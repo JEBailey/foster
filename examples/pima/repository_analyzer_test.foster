@@ -1,0 +1,19 @@
+import core.sequence
+
+type ExpectedMetrics {
+    lines: Int
+    todos: Int
+    functions: Int
+    imports: Int
+}
+
+func main() -> Bool {
+    fixture = "import core.list\nfunc first() { 1 }\n// TODO\nfunc second() { 2 }\n// FIXME\n"
+    actual = ExpectedMetrics { lines: sequence.count(fixture, (character: CodePoint) -> character == '\n'), todos: 2, functions: 2, imports: 1 }
+    branch {
+        actual.lines != 5 -> false
+        actual.todos != 2 -> false
+        actual.functions != 2 -> false
+        _ -> actual.imports == 1
+    }
+}

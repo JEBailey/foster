@@ -1,0 +1,22 @@
+func set[state: group Int](value: ref[state] Int, next: Int) -> Int {
+    value = next
+    value
+}
+
+func add(left: Int, right: Int) -> Int {
+    left + right
+}
+
+func main() -> Int {
+    values = [1, 2]
+    set(ref values[0], 7)
+
+    count = 0
+    increment = [ref count] () -> {
+        count = count + 1
+    }
+    increment()
+
+    add_seven = add(7, _)
+    add_seven(count)
+}

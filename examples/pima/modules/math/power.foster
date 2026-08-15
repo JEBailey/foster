@@ -1,0 +1,6 @@
+pub func raise(value: Int, exponent: Int) -> Int {
+    branch {
+        exponent < 2 -> value
+        _ -> value * raise(value, exponent - 1)
+    }
+}

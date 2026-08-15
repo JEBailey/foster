@@ -1,0 +1,11 @@
+func curry_sample(x: Int, y: Int, z: Int) -> Int {
+    result = x + y + z
+    println("This is an example of currying", result)
+    result
+}
+
+func main() -> Int {
+    curry = curry_sample(2, 3, _)
+    curry(12)
+    curry(14)
+}

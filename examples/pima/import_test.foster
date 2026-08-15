@@ -1,0 +1,11 @@
+func power(base: Int, exponent: Int) -> Int {
+    branch {
+        exponent == 0 -> 1
+        _ -> base * power(base, exponent - 1)
+    }
+}
+
+func main() -> Int {
+    println("2^10:", power(2, 10))
+    power(2, 10)
+}

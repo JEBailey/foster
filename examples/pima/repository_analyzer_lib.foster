@@ -1,0 +1,59 @@
+import core.sequence
+
+type Metrics {
+    lines: Int
+    todos: Int
+    functions: Int
+    imports: Int
+}
+
+type Analyzer {
+    source: String
+}
+
+func starts_with(source: String, prefix: String) -> Bool {
+    branch {
+        prefix.empty? -> true
+        source.empty? -> false
+        source.head != prefix.head -> false
+        _ -> starts_with(source.rest, prefix.rest)
+    }
+}
+
+func count_occurrences(source: String, word: String) -> Int {
+    branch {
+        source.empty? -> 0
+        starts_with(source, word) -> 1 + count_occurrences(source.rest, word)
+        _ -> count_occurrences(source.rest, word)
+    }
+}
+
+func count_lines(source: String) -> Int {
+    branch {
+        source.empty? -> 0
+        _ -> 1 + count_newlines(source)
+    }
+}
+
+func count_newlines(source: String) -> Int {
+    sequence.count(source, (character: CodePoint) -> character == '\n')
+}
+
+func analyze(source: String) -> Metrics {
+    Metrics {
+        lines: count_lines(source)
+        todos: count_occurrences(source, "TODO") + count_occurrences(source, "FIXME")
+        functions: count_occurrences(source, "function ")
+        imports: count_occurrences(source, "import ")
+    }
+}
+
+func run(self: Analyzer) -> Metrics {
+    analyze(self.source)
+}
+
+func main() -> Int {
+    worker = remote Analyzer { source: "import core\nfunction work()\n// TODO\n" }
+    result = await worker.run()
+    result.lines * 1000 + result.todos * 100 + result.functions * 10 + result.imports
+}

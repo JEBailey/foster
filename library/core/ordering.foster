@@ -1,0 +1,13 @@
+pub type Ordering =
+    | Less
+    | Equal
+    | Greater
+
+/// Reverses an ordering, exchanging `Less` and `Greater` while preserving `Equal`.
+pub func reverse(ordering: Ordering) -> Ordering {
+    branch ordering {
+        Ordering.Less -> Ordering.Greater
+        Ordering.Equal -> Ordering.Equal
+        Ordering.Greater -> Ordering.Less
+    }
+}

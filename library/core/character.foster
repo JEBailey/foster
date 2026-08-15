@@ -1,0 +1,26 @@
+import core.option
+
+/// Creates a code point from a valid Unicode scalar value.
+///
+/// Returns `None` for negative values, surrogate code points, and values above `0x10FFFF`.
+pub func from_int(value: Int) -> Option[CodePoint] {
+    branch {
+        value < 0 -> Option.None
+        value > 1114111 -> Option.None
+        value >= 55296 -> branch {
+            value <= 57343 -> Option.None
+            _ -> Option.Some(from_code_point(value))
+        }
+        _ -> Option.Some(from_code_point(value))
+    }
+}
+
+/// Returns the Unicode scalar value represented by `character`.
+pub func to_int(character: CodePoint) -> Int {
+    character.value
+}
+
+/// Converts one code point to its single-code-point string representation.
+pub func to_string(character: CodePoint) -> String {
+    character.string
+}

@@ -1,0 +1,109 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Foster",
+  "scopeName": "source.foster",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#symbols" },
+    { "include": "#declarations" },
+    { "include": "#keywords" },
+    { "include": "#types" },
+    { "include": "#operators" },
+    { "include": "#constants" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        { "name": "comment.line.documentation.foster", "match": "///.*$" },
+        {
+          "name": "comment.block.documentation.foster",
+          "begin": "/\\*\\*",
+          "end": "\\*/",
+          "patterns": [{ "include": "#block-comments" }]
+        },
+        { "name": "comment.line.double-slash.foster", "match": "//.*$" },
+        { "include": "#block-comments" }
+      ]
+    },
+    "block-comments": {
+      "patterns": [
+        {
+          "name": "comment.block.foster",
+          "begin": "/\\*",
+          "end": "\\*/",
+          "patterns": [{ "include": "#block-comments" }]
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "constant.character.foster",
+          "match": "'(?:\\\\[nrt'\\\"\\\\]|[^'\\r\\n])'"
+        },
+        {
+          "name": "string.quoted.double.foster",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            { "name": "constant.character.escape.foster", "match": "\\\\(?:[\\\"/bfnrt]|u[0-9A-Fa-f]{4})" }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        { "name": "constant.numeric.float.foster", "match": "\\b(?:[0-9]+\\.[0-9]+|[0-9]+(?:\\.[0-9]+)?[eE][+-]?[0-9]+)\\b" },
+        { "name": "constant.numeric.integer.foster", "match": "\\b[0-9]+\\b" }
+      ]
+    },
+    "symbols": {
+      "patterns": [
+        { "name": "constant.other.symbol.foster", "match": ":[A-Za-z_][A-Za-z0-9_?]*" }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(func)\\s+([A-Za-z_][A-Za-z0-9_?]*)",
+          "captures": {
+            "1": { "name": "storage.type.function.foster" },
+            "2": { "name": "entity.name.function.foster" }
+          }
+        },
+        {
+          "match": "\\b(type)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.foster" },
+            "2": { "name": "entity.name.type.foster" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.foster", "match": "\\b(?:branch|if|return|await)\\b" },
+        { "name": "keyword.declaration.foster", "match": "\\b(?:func|type|pub|import|as)\\b" },
+        { "name": "keyword.other.foster", "match": "\\b(?:copy|move|ref|remote|any|group|read|mut|reshape|consume|suspend)\\b" }
+      ]
+    },
+    "types": {
+      "patterns": [
+        { "name": "support.type.foster", "match": "\\b(?:Unit|Bool|Int|Float|String|CodePoint|Symbol|List|Sequence|Remote|Future)\\b" },
+        { "name": "entity.name.type.foster", "match": "\\b[A-Z][A-Za-z0-9_]*\\b" }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.type.intersection.foster", "match": "&" }
+      ]
+    },
+    "constants": {
+      "patterns": [
+        { "name": "constant.language.boolean.foster", "match": "\\b(?:true|false)\\b" }
+      ]
+    }
+  }
+}

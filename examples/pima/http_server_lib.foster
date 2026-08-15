@@ -1,0 +1,40 @@
+// The request parser and response serializer remain transport-independent.
+// Applications can feed text from core.net.tcp into these pure functions.
+
+type Request =
+    | Get(String)
+    | BadRequest(String)
+
+type HttpResponse {
+    status: Int
+    reason: String
+    body: String
+}
+
+func parse_request(source: String) -> Request {
+    branch source {
+        "GET / HTTP/1.1\r\n\r\n" -> Get("/")
+        "GET /health HTTP/1.1\r\n\r\n" -> Get("/health")
+        _ -> BadRequest("malformed HTTP request")
+    }
+}
+
+func dispatch(request: Request) -> HttpResponse {
+    branch request {
+        Get("/health") -> HttpResponse { status: 200, reason: "OK", body: "healthy" }
+        Get(path) -> not_found(path)
+        BadRequest(message) -> HttpResponse { status: 400, reason: "Bad Request", body: message }
+    }
+}
+
+func not_found(path: String) -> HttpResponse {
+    println("not found:", path)
+    HttpResponse { status: 404, reason: "Not Found", body: "not found" }
+}
+
+func main() -> Int {
+    good = dispatch(parse_request("GET /health HTTP/1.1\r\n\r\n"))
+    bad = dispatch(parse_request("BROKEN"))
+    println("HTTP results:", good.status, bad.status)
+    good.status + bad.status
+}

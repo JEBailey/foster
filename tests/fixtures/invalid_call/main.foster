@@ -1,0 +1,6 @@
+import json.parser as parser
+
+func main() {
+    parser.parse(42)
+}
+

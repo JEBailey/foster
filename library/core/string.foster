@@ -1,0 +1,213 @@
+import core.character
+import core.list
+import core.option
+
+/// Returns the first code point, or `None` when the string is empty.
+pub func first(value: String) -> Option[CodePoint] {
+    branch {
+        value.empty? -> Option.None
+        _ -> Option.Some(value.head)
+    }
+}
+
+/// Returns the final code point, or `None` when the string is empty.
+pub func last(value: String) -> Option[CodePoint] {
+    branch {
+        value.empty? -> Option.None
+        value.rest.empty? -> Option.Some(value.head)
+        _ -> last(value.rest)
+    }
+}
+
+/// Returns the string with its code points in reverse order.
+pub func reverse(value: String) -> String {
+    reverse_into(value, "")
+}
+
+/// Prepends remaining code points to the reversed-string accumulator.
+func reverse_into(value: String, result: String) -> String [consume result] {
+    branch {
+        value.empty? -> result
+        _ -> reverse_into(value.rest, value.head.string + result)
+    }
+}
+
+/// Returns whether `value` begins with `prefix`.
+pub func starts_with?(value: String, prefix: String) -> Bool {
+    branch {
+        prefix.empty? -> true
+        value.empty? -> false
+        value.head != prefix.head -> false
+        _ -> starts_with?(value.rest, prefix.rest)
+    }
+}
+
+/// Returns whether `value` ends with `suffix`.
+pub func ends_with?(value: String, suffix: String) -> Bool {
+    starts_with?(reverse(value), reverse(suffix))
+}
+
+/// Returns whether `value` contains `fragment`.
+pub func contains?(value: String, fragment: String) -> Bool {
+    branch {
+        fragment.empty? -> true
+        value.empty? -> false
+        starts_with?(value, fragment) -> true
+        _ -> contains?(value.rest, fragment)
+    }
+}
+
+/// Consumes the string and removes leading Unicode whitespace.
+pub func trim_start(value: String) -> String [consume value] {
+    branch {
+        value.empty? -> value
+        value.head.whitespace? -> trim_start(value.rest)
+        _ -> value
+    }
+}
+
+/// Returns the string without trailing Unicode whitespace.
+pub func trim_end(value: String) -> String {
+    reverse(trim_start(reverse(value)))
+}
+
+/// Consumes the string and removes leading and trailing Unicode whitespace.
+pub func trim(value: String) -> String [consume value] {
+    trim_end(trim_start(move value))
+}
+
+/// Materializes the string's Unicode scalar values as a list of code points.
+pub func to_code_points(value: String) -> List[CodePoint] {
+    to_code_points_into(value, [])
+}
+
+/// Appends remaining string code points to the list accumulator.
+func to_code_points_into(value: String, result: List[CodePoint]) -> List[CodePoint] [consume result] {
+    branch {
+        value.empty? -> result
+        _ -> to_code_points_into(value.rest, result.append(value.head))
+    }
+}
+
+/// Concatenates a sequence of code points into a string.
+pub func from_code_points(characters: Sequence[CodePoint]) -> String {
+    branch {
+        characters.empty? -> ""
+        _ -> characters.head.string + from_code_points(characters.rest)
+    }
+}
+
+/// Returns the number of Unicode code points in the string.
+pub func length(value: String) -> Int {
+    value.length
+}
+
+/// Returns the half-open code-point range `[start, end)` from the string.
+pub func slice(value: String, start: Int, end: Int) -> String {
+    slice_into(value, 0, start, end, "")
+}
+
+/// Copies code points in the selected range into the string accumulator.
+func slice_into(value: String, index: Int, start: Int, end: Int, result: String) -> String [consume result] {
+    branch {
+        value.empty? -> result
+        index >= end -> result
+        index >= start -> slice_into(value.rest, index + 1, start, end, result + value.head.string)
+        _ -> slice_into(value.rest, index + 1, start, end, move result)
+    }
+}
+
+/// Consumes and splits a string around each occurrence of `separator`.
+///
+/// An empty separator produces one single-code-point string per element.
+pub func split(value: String, separator: String) -> List[String] [consume value] {
+    branch {
+        separator.empty? -> split_characters(value, [])
+        _ -> split_into(move value, separator, "", [])
+    }
+}
+
+/// Splits the remaining value into single-code-point strings.
+func split_characters(value: String, result: List[String]) -> List[String] [consume result] {
+    branch {
+        value.empty? -> result
+        _ -> split_characters(value.rest, result.append(value.head.string))
+    }
+}
+
+/// Scans separator-delimited segments into the result accumulator.
+func split_into(value: String, separator: String, current: String, result: List[String]) -> List[String] [consume value, consume current, consume result] {
+    branch {
+        value.empty? -> result.append(current)
+        starts_with?(value, separator) -> split_into(drop_prefix(move value, separator.length), separator, "", result.append(current))
+        _ -> split_into(value.rest, separator, current + value.head.string, move result)
+    }
+}
+
+/// Consumes and removes at most `count` leading code points.
+func drop_prefix(value: String, count: Int) -> String [consume value] {
+    branch {
+        count <= 0 -> value
+        value.empty? -> value
+        _ -> drop_prefix(value.rest, count - 1)
+    }
+}
+
+/// Returns an ASCII-lowercase version of the string.
+pub func lower(value: String) -> String {
+    branch {
+        value.empty? -> ""
+        _ -> lower_character(value.head) + lower(value.rest)
+    }
+}
+
+/// Converts one ASCII uppercase code point to lowercase text.
+func lower_character(value: CodePoint) -> String {
+    code = code_point(value)
+    branch {
+        code < 65 -> value.string
+        code > 90 -> value.string
+        _ -> from_code_point(code + 32).string
+    }
+}
+
+/// Returns an ASCII-uppercase version of the string.
+pub func upper(value: String) -> String {
+    branch {
+        value.empty? -> ""
+        _ -> upper_character(value.head) + upper(value.rest)
+    }
+}
+
+/// Converts one ASCII lowercase code point to uppercase text.
+func upper_character(value: CodePoint) -> String {
+    code = code_point(value)
+    branch {
+        code < 97 -> value.string
+        code > 122 -> value.string
+        _ -> from_code_point(code - 32).string
+    }
+}
+
+/// Returns the number of bytes required by the string's UTF-8 encoding.
+pub func byte_length(value: String) -> Int {
+    branch {
+        value.empty? -> 0
+        _ -> utf8_width(code_point(value.head)) + byte_length(value.rest)
+    }
+}
+
+/// Returns the UTF-8 width of a valid Unicode scalar value.
+func utf8_width(code: Int) -> Int {
+    branch {
+        code <= 127 -> 1
+        code <= 2047 -> 2
+        code <= 65535 -> 3
+        _ -> 4
+    }
+}
+
+/// Joins strings with `separator` between adjacent values.
+pub func join(values: List[String], separator: String) -> String {
+    list.join(values, separator)
+}

@@ -1,0 +1,56 @@
+import core.ordering
+
+/// Returns the absolute value of `value`.
+pub func absolute(value: Float) -> Float {
+    branch {
+        value < 0.0 -> -value
+        _ -> value
+    }
+}
+
+/// Returns the smaller of `left` and `right`.
+pub func minimum(left: Float, right: Float) -> Float {
+    branch {
+        left <= right -> left
+        _ -> right
+    }
+}
+
+/// Returns the larger of `left` and `right`.
+pub func maximum(left: Float, right: Float) -> Float {
+    branch {
+        left >= right -> left
+        _ -> right
+    }
+}
+
+/// Restricts `value` to the inclusive range from `lower` to `upper`.
+pub func clamp(value: Float, lower: Float, upper: Float) -> Float {
+    minimum(maximum(value, lower), upper)
+}
+
+/// Returns `-1`, `0`, or `1` according to the sign of `value`.
+pub func sign(value: Float) -> Int {
+    branch {
+        value < 0.0 -> -1
+        value > 0.0 -> 1
+        _ -> 0
+    }
+}
+
+/// Compares two floating-point values and returns their ordering.
+pub func compare(left: Float, right: Float) -> Ordering {
+    branch {
+        left < right -> Ordering.Less
+        left > right -> Ordering.Greater
+        _ -> Ordering.Equal
+    }
+}
+
+/// Returns whether `value` lies in the inclusive range from `lower` to `upper`.
+pub func between?(value: Float, lower: Float, upper: Float) -> Bool {
+    branch {
+        value < lower -> false
+        _ -> value <= upper
+    }
+}

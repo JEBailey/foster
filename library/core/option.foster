@@ -1,0 +1,35 @@
+pub type Option[T] =
+    | Some(T)
+    | None
+
+/// Applies `transform` to a present value and preserves `None`.
+pub func map[T, U](option: Option[T], transform: func(T) -> U) -> Option[U] {
+    branch option {
+        Option.Some(value) -> Option.Some(transform(value))
+        Option.None -> Option.None
+    }
+}
+
+/// Applies an optional-producing transform to a present value and flattens the result.
+pub func and_then[T, U](option: Option[T], transform: func(T) -> Option[U]) -> Option[U] {
+    branch option {
+        Option.Some(value) -> transform(value)
+        Option.None -> Option.None
+    }
+}
+
+/// Returns the contained value, or `fallback` when the option is `None`.
+pub func unwrap_or[T](option: Option[T], fallback: T) -> T {
+    branch option {
+        Option.Some(value) -> value
+        Option.None -> fallback
+    }
+}
+
+/// Returns whether the option contains a value.
+pub func present?[T](option: Option[T]) -> Bool {
+    branch option {
+        Option.Some(_) -> true
+        Option.None -> false
+    }
+}

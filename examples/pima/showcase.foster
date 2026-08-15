@@ -1,0 +1,73 @@
+type Account {
+    owner: String
+    balance: Int
+    transactions: List[Int]
+}
+
+type AccountResult =
+    | Created(Account)
+    | InvalidOpeningBalance(String)
+
+func create_account(owner: String, opening_balance: Int) -> AccountResult {
+    branch {
+        opening_balance < 0 -> InvalidOpeningBalance("opening balance must not be negative")
+        _ -> Created(Account { owner, balance: opening_balance, transactions: [] })
+    }
+}
+
+func deposit(self: Account, amount: Int) -> Int {
+    self.balance = self.balance + amount
+    self.transactions = self.transactions.append(amount)
+    self.balance
+}
+
+func summary(self: Account) -> String {
+    self.owner + " account"
+}
+
+func multiplier(factor: Int) -> func(Int) -> Int {
+    (value: Int) -> factor * value
+}
+
+func select_over_ten(values: List[Int], selected: List[Int]) -> List[Int] {
+    branch {
+        values.empty? -> selected
+        values.head > 10 -> select_over_ten(values.rest, selected.append(values.head))
+        _ -> select_over_ten(values.rest, move selected)
+    }
+}
+
+func sum(values: List[Int], total: Int) -> Int {
+    branch {
+        values.empty? -> total
+        _ -> sum(values.rest, total + values.head)
+    }
+}
+
+func use_account(result: AccountResult) -> Int {
+    branch result {
+        InvalidOpeningBalance(message) -> report_error(message)
+        Created(account) -> operate(move account)
+    }
+}
+
+func report_error(message: String) -> Int {
+    println("Expected error:", message)
+    0
+}
+
+func operate(account: Account) -> Int {
+    account.deposit(25)
+    account.deposit(10)
+    println("Account:", account.summary())
+    account.balance
+}
+
+func main() -> Int {
+    triple = multiplier(3)
+    generated = [triple(1), triple(2), triple(3), triple(4), triple(5), triple(6)]
+    selected = select_over_ten(generated, [])
+    total = sum(selected, 0)
+    println("Selected total:", total)
+    use_account(create_account("Ada", total)) + use_account(create_account("Grace", -1))
+}

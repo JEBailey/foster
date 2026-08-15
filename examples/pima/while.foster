@@ -1,0 +1,10 @@
+func count_to(current: Int, limit: Int) -> Int {
+    branch {
+        current == limit -> current
+        _ -> count_to(current + 1, limit)
+    }
+}
+
+func main() -> Int {
+    count_to(0, 12000)
+}

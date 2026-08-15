@@ -1,0 +1,44 @@
+// Pima's open code blocks become ordinary lexical closures in Foster. The
+// required environment is explicit in the closure's parameters.
+
+func compact_report(name: String, score: Int) -> Unit {
+    println(name, ":", score)
+}
+
+func detailed_report(name: String, score: Int) -> Unit {
+    println("Student:", name)
+    println("Score:", score)
+    println("Passing:", score >= 70)
+}
+
+func choose_report(detailed: Bool) -> func(String, Int) -> Unit {
+    branch {
+        detailed -> detailed_report
+        _ -> compact_report
+    }
+}
+
+func render_report(report: func(String, Int) -> Unit, name: String, score: Int) -> Unit {
+    report(name, score)
+}
+
+func for_each_report(reports: List[func(String, Int) -> Unit], name: String, score: Int) -> Unit {
+    branch {
+        reports.empty? -> println()
+        _ -> render_then_continue(reports, name, score)
+    }
+}
+
+func render_then_continue(reports: List[func(String, Int) -> Unit], name: String, score: Int) -> Unit {
+    reports.head(name, score)
+    for_each_report(reports.rest, name, score)
+}
+
+func main() -> Int {
+    selected = choose_report(true)
+    render_report(selected, "Ada", 96)
+    render_report(selected, "Grace", 68)
+    reports = [compact_report, detailed_report]
+    for_each_report(reports, "Linus", 88)
+    2
+}

@@ -1,0 +1,12 @@
+func skip_whitespace(characters: String) -> String {
+    branch {
+        characters.empty? -> characters
+        characters.head.whitespace? -> skip_whitespace(characters.rest)
+        _ -> characters
+    }
+}
+
+func main() -> String {
+    skip_whitespace(" \nFoster")
+}
+

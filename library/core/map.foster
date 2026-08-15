@@ -1,0 +1,93 @@
+import core.option
+
+type Entry[K, V] {
+    key: K
+    value: V
+}
+
+pub type Map[K, V] {
+    entries: List[Entry[K, V]]
+}
+
+/// Creates an empty map.
+pub func Map.empty[K, V]() -> Map[K, V] {
+    Map { entries: [] }
+}
+
+/// Consumes the map and returns the value associated with `key`, if present.
+pub func get[K, V](self: Map[K, V], key: K) -> Option[V] {
+    get_entries(move self.entries, key)
+}
+
+/// Searches owned entries for a matching key and returns its value.
+func get_entries[K, V](entries: List[Entry[K, V]], key: K) -> Option[V] {
+    branch {
+        entries.empty? -> Option.None
+        entries.head.key == key -> Option.Some(entries.head.value)
+        _ -> get_entries(entries.rest, key)
+    }
+}
+
+/// Returns whether the map contains `key` without consuming the map.
+pub func contains_key?[K, V](self: Map[K, V], key: K) -> Bool {
+    contains_entries?(self.entries, key)
+}
+
+/// Searches entries for a key without extracting its value.
+func contains_entries?[K, V](entries: List[Entry[K, V]], key: K) -> Bool {
+    branch {
+        entries.empty? -> false
+        entries.head.key == key -> true
+        _ -> contains_entries?(entries.rest, key)
+    }
+}
+
+/// Returns a map with `key` associated with `value`, replacing an existing entry when present.
+pub func put[K, V](self: Map[K, V], key: K, value: V) -> Map[K, V] {
+    Map { entries: put_entries(move self.entries, move key, move value) }
+}
+
+/// Rebuilds the entry list with the supplied key and value.
+func put_entries[K, V](entries: List[Entry[K, V]], key: K, value: V) -> List[Entry[K, V]] {
+    branch {
+        entries.empty? -> [Entry { key, value }]
+        entries.head.key == key -> entries.rest.append(Entry { key, value })
+        _ -> put_entries(entries.rest, move key, move value).append(entries.head)
+    }
+}
+
+/// Returns the number of entries in the map.
+pub func length[K, V](self: Map[K, V]) -> Int {
+    self.entries.length
+}
+
+/// Returns whether the map contains no entries.
+pub func empty?[K, V](self: Map[K, V]) -> Bool {
+    self.entries.empty?
+}
+
+/// Consumes the map and returns its keys in storage order.
+pub func keys[K, V](self: Map[K, V]) -> List[K] {
+    keys_into(move self.entries, [])
+}
+
+/// Extracts keys from owned entries into the result accumulator.
+func keys_into[K, V](entries: List[Entry[K, V]], result: List[K]) -> List[K] {
+    branch {
+        entries.empty? -> result
+        _ -> keys_into(entries.rest, result.append(entries.head.key))
+    }
+}
+
+/// Consumes the map and returns its values in storage order.
+pub func values[K, V](self: Map[K, V]) -> List[V] {
+    values_into(move self.entries, [])
+}
+
+/// Extracts values from owned entries into the result accumulator.
+func values_into[K, V](entries: List[Entry[K, V]], result: List[V]) -> List[V] {
+    branch {
+        entries.empty? -> result
+        _ -> values_into(entries.rest, result.append(entries.head.value))
+    }
+}

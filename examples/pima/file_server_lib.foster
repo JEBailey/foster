@@ -1,0 +1,45 @@
+// Transport-independent static-file handling. This corpus keeps files as owned
+// data for deterministic tests; applications can load them through core.io.
+
+type File {
+    path: String
+    media_type: String
+    body: String
+}
+
+type Response {
+    status: Int
+    reason: String
+    media_type: String
+    body: String
+}
+
+type FileServer {
+    files: List[File]
+}
+
+func response(status: Int, reason: String, media_type: String, body: String) -> Response {
+    Response { status, reason, media_type, body }
+}
+
+func find_file(files: List[File], path: String) -> Response {
+    branch {
+        files.empty? -> response(404, "Not Found", "text/plain", "file not found")
+        files.head.path == path -> response(200, "OK", "text/plain", "stored file")
+        _ -> find_file(files.rest, path)
+    }
+}
+
+func handle(self: FileServer, method: String, target: String) -> Response {
+    branch {
+        method != "GET" -> response(405, "Method Not Allowed", "text/plain", "method not allowed")
+        target == "/../json_parser.pima" -> response(403, "Forbidden", "text/plain", "path escapes document root")
+        target == "/" -> find_file(self.files, "/index.html")
+        _ -> find_file(self.files, target)
+    }
+}
+
+func main() -> Int {
+    server = FileServer { files: [File { path: "/index.html", media_type: "text/html", body: "<h1>Foster</h1>" }, File { path: "/assets/site.css", media_type: "text/css", body: "body {}" }] }
+    server.handle("GET", "/").status + server.handle("GET", "/missing.txt").status
+}

@@ -1,0 +1,3 @@
+pub func parse(input: String) -> String {
+    input
+}

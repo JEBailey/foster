@@ -1,0 +1,4 @@
+func version() -> String {
+    "0.1"
+}
+

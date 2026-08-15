@@ -1,0 +1,11 @@
+pub type Box[T] {
+    value: T
+}
+
+pub func Box.create[T](value: T) -> Box[T] {
+    Box { value }
+}
+
+pub func unwrap[T](self: Box[T]) -> T {
+    self.value
+}

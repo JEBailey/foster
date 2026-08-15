@@ -1,0 +1,83 @@
+{
+  "name": "foster-language-support",
+  "displayName": "Foster Language Support",
+  "description": "Language support and compiler diagnostics for Foster.",
+  "version": "0.1.0",
+  "publisher": "foster-lang",
+  "license": "MIT OR Apache-2.0",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:foster",
+    "onCommand:foster.restartLanguageServer"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "foster",
+        "aliases": [
+          "Foster",
+          "foster"
+        ],
+        "extensions": [
+          ".foster"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "foster",
+        "scopeName": "source.foster",
+        "path": "./syntaxes/foster.tmLanguage.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "foster.restartLanguageServer",
+        "title": "Foster: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "Foster",
+      "properties": {
+        "foster.server.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "description": "Path to the Foster compiler executable. When empty, the extension checks this workspace's target/debug directory and then PATH."
+        },
+        "foster.server.trace": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "scope": "window",
+          "description": "Trace communication between VS Code and the Foster language server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "check": "tsc -p ./ --noEmit"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^10.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.125.0",
+    "typescript": "^7.0.2"
+  }
+}

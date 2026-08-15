@@ -1,0 +1,110 @@
+import core.ordering
+
+/// Returns the absolute value of `value`.
+pub func absolute(value: Int) -> Int {
+    branch {
+        value < 0 -> -value
+        _ -> value
+    }
+}
+
+/// Returns the smaller of `left` and `right`.
+pub func minimum(left: Int, right: Int) -> Int {
+    branch {
+        left <= right -> left
+        _ -> right
+    }
+}
+
+/// Returns the larger of `left` and `right`.
+pub func maximum(left: Int, right: Int) -> Int {
+    branch {
+        left >= right -> left
+        _ -> right
+    }
+}
+
+/// Restricts `value` to the inclusive range from `lower` to `upper`.
+pub func clamp(value: Int, lower: Int, upper: Int) -> Int {
+    minimum(maximum(value, lower), upper)
+}
+
+/// Returns `-1`, `0`, or `1` according to the sign of `value`.
+pub func sign(value: Int) -> Int {
+    branch {
+        value < 0 -> -1
+        value > 0 -> 1
+        _ -> 0
+    }
+}
+
+/// Compares two integers and returns their ordering.
+pub func compare(left: Int, right: Int) -> Ordering {
+    branch {
+        left < right -> Ordering.Less
+        left > right -> Ordering.Greater
+        _ -> Ordering.Equal
+    }
+}
+
+/// Returns whether `value` lies in the inclusive range from `lower` to `upper`.
+pub func between?(value: Int, lower: Int, upper: Int) -> Bool {
+    branch {
+        value < lower -> false
+        _ -> value <= upper
+    }
+}
+
+/// Returns whether `value` is evenly divisible by two.
+pub func even?(value: Int) -> Bool {
+    value / 2 * 2 == value
+}
+
+/// Returns whether `value` is not evenly divisible by two.
+pub func odd?(value: Int) -> Bool {
+    value / 2 * 2 != value
+}
+
+/// Raises `base` to a nonnegative integer `exponent`.
+pub func power(base: Int, exponent: Int) -> Int {
+    branch {
+        exponent <= 0 -> 1
+        _ -> base * power(base, exponent - 1)
+    }
+}
+
+/// Returns the remainder after integer division by `divisor`.
+pub func modulo(value: Int, divisor: Int) -> Int {
+    value - value / divisor * divisor
+}
+
+/// Builds the half-open integer range `[start, end)`.
+pub func range(start: Int, end: Int) -> List[Int] {
+    range_into(start, end, [])
+}
+
+/// Appends consecutive integers to the range accumulator.
+func range_into(value: Int, end: Int, result: List[Int]) -> List[Int] [consume result] {
+    branch {
+        value >= end -> result
+        _ -> range_into(value + 1, end, result.append(value))
+    }
+}
+
+/// Formats an integer as decimal text.
+pub func to_string(value: Int) -> String {
+    branch {
+        value < 0 -> "-" + unsigned_string(-value)
+        _ -> unsigned_string(value)
+    }
+}
+
+/// Formats a known nonnegative integer as decimal text.
+func unsigned_string(value: Int) -> String {
+    quotient = value / 10
+    digit = value - quotient * 10
+    branch {
+        quotient == 0 -> from_code_point(48 + digit).string
+        _ -> unsigned_string(quotient) + from_code_point(48 + digit).string
+    }
+}

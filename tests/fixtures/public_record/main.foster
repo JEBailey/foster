@@ -1,0 +1,9 @@
+import geometry
+
+func origin() -> geometry.Point {
+    geometry.Point { x: 0, y: 0 }
+}
+
+func main() -> Int {
+    origin().x
+}

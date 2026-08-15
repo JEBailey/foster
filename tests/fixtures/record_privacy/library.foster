@@ -1,0 +1,11 @@
+pub type Person {
+    pub name: String
+    secret: Int
+}
+
+pub func person() -> Person {
+    Person {
+        name: "Ada"
+        secret: 42
+    }
+}

@@ -1,0 +1,11 @@
+func birthday_paradox(probability: Float, number_of_people: Float) -> Float {
+    new_probability = ((365.0 - number_of_people) / 365.0) * probability
+    branch {
+        new_probability < 0.5 -> number_of_people + 1.0
+        _ -> birthday_paradox(new_probability, number_of_people + 1.0)
+    }
+}
+
+func main() -> Float {
+    birthday_paradox(1.0, 1.0)
+}

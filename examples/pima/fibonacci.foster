@@ -1,0 +1,18 @@
+func fibonacci_from(remaining: Int, current: Int, next: Int) -> Int {
+    branch {
+        remaining == 0 -> current
+        _ -> fibonacci_from(remaining - 1, next, current + next)
+    }
+}
+
+func fibonacci(position: Int) -> Int {
+    branch {
+        position < 1 -> 0
+        _ -> fibonacci_from(position, 0, 1)
+    }
+}
+
+func main() -> Unit {
+    println("The Fibonacci value at position 12 is", fibonacci(12))
+}
+

@@ -1,0 +1,1 @@
+pub func map(value: Int) -> Int { value }

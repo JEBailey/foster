@@ -1,0 +1,11 @@
+func power(value: Int, exponent: Int) -> Int {
+    branch {
+        exponent < 2 -> value
+        _ -> value * power(value, exponent - 1)
+    }
+}
+
+func main() -> Unit {
+    println(power(5, 2))
+}
+

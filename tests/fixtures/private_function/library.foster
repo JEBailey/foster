@@ -1,0 +1,3 @@
+func hidden() -> Int {
+    42
+}

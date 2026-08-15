@@ -1,0 +1,4 @@
+func main() -> Int {
+    "not an integer"
+}
+

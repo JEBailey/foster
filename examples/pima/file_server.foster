@@ -1,0 +1,31 @@
+type FileResponse {
+    status: Int
+    reason: String
+}
+
+type StaticServer {
+    home: String
+    stylesheet: String
+}
+
+func handle(self: StaticServer, method: String, target: String) -> FileResponse {
+    branch {
+        method != "GET" -> FileResponse { status: 405, reason: "Method Not Allowed" }
+        target == "/../json_parser.pima" -> FileResponse { status: 403, reason: "Forbidden" }
+        target == "/" -> FileResponse { status: 200, reason: "OK" }
+        target == "/assets/site.css" -> FileResponse { status: 200, reason: "OK" }
+        _ -> FileResponse { status: 404, reason: "Not Found" }
+    }
+}
+
+func main() -> Int {
+    server = StaticServer { home: "<h1>Foster</h1>", stylesheet: "body {}" }
+    home = server.handle("GET", "/")
+    stylesheet = server.handle("GET", "/assets/site.css")
+    missing = server.handle("GET", "/missing.txt")
+    traversal = server.handle("GET", "/../json_parser.pima")
+    rejected = server.handle("POST", "/")
+    println("GET /:", home.status, home.reason)
+    println("HEAD statuses:", stylesheet.status, missing.status, traversal.status, rejected.status)
+    home.status + stylesheet.status + missing.status + traversal.status + rejected.status
+}

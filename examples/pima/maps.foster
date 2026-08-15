@@ -1,0 +1,57 @@
+type Entry {
+    key: Symbol
+    value: Int
+}
+
+pub type Map {
+    entries: List[Entry]
+}
+
+type Lookup =
+    | Found(Int)
+    | Missing
+
+pub func Map.empty() -> Map {
+    Map { entries: [] }
+}
+
+func get_entries(entries: List[Entry], key: Symbol) -> Lookup {
+    branch {
+        entries.empty? -> Missing
+        entries.head.key == key -> Found(entries.head.value)
+        _ -> get_entries(entries.rest, key)
+    }
+}
+
+func get(self: Map, key: Symbol) -> Lookup {
+    get_entries(self.entries, key)
+}
+
+func put_entries(entries: List[Entry], key: Symbol, value: Int) -> List[Entry] {
+    branch {
+        entries.empty? -> [Entry { key, value }]
+        entries.head.key == key -> entries.rest.append(Entry { key, value })
+        _ -> put_entries(entries.rest, key, value).append(entries.head)
+    }
+}
+
+func put(self: Map, key: Symbol, value: Int) -> Map {
+    Map { entries: put_entries(move self.entries, key, value) }
+}
+
+func value_or_zero(value: Lookup) -> Int {
+    branch value {
+        Found(number) -> number
+        Missing -> 0
+    }
+}
+
+func main() -> Int {
+    user = Map.empty()
+    user = user.put(:name, 1)
+    user = user.put(:score, 95)
+    updated = user.put(:score, 96)
+    println("original:", value_or_zero(user.get(:score)))
+    println("updated:", value_or_zero(updated.get(:score)))
+    value_or_zero(updated.get(:score))
+}

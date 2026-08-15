@@ -1,0 +1,35 @@
+pub type Result[T, E] =
+    | Ok(T)
+    | Error(E)
+
+/// Applies `transform` to a successful value and preserves an error.
+pub func map[T, E, U](result: Result[T, E], transform: func(T) -> U) -> Result[U, E] {
+    branch result {
+        Result.Ok(value) -> Result.Ok(transform(value))
+        Result.Error(error) -> Result.Error(error)
+    }
+}
+
+/// Applies `transform` to an error and preserves a successful value.
+pub func map_error[T, E, F](result: Result[T, E], transform: func(E) -> F) -> Result[T, F] {
+    branch result {
+        Result.Ok(value) -> Result.Ok(value)
+        Result.Error(error) -> Result.Error(transform(error))
+    }
+}
+
+/// Applies a result-producing transform to a successful value and flattens the result.
+pub func and_then[T, E, U](result: Result[T, E], transform: func(T) -> Result[U, E]) -> Result[U, E] {
+    branch result {
+        Result.Ok(value) -> transform(value)
+        Result.Error(error) -> Result.Error(error)
+    }
+}
+
+/// Returns whether the result is successful.
+pub func success?[T, E](result: Result[T, E]) -> Bool {
+    branch result {
+        Result.Ok(_) -> true
+        Result.Error(_) -> false
+    }
+}

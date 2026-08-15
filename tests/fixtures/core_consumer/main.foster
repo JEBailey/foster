@@ -1,0 +1,22 @@
+import core.list
+import core.option
+import core.result
+
+func double(value: Int) -> Int { value * 2 }
+
+func initial() -> Result[Int, String] {
+    Result.Ok(20)
+}
+
+func main() -> Int {
+    values = list.map([1, 2, 3], double)
+    first = first(move values)
+    mapped = result.map(initial(), double)
+    branch first {
+        Option.Some(value) -> branch mapped {
+            Result.Ok(other) -> value + other
+            Result.Error(_) -> 0
+        }
+        Option.None -> 0
+    }
+}

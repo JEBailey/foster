@@ -1,0 +1,4 @@
+import left
+import right
+
+func main() -> Int { map(1) }

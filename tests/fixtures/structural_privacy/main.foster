@@ -1,0 +1,13 @@
+import secret
+
+type Imitation {
+    pub value: String
+}
+
+func accept(value: Secret) -> Unit {
+    println()
+}
+
+func main() -> Unit {
+    accept(Imitation { value: "not a Secret" })
+}

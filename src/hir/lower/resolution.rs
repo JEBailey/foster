@@ -1,0 +1,388 @@
+use super::*;
+
+impl FunctionLowerer<'_> {
+    pub(super) fn resolve_associated_function(
+        &mut self,
+        path: &[&str],
+    ) -> Result<Option<FunctionId>, FosterError> {
+        let (module, type_name, member, imported) = match path {
+            [type_name, member] => {
+                let resolved = self.resolve_name(type_name)?;
+                let type_module = match resolved {
+                    ResolvedName::Record(record) => self.hir.records[record].module,
+                    ResolvedName::Variant(variant) => {
+                        self.hir.variant_types[self.hir.variants[variant].parent].module
+                    }
+                    _ => return Ok(None),
+                };
+                (type_module, *type_name, *member, type_module != self.module)
+            }
+            [module_alias, type_name, member] => {
+                let Some(module) = self.imports.get(*module_alias).copied() else {
+                    return Ok(None);
+                };
+                let names_type = self.hir.record_named(module, type_name).is_some()
+                    || self.hir.variant_type_named(module, type_name).is_some();
+                if !names_type {
+                    return Ok(None);
+                }
+                (module, *type_name, *member, true)
+            }
+            _ => return Ok(None),
+        };
+
+        let qualified_name = format!("{type_name}.{member}");
+        let Some(function) = self.hir.function_named(module, &qualified_name) else {
+            return Ok(None);
+        };
+        if imported && !self.hir.functions[function].public {
+            return Err(self.error(format!("associated function `{qualified_name}` is private")));
+        }
+        Ok(Some(function))
+    }
+
+    pub(super) fn resolve_variant_constructor(
+        &self,
+        type_name: &str,
+        alternative: &str,
+    ) -> Result<Option<VariantId>, FosterError> {
+        let parent = if let Some(parent) = self.hir.variant_type_named(self.module, type_name) {
+            Some(parent)
+        } else {
+            let mut imported = Vec::new();
+            for module in self.imports.values() {
+                if let Some(parent) = self.hir.variant_type_named(*module, type_name)
+                    && self.hir.variant_types[parent].public
+                    && !imported.contains(&parent)
+                {
+                    imported.push(parent);
+                }
+            }
+            match imported.as_slice() {
+                [parent] => Some(*parent),
+                [_, _, ..] => {
+                    return Err(self.error(format!(
+                        "imported type `{type_name}` is ambiguous; qualify it with its module"
+                    )));
+                }
+                [] => None,
+            }
+        };
+        let Some(parent) = parent else {
+            return Ok(None);
+        };
+        self.hir.variant_types[parent]
+            .alternatives
+            .iter()
+            .copied()
+            .find(|variant| self.hir.variants[*variant].name == alternative)
+            .map(Some)
+            .ok_or_else(|| {
+                self.error(format!(
+                    "variant `{type_name}` has no alternative `{alternative}`"
+                ))
+            })
+    }
+
+    pub(super) fn resolve_variant(&self, path: &[String]) -> Result<VariantId, FosterError> {
+        if path.len() == 1 {
+            let local = self.hir.modules[self.module]
+                .variant_types
+                .values()
+                .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter().copied())
+                .filter(|variant| self.hir.variants[*variant].name == path[0])
+                .collect::<Vec<_>>();
+            return match local.as_slice() {
+                [variant] => Ok(*variant),
+                [_, _, ..] => Err(self.error(format!(
+                    "variant alternative `{}` is ambiguous; qualify it with its type",
+                    path[0]
+                ))),
+                [] => {
+                    let mut imported = Vec::new();
+                    for module in self.imports.values() {
+                        for parent in self.hir.modules[*module].variant_types.values() {
+                            if !self.hir.variant_types[*parent].public {
+                                continue;
+                            }
+                            for variant in &self.hir.variant_types[*parent].alternatives {
+                                if self.hir.variants[*variant].name == path[0]
+                                    && !imported.contains(variant)
+                                {
+                                    imported.push(*variant);
+                                }
+                            }
+                        }
+                    }
+                    match imported.as_slice() {
+                        [variant] => Ok(*variant),
+                        [] => Err(self.error(format!("unknown variant alternative `{}`", path[0]))),
+                        _ => Err(self.error(format!("imported variant alternative `{}` is ambiguous; qualify it with its module or type", path[0]))),
+                    }
+                }
+            };
+        }
+        if path.len() != 2 {
+            if path.len() == 3
+                && let Some(module) = self.imports.get(&path[0]).copied()
+                && let Some(parent) = self.hir.variant_type_named(module, &path[1])
+            {
+                if !self.hir.variant_types[parent].public {
+                    return Err(self.error(format!("type `{}.{}` is private", path[0], path[1])));
+                }
+                return self.hir.variant_types[parent]
+                    .alternatives
+                    .iter()
+                    .copied()
+                    .find(|id| self.hir.variants[*id].name == path[2])
+                    .ok_or_else(|| {
+                        self.error(format!(
+                            "variant `{}.{}` has no alternative `{}`",
+                            path[0], path[1], path[2]
+                        ))
+                    });
+            }
+            return Err(self.error("variant pattern must name an alternative"));
+        }
+        if let Some(variant) = self.resolve_variant_constructor(&path[0], &path[1])? {
+            return Ok(variant);
+        }
+        if let Some(module) = self.imports.get(&path[0]).copied() {
+            let matches = self.hir.modules[module]
+                .variant_types
+                .values()
+                .filter(|parent| self.hir.variant_types[**parent].public)
+                .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter().copied())
+                .filter(|variant| self.hir.variants[*variant].name == path[1])
+                .collect::<Vec<_>>();
+            return match matches.as_slice() {
+                [variant] => Ok(*variant),
+                [] => Err(self.error(format!(
+                    "module `{}` has no public variant alternative `{}`",
+                    path[0], path[1]
+                ))),
+                _ => Err(self.error(format!(
+                    "variant alternative `{}.{}` is ambiguous; include its type name",
+                    path[0], path[1]
+                ))),
+            };
+        }
+        let parent = self
+            .hir
+            .variant_type_named(self.module, &path[0])
+            .ok_or_else(|| self.error(format!("unknown variant type `{}`", path[0])))?;
+        self.hir.variant_types[parent]
+            .alternatives
+            .iter()
+            .copied()
+            .find(|id| self.hir.variants[*id].name == path[1])
+            .ok_or_else(|| {
+                self.error(format!(
+                    "variant `{}` has no alternative `{}`",
+                    path[0], path[1]
+                ))
+            })
+    }
+
+    pub(super) fn resolve_name(&mut self, name: &str) -> Result<ResolvedName, FosterError> {
+        if self.self_name.as_deref() == Some(name) {
+            return Ok(ResolvedName::Function(self.function));
+        }
+        if let Some(local) = self.locals.get(name) {
+            if self.hir.locals[*local].function != self.function && !self.captures.contains(local) {
+                self.captures.push(*local);
+            }
+            return Ok(ResolvedName::Local(*local));
+        }
+        if let Some(function) = self.hir.function_named(self.module, name) {
+            return Ok(ResolvedName::Function(function));
+        }
+        if let Some(record) = self.hir.record_named(self.module, name) {
+            return Ok(ResolvedName::Record(record));
+        }
+        let variants = self.hir.modules[self.module]
+            .variant_types
+            .values()
+            .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter().copied())
+            .filter(|variant| self.hir.variants[*variant].name == name)
+            .collect::<Vec<_>>();
+        match variants.as_slice() {
+            [variant] => return Ok(ResolvedName::Variant(*variant)),
+            [_, _, ..] => {
+                return Err(self.error(format!(
+                    "variant alternative `{name}` is ambiguous; qualify it with its type"
+                )));
+            }
+            [] => {}
+        }
+        if let Some(module) = self.imports.get(name) {
+            return Ok(ResolvedName::Module(*module));
+        }
+        let mut imported = Vec::new();
+        for module in self.imports.values() {
+            if let Some(function) = self.hir.function_named(*module, name)
+                && self.hir.functions[function].public
+                && !imported.contains(&ResolvedName::Function(function))
+            {
+                imported.push(ResolvedName::Function(function));
+            }
+            if let Some(record) = self.hir.record_named(*module, name)
+                && self.hir.records[record].public
+                && !imported.contains(&ResolvedName::Record(record))
+            {
+                imported.push(ResolvedName::Record(record));
+            }
+            for parent in self.hir.modules[*module].variant_types.values() {
+                if !self.hir.variant_types[*parent].public {
+                    continue;
+                }
+                for variant in &self.hir.variant_types[*parent].alternatives {
+                    if self.hir.variants[*variant].name == name {
+                        let resolved = ResolvedName::Variant(*variant);
+                        if !imported.contains(&resolved) {
+                            imported.push(resolved);
+                        }
+                    }
+                }
+            }
+        }
+        match imported.as_slice() {
+            [resolved] => Ok(*resolved),
+            [_, _, ..] => Err(self.error(format!(
+                "imported name `{name}` is ambiguous; qualify it with its module"
+            ))),
+            [] => match name {
+                "print" => Ok(ResolvedName::Builtin(Builtin::Print)),
+                "println" => Ok(ResolvedName::Builtin(Builtin::Println)),
+                "code_point" => Ok(ResolvedName::Builtin(Builtin::CodePoint)),
+                "from_code_point" => Ok(ResolvedName::Builtin(Builtin::FromCodePoint)),
+                "parse_float" => Ok(ResolvedName::Builtin(Builtin::ParseFloat)),
+                "__io_read_text" => Ok(ResolvedName::Builtin(Builtin::IoReadText)),
+                "__io_write_text" => Ok(ResolvedName::Builtin(Builtin::IoWriteText)),
+                "__io_list_directory" => Ok(ResolvedName::Builtin(Builtin::IoListDirectory)),
+                "__io_exists" => Ok(ResolvedName::Builtin(Builtin::IoExists)),
+                "__io_is_file" => Ok(ResolvedName::Builtin(Builtin::IoIsFile)),
+                "__io_is_directory" => Ok(ResolvedName::Builtin(Builtin::IoIsDirectory)),
+                "__io_join" => Ok(ResolvedName::Builtin(Builtin::IoJoin)),
+                "__io_parent" => Ok(ResolvedName::Builtin(Builtin::IoParent)),
+                "__io_file_name" => Ok(ResolvedName::Builtin(Builtin::IoFileName)),
+                "__io_extension" => Ok(ResolvedName::Builtin(Builtin::IoExtension)),
+                "__io_canonicalize" => Ok(ResolvedName::Builtin(Builtin::IoCanonicalize)),
+                "__io_current_directory" => Ok(ResolvedName::Builtin(Builtin::IoCurrentDirectory)),
+                "__tcp_listen" => Ok(ResolvedName::Builtin(Builtin::TcpListen)),
+                "__tcp_connect" => Ok(ResolvedName::Builtin(Builtin::TcpConnect)),
+                "__tcp_accept" => Ok(ResolvedName::Builtin(Builtin::TcpAccept)),
+                "__tcp_read" => Ok(ResolvedName::Builtin(Builtin::TcpRead)),
+                "__tcp_write" => Ok(ResolvedName::Builtin(Builtin::TcpWrite)),
+                "__tcp_set_timeout" => Ok(ResolvedName::Builtin(Builtin::TcpSetTimeout)),
+                "__tcp_close_listener" => Ok(ResolvedName::Builtin(Builtin::TcpCloseListener)),
+                "__tcp_close_connection" => Ok(ResolvedName::Builtin(Builtin::TcpCloseConnection)),
+                _ => Err(self.error(format!("unknown name `{name}`"))),
+            },
+        }
+    }
+
+    pub(super) fn resolve_qualified(&self, path: &[&str]) -> Result<ResolvedName, FosterError> {
+        let mut module = self.imports[path[0]];
+        if path.len() == 3
+            && let Some(parent) = self.hir.variant_type_named(module, path[1])
+        {
+            if !self.hir.variant_types[parent].public {
+                return Err(self.error(format!("type `{}.{}` is private", path[0], path[1])));
+            }
+            let variant = self.hir.variant_types[parent]
+                .alternatives
+                .iter()
+                .copied()
+                .find(|id| self.hir.variants[*id].name == path[2])
+                .ok_or_else(|| {
+                    self.error(format!(
+                        "variant `{}.{}` has no alternative `{}`",
+                        path[0], path[1], path[2]
+                    ))
+                })?;
+            return Ok(ResolvedName::Variant(variant));
+        }
+        for (index, component) in path.iter().enumerate().skip(1) {
+            let last = index + 1 == path.len();
+            if last && let Some(function) = self.hir.function_named(module, component) {
+                if !self.hir.functions[function].public {
+                    return Err(self.error(format!(
+                        "function `{}.{component}` is private",
+                        self.hir.modules[module].name
+                    )));
+                }
+                return Ok(ResolvedName::Function(function));
+            }
+            if last && let Some(record) = self.hir.record_named(module, component) {
+                if !self.hir.records[record].public {
+                    return Err(self.error(format!(
+                        "type `{}.{component}` is private",
+                        self.hir.modules[module].name
+                    )));
+                }
+                return Ok(ResolvedName::Record(record));
+            }
+            if last {
+                let matches = self.hir.modules[module]
+                    .variant_types
+                    .values()
+                    .filter(|parent| self.hir.variant_types[**parent].public)
+                    .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter().copied())
+                    .filter(|variant| self.hir.variants[*variant].name == *component)
+                    .collect::<Vec<_>>();
+                match matches.as_slice() {
+                    [variant] => return Ok(ResolvedName::Variant(*variant)),
+                    [_, _, ..] => {
+                        return Err(self.error(format!(
+                            "variant alternative `{}` is ambiguous; include its type name",
+                            component
+                        )));
+                    }
+                    [] => {}
+                }
+            }
+            let child_name = format!("{}.{}", self.hir.modules[module].name, component);
+            if let Some(child) = self.hir.module_named(&child_name) {
+                module = child;
+                if last {
+                    return Ok(ResolvedName::Module(module));
+                }
+            } else {
+                return Err(self.error(format!(
+                    "module `{}` has no member `{component}`",
+                    self.hir.modules[module].name
+                )));
+            }
+        }
+        Ok(ResolvedName::Module(module))
+    }
+
+    pub(super) fn error(&self, message: impl Into<String>) -> FosterError {
+        FosterError::runtime(format!(
+            "in `{}.{}`: {}",
+            self.hir.modules[self.module].name,
+            self.hir.functions[self.function].name,
+            message.into()
+        ))
+    }
+}
+
+pub(super) fn qualified_path(expression: &ast::Expr) -> Option<Vec<&str>> {
+    fn collect<'a>(expression: &'a ast::Expr, path: &mut Vec<&'a str>) -> bool {
+        match expression.unspanned() {
+            ast::Expr::Name(name) => {
+                path.push(name);
+                true
+            }
+            ast::Expr::Member { object, name } if collect(object, path) => {
+                path.push(name);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    let mut path = Vec::new();
+    collect(expression, &mut path).then_some(path)
+}

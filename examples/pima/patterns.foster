@@ -1,0 +1,24 @@
+type ScoreResult =
+    | Ok(String, Int)
+    | Error(String)
+
+func describe(result: ScoreResult) -> Int {
+    branch result {
+        Ok(name, score) -> describe_score(name, score)
+        Error(message) -> describe_error(message)
+    }
+}
+
+func describe_score(name: String, score: Int) -> Int {
+    println(name, "scored", score)
+    score
+}
+
+func describe_error(message: String) -> Int {
+    println("Error:", message)
+    0
+}
+
+func main() -> Int {
+    describe(Ok("Ada", 42)) + describe(Error("missing score"))
+}

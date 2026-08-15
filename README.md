@@ -1,0 +1,151 @@
+# Foster
+
+Foster is an experimental statically typed, general-purpose programming language. Its defining
+direction is single ownership with group-parameterized references, inferred effect contracts,
+structurally adaptable records, and lightweight remote objects running on virtual threads. The
+bootstrap compiler and register VM are written in Rust.
+
+## Try it
+
+```powershell
+cargo run --bin foster -- run examples/live_inventory_pipeline.foster
+cargo run --bin foster -- check examples/pima/json_parser.foster
+cargo run --bin foster -- check tests/fixtures/modules
+cargo run --bin foster -- run tests/fixtures/modules --no-optimize
+cargo test
+```
+
+`run` invokes the zero-argument `main` function. A file is treated as a one-module package; a
+directory is discovered as a filesystem module tree whose entry point is `main.foster`.
+Optimization is enabled by default and can be selected with `--optimize` or `--no-optimize`.
+
+## Language snapshot
+
+The current implementation includes:
+
+- functions, recursion, local inference, explicit generics, closures, and partial application;
+- `Bool`, `Int`, binary64 `Float`, `String`, `CodePoint`, `Symbol`, `Unit`, homogeneous `List[T]`,
+  and zero-conversion `Sequence[T]` views;
+- generic records, associated factories, instance methods, private-by-default declarations, and
+  closed variants with exhaustive pattern branches;
+- statically checked structural record adaptation and intersection contracts such as
+  `Named & Located`;
+- borrow-by-default calls, explicit `move`, positional consuming callable types, group references,
+  closure capture modes, move/initialization checking, and structural invalidation;
+- inferred or explicit `read`, `mut`, `reshape`, `consume`, and `suspend` effects;
+- remote objects, virtual threads, FIFO method messages, futures, `await`, transferred messages,
+  call-scoped borrowed messages, and persistent remote read loans;
+- explicit core-library imports, typed filesystem APIs, and typed TCP connections;
+- line, nested block, and Markdown documentation comments;
+- a package-aware LSP and VS Code extension; and
+- an optional optimizing register-bytecode pipeline with a verifier and iterative VM call frames.
+
+Conditional `branch` expressions use `_` for their required fallback arm:
+
+```foster
+func skip_whitespace(characters: String) -> String {
+    branch {
+        characters.empty? -> characters
+        characters.head.whitespace? -> skip_whitespace(characters.rest)
+        _ -> characters
+    }
+}
+```
+
+Subject branches destructure closed variants:
+
+```foster
+import core.result
+
+func unwrap_or(result: Result[Int, String], fallback: Int) -> Int {
+    branch result {
+        Result.Ok(value) -> value
+        Result.Error(_) -> fallback
+    }
+}
+```
+
+## Filesystem modules
+
+Directories implicitly define empty modules. A same-named `.foster` file optionally supplies the
+body of that module:
+
+```text
+json.foster          json (with declarations)
+json/                json (the same module, with children)
+  parser.foster      json.parser
+tools/               tools (implicit and empty)
+  text/
+    trim.foster      tools.text.trim
+```
+
+There are no `_module` or `index` files. Module components must be portable identifiers and cannot
+differ only by case. Imports use canonical dotted names:
+
+```foster
+import json
+import json.parser as parser
+import tools.text.trim
+```
+
+Importing a module exposes its public declarations directly and binds its final component as a
+qualifier. Modules are public; declarations and record fields are private unless marked `pub`.
+
+## Core library
+
+Foster has no prelude. Programs explicitly import embedded Foster-written modules such as
+`core.option`, `core.result`, `core.sequence`, `core.list`, `core.map`, `core.io`, and
+`core.net.tcp`. Host-dependent filesystem and socket operations cross a narrow VM boundary; public
+types, typed errors, and policy wrappers remain Foster code. See
+[the core library reference](docs/core-library.md).
+
+## Compiler and VM
+
+The executable pipeline is:
+
+```text
+source
+  -> tokens and AST
+  -> resolved HIR
+  -> type and fixed-point effect inference
+  -> loan, capture, group, and ownership checks
+  -> ownership MIR validation
+  -> structured register bytecode
+  -> optional optimizer
+  -> verifier
+  -> register VM
+```
+
+The VM is the sole execution engine; there is no AST interpreter fallback. Optimization can be
+disabled without changing semantics. The intended native evolution is to lower a stable
+backend-neutral IR to Cranelift for JIT and object-file output. That native backend is not yet
+implemented.
+
+See [the VM design](docs/vm.md) and [benchmarking guide](docs/benchmarking.md).
+
+## Language server
+
+Start the server over standard input/output with:
+
+```powershell
+cargo run --bin foster -- lsp
+```
+
+It supports package diagnostics with open-buffer overlays, document symbols, go-to-definition,
+references, identity-aware rename, inferred-type hover, declaration documentation, and scope-aware
+completion. The development VS Code extension lives in
+[`editors/vscode`](editors/vscode/README.md).
+
+## Documentation map
+
+- [Language design and implemented syntax](docs/language-design.md)
+- [Ownership and borrowing](docs/ownership.md)
+- [Closures and group borrowing](docs/closures.md)
+- [Effect derivation](docs/effect-derivation.md)
+- [Register VM](docs/vm.md)
+- [Core library](docs/core-library.md)
+- [Optimization and benchmarks](docs/benchmarking.md)
+- [Executable examples](examples/README.md)
+
+Files under `examples/pima/design/` are explicitly historical notes. Executable `.foster` files and
+the documents above describe the current implementation.

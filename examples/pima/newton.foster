@@ -1,0 +1,29 @@
+func square_root(number: Float) -> Float {
+    func absolute(value: Float) -> Float {
+        branch {
+            value < 0.0 -> -value
+            _ -> value
+        }
+    }
+
+    func average(left: Float, right: Float) -> Float {
+        (left + right) / 2.0
+    }
+
+    func good_enough(guess: Float) -> Bool {
+        absolute(guess * guess - number) < 0.001
+    }
+
+    func find_square_root(guess: Float) -> Float {
+        branch {
+            good_enough(guess) -> guess
+            _ -> find_square_root(average(guess, number / guess))
+        }
+    }
+
+    find_square_root(1.0)
+}
+
+func main() -> Float {
+    square_root(16.0)
+}

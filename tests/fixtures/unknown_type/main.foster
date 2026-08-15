@@ -1,0 +1,8 @@
+func consume(value: Missing) -> Int {
+    0
+}
+
+func main() {
+    0
+}
+

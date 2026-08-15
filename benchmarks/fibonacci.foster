@@ -1,0 +1,10 @@
+func fibonacci(value: Int) -> Int {
+    branch {
+        value < 2 -> value
+        _ -> fibonacci(value - 1) + fibonacci(value - 2)
+    }
+}
+
+func main() -> Int {
+    fibonacci(20)
+}

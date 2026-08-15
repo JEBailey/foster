@@ -1,0 +1,20 @@
+func identity(value) {
+    value
+}
+
+func add_one(value: Int) {
+    value + 1
+}
+
+func first(values) {
+    return "" if values.empty?
+    values.head
+}
+
+func use_first() -> String {
+    first(["Foster"])
+}
+
+func main() {
+    identity(add_one(41))
+}
