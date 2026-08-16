@@ -19,7 +19,9 @@ pub(super) fn matches(
         (Pattern::Integer(expected), Value::Integer(actual)) => expected == actual,
         (Pattern::Float(expected), Value::Float(actual)) => expected == actual,
         (Pattern::String(expected), Value::String(actual)) => expected == actual,
-        (Pattern::CodePoint(expected), Value::String(actual)) => expected == actual,
+        (Pattern::CodePoint(expected), Value::CodePoint(actual)) => {
+            expected.chars().next() == Some(*actual)
+        }
         (Pattern::Symbol(expected), Value::Symbol(actual)) => expected == actual,
         (
             Pattern::Variant { variant, fields },

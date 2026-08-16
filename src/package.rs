@@ -128,7 +128,7 @@ impl Package {
                 (*name).into(),
                 Module {
                     name: (*name).into(),
-                    source_path: None,
+                    source_path: core_source_path(name),
                     program: Some(program),
                     source: Some((*source).to_owned()),
                 },
@@ -331,6 +331,12 @@ impl Package {
     }
 }
 
+fn core_source_path(module: &str) -> Option<Utf8PathBuf> {
+    let relative = format!("library/{}.foster", module.replace('.', "/"));
+    let path = Utf8PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative);
+    path.is_file().then_some(path)
+}
+
 const CORE_MODULES: &[(&str, &str)] = &[
     ("core.option", include_str!("../library/core/option.foster")),
     ("core.result", include_str!("../library/core/result.foster")),
@@ -391,10 +397,12 @@ fn validate_component(name: &str, path: &Utf8Path) -> Result<(), FosterError> {
 }
 
 fn is_ignored_directory(entry: &DirEntry) -> bool {
-    entry.depth() > 0
-        && entry.file_type().is_dir()
-        && matches!(
-            entry.file_name().to_str(),
-            Some("target" | ".git" | ".foster")
-        )
+    if entry.depth() == 0 || !entry.file_type().is_dir() {
+        return false;
+    }
+    match entry.file_name().to_str() {
+        Some("target" | ".git" | ".foster") => true,
+        Some("documentation") => entry.depth() == 1,
+        _ => false,
+    }
 }

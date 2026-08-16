@@ -163,11 +163,10 @@ pub func lower(value: String) -> String {
 
 /// Converts one ASCII uppercase code point to lowercase text.
 func lower_character(value: CodePoint) -> String {
-    code = code_point(value)
     branch {
-        code < 65 -> value.string
-        code > 90 -> value.string
-        _ -> from_code_point(code + 32).string
+        value < 'A' -> value.string
+        value > 'Z' -> value.string
+        _ -> from_code_point(value + 32).string
     }
 }
 
@@ -181,11 +180,10 @@ pub func upper(value: String) -> String {
 
 /// Converts one ASCII lowercase code point to uppercase text.
 func upper_character(value: CodePoint) -> String {
-    code = code_point(value)
     branch {
-        code < 97 -> value.string
-        code > 122 -> value.string
-        _ -> from_code_point(code - 32).string
+        value < 'a' -> value.string
+        value > 'z' -> value.string
+        _ -> from_code_point(value - 32).string
     }
 }
 
@@ -193,12 +191,12 @@ func upper_character(value: CodePoint) -> String {
 pub func byte_length(value: String) -> Int {
     branch {
         value.empty? -> 0
-        _ -> utf8_width(code_point(value.head)) + byte_length(value.rest)
+        _ -> utf8_width(value.head) + byte_length(value.rest)
     }
 }
 
 /// Returns the UTF-8 width of a valid Unicode scalar value.
-func utf8_width(code: Int) -> Int {
+func utf8_width(code: CodePoint) -> Int {
     branch {
         code <= 127 -> 1
         code <= 2047 -> 2

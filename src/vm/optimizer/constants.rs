@@ -189,6 +189,7 @@ fn value_constant(value: Value) -> Option<Constant> {
         Value::Integer(value) => Some(Constant::Integer(value)),
         Value::Float(value) => Some(Constant::Float(value)),
         Value::String(value) => Some(Constant::String(value)),
+        Value::CodePoint(value) => Some(Constant::CodePoint(value)),
         Value::Symbol(value) => Some(Constant::Symbol(value)),
         _ => None,
     }

@@ -2,6 +2,7 @@ use std::env;
 use std::error::Error;
 use std::fmt;
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 #[derive(Debug)]
@@ -31,18 +32,24 @@ fn execute() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
     let command = args
         .next()
-        .ok_or("usage: foster <run|check> <file> | foster lsp")?;
+        .ok_or("usage: foster <run|check|docs|serve-docs> [path] | foster lsp")?;
     if command == "lsp" {
         if args.next().is_some() {
             return Err("usage: foster lsp".into());
         }
         return foster::lsp::run();
     }
+    if command == "docs" {
+        return docs(args.collect());
+    }
+    if command == "serve-docs" {
+        return serve_docs(args.collect());
+    }
     let path = args.next().ok_or(
         "usage: foster run <file-or-directory> [--optimize|--no-optimize] | foster check <file-or-directory> | foster lsp",
     )?;
     let flags = args.collect::<Vec<_>>();
-    let path = std::path::Path::new(&path);
+    let path = Path::new(&path);
     match command.as_str() {
         "check" => {
             if !flags.is_empty() {
@@ -94,11 +101,122 @@ fn execute() -> Result<(), Box<dyn std::error::Error>> {
         }
         _ => {
             return Err(
-                format!("unknown command `{command}`; expected `run`, `check`, or `lsp`").into(),
+                format!(
+                    "unknown command `{command}`; expected `run`, `check`, `docs`, `serve-docs`, or `lsp`"
+                )
+                .into(),
             );
         }
     }
     Ok(())
+}
+
+fn docs(args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    let mut source = None;
+    let mut output = None;
+    let mut serve = false;
+    let mut open_browser = true;
+    let mut port = 8000;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--output" => {
+                index += 1;
+                output = Some(PathBuf::from(
+                    args.get(index).ok_or("`--output` requires a path")?,
+                ));
+            }
+            "--serve" => serve = true,
+            "--no-open" => open_browser = false,
+            "--port" => {
+                index += 1;
+                port = parse_port(args.get(index).ok_or("`--port` requires a number")?)?;
+            }
+            flag if flag.starts_with('-') => {
+                return Err(format!("unknown docs flag `{flag}`").into());
+            }
+            path if source.is_none() => source = Some(PathBuf::from(path)),
+            path => return Err(format!("unexpected docs argument `{path}`").into()),
+        }
+        index += 1;
+    }
+    if !serve && (!open_browser || port != 8000) {
+        return Err("`--port` and `--no-open` require `--serve`".into());
+    }
+
+    let source = source.unwrap_or_else(|| PathBuf::from("."));
+    let compilation = compile_path(&source)?;
+    report_warnings(&compilation, None, None)?;
+    let output = output.unwrap_or_else(|| default_documentation_directory(&source));
+    let report = foster::documentation::generate(&compilation, &output)?;
+    println!(
+        "generated {} declaration(s) in {} module(s) at {}",
+        report.declarations,
+        report.modules,
+        report.output.display()
+    );
+    if serve {
+        foster::documentation::serve(
+            &output,
+            foster::documentation::ServeOptions { port, open_browser },
+        )?;
+    }
+    Ok(())
+}
+
+fn serve_docs(args: Vec<String>) -> Result<(), Box<dyn Error>> {
+    let mut directory = None;
+    let mut open_browser = true;
+    let mut port = 8000;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--no-open" => open_browser = false,
+            "--port" => {
+                index += 1;
+                port = parse_port(args.get(index).ok_or("`--port` requires a number")?)?;
+            }
+            flag if flag.starts_with('-') => {
+                return Err(format!("unknown serve-docs flag `{flag}`").into());
+            }
+            path if directory.is_none() => directory = Some(PathBuf::from(path)),
+            path => return Err(format!("unexpected serve-docs argument `{path}`").into()),
+        }
+        index += 1;
+    }
+    foster::documentation::serve(
+        directory.unwrap_or_else(|| PathBuf::from("documentation")),
+        foster::documentation::ServeOptions { port, open_browser },
+    )?;
+    Ok(())
+}
+
+fn parse_port(value: &str) -> Result<u16, Box<dyn Error>> {
+    value
+        .parse::<u16>()
+        .map_err(|_| format!("invalid TCP port `{value}`").into())
+}
+
+fn default_documentation_directory(source: &Path) -> PathBuf {
+    if source.is_dir() {
+        source.join("documentation")
+    } else {
+        source
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("documentation")
+    }
+}
+
+fn compile_path(path: &Path) -> Result<foster::hir::Compilation, Box<dyn Error>> {
+    if path.is_dir() {
+        return Ok(foster::check_package(path)?);
+    }
+    let source = fs::read_to_string(path)?;
+    let program = parse_file(path, &source)?;
+    Ok(foster::hir::Compilation::new(
+        foster::package::Package::from_program_with_core("main", program)?,
+    )?)
 }
 
 fn report_warnings(

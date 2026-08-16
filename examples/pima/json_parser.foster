@@ -50,30 +50,29 @@ func skip_whitespace(characters: String) -> String {
 
 func digit_value(character: CodePoint) -> Int {
     branch {
-        code_point(character) < 48 -> -1
-        code_point(character) > 57 -> -1
-        _ -> code_point(character) - 48
+        character < '0' -> -1
+        character > '9' -> -1
+        _ -> character - '0'
     }
 }
 
 func hex_value(character: CodePoint) -> Int {
-    code = code_point(character)
     branch {
-        code >= 48 -> branch { code <= 57 -> code - 48 _ -> hex_letter_value(code) }
+        character >= '0' -> branch { character <= '9' -> character - '0' _ -> hex_letter_value(character) }
         _ -> -1
     }
 }
 
-func hex_letter_value(code: Int) -> Int {
+func hex_letter_value(character: CodePoint) -> Int {
     branch {
-        code >= 65 -> branch { code <= 70 -> code - 55 _ -> lower_hex_value(code) }
+        character >= 'A' -> branch { character <= 'F' -> character - 'A' + 10 _ -> lower_hex_value(character) }
         _ -> -1
     }
 }
 
-func lower_hex_value(code: Int) -> Int {
+func lower_hex_value(character: CodePoint) -> Int {
     branch {
-        code >= 97 -> branch { code <= 102 -> code - 87 _ -> -1 }
+        character >= 'a' -> branch { character <= 'f' -> character - 'a' + 10 _ -> -1 }
         _ -> -1
     }
 }
@@ -243,7 +242,7 @@ func parse_string_characters(characters: String, result: String) -> ParseResult[
         characters.empty? -> Error(JsonError { message: "unterminated JSON string" })
         characters.head == '\"' -> Ok(ParsedString { value: result, rest: characters.rest })
         characters.head == '\\' -> append_escape(characters.rest, move result)
-        code_point(characters.head) < 32 -> Error(JsonError { message: "unescaped control character in JSON string" })
+        characters.head < 32 -> Error(JsonError { message: "unescaped control character in JSON string" })
         _ -> parse_string_characters(characters.rest, result + characters.head.string)
     }
 }

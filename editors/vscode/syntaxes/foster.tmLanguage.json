@@ -48,7 +48,8 @@
           "begin": "\"",
           "end": "\"",
           "patterns": [
-            { "name": "constant.character.escape.foster", "match": "\\\\(?:[\\\"/bfnrt]|u[0-9A-Fa-f]{4})" }
+            { "name": "constant.character.escape.foster", "match": "\\\\[nrt\\\"\\\\]" },
+            { "name": "invalid.illegal.escape.foster", "match": "\\\\." }
           ]
         }
       ]

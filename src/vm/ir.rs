@@ -14,6 +14,7 @@ pub enum Constant {
     Integer(i64),
     Float(f64),
     String(String),
+    CodePoint(char),
     Symbol(String),
 }
 

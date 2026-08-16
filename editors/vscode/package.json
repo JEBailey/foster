@@ -70,7 +70,7 @@
   "scripts": {
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "check": "tsc -p ./ --noEmit"
+    "check": "tsc -p ./ --noEmit && node scripts/test-grammar.cjs"
   },
   "dependencies": {
     "vscode-languageclient": "^10.1.0"

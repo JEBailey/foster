@@ -5,14 +5,17 @@ use lsp_types::{
     CompletionOptions, CompletionParams, Diagnostic, DiagnosticSeverity,
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DocumentSymbolParams, GotoDefinitionParams, HoverParams, InitializeParams, InitializeResult,
-    Position, PublishDiagnosticsParams, Range, ReferenceParams, RenameParams, ServerCapabilities,
-    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
+    InlayHintParams, Position, PublishDiagnosticsParams, Range, ReferenceParams, RenameParams,
+    ServerCapabilities, ServerInfo, SignatureHelpOptions, SignatureHelpParams,
+    TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
     request::{
-        Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, References, Rename,
-        Request,
+        Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest, InlayHintRequest,
+        References, Rename, Request, SignatureHelpRequest,
     },
 };
 
+mod builtins;
+mod hints;
 mod workspace;
 use workspace::Workspace;
 
@@ -29,6 +32,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             trigger_characters: Some(vec![".".into()]),
             ..CompletionOptions::default()
         }),
+        signature_help_provider: Some(SignatureHelpOptions {
+            trigger_characters: Some(vec!["(".into(), ",".into()]),
+            retrigger_characters: Some(vec![",".into()]),
+            ..SignatureHelpOptions::default()
+        }),
+        inlay_hint_provider: Some(lsp_types::OneOf::Left(true)),
         references_provider: Some(lsp_types::OneOf::Left(true)),
         rename_provider: Some(lsp_types::OneOf::Left(true)),
         ..ServerCapabilities::default()
@@ -76,6 +85,14 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                     Completion::METHOD => {
                         let params: CompletionParams = serde_json::from_value(request.params)?;
                         Response::new_ok(request.id, workspace.completion(&params))
+                    }
+                    SignatureHelpRequest::METHOD => {
+                        let params: SignatureHelpParams = serde_json::from_value(request.params)?;
+                        Response::new_ok(request.id, workspace.signature_help(&params))
+                    }
+                    InlayHintRequest::METHOD => {
+                        let params: InlayHintParams = serde_json::from_value(request.params)?;
+                        Response::new_ok(request.id, workspace.inlay_hints(&params))
                     }
                     References::METHOD => {
                         let params: ReferenceParams = serde_json::from_value(request.params)?;

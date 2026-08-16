@@ -17,7 +17,7 @@ pub func from_int(value: Int) -> Option[CodePoint] {
 
 /// Returns the Unicode scalar value represented by `character`.
 pub func to_int(character: CodePoint) -> Int {
-    character.value
+    character + 0
 }
 
 /// Converts one code point to its single-code-point string representation.

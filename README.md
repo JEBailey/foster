@@ -12,12 +12,33 @@ cargo run --bin foster -- run examples/live_inventory_pipeline.foster
 cargo run --bin foster -- check examples/pima/json_parser.foster
 cargo run --bin foster -- check tests/fixtures/modules
 cargo run --bin foster -- run tests/fixtures/modules --no-optimize
+cargo run --bin foster -- docs tests/fixtures/modules
+cargo run --bin foster -- docs tests/fixtures/modules --serve
 cargo test
 ```
 
 `run` invokes the zero-argument `main` function. A file is treated as a one-module package; a
 directory is discovered as a filesystem module tree whose entry point is `main.foster`.
 Optimization is enabled by default and can be selected with `--optimize` or `--no-optimize`.
+
+## Generated documentation
+
+`foster docs [file-or-directory]` type-checks the package and generates a static API site in a
+neighboring `documentation/` directory. The site is built from resolved HIR, so signatures include
+inferred types and effects. It includes public and private declarations, their visibility, and all
+attached Markdown documentation comments.
+
+Use `--output <directory>` to choose another destination. Add `--serve` to start a local server and
+open the site in the system browser:
+
+```powershell
+foster docs . --serve
+foster docs . --output build/api-docs
+foster serve-docs documentation
+```
+
+Both serving commands accept `--port <number>` and `--no-open`. The latter is useful on headless
+machines. Generated `documentation/` directories are ignored during Foster module discovery.
 
 ## Language snapshot
 
@@ -131,9 +152,10 @@ Start the server over standard input/output with:
 cargo run --bin foster -- lsp
 ```
 
-It supports package diagnostics with open-buffer overlays, document symbols, go-to-definition,
-references, identity-aware rename, inferred-type hover, declaration documentation, and scope-aware
-completion. The development VS Code extension lives in
+It supports package diagnostics with open-buffer overlays, document symbols, go-to-definition
+through imports and receiver-resolved methods, references, identity-aware rename, rich Markdown
+documentation hovers, call signature help, inferred type and argument-name inlay hints, and
+scope-aware completion. The development VS Code extension lives in
 [`editors/vscode`](editors/vscode/README.md).
 
 ## Documentation map

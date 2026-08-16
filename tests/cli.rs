@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::process::Command;
+use std::{fs, time};
 
 fn foster() -> Command {
     Command::new(env!("CARGO_BIN_EXE_foster"))
@@ -44,5 +45,50 @@ fn run_rejects_unknown_optimizer_settings() {
         String::from_utf8(output.stderr)
             .unwrap()
             .contains("unknown run flag `--turbo`")
+    );
+}
+
+#[test]
+fn docs_generates_a_static_site_from_resolved_declarations() {
+    let unique = format!(
+        "foster-docs-{}-{}",
+        std::process::id(),
+        time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let output_directory = std::env::temp_dir().join(unique);
+    let output = foster()
+        .arg("docs")
+        .arg(benchmark_source())
+        .arg("--output")
+        .arg(&output_directory)
+        .output()
+        .unwrap();
+
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let index = fs::read_to_string(output_directory.join("index.html")).unwrap();
+    let module = fs::read_to_string(output_directory.join("modules/main.html")).unwrap();
+    assert!(index.contains("Foster documentation"));
+    assert!(module.contains("func fibonacci"));
+    assert!(output_directory.join("style.css").is_file());
+
+    fs::remove_dir_all(output_directory).unwrap();
+}
+
+#[test]
+fn docs_rejects_server_only_options_without_serve() {
+    let output = foster().args(["docs", "--no-open"]).output().unwrap();
+
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8(output.stderr)
+            .unwrap()
+            .contains("require `--serve`")
     );
 }

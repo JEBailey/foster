@@ -154,7 +154,7 @@ impl Checker<'_> {
                         } else {
                             Ty::Int
                         };
-                        self.unify(numeric.clone(), operand, function)?;
+                        self.unify_numeric_operand(numeric.clone(), operand, function)?;
                         numeric
                     }
                     UnaryOp::Not => {
@@ -341,7 +341,13 @@ impl Checker<'_> {
                 Ok(Ty::Bool)
             }
             BinaryOp::Equal | BinaryOp::NotEqual => {
-                self.unify(left, right, function)?;
+                if integer_like(&self.resolved(left.clone()))
+                    && integer_like(&self.resolved(right.clone()))
+                {
+                    self.infer_numeric_binary(function, left, right)?;
+                } else {
+                    self.unify(left, right, function)?;
+                }
                 Ok(Ty::Bool)
             }
         }
@@ -360,9 +366,22 @@ impl Checker<'_> {
         } else {
             Ty::Int
         };
-        self.unify(numeric.clone(), left, function)?;
-        self.unify(numeric.clone(), right, function)?;
+        self.unify_numeric_operand(numeric.clone(), left, function)?;
+        self.unify_numeric_operand(numeric.clone(), right, function)?;
         Ok(numeric)
+    }
+
+    fn unify_numeric_operand(
+        &mut self,
+        numeric: Ty,
+        operand: Ty,
+        function: FunctionId,
+    ) -> Result<(), FosterError> {
+        if numeric == Ty::Int && matches!(self.resolved(operand.clone()), Ty::CodePoint) {
+            Ok(())
+        } else {
+            self.unify(numeric, operand, function)
+        }
     }
 
     pub(super) fn type_of_name(&mut self, name: ResolvedName) -> Result<Ty, FosterError> {
@@ -488,4 +507,8 @@ impl Checker<'_> {
             concrete => concrete,
         }
     }
+}
+
+fn integer_like(ty: &Ty) -> bool {
+    matches!(ty, Ty::Int | Ty::CodePoint)
 }

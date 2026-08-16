@@ -690,18 +690,14 @@ fn member(value: Value, field: &str) -> Result<Value, FosterError> {
         (Value::String(value), "head") => value
             .chars()
             .next()
-            .map(|value| Value::String(value.to_string()))
+            .map(Value::CodePoint)
             .ok_or_else(|| FosterError::runtime("cannot take `head` of an empty string")),
         (Value::String(value), "rest") => Ok(Value::String(value.chars().skip(1).collect())),
         (Value::String(value), "whitespace?") => {
             Ok(Value::Bool(value.chars().all(char::is_whitespace)))
         }
-        (Value::String(value), "value") => value
-            .chars()
-            .next()
-            .map(|value| Value::Integer(value as i64))
-            .ok_or_else(|| FosterError::runtime("empty value is not a CodePoint")),
-        (Value::String(value), "string") => Ok(Value::String(value)),
+        (Value::CodePoint(value), "whitespace?") => Ok(Value::Bool(value.is_whitespace())),
+        (Value::CodePoint(value), "string") => Ok(Value::String(value.to_string())),
         (_, field) => Err(FosterError::runtime(format!(
             "value has no field `{field}`"
         ))),
@@ -723,15 +719,11 @@ fn call_builtin(builtin: Builtin, arguments: &[Value]) -> Result<Value, FosterEr
             }
             Ok(Value::Unit)
         }
-        (Builtin::CodePoint, [Value::String(value)]) => value
-            .chars()
-            .next()
-            .map(|value| Value::Integer(value as i64))
-            .ok_or_else(|| FosterError::runtime("`code_point` requires a nonempty String")),
+        (Builtin::CodePoint, [Value::CodePoint(value)]) => Ok(Value::Integer(*value as i64)),
         (Builtin::FromCodePoint, [Value::Integer(value)]) => u32::try_from(*value)
             .ok()
             .and_then(char::from_u32)
-            .map(|value| Value::String(value.to_string()))
+            .map(Value::CodePoint)
             .ok_or_else(|| FosterError::runtime("invalid Unicode scalar value")),
         (Builtin::ParseFloat, [Value::String(value)]) => value
             .parse::<f64>()

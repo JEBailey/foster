@@ -19,6 +19,7 @@ la-arena = "0.3"
 lsp-server = "0.10"
 lsp-types = "0.97"
 may = "0.3.51"
+pulldown-cmark = "0.13.4"
 serde_json = "1"
 walkdir = "2.5"
 

@@ -16,6 +16,7 @@ pub enum Value {
     Integer(i64),
     Float(f64),
     String(String),
+    CodePoint(char),
     Symbol(String),
     List(Vec<Value>),
     VmClosure {
@@ -329,6 +330,7 @@ pub(crate) enum WireValue {
     Integer(i64),
     Float(f64),
     String(String),
+    CodePoint(char),
     Symbol(String),
     List(Vec<WireValue>),
     Record {
@@ -404,6 +406,7 @@ impl Value {
             Self::Integer(value) => WireValue::Integer(value),
             Self::Float(value) => WireValue::Float(value),
             Self::String(value) => WireValue::String(value),
+            Self::CodePoint(value) => WireValue::CodePoint(value),
             Self::Symbol(value) => WireValue::Symbol(value),
             Self::List(values) => WireValue::List(
                 values
@@ -446,6 +449,7 @@ impl Value {
             WireValue::Integer(value) => Self::Integer(value),
             WireValue::Float(value) => Self::Float(value),
             WireValue::String(value) => Self::String(value),
+            WireValue::CodePoint(value) => Self::CodePoint(value),
             WireValue::Symbol(value) => Self::Symbol(value),
             WireValue::List(values) => Self::List(
                 values
@@ -485,6 +489,7 @@ impl fmt::Display for Value {
             Self::Integer(value) => write!(formatter, "{value}"),
             Self::Float(value) => write!(formatter, "{value}"),
             Self::String(value) => write!(formatter, "{value}"),
+            Self::CodePoint(value) => write!(formatter, "{value}"),
             Self::Symbol(value) => write!(formatter, ":{value}"),
             Self::List(values) => {
                 write!(formatter, "[")?;
@@ -494,6 +499,7 @@ impl fmt::Display for Value {
                     }
                     match value {
                         Self::String(value) => write!(formatter, "{value:?}")?,
+                        Self::CodePoint(value) => write!(formatter, "'{value}'")?,
                         value => write!(formatter, "{value}")?,
                     }
                 }

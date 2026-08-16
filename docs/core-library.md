@@ -47,7 +47,7 @@ runtime supplies representation-level primitives and capabilities that must cros
 - sequence, list, and string `empty?`, `length`, `head`, and `rest`;
 - functional list `append` and mutable list `push`;
 - string concatenation;
-- `code_point`, `from_code_point`, and `parse_float`;
+- integer-like `CodePoint` operators, checked `from_code_point`, and `parse_float`;
 - printing and remote-object runtime operations;
 - filesystem and platform path operations used by `core.io`;
 - TCP socket operations used by `core.net.tcp`.
@@ -56,6 +56,24 @@ The host-facing intrinsics are private implementation details. Public APIs, opaq
 and conversion into `Result` values are defined in Foster. `IoError` includes the operation, path,
 and host message; `NetworkError` includes the operation and host message. TCP resources expose no
 public handle field, so user code obtains them only through `listen`, `connect`, and `accept`.
+
+### Compiler intrinsics
+
+These names form the typed boundary used by Foster-written library code. Editor navigation opens
+this table for an intrinsic because it has no Foster implementation body.
+
+| Intrinsic | Purpose |
+| --- | --- |
+| `print`, `println` | Write values to standard output, without or with a trailing newline |
+| `code_point`, `from_code_point` | Legacy explicit widening and checked construction of `CodePoint`; ordinary widening uses integer operators |
+| `parse_float` | Parse a binary64 floating-point value from text |
+| `__io_read_text`, `__io_write_text`, `__io_list_directory` | Perform text-file and directory operations |
+| `__io_exists`, `__io_is_file`, `__io_is_directory` | Query host filesystem paths |
+| `__io_join`, `__io_parent`, `__io_file_name`, `__io_extension` | Apply host path rules |
+| `__io_canonicalize`, `__io_current_directory` | Resolve host filesystem locations |
+| `__tcp_listen`, `__tcp_connect`, `__tcp_accept` | Establish TCP resources |
+| `__tcp_read`, `__tcp_write`, `__tcp_set_timeout` | Operate on TCP connections |
+| `__tcp_close_listener`, `__tcp_close_connection` | Close TCP resources |
 
 `String` implements `Sequence[CodePoint]`, and `List[T]` implements `Sequence[T]`. This is a
 zero-conversion view: generic sequence functions operate on the original string or list value.

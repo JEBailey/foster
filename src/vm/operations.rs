@@ -11,6 +11,7 @@ pub(super) fn constant_value(constant: &Constant) -> Value {
         Constant::Integer(value) => Value::Integer(*value),
         Constant::Float(value) => Value::Float(*value),
         Constant::String(value) => Value::String(value.clone()),
+        Constant::CodePoint(value) => Value::CodePoint(*value),
         Constant::Symbol(value) => Value::Symbol(value.clone()),
     }
 }
@@ -18,6 +19,7 @@ pub(super) fn constant_value(constant: &Constant) -> Value {
 pub(super) fn unary(operator: UnaryOp, value: &Value) -> Result<Value, FosterError> {
     match (operator, value) {
         (UnaryOp::Negate, Value::Integer(value)) => Ok(Value::Integer(-value)),
+        (UnaryOp::Negate, Value::CodePoint(value)) => Ok(Value::Integer(-(*value as i64))),
         (UnaryOp::Negate, Value::Float(value)) => Ok(Value::Float(-value)),
         (UnaryOp::Not, Value::Bool(value)) => Ok(Value::Bool(!value)),
         _ => Err(FosterError::runtime(
@@ -32,11 +34,21 @@ pub(super) fn binary(
     right: &Value,
 ) -> Result<Value, FosterError> {
     use BinaryOp::*;
+    if let (Some(left), Some(right)) = (integer_value(left), integer_value(right)) {
+        return match operator {
+            Add => checked_integer(left.checked_add(right)),
+            Subtract => checked_integer(left.checked_sub(right)),
+            Multiply => checked_integer(left.checked_mul(right)),
+            Divide => checked_integer(left.checked_div(right)),
+            Equal => Ok(Value::Bool(left == right)),
+            NotEqual => Ok(Value::Bool(left != right)),
+            Less => Ok(Value::Bool(left < right)),
+            LessEqual => Ok(Value::Bool(left <= right)),
+            Greater => Ok(Value::Bool(left > right)),
+            GreaterEqual => Ok(Value::Bool(left >= right)),
+        };
+    }
     match (operator, left, right) {
-        (Add, Value::Integer(a), Value::Integer(b)) => checked_integer(a.checked_add(*b)),
-        (Subtract, Value::Integer(a), Value::Integer(b)) => checked_integer(a.checked_sub(*b)),
-        (Multiply, Value::Integer(a), Value::Integer(b)) => checked_integer(a.checked_mul(*b)),
-        (Divide, Value::Integer(a), Value::Integer(b)) => checked_integer(a.checked_div(*b)),
         (Add, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
         (Subtract, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
         (Multiply, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
@@ -44,10 +56,6 @@ pub(super) fn binary(
         (Add, Value::String(a), Value::String(b)) => Ok(Value::String(a.clone() + b)),
         (Equal, a, b) => Ok(Value::Bool(a == b)),
         (NotEqual, a, b) => Ok(Value::Bool(a != b)),
-        (Less, Value::Integer(a), Value::Integer(b)) => Ok(Value::Bool(a < b)),
-        (LessEqual, Value::Integer(a), Value::Integer(b)) => Ok(Value::Bool(a <= b)),
-        (Greater, Value::Integer(a), Value::Integer(b)) => Ok(Value::Bool(a > b)),
-        (GreaterEqual, Value::Integer(a), Value::Integer(b)) => Ok(Value::Bool(a >= b)),
         (Less, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a < b)),
         (LessEqual, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a <= b)),
         (Greater, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a > b)),
@@ -55,6 +63,14 @@ pub(super) fn binary(
         _ => Err(FosterError::runtime(
             "invalid typed binary bytecode operation",
         )),
+    }
+}
+
+fn integer_value(value: &Value) -> Option<i64> {
+    match value {
+        Value::Integer(value) => Some(*value),
+        Value::CodePoint(value) => Some(*value as i64),
+        _ => None,
     }
 }
 

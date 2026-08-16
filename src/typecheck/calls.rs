@@ -236,7 +236,6 @@ impl Checker<'_> {
             (Ty::String, "head") => Ok(Ty::CodePoint),
             (Ty::String, "rest") => Ok(Ty::String),
             (Ty::CodePoint, "whitespace?") => Ok(Ty::Bool),
-            (Ty::CodePoint, "value") => Ok(Ty::Int),
             (Ty::CodePoint, "string") => Ok(Ty::String),
             (Ty::Sequence(_), "empty?") => Ok(Ty::Bool),
             (Ty::Sequence(_), "length") => Ok(Ty::Int),

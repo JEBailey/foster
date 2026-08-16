@@ -8,9 +8,10 @@ use lsp_server::Connection;
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, Diagnostic,
     DiagnosticSeverity, DocumentChanges, DocumentSymbol, DocumentSymbolResponse, Documentation,
-    Hover, HoverContents, InitializeParams, Location, MarkupContent, MarkupKind, NumberOrString,
-    OneOf, OptionalVersionedTextDocumentIdentifier, Position, ReferenceParams, RenameParams,
-    SymbolKind, TextDocumentEdit, TextDocumentPositionParams, TextEdit, Uri, WorkspaceEdit,
+    Hover, HoverContents, InitializeParams, InlayHint, InlayHintParams, Location, MarkupContent,
+    MarkupKind, NumberOrString, OneOf, OptionalVersionedTextDocumentIdentifier, Position,
+    ReferenceParams, RenameParams, SignatureHelp, SignatureHelpParams, SymbolKind,
+    TextDocumentEdit, TextDocumentPositionParams, TextEdit, Uri, WorkspaceEdit,
 };
 
 use super::{byte_range_to_lsp, error_diagnostic, publish};
@@ -254,7 +255,7 @@ impl Workspace {
                 .find(|(_, local)| local.function == function_id && local.name == name)
         {
             let ty = compilation.types.local_type(local_id)?;
-            format!("{}: {}", name, compilation.types.display(ty))
+            documented_hover(format!("{}: {}", name, compilation.types.display(ty)), None)
         } else if let Some(symbol) = symbol_at(&compilation, module_id, source, offset)
             && let Some(value) = symbol_hover(&compilation, symbol)
         {
@@ -277,10 +278,20 @@ impl Workspace {
         Some(Hover {
             contents: HoverContents::Markup(MarkupContent {
                 kind: MarkupKind::Markdown,
-                value: format!("```foster\n{value}\n```"),
+                value,
             }),
             range: Some(range),
         })
+    }
+
+    pub(super) fn signature_help(&self, params: &SignatureHelpParams) -> Option<SignatureHelp> {
+        let compilation = self.compile().ok()?;
+        super::hints::signature_help(&compilation, params)
+    }
+
+    pub(super) fn inlay_hints(&self, params: &InlayHintParams) -> Option<Vec<InlayHint>> {
+        let compilation = self.compile().ok()?;
+        super::hints::inlay_hints(&compilation, params)
     }
 
     pub(super) fn completion(&self, params: &CompletionParams) -> Option<CompletionResponse> {
@@ -379,6 +390,9 @@ impl Workspace {
             .as_deref()?;
         let offset = position_to_offset(source, position.position)?;
         let symbol = symbol_at(&compilation, module, source, offset)?;
+        if matches!(symbol, SymbolIdentity::Builtin(_)) {
+            return None;
+        }
         let mut grouped = std::collections::BTreeMap::<String, (Uri, Vec<TextEdit>)>::new();
         for location in symbol_locations(&compilation, symbol) {
             grouped
@@ -430,11 +444,12 @@ impl Workspace {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SymbolIdentity {
+pub(super) enum SymbolIdentity {
     Local(crate::hir::LocalId),
     Function(crate::hir::FunctionId),
     Record(crate::hir::RecordId),
     Variant(crate::hir::VariantTypeId),
+    Builtin(crate::hir::Builtin),
 }
 
 fn expression_at(
@@ -468,23 +483,37 @@ fn symbol_at(
     let (name, start) = identifier_at(source, offset)?;
     let module = &compilation.hir.modules[module_id];
     let qualifier = qualifier_before(source, start);
-    if let Some(expression) = expression_at(compilation, module_id, offset)
-        && let crate::hir::Expr::Name(resolved) = compilation.hir.expressions[expression]
-    {
-        match resolved {
-            crate::hir::ResolvedName::Local(local) => return Some(SymbolIdentity::Local(local)),
-            crate::hir::ResolvedName::Function(function) => {
-                return Some(SymbolIdentity::Function(function));
+    if let Some(expression) = expression_at(compilation, module_id, offset) {
+        match &compilation.hir.expressions[expression] {
+            crate::hir::Expr::Member {
+                object,
+                name: member,
+            } if member == name => {
+                if let Some(function) = member_function(compilation, *object, member) {
+                    return Some(SymbolIdentity::Function(function));
+                }
             }
-            crate::hir::ResolvedName::Record(record) => {
-                return Some(SymbolIdentity::Record(record));
-            }
-            crate::hir::ResolvedName::Variant(variant) => {
-                return Some(SymbolIdentity::Variant(
-                    compilation.hir.variants[variant].parent,
-                ));
-            }
-            crate::hir::ResolvedName::Module(_) | crate::hir::ResolvedName::Builtin(_) => {}
+            crate::hir::Expr::Name(resolved) => match *resolved {
+                crate::hir::ResolvedName::Local(local) => {
+                    return Some(SymbolIdentity::Local(local));
+                }
+                crate::hir::ResolvedName::Function(function) => {
+                    return Some(SymbolIdentity::Function(function));
+                }
+                crate::hir::ResolvedName::Record(record) => {
+                    return Some(SymbolIdentity::Record(record));
+                }
+                crate::hir::ResolvedName::Variant(variant) => {
+                    return Some(SymbolIdentity::Variant(
+                        compilation.hir.variants[variant].parent,
+                    ));
+                }
+                crate::hir::ResolvedName::Builtin(builtin) => {
+                    return Some(SymbolIdentity::Builtin(builtin));
+                }
+                crate::hir::ResolvedName::Module(_) => {}
+            },
+            _ => {}
         }
     }
     if let Some(function) = function_at(compilation, module_id, offset) {
@@ -530,10 +559,13 @@ fn symbol_at(
 fn symbol_hover(compilation: &crate::hir::Compilation, symbol: SymbolIdentity) -> Option<String> {
     match symbol {
         SymbolIdentity::Local(local) => compilation.types.local_type(local).map(|ty| {
-            format!(
-                "{}: {}",
-                compilation.hir.locals[local].name,
-                compilation.types.display(ty)
+            documented_hover(
+                format!(
+                    "{}: {}",
+                    compilation.hir.locals[local].name,
+                    compilation.types.display(ty)
+                ),
+                None,
             )
         }),
         SymbolIdentity::Function(function) => declaration_hover(
@@ -544,15 +576,22 @@ fn symbol_hover(compilation: &crate::hir::Compilation, symbol: SymbolIdentity) -
         SymbolIdentity::Record(record) => {
             let definition = &compilation.hir.records[record];
             Some(documented_hover(
-                format!("type {}", definition.name),
+                record_signature(definition),
                 definition.documentation.as_deref(),
             ))
         }
         SymbolIdentity::Variant(variant) => {
             let definition = &compilation.hir.variant_types[variant];
             Some(documented_hover(
-                format!("type {}", definition.name),
+                variant_signature(compilation, variant),
                 definition.documentation.as_deref(),
+            ))
+        }
+        SymbolIdentity::Builtin(builtin) => {
+            let info = super::builtins::info(builtin);
+            Some(documented_hover(
+                info.signature.to_owned(),
+                Some(info.documentation),
             ))
         }
     }
@@ -650,10 +689,11 @@ fn symbol_name(compilation: &crate::hir::Compilation, symbol: SymbolIdentity) ->
         SymbolIdentity::Function(function) => &compilation.hir.functions[function].name,
         SymbolIdentity::Record(record) => &compilation.hir.records[record].name,
         SymbolIdentity::Variant(variant) => &compilation.hir.variant_types[variant].name,
+        SymbolIdentity::Builtin(builtin) => super::builtins::info(builtin).name,
     }
 }
 
-fn symbol_declaration(
+pub(super) fn symbol_declaration(
     compilation: &crate::hir::Compilation,
     symbol: SymbolIdentity,
 ) -> Option<Location> {
@@ -699,6 +739,7 @@ fn symbol_declaration(
                 &definition.name,
             )
         }
+        SymbolIdentity::Builtin(builtin) => super::builtins::definition_location(builtin),
     }
 }
 
@@ -759,31 +800,21 @@ fn declaration_hover(
 ) -> Option<String> {
     let definitions = &compilation.hir.modules[module];
     if let Some(function) = definitions.functions.get(name) {
-        let signature = compilation.types.function_type(*function)?;
-        let parameters = signature
-            .parameters
-            .iter()
-            .map(|ty| compilation.types.display(*ty))
-            .collect::<Vec<_>>()
-            .join(", ");
         let definition = &compilation.hir.functions[*function];
         return Some(documented_hover(
-            format!(
-                "func {name}({parameters}) -> {}",
-                compilation.types.display(signature.result)
-            ),
+            function_signature(compilation, *function, false),
             definition.documentation.as_deref(),
         ));
     }
     if let Some(record) = definitions.records.get(name) {
         return Some(documented_hover(
-            format!("type {name}"),
+            record_signature(&compilation.hir.records[*record]),
             compilation.hir.records[*record].documentation.as_deref(),
         ));
     }
     if let Some(variant) = definitions.variant_types.get(name) {
         return Some(documented_hover(
-            format!("type {name}"),
+            variant_signature(compilation, *variant),
             compilation.hir.variant_types[*variant]
                 .documentation
                 .as_deref(),
@@ -938,10 +969,277 @@ fn insert_documented_completion(
     }
 }
 
-fn documented_hover(signature: String, documentation: Option<&str>) -> String {
-    documentation.map_or(signature.clone(), |documentation| {
-        format!("```foster\n{signature}\n```\n\n{documentation}")
+pub(super) struct CallablePresentation {
+    pub signature: String,
+    pub parameters: Vec<String>,
+    pub documentation: Option<String>,
+    pub definition: Option<Location>,
+}
+
+pub(super) fn callable_presentation(
+    compilation: &crate::hir::Compilation,
+    callee: crate::hir::ExprId,
+) -> Option<CallablePresentation> {
+    let (function, receiver) = match &compilation.hir.expressions[callee] {
+        crate::hir::Expr::Name(crate::hir::ResolvedName::Function(function)) => (*function, false),
+        crate::hir::Expr::Member { object, name } => {
+            (member_function(compilation, *object, name)?, true)
+        }
+        crate::hir::Expr::Name(crate::hir::ResolvedName::Builtin(builtin)) => {
+            let info = super::builtins::info(*builtin);
+            return Some(CallablePresentation {
+                signature: info.signature.to_owned(),
+                parameters: info
+                    .parameters
+                    .iter()
+                    .map(|name| (*name).to_owned())
+                    .collect(),
+                documentation: Some(info.documentation.to_owned()),
+                definition: super::builtins::definition_location(*builtin),
+            });
+        }
+        _ => return None,
+    };
+    let definition = &compilation.hir.functions[function];
+    Some(CallablePresentation {
+        signature: function_signature(compilation, function, receiver),
+        parameters: definition
+            .parameters
+            .iter()
+            .skip(usize::from(receiver))
+            .map(|parameter| compilation.hir.locals[*parameter].name.clone())
+            .collect(),
+        documentation: definition.documentation.clone(),
+        definition: symbol_declaration(compilation, SymbolIdentity::Function(function)),
     })
+}
+
+fn member_function(
+    compilation: &crate::hir::Compilation,
+    object: crate::hir::ExprId,
+    member: &str,
+) -> Option<crate::hir::FunctionId> {
+    let ty = compilation.types.expression_type(object)?;
+    let record = record_from_type(&compilation.types, ty)?;
+    let record = &compilation.hir.records[record];
+    let function = compilation.hir.modules[record.module]
+        .functions
+        .get(member)
+        .copied()?;
+    compilation.hir.functions[function]
+        .parameters
+        .first()
+        .is_some_and(|parameter| compilation.hir.locals[*parameter].name == "self")
+        .then_some(function)
+}
+
+fn record_from_type(
+    types: &crate::types::TypeInformation,
+    ty: crate::types::TypeId,
+) -> Option<crate::hir::RecordId> {
+    match &types.types[ty] {
+        crate::types::Type::Record { record, .. } => Some(*record),
+        crate::types::Type::Reference { value, .. } | crate::types::Type::Remote(value) => {
+            record_from_type(types, *value)
+        }
+        _ => None,
+    }
+}
+
+pub(super) fn function_signature(
+    compilation: &crate::hir::Compilation,
+    function_id: crate::hir::FunctionId,
+    omit_receiver: bool,
+) -> String {
+    let function = &compilation.hir.functions[function_id];
+    let signature = compilation.types.function_type(function_id);
+    let skip = usize::from(omit_receiver);
+    let parameters = function
+        .parameters
+        .iter()
+        .enumerate()
+        .skip(skip)
+        .map(|(index, local)| {
+            let ty = signature
+                .and_then(|signature| signature.parameters.get(index))
+                .map(|ty| compilation.types.display(*ty))
+                .unwrap_or_else(|| "_".into());
+            let consumed = signature
+                .and_then(|signature| signature.parameter_modes.get(index))
+                .is_some_and(|mode| *mode == crate::ast::ParameterMode::Consume);
+            format!(
+                "{}: {}{ty}",
+                compilation.hir.locals[*local].name,
+                if consumed { "consume " } else { "" }
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let result = signature
+        .map(|signature| compilation.types.display(signature.result))
+        .unwrap_or_else(|| "Unit".into());
+    let effects = signature.map_or_else(String::new, |signature| {
+        display_effects(&signature.effects, signature.suspends)
+    });
+    let mut generic_entries = function.type_parameters.clone();
+    generic_entries.extend(function.groups.iter().map(|group| {
+        format!(
+            "{}: group {}",
+            group.name,
+            display_type_expr(&group.element)
+        )
+    }));
+    let generics = type_parameters(&generic_entries);
+    format!(
+        "{}func {}{generics}({parameters}) -> {result}{effects}",
+        if function.public { "pub " } else { "" },
+        function.name
+    )
+}
+
+fn record_signature(record: &crate::hir::Record) -> String {
+    let parameters = type_parameters(&record.parameters);
+    let fields = record
+        .fields
+        .iter()
+        .map(|field| {
+            format!(
+                "    {}{}: {}",
+                if field.public { "pub " } else { "" },
+                field.name,
+                display_type_expr(&field.ty)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        "{}type {}{parameters} {{\n{fields}\n}}",
+        if record.public { "pub " } else { "" },
+        record.name
+    )
+}
+
+fn variant_signature(
+    compilation: &crate::hir::Compilation,
+    variant_id: crate::hir::VariantTypeId,
+) -> String {
+    let variant = &compilation.hir.variant_types[variant_id];
+    let parameters = type_parameters(&variant.parameters);
+    let alternatives = variant
+        .alternatives
+        .iter()
+        .map(|alternative| {
+            let alternative = &compilation.hir.variants[*alternative];
+            if alternative.payload.is_empty() {
+                alternative.name.clone()
+            } else {
+                format!(
+                    "{}({})",
+                    alternative.name,
+                    alternative
+                        .payload
+                        .iter()
+                        .map(display_type_expr)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" | ");
+    format!(
+        "{}type {}{parameters} = {alternatives}",
+        if variant.public { "pub " } else { "" },
+        variant.name
+    )
+}
+
+fn type_parameters(parameters: &[String]) -> String {
+    if parameters.is_empty() {
+        String::new()
+    } else {
+        format!("[{}]", parameters.join(", "))
+    }
+}
+
+fn display_type_expr(ty: &crate::ast::TypeExpr) -> String {
+    match ty {
+        crate::ast::TypeExpr::Named(name, arguments) => {
+            let arguments = arguments.iter().map(display_type_expr).collect::<Vec<_>>();
+            format!("{name}{}", type_parameters(&arguments))
+        }
+        crate::ast::TypeExpr::Intersection(members) => members
+            .iter()
+            .map(display_type_expr)
+            .collect::<Vec<_>>()
+            .join(" & "),
+        crate::ast::TypeExpr::Reference { group, value } => {
+            format!("ref[{group}] {}", display_type_expr(value))
+        }
+        crate::ast::TypeExpr::Function {
+            erased,
+            parameters,
+            parameter_modes,
+            result,
+            effects,
+            suspends,
+        } => {
+            let parameters = parameters
+                .iter()
+                .zip(parameter_modes)
+                .map(|(parameter, mode)| {
+                    format!(
+                        "{}{}",
+                        if *mode == crate::ast::ParameterMode::Consume {
+                            "consume "
+                        } else {
+                            ""
+                        },
+                        display_type_expr(parameter)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(
+                "{}func({parameters}) -> {}{}",
+                if *erased { "any " } else { "" },
+                display_type_expr(result),
+                display_effects(effects, *suspends)
+            )
+        }
+    }
+}
+
+fn display_effects(effects: &[crate::ast::Effect], suspends: bool) -> String {
+    let mut values = effects
+        .iter()
+        .map(|effect| {
+            let kind = match effect.kind {
+                crate::ast::EffectKind::Read => "read",
+                crate::ast::EffectKind::Mut => "mut",
+                crate::ast::EffectKind::Reshape => "reshape",
+                crate::ast::EffectKind::Consume => "consume",
+            };
+            format!("{kind} {}", effect.target)
+        })
+        .collect::<Vec<_>>();
+    if suspends {
+        values.push("suspend".into());
+    }
+    if values.is_empty() {
+        String::new()
+    } else {
+        format!(" [{}]", values.join(", "))
+    }
+}
+
+fn documented_hover(signature: String, documentation: Option<&str>) -> String {
+    let mut hover = format!("```foster\n{signature}\n```");
+    if let Some(documentation) = documentation {
+        hover.push_str("\n\n");
+        hover.push_str(documentation);
+    }
+    hover
 }
 
 fn compiler_diagnostic(source: &str, diagnostic: &crate::diagnostic::Diagnostic) -> Diagnostic {
@@ -1040,7 +1338,7 @@ fn location(
     ))
 }
 
-fn module_for_uri(
+pub(super) fn module_for_uri(
     compilation: &crate::hir::Compilation,
     uri: &Uri,
 ) -> Option<crate::hir::ModuleId> {
@@ -1099,7 +1397,7 @@ fn is_ident(byte: u8) -> bool {
     byte == b'_' || byte.is_ascii_alphanumeric()
 }
 
-fn position_to_offset(source: &str, position: Position) -> Option<usize> {
+pub(super) fn position_to_offset(source: &str, position: Position) -> Option<usize> {
     let line = source.split_inclusive('\n').nth(position.line as usize)?;
     let line_start = source.as_ptr() as usize;
     let start = line.as_ptr() as usize - line_start;
@@ -1121,7 +1419,7 @@ fn uri_to_path(uri: &Uri) -> Option<PathBuf> {
     Some(PathBuf::from(decoded))
 }
 
-fn path_to_uri(path: &Path) -> Option<Uri> {
+pub(super) fn path_to_uri(path: &Path) -> Option<Uri> {
     let value = path
         .to_string_lossy()
         .replace('\\', "/")
@@ -1278,7 +1576,13 @@ mod tests {
         let HoverContents::Markup(function) = function.contents else {
             panic!("expected markdown hover")
         };
-        assert!(function.value.contains("func parse(String) -> String"));
+        assert!(
+            function
+                .value
+                .contains("func parse(input: consume String) -> String"),
+            "{}",
+            function.value
+        );
     }
 
     #[test]
@@ -1302,8 +1606,9 @@ func main() -> Int {
         let HoverContents::Markup(hover) = hover.contents else {
             panic!("expected markdown hover")
         };
-        assert!(hover.value.contains("func documented(Int) -> Int"));
+        assert!(hover.value.contains("func documented(value: Int) -> Int"));
         assert!(hover.value.contains("Computes the documented answer."));
+        assert_eq!(hover.value.matches("```foster").count(), 1);
 
         let completion = workspace
             .completion(&CompletionParams {
@@ -1442,5 +1747,183 @@ func select(value: Choice) -> String {
         assert_eq!(location.uri, uri);
         assert_eq!(location.range.start, Position::new(6, 20));
         assert_eq!(location.range.end, Position::new(6, 27));
+    }
+
+    #[test]
+    fn inlay_hints_report_inferred_types_and_argument_names() {
+        let (mut workspace, uri, _) = fixture_workspace();
+        let source = r#"/// Adds two values.
+func add(left: Int, right: Int) -> Int { left + right }
+
+func main() -> Int {
+    value = add(1, 2)
+    value
+}
+"#;
+        workspace.open(uri.clone(), source.into(), 1);
+        let hints = workspace
+            .inlay_hints(&InlayHintParams {
+                work_done_progress_params: Default::default(),
+                text_document: lsp_types::TextDocumentIdentifier::new(uri),
+                range: lsp_types::Range::new(Position::new(0, 0), Position::new(6, 1)),
+            })
+            .unwrap();
+
+        assert!(hints.iter().any(|hint| {
+            matches!(&hint.label, lsp_types::InlayHintLabel::String(label) if label == ": Int")
+                && hint.kind == Some(lsp_types::InlayHintKind::TYPE)
+        }));
+        for expected in ["left:", "right:"] {
+            assert!(hints.iter().any(|hint| {
+                matches!(&hint.label, lsp_types::InlayHintLabel::LabelParts(parts) if parts.iter().any(|part| part.value == expected && part.location.is_some()))
+            }));
+        }
+    }
+
+    #[test]
+    fn signature_help_selects_the_active_argument_and_shows_docs() {
+        let (mut workspace, uri, _) = fixture_workspace();
+        let source = r#"/// Adds two values.
+func add(left: Int, right: Int) -> Int { left + right }
+
+func main() -> Int {
+    add(1, 2)
+}
+"#;
+        workspace.open(uri.clone(), source.into(), 1);
+        let help = workspace
+            .signature_help(&SignatureHelpParams {
+                context: None,
+                text_document_position_params: TextDocumentPositionParams::new(
+                    lsp_types::TextDocumentIdentifier::new(uri),
+                    Position::new(4, 11),
+                ),
+                work_done_progress_params: Default::default(),
+            })
+            .unwrap();
+
+        assert_eq!(help.active_parameter, Some(1));
+        assert!(
+            help.signatures[0]
+                .label
+                .contains("add(left: Int, right: Int) -> Int")
+        );
+        assert!(matches!(
+            &help.signatures[0].documentation,
+            Some(Documentation::MarkupContent(contents)) if contents.value.contains("Adds two values")
+        ));
+    }
+
+    #[test]
+    fn definition_resolves_instance_methods_from_receiver_types() {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("tests/fixtures/associated_function");
+        let uri = path_to_uri(&root.join("main.foster")).unwrap();
+        let workspace = Workspace {
+            root: Some(root.clone()),
+            documents: HashMap::new(),
+            published: HashSet::new(),
+        };
+
+        let location = workspace
+            .definition(&TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri),
+                Position::new(5, 13),
+            ))
+            .unwrap();
+        assert_eq!(
+            uri_to_path(&location.uri).unwrap(),
+            root.join("collection.foster")
+        );
+        assert_eq!(location.range.start, Position::new(8, 9));
+    }
+
+    #[test]
+    fn definition_opens_embedded_core_source_when_available() {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("tests/fixtures/core_consumer");
+        let uri = path_to_uri(&root.join("main.foster")).unwrap();
+        let workspace = Workspace {
+            root: Some(root),
+            documents: HashMap::new(),
+            published: HashSet::new(),
+        };
+
+        let location = workspace
+            .definition(&TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri),
+                Position::new(11, 19),
+            ))
+            .unwrap();
+        assert_eq!(
+            uri_to_path(&location.uri).unwrap(),
+            std::env::current_dir()
+                .unwrap()
+                .join("library/core/list.foster")
+        );
+        assert_eq!(location.range.start, Position::new(21, 9));
+    }
+
+    #[test]
+    fn intrinsics_provide_docs_navigation_and_parameter_hints() {
+        let (mut workspace, uri, _) = fixture_workspace();
+        let source = "func main() -> CodePoint {\n    from_code_point(65)\n}\n";
+        workspace.open(uri.clone(), source.into(), 1);
+
+        let hover = workspace
+            .hover(&TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri.clone()),
+                Position::new(1, 10),
+            ))
+            .unwrap();
+        let HoverContents::Markup(hover) = hover.contents else {
+            panic!("expected markdown hover")
+        };
+        assert!(
+            hover
+                .value
+                .contains("from_code_point(value: Int) -> CodePoint")
+        );
+        assert!(hover.value.contains("Unicode scalar value"));
+
+        let location = workspace
+            .definition(&TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri.clone()),
+                Position::new(1, 10),
+            ))
+            .unwrap();
+        assert!(
+            uri_to_path(&location.uri)
+                .unwrap()
+                .ends_with("docs/core-library.md")
+        );
+
+        let hints = workspace
+            .inlay_hints(&InlayHintParams {
+                work_done_progress_params: Default::default(),
+                text_document: lsp_types::TextDocumentIdentifier::new(uri.clone()),
+                range: lsp_types::Range::new(Position::new(0, 0), Position::new(2, 1)),
+            })
+            .unwrap();
+        assert!(hints.iter().any(|hint| {
+            matches!(&hint.label, lsp_types::InlayHintLabel::LabelParts(parts) if parts.iter().any(|part| part.value == "value:" && part.location.is_some()))
+        }));
+
+        let help = workspace
+            .signature_help(&SignatureHelpParams {
+                context: None,
+                text_document_position_params: TextDocumentPositionParams::new(
+                    lsp_types::TextDocumentIdentifier::new(uri),
+                    Position::new(1, 21),
+                ),
+                work_done_progress_params: Default::default(),
+            })
+            .unwrap();
+        assert_eq!(
+            help.signatures[0].label,
+            "from_code_point(value: Int) -> CodePoint"
+        );
     }
 }

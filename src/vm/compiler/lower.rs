@@ -14,9 +14,15 @@ impl FunctionCompiler<'_> {
             hir::Expr::Integer(value) => self.load_constant(Constant::Integer(*value), span),
             hir::Expr::Float(value) => self.load_constant(Constant::Float(*value), span),
             hir::Expr::String(value) => self.load_constant(Constant::String(value.clone()), span),
-            hir::Expr::CodePoint(value) => {
-                self.load_constant(Constant::String(value.clone()), span)
-            }
+            hir::Expr::CodePoint(value) => self.load_constant(
+                Constant::CodePoint(
+                    value
+                        .chars()
+                        .next()
+                        .expect("parsed CodePoint literals contain one scalar value"),
+                ),
+                span,
+            ),
             hir::Expr::Symbol(value) => self.load_constant(Constant::Symbol(value.clone()), span),
             hir::Expr::List(items) => {
                 let elements = items
