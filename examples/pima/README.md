@@ -32,7 +32,7 @@ Foster rather than emulating Pima syntax:
 | `function_test.pima` | `function_test.foster` | Callable values and Euclidean GCD |
 | `http_server_lib.pima` | `http_server_lib.foster` | Pure HTTP request dispatch |
 | `import_test.pima` | `import_test.foster` | Power function; package imports are also covered by `modules/` |
-| `json_parser.pima` | `json_parser.foster` | Full typed recursive-descent JSON parser |
+| `json_parser.pima` | `json_parser/` | Full typed recursive-descent JSON parser and actor pipeline package |
 | `list.pima` | `list.foster` | Generic and concrete list reversal |
 | `maps.pima` | `maps.foster` | Typed persistent map behavior |
 | `newton.pima` | `newton.foster` | Float iteration and nested closures |

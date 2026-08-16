@@ -1,0 +1,60 @@
+import parser
+
+type ParserWorker {}
+
+type Statistics {
+    processed: Int
+    failed: Int
+}
+
+type PipelineReport {
+    processed: Int
+    failed: Int
+}
+
+func parse_document(self: ParserWorker, source: String) -> ParseResult<Json> {
+    parse_json(move source)
+}
+
+func record_success(self: Statistics) -> Int {
+    self.processed = self.processed + 1
+    self.processed
+}
+
+func record_failure(self: Statistics) -> Int {
+    self.failed = self.failed + 1
+    self.failed
+}
+
+func record_result(self: Statistics, result: ParseResult<Json>) -> Int {
+    branch result {
+        Ok(_) -> self.record_success()
+        Error(_) -> self.record_failure()
+    }
+}
+
+func snapshot(self: Statistics) -> PipelineReport {
+    PipelineReport {
+        processed: self.processed
+        failed: self.failed
+    }
+}
+
+func main() -> PipelineReport {
+    parser_a = remote ParserWorker {}
+    parser_b = remote ParserWorker {}
+    statistics = remote Statistics { processed: 0, failed: 0 }
+
+    first = parser_a.parse_document("{\"name\":\"Ada\",\"active\":true}")
+    second = parser_b.parse_document("[1,2,3,4]")
+    third = parser_a.parse_document("{broken json}")
+
+    first_recorded = statistics.record_result(await first)
+    second_recorded = statistics.record_result(await second)
+    third_recorded = statistics.record_result(await third)
+
+    await first_recorded
+    await second_recorded
+    await third_recorded
+    await statistics.snapshot()
+}

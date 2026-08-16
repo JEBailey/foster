@@ -7,7 +7,7 @@ prelude and does not inject library declarations into user modules.
 import core.list
 import core.option
 
-func first_doubled(values: List[Int]) -> Option[Int] {
+func first_doubled(values: List<Int>) -> Option<Int> {
     list.first(list.map(values, (value: Int) -> value * 2))
 }
 ```

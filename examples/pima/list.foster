@@ -1,4 +1,4 @@
-func reverse[T](remaining: List[T]) -> List[T] {
+func reverse<T>(remaining: List<T>) -> List<T> {
     branch {
         remaining.empty? -> []
         _ -> reverse(remaining.rest).append(remaining.head)

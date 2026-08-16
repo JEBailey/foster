@@ -1,4 +1,4 @@
-pub type Parsed[T] {
+pub type Parsed<T> {
     pub value: T
     pub remaining: String
 }
@@ -8,7 +8,7 @@ pub type JsonError {
     pub offset: Int
 }
 
-func parsed_int(value: Int, remaining: String) -> Parsed[Int] {
+func parsed_int(value: Int, remaining: String) -> Parsed<Int> {
     Parsed { value remaining }
 }
 

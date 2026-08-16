@@ -4,7 +4,7 @@ import core.result
 
 func double(value: Int) -> Int { value * 2 }
 
-func initial() -> Result[Int, String] {
+func initial() -> Result<Int, String> {
     Result.Ok(20)
 }
 

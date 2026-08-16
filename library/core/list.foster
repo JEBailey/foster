@@ -2,7 +2,7 @@ import core.option
 import core.sequence
 
 /// Returns the first element, or `None` when the list is empty.
-pub func first[T](values: List[T]) -> Option[T] {
+pub func first<T>(values: List<T>) -> Option<T> {
     branch {
         values.empty? -> Option.None
         _ -> Option.Some(values.head)
@@ -10,7 +10,7 @@ pub func first[T](values: List[T]) -> Option[T] {
 }
 
 /// Returns the final element, or `None` when the list is empty.
-pub func last[T](values: List[T]) -> Option[T] {
+pub func last<T>(values: List<T>) -> Option<T> {
     branch {
         values.empty? -> Option.None
         values.rest.empty? -> Option.Some(values.head)
@@ -19,17 +19,17 @@ pub func last[T](values: List[T]) -> Option[T] {
 }
 
 /// Applies `transform` to every element and returns the transformed list.
-pub func map[T, U](values: List[T], transform: func(T) -> U) -> List[U] {
+pub func map<T, U>(values: List<T>, transform: func(T) -> U) -> List<U> {
     sequence.map(values, transform)
 }
 
 /// Returns the elements for which `include` evaluates to true.
-pub func filter[T](values: List[T], include: func(T) -> Bool) -> List[T] {
+pub func filter<T>(values: List<T>, include: func(T) -> Bool) -> List<T> {
     sequence.filter(values, include)
 }
 
 /// Reduces the list from left to right, beginning with `initial`.
-pub func fold[T, U](values: List[T], initial: U, combine: func(consume U, consume T) -> U) -> U [consume initial] {
+pub func fold<T, U>(values: List<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [consume initial] {
     branch {
         values.empty? -> initial
         _ -> fold(values.rest, combine(move initial, values.head), combine)
@@ -37,7 +37,7 @@ pub func fold[T, U](values: List[T], initial: U, combine: func(consume U, consum
 }
 
 /// Returns the first element satisfying `predicate`, or `None` if none does.
-pub func find[T](values: List[T], predicate: func(T) -> Bool) -> Option[T] {
+pub func find<T>(values: List<T>, predicate: func(T) -> Bool) -> Option<T> {
     branch {
         values.empty? -> Option.None
         predicate(values.head) -> Option.Some(values.head)
@@ -46,22 +46,22 @@ pub func find[T](values: List[T], predicate: func(T) -> Bool) -> Option[T] {
 }
 
 /// Returns whether at least one element satisfies `predicate`.
-pub func any?[T](values: List[T], predicate: func(T) -> Bool) -> Bool {
+pub func any?<T>(values: List<T>, predicate: func(T) -> Bool) -> Bool {
     sequence.any?(values, predicate)
 }
 
 /// Returns whether every element satisfies `predicate`.
-pub func all?[T](values: List[T], predicate: func(T) -> Bool) -> Bool {
+pub func all?<T>(values: List<T>, predicate: func(T) -> Bool) -> Bool {
     sequence.all?(values, predicate)
 }
 
 /// Returns whether the list contains an element equal to `expected`.
-pub func contains?[T](values: List[T], expected: T) -> Bool {
+pub func contains?<T>(values: List<T>, expected: T) -> Bool {
     sequence.contains?(values, expected)
 }
 
 /// Returns a list containing the elements in reverse order.
-pub func reverse[T](values: List[T]) -> List[T] {
+pub func reverse<T>(values: List<T>) -> List<T> {
     branch {
         values.empty? -> []
         _ -> reverse(values.rest).append(values.head)
@@ -69,22 +69,22 @@ pub func reverse[T](values: List[T]) -> List[T] {
 }
 
 /// Appends every element of `right` to `left`, consuming the left list.
-pub func concat[T](left: List[T], right: List[T]) -> List[T] [consume left] {
-    fold(right, move left, (result: List[T], value: T) -> result.append(value))
+pub func concat<T>(left: List<T>, right: List<T>) -> List<T> [consume left] {
+    fold(right, move left, (result: List<T>, value: T) -> result.append(value))
 }
 
 /// Returns whether the list contains no elements.
-pub func empty?[T](values: List[T]) -> Bool {
+pub func empty?<T>(values: List<T>) -> Bool {
     values.empty?
 }
 
 /// Returns the number of elements in the list.
-pub func length[T](values: List[T]) -> Int {
+pub func length<T>(values: List<T>) -> Int {
     values.length
 }
 
 /// Returns the element at `index`, or `None` when the index is outside the list.
-pub func get[T](values: List[T], index: Int) -> Option[T] {
+pub func get<T>(values: List<T>, index: Int) -> Option<T> {
     branch {
         index < 0 -> Option.None
         values.empty? -> Option.None
@@ -94,12 +94,12 @@ pub func get[T](values: List[T], index: Int) -> Option[T] {
 }
 
 /// Returns at most the first `count` elements.
-pub func take[T](values: List[T], count: Int) -> List[T] {
+pub func take<T>(values: List<T>, count: Int) -> List<T> {
     sequence.take(values, count)
 }
 
 /// Consumes the list and returns the elements after the first `count` entries.
-pub func drop[T](values: List[T], count: Int) -> List[T] [consume values] {
+pub func drop<T>(values: List<T>, count: Int) -> List<T> [consume values] {
     branch {
         count <= 0 -> values
         values.empty? -> values
@@ -108,12 +108,12 @@ pub func drop[T](values: List[T], count: Int) -> List[T] [consume values] {
 }
 
 /// Maps each element to a list and concatenates the produced lists.
-pub func flat_map[T, U](values: List[T], transform: func(T) -> List[U]) -> List[U] {
+pub func flat_map<T, U>(values: List<T>, transform: func(T) -> List<U>) -> List<U> {
     flat_map_into(values, transform, [])
 }
 
 /// Accumulates the lists produced from the remaining source elements.
-func flat_map_into[T, U](values: List[T], transform: func(T) -> List[U], result: List[U]) -> List[U] [consume result] {
+func flat_map_into<T, U>(values: List<T>, transform: func(T) -> List<U>, result: List<U>) -> List<U> [consume result] {
     branch {
         values.empty? -> result
         _ -> flat_map_next(values, transform, move result)
@@ -121,14 +121,14 @@ func flat_map_into[T, U](values: List[T], transform: func(T) -> List[U], result:
 }
 
 /// Transforms the next element and appends its values to the accumulator.
-func flat_map_next[T, U](values: List[T], transform: func(T) -> List[U], result: List[U]) -> List[U] [consume result] {
+func flat_map_next<T, U>(values: List<T>, transform: func(T) -> List<U>, result: List<U>) -> List<U> [consume result] {
     mapped = transform(values.head)
     next = concat(move result, mapped)
     flat_map_into(values.rest, transform, move next)
 }
 
 /// Concatenates a list of lists into one list.
-pub func flatten[T](values: List[List[T]]) -> List[T] {
+pub func flatten<T>(values: List<List<T>>) -> List<T> {
     branch {
         values.empty? -> []
         _ -> concat(values.head, flatten(values.rest))
@@ -136,17 +136,17 @@ pub func flatten[T](values: List[List[T]]) -> List[T] {
 }
 
 /// Counts the elements satisfying `predicate`.
-pub func count[T](values: List[T], predicate: func(T) -> Bool) -> Int {
+pub func count<T>(values: List<T>, predicate: func(T) -> Bool) -> Int {
     sequence.count(values, predicate)
 }
 
 /// Returns whether no element satisfies `predicate`.
-pub func none?[T](values: List[T], predicate: func(T) -> Bool) -> Bool {
+pub func none?<T>(values: List<T>, predicate: func(T) -> Bool) -> Bool {
     sequence.none?(values, predicate)
 }
 
 /// Combines a nonempty list into one value, or returns `None` for an empty list.
-pub func reduce[T](values: List[T], combine: func(T, T) -> T) -> Option[T] {
+pub func reduce<T>(values: List<T>, combine: func(T, T) -> T) -> Option<T> {
     branch {
         values.empty? -> Option.None
         _ -> Option.Some(fold(values.rest, values.head, combine))
@@ -154,7 +154,7 @@ pub func reduce[T](values: List[T], combine: func(T, T) -> T) -> Option[T] {
 }
 
 /// Joins strings with `separator` between adjacent values.
-pub func join(values: List[String], separator: String) -> String {
+pub func join(values: List<String>, separator: String) -> String {
     branch {
         values.empty? -> ""
         _ -> join_rest(values.rest, separator, values.head)
@@ -162,7 +162,7 @@ pub func join(values: List[String], separator: String) -> String {
 }
 
 /// Appends the remaining strings and separators to the accumulated result.
-func join_rest(values: List[String], separator: String, result: String) -> String [consume result] {
+func join_rest(values: List<String>, separator: String, result: String) -> String [consume result] {
     branch {
         values.empty? -> result
         _ -> join_next(values, separator, move result)
@@ -170,7 +170,7 @@ func join_rest(values: List[String], separator: String, result: String) -> Strin
 }
 
 /// Builds the next joined accumulator value.
-func join_next(values: List[String], separator: String, result: String) -> String {
+func join_next(values: List<String>, separator: String, result: String) -> String {
     next = result + separator + values.head
     join_rest(values.rest, separator, move next)
 }

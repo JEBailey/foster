@@ -3,7 +3,7 @@ import core.list
 import core.option
 
 /// Returns the first code point, or `None` when the string is empty.
-pub func first(value: String) -> Option[CodePoint] {
+pub func first(value: String) -> Option<CodePoint> {
     branch {
         value.empty? -> Option.None
         _ -> Option.Some(value.head)
@@ -11,7 +11,7 @@ pub func first(value: String) -> Option[CodePoint] {
 }
 
 /// Returns the final code point, or `None` when the string is empty.
-pub func last(value: String) -> Option[CodePoint] {
+pub func last(value: String) -> Option<CodePoint> {
     branch {
         value.empty? -> Option.None
         value.rest.empty? -> Option.Some(value.head)
@@ -77,12 +77,12 @@ pub func trim(value: String) -> String [consume value] {
 }
 
 /// Materializes the string's Unicode scalar values as a list of code points.
-pub func to_code_points(value: String) -> List[CodePoint] {
+pub func to_code_points(value: String) -> List<CodePoint> {
     to_code_points_into(value, [])
 }
 
 /// Appends remaining string code points to the list accumulator.
-func to_code_points_into(value: String, result: List[CodePoint]) -> List[CodePoint] [consume result] {
+func to_code_points_into(value: String, result: List<CodePoint>) -> List<CodePoint> [consume result] {
     branch {
         value.empty? -> result
         _ -> to_code_points_into(value.rest, result.append(value.head))
@@ -90,7 +90,7 @@ func to_code_points_into(value: String, result: List[CodePoint]) -> List[CodePoi
 }
 
 /// Concatenates a sequence of code points into a string.
-pub func from_code_points(characters: Sequence[CodePoint]) -> String {
+pub func from_code_points(characters: Sequence<CodePoint>) -> String {
     branch {
         characters.empty? -> ""
         _ -> characters.head.string + from_code_points(characters.rest)
@@ -120,7 +120,7 @@ func slice_into(value: String, index: Int, start: Int, end: Int, result: String)
 /// Consumes and splits a string around each occurrence of `separator`.
 ///
 /// An empty separator produces one single-code-point string per element.
-pub func split(value: String, separator: String) -> List[String] [consume value] {
+pub func split(value: String, separator: String) -> List<String> [consume value] {
     branch {
         separator.empty? -> split_characters(value, [])
         _ -> split_into(move value, separator, "", [])
@@ -128,7 +128,7 @@ pub func split(value: String, separator: String) -> List[String] [consume value]
 }
 
 /// Splits the remaining value into single-code-point strings.
-func split_characters(value: String, result: List[String]) -> List[String] [consume result] {
+func split_characters(value: String, result: List<String>) -> List<String> [consume result] {
     branch {
         value.empty? -> result
         _ -> split_characters(value.rest, result.append(value.head.string))
@@ -136,7 +136,7 @@ func split_characters(value: String, result: List[String]) -> List[String] [cons
 }
 
 /// Scans separator-delimited segments into the result accumulator.
-func split_into(value: String, separator: String, current: String, result: List[String]) -> List[String] [consume value, consume current, consume result] {
+func split_into(value: String, separator: String, current: String, result: List<String>) -> List<String> [consume value, consume current, consume result] {
     branch {
         value.empty? -> result.append(current)
         starts_with?(value, separator) -> split_into(drop_prefix(move value, separator.length), separator, "", result.append(current))
@@ -206,6 +206,6 @@ func utf8_width(code: CodePoint) -> Int {
 }
 
 /// Joins strings with `separator` between adjacent values.
-pub func join(values: List[String], separator: String) -> String {
+pub func join(values: List<String>, separator: String) -> String {
     list.join(values, separator)
 }

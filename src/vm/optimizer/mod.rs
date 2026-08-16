@@ -7,6 +7,7 @@ mod closures;
 mod constants;
 mod control_flow;
 mod copies;
+mod drops;
 mod inlining;
 mod registers;
 
@@ -49,4 +50,9 @@ pub fn optimize(program: &mut Program) {
     control_flow::simplify(program);
     registers::compact(program);
     constants::deduplicate(program);
+}
+
+/// Inserts deterministic register releases after all representational rewrites.
+pub(crate) fn insert_drops(program: &mut Program) {
+    drops::insert(program);
 }

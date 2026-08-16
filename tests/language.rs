@@ -4,7 +4,7 @@ use std::path::Path;
 #[test]
 fn guard_return_and_implicit_result() {
     let source = r#"
-func first(characters: List[String]) -> String {
+func first(characters: List<String>) -> String {
     return "" if characters.empty?
     characters.head
 }
@@ -331,7 +331,7 @@ fn derives_suspend_from_await_and_callee_contracts() {
     let source = r#"
 type Worker {}
 func value(self: Worker) -> Int { 1 }
-func wait(worker: Remote[Worker]) -> Int {
+func wait(worker: Remote<Worker>) -> Int {
     await worker.value()
 }
 func main() { 0 }
@@ -347,7 +347,7 @@ fn accepts_declared_suspension() {
     let source = r#"
 type Worker {}
 func value(self: Worker) -> Int { 1 }
-func wait(worker: Remote[Worker]) -> Int [suspend] {
+func wait(worker: Remote<Worker>) -> Int [suspend] {
     await worker.value()
 }
 func main() { 0 }
@@ -1082,12 +1082,12 @@ func main() -> Int {
 #[test]
 fn infers_generic_record_arguments() {
     let source = r#"
-type Parsed[T] {
+type Parsed<T> {
     value: T
     remaining: String
 }
 
-func parse() -> Parsed[Int] {
+func parse() -> Parsed<Int> {
     Parsed {
         value: 42
         remaining: ""
@@ -1104,9 +1104,9 @@ func main() -> Int {
 #[test]
 fn calls_functions_associated_with_record_types() {
     let source = r#"
-type Box[T] { value: T }
+type Box<T> { value: T }
 
-func Box.create[T](value: T) -> Box[T] {
+func Box.create<T>(value: T) -> Box<T> {
     Box { value }
 }
 
@@ -1213,11 +1213,11 @@ func main() -> Int {
 #[test]
 fn constructs_and_exhaustively_matches_closed_variants() {
     let source = r#"
-type Result[T] =
+type Result<T> =
     | Ok(T)
     | Error(String)
 
-func unwrap(result: Result[Int]) -> Int {
+func unwrap(result: Result<Int>) -> Int {
     branch result {
         Result.Ok(value) -> value
         Result.Error(message) -> 0
@@ -1232,11 +1232,11 @@ func main() -> Int { unwrap(Result.Ok(42)) }
 #[test]
 fn matches_payloadless_variants_and_wildcards() {
     let source = r#"
-type Option[T] =
+type Option<T> =
     | Some(T)
     | None
 
-func present(value: Option[Int]) -> Bool {
+func present(value: Option<Int>) -> Bool {
     branch value {
         Option.Some(_) -> true
         Option.None -> false
@@ -1319,9 +1319,8 @@ func main() { 0 }
 }
 
 fn json_parser_with_main(expression: &str) -> String {
-    let parser = include_str!("../examples/pima/json_parser.foster");
-    let declarations = parser.split("func main()").next().unwrap();
-    format!("{declarations}func main() {{ {expression} }}")
+    let parser = include_str!("../examples/pima/json_parser/parser.foster");
+    format!("{parser}\nfunc main() {{ {expression} }}")
 }
 
 #[test]
@@ -1339,7 +1338,7 @@ fn runs_the_foster_json_parser() {
 
 #[test]
 fn runs_the_json_actor_pipeline() {
-    let value = foster::run(include_str!("../examples/pima/json_parser.foster")).unwrap();
+    let value = foster::run_package("examples/pima/json_parser").unwrap();
     let Value::Record { name, fields } = value else {
         panic!("pipeline should return a report record")
     };
@@ -1350,7 +1349,13 @@ fn runs_the_json_actor_pipeline() {
 
 #[test]
 fn json_parser_returns_typed_errors_for_malformed_input() {
-    for document in [r#"[1,2,]"#, r#"{\"a\":1,}"#, r#"01"#, r#"\"\\uDE00\""#] {
+    for document in [
+        r#"[1,2,]"#,
+        r#"{\"a\":1,}"#,
+        r#"01"#,
+        r#"-"#,
+        r#"\"\\uDE00\""#,
+    ] {
         let expression = format!("parse_json({document:?})");
         let value = foster::run(&json_parser_with_main(&expression)).unwrap();
         assert!(
@@ -1363,7 +1368,7 @@ fn json_parser_returns_typed_errors_for_malformed_input() {
 #[test]
 fn generic_functions_are_rigid_and_instantiate_per_call() {
     let source = r#"
-func identity[T](value: T) -> T [consume value] { value }
+func identity<T>(value: T) -> T [consume value] { value }
 
 func main() -> String {
     number = identity(42)
@@ -1375,7 +1380,7 @@ func main() -> String {
 
     let error = foster::compile(
         r#"
-func invalid[T](value: T) -> T { value + 1 }
+func invalid<T>(value: T) -> T { value + 1 }
 func main() { invalid(1) }
 "#,
     )
@@ -1384,10 +1389,35 @@ func main() { invalid(1) }
 }
 
 #[test]
+fn generic_syntax_uses_angles_while_indexing_uses_brackets() {
+    let source = r#"
+func first<T>(values: List<T>) -> T {
+    values[0]
+}
+
+func main() -> Int {
+    first([42])
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+
+    let legacy = foster::compile(
+        r#"
+func identity[T](value: T) -> T { value }
+func main() -> Int { identity(42) }
+"#,
+    );
+    assert!(
+        legacy.is_err(),
+        "square-bracketed generics must be rejected"
+    );
+}
+
+#[test]
 fn rejects_duplicate_and_colliding_function_parameters() {
     let duplicate = foster::compile(
         r#"
-func invalid[T, T](value: T) -> T { value }
+func invalid<T, T>(value: T) -> T { value }
 func main() { 0 }
 "#,
     )
@@ -1400,7 +1430,7 @@ func main() { 0 }
 
     let collision = foster::compile(
         r#"
-func invalid[T, T: group Int](value: T) -> T { value }
+func invalid<T>[T: group Int](value: T) -> T { value }
 func main() { 0 }
 "#,
     )
@@ -1846,4 +1876,31 @@ func main() -> String {
 }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::String("λ".into()));
+}
+
+#[test]
+fn code_points_promote_through_integer_operators() {
+    let source = r#"
+func main() -> Int {
+    digit = '9' - '0'
+    branch {
+        'A' == 65 -> digit * 10 + ('C' - 'A')
+        _ -> 0
+    }
+}
+"#;
+
+    let compilation = foster::compile(source).unwrap();
+    for optimize in [false, true] {
+        let result =
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap();
+        assert_eq!(result, Value::Integer(92));
+    }
+}
+
+#[test]
+fn code_points_do_not_expose_a_value_member() {
+    let error = foster::compile("func main() -> Int { 'A'.value }").unwrap_err();
+    assert!(error.message.contains("has no member `value`"));
 }

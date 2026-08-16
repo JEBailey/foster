@@ -9,17 +9,17 @@ pub type IoError {
 }
 
 /// Reads an entire UTF-8 text file.
-pub func read_text(path: String) -> Result[String, IoError] {
+pub func read_text(path: String) -> Result<String, IoError> {
     __io_read_text(path)
 }
 
 /// Replaces a file with UTF-8 text, creating it when necessary.
-pub func write_text(path: String, text: String) -> Result[Unit, IoError] {
+pub func write_text(path: String, text: String) -> Result<Unit, IoError> {
     __io_write_text(path, text)
 }
 
 /// Returns the names directly inside a directory in deterministic order.
-pub func list_directory(path: String) -> Result[List[String], IoError] {
+pub func list_directory(path: String) -> Result<List<String>, IoError> {
     __io_list_directory(path)
 }
 
@@ -44,7 +44,7 @@ pub func join(left: String, right: String) -> String {
 }
 
 /// Joins a list of platform path components, returning an empty string for an empty list.
-pub func join_all(parts: List[String]) -> String {
+pub func join_all(parts: List<String>) -> String {
     branch {
         parts.empty? -> ""
         _ -> join_remaining(parts.rest, parts.head)
@@ -52,7 +52,7 @@ pub func join_all(parts: List[String]) -> String {
 }
 
 /// Joins remaining path components onto the accumulated path.
-func join_remaining(parts: List[String], path: String) -> String {
+func join_remaining(parts: List<String>, path: String) -> String {
     branch {
         parts.empty? -> path
         _ -> join_remaining(parts.rest, join(path, parts.head))
@@ -60,22 +60,22 @@ func join_remaining(parts: List[String], path: String) -> String {
 }
 
 /// Returns the parent path, or `None` when no parent component exists.
-pub func parent(path: String) -> Option[String] {
+pub func parent(path: String) -> Option<String> {
     optional_component(__io_parent(path))
 }
 
 /// Returns the final path component, or `None` when it is absent.
-pub func file_name(path: String) -> Option[String] {
+pub func file_name(path: String) -> Option<String> {
     optional_component(__io_file_name(path))
 }
 
 /// Returns the final extension without its separator, or `None` when it is absent.
-pub func extension(path: String) -> Option[String] {
+pub func extension(path: String) -> Option<String> {
     optional_component(__io_extension(path))
 }
 
 /// Converts the host boundary's empty sentinel into an option.
-func optional_component(value: String) -> Option[String] {
+func optional_component(value: String) -> Option<String> {
     branch {
         value.empty? -> Option.None
         _ -> Option.Some(value)
@@ -83,11 +83,11 @@ func optional_component(value: String) -> Option[String] {
 }
 
 /// Resolves `path` to an absolute canonical path.
-pub func canonicalize(path: String) -> Result[String, IoError] {
+pub func canonicalize(path: String) -> Result<String, IoError> {
     __io_canonicalize(path)
 }
 
 /// Returns the process's current working directory.
-pub func current_directory() -> Result[String, IoError] {
+pub func current_directory() -> Result<String, IoError> {
     __io_current_directory()
 }

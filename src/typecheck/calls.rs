@@ -297,14 +297,14 @@ impl Checker<'_> {
                     other => Err(self.error(
                         function,
                         format!(
-                            "Remote[ref {}] has no method `{method}`",
+                            "Remote<ref {}> has no method `{method}`",
                             self.describe(&other)
                         ),
                     )),
                 },
                 other => Err(self.error(
                     function,
-                    format!("Remote[{}] has no method `{method}`", self.describe(&other)),
+                    format!("Remote<{}> has no method `{method}`", self.describe(&other)),
                 )),
             },
             (receiver @ Ty::Variable(_), _) => {

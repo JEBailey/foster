@@ -3,7 +3,7 @@ import core.option
 /// Creates a code point from a valid Unicode scalar value.
 ///
 /// Returns `None` for negative values, surrogate code points, and values above `0x10FFFF`.
-pub func from_int(value: Int) -> Option[CodePoint] {
+pub func from_int(value: Int) -> Option<CodePoint> {
     branch {
         value < 0 -> Option.None
         value > 1114111 -> Option.None

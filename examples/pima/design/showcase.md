@@ -12,7 +12,7 @@ type AccountError =
 type Account {
     owner: String
     balance: Int
-    history: List[Int]
+    history: List<Int>
 }
 
 func create_account(owner: String, opening_balance: Int)

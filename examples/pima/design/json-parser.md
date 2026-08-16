@@ -1,6 +1,6 @@
 # JSON parser
 
-> Historical design note. `../json_parser.foster` is the authoritative executable port.
+> Historical design note. `../json_parser/` is the authoritative executable port.
 
 The 281-line Pima JSON parser is a valuable future conformance test. Its public Foster shape should
 be:
@@ -11,8 +11,8 @@ type Json =
     | Boolean(Bool)
     | Number(Float)
     | String(String)
-    | Array(List[Json])
-    | Object(Map[String, Json])
+    | Array(List<Json>)
+    | Object(Map<String, Json>)
 
 type JsonError {
     message: String

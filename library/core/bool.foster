@@ -31,7 +31,7 @@ pub func xor(left: Bool, right: Bool) -> Bool {
 }
 
 /// Returns a singleton list containing `value` when `condition` is true, or an empty list otherwise.
-pub func then[T](condition: Bool, value: T) -> List[T] [consume value] {
+pub func then<T>(condition: Bool, value: T) -> List<T> [consume value] {
     branch {
         condition -> [value]
         _ -> []

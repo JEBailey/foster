@@ -1,12 +1,12 @@
 import core.option
 
 /// Applies `transform` to every element of a string or list and returns the results as a list.
-pub func map[T, U](values: Sequence[T], transform: func(T) -> U) -> List[U] {
+pub func map<T, U>(values: Sequence<T>, transform: func(T) -> U) -> List<U> {
     map_into(values, transform, [])
 }
 
 /// Maps the remaining sequence elements into the result accumulator.
-func map_into[T, U](values: Sequence[T], transform: func(T) -> U, result: List[U]) -> List[U] [consume result] {
+func map_into<T, U>(values: Sequence<T>, transform: func(T) -> U, result: List<U>) -> List<U> [consume result] {
     branch {
         values.empty? -> result
         _ -> map_next(values, transform, move result)
@@ -14,18 +14,18 @@ func map_into[T, U](values: Sequence[T], transform: func(T) -> U, result: List[U
 }
 
 /// Transforms the next sequence element and appends it to the accumulator.
-func map_next[T, U](values: Sequence[T], transform: func(T) -> U, result: List[U]) -> List[U] {
+func map_next<T, U>(values: Sequence<T>, transform: func(T) -> U, result: List<U>) -> List<U> {
     mapped = transform(values.head)
     map_into(values.rest, transform, result.append(mapped))
 }
 
 /// Returns sequence elements for which `include` evaluates to true.
-pub func filter[T](values: Sequence[T], include: func(T) -> Bool) -> List[T] {
+pub func filter<T>(values: Sequence<T>, include: func(T) -> Bool) -> List<T> {
     filter_into(values, include, [])
 }
 
 /// Filters the remaining sequence elements into the result accumulator.
-func filter_into[T](values: Sequence[T], include: func(T) -> Bool, result: List[T]) -> List[T] [consume result] {
+func filter_into<T>(values: Sequence<T>, include: func(T) -> Bool, result: List<T>) -> List<T> [consume result] {
     branch {
         values.empty? -> result
         include(values.head) -> filter_into(values.rest, include, result.append(values.head))
@@ -36,7 +36,7 @@ func filter_into[T](values: Sequence[T], include: func(T) -> Bool, result: List[
 /// Returns the first element of a sequence, if one exists.
 ///
 /// The sequence is consumed because the returned generic element is owned.
-pub func first[T](values: Sequence[T]) -> Option[T] [consume values] {
+pub func first<T>(values: Sequence<T>) -> Option<T> [consume values] {
     branch {
         values.empty? -> Option.None
         _ -> Option.Some(values.head)
@@ -46,7 +46,7 @@ pub func first[T](values: Sequence[T]) -> Option[T] [consume values] {
 /// Returns the final element of a sequence, if one exists.
 ///
 /// The sequence is consumed because the returned generic element is owned.
-pub func last[T](values: Sequence[T]) -> Option[T] [consume values] {
+pub func last<T>(values: Sequence<T>) -> Option<T> [consume values] {
     branch {
         values.empty? -> Option.None
         values.rest.empty? -> Option.Some(values.head)
@@ -55,7 +55,7 @@ pub func last[T](values: Sequence[T]) -> Option[T] [consume values] {
 }
 
 /// Reduces the sequence from left to right, consuming its elements and the initial accumulator.
-pub func fold[T, U](values: Sequence[T], initial: U, combine: func(consume U, consume T) -> U) -> U [consume values, consume initial] {
+pub func fold<T, U>(values: Sequence<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [consume values, consume initial] {
     branch {
         values.empty? -> initial
         _ -> fold(values.rest, combine(move initial, values.head), combine)
@@ -63,7 +63,7 @@ pub func fold[T, U](values: Sequence[T], initial: U, combine: func(consume U, co
 }
 
 /// Returns the first element satisfying `predicate`, consuming the sequence to return an owned value.
-pub func find[T](values: Sequence[T], predicate: func(T) -> Bool) -> Option[T] [consume values] {
+pub func find<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Option<T> [consume values] {
     branch {
         values.empty? -> Option.None
         predicate(values.head) -> Option.Some(values.head)
@@ -72,7 +72,7 @@ pub func find[T](values: Sequence[T], predicate: func(T) -> Bool) -> Option[T] [
 }
 
 /// Returns whether at least one sequence element satisfies `predicate`.
-pub func any?[T](values: Sequence[T], predicate: func(T) -> Bool) -> Bool {
+pub func any?<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Bool {
     branch {
         values.empty? -> false
         predicate(values.head) -> true
@@ -81,7 +81,7 @@ pub func any?[T](values: Sequence[T], predicate: func(T) -> Bool) -> Bool {
 }
 
 /// Returns whether every sequence element satisfies `predicate`.
-pub func all?[T](values: Sequence[T], predicate: func(T) -> Bool) -> Bool {
+pub func all?<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Bool {
     branch {
         values.empty? -> true
         predicate(values.head) -> all?(values.rest, predicate)
@@ -90,12 +90,12 @@ pub func all?[T](values: Sequence[T], predicate: func(T) -> Bool) -> Bool {
 }
 
 /// Returns whether no sequence element satisfies `predicate`.
-pub func none?[T](values: Sequence[T], predicate: func(T) -> Bool) -> Bool {
+pub func none?<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Bool {
     !any?(values, predicate)
 }
 
 /// Returns whether the sequence contains an element equal to `expected`.
-pub func contains?[T](values: Sequence[T], expected: T) -> Bool {
+pub func contains?<T>(values: Sequence<T>, expected: T) -> Bool {
     branch {
         values.empty? -> false
         values.head == expected -> true
@@ -104,7 +104,7 @@ pub func contains?[T](values: Sequence[T], expected: T) -> Bool {
 }
 
 /// Counts the sequence elements satisfying `predicate`.
-pub func count[T](values: Sequence[T], predicate: func(T) -> Bool) -> Int {
+pub func count<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Int {
     branch {
         values.empty? -> 0
         predicate(values.head) -> 1 + count(values.rest, predicate)
@@ -113,12 +113,12 @@ pub func count[T](values: Sequence[T], predicate: func(T) -> Bool) -> Int {
 }
 
 /// Returns at most the first `count` sequence elements as a list.
-pub func take[T](values: Sequence[T], count: Int) -> List[T] {
+pub func take<T>(values: Sequence<T>, count: Int) -> List<T> {
     take_into(values, count, [])
 }
 
 /// Copies at most `count` remaining elements into the result accumulator.
-func take_into[T](values: Sequence[T], count: Int, result: List[T]) -> List[T] [consume result] {
+func take_into<T>(values: Sequence<T>, count: Int, result: List<T>) -> List<T> [consume result] {
     branch {
         count <= 0 -> result
         values.empty? -> result

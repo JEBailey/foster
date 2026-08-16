@@ -54,7 +54,7 @@ fn foster_written_map_constructs_through_its_associated_factory() {
 import core.map
 import core.option
 
-func option_value(value: Option[Int]) -> Int {
+func option_value(value: Option<Int>) -> Int {
     branch value {
         Option.Some(number) -> number
         Option.None -> 0
@@ -85,14 +85,14 @@ fn core_io_reads_writes_and_inspects_host_files() {
 import core.io
 import core.result
 
-func read_after_write(path: String, outcome: Result[Unit, IoError]) -> String {{
+func read_after_write(path: String, outcome: Result<Unit, IoError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
         Result.Ok(_) -> read_result(read_text(path))
     }}
 }}
 
-func read_result(outcome: Result[String, IoError]) -> String {{
+func read_result(outcome: Result<String, IoError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
         Result.Ok(text) -> text
@@ -129,21 +129,21 @@ fn core_tcp_accepts_reads_and_writes_a_connection() {
 import core.net.tcp
 import core.result
 
-func start(outcome: Result[Connection, NetworkError]) -> String {{
+func start(outcome: Result<Connection, NetworkError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
         Result.Ok(connection) -> send(connection, tcp.write(connection, "ping"))
     }}
 }}
 
-func send(connection: Connection, outcome: Result[Unit, NetworkError]) -> String {{
+func send(connection: Connection, outcome: Result<Unit, NetworkError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
         Result.Ok(_) -> receive(connection, tcp.read(connection, 64))
     }}
 }}
 
-func receive(connection: Connection, outcome: Result[String, NetworkError]) -> String {{
+func receive(connection: Connection, outcome: Result<String, NetworkError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
         Result.Ok(text) -> finish(connection, move text)

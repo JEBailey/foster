@@ -82,10 +82,10 @@ impl Checker<'_> {
             Ty::String => "String".into(),
             Ty::CodePoint => "CodePoint".into(),
             Ty::Symbol => "Symbol".into(),
-            Ty::List(element) => format!("List[{}]", self.describe(&element)),
-            Ty::Sequence(element) => format!("Sequence[{}]", self.describe(&element)),
-            Ty::Remote(value) => format!("Remote[{}]", self.describe(&value)),
-            Ty::Future(value) => format!("Future[{}]", self.describe(&value)),
+            Ty::List(element) => format!("List<{}>", self.describe(&element)),
+            Ty::Sequence(element) => format!("Sequence<{}>", self.describe(&element)),
+            Ty::Remote(value) => format!("Remote<{}>", self.describe(&value)),
+            Ty::Future(value) => format!("Future<{}>", self.describe(&value)),
             Ty::Function(parameters, result) => format!(
                 "func({}) -> {}",
                 parameters
@@ -139,7 +139,7 @@ impl Checker<'_> {
                     name.clone()
                 } else {
                     format!(
-                        "{name}[{}]",
+                        "{name}<{}>",
                         arguments
                             .iter()
                             .map(|argument| self.describe(argument))
@@ -159,7 +159,7 @@ impl Checker<'_> {
                     name.clone()
                 } else {
                     format!(
-                        "{name}[{}]",
+                        "{name}<{}>",
                         arguments
                             .iter()
                             .map(|a| self.describe(a))

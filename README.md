@@ -9,7 +9,7 @@ bootstrap compiler and register VM are written in Rust.
 
 ```powershell
 cargo run --bin foster -- run examples/live_inventory_pipeline.foster
-cargo run --bin foster -- check examples/pima/json_parser.foster
+cargo run --bin foster -- check examples/pima/json_parser
 cargo run --bin foster -- check tests/fixtures/modules
 cargo run --bin foster -- run tests/fixtures/modules --no-optimize
 cargo run --bin foster -- docs tests/fixtures/modules
@@ -45,8 +45,8 @@ machines. Generated `documentation/` directories are ignored during Foster modul
 The current implementation includes:
 
 - functions, recursion, local inference, explicit generics, closures, and partial application;
-- `Bool`, `Int`, binary64 `Float`, `String`, `CodePoint`, `Symbol`, `Unit`, homogeneous `List[T]`,
-  and zero-conversion `Sequence[T]` views;
+- `Bool`, `Int`, binary64 `Float`, `String`, `CodePoint`, `Symbol`, `Unit`, homogeneous `List<T>`,
+  and zero-conversion `Sequence<T>` views;
 - generic records, associated factories, instance methods, private-by-default declarations, and
   closed variants with exhaustive pattern branches;
 - statically checked structural record adaptation and intersection contracts such as
@@ -78,7 +78,7 @@ Subject branches destructure closed variants:
 ```foster
 import core.result
 
-func unwrap_or(result: Result[Int, String], fallback: Int) -> Int {
+func unwrap_or(result: Result<Int, String>, fallback: Int) -> Int {
     branch result {
         Result.Ok(value) -> value
         Result.Error(_) -> fallback

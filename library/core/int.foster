@@ -79,12 +79,12 @@ pub func modulo(value: Int, divisor: Int) -> Int {
 }
 
 /// Builds the half-open integer range `[start, end)`.
-pub func range(start: Int, end: Int) -> List[Int] {
+pub func range(start: Int, end: Int) -> List<Int> {
     range_into(start, end, [])
 }
 
 /// Appends consecutive integers to the range accumulator.
-func range_into(value: Int, end: Int, result: List[Int]) -> List[Int] [consume result] {
+func range_into(value: Int, end: Int, result: List<Int>) -> List<Int> [consume result] {
     branch {
         value >= end -> result
         _ -> range_into(value + 1, end, result.append(value))

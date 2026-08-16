@@ -46,8 +46,8 @@ func decode(source: String) {
 ```
 
 An import makes the module's public declarations available directly and also binds its final path
-component as a module qualifier. Thus `import core.option` permits both `Option[T]` and
-`option.Option[T]`. Same-module declarations take precedence. If multiple imported modules expose
+component as a module qualifier. Thus `import core.option` permits both `Option<T>` and
+`option.Option<T>`. Same-module declarations take precedence. If multiple imported modules expose
 the same unqualified name, Foster requires a module-qualified use at that point; importing the
 modules themselves remains valid.
 
@@ -78,7 +78,7 @@ func double(value: Int) -> Int {
 Explicit `return` performs an early return. A postfix guard is supported:
 
 ```foster
-func first(values: List[String]) -> String {
+func first(values: List<String>) -> String {
     return "" if values.empty?
     values.head
 }
@@ -98,24 +98,28 @@ The executable prototype currently has:
 - `CodePoint`, with literals such as `'F'`, `'λ'`, and `'\n'`
 - symbols such as `:json_error`
 - homogeneous lists, enforced by the type checker
-- `Sequence[T]`, implemented without conversion by `List[T]` and by `String` as
-  `Sequence[CodePoint]`
+- `Sequence<T>`, implemented without conversion by `List<T>` and by `String` as
+  `Sequence<CodePoint>`
 - unit
 
-Foster will not have a universally nullable reference. Absence is represented by `Option[T]`:
+Foster will not have a universally nullable reference. Absence is represented by `Option<T>`:
 
 ```foster
-type Option[T] =
+type Option<T> =
     | Some(T)
     | None
 ```
 
-`Sequence[T]` is a read-oriented structural view, not a storage representation. Passing a list or
+`Sequence<T>` is a read-oriented structural view, not a storage representation. Passing a list or
 string to a sequence parameter retains the original runtime value and ownership. Its common
 members are `empty?`, `length`, `head`, and `rest`. For strings, `head` returns a `CodePoint` and
-`rest` remains a `String` when accessed directly; through a `Sequence[CodePoint]` parameter,
-`rest` has sequence type. A code point exposes `.value`, `.string`, and `.whitespace?`.
-The bootstrap compiler currently supplies the `String` and `List[T]` conformances. Syntax for
+`rest` remains a `String` when accessed directly; through a `Sequence<CodePoint>` parameter,
+`rest` has sequence type. A code point exposes `.string` and `.whitespace?`. `CodePoint` is a
+bounded integer-like primitive: integer arithmetic and comparisons promote its Unicode scalar
+value, and arithmetic produces `Int`. This permits expressions such as `'9' - '0'` and
+`character < 32` without an extraction member. Conversion from an arbitrary `Int` remains checked
+because surrogate values and values above `0x10FFFF` are not Unicode scalar values.
+The bootstrap compiler currently supplies the `String` and `List<T>` conformances. Syntax for
 user-defined sequence implementations belongs to the general protocol design and is not yet
 available.
 
@@ -137,18 +141,18 @@ person = Person { name age internal_id }
 
 Construction initializes every field exactly once. A record with any private field can only be
 constructed inside its defining module. Field mutation is controlled by ownership and group access,
-not by a `var` marker on the field. Generic records such as `Parsed[T]` participate in ordinary
+not by a `var` marker on the field. Generic records such as `Parsed<T>` participate in ordinary
 constraint inference. Functional `..record` updates and record patterns are deferred.
 
 Functions may be associated with a record's type namespace by qualifying their declarations. They
 do not receive an instance and are called through the type:
 
 ```foster
-pub type Map[K, V] {
-    entries: List[Entry[K, V]]
+pub type Map<K, V> {
+    entries: List<Entry<K, V>>
 }
 
-pub func Map.empty[K, V]() -> Map[K, V] {
+pub func Map.empty<K, V>() -> Map<K, V> {
     Map { entries: [] }
 }
 
@@ -158,7 +162,7 @@ scores = Map.empty()
 Associated functions are declared in the record's defining module, so they may construct records
 whose representation contains private fields. The qualifier must name a record in that module.
 An associated declaration cannot have a `self` parameter; instance methods retain the existing
-`func get(self: Map[K, V], key: K)` form. Both directly imported `Map.empty()` and explicitly
+`func get(self: Map<K, V>, key: K)` form. Both directly imported `Map.empty()` and explicitly
 module-qualified `map.Map.empty()` calls resolve to the same function.
 
 ## Closed variants — implemented foundation
@@ -166,7 +170,7 @@ module-qualified `map.Map.empty()` calls resolve to the same function.
 Closed variants use alternatives and are consumed with exhaustive pattern branching:
 
 ```foster
-type Result[T, E] =
+type Result<T, E> =
     | Ok(T)
     | Error(E)
 ```
@@ -212,7 +216,7 @@ for non-variant literal domains are deferred.
 
 `remote` transfers a record into an isolated virtual thread. A function declared in the record's
 module whose first parameter is named `self` is an instance method. Calling that method through a
-`Remote[T]` handle sends a FIFO mailbox message and returns `Future[R]`; `await` parks the current
+`Remote<T>` handle sends a FIFO mailbox message and returns `Future<R>`; `await` parks the current
 virtual thread until the reply arrives.
 
 ```foster
@@ -242,7 +246,7 @@ catalog.add("Foster")
 found = await reader.contains("Foster")
 ```
 
-The resulting type retains the borrowed group as `Remote[ref[group] Catalog]`. Read-only describes
+The resulting type retains the borrowed group as `Remote<ref[group] Catalog>`. Read-only describes
 the handle's capability, not permanent immutability of the underlying value.
 
 Borrow-mode remote method arguments use the same mechanism for a shorter lifetime. Because object
@@ -256,7 +260,7 @@ in actor state, or returned across the mailbox boundary.
 
 Foster uses local type inference with explicit package API signatures. Implemented foundations are
 nominally constructed records with structural adaptation, closed variants, explicit parametric
-generics using `Type[Argument]`, function and intersection types, and no implicit numeric or
+generics using `Type<Argument>`, function and intersection types, and no implicit numeric or
 nullable conversions. Traits, transparent aliases, distinct wrapper declarations, and typed error
 effects remain design work.
 
@@ -264,24 +268,26 @@ Types, traits, and functions may be qualified by modules. The HIR resolves every
 to a local binding, function, module, builtin, or later a type-level definition before type checking.
 
 The bootstrap compiler resolves `Unit`, `Bool`, `Int`, `Float`, `String`, `CodePoint`, `Symbol`,
-`List[T]`, `Sequence[T]`, `Remote[T]`, `Future[T]`, concrete and erased function types, records,
+`List<T>`, `Sequence<T>`, `Remote<T>`, `Future<T>`, concrete and erased function types, records,
 variants, generics, and record intersections. Decimal and scientific-notation literals produce
 `Float`; there are no implicit conversions between `Int` and `Float`.
-Representation-level operations such as functional `List.append`, `code_point(CodePoint)`,
-`from_code_point(Int)`, and `parse_float(String)` form the narrow primitive boundary beneath the
-Foster-written core library.
+Representation-level operations such as functional `List.append`, checked `from_code_point(Int)`,
+and `parse_float(String)` form the narrow primitive boundary beneath the Foster-written core
+library. The older `code_point(CodePoint)` intrinsic remains temporarily for compatibility; source
+code normally uses integer operators directly.
 It performs constraint inference across function calls and records a canonical type for every HIR
 expression, local, and function signature. Explicit generic functions use
-`func identity[T](value: T) -> T`; their parameters are rigid while checking the body and freshly
+`func identity<T>(value: T) -> T`; their parameters are rigid while checking the body and freshly
 instantiated at each call. It checks operators, calls, branch results,
 returns, list construction, and the implemented standard members. An unconstrained type is an error
 and asks for an annotation.
 
 This is not Hindley–Milner generalization: an unannotated function receives one inferred type within
 a compilation rather than becoming implicitly polymorphic. Polymorphism is always explicit.
-Type and group parameters share a bracketed function-parameter section but occupy distinct
-namespaces syntactically: `T` declares a type parameter, while `items: group T` declares a group.
-A function may not declare either category twice or reuse one name across both categories.
+Type parameters use angle brackets and group parameters use a following square-bracketed section:
+`func map<T, U>(...)` declares types, while `func inspect[items: group T](...)` declares a group.
+Functions needing both use `func inspect<T>[items: group T](...)`. A function may not declare
+either category twice or reuse one name across both categories.
 
 ## Core library — explicit imports
 
@@ -449,12 +455,12 @@ and current limitations.
 ## Errors — implemented values and provisional effects
 
 Recoverable errors are currently ordinary typed values, conventionally represented with the
-Foster-written `Result[T, E]` closed variant:
+Foster-written `Result<T, E>` closed variant:
 
 ```foster
 import core.result
 
-func parse(input: String) -> Result[Json, JsonError] {
+func parse(input: String) -> Result<Json, JsonError> {
     branch parse_value(input) {
         Result.Ok(value) -> Result.Ok(value)
         Result.Error(error) -> Result.Error(error)
@@ -478,7 +484,7 @@ system must preserve this initialization-free model.
 
 ## Filesystem and network access — implemented host boundary, provisional capabilities
 
-`core.io` exposes typed UTF-8 file, directory, and path operations returning `Result[..., IoError]`.
+`core.io` exposes typed UTF-8 file, directory, and path operations returning `Result<..., IoError>`.
 `core.net.tcp` exposes opaque listeners and connections with typed `NetworkError` results. Their
 public records and wrappers are Foster code; private VM intrinsics perform the host operations.
 

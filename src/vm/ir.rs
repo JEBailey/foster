@@ -20,6 +20,13 @@ pub enum Constant {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
+    /// Releases this frame's ownership of a register's slot.
+    ///
+    /// This detaches the register rather than writing through the slot because
+    /// reference captures may still own and observe that slot.
+    Drop {
+        register: Register,
+    },
     LoadConstant {
         destination: Register,
         constant: u16,
@@ -168,6 +175,7 @@ pub enum Instruction {
 impl Instruction {
     pub(crate) fn visit_registers(&self, mut visit: impl FnMut(Register)) {
         match self {
+            Self::Drop { register } => visit(*register),
             Self::LoadConstant { destination, .. } => visit(*destination),
             Self::Move {
                 destination,

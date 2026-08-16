@@ -86,6 +86,26 @@ mod tests {
     }
 
     #[test]
+    fn emits_register_drops_with_and_without_optimization() {
+        let compilation =
+            crate::compile("func main() -> Int {\n values = [1, 2, 3]\n 42\n}").unwrap();
+        for optimize in [false, true] {
+            let program = compile_with_options(&compilation, CompileOptions { optimize }).unwrap();
+            verify(&program).unwrap();
+            assert!(program.functions.values().any(|function| {
+                function
+                    .instructions
+                    .iter()
+                    .any(|instruction| matches!(instruction, Instruction::Drop { .. }))
+            }));
+            assert_eq!(
+                Machine::new(&program).run_main().unwrap(),
+                Value::Integer(42)
+            );
+        }
+    }
+
+    #[test]
     fn optimizer_reduces_representative_bytecode() {
         let compilation = crate::compile(
             "func increment(value: Int) -> Int { value + 1 }

@@ -60,49 +60,49 @@ impl Workspace {
         &mut self,
         connection: &Connection,
     ) -> Result<(), Box<dyn Error>> {
-        let mut next = Vec::<(Uri, Vec<Diagnostic>, Option<i32>)>::new();
-        match self.compile() {
-            Ok(compilation) => {
-                for (_, module) in compilation.hir.modules.iter() {
-                    let Some(path) = module.source_path.as_deref() else {
-                        continue;
-                    };
-                    let Some(uri) = path_to_uri(path.as_std_path()) else {
-                        continue;
-                    };
-                    let source = compilation
-                        .package
-                        .module(&module.name)
-                        .and_then(|module| module.source.as_deref())
-                        .unwrap_or_default();
-                    let diagnostics = compilation
-                        .diagnostics
-                        .iter()
-                        .filter(|diagnostic| {
-                            diagnostic.source_module.as_deref() == Some(&module.name)
-                        })
-                        .map(|diagnostic| compiler_diagnostic(source, diagnostic))
-                        .collect();
-                    next.push((uri.clone(), diagnostics, self.version(&uri)));
+        let mut next_by_uri = HashMap::<String, (Uri, Vec<Diagnostic>, Option<i32>)>::new();
+        for (focus_uri, document) in &self.documents {
+            match self.compile_for(focus_uri) {
+                Ok(compilation) => {
+                    for (_, module) in compilation.hir.modules.iter() {
+                        let Some(path) = module.source_path.as_deref() else {
+                            continue;
+                        };
+                        let Some(uri) = path_to_uri(path.as_std_path()) else {
+                            continue;
+                        };
+                        let source = compilation
+                            .package
+                            .module(&module.name)
+                            .and_then(|module| module.source.as_deref())
+                            .unwrap_or_default();
+                        let diagnostics = compilation
+                            .diagnostics
+                            .iter()
+                            .filter(|diagnostic| {
+                                diagnostic.source_module.as_deref() == Some(&module.name)
+                            })
+                            .map(|diagnostic| compiler_diagnostic(source, diagnostic))
+                            .collect();
+                        next_by_uri.insert(
+                            uri.as_str().to_owned(),
+                            (uri.clone(), diagnostics, self.version(&uri)),
+                        );
+                    }
                 }
-            }
-            Err(error) => {
-                let target = self.documents.iter().find(|(uri, _)| {
-                    uri_to_path(uri).is_some_and(|path| {
-                        let native = path.to_string_lossy();
-                        let portable = native.replace('\\', "/");
-                        error.message.contains(native.as_ref()) || error.message.contains(&portable)
-                    })
-                });
-                if let Some((uri, document)) = target.or_else(|| self.documents.iter().next()) {
-                    next.push((
-                        uri.clone(),
-                        vec![error_diagnostic(&document.text, error)],
-                        Some(document.version),
-                    ));
+                Err(error) => {
+                    next_by_uri.insert(
+                        focus_uri.as_str().to_owned(),
+                        (
+                            focus_uri.clone(),
+                            vec![error_diagnostic(&document.text, error)],
+                            Some(document.version),
+                        ),
+                    );
                 }
             }
         }
+        let next = next_by_uri.into_values().collect::<Vec<_>>();
 
         let next_uris = next
             .iter()
@@ -123,7 +123,7 @@ impl Workspace {
     }
 
     pub(super) fn document_symbols(&self, uri: &Uri) -> Option<DocumentSymbolResponse> {
-        let compilation = self.compile().ok()?;
+        let compilation = self.compile_for(uri).ok()?;
         let module_id = module_for_uri(&compilation, uri)?;
         let module = &compilation.hir.modules[module_id];
         let source = compilation
@@ -174,7 +174,7 @@ impl Workspace {
     }
 
     pub(super) fn definition(&self, params: &TextDocumentPositionParams) -> Option<Location> {
-        let compilation = self.compile().ok()?;
+        let compilation = self.compile_for(&params.text_document.uri).ok()?;
         let module_id = module_for_uri(&compilation, &params.text_document.uri)?;
         let module = &compilation.hir.modules[module_id];
         let source = compilation
@@ -233,7 +233,7 @@ impl Workspace {
     }
 
     pub(super) fn hover(&self, params: &TextDocumentPositionParams) -> Option<Hover> {
-        let compilation = self.compile().ok()?;
+        let compilation = self.compile_for(&params.text_document.uri).ok()?;
         let module_id = module_for_uri(&compilation, &params.text_document.uri)?;
         let module = &compilation.hir.modules[module_id];
         let source = compilation
@@ -285,18 +285,20 @@ impl Workspace {
     }
 
     pub(super) fn signature_help(&self, params: &SignatureHelpParams) -> Option<SignatureHelp> {
-        let compilation = self.compile().ok()?;
+        let compilation = self
+            .compile_for(&params.text_document_position_params.text_document.uri)
+            .ok()?;
         super::hints::signature_help(&compilation, params)
     }
 
     pub(super) fn inlay_hints(&self, params: &InlayHintParams) -> Option<Vec<InlayHint>> {
-        let compilation = self.compile().ok()?;
+        let compilation = self.compile_for(&params.text_document.uri).ok()?;
         super::hints::inlay_hints(&compilation, params)
     }
 
     pub(super) fn completion(&self, params: &CompletionParams) -> Option<CompletionResponse> {
-        let compilation = self.compile().ok()?;
         let position = &params.text_document_position;
+        let compilation = self.compile_for(&position.text_document.uri).ok()?;
         let module_id = module_for_uri(&compilation, &position.text_document.uri)?;
         let module = &compilation.hir.modules[module_id];
         let source = compilation
@@ -358,8 +360,8 @@ impl Workspace {
     }
 
     pub(super) fn references(&self, params: &ReferenceParams) -> Option<Vec<Location>> {
-        let compilation = self.compile().ok()?;
         let position = &params.text_document_position;
+        let compilation = self.compile_for(&position.text_document.uri).ok()?;
         let module = module_for_uri(&compilation, &position.text_document.uri)?;
         let source = compilation
             .package
@@ -380,8 +382,8 @@ impl Workspace {
         if !valid_identifier(&params.new_name) {
             return None;
         }
-        let compilation = self.compile().ok()?;
         let position = &params.text_document_position;
+        let compilation = self.compile_for(&position.text_document.uri).ok()?;
         let module = module_for_uri(&compilation, &position.text_document.uri)?;
         let source = compilation
             .package
@@ -421,9 +423,9 @@ impl Workspace {
         })
     }
 
-    fn compile(&self) -> Result<crate::hir::Compilation, crate::error::FosterError> {
-        let root = self.root.as_deref().ok_or_else(|| {
-            crate::error::FosterError::runtime("language server has no workspace root")
+    fn compile_for(&self, uri: &Uri) -> Result<crate::hir::Compilation, crate::error::FosterError> {
+        let path = uri_to_path(uri).ok_or_else(|| {
+            crate::error::FosterError::runtime("language server document is not a file URI")
         })?;
         let overlays = self
             .documents
@@ -433,8 +435,73 @@ impl Workspace {
                 let path = Utf8PathBuf::from_path_buf(path).ok()?;
                 Some((path, document.text.clone()))
             })
-            .collect();
-        let package = crate::package::Package::load_with_overlays(root, &overlays)?;
+            .collect::<HashMap<_, _>>();
+
+        let standalone = self.compile_standalone(&path, &overlays);
+        if standalone.is_ok() {
+            return standalone;
+        }
+
+        let workspace_root = self.root.as_deref();
+        let mut candidate = path.parent();
+        while let Some(root) = candidate {
+            if workspace_root.is_some_and(|workspace| !root.starts_with(workspace)) {
+                break;
+            }
+            if let Ok(package) = crate::package::Package::load_with_overlays(root, &overlays)
+                && package.modules.values().any(|module| {
+                    module
+                        .source_path
+                        .as_ref()
+                        .is_some_and(|source| source.as_std_path() == path)
+                })
+            {
+                return crate::hir::Compilation::new(package);
+            }
+            if workspace_root.is_some_and(|workspace| root == workspace) {
+                break;
+            }
+            candidate = root.parent();
+        }
+
+        standalone
+    }
+
+    fn compile_standalone(
+        &self,
+        path: &Path,
+        overlays: &HashMap<Utf8PathBuf, String>,
+    ) -> Result<crate::hir::Compilation, crate::error::FosterError> {
+        let source_path = Utf8PathBuf::from_path_buf(path.to_path_buf()).map_err(|path| {
+            crate::error::FosterError::runtime(format!(
+                "source path is not valid UTF-8: `{}`",
+                path.display()
+            ))
+        })?;
+        let source = overlays.get(&source_path).cloned().map_or_else(
+            || {
+                std::fs::read_to_string(path).map_err(|error| {
+                    crate::error::FosterError::runtime(format!(
+                        "cannot read `{}`: {error}",
+                        path.display()
+                    ))
+                })
+            },
+            Ok,
+        )?;
+        let program = crate::parse(&source)?;
+        let module_name = path
+            .file_stem()
+            .and_then(|name| name.to_str())
+            .unwrap_or("main")
+            .to_owned();
+        let mut package = crate::package::Package::from_program_with_core(&module_name, program)?;
+        let module = package
+            .modules
+            .get_mut(&module_name)
+            .expect("standalone package contains its source module");
+        module.source_path = Some(source_path);
+        module.source = Some(source);
         crate::hir::Compilation::new(package)
     }
 
@@ -1864,6 +1931,36 @@ func main() -> Int {
                 .join("library/core/list.foster")
         );
         assert_eq!(location.range.start, Position::new(21, 9));
+    }
+
+    #[test]
+    fn examples_compile_in_their_own_document_context() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
+        let example = root.join("examples/pima/repository_analyzer.foster");
+        let uri = path_to_uri(&example).unwrap();
+        let workspace = Workspace {
+            root: Some(root.clone()),
+            documents: HashMap::new(),
+            published: HashSet::new(),
+        };
+        let position = TextDocumentPositionParams::new(
+            lsp_types::TextDocumentIdentifier::new(uri),
+            Position::new(42, 26),
+        );
+
+        let hover = workspace.hover(&position).unwrap();
+        let HoverContents::Markup(contents) = hover.contents else {
+            panic!("expected markdown hover")
+        };
+        assert!(contents.value.contains("func count"));
+        assert!(contents.value.contains("Counts the sequence elements"));
+
+        let location = workspace.definition(&position).unwrap();
+        assert_eq!(
+            uri_to_path(&location.uri).unwrap(),
+            root.join("library/core/sequence.foster")
+        );
+        assert_eq!(location.range.start, Position::new(106, 9));
     }
 
     #[test]

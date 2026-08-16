@@ -7,7 +7,7 @@ the modules they use:
 import core.list
 import core.option
 
-func first_name(names: List[String]) -> Option[String] {
+func first_name(names: List<String>) -> Option<String> {
     list.first(names)
 }
 ```
@@ -75,7 +75,7 @@ this table for an intrinsic because it has no Foster implementation body.
 | `__tcp_read`, `__tcp_write`, `__tcp_set_timeout` | Operate on TCP connections |
 | `__tcp_close_listener`, `__tcp_close_connection` | Close TCP resources |
 
-`String` implements `Sequence[CodePoint]`, and `List[T]` implements `Sequence[T]`. This is a
+`String` implements `Sequence<CodePoint>`, and `List<T>` implements `Sequence<T>`. This is a
 zero-conversion view: generic sequence functions operate on the original string or list value.
 Code-point literals use single quotes, while string literals use double quotes. Operations that
 return an owned generic element, such as `sequence.first`, consume their sequence argument;

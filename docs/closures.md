@@ -350,7 +350,7 @@ Closures that may `consume self` are not callable after their consuming call.
 Every closure expression has a different concrete type. Heterogeneous storage requires erasure:
 
 ```foster
-handlers: List[any func(Event) -> Unit [mut app]]
+handlers: List<any func(Event) -> Unit [mut app]>
 ```
 
 An erased closure retains a VM call target and its capture environment. A closure coerces to an

@@ -136,8 +136,8 @@ At a call site, every callee group parameter is independently substituted from t
 | --- | --- |
 | Frame-owned local record | Internal frame group; filtered from the caller contract |
 | Borrowed record from `ref[g]` | Delegated to `g` |
-| Owned `Remote[T]` | Cut at the actor boundary |
-| `Remote[ref[g] T]` | Only `read self` is permitted and maps back to `g` |
+| Owned `Remote<T>` | Cut at the actor boundary |
+| `Remote<ref[g] T>` | Only `read self` is permitted and maps back to `g` |
 
 A remote method call enqueues work and returns a future; it does not itself suspend the caller.
 Evaluating `await` derives suspension. Owned remote arguments cross as messages. Borrow-mode remote

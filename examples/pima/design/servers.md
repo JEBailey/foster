@@ -11,14 +11,14 @@ capabilities and effects explicit:
 type Request {
     method: Method
     target: String
-    headers: Map[String, String]
+    headers: Map<String, String>
     body: Bytes
 }
 
 type Response {
     status: Int
     reason: String
-    headers: Map[String, String]
+    headers: Map<String, String>
     body: Bytes
 }
 

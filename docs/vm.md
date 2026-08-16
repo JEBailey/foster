@@ -7,7 +7,7 @@ Foster uses a custom register VM as its executable semantic reference. The pipel
 ```text
 source -> AST -> resolved HIR -> type/effect/loan/ownership checks
        -> ownership MIR validation -> structured register bytecode
-       -> optional optimizer -> verifier -> machine
+       -> optional optimizer -> liveness-driven drops -> verifier -> machine
 ```
 
 The structured instruction enum is both the optimizer-facing IR and executable form while the
@@ -17,6 +17,14 @@ register reuse, and constant-pool deduplication. Rewrites preserve the parallel 
 source-span table. Capture/parameter frame prefixes and reference-captured slots are pinned where
 identity is observable. Compact byte encoding remains deferred. Bytecode is verified before
 execution.
+
+After all optional representational rewrites, the compiler inserts explicit `Drop` instructions
+at register last-use points. A drop detaches the frame register from its slot, allowing ordinary
+acyclic values to be reclaimed immediately. It does not write through the slot: reference captures,
+projected-reference parameters, and method receivers can share slot identity and are protected for
+as long as that identity remains observable. Conditional branches receive cleanup on both outgoing
+edges when their condition dies at the branch. Frame teardown remains the final cleanup boundary
+for protected slots and returned values.
 
 The interprocedural tier inlines small straight-line leaf functions. Inlined parameters receive
 fresh virtual registers before copy propagation, so assigning to a parameter cannot mutate the
@@ -56,7 +64,7 @@ conditions, not repeat static analysis.
 1. Explicit basic blocks, conditional branches, and an iterative call-frame stack.
 2. Lists, records, variants, field/index places, and pattern decisions.
 3. Closure environment layouts with explicit copy, move, and reference capture instructions.
-4. Move/drop operations and deterministic destruction points from ownership-aware MIR.
+4. Move operations and liveness-driven deterministic register destruction points.
 5. Remote construction, remote calls, futures, and suspension.
 6. The legacy AST execution path was removed after the complete example and conformance suite ran
    on the VM.

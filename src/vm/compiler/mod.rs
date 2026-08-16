@@ -72,6 +72,7 @@ pub fn compile_with_options(
     if options.optimize {
         super::optimizer::optimize(&mut compiler.program);
     }
+    super::optimizer::insert_drops(&mut compiler.program);
     Ok(compiler.program)
 }
 

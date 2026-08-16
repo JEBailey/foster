@@ -15,14 +15,14 @@ type Response {
 }
 
 type FileServer {
-    files: List[File]
+    files: List<File>
 }
 
 func response(status: Int, reason: String, media_type: String, body: String) -> Response {
     Response { status, reason, media_type, body }
 }
 
-func find_file(files: List[File], path: String) -> Response {
+func find_file(files: List<File>, path: String) -> Response {
     branch {
         files.empty? -> response(404, "Not Found", "text/plain", "file not found")
         files.head.path == path -> response(200, "OK", "text/plain", "stored file")

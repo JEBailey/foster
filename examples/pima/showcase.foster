@@ -1,7 +1,7 @@
 type Account {
     owner: String
     balance: Int
-    transactions: List[Int]
+    transactions: List<Int>
 }
 
 type AccountResult =
@@ -29,7 +29,7 @@ func multiplier(factor: Int) -> func(Int) -> Int {
     (value: Int) -> factor * value
 }
 
-func select_over_ten(values: List[Int], selected: List[Int]) -> List[Int] {
+func select_over_ten(values: List<Int>, selected: List<Int>) -> List<Int> {
     branch {
         values.empty? -> selected
         values.head > 10 -> select_over_ten(values.rest, selected.append(values.head))
@@ -37,7 +37,7 @@ func select_over_ten(values: List[Int], selected: List[Int]) -> List[Int] {
     }
 }
 
-func sum(values: List[Int], total: Int) -> Int {
+func sum(values: List<Int>, total: Int) -> Int {
     branch {
         values.empty? -> total
         _ -> sum(values.rest, total + values.head)

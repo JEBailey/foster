@@ -25,7 +25,10 @@ pub(super) fn successors(instructions: &[Instruction], index: usize) -> Vec<usiz
 
 pub(super) fn definitions(instruction: &Instruction) -> Vec<Register> {
     match instruction {
-        Instruction::LoadConstant { destination, .. }
+        Instruction::Drop {
+            register: destination,
+        }
+        | Instruction::LoadConstant { destination, .. }
         | Instruction::Move { destination, .. }
         | Instruction::Unary { destination, .. }
         | Instruction::Binary { destination, .. }
@@ -34,7 +37,18 @@ pub(super) fn definitions(instruction: &Instruction) -> Vec<Register> {
         | Instruction::MakeRecord { destination, .. }
         | Instruction::MakeVariant { destination, .. }
         | Instruction::LoadField { destination, .. }
+        | Instruction::MakeReference { destination, .. }
+        | Instruction::MoveOut { destination, .. }
+        | Instruction::Push { destination, .. }
+        | Instruction::Append { destination, .. }
+        | Instruction::Contains { destination, .. }
+        | Instruction::Builtin { destination, .. }
+        | Instruction::SpawnRemote { destination, .. }
+        | Instruction::SpawnRemoteBorrow { destination, .. }
+        | Instruction::RemoteCall { destination, .. }
+        | Instruction::Await { destination, .. }
         | Instruction::Call { destination, .. }
+        | Instruction::CallMethod { destination, .. }
         | Instruction::MakeClosure { destination, .. }
         | Instruction::CallValue { destination, .. }
         | Instruction::CallClosure { destination, .. } => vec![*destination],
@@ -48,16 +62,18 @@ pub(super) fn definitions(instruction: &Instruction) -> Vec<Register> {
             definitions.extend(bindings);
             definitions
         }
-        Instruction::Jump { .. } | Instruction::JumpIfFalse { .. } | Instruction::Return { .. } => {
-            Vec::new()
-        }
-        _ => Vec::new(),
+        Instruction::StoreField { .. }
+        | Instruction::StoreIndex { .. }
+        | Instruction::Jump { .. }
+        | Instruction::JumpIfFalse { .. }
+        | Instruction::Return { .. } => Vec::new(),
     }
 }
 
 pub(super) fn uses(instruction: &Instruction) -> Vec<Register> {
     let mut uses = Vec::new();
     match instruction {
+        Instruction::Drop { .. } => {}
         Instruction::Move { source, .. } => uses.push(*source),
         Instruction::Unary { operand, .. } => uses.push(*operand),
         Instruction::Binary { left, right, .. } => {
@@ -74,9 +90,55 @@ pub(super) fn uses(instruction: &Instruction) -> Vec<Register> {
         }
         Instruction::MakeVariant { payload, .. } => uses.extend(payload),
         Instruction::LoadField { object, .. } => uses.push(*object),
+        Instruction::StoreField { object, source, .. } => {
+            uses.push(*object);
+            uses.push(*source);
+        }
+        Instruction::StoreIndex {
+            object,
+            index,
+            source,
+        } => {
+            uses.push(*object);
+            uses.push(*index);
+            uses.push(*source);
+        }
+        Instruction::MakeReference { object, index, .. } => {
+            uses.push(*object);
+            uses.push(*index);
+        }
+        Instruction::MoveOut { source, .. } => uses.push(*source),
+        Instruction::Push { object, value, .. } | Instruction::Append { object, value, .. } => {
+            uses.push(*object);
+            uses.push(*value);
+        }
+        Instruction::Contains {
+            value, candidates, ..
+        } => {
+            uses.push(*value);
+            uses.extend(candidates);
+        }
+        Instruction::Builtin { arguments, .. } => uses.extend(arguments),
+        Instruction::SpawnRemote { value, .. } => uses.push(*value),
+        Instruction::SpawnRemoteBorrow { source, .. } => uses.push(*source),
+        Instruction::RemoteCall {
+            remote, arguments, ..
+        } => {
+            uses.push(*remote);
+            uses.extend(arguments.iter().map(|(_, register)| register));
+        }
+        Instruction::Await { future, .. } => uses.push(*future),
         Instruction::MatchPattern { subject, .. } => uses.push(*subject),
         Instruction::JumpIfFalse { condition, .. } => uses.push(*condition),
         Instruction::Call { arguments, .. } => uses.extend(arguments),
+        Instruction::CallMethod {
+            receiver,
+            arguments,
+            ..
+        } => {
+            uses.push(*receiver);
+            uses.extend(arguments);
+        }
         Instruction::MakeClosure { captures, .. } => {
             uses.extend(captures.iter().map(|(_, register)| register));
         }
@@ -96,7 +158,6 @@ pub(super) fn uses(instruction: &Instruction) -> Vec<Register> {
         }
         Instruction::Return { source } => uses.push(*source),
         Instruction::LoadConstant { .. } | Instruction::Jump { .. } => {}
-        _ => {}
     }
     uses
 }

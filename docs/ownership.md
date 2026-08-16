@@ -309,8 +309,10 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   variants, containers, and returned higher-order values needs a more general provenance analysis.
 - Copy behavior is currently a built-in type classification. User-defined copy types have not been
   designed.
-- Runtime storage still uses managed host representations in the VM. Native layout,
-  deterministic destruction, and destructor ordering remain backend work.
+- Runtime storage still uses managed host representations in the VM. The bytecode compiler now
+  emits deterministic `Drop` instructions after register last use, while observable shared slots
+  remain alive through frame teardown. Native layout, cycle collection, resource destructors, and
+  destructor ordering remain backend work.
 
 The intended evolution is richer place/provenance tracking and control-flow-aware loan states while
 preserving the source model: ownership transfer stays explicit, references name groups, and API

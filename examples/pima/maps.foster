@@ -4,7 +4,7 @@ type Entry {
 }
 
 pub type Map {
-    entries: List[Entry]
+    entries: List<Entry>
 }
 
 type Lookup =
@@ -15,7 +15,7 @@ pub func Map.empty() -> Map {
     Map { entries: [] }
 }
 
-func get_entries(entries: List[Entry], key: Symbol) -> Lookup {
+func get_entries(entries: List<Entry>, key: Symbol) -> Lookup {
     branch {
         entries.empty? -> Missing
         entries.head.key == key -> Found(entries.head.value)
@@ -27,7 +27,7 @@ func get(self: Map, key: Symbol) -> Lookup {
     get_entries(self.entries, key)
 }
 
-func put_entries(entries: List[Entry], key: Symbol, value: Int) -> List[Entry] {
+func put_entries(entries: List<Entry>, key: Symbol, value: Int) -> List<Entry> {
     branch {
         entries.empty? -> [Entry { key, value }]
         entries.head.key == key -> entries.rest.append(Entry { key, value })

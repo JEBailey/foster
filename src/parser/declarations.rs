@@ -52,14 +52,14 @@ impl Parser {
         self.expect(&TokenKind::Type, "expected `type`")?;
         let name = self.expect_ident("expected record name")?;
         let mut parameters = Vec::new();
-        if !self.effect_clause_follows() && self.take(&TokenKind::LBracket) {
+        if self.take(&TokenKind::Less) {
             loop {
                 parameters.push(self.expect_ident("expected type parameter")?);
                 if !self.take(&TokenKind::Comma) {
                     break;
                 }
             }
-            self.expect(&TokenKind::RBracket, "expected `]` after type parameters")?;
+            self.expect(&TokenKind::Greater, "expected `>` after type parameters")?;
         }
         self.newlines();
         if self.take(&TokenKind::Equal) {
@@ -223,26 +223,28 @@ impl Parser {
     ) -> Result<(Vec<String>, Vec<GroupParameter>), FosterError> {
         let mut type_parameters = Vec::new();
         let mut groups = Vec::new();
-        if !self.take(&TokenKind::LBracket) {
-            return Ok((type_parameters, groups));
+        if self.take(&TokenKind::Less) {
+            loop {
+                type_parameters.push(self.expect_ident("expected type parameter")?);
+                if !self.take(&TokenKind::Comma) {
+                    break;
+                }
+            }
+            self.expect(&TokenKind::Greater, "expected `>` after type parameters")?;
         }
-        loop {
-            let name = self.expect_ident("expected function parameter name")?;
-            if self.take(&TokenKind::Colon) {
+        if self.take(&TokenKind::LBracket) {
+            loop {
+                let name = self.expect_ident("expected group parameter name")?;
+                self.expect(&TokenKind::Colon, "expected `:` after group parameter name")?;
                 self.expect(&TokenKind::Group, "expected `group`")?;
                 let element = self.type_expr()?;
                 groups.push(GroupParameter { name, element });
-            } else {
-                type_parameters.push(name);
+                if !self.take(&TokenKind::Comma) {
+                    break;
+                }
             }
-            if !self.take(&TokenKind::Comma) {
-                break;
-            }
+            self.expect(&TokenKind::RBracket, "expected `]` after group parameters")?;
         }
-        self.expect(
-            &TokenKind::RBracket,
-            "expected `]` after function parameters",
-        )?;
         Ok((type_parameters, groups))
     }
 
@@ -313,14 +315,14 @@ impl Parser {
             name.push_str(&self.expect_ident("expected type name after `.`")?);
         }
         let mut arguments = Vec::new();
-        if !self.effect_clause_follows() && self.take(&TokenKind::LBracket) {
+        if self.take(&TokenKind::Less) {
             loop {
                 arguments.push(self.type_expr()?);
                 if !self.take(&TokenKind::Comma) {
                     break;
                 }
             }
-            self.expect(&TokenKind::RBracket, "expected `]` after type arguments")?;
+            self.expect(&TokenKind::Greater, "expected `>` after type arguments")?;
         }
         Ok(TypeExpr::Named(name, arguments))
     }

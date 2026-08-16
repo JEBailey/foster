@@ -91,10 +91,10 @@ impl TypeInformation {
             Type::Reference { group, value } => {
                 format!("ref[{group}] {}", self.display(*value))
             }
-            Type::List(element) => format!("List[{}]", self.display(*element)),
-            Type::Sequence(element) => format!("Sequence[{}]", self.display(*element)),
-            Type::Remote(value) => format!("Remote[{}]", self.display(*value)),
-            Type::Future(value) => format!("Future[{}]", self.display(*value)),
+            Type::List(element) => format!("List<{}>", self.display(*element)),
+            Type::Sequence(element) => format!("Sequence<{}>", self.display(*element)),
+            Type::Remote(value) => format!("Remote<{}>", self.display(*value)),
+            Type::Future(value) => format!("Future<{}>", self.display(*value)),
             Type::Function(function) => {
                 let effects = display_effects(&function.effects, function.suspends);
                 format!(
@@ -125,7 +125,7 @@ impl TypeInformation {
                     name
                 } else {
                     format!(
-                        "{name}[{}]",
+                        "{name}<{}>",
                         arguments
                             .iter()
                             .map(|argument| self.display(*argument))
@@ -149,7 +149,7 @@ impl TypeInformation {
                     name
                 } else {
                     format!(
-                        "{name}[{}]",
+                        "{name}<{}>",
                         arguments
                             .iter()
                             .map(|a| self.display(*a))

@@ -22,14 +22,14 @@ func render_report(report: func(String, Int) -> Unit, name: String, score: Int) 
     report(name, score)
 }
 
-func for_each_report(reports: List[func(String, Int) -> Unit], name: String, score: Int) -> Unit {
+func for_each_report(reports: List<func(String, Int) -> Unit>, name: String, score: Int) -> Unit {
     branch {
         reports.empty? -> println()
         _ -> render_then_continue(reports, name, score)
     }
 }
 
-func render_then_continue(reports: List[func(String, Int) -> Unit], name: String, score: Int) -> Unit {
+func render_then_continue(reports: List<func(String, Int) -> Unit>, name: String, score: Int) -> Unit {
     reports.head(name, score)
     for_each_report(reports.rest, name, score)
 }

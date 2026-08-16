@@ -86,6 +86,9 @@ impl Machine {
             frame.instruction += 1;
 
             match instruction {
+                Instruction::Drop { register } => {
+                    drop_register(frame, register);
+                }
                 Instruction::LoadConstant {
                     destination,
                     constant,
@@ -616,6 +619,17 @@ impl Machine {
         let offset = usize::from(self.program.functions[&function].captures);
         frame.registers[offset] = receiver;
         Ok(frame)
+    }
+}
+
+fn drop_register(frame: &mut Frame, register: Register) {
+    let slot = &mut frame.registers[register.0 as usize];
+    if Rc::strong_count(slot) == 1 && slot.shared().is_none() {
+        slot.replace(Value::Unit);
+    } else {
+        // Detach from observable storage. Writing Unit through a captured or
+        // remotely shared slot would change the value seen by another owner.
+        *slot = Slot::new(Value::Unit);
     }
 }
 

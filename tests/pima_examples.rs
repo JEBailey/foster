@@ -35,11 +35,13 @@ fn examples_root() -> PathBuf {
 #[test]
 fn every_pima_example_has_a_foster_counterpart() {
     for name in PIMA_COUNTERPARTS {
-        let path = examples_root().join(format!("{name}.foster"));
+        let file = examples_root().join(format!("{name}.foster"));
+        let package = examples_root().join(name);
         assert!(
-            path.is_file(),
-            "missing Foster counterpart: {}",
-            path.display()
+            file.is_file() || package.is_dir(),
+            "missing Foster counterpart: {} or {}",
+            file.display(),
+            package.display()
         );
     }
 }
@@ -67,5 +69,16 @@ fn pima_corpus_runs_with_and_without_optimization() {
                     )
                 });
         }
+    }
+
+    let json_parser = examples_root().join("json_parser");
+    for optimize in [false, true] {
+        foster::run_package_with_options(&json_parser, foster::vm::CompileOptions { optimize })
+            .unwrap_or_else(|error| {
+                panic!(
+                    "{} failed with optimize={optimize}: {error}",
+                    json_parser.display()
+                )
+            });
     }
 }
