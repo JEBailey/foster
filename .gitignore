@@ -1,4 +1,6 @@
 /target/
 *.pdb
 node_modules/
+.idea/
+documentation/
 
