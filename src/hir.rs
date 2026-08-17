@@ -117,7 +117,9 @@ pub struct Record {
     pub name: String,
     pub public: bool,
     pub parameters: Vec<String>,
+    pub compositions: Vec<ast::TypeExpr>,
     pub fields: Vec<RecordField>,
+    pub methods: Vec<ast::MethodRequirement>,
 }
 
 #[derive(Debug, Clone)]

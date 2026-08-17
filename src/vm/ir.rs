@@ -151,6 +151,12 @@ pub enum Instruction {
         function: FunctionId,
         arguments: Vec<Register>,
     },
+    CallContractMethod {
+        destination: Register,
+        receiver: Register,
+        name: String,
+        arguments: Vec<Register>,
+    },
     MakeClosure {
         destination: Register,
         function: FunctionId,
@@ -355,6 +361,12 @@ impl Instruction {
                 receiver,
                 arguments,
                 ..
+            }
+            | Self::CallContractMethod {
+                destination,
+                receiver,
+                arguments,
+                ..
             } => {
                 visit(*destination);
                 visit(*receiver);
@@ -408,6 +420,7 @@ pub struct Program {
     pub functions: HashMap<FunctionId, BytecodeFunction>,
     pub main: Option<FunctionId>,
     pub records: HashMap<RecordId, String>,
+    pub methods: HashMap<(RecordId, String), FunctionId>,
     pub variants: HashMap<VariantId, (String, String)>,
 }
 

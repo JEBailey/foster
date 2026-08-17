@@ -39,7 +39,9 @@ pub struct RecordDecl {
     pub name: String,
     pub public: bool,
     pub parameters: Vec<String>,
+    pub compositions: Vec<TypeExpr>,
     pub fields: Vec<RecordField>,
+    pub methods: Vec<MethodRequirement>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,6 +49,20 @@ pub struct RecordField {
     pub name: String,
     pub public: bool,
     pub ty: TypeExpr,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MethodRequirement {
+    pub span: std::ops::Range<usize>,
+    pub documentation: Option<String>,
+    pub name: String,
+    pub public: bool,
+    pub type_parameters: Vec<String>,
+    pub groups: Vec<GroupParameter>,
+    pub parameters: Vec<Parameter>,
+    pub return_type: Option<TypeExpr>,
+    pub effects: Vec<Effect>,
+    pub suspends: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -81,7 +97,7 @@ pub struct GroupParameter {
     pub element: TypeExpr,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parameter {
     pub name: String,
     pub ty: Option<TypeExpr>,
@@ -96,7 +112,6 @@ pub enum TypeExpr {
         value: Box<TypeExpr>,
     },
     Function {
-        erased: bool,
         parameters: Vec<TypeExpr>,
         parameter_modes: Vec<ParameterMode>,
         result: Box<TypeExpr>,

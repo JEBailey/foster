@@ -48,7 +48,6 @@ impl Parser {
             TokenKind::Copy => Ok("copy".into()),
             TokenKind::Move => Ok("move".into()),
             TokenKind::Ref => Ok("ref".into()),
-            TokenKind::Any => Ok("any".into()),
             TokenKind::Group => Ok("group".into()),
             TokenKind::Read => Ok("read".into()),
             TokenKind::Mut => Ok("mut".into()),

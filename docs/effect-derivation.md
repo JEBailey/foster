@@ -5,7 +5,7 @@ v1 implementation plan.
 
 Effects state what a function may do to an ownership group. Most functions omit an effect clause;
 the compiler derives their contract from typed HIR and stores it on the function. Explicit clauses
-are useful for erased callable types and for APIs that intentionally publish an upper bound.
+are useful for callable contracts and for APIs that intentionally publish an upper bound.
 
 ```foster
 func set[state: group Int](value: ref[state] Int, next: Int) -> Int [mut state] {
@@ -17,7 +17,7 @@ func set[state: group Int](value: ref[state] Int, next: Int) -> Int [mut state] 
 A callable type fragment can publish the same contract without a body:
 
 ```foster
-any func(Event) -> Unit [mut application, suspend]
+func(Event) -> Unit [mut application, suspend]
 ```
 
 Effect clauses follow the result type or, for an anonymous closure, the arrow. They are bracketed
@@ -161,7 +161,7 @@ The compiler combines capture-derived requirements with this explicit row and ch
 against the result. Function types preserve effects, suspension, and positional consuming modes:
 
 ```foster
-any func(consume Job) -> Unit [mut queue, suspend]
+func(consume Job) -> Unit [mut queue, suspend]
 ```
 
 Erasure and indirect calls therefore do not discard ownership behavior.

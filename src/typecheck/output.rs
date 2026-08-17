@@ -1,9 +1,51 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::*;
 
 impl Checker<'_> {
-    pub(super) fn finish(self) -> Result<TypeInformation, FosterError> {
+    pub(super) fn finish(mut self) -> Result<TypeInformation, FosterError> {
+        let records = self
+            .hir
+            .records
+            .iter()
+            .map(|(record, definition)| {
+                let arguments = definition
+                    .parameters
+                    .iter()
+                    .map(|parameter| Ty::Generic(parameter.clone()))
+                    .collect::<Vec<_>>();
+                (record, arguments)
+            })
+            .collect::<Vec<_>>();
+        let mut record_fields = HashMap::new();
+        let mut record_properties = HashMap::new();
+        let mut record_methods = HashMap::new();
+        for (record, arguments) in records {
+            let fields = self
+                .effective_record_fields(record, &arguments)?
+                .into_iter()
+                .map(|field| field.name)
+                .collect::<HashSet<_>>();
+            record_fields.insert(record, fields);
+            let methods = self.effective_record_methods(record, &arguments)?;
+            let properties = methods
+                .iter()
+                .filter(|method| {
+                    method.parameters.is_empty()
+                        && !method.suspends
+                        && method
+                            .effects
+                            .iter()
+                            .all(|effect| effect.kind == crate::ast::EffectKind::Read)
+                })
+                .map(|method| method.name.clone())
+                .collect::<HashSet<_>>();
+            record_properties.insert(record, properties);
+            record_methods.insert(
+                record,
+                methods.into_iter().map(|method| method.name).collect(),
+            );
+        }
         let mut information = TypeInformation {
             record_names: self
                 .hir
@@ -11,6 +53,9 @@ impl Checker<'_> {
                 .iter()
                 .map(|(record, definition)| (record, definition.name.clone()))
                 .collect(),
+            record_fields,
+            record_properties,
+            record_methods,
             variant_names: self
                 .hir
                 .variant_types
@@ -105,9 +150,9 @@ impl Checker<'_> {
                 parameters,
                 parameter_modes,
                 result,
-                erased,
                 effects,
                 suspends,
+                ..
             } => {
                 let mut effects = effects
                     .iter()
@@ -122,8 +167,7 @@ impl Checker<'_> {
                     format!(" [{}]", effects.join(", "))
                 };
                 format!(
-                    "{}func({}) -> {}{effects}",
-                    if erased { "any " } else { "" },
+                    "func({}) -> {}{effects}",
                     parameters
                         .iter()
                         .zip(&parameter_modes)

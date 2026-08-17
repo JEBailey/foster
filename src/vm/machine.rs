@@ -158,6 +158,7 @@ impl Machine {
                         frame,
                         destination,
                         Value::Record {
+                            record: Some(record),
                             name: self.program.records[&record].clone(),
                             fields,
                         },
@@ -348,6 +349,74 @@ impl Machine {
                 } => {
                     let arguments = values(frame, arguments)?;
                     let receiver = frame.registers[receiver.0 as usize].clone();
+                    if let Some(shared) = receiver.shared() {
+                        let (lease, state) = shared.write_snapshot()?;
+                        let local = Slot::new(Value::from_wire(state)?);
+                        let mut method = self.method_frame(
+                            function,
+                            local.clone(),
+                            arguments,
+                            Some(destination),
+                        )?;
+                        method.shared_commit = Some(SharedCommit {
+                            shared,
+                            receiver: local,
+                            _lease: lease,
+                        });
+                        frames.push(method);
+                    } else {
+                        frames.push(self.method_frame(
+                            function,
+                            receiver,
+                            arguments,
+                            Some(destination),
+                        )?);
+                    }
+                }
+                Instruction::CallContractMethod {
+                    destination,
+                    receiver,
+                    name,
+                    arguments,
+                } => {
+                    let arguments = values(frame, arguments)?;
+                    let receiver = frame.registers[receiver.0 as usize].clone();
+                    let value = receiver.read()?;
+                    if let Value::Record { fields, .. } = &value
+                        && arguments.is_empty()
+                        && let Some(field) = fields.get(&name)
+                    {
+                        write(frame, destination, field.clone())?;
+                        continue;
+                    }
+                    if !matches!(value, Value::Record { .. }) {
+                        if !arguments.is_empty() {
+                            return Err(FosterError::runtime(format!(
+                                "contract member `{name}` does not accept arguments"
+                            )));
+                        }
+                        write(frame, destination, member(value, &name)?)?;
+                        continue;
+                    }
+                    let Value::Record {
+                        record: Some(record),
+                        ..
+                    } = value
+                    else {
+                        return Err(FosterError::runtime(format!(
+                            "record cannot dispatch required method `{name}`"
+                        )));
+                    };
+                    let function = self
+                        .program
+                        .methods
+                        .get(&(record, name.clone()))
+                        .copied()
+                        .ok_or_else(|| {
+                            FosterError::runtime(format!(
+                                "record has no implementation of required method `{name}`"
+                            ))
+                        })?;
                     if let Some(shared) = receiver.shared() {
                         let (lease, state) = shared.write_snapshot()?;
                         let local = Slot::new(Value::from_wire(state)?);
@@ -849,6 +918,7 @@ fn io_result(operation: &str, path: &str, result: Result<Value, std::io::Error>)
     match result {
         Ok(value) => result_ok(value),
         Err(error) => result_error(Value::Record {
+            record: None,
             name: "IoError".into(),
             fields: BTreeMap::from([
                 ("operation".into(), Value::String(operation.into())),
@@ -863,6 +933,7 @@ fn tcp_result(operation: &str, result: Result<Value, String>) -> Value {
     match result {
         Ok(value) => result_ok(value),
         Err(message) => result_error(Value::Record {
+            record: None,
             name: "NetworkError".into(),
             fields: BTreeMap::from([
                 ("operation".into(), Value::String(operation.into())),

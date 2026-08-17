@@ -20,3 +20,10 @@ The program deterministically returns `1242`:
 - `12` items observed through the live remote inventory view
 
 The smaller programs under `pima/` focus on individual language features.
+
+`type_composition.foster` demonstrates declaration-side composition, intersection parameters, and
+static duck typing without a wrapper or runtime conversion:
+
+```console
+cargo run --bin foster -- run examples/type_composition.foster
+```

@@ -14,7 +14,7 @@ Implemented today:
 - explicit `[copy ...]`, `[move ...]`, and `[ref ...]` capture clauses;
 - identity-bearing places and mutable borrowed captures;
 - group-parameterized reference types and `read`/`mut`/`reshape`/`consume` effects;
-- effect-checked erased `any func` types;
+- effect-checked callable contracts with compiler-inferred representation erasure;
 - projected list references with structural-invalidation diagnostics;
 - `_` placeholder partial application.
 
@@ -354,22 +354,23 @@ Closures that may `consume self` are not callable after their consuming call.
 
 ## Type erasure
 
-Every closure expression has a different concrete type. Heterogeneous storage requires erasure:
+Every closure expression has a different concrete type. A callable type states the shared contract
+needed for heterogeneous storage:
 
 ```foster
-handlers: List<any func(Event) -> Unit [mut app]>
+handlers: List<func(Event) -> Unit [mut app]>
 ```
 
-An erased closure retains a VM call target and its capture environment. A closure coerces to an
-erased function type when:
+When necessary, the compiler erases the concrete closure representation while retaining its VM call
+target and capture environment. A closure conforms to a callable contract when:
 
 - parameter and result types are compatible;
-- its effects are a subset of the erased type's declared effects;
-- every borrowed capture group is represented by the erased type;
-- its call capability is no stronger than the erased interface permits.
+- its effects are a subset of the callable contract's declared effects;
+- every borrowed capture group is represented by the callable contract;
+- its call capability is no stronger than the callable contract permits.
 
-`any func` is the erased spelling; ordinary `func` describes callable signatures for statically
-known functions and closures.
+Foster has only the `func` spelling. Whether a callable remains concrete, is specialized, or uses an
+erased environment is an internal compiler and VM decision.
 
 ## Partial application
 
@@ -415,7 +416,7 @@ mutation. Sending or sharing a closure depends on its captures:
 - a borrowed closure is sendable only when the captured groups may cross the concurrency boundary;
 - concurrent calls that mutate an overlapping group require synchronization or exclusive task
   ownership;
-- erased closures preserve these requirements.
+- representation-erased closures preserve these requirements.
 
 The exact `Send`, `Share`, task, and synchronization model is deferred to the concurrency design.
 
@@ -432,7 +433,7 @@ The exact `Send`, `Share`, task, and synchronization model is deferred to the co
    **Complete for local and projected list places, with conservative control-flow joins.**
 7. Execute concrete closure environments in the VM. **Complete for copy, move, mutable-reference,
    and shared-reference captures.**
-8. Add erased `any func` values. **Complete in the VM.**
+8. Add compiler-inferred representation erasure for callable values. **Complete in the VM.**
 9. Add `_` partial application sugar. **Complete.**
 
 The VM now supports owned, copied, and shared-place environments. The compiler

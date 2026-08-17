@@ -107,6 +107,14 @@ impl PackageHir {
                         )));
                     }
                 }
+                for method in &source_record.methods {
+                    if !fields.insert(method.name.as_str()) {
+                        return Err(FosterError::runtime(format!(
+                            "type `{}` declares member `{}` more than once",
+                            source_record.name, method.name
+                        )));
+                    }
+                }
                 if hir.modules[module]
                     .functions
                     .contains_key(&source_record.name)
@@ -129,6 +137,7 @@ impl PackageHir {
                     name: source_record.name.clone(),
                     public: source_record.public,
                     parameters: source_record.parameters.clone(),
+                    compositions: source_record.compositions.clone(),
                     fields: source_record
                         .fields
                         .iter()
@@ -138,6 +147,7 @@ impl PackageHir {
                             ty: field.ty.clone(),
                         })
                         .collect(),
+                    methods: source_record.methods.clone(),
                 });
                 hir.modules[module]
                     .records

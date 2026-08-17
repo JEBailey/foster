@@ -49,6 +49,7 @@ pub(super) fn definitions(instruction: &Instruction) -> Vec<Register> {
         | Instruction::Await { destination, .. }
         | Instruction::Call { destination, .. }
         | Instruction::CallMethod { destination, .. }
+        | Instruction::CallContractMethod { destination, .. }
         | Instruction::MakeClosure { destination, .. }
         | Instruction::CallValue { destination, .. }
         | Instruction::CallClosure { destination, .. } => vec![*destination],
@@ -132,6 +133,11 @@ pub(super) fn uses(instruction: &Instruction) -> Vec<Register> {
         Instruction::JumpIfFalse { condition, .. } => uses.push(*condition),
         Instruction::Call { arguments, .. } => uses.extend(arguments),
         Instruction::CallMethod {
+            receiver,
+            arguments,
+            ..
+        }
+        | Instruction::CallContractMethod {
             receiver,
             arguments,
             ..

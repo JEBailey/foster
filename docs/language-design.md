@@ -7,9 +7,11 @@ change, and **open** items require design work before they become language guara
 ## Goals
 
 Foster is a statically typed, general-purpose language intended to span application and systems
-programming. Its defining memory-safety direction is single ownership with group-parameterized
-references: references describe the set of locations they may target, while mutation is expressed
-as a function effect.
+programming. It uses compile-time duck typing: a value conforms to a type when its accessible
+contract matches, without requiring nominal inheritance or an explicit `implements` declaration.
+Its defining memory-safety direction is single ownership with group-parameterized references:
+references describe the set of locations they may target, while mutation is expressed as a
+function effect.
 
 The language should be approachable, predictable from source, explicit at API boundaries, and
 capable of zero-cost native execution without requiring garbage collection.
@@ -137,9 +139,35 @@ bounded integer-like primitive: integer arithmetic and comparisons promote its U
 value, and arithmetic produces `Int`. This permits expressions such as `'9' - '0'` and
 `character < 32` without an extraction member. Conversion from an arbitrary `Int` remains checked
 because surrogate values and values above `0x10FFFF` are not Unicode scalar values.
-The bootstrap compiler currently supplies the `String` and `List<T>` conformances. Syntax for
-user-defined sequence implementations belongs to the general protocol design and is not yet
-available.
+The bootstrap compiler currently supplies the `String` and `List<T>` conformances. The settled
+declaration syntax for stating that a type includes a contract uses `&` after its name:
+
+```foster
+type Foo & Sequence<CodePoint> {
+    source: String
+}
+```
+
+This is compile-time contract composition, not inheritance. The composed contract's accessible
+members become part of `Foo`'s effective contract, but behavioral requirements do not become stored
+fields. `Foo` therefore supplies compatible `empty?`, `length`, `head`, and `rest` instance
+functions. Read-only zero-argument contract functions support property syntax, so callers continue
+to write `value.head`; functions with arguments use ordinary call syntax. `Foo` constructors only
+initialize fields written in its effective stored-field contract.
+
+Required callable members can be declared directly in a structural type:
+
+```foster
+type Identified {
+    pub func id(self) -> Int [read self]
+    pub func offset(self, amount: Int) -> Int [read self]
+}
+```
+
+A composing type implements these requirements with ordinary module-level `self` functions. The
+compiler checks parameter ownership modes, result types, effects, suspension, and visibility.
+Naming a contract is not required for conformance: another type with matching accessible fields and
+methods is accepted structurally.
 
 ## Records — implemented foundation
 
@@ -276,17 +304,23 @@ in actor state, or returned across the mailbox boundary.
 
 ## Static types — implemented foundation and provisional design
 
-Foster uses local type inference with explicit package API signatures. Implemented foundations are
-nominally constructed records with structural adaptation, closed variants, explicit parametric
-generics using `Type<Argument>`, function and intersection types, and no implicit numeric or
-nullable conversions. Traits, transparent aliases, distinct wrapper declarations, and typed error
-effects remain design work.
+Foster is statically typed and uses compile-time duck typing. Every expression has a type before
+execution, and missing or incompatible contract members are compile errors; there is no dynamic
+member lookup implied by “duck typing.” Records retain nominal construction and private
+representation, while their accessible contract participates in structural conformance.
+
+Implemented foundations are nominally constructed records with structural adaptation and declared
+contract composition, closed variants, explicit parametric generics using `Type<Argument>`,
+function and intersection types, callable-member contracts, and no implicit numeric or nullable
+conversions. Method-level generic requirements, default contract implementations, transparent
+aliases, distinct wrapper declarations, and typed error effects remain design work.
 
 Types, traits, and functions may be qualified by modules. The HIR resolves every source-level name
 to a local binding, function, module, builtin, or later a type-level definition before type checking.
 
 The bootstrap compiler resolves `Unit`, `Bool`, `Int`, `Float`, `String`, `CodePoint`, `Symbol`,
-`List<T>`, `Sequence<T>`, `Remote<T>`, `Future<T>`, concrete and erased function types, records,
+`List<T>`, `Sequence<T>`, `Remote<T>`, `Future<T>`, callable types with internally inferred
+representation erasure, records,
 variants, generics, and record intersections. Decimal and scientific-notation literals produce
 `Float`; there are no implicit conversions between `Int` and `Float`.
 Representation-level operations such as functional `List.append`, checked `from_code_point(Int)`,
@@ -337,7 +371,7 @@ Documentation text is Markdown. The compiler retains it in AST and HIR, and the 
 includes it in hover information and completion items. A documentation comment that does not
 precede a declaration is an error.
 
-## Structural record adaptation and intersections
+## Structural conformance, composition, and intersections
 
 Records have nominal constructors but public fields form a statically checked structural contract.
 When a record value is used where another record type is expected, Foster accepts it when it has
@@ -365,6 +399,28 @@ Adaptation is resolved entirely during type checking. It performs no runtime sha
 or field copy. Borrowed arguments borrow the original value. A consuming destination moves the
 original value and narrows the fields visible through the resulting type.
 
+This is Foster's static duck typing rule: a source type conforms to a destination type when its
+accessible contract contains compatible members for everything the destination requires. A
+contract includes accessible fields and callable members, including their generic parameters,
+parameter ownership modes, result types, effects, and suspension behavior. Private representation
+does not participate outside its defining module.
+
+A type declaration may explicitly compose and assert a contract with `&`:
+
+```foster
+type TextCursor & Sequence<CodePoint> {
+    source: String
+    offset: Int
+}
+```
+
+The declaration imports the accessible `Sequence<CodePoint>` requirements into `TextCursor`'s
+effective contract. The requirements are functions, not record storage, so the constructor only
+initializes `source` and `offset`; the defining module supplies compatible `empty?`, `length`,
+`head`, and `rest` implementations. Conformance remains structural: a different type whose fields
+or accessor methods satisfy the same readable contract may be passed to the same functions without
+declaring `& Sequence<CodePoint>`.
+
 `A & B` is an intersection contract requiring the accessible fields of both record types:
 
 ```foster
@@ -373,10 +429,13 @@ func locate(value: Named & Located) -> String {
 }
 ```
 
-Intersection members must be record types. Overlapping fields must have identical types. Structural
-adaptation does not expose an inaccessible private field, so records with private representation
-remain nominal outside their defining module. Methods also remain nominal: `&` composes field
-contracts, not implementations or method sets.
+The current bootstrap implementation accepts record and `Sequence<T>` contracts in intersections.
+Overlapping fields and methods must have compatible contracts. Declaration-side composition
+contributes requirements once and rejects missing or incompatible implementations. The same
+structural rules apply at calls, returns, and assignments. Structural adaptation never exposes an
+inaccessible private member, so records with private representation remain encapsulated outside
+their defining module. `&` does not add a wrapper or establish a nominal subtype chain; contract
+method calls dispatch against the original runtime record.
 
 ## Ownership and groups — implemented foundation
 
@@ -433,8 +492,8 @@ effects rather than routine parameter passing.
 Function types carry the same contract by parameter position:
 
 ```foster
-func(Job) -> Unit             // borrows its argument
-any func(consume Job) -> Unit // takes ownership of its argument
+func(Job) -> Unit         // borrows its argument
+func(consume Job) -> Unit // takes ownership of its argument
 ```
 
 ## Inferred and explicit effects
@@ -455,7 +514,7 @@ When a contract must be written because there is no concrete body, it follows th
 bracketed, comma-separated clause:
 
 ```foster
-any func(Inventory) -> Int [mut inventory, suspend]
+func(Inventory) -> Int [mut inventory, suspend]
 ```
 
 Explicit function contracts use the same form and act as checked upper bounds. Loose tokens after
@@ -463,6 +522,10 @@ the return type are not valid syntax.
 
 Declaration names are normalized to these positional modes before a callable is stored or erased,
 so indirect calls and partial applications do not lose ownership information.
+
+Foster has no surface keyword for callable erasure. `func(...) -> ...` always describes the
+required callable contract. The compiler decides whether a particular value remains a direct
+function, is specialized, or needs a representation-erased closure environment.
 
 The current compiler implements moves, copy/move/reference closure captures, borrowed-result escape
 checks, projected-reference invalidation, group-effect derivation, and ownership-safe remote

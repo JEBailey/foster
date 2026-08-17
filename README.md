@@ -1,9 +1,10 @@
 # Foster
 
-Foster is an experimental statically typed, general-purpose programming language. Its defining
-direction is single ownership with group-parameterized references, inferred effect contracts,
-structurally adaptable records, and lightweight remote objects running on virtual threads. The
-bootstrap compiler and register VM are written in Rust.
+Foster is an experimental statically typed, general-purpose programming language with compile-time
+duck typing: a type conforms when its accessible contract matches, without nominal inheritance or
+runtime member lookup. Its defining direction is single ownership with group-parameterized
+references, inferred effect contracts, structurally adaptable records, and lightweight remote
+objects running on virtual threads. The bootstrap compiler and register VM are written in Rust.
 
 ## Try it
 
@@ -49,8 +50,8 @@ The current implementation includes:
   and zero-conversion `Sequence<T>` views;
 - generic records, associated factories, instance methods, private-by-default declarations, and
   closed variants with exhaustive pattern branches;
-- statically checked structural record adaptation and intersection contracts such as
-  `Named & Located`;
+- statically checked structural record adaptation, declaration-side composition such as
+  `type Text & Sequence<CodePoint>`, and intersection contracts such as `Named & Located`;
 - borrow-by-default calls, explicit `move`, positional consuming callable types, group references,
   closure capture modes, move/initialization checking, and structural invalidation;
 - inferred or explicit `read`, `mut`, `reshape`, `consume`, and `suspend` effects;
@@ -128,11 +129,12 @@ The executable pipeline is:
 source
   -> tokens and AST
   -> resolved HIR
-  -> type and fixed-point effect inference
+  -> type, structural-contract, and fixed-point effect inference
   -> loan, capture, group, and ownership checks
   -> ownership MIR validation
   -> structured register bytecode
   -> optional optimizer
+  -> liveness-driven drops
   -> verifier
   -> register VM
 ```

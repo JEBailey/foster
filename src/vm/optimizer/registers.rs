@@ -279,6 +279,24 @@ pub(super) fn rewrite_registers(
                 .iter_mut()
                 .for_each(|register| rewrite(register, mapping));
         }
+        Instruction::CallMethod {
+            destination,
+            receiver,
+            arguments,
+            ..
+        }
+        | Instruction::CallContractMethod {
+            destination,
+            receiver,
+            arguments,
+            ..
+        } => {
+            rewrite(destination, mapping);
+            rewrite(receiver, mapping);
+            arguments
+                .iter_mut()
+                .for_each(|register| rewrite(register, mapping));
+        }
         Instruction::MakeClosure {
             destination,
             captures,

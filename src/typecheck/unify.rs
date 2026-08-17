@@ -103,7 +103,7 @@ impl Checker<'_> {
                 {
                     return Err(self.error(
                         function,
-                        "callable effects or erasure are incompatible with the expected function type",
+                        "callable contract is incompatible with the expected function type",
                     ));
                 }
                 for (a, b) in a_params.into_iter().zip(b_params) {

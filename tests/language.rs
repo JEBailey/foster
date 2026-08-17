@@ -933,12 +933,12 @@ func main() -> Int {
 }
 
 #[test]
-fn preserves_group_effects_and_erased_function_types() {
+fn preserves_group_effects_when_callable_representation_is_inferred() {
     use foster::types::Type;
 
     let source = r#"
 func make[people: group Int](person: ref[people] Int)
-    -> any func(Int) -> Int [mut people]
+    -> func(Int) -> Int [mut people]
 {
     [ref person] (value: Int) -> [mut people] {
         person = value
@@ -1095,10 +1095,10 @@ func invalid() {
 }
 
 #[test]
-fn checks_erased_callable_effect_bounds() {
+fn checks_callable_effect_bounds() {
     let source = r#"
 func invalid[state: group Int](value: ref[state] Int)
-    -> any func(Int) -> Int [read state]
+    -> func(Int) -> Int [read state]
 {
     [ref value] (next: Int) -> {
         value = next
@@ -1107,11 +1107,7 @@ func invalid[state: group Int](value: ref[state] Int)
 }
 "#;
     let error = foster::compile(source).unwrap_err();
-    assert!(
-        error
-            .message
-            .contains("effects or erasure are incompatible")
-    );
+    assert!(error.message.contains("callable contract is incompatible"));
 }
 
 #[test]
@@ -1485,7 +1481,7 @@ fn runs_the_foster_json_parser() {
 #[test]
 fn runs_the_json_actor_pipeline() {
     let value = foster::run_package("examples/pima/json_parser").unwrap();
-    let Value::Record { name, fields } = value else {
+    let Value::Record { name, fields, .. } = value else {
         panic!("pipeline should return a report record")
     };
     assert_eq!(name, "PipelineReport");
@@ -1713,13 +1709,13 @@ func main() -> Unit {
 }
 
 #[test]
-fn expresses_consuming_parameters_in_erased_callable_types() {
+fn expresses_consuming_parameters_in_callable_types() {
     let source = r#"
 func sink(message: String) -> Unit [consume message] {
     println(message)
 }
 
-func invoke(action: any func(consume String) -> Unit, message: String) -> Unit [consume message] {
+func invoke(action: func(consume String) -> Unit, message: String) -> Unit [consume message] {
     action(move message)
 }
 
@@ -1739,15 +1735,180 @@ func main() -> Unit {
         vec![foster::ast::ParameterMode::Consume]
     );
 
-    let incompatible = source.replace(
-        "any func(consume String) -> Unit",
-        "any func(String) -> Unit",
-    );
+    let incompatible = source.replace("func(consume String) -> Unit", "func(String) -> Unit");
     let error = foster::compile(&incompatible).unwrap_err();
+    assert!(error.message.contains("callable contract is incompatible"));
+}
+
+#[test]
+fn any_is_an_ordinary_identifier_not_a_language_keyword() {
+    let source = r#"
+func main() -> Int {
+    any = 42
+    any
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+}
+
+#[test]
+fn declared_type_composition_conforms_without_runtime_conversion() {
+    let source = r#"
+import core.string as strings
+
+type TextSlice & Sequence<CodePoint> {
+    text: String
+}
+
+func empty?(self: TextSlice) -> Bool { self.text.empty? }
+func length(self: TextSlice) -> Int { self.text.length }
+func head(self: TextSlice) -> CodePoint { self.text.head }
+func rest(self: TextSlice) -> String { strings.slice(self.text, 1, self.text.length) }
+
+func first(values: Sequence<CodePoint>) -> CodePoint {
+    values.head
+}
+
+func main() -> CodePoint {
+    value = TextSlice { text: "OK" }
+    first(value)
+    value.head
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::CodePoint('O'));
+}
+
+#[test]
+fn callable_contract_members_dispatch_through_structural_types() {
+    let source = r#"
+type Identified {
+    pub func id(self) -> Int [read self]
+    pub func offset(self, amount: Int) -> Int [read self]
+}
+
+type User & Identified {
+    value: Int
+}
+
+func id(self: User) -> Int {
+    self.value
+}
+
+func offset(self: User, amount: Int) -> Int {
+    self.value + amount
+}
+
+func increment_id(value: Identified) -> Int {
+    value.id + value.offset(2)
+}
+
+func main() -> Int {
+    increment_id(User { value: 20 })
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+
+    let missing = source
+        .replace("type User & Identified", "type User")
+        .replace(
+            "func id(self: User) -> Int {\n    self.value\n}\n\nfunc offset(self: User, amount: Int) -> Int {\n    self.value + amount\n}\n",
+            "",
+        );
+    let error = foster::compile(&missing).unwrap_err();
+    assert!(error.message.contains("missing accessible method `id`"));
+}
+
+#[test]
+fn matching_contracts_conform_without_an_explicit_composition_clause() {
+    let source = r#"
+type TextSlice {
+    pub empty?: Bool
+    pub length: Int
+    pub head: CodePoint
+    pub rest: String
+}
+
+func first(values: Sequence<CodePoint>) -> CodePoint {
+    values.head
+}
+
+func main() -> CodePoint {
+    first(TextSlice { empty?: false, length: 2, head: 'O', rest: "K" })
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::CodePoint('O'));
+}
+
+#[test]
+fn intersection_parameters_require_every_composed_contract() {
+    let source = r#"
+import core.string as strings
+
+type Named {
+    pub name: String
+}
+
+type TextSlice & Named & Sequence<CodePoint> {
+    text: String
+}
+
+func empty?(self: TextSlice) -> Bool { self.text.empty? }
+func length(self: TextSlice) -> Int { self.text.length }
+func head(self: TextSlice) -> CodePoint { self.text.head }
+func rest(self: TextSlice) -> String { strings.slice(self.text, 1, self.text.length) }
+
+func describe(value: Named & Sequence<CodePoint>) -> String {
+    value.name + value.head.string
+}
+
+func main() -> String {
+    describe(TextSlice {
+        name: "answer: "
+        text: "Y"
+    })
+}
+"#;
+    assert_eq!(
+        foster::run(source).unwrap(),
+        Value::String("answer: Y".into())
+    );
+}
+
+#[test]
+fn declared_composition_requires_callable_members() {
+    let error = foster::compile(
+        r#"
+type Broken & Sequence<CodePoint> {}
+
+func main() { 0 }
+"#,
+    )
+    .unwrap_err();
+    assert!(error.message.contains("missing required method `empty?`"));
+}
+
+#[test]
+fn declared_composition_rejects_incompatible_contract_members() {
+    let error = foster::compile(
+        r#"
+type TextNamed {
+    pub name: String
+}
+
+type NumericNamed {
+    pub name: Int
+}
+
+type Broken & TextNamed & NumericNamed {}
+
+func main() { 0 }
+"#,
+    )
+    .unwrap_err();
     assert!(
         error
             .message
-            .contains("callable effects or erasure are incompatible")
+            .contains("composes incompatible definitions of field `name`")
     );
 }
 

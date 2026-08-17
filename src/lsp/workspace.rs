@@ -529,6 +529,7 @@ pub(super) enum SymbolIdentity {
     Constant(crate::hir::ConstantId),
     Function(crate::hir::FunctionId),
     Record(crate::hir::RecordId),
+    RequiredMethod(crate::hir::RecordId, usize),
     Variant(crate::hir::VariantTypeId),
     Builtin(crate::hir::Builtin),
 }
@@ -572,6 +573,9 @@ fn symbol_at(
             } if member == name => {
                 if let Some(function) = member_function(compilation, *object, member) {
                     return Some(SymbolIdentity::Function(function));
+                }
+                if let Some((record, method)) = required_method(compilation, *object, member) {
+                    return Some(SymbolIdentity::RequiredMethod(record, method));
                 }
             }
             crate::hir::Expr::Name(resolved) => match *resolved {
@@ -675,6 +679,13 @@ fn symbol_hover(compilation: &crate::hir::Compilation, symbol: SymbolIdentity) -
             Some(documented_hover(
                 record_signature(definition),
                 definition.documentation.as_deref(),
+            ))
+        }
+        SymbolIdentity::RequiredMethod(record, method) => {
+            let method = &compilation.hir.records[record].methods[method];
+            Some(documented_hover(
+                method_requirement_signature(method),
+                method.documentation.as_deref(),
             ))
         }
         SymbolIdentity::Variant(variant) => {
@@ -793,6 +804,9 @@ fn symbol_name(compilation: &crate::hir::Compilation, symbol: SymbolIdentity) ->
         SymbolIdentity::Constant(constant) => &compilation.hir.constants[constant].name,
         SymbolIdentity::Function(function) => &compilation.hir.functions[function].name,
         SymbolIdentity::Record(record) => &compilation.hir.records[record].name,
+        SymbolIdentity::RequiredMethod(record, method) => {
+            &compilation.hir.records[record].methods[method].name
+        }
         SymbolIdentity::Variant(variant) => &compilation.hir.variant_types[variant].name,
         SymbolIdentity::Builtin(builtin) => super::builtins::info(builtin).name,
     }
@@ -842,6 +856,16 @@ pub(super) fn symbol_declaration(
                 definition.module,
                 definition.span.clone(),
                 &definition.name,
+            )
+        }
+        SymbolIdentity::RequiredMethod(record, method) => {
+            let record = &compilation.hir.records[record];
+            let method = &record.methods[method];
+            location(
+                compilation,
+                record.module,
+                method.span.clone(),
+                &method.name,
             )
         }
         SymbolIdentity::Variant(variant) => {
@@ -1128,7 +1152,26 @@ pub(super) fn callable_presentation(
     let (function, receiver) = match &compilation.hir.expressions[callee] {
         crate::hir::Expr::Name(crate::hir::ResolvedName::Function(function)) => (*function, false),
         crate::hir::Expr::Member { object, name } => {
-            (member_function(compilation, *object, name)?, true)
+            if let Some(function) = member_function(compilation, *object, name) {
+                (function, true)
+            } else {
+                let (record, method_index) = required_method(compilation, *object, name)?;
+                let method = &compilation.hir.records[record].methods[method_index];
+                return Some(CallablePresentation {
+                    signature: method_requirement_signature(method),
+                    parameters: method
+                        .parameters
+                        .iter()
+                        .skip(1)
+                        .map(|parameter| parameter.name.clone())
+                        .collect(),
+                    documentation: method.documentation.clone(),
+                    definition: symbol_declaration(
+                        compilation,
+                        SymbolIdentity::RequiredMethod(record, method_index),
+                    ),
+                });
+            }
         }
         crate::hir::Expr::Name(crate::hir::ResolvedName::Builtin(builtin)) => {
             let info = super::builtins::info(*builtin);
@@ -1165,17 +1208,42 @@ fn member_function(
     member: &str,
 ) -> Option<crate::hir::FunctionId> {
     let ty = compilation.types.expression_type(object)?;
-    let record = record_from_type(&compilation.types, ty)?;
-    let record = &compilation.hir.records[record];
+    let record_id = record_from_type(&compilation.types, ty)?;
+    let record = &compilation.hir.records[record_id];
     let function = compilation.hir.modules[record.module]
         .functions
         .get(member)
         .copied()?;
-    compilation.hir.functions[function]
-        .parameters
-        .first()
-        .is_some_and(|parameter| compilation.hir.locals[*parameter].name == "self")
-        .then_some(function)
+    let receiver_matches = compilation
+        .types
+        .function_type(function)
+        .and_then(|signature| signature.parameters.first())
+        .is_some_and(|ty| {
+            matches!(
+                compilation.types.types[*ty],
+                crate::types::Type::Record { record, .. } if record == record_id
+            )
+        });
+    (receiver_matches
+        && compilation.hir.functions[function]
+            .parameters
+            .first()
+            .is_some_and(|parameter| compilation.hir.locals[*parameter].name == "self"))
+    .then_some(function)
+}
+
+fn required_method(
+    compilation: &crate::hir::Compilation,
+    object: crate::hir::ExprId,
+    member: &str,
+) -> Option<(crate::hir::RecordId, usize)> {
+    let ty = compilation.types.expression_type(object)?;
+    let record = record_from_type(&compilation.types, ty)?;
+    compilation.hir.records[record]
+        .methods
+        .iter()
+        .position(|method| method.name == member)
+        .map(|method| (record, method))
 }
 
 fn record_from_type(
@@ -1226,25 +1294,42 @@ pub(super) fn function_signature(
     let effects = signature.map_or_else(String::new, |signature| {
         display_effects(&signature.effects, signature.suspends)
     });
-    let mut generic_entries = function.type_parameters.clone();
-    generic_entries.extend(function.groups.iter().map(|group| {
-        format!(
-            "{}: group {}",
-            group.name,
-            display_type_expr(&group.element)
-        )
-    }));
-    let generics = type_parameters(&generic_entries);
+    let generics = angle_parameters(&function.type_parameters);
+    let group_entries = function
+        .groups
+        .iter()
+        .map(|group| {
+            format!(
+                "{}: group {}",
+                group.name,
+                display_type_expr(&group.element)
+            )
+        })
+        .collect::<Vec<_>>();
+    let groups = square_parameters(&group_entries);
     format!(
-        "{}func {}{generics}({parameters}) -> {result}{effects}",
+        "{}func {}{generics}{groups}({parameters}) -> {result}{effects}",
         if function.public { "pub " } else { "" },
         function.name
     )
 }
 
 fn record_signature(record: &crate::hir::Record) -> String {
-    let parameters = type_parameters(&record.parameters);
-    let fields = record
+    let parameters = angle_parameters(&record.parameters);
+    let compositions = if record.compositions.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " & {}",
+            record
+                .compositions
+                .iter()
+                .map(display_type_expr)
+                .collect::<Vec<_>>()
+                .join(" & ")
+        )
+    };
+    let mut members = record
         .fields
         .iter()
         .map(|field| {
@@ -1255,12 +1340,42 @@ fn record_signature(record: &crate::hir::Record) -> String {
                 display_type_expr(&field.ty)
             )
         })
-        .collect::<Vec<_>>()
-        .join("\n");
+        .collect::<Vec<_>>();
+    members.extend(
+        record
+            .methods
+            .iter()
+            .map(|method| format!("    {}", method_requirement_signature(method))),
+    );
+    let members = members.join("\n");
     format!(
-        "{}type {}{parameters} {{\n{fields}\n}}",
+        "{}type {}{parameters}{compositions} {{\n{members}\n}}",
         if record.public { "pub " } else { "" },
         record.name
+    )
+}
+
+fn method_requirement_signature(method: &crate::ast::MethodRequirement) -> String {
+    let parameters = method
+        .parameters
+        .iter()
+        .map(|parameter| match &parameter.ty {
+            Some(ty) => format!("{}: {}", parameter.name, display_type_expr(ty)),
+            None => parameter.name.clone(),
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let result = method
+        .return_type
+        .as_ref()
+        .map(display_type_expr)
+        .unwrap_or_else(|| "Unit".into());
+    format!(
+        "{}func {}{}({parameters}) -> {result}{}",
+        if method.public { "pub " } else { "" },
+        method.name,
+        angle_parameters(&method.type_parameters),
+        display_effects(&method.effects, method.suspends)
     )
 }
 
@@ -1269,7 +1384,7 @@ fn variant_signature(
     variant_id: crate::hir::VariantTypeId,
 ) -> String {
     let variant = &compilation.hir.variant_types[variant_id];
-    let parameters = type_parameters(&variant.parameters);
+    let parameters = angle_parameters(&variant.parameters);
     let alternatives = variant
         .alternatives
         .iter()
@@ -1299,7 +1414,15 @@ fn variant_signature(
     )
 }
 
-fn type_parameters(parameters: &[String]) -> String {
+fn angle_parameters(parameters: &[String]) -> String {
+    if parameters.is_empty() {
+        String::new()
+    } else {
+        format!("<{}>", parameters.join(", "))
+    }
+}
+
+fn square_parameters(parameters: &[String]) -> String {
     if parameters.is_empty() {
         String::new()
     } else {
@@ -1311,7 +1434,7 @@ fn display_type_expr(ty: &crate::ast::TypeExpr) -> String {
     match ty {
         crate::ast::TypeExpr::Named(name, arguments) => {
             let arguments = arguments.iter().map(display_type_expr).collect::<Vec<_>>();
-            format!("{name}{}", type_parameters(&arguments))
+            format!("{name}{}", angle_parameters(&arguments))
         }
         crate::ast::TypeExpr::Intersection(members) => members
             .iter()
@@ -1322,7 +1445,6 @@ fn display_type_expr(ty: &crate::ast::TypeExpr) -> String {
             format!("ref[{group}] {}", display_type_expr(value))
         }
         crate::ast::TypeExpr::Function {
-            erased,
             parameters,
             parameter_modes,
             result,
@@ -1346,8 +1468,7 @@ fn display_type_expr(ty: &crate::ast::TypeExpr) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
-                "{}func({parameters}) -> {}{}",
-                if *erased { "any " } else { "" },
+                "func({parameters}) -> {}{}",
                 display_type_expr(result),
                 display_effects(effects, *suspends)
             )
@@ -2018,6 +2139,65 @@ func main() -> Int {
     }
 
     #[test]
+    fn callable_contract_members_provide_hover_signature_and_definition() {
+        let (mut workspace, uri, _) = fixture_workspace();
+        let source = r#"type Identified {
+    /// Adds an amount to this value.
+    pub func offset(self, amount: Int) -> Int [read self]
+}
+
+type User & Identified { value: Int }
+func offset(self: User, amount: Int) -> Int { self.value + amount }
+
+func apply(value: Identified) -> Int {
+    value.offset(2)
+}
+func main() -> Int { apply(User { value: 40 }) }
+"#;
+        workspace.open(uri.clone(), source.into(), 1);
+        let position = TextDocumentPositionParams::new(
+            lsp_types::TextDocumentIdentifier::new(uri.clone()),
+            Position::new(9, 12),
+        );
+
+        let hover = workspace.hover(&position).unwrap();
+        let HoverContents::Markup(contents) = hover.contents else {
+            panic!("expected markdown hover")
+        };
+        assert!(
+            contents
+                .value
+                .contains("func offset(self, amount: Int) -> Int"),
+            "{}",
+            contents.value
+        );
+        assert!(contents.value.contains("Adds an amount"));
+
+        let location = workspace.definition(&position).unwrap();
+        assert_eq!(location.range.start, Position::new(2, 13));
+
+        let help = workspace
+            .signature_help(&SignatureHelpParams {
+                context: None,
+                text_document_position_params: TextDocumentPositionParams::new(
+                    lsp_types::TextDocumentIdentifier::new(uri),
+                    Position::new(9, 19),
+                ),
+                work_done_progress_params: Default::default(),
+            })
+            .unwrap();
+        assert!(
+            help.signatures[0]
+                .label
+                .contains("offset(self, amount: Int)")
+        );
+        assert!(matches!(
+            &help.signatures[0].documentation,
+            Some(Documentation::MarkupContent(contents)) if contents.value.contains("Adds an amount")
+        ));
+    }
+
+    #[test]
     fn definition_resolves_instance_methods_from_receiver_types() {
         let root = std::env::current_dir()
             .unwrap()
@@ -2157,6 +2337,25 @@ func main() -> Int {
         assert_eq!(
             help.signatures[0].label,
             "from_code_point(value: Int) -> CodePoint"
+        );
+    }
+
+    #[test]
+    fn record_signatures_show_declared_type_composition() {
+        let compilation = crate::compile(
+            r#"
+type Named { pub name: String }
+type TextSlice & Named {}
+func main() { 0 }
+"#,
+        )
+        .unwrap();
+        let module = compilation.hir.module_named("main").unwrap();
+        let record = compilation.hir.record_named(module, "TextSlice").unwrap();
+        let signature = record_signature(&compilation.hir.records[record]);
+        assert!(
+            signature.starts_with("type TextSlice & Named"),
+            "{signature}"
         );
     }
 }

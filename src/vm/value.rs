@@ -27,6 +27,7 @@ pub enum Value {
     Remote(RemoteValue),
     Future(FutureValue),
     Record {
+        record: Option<crate::hir::RecordId>,
         name: String,
         fields: BTreeMap<String, Value>,
     },
@@ -397,6 +398,7 @@ pub(crate) enum WireValue {
     Symbol(String),
     List(Vec<WireValue>),
     Record {
+        record: Option<crate::hir::RecordId>,
         name: String,
         fields: BTreeMap<String, WireValue>,
     },
@@ -477,7 +479,12 @@ impl Value {
                     .map(Self::into_wire)
                     .collect::<Result<_, _>>()?,
             ),
-            Self::Record { name, fields } => WireValue::Record {
+            Self::Record {
+                record,
+                name,
+                fields,
+            } => WireValue::Record {
+                record,
                 name,
                 fields: fields
                     .into_iter()
@@ -520,7 +527,12 @@ impl Value {
                     .map(Self::from_wire)
                     .collect::<Result<_, _>>()?,
             ),
-            WireValue::Record { name, fields } => Self::Record {
+            WireValue::Record {
+                record,
+                name,
+                fields,
+            } => Self::Record {
+                record,
                 name,
                 fields: fields
                     .into_iter()
@@ -574,7 +586,7 @@ impl fmt::Display for Value {
             }
             Self::Remote(remote) => write!(formatter, "<remote {}>", remote.id),
             Self::Future(future) => write!(formatter, "<future {}>", future.id),
-            Self::Record { name, fields } => {
+            Self::Record { name, fields, .. } => {
                 write!(formatter, "{name} {{")?;
                 for (index, (field, value)) in fields.iter().enumerate() {
                     if index > 0 {

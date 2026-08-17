@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use la_arena::{Arena, Idx};
 
@@ -56,6 +56,9 @@ pub struct TypeInformation {
     pub functions: HashMap<FunctionId, FunctionType>,
     pub constants: HashMap<ConstantId, TypeId>,
     pub record_names: HashMap<RecordId, String>,
+    pub record_fields: HashMap<RecordId, HashSet<String>>,
+    pub record_properties: HashMap<RecordId, HashSet<String>>,
+    pub record_methods: HashMap<RecordId, HashSet<String>>,
     pub variant_names: HashMap<VariantTypeId, String>,
 }
 
@@ -99,8 +102,7 @@ impl TypeInformation {
             Type::Function(function) => {
                 let effects = display_effects(&function.effects, function.suspends);
                 format!(
-                    "{}func({}) -> {}{effects}",
-                    if function.erased { "any " } else { "" },
+                    "func({}) -> {}{effects}",
                     function
                         .parameters
                         .iter()

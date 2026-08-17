@@ -86,8 +86,15 @@ impl Parser {
             }
             self.expect(&TokenKind::Greater, "expected `>` after type parameters")?;
         }
+        let mut compositions = Vec::new();
+        while self.take(&TokenKind::Ampersand) {
+            compositions.push(self.primary_type_expr()?);
+        }
         self.newlines();
         if self.take(&TokenKind::Equal) {
+            if !compositions.is_empty() {
+                return Err(self.error("variant types cannot declare composed contracts"));
+            }
             self.newlines();
             let mut alternatives = Vec::new();
             while self.take(&TokenKind::Pipe) {
@@ -128,7 +135,28 @@ impl Parser {
         self.expect(&TokenKind::LBrace, "expected `{` in record declaration")?;
         self.newlines();
         let mut fields = Vec::new();
+        let mut methods = Vec::new();
         while !self.at(&TokenKind::RBrace) && !self.at(&TokenKind::Eof) {
+            let documentation = self.documentation();
+            let method_follows = self.at(&TokenKind::Func)
+                || (self.at(&TokenKind::Pub)
+                    && self
+                        .peek_n(1)
+                        .is_some_and(|token| token.kind == TokenKind::Func));
+            if method_follows {
+                methods.push(self.method_requirement(documentation)?);
+                if !self.at(&TokenKind::RBrace) {
+                    self.expect(
+                        &TokenKind::Newline,
+                        "expected newline after required method signature",
+                    )?;
+                }
+                self.newlines();
+                continue;
+            }
+            if documentation.is_some() {
+                return Err(self.error("documentation inside a type must precede a method"));
+            }
             let public = self.take(&TokenKind::Pub);
             let name = self.expect_ident("expected field name")?;
             self.expect(&TokenKind::Colon, "expected `:` after field name")?;
@@ -147,10 +175,64 @@ impl Parser {
                 name,
                 public,
                 parameters,
+                compositions,
                 fields,
+                methods,
             }),
             None,
         ))
+    }
+
+    fn method_requirement(
+        &mut self,
+        documentation: Option<String>,
+    ) -> Result<MethodRequirement, FosterError> {
+        let start = self.peek().range.start;
+        let public = self.take(&TokenKind::Pub);
+        self.expect(&TokenKind::Func, "expected `func`")?;
+        let name = self.expect_ident("expected required method name")?;
+        let (type_parameters, groups) = self.function_parameters()?;
+        self.expect(
+            &TokenKind::LParen,
+            "expected `(` after required method name",
+        )?;
+        let mut parameters = Vec::new();
+        if !self.at(&TokenKind::RParen) {
+            loop {
+                let name = self.expect_ident("expected parameter name")?;
+                let ty = if self.take(&TokenKind::Colon) {
+                    Some(self.type_expr()?)
+                } else {
+                    None
+                };
+                parameters.push(Parameter { name, ty });
+                if !self.take(&TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+        self.expect(
+            &TokenKind::RParen,
+            "expected `)` after required method parameters",
+        )?;
+        let return_type = if self.take(&TokenKind::Arrow) {
+            Some(self.type_expr()?)
+        } else {
+            None
+        };
+        let effects = self.effects()?;
+        Ok(MethodRequirement {
+            span: start..self.tokens[self.current.saturating_sub(1)].range.end,
+            documentation,
+            name,
+            public,
+            type_parameters,
+            groups,
+            parameters,
+            return_type,
+            effects: effects.effects,
+            suspends: effects.suspend_span.is_some(),
+        })
     }
 
     pub(super) fn import(&mut self) -> Result<Import, FosterError> {
@@ -286,11 +368,7 @@ impl Parser {
     }
 
     fn primary_type_expr(&mut self) -> Result<TypeExpr, FosterError> {
-        let erased = self.take(&TokenKind::Any);
-        if erased || self.take(&TokenKind::Func) {
-            if erased {
-                self.expect(&TokenKind::Func, "expected `func` after `any`")?;
-            }
+        if self.take(&TokenKind::Func) {
             self.expect(&TokenKind::LParen, "expected `(` in function type")?;
             let mut parameters = Vec::new();
             let mut parameter_modes = Vec::new();
@@ -317,7 +395,6 @@ impl Parser {
                 ..
             } = self.effects()?;
             return Ok(TypeExpr::Function {
-                erased,
                 parameters,
                 parameter_modes,
                 result,

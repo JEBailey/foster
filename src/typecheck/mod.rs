@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 mod annotations;
 mod calls;
+mod composition;
 mod constants;
 mod context;
 mod effects;
@@ -78,6 +79,7 @@ impl<'a> Checker<'a> {
         self.check_variant_declarations()?;
         self.declare_constants()?;
         self.declare_signatures()?;
+        self.check_record_compositions()?;
         for (function, _) in self.hir.functions.iter() {
             self.check_function(function)?;
         }

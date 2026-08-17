@@ -86,12 +86,13 @@ Callable types preserve this behavior positionally. Parameters borrow unless pre
 
 ```foster
 func(String) -> Unit
-any func(consume String) -> Unit
+func(consume String) -> Unit
 ```
 
 When `func send(message: String) [consume message]` becomes a function value, the compiler converts
 the name-based declaration into a positional `Consume` mode for parameter zero. That mode survives
-closure assignment, partial application, generic instantiation, and `any func` erasure. Indirect
+closure assignment, partial application, generic instantiation, and compiler-inferred callable
+erasure. Indirect
 calls therefore require the same `move` as direct calls. Parameter modes describe what happens to
 the argument itself; group effects continue to describe access through references.
 

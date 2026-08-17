@@ -32,6 +32,7 @@ pub fn optimize(program: &mut Program) {
                     | Instruction::RemoteCall { .. }
                     | Instruction::Await { .. }
                     | Instruction::CallMethod { .. }
+                    | Instruction::CallContractMethod { .. }
             )
         })
     }) {

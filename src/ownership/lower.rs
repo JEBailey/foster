@@ -272,7 +272,7 @@ impl<'a> Builder<'a> {
         match &self.hir.expressions[expression] {
             hir::Expr::Member { object, name } => {
                 let ty = self.types.expression_type(*object)?;
-                type_has_field(self.hir, self.types, ty, name).then_some(place)
+                type_has_field(self.types, ty, name).then_some(place)
             }
             hir::Expr::Index { .. }
             | hir::Expr::Name(ResolvedName::Local(_))
@@ -327,20 +327,15 @@ impl<'a> Builder<'a> {
     }
 }
 
-fn type_has_field(
-    hir: &hir::PackageHir,
-    types: &TypeInformation,
-    ty: crate::types::TypeId,
-    name: &str,
-) -> bool {
+fn type_has_field(types: &TypeInformation, ty: crate::types::TypeId, name: &str) -> bool {
     match &types.types[ty] {
-        crate::types::Type::Record { record, .. } => hir.records[*record]
-            .fields
-            .iter()
-            .any(|field| field.name == name),
+        crate::types::Type::Record { record, .. } => types
+            .record_fields
+            .get(record)
+            .is_some_and(|fields| fields.contains(name)),
         crate::types::Type::Intersection(members) => members
             .iter()
-            .any(|member| type_has_field(hir, types, *member, name)),
+            .any(|member| type_has_field(types, *member, name)),
         _ => false,
     }
 }

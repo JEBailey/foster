@@ -181,14 +181,13 @@ fn declaration(body: &mut String, name: &str, public: bool, signature: &str, doc
 fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
     let function = &compilation.hir.functions[id];
     let signature = compilation.types.function_type(id);
-    let mut generic_entries = function.type_parameters.clone();
-    generic_entries.extend(
-        function
-            .groups
-            .iter()
-            .map(|group| format!("{}: group {}", group.name, type_expr(&group.element))),
-    );
-    let generics = bracketed(&generic_entries);
+    let generics = angled(&function.type_parameters);
+    let group_entries = function
+        .groups
+        .iter()
+        .map(|group| format!("{}: group {}", group.name, type_expr(&group.element)))
+        .collect::<Vec<_>>();
+    let groups = squared(&group_entries);
     let parameters = function
         .parameters
         .iter()
@@ -211,14 +210,27 @@ fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
         .unwrap_or_else(|| "Unit".into());
     let effects = signature.map_or_else(String::new, |sig| effects(&sig.effects, sig.suspends));
     format!(
-        "{}func {}{generics}({parameters}) -> {result}{effects}",
+        "{}func {}{generics}{groups}({parameters}) -> {result}{effects}",
         if function.public { "pub " } else { "" },
         function.name
     )
 }
 
 fn record_signature(record: &crate::hir::Record) -> String {
-    let fields = record
+    let compositions = if record.compositions.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " & {}",
+            record
+                .compositions
+                .iter()
+                .map(type_expr)
+                .collect::<Vec<_>>()
+                .join(" & ")
+        )
+    };
+    let mut members = record
         .fields
         .iter()
         .map(|field| {
@@ -229,13 +241,36 @@ fn record_signature(record: &crate::hir::Record) -> String {
                 type_expr(&field.ty)
             )
         })
-        .collect::<Vec<_>>()
-        .join("\n");
+        .collect::<Vec<_>>();
+    members.extend(record.methods.iter().map(|method| {
+        let parameters = method
+            .parameters
+            .iter()
+            .map(|parameter| match &parameter.ty {
+                Some(ty) => format!("{}: {}", parameter.name, type_expr(ty)),
+                None => parameter.name.clone(),
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let result = method
+            .return_type
+            .as_ref()
+            .map(type_expr)
+            .unwrap_or_else(|| "Unit".into());
+        format!(
+            "    {}func {}{}({parameters}) -> {result}{}",
+            if method.public { "pub " } else { "" },
+            method.name,
+            angled(&method.type_parameters),
+            effects(&method.effects, method.suspends)
+        )
+    }));
+    let members = members.join("\n");
     format!(
-        "{}type {}{} {{\n{fields}\n}}",
+        "{}type {}{}{compositions} {{\n{members}\n}}",
         if record.public { "pub " } else { "" },
         record.name,
-        bracketed(&record.parameters)
+        angled(&record.parameters)
     )
 }
 
@@ -267,7 +302,7 @@ fn variant_signature(compilation: &Compilation, id: crate::hir::VariantTypeId) -
         "{}type {}{} = {alternatives}",
         if variant.public { "pub " } else { "" },
         variant.name,
-        bracketed(&variant.parameters)
+        angled(&variant.parameters)
     )
 }
 
@@ -275,7 +310,7 @@ fn type_expr(ty: &TypeExpr) -> String {
     match ty {
         TypeExpr::Named(name, arguments) => format!(
             "{name}{}",
-            bracketed(&arguments.iter().map(type_expr).collect::<Vec<_>>())
+            angled(&arguments.iter().map(type_expr).collect::<Vec<_>>())
         ),
         TypeExpr::Intersection(members) => members
             .iter()
@@ -284,7 +319,6 @@ fn type_expr(ty: &TypeExpr) -> String {
             .join(" & "),
         TypeExpr::Reference { group, value } => format!("ref[{group}] {}", type_expr(value)),
         TypeExpr::Function {
-            erased,
             parameters,
             parameter_modes,
             result,
@@ -308,8 +342,7 @@ fn type_expr(ty: &TypeExpr) -> String {
                 .collect::<Vec<_>>()
                 .join(", ");
             format!(
-                "{}func({parameters}) -> {}{}",
-                if *erased { "any " } else { "" },
+                "func({parameters}) -> {}{}",
                 type_expr(result),
                 effects(declared, *suspends)
             )
@@ -343,7 +376,15 @@ fn effects(declared: &[Effect], suspends: bool) -> String {
     }
 }
 
-fn bracketed(values: &[String]) -> String {
+fn angled(values: &[String]) -> String {
+    if values.is_empty() {
+        String::new()
+    } else {
+        format!("<{}>", values.join(", "))
+    }
+}
+
+fn squared(values: &[String]) -> String {
     if values.is_empty() {
         String::new()
     } else {

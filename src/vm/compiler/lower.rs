@@ -228,6 +228,24 @@ impl FunctionCompiler<'_> {
                         }
                         return Ok(destination);
                     }
+                    if self.contract_method(*object, name) {
+                        let receiver = self.expression(*object)?;
+                        let arguments = arguments
+                            .iter()
+                            .map(|argument| self.expression(*argument))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let destination = self.allocate();
+                        self.emit(
+                            Instruction::CallContractMethod {
+                                destination,
+                                receiver,
+                                name: name.clone(),
+                                arguments,
+                            },
+                            span,
+                        );
+                        return Ok(destination);
+                    }
                 }
                 let arguments = arguments
                     .iter()
@@ -392,6 +410,32 @@ impl FunctionCompiler<'_> {
                 Ok(destination)
             }
             hir::Expr::Member { object, name } => {
+                if self.contract_property(*object, name) {
+                    let receiver = self.expression(*object)?;
+                    let destination = self.allocate();
+                    if let Some((function, false)) = self.record_method(*object, name) {
+                        self.emit(
+                            Instruction::CallMethod {
+                                destination,
+                                receiver,
+                                function,
+                                arguments: Vec::new(),
+                            },
+                            span,
+                        );
+                    } else {
+                        self.emit(
+                            Instruction::CallContractMethod {
+                                destination,
+                                receiver,
+                                name: name.clone(),
+                                arguments: Vec::new(),
+                            },
+                            span,
+                        );
+                    }
+                    return Ok(destination);
+                }
                 let object = self.expression(*object)?;
                 let destination = self.allocate();
                 self.emit(
@@ -471,13 +515,66 @@ impl FunctionCompiler<'_> {
                 }
                 crate::types::Type::Reference { value, .. } => ty = *value,
                 crate::types::Type::Record { record, .. } => {
-                    return self
+                    let function = self
                         .hir
-                        .function_named(self.hir.records[*record].module, name)
-                        .map(|function| (function, remote));
+                        .function_named(self.hir.records[*record].module, name)?;
+                    let receiver_matches = self
+                        .types
+                        .function_type(function)
+                        .and_then(|signature| signature.parameters.first())
+                        .is_some_and(|ty| {
+                            matches!(
+                                self.types.types[*ty],
+                                crate::types::Type::Record { record: receiver, .. }
+                                    if receiver == *record
+                            )
+                        });
+                    return receiver_matches.then_some((function, remote));
                 }
                 _ => return None,
             }
+        }
+    }
+
+    fn contract_property(&self, object: ExprId, name: &str) -> bool {
+        self.contract_member(object, name, true)
+    }
+
+    fn contract_method(&self, object: ExprId, name: &str) -> bool {
+        self.contract_member(object, name, false)
+    }
+
+    fn contract_member(&self, object: ExprId, name: &str, property_only: bool) -> bool {
+        let Some(ty) = self.types.expression_type(object) else {
+            return false;
+        };
+        self.type_has_contract_member(ty, name, property_only)
+    }
+
+    fn type_has_contract_member(
+        &self,
+        ty: crate::types::TypeId,
+        name: &str,
+        property_only: bool,
+    ) -> bool {
+        match &self.types.types[ty] {
+            crate::types::Type::Sequence(_) => {
+                matches!(name, "empty?" | "length" | "head" | "rest")
+            }
+            crate::types::Type::Record { record, .. } => {
+                let members = if property_only {
+                    &self.types.record_properties
+                } else {
+                    &self.types.record_methods
+                };
+                members
+                    .get(record)
+                    .is_some_and(|methods| methods.contains(name))
+            }
+            crate::types::Type::Intersection(members) => members
+                .iter()
+                .any(|member| self.type_has_contract_member(*member, name, property_only)),
+            _ => false,
         }
     }
 

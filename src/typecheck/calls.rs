@@ -80,6 +80,13 @@ impl Checker<'_> {
             return Ok(result);
         }
 
+        if let hir::Expr::Member { object, name } = self.hir.expressions[callee].clone() {
+            let object_type = self.infer_expression(function, object)?;
+            if let Some(method) = self.contract_method_type(function, object_type, &name)? {
+                self.expressions.insert(callee, method);
+            }
+        }
+
         let callee_type = self.infer_expression(function, callee)?;
         let argument_types = arguments
             .iter()
@@ -250,12 +257,31 @@ impl Checker<'_> {
                 Box::new(Ty::List(element)),
             )),
             (Ty::Record(record, arguments), member) => {
-                if self.hir.records[record]
-                    .fields
+                if self
+                    .effective_record_fields(record, &arguments)?
                     .iter()
                     .any(|field| field.name == member)
                 {
                     self.record_field_type(function, record, &arguments, member)
+                } else if let Some(method) =
+                    self.effective_method_type(function, record, &arguments, member)?
+                {
+                    match method {
+                        Ty::Callable {
+                            ref parameters,
+                            ref result,
+                            ref effects,
+                            suspends: false,
+                            ..
+                        } if parameters.is_empty()
+                            && effects
+                                .iter()
+                                .all(|effect| effect.kind == crate::ast::EffectKind::Read) =>
+                        {
+                            Ok((**result).clone())
+                        }
+                        method => Ok(method),
+                    }
                 } else {
                     self.record_method_type(function, record, arguments, member, false, false)
                 }
@@ -263,16 +289,26 @@ impl Checker<'_> {
             (Ty::Intersection(members), member) => {
                 let mut found: Option<Ty> = None;
                 for component in members {
-                    let Ty::Record(record, arguments) = component else {
-                        continue;
+                    let candidate = match component {
+                        Ty::Record(record, arguments) => {
+                            let has_field = self
+                                .effective_record_fields(record, &arguments)?
+                                .iter()
+                                .any(|field| field.name == member);
+                            if has_field {
+                                Some(self.record_field_type(function, record, &arguments, member)?)
+                            } else {
+                                None
+                            }
+                        }
+                        sequence @ Ty::Sequence(_)
+                            if matches!(member, "empty?" | "length" | "head" | "rest") =>
+                        {
+                            Some(self.infer_member(function, sequence, member)?)
+                        }
+                        _ => None,
                     };
-                    if self.hir.records[record]
-                        .fields
-                        .iter()
-                        .any(|field| field.name == member)
-                    {
-                        let candidate =
-                            self.record_field_type(function, record, &arguments, member)?;
+                    if let Some(candidate) = candidate {
                         if let Some(previous) = &found {
                             self.unify(previous.clone(), candidate.clone(), function)?;
                         }
@@ -322,6 +358,56 @@ impl Checker<'_> {
                 format!("type `{}` has no member `{name}`", self.describe(&ty)),
             )),
         }
+    }
+
+    fn contract_method_type(
+        &mut self,
+        function: FunctionId,
+        object: Ty,
+        name: &str,
+    ) -> Result<Option<Ty>, FosterError> {
+        match self.resolved(object) {
+            Ty::Record(record, arguments) => {
+                self.effective_method_type(function, record, &arguments, name)
+            }
+            Ty::Intersection(members) => {
+                for member in members {
+                    if let Some(found) = self.contract_method_type(function, member, name)? {
+                        return Ok(Some(found));
+                    }
+                }
+                Ok(None)
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn effective_method_type(
+        &mut self,
+        caller: FunctionId,
+        record: RecordId,
+        arguments: &[Ty],
+        name: &str,
+    ) -> Result<Option<Ty>, FosterError> {
+        let definition = self.hir.records[record].clone();
+        let Some(method) = self
+            .effective_record_methods(record, arguments)?
+            .into_iter()
+            .find(|method| method.name == name)
+        else {
+            return Ok(None);
+        };
+        if definition.module != self.hir.functions[caller].module && !method.public {
+            return Err(self.error(caller, format!("method `{name}` is private")));
+        }
+        Ok(Some(Ty::Callable {
+            parameters: method.parameters,
+            parameter_modes: method.parameter_modes,
+            result: Box::new(method.result),
+            erased: false,
+            effects: method.effects,
+            suspends: method.suspends,
+        }))
     }
 
     pub(super) fn record_method_type(

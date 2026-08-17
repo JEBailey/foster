@@ -21,10 +21,10 @@ impl Checker<'_> {
                     .collect::<Result<Vec<_>, _>>()?;
                 if members
                     .iter()
-                    .any(|member| !matches!(member, Ty::Record(_, _)))
+                    .any(|member| !matches!(member, Ty::Record(_, _) | Ty::Sequence(_)))
                 {
                     return Err(FosterError::runtime(
-                        "intersection members must be record types",
+                        "intersection members must be structural contract types",
                     ));
                 }
                 Ok(Ty::Intersection(members))
@@ -105,7 +105,6 @@ impl Checker<'_> {
                 Box::new(self.annotation_type(module, value, generics)?),
             )),
             TypeExpr::Function {
-                erased,
                 parameters,
                 parameter_modes,
                 result,
@@ -118,7 +117,9 @@ impl Checker<'_> {
                     .collect::<Result<_, _>>()?,
                 parameter_modes: parameter_modes.clone(),
                 result: Box::new(self.annotation_type(module, result, generics)?),
-                erased: *erased,
+                // A source-level callable type is a contract. The compiler chooses
+                // an erased representation when a concrete callable flows into it.
+                erased: true,
                 effects: effects.clone(),
                 suspends: *suspends,
             }),

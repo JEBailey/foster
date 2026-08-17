@@ -51,6 +51,32 @@ pub fn compile_with_options(
         .iter()
         .map(|(id, value)| (id, value.name.clone()))
         .collect();
+    for (record, definition) in compilation.hir.records.iter() {
+        for (name, function) in &compilation.hir.modules[definition.module].functions {
+            let receiver_matches = compilation
+                .types
+                .function_type(*function)
+                .and_then(|signature| signature.parameters.first())
+                .is_some_and(|ty| {
+                    matches!(
+                        compilation.types.types[*ty],
+                        crate::types::Type::Record { record: receiver, .. }
+                            if receiver == record
+                    )
+                });
+            if receiver_matches
+                && compilation.hir.functions[*function]
+                    .parameters
+                    .first()
+                    .is_some_and(|parameter| compilation.hir.locals[*parameter].name == "self")
+            {
+                compiler
+                    .program
+                    .methods
+                    .insert((record, name.clone()), *function);
+            }
+        }
+    }
     compiler.program.variants = compilation
         .hir
         .variants
