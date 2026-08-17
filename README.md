@@ -163,6 +163,7 @@ scope-aware completion. The development VS Code extension lives in
 ## Documentation map
 
 - [Language design and implemented syntax](docs/language-design.md)
+- [Roadmap](docs/roadmap.md)
 - [Ownership and borrowing](docs/ownership.md)
 - [Closures and group borrowing](docs/closures.md)
 - [Effect derivation](docs/effect-derivation.md)

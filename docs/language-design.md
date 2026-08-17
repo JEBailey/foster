@@ -1,22 +1,20 @@
 # Foster Language Design
 
-This document records Foster's current design. It is a living specification: **settled** items are
-intentional foundations, **provisional** items are implemented or strongly preferred but may still
-change, and **open** items require design work before they become language guarantees.
+This document is an inventory of the Foster language implemented by this repository. It describes
+the syntax and semantics accepted by the bootstrap compiler, the behavior of its VM, and the core
+library shipped with it. It is descriptive rather than a roadmap: unimplemented ideas belong in
+focused design notes or issues, not in this language summary.
 
-## Goals
+## Language snapshot
 
-Foster is a statically typed, general-purpose language intended to span application and systems
-programming. It uses compile-time duck typing: a value conforms to a type when its accessible
-contract matches, without requiring nominal inheritance or an explicit `implements` declaration.
-Its defining memory-safety direction is single ownership with group-parameterized references:
+Foster is a statically typed, general-purpose language. It uses compile-time duck typing: a value
+conforms to a type when its accessible contract matches, without requiring nominal inheritance or
+an explicit `implements` declaration.
+Its memory-safety model uses single ownership with group-parameterized references:
 references describe the set of locations they may target, while mutation is expressed as a
 function effect.
 
-The language should be approachable, predictable from source, explicit at API boundaries, and
-capable of zero-cost native execution without requiring garbage collection.
-
-## Source files and modules — settled
+## Source files and modules
 
 Filesystem structure determines module structure.
 
@@ -64,14 +62,13 @@ const LIMIT = 100        // module-private compile-time value
 pub const VERSION = "1" // visible to importing modules
 ```
 
-This default applies to the implemented function and type declarations and is intended to apply to
-future declaration kinds as well. A public declaration may not expose a private declaration in its
-public signature. Explicit re-export syntax remains an open design question.
+This default applies to function and type declarations. A public declaration may not expose a
+private declaration in its public signature.
 
-## Functions and evaluation — provisional
+## Functions and evaluation
 
-`func` introduces a function. Parameters and public signatures are intended to be typed, while
-local values use inference. The last expression in a function is its result.
+`func` introduces a function. Type annotations may state parameter and result types; otherwise the
+compiler infers them. Local values use inference. The last expression in a function is its result.
 
 ```foster
 func double(value: Int) -> Int {
@@ -91,7 +88,7 @@ func first(values: List<String>) -> String {
 Identifiers may end in `?`, conventionally marking Boolean observations such as `empty?` and
 `whitespace?`. Commas separate arguments and generic parameters. Newlines separate statements.
 
-## Values — provisional
+## Values
 
 Module constants use `const`, are private by default, and must have compile-time initializers.
 The implemented initializer forms are primitive literals, other module constants, unary-negative
@@ -109,7 +106,7 @@ func retries() -> Int {
 }
 ```
 
-The executable prototype currently has:
+Implemented built-in and runtime types include:
 
 - `Bool`
 - `Int`
@@ -122,7 +119,8 @@ The executable prototype currently has:
   `Sequence<CodePoint>`
 - unit
 
-Foster will not have a universally nullable reference. Absence is represented by `Option<T>`:
+There is no universally nullable reference type. The core library represents absence with
+`Option<T>`:
 
 ```foster
 type Option<T> =
@@ -139,8 +137,8 @@ bounded integer-like primitive: integer arithmetic and comparisons promote its U
 value, and arithmetic produces `Int`. This permits expressions such as `'9' - '0'` and
 `character < 32` without an extraction member. Conversion from an arbitrary `Int` remains checked
 because surrogate values and values above `0x10FFFF` are not Unicode scalar values.
-The bootstrap compiler currently supplies the `String` and `List<T>` conformances. The settled
-declaration syntax for stating that a type includes a contract uses `&` after its name:
+The bootstrap compiler supplies the `String` and `List<T>` conformances. A declaration states that
+a type includes a contract with `&` after its name:
 
 ```foster
 type Foo & Sequence<CodePoint> {
@@ -169,7 +167,7 @@ compiler checks parameter ownership modes, result types, effects, suspension, an
 Naming a contract is not required for conformance: another type with matching accessible fields and
 methods is accepted structurally.
 
-## Records — implemented foundation
+## Records
 
 Records have nominal constructors and may have generic type parameters. Their accessible fields
 also form structural contracts, as described below. Types and fields are private by default;
@@ -188,7 +186,7 @@ person = Person { name age internal_id }
 Construction initializes every field exactly once. A record with any private field can only be
 constructed inside its defining module. Field mutation is controlled by ownership and group access,
 not by a `var` marker on the field. Generic records such as `Parsed<T>` participate in ordinary
-constraint inference. Functional `..record` updates and record patterns are deferred.
+constraint inference.
 
 Functions may be associated with a record's type namespace by qualifying their declarations. They
 do not receive an instance and are called through the type:
@@ -211,7 +209,7 @@ An associated declaration cannot have a `self` parameter; instance methods retai
 `func get(self: Map<K, V>, key: K)` form. Both directly imported `Map.empty()` and explicitly
 module-qualified `map.Map.empty()` calls resolve to the same function.
 
-## Closed variants — implemented foundation
+## Closed variants
 
 Closed variants use alternatives and are consumed with exhaustive pattern branching:
 
@@ -230,7 +228,7 @@ alternative in the current module. This applies to both constructors and pattern
 `Ok(value)` and `Error(error)` in code centered on one result type. If two variant types declare the
 same alternative name, Foster requires the qualified spelling.
 
-## Branch expressions — implemented
+## Branch expressions
 
 `branch` is an expression. Conditional branches use `_` as their required catch-all arm.
 
@@ -255,10 +253,9 @@ The implemented patterns are variant patterns, recursive positional payload patt
 `_`, and Bool, Int, Float, String, and Symbol literals. Branches over closed variants are checked
 for exhaustiveness. A variant alternative is covered only when all of its payload patterns are
 irrefutable bindings or `_`; for example, `Some(value)` covers `Some`, while `Some(0)` does not. A
-top-level binding or `_` is a catch-all. Record and list patterns, guards, and refined exhaustiveness
-for non-variant literal domains are deferred.
+top-level binding or `_` is a catch-all.
 
-## Remote objects and virtual threads — implemented
+## Remote objects and virtual threads
 
 `remote` transfers a record into an isolated virtual thread. A function declared in the record's
 module whose first parameter is named `self` is an instance method. Calling that method through a
@@ -302,18 +299,17 @@ temporary loan begins when the worker starts the invocation and ends when that i
 independently of when its future is awaited. Borrowed arguments cannot be mutated, consumed, stored
 in actor state, or returned across the mailbox boundary.
 
-## Static types — implemented foundation and provisional design
+## Static types
 
 Foster is statically typed and uses compile-time duck typing. Every expression has a type before
 execution, and missing or incompatible contract members are compile errors; there is no dynamic
 member lookup implied by “duck typing.” Records retain nominal construction and private
 representation, while their accessible contract participates in structural conformance.
 
-Implemented foundations are nominally constructed records with structural adaptation and declared
-contract composition, closed variants, explicit parametric generics using `Type<Argument>`,
-function and intersection types, callable-member contracts, and no implicit numeric or nullable
-conversions. Method-level generic requirements, default contract implementations, transparent
-aliases, distinct wrapper declarations, and typed error effects remain design work.
+The implemented type system includes nominally constructed records with structural adaptation and
+declared contract composition, closed variants, explicit parametric generics using
+`Type<Argument>`, function and intersection types, callable-member contracts, and no implicit
+numeric or nullable conversions.
 
 Types, traits, and functions may be qualified by modules. The HIR resolves every source-level name
 to a local binding, function, module, builtin, or later a type-level definition before type checking.
@@ -325,7 +321,7 @@ variants, generics, and record intersections. Decimal and scientific-notation li
 `Float`; there are no implicit conversions between `Int` and `Float`.
 Representation-level operations such as functional `List.append`, checked `from_code_point(Int)`,
 and `parse_float(String)` form the narrow primitive boundary beneath the Foster-written core
-library. The older `code_point(CodePoint)` intrinsic remains temporarily for compatibility; source
+library. The older `code_point(CodePoint)` intrinsic is also accepted for compatibility; source
 code normally uses integer operators directly.
 It performs constraint inference across function calls and records a canonical type for every HIR
 expression, local, and function signature. Explicit generic functions use
@@ -429,7 +425,7 @@ func locate(value: Named & Located) -> String {
 }
 ```
 
-The current bootstrap implementation accepts record and `Sequence<T>` contracts in intersections.
+The bootstrap implementation accepts record and `Sequence<T>` contracts in intersections.
 Overlapping fields and methods must have compatible contracts. Declaration-side composition
 contributes requirements once and rejects missing or incompatible implementations. The same
 structural rules apply at calls, returns, and assignments. Structural adaptation never exposes an
@@ -437,7 +433,7 @@ inaccessible private member, so records with private representation remain encap
 their defining module. `&` does not add a wrapper or establish a nominal subtype chain; contract
 method calls dispatch against the original runtime record.
 
-## Ownership and groups — implemented foundation
+## Ownership and groups
 
 Every value has one owner: a local, containing value, collection, allocation, or global. Moving a
 value transfers ownership and leaves the source uninitialized until it is assigned again.
@@ -469,7 +465,7 @@ mut entities.rings
 reshape entities.rings.items
 ```
 
-The compiler must distinguish at least:
+The compiler distinguishes:
 
 - value mutation, which preserves storage identity;
 - structural mutation, which may move or destroy child-group members;
@@ -527,15 +523,14 @@ Foster has no surface keyword for callable erasure. `func(...) -> ...` always de
 required callable contract. The compiler decides whether a particular value remains a direct
 function, is specialized, or needs a representation-erased closure environment.
 
-The current compiler implements moves, copy/move/reference closure captures, borrowed-result escape
-checks, projected-reference invalidation, group-effect derivation, and ownership-safe remote
-transfer. Richer place provenance and control-flow-aware loan analysis remain open work. See
+The compiler implements moves, copy/move/reference closure captures, borrowed-result escape checks,
+projected-reference invalidation, group-effect derivation, and ownership-safe remote transfer. See
 [Ownership and borrowing](ownership.md) for the source model, compiler passes, runtime backstops,
-and current limitations.
+and implementation limits.
 
-## Errors — implemented values and provisional effects
+## Errors as values
 
-Recoverable errors are currently ordinary typed values, conventionally represented with the
+Recoverable errors are ordinary typed values, conventionally represented with the
 Foster-written `Result<T, E>` closed variant:
 
 ```foster
@@ -549,31 +544,27 @@ func parse(input: String) -> Result<Json, JsonError> {
 }
 ```
 
-The VM host boundary follows the same rule for `core.io` and `core.net.tcp`. Dedicated `throw` and
-typed error-effect syntax are not implemented; propagation syntax and its relationship to closed
-variants remain open.
+The VM host boundary follows the same rule for `core.io` and `core.net.tcp`. The language does not
+provide dedicated `throw` or typed error-effect syntax.
 
-## Module initialization — settled direction
+## Module initialization
 
 Module bodies contain declarations and compile-time constants, not arbitrary runtime startup code.
 Resources are created by explicit functions. This avoids observable import order and runtime module
 initialization cycles.
 
 Because modules contain no runtime initialization, declarations in different modules may refer to
-one another when name and signature resolution can settle the cycle. A future compile-time constant
-system must preserve this initialization-free model.
+one another when name and signature resolution can settle the cycle.
 
-## Filesystem and network access — implemented host boundary, provisional capabilities
+## Filesystem and network access
 
 `core.io` exposes typed UTF-8 file, directory, and path operations returning `Result<..., IoError>`.
 `core.net.tcp` exposes opaque listeners and connections with typed `NetworkError` results. Their
 public records and wrappers are Foster code; private VM intrinsics perform the host operations.
 
-These modules currently use process-wide host capabilities. Explicit capability values for
-production, sandboxed, and in-memory implementations remain a design goal, as do byte buffers,
-socket readiness, and TLS.
+These modules use process-wide host capabilities.
 
-## Compiler pipeline — settled
+## Compiler pipeline
 
 The implemented pipeline is:
 
@@ -584,21 +575,15 @@ source -> tokens -> AST -> resolved HIR -> type/effect inference
 ```
 
 The register VM is the sole execution engine and the executable semantic reference. Bytecode is
-currently lowered from checked HIR after ownership MIR validation. A backend-neutral lowered IR and
-Cranelift JIT/object backend are intended future layers; LLVM remains optional.
+lowered from checked HIR after ownership MIR validation.
 
 Group information is normally erased before bytecode execution, but its consequences—moves,
 storage identity, and valid optimization facts—are represented by checked HIR, ownership MIR, and
 concrete VM operations.
 
-## Deferred features
-
-The initial design deliberately defers inheritance, higher-kinded types, arbitrary type-level
-programming, macros, operator overloading, reflection, and a stable ABI. Foster's complexity budget
-is currently reserved for a coherent ownership, group, and effect model.
-
 ## Focused design documents
 
+- [Roadmap](roadmap.md)
 - [Ownership and borrowing](ownership.md)
 - [Closures and group borrowing](closures.md)
 - [Effect derivation](effect-derivation.md)
