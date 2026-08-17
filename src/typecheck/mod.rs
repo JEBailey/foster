@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 mod annotations;
 mod calls;
+mod constants;
 mod context;
 mod effects;
 mod expressions;
@@ -20,7 +21,7 @@ use predicates::{
 use crate::ast::{BinaryOp, UnaryOp};
 use crate::error::FosterError;
 use crate::hir::{
-    self, Builtin, ExprId, FunctionId, LocalId, RecordId, ResolvedName, VariantTypeId,
+    self, Builtin, ConstantId, ExprId, FunctionId, LocalId, RecordId, ResolvedName, VariantTypeId,
 };
 use crate::types::{FunctionType, Type, TypeId, TypeInformation};
 
@@ -62,6 +63,7 @@ impl<'a> Checker<'a> {
             next_variable: 0,
             substitutions: HashMap::new(),
             functions: HashMap::new(),
+            constants: HashMap::new(),
             locals: HashMap::new(),
             local_groups: HashMap::new(),
             expressions: HashMap::new(),
@@ -74,6 +76,7 @@ impl<'a> Checker<'a> {
     fn check(mut self, validate_effects: bool) -> Result<CheckOutput, FosterError> {
         self.check_record_declarations()?;
         self.check_variant_declarations()?;
+        self.declare_constants()?;
         self.declare_signatures()?;
         for (function, _) in self.hir.functions.iter() {
             self.check_function(function)?;

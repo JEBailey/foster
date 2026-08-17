@@ -179,8 +179,8 @@ func unicode_scalar(parsed: Parsed<Int>) -> ParseResult<Parsed<String>> {
     }
 }
 
-var HIGH_SURROGATE_LOW_MESSAGE = "high surrogate must be followed by a low surrogate"
-var HIGH_SURROGATE_UNICODE_MESSAGE = "high surrogate must be followed by a Unicode escape"
+const HIGH_SURROGATE_LOW_MESSAGE = "high surrogate must be followed by a low surrogate"
+const HIGH_SURROGATE_UNICODE_MESSAGE = "high surrogate must be followed by a Unicode escape"
 
 func parse_low_surrogate(high: Parsed<Int>) -> ParseResult<Parsed<String>> {
     return branch {
@@ -188,7 +188,7 @@ func parse_low_surrogate(high: Parsed<Int>) -> ParseResult<Parsed<String>> {
         high.rest.head != '\\' -> fail(HIGH_SURROGATE_LOW_MESSAGE)
         high.rest.rest.empty? -> fail(HIGH_SURROGATE_LOW_MESSAGE)
         high.rest.rest.head != 'u' -> fail(HIGH_SURROGATE_LOW_MESSAGE)
-        _ -> combine_surrogates(high.value, consume_hex(high.rest.rest, 0, 4))
+        _ -> combine_surrogates(high.value, consume_hex(high.rest.rest.rest, 0, 4))
     }   
 }
 
@@ -296,9 +296,7 @@ func require_object_colon(key: Parsed<String>, members: List<JsonMember>) -> Par
 func parse_object_value(parsed: ParseResult<Parsed<Json>>, key: String, members: List<JsonMember>) -> ParseResult<Parsed<Json>> {
     branch parsed {
         Error(error) -> Error(error)
-        Ok(value) -> {
-            object_separator(move value.rest, members.append(JsonMember { key, value: value.value }))
-        }
+        Ok(value) -> object_separator(move value.rest, members.append(JsonMember { key, value: value.value }))
     }
 }
 

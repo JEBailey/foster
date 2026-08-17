@@ -18,6 +18,7 @@ use ownership::{
 
 pub type ModuleId = Idx<Module>;
 pub type FunctionId = Idx<Function>;
+pub type ConstantId = Idx<Constant>;
 pub type RecordId = Idx<Record>;
 pub type VariantTypeId = Idx<VariantType>;
 pub type VariantId = Idx<Variant>;
@@ -37,6 +38,7 @@ pub struct Compilation {
 pub struct PackageHir {
     pub modules: Arena<Module>,
     pub functions: Arena<Function>,
+    pub constants: Arena<Constant>,
     pub records: Arena<Record>,
     pub variant_types: Arena<VariantType>,
     pub variants: Arena<Variant>,
@@ -53,9 +55,33 @@ pub struct Module {
     pub source_path: Option<camino::Utf8PathBuf>,
     pub imports_with_spans: Vec<ImportBinding>,
     pub functions: BTreeMap<String, FunctionId>,
+    pub constants: BTreeMap<String, ConstantId>,
     pub records: BTreeMap<String, RecordId>,
     pub variant_types: BTreeMap<String, VariantTypeId>,
     pub imports: BTreeMap<String, ModuleId>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Constant {
+    pub span: std::ops::Range<usize>,
+    pub documentation: Option<String>,
+    pub module: ModuleId,
+    pub name: String,
+    pub public: bool,
+    pub value: ConstantValue,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ConstantValue {
+    Unit,
+    Bool(bool),
+    Integer(i64),
+    Float(f64),
+    String(String),
+    CodePoint(char),
+    Symbol(String),
+    List(Vec<ConstantValue>),
+    Constant(ConstantId),
 }
 
 #[derive(Debug, Clone)]
@@ -237,6 +263,7 @@ pub enum CaptureMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResolvedName {
     Local(LocalId),
+    Constant(ConstantId),
     Function(FunctionId),
     Module(ModuleId),
     Builtin(Builtin),
@@ -332,7 +359,7 @@ impl Compilation {
         let (types, diagnostics) = crate::typecheck::check(&mut hir)?;
         validate_groups_and_effects(&hir)?;
         check_closure_ownership(&hir)?;
-        check_loan_safety(&hir)?;
+        check_loan_safety(&hir, &types)?;
         check_capture_invalidation(&hir)?;
         let ownership = crate::ownership::build_and_check(&hir, &types)?;
         Ok(Self {

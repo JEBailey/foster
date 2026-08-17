@@ -14,9 +14,8 @@ The structured instruction enum is both the optimizer-facing IR and executable f
 language evolves. The explicit optimizer pipeline performs typed constant and branch folding,
 control-flow cleanup, CFG-aware copy propagation, liveness-based dead-write elimination and
 register reuse, and constant-pool deduplication. Rewrites preserve the parallel instruction
-source-span table. Capture/parameter frame prefixes and reference-captured slots are pinned where
-identity is observable. Compact byte encoding remains deferred. Bytecode is verified before
-execution.
+source-span table. Capture/parameter frame prefixes and reference origins are pinned where identity
+is observable. Compact byte encoding remains deferred. Bytecode is verified before execution.
 
 After all optional representational rewrites, the compiler inserts explicit `Drop` instructions
 at register last-use points. A drop detaches the frame register from its slot, allowing ordinary
@@ -40,9 +39,10 @@ references, structural mutation, remote objects, futures, await, and returns.
 Lowering rejects unsupported HIR explicitly; it never interprets an unsupported node as a fallback.
 
 Closure frames use a fixed `[captures][parameters][locals/temporaries]` register layout. Copy and
-move captures contain values; reference captures share addressable VM register slots. Bindings are
-allocated before their initializer executes, allowing a named closure to capture its own slot.
-Calls execute on an explicit VM frame vector rather than recursively invoking Rust.
+move captures contain values; reference captures contain weak `PlaceHandle`s that are materialized
+as forwarding slots in the called frame. Reference wrappers are flattened when captured so an
+escaping closure points directly to the original place. Named recursion resolves directly to a
+function ID. Calls execute on an explicit VM frame vector rather than recursively invoking Rust.
 
 ## Lessons adopted from Pima
 

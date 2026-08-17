@@ -51,6 +51,9 @@ impl FunctionLowerer<'_> {
                     }
                     return Ok(Stmt::Assign { local, value });
                 }
+                if self.hir.constant_named(self.module, name).is_some() {
+                    return Err(self.error(format!("cannot assign to constant `{name}`")));
+                }
                 let local = self.hir.locals.alloc(Local {
                     span: self.hir.functions[self.function].span.clone(),
                     function: self.function,

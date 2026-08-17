@@ -1,9 +1,19 @@
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
     pub imports: Vec<Import>,
+    pub constants: Vec<ConstDecl>,
     pub records: Vec<RecordDecl>,
     pub variants: Vec<VariantDecl>,
     pub functions: Vec<Function>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConstDecl {
+    pub span: std::ops::Range<usize>,
+    pub documentation: Option<String>,
+    pub name: String,
+    pub public: bool,
+    pub value: Expr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

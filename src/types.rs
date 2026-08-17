@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use la_arena::{Arena, Idx};
 
 use crate::ast;
-use crate::hir::{ExprId, FunctionId, LocalId, RecordId, VariantTypeId};
+use crate::hir::{ConstantId, ExprId, FunctionId, LocalId, RecordId, VariantTypeId};
 
 pub type TypeId = Idx<Type>;
 
@@ -54,6 +54,7 @@ pub struct TypeInformation {
     pub expressions: HashMap<ExprId, TypeId>,
     pub locals: HashMap<LocalId, TypeId>,
     pub functions: HashMap<FunctionId, FunctionType>,
+    pub constants: HashMap<ConstantId, TypeId>,
     pub record_names: HashMap<RecordId, String>,
     pub variant_names: HashMap<VariantTypeId, String>,
 }

@@ -44,6 +44,9 @@ impl FunctionCompiler<'_> {
                 .get(local)
                 .copied()
                 .ok_or_else(|| self.unsupported("captured local")),
+            hir::Expr::Name(ResolvedName::Constant(constant)) => {
+                self.constant_value(&self.hir.constants[*constant].value, span)
+            }
             hir::Expr::Name(ResolvedName::Function(function)) => {
                 let destination = self.allocate();
                 let captures = self.function_captures(*function)?;
@@ -513,6 +516,50 @@ impl FunctionCompiler<'_> {
             span,
         );
         Ok(destination)
+    }
+
+    fn constant_value(
+        &mut self,
+        value: &hir::ConstantValue,
+        span: std::ops::Range<usize>,
+    ) -> Result<Register, FosterError> {
+        Ok(match value {
+            hir::ConstantValue::Unit => self.load_constant(Constant::Unit, span)?,
+            hir::ConstantValue::Bool(value) => self.load_constant(Constant::Bool(*value), span)?,
+            hir::ConstantValue::Integer(value) => {
+                self.load_constant(Constant::Integer(*value), span)?
+            }
+            hir::ConstantValue::Float(value) => {
+                self.load_constant(Constant::Float(*value), span)?
+            }
+            hir::ConstantValue::String(value) => {
+                self.load_constant(Constant::String(value.clone()), span)?
+            }
+            hir::ConstantValue::CodePoint(value) => {
+                self.load_constant(Constant::CodePoint(*value), span)?
+            }
+            hir::ConstantValue::Symbol(value) => {
+                self.load_constant(Constant::Symbol(value.clone()), span)?
+            }
+            hir::ConstantValue::Constant(constant) => {
+                self.constant_value(&self.hir.constants[*constant].value, span)?
+            }
+            hir::ConstantValue::List(values) => {
+                let elements = values
+                    .iter()
+                    .map(|value| self.constant_value(value, span.clone()))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let destination = self.allocate();
+                self.emit(
+                    Instruction::MakeList {
+                        destination,
+                        elements,
+                    },
+                    span,
+                );
+                destination
+            }
+        })
     }
 
     pub(super) fn allocate(&mut self) -> Register {

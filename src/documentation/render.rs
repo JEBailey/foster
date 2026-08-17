@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use crate::ast::{Effect, EffectKind, ParameterMode, TypeExpr};
-use crate::hir::{Compilation, FunctionId, ModuleId};
+use crate::hir::{Compilation, ConstantId, FunctionId, ModuleId};
 
 pub(super) const STYLE: &str = r#":root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
 body { margin: 0; color: #20242b; background: #f6f7f9; }
@@ -46,6 +46,7 @@ pub(super) fn site(compilation: &Compilation) -> Site {
             .values()
             .filter(|id| visible_function(compilation, **id))
             .count()
+            + module.constants.len()
             + module.records.len()
             + module.variant_types.len();
         declaration_count += count;
@@ -79,6 +80,17 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
     let mut body = String::from("<a class=\"crumb\" href=\"../index.html\">← All modules</a>");
     let mut count = 0;
 
+    for constant_id in module.constants.values().copied() {
+        count += 1;
+        let constant = &compilation.hir.constants[constant_id];
+        declaration(
+            &mut body,
+            &constant.name,
+            constant.public,
+            &constant_signature(compilation, constant_id),
+            constant.documentation.as_deref(),
+        );
+    }
     for function_id in module.functions.values().copied() {
         if !visible_function(compilation, function_id) {
             continue;
@@ -132,6 +144,21 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
 
 fn visible_function(compilation: &Compilation, id: FunctionId) -> bool {
     !compilation.hir.functions[id].name.contains('$')
+}
+
+fn constant_signature(compilation: &Compilation, id: ConstantId) -> String {
+    let constant = &compilation.hir.constants[id];
+    let ty = compilation
+        .types
+        .constants
+        .get(&id)
+        .map(|ty| compilation.types.display(*ty))
+        .unwrap_or_else(|| "_".into());
+    format!(
+        "{}const {}: {ty}",
+        if constant.public { "pub " } else { "" },
+        constant.name
+    )
 }
 
 fn declaration(body: &mut String, name: &str, public: bool, signature: &str, docs: Option<&str>) {

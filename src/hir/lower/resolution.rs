@@ -194,6 +194,9 @@ impl FunctionLowerer<'_> {
             }
             return Ok(ResolvedName::Local(*local));
         }
+        if let Some(constant) = self.hir.constant_named(self.module, name) {
+            return Ok(ResolvedName::Constant(constant));
+        }
         if let Some(function) = self.hir.function_named(self.module, name) {
             return Ok(ResolvedName::Function(function));
         }
@@ -220,6 +223,12 @@ impl FunctionLowerer<'_> {
         }
         let mut imported = Vec::new();
         for module in self.imports.values() {
+            if let Some(constant) = self.hir.constant_named(*module, name)
+                && self.hir.constants[constant].public
+                && !imported.contains(&ResolvedName::Constant(constant))
+            {
+                imported.push(ResolvedName::Constant(constant));
+            }
             if let Some(function) = self.hir.function_named(*module, name)
                 && self.hir.functions[function].public
                 && !imported.contains(&ResolvedName::Function(function))
@@ -305,6 +314,15 @@ impl FunctionLowerer<'_> {
         }
         for (index, component) in path.iter().enumerate().skip(1) {
             let last = index + 1 == path.len();
+            if last && let Some(constant) = self.hir.constant_named(module, component) {
+                if !self.hir.constants[constant].public {
+                    return Err(self.error(format!(
+                        "constant `{}.{component}` is private",
+                        self.hir.modules[module].name
+                    )));
+                }
+                return Ok(ResolvedName::Constant(constant));
+            }
             if last && let Some(function) = self.hir.function_named(module, component) {
                 if !self.hir.functions[function].public {
                     return Err(self.error(format!(

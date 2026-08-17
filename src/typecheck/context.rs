@@ -57,6 +57,7 @@ pub(super) struct Checker<'a> {
     pub(super) next_variable: u32,
     pub(super) substitutions: HashMap<u32, Ty>,
     pub(super) functions: HashMap<FunctionId, Signature>,
+    pub(super) constants: HashMap<ConstantId, Ty>,
     pub(super) locals: HashMap<LocalId, Ty>,
     pub(super) local_groups: HashMap<LocalId, String>,
     pub(super) expressions: HashMap<ExprId, Ty>,

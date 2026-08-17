@@ -416,6 +416,34 @@ func main() { 0 }
 }
 
 #[test]
+fn returned_ref_capture_uses_the_original_projected_place() {
+    let source = r#"
+func incrementer[g: group Int](value: ref[g] Int) -> func() -> Int [mut g] {
+    [ref value] () -> [mut g] {
+        value = value + 1
+        value
+    }
+}
+
+func main() -> Int {
+    values = [40]
+    increment = incrementer(ref values[0])
+    increment()
+    increment()
+    values.head
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap(),
+            Value::Integer(42)
+        );
+    }
+}
+
+#[test]
 fn derives_consume_from_move_out() {
     let missing = r#"
 func take[g: group Int](value: ref[g] Int) -> Int { move value }
@@ -580,6 +608,81 @@ fn runs_a_package_main_module() {
         foster::run_package("tests/fixtures/modules").unwrap(),
         Value::Integer(42)
     );
+}
+
+#[test]
+fn module_constants_run_with_and_without_optimization() {
+    let source = r#"
+/// The answer.
+const ANSWER = 42
+const VALUES = [ANSWER, 43]
+
+func main() -> Int {
+    VALUES[0]
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize },)
+                .unwrap(),
+            Value::Integer(42)
+        );
+    }
+}
+
+#[test]
+fn imports_public_constants_directly_and_by_qualifier() {
+    assert_eq!(
+        foster::run_package("tests/fixtures/constants").unwrap(),
+        Value::Integer(42)
+    );
+}
+
+#[test]
+fn module_constants_are_private_by_default() {
+    let error = foster::check_package("tests/fixtures/constants_private").unwrap_err();
+    assert!(error.message.contains("unknown name `HIDDEN`"));
+}
+
+#[test]
+fn rejects_non_constant_initializers() {
+    let error = foster::compile(
+        r#"
+func answer() -> Int { 42 }
+const BAD = answer()
+func main() { BAD }
+"#,
+    )
+    .unwrap_err();
+    assert!(error.message.contains("constant initializer"));
+}
+
+#[test]
+fn rejects_cyclic_constants() {
+    let error = foster::compile(
+        r#"
+const FIRST = SECOND
+const SECOND = FIRST
+func main() { FIRST }
+"#,
+    )
+    .unwrap_err();
+    assert!(error.message.contains("cyclic initializer"));
+}
+
+#[test]
+fn rejects_assignment_to_a_module_constant() {
+    let error = foster::compile(
+        r#"
+const ANSWER = 42
+func main() {
+    ANSWER = 43
+}
+"#,
+    )
+    .unwrap_err();
+    assert!(error.message.contains("cannot assign to constant `ANSWER`"));
 }
 
 #[test]
@@ -1208,6 +1311,49 @@ func main() -> Int {
 }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::Integer(2));
+}
+
+#[test]
+fn rejects_storing_a_borrower_into_its_own_origin() {
+    let source = r#"
+type Counter {
+    value: Int,
+    callback: func() -> Int
+}
+
+func main() -> Int {
+    counter = Counter {
+        value: 1,
+        callback: () -> 0
+    }
+    callback = [ref counter] () -> counter.value
+    counter.callback = callback
+    counter.value
+}
+"#;
+
+    let error = foster::compile(source).unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("cannot store a value borrowing `counter` into its own origin")
+    );
+}
+
+#[test]
+fn permits_storing_a_value_derived_from_a_borrower() {
+    let source = r#"
+type Counter { value: Int }
+
+func main() -> Int {
+    counter = Counter { value: 1 }
+    observe = [ref counter] () -> counter.value
+    counter.value = observe()
+    counter.value
+}
+"#;
+
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(1));
 }
 
 #[test]

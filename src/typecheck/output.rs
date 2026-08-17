@@ -32,6 +32,12 @@ impl Checker<'_> {
             let id = intern_type(&mut information, &mut interner, ty);
             information.locals.insert(*local, id);
         }
+        for (constant, ty) in &self.constants {
+            let name = &self.hir.constants[*constant].name;
+            let ty = self.require_concrete(ty.clone(), &format!("constant `{name}`"))?;
+            let id = intern_type(&mut information, &mut interner, ty);
+            information.constants.insert(*constant, id);
+        }
         for (function, signature) in &self.functions {
             let name = &self.hir.functions[*function].name;
             let parameters = signature

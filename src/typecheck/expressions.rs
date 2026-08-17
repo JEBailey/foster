@@ -390,6 +390,7 @@ impl Checker<'_> {
                 Ty::Reference(_, value) => (**value).clone(),
                 ty => ty.clone(),
             },
+            ResolvedName::Constant(constant) => self.constants[&constant].clone(),
             ResolvedName::Function(function) => {
                 let signature = self.functions[&function].clone();
                 let mut generics = HashMap::new();

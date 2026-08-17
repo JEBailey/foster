@@ -3,6 +3,7 @@ use super::*;
 impl Parser {
     pub(super) fn program(&mut self) -> Result<Program, FosterError> {
         let mut imports = Vec::new();
+        let mut constants = Vec::new();
         let mut records = Vec::new();
         let mut variants = Vec::new();
         let mut functions = Vec::new();
@@ -17,7 +18,14 @@ impl Parser {
             documentation = self.documentation();
         }
         while !self.at(&TokenKind::Eof) {
-            if self.at(&TokenKind::Type)
+            if self.at(&TokenKind::Const)
+                || (self.at(&TokenKind::Pub)
+                    && self
+                        .peek_n(1)
+                        .is_some_and(|token| token.kind == TokenKind::Const))
+            {
+                constants.push(self.constant(documentation.take())?);
+            } else if self.at(&TokenKind::Type)
                 || (self.at(&TokenKind::Pub)
                     && self
                         .peek_n(1)
@@ -37,9 +45,26 @@ impl Parser {
         }
         Ok(Program {
             imports,
+            constants,
             records,
             variants,
             functions,
+        })
+    }
+
+    fn constant(&mut self, documentation: Option<String>) -> Result<ConstDecl, FosterError> {
+        let start = self.peek().range.start;
+        let public = self.take(&TokenKind::Pub);
+        self.expect(&TokenKind::Const, "expected `const`")?;
+        let name = self.expect_ident("expected constant name")?;
+        self.expect(&TokenKind::Equal, "expected `=` after constant name")?;
+        let value = self.expression()?;
+        Ok(ConstDecl {
+            span: start..self.tokens[self.current.saturating_sub(1)].range.end,
+            documentation,
+            name,
+            public,
+            value,
         })
     }
 

@@ -204,6 +204,10 @@ func make_renamer[people: group Person](person: ref[people] Person)
 
 The returned callable's effect contract communicates that invoking it may mutate `people`.
 
+Borrowed values cannot be stored back into the place from which they borrow. For example, assigning
+a `[ref object]` closure into a field of `object` is rejected. This prevents an object from owning a
+borrower of itself and makes the runtime borrow graph non-owning and acyclic.
+
 ## Remote ownership boundary
 
 `remote value` transfers an owned object to a worker. Calls on its remote handle enqueue messages
@@ -265,8 +269,9 @@ The implementation is divided by responsibility:
 - `src/ownership/` lowers typed HIR to ownership MIR basic blocks containing explicit
   read/copy/move/borrow/initialize operations, validates consuming call contracts, then checks
   initialization and partial-move state at control-flow joins.
-- `src/vm/value.rs` implements VM references, slots, and mutation.
-- `src/vm/runtime.rs` and VM capture instructions represent copied, moved, and shared capture slots.
+- `src/vm/value.rs` implements slots and the common weak `PlaceHandle` used by projected references
+  and borrowed captures.
+- `src/vm/runtime.rs` and VM capture instructions represent copied/moved values and borrowed places.
 
 HIR uses resolved `LocalId` and `ExprId` identities, so ownership checks do not compare source names.
 Canonical places contain a root local plus field, index, or dereference projections. Ownership MIR
@@ -274,9 +279,10 @@ uses those places to distinguish whole-value moves from partial moves of disjoin
 currently records its root local and whether it projects an indexed item. Moves and invalidations
 are found by recursively walking each statement's expression tree.
 
-At runtime, VM references retain the origin's structural generation. A reshape increments
-that generation, and dereferencing an older reference fails. This is a defensive runtime backstop;
-well-typed programs should be rejected statically before reaching it.
+At runtime, VM references retain the origin's structural generation but only a weak connection to
+the origin slot. A reshape increments that generation, and dereferencing an older reference fails.
+An expired weak place also fails safely. These are defensive runtime backstops; well-typed programs
+should be rejected statically before reaching either condition.
 
 ## Diagnostics
 
@@ -286,6 +292,7 @@ Ownership violations are compile errors. Current errors cover:
 - explicitly copying a non-copy value;
 - returning a reference into a frame local;
 - returning a borrowed closure whose group is not exposed by its result type;
+- storing a borrower into the place from which it borrows;
 - using a projected loan after structural mutation;
 - calling a closure after mutation invalidated a captured reference;
 - sending an explicit reference as an ordinary mailbox value;
@@ -311,8 +318,9 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   designed.
 - Runtime storage still uses managed host representations in the VM. The bytecode compiler now
   emits deterministic `Drop` instructions after register last use, while observable shared slots
-  remain alive through frame teardown. Native layout, cycle collection, resource destructors, and
-  destructor ordering remain backend work.
+  remain alive through frame teardown. Borrow edges are weak and therefore do not create reference
+  cycles. Native layout, arbitrary cyclic owned graphs, resource destructors, and destructor
+  ordering remain backend work.
 
 The intended evolution is richer place/provenance tracking and control-flow-aware loan states while
 preserving the source model: ownership transfer stays explicit, references name groups, and API

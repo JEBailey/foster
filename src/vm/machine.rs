@@ -8,8 +8,8 @@ use crate::hir::{Builtin, CaptureMode, FunctionId};
 use super::operations::{binary, constant_value, unary};
 use super::patterns::matches as match_pattern;
 use super::value::{
-    AccessLease, FutureValue, ReferenceValue, RemoteArgument, RemoteMessage, RemoteValue,
-    SharedValue, Slot, next_future_id, next_remote_id,
+    AccessLease, FutureValue, PlaceHandle, RemoteArgument, RemoteMessage, RemoteValue, SharedValue,
+    Slot, next_future_id, next_remote_id,
 };
 use super::{Capture, Instruction, Program, Register, Value};
 
@@ -236,7 +236,7 @@ impl Machine {
                     let index = usize::try_from(index)
                         .map_err(|_| FosterError::runtime("reference index is out of bounds"))?;
                     let reference =
-                        ReferenceValue::indexed(frame.registers[object.0 as usize].clone(), index)?;
+                        PlaceHandle::indexed(frame.registers[object.0 as usize].clone(), index)?;
                     write(frame, destination, Value::Reference(reference))?;
                 }
                 Instruction::MoveOut {
@@ -586,7 +586,7 @@ impl Machine {
         for (index, capture) in captures.into_iter().enumerate() {
             registers[index] = match capture {
                 Capture::Value(value) => Slot::new(value),
-                Capture::Slot(slot) => slot,
+                Capture::Place(place) => Slot::new(Value::Reference(place)),
             };
         }
         let offset = usize::from(bytecode.captures);
@@ -666,7 +666,9 @@ fn capture(
         .into_iter()
         .map(|(mode, register)| {
             Ok(match mode {
-                CaptureMode::Ref => Capture::Slot(frame.registers[register.0 as usize].clone()),
+                CaptureMode::Ref => {
+                    Capture::Place(Slot::place(&frame.registers[register.0 as usize]))
+                }
                 CaptureMode::Move => {
                     Capture::Value(frame.registers[register.0 as usize].replace(Value::Unit))
                 }

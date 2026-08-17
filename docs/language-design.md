@@ -58,6 +58,8 @@ declaration inside a module is private unless explicitly marked `pub`:
 ```foster
 func helper() { }       // visible only within this module
 pub func parse() { }    // visible through the module's canonical path
+const LIMIT = 100        // module-private compile-time value
+pub const VERSION = "1" // visible to importing modules
 ```
 
 This default applies to the implemented function and type declarations and is intended to apply to
@@ -88,6 +90,22 @@ Identifiers may end in `?`, conventionally marking Boolean observations such as 
 `whitespace?`. Commas separate arguments and generic parameters. Newlines separate statements.
 
 ## Values — provisional
+
+Module constants use `const`, are private by default, and must have compile-time initializers.
+The implemented initializer forms are primitive literals, other module constants, unary-negative
+numeric literals, and recursively constant homogeneous lists. Their types are inferred, and their
+values are embedded directly into VM bytecode rather than allocated in mutable module storage.
+Constants may be referenced before their declarations, but cycles are rejected. Function-local
+immutable values continue to use ordinary assignment; `const` is deliberately module-level only.
+
+```foster
+const RETRY_LIMIT = 3
+pub const HTTP_SUCCESS = [200, 201, 204]
+
+func retries() -> Int {
+    RETRY_LIMIT
+}
+```
 
 The executable prototype currently has:
 

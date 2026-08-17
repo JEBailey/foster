@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::fmt;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 
@@ -23,7 +23,7 @@ pub enum Value {
         function: crate::hir::FunctionId,
         captures: Vec<Capture>,
     },
-    Reference(ReferenceValue),
+    Reference(PlaceHandle),
     Remote(RemoteValue),
     Future(FutureValue),
     Record {
@@ -230,6 +230,13 @@ impl Slot {
         &self,
         update: impl FnOnce(&mut Value) -> Result<(), FosterError>,
     ) -> Result<(), FosterError> {
+        let place = match &*self.storage.borrow() {
+            SlotStorage::Local(Value::Reference(place)) => Some(place.clone()),
+            SlotStorage::Local(_) | SlotStorage::Shared(_) => None,
+        };
+        if let Some(place) = place {
+            return place.reshape(update);
+        }
         let shared = match &*self.storage.borrow() {
             SlotStorage::Local(_) => None,
             SlotStorage::Shared(shared) => Some(shared.clone()),
@@ -256,24 +263,43 @@ impl Slot {
             SlotStorage::Local(_) => None,
         }
     }
-}
 
-#[derive(Debug, Clone)]
-pub struct ReferenceValue {
-    origin: Rc<Slot>,
-    index: usize,
-    generation: u64,
-}
-
-impl PartialEq for ReferenceValue {
-    fn eq(&self, other: &Self) -> bool {
-        Rc::ptr_eq(&self.origin, &other.origin)
-            && self.index == other.index
-            && self.generation == other.generation
+    /// Creates a non-owning handle to the place represented by this slot.
+    /// Reference wrapper slots are flattened to their original place.
+    pub(crate) fn place(slot: &Rc<Self>) -> PlaceHandle {
+        match &*slot.storage.borrow() {
+            SlotStorage::Local(Value::Reference(place)) => place.clone(),
+            SlotStorage::Local(_) | SlotStorage::Shared(_) => PlaceHandle::whole(slot),
+        }
     }
 }
 
-impl ReferenceValue {
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum PlaceProjection {
+    Whole,
+    Index { index: usize, generation: u64 },
+}
+
+#[derive(Debug, Clone)]
+pub struct PlaceHandle {
+    origin: Weak<Slot>,
+    projection: PlaceProjection,
+}
+
+impl PartialEq for PlaceHandle {
+    fn eq(&self, other: &Self) -> bool {
+        Weak::ptr_eq(&self.origin, &other.origin) && self.projection == other.projection
+    }
+}
+
+impl PlaceHandle {
+    fn whole(origin: &Rc<Slot>) -> Self {
+        Self {
+            origin: Rc::downgrade(origin),
+            projection: PlaceProjection::Whole,
+        }
+    }
+
     pub(crate) fn indexed(origin: Rc<Slot>, index: usize) -> Result<Self, FosterError> {
         let exists = matches!(origin.read()?, Value::List(values) if index < values.len());
         if !exists {
@@ -281,45 +307,82 @@ impl ReferenceValue {
         }
         let generation = origin.generation.get();
         Ok(Self {
-            origin,
-            index,
-            generation,
+            origin: Rc::downgrade(&origin),
+            projection: PlaceProjection::Index { index, generation },
         })
     }
 
-    fn ensure_valid(&self) -> Result<(), FosterError> {
-        if self.origin.generation.get() == self.generation {
-            Ok(())
-        } else {
-            Err(FosterError::runtime(
-                "reference was invalidated by structural mutation",
-            ))
-        }
+    fn origin(&self) -> Result<Rc<Slot>, FosterError> {
+        self.origin
+            .upgrade()
+            .ok_or_else(|| FosterError::runtime("borrowed place has expired"))
     }
 
     pub(crate) fn read(&self) -> Result<Value, FosterError> {
-        self.ensure_valid()?;
-        let origin = self.origin.read()?;
-        let Value::List(values) = origin else {
-            return Err(FosterError::runtime("reference origin is no longer a List"));
-        };
-        values
-            .get(self.index)
-            .cloned()
-            .ok_or_else(|| FosterError::runtime("referenced list element no longer exists"))
+        let origin = self.origin()?;
+        match self.projection {
+            PlaceProjection::Whole => origin.read(),
+            PlaceProjection::Index { index, generation } => {
+                ensure_generation(&origin, generation)?;
+                let Value::List(values) = origin.read()? else {
+                    return Err(FosterError::runtime("reference origin is no longer a List"));
+                };
+                values
+                    .get(index)
+                    .cloned()
+                    .ok_or_else(|| FosterError::runtime("referenced list element no longer exists"))
+            }
+        }
     }
 
     pub(crate) fn write(&self, value: Value) -> Result<(), FosterError> {
-        self.ensure_valid()?;
-        let mut origin = self.origin.read()?;
-        let Value::List(values) = &mut origin else {
-            return Err(FosterError::runtime("reference origin is no longer a List"));
-        };
-        *values
-            .get_mut(self.index)
-            .ok_or_else(|| FosterError::runtime("referenced list element no longer exists"))? =
-            value;
-        self.origin.write(origin)
+        let origin = self.origin()?;
+        match self.projection {
+            PlaceProjection::Whole => origin.write(value),
+            PlaceProjection::Index { index, generation } => {
+                ensure_generation(&origin, generation)?;
+                let mut current = origin.read()?;
+                let Value::List(values) = &mut current else {
+                    return Err(FosterError::runtime("reference origin is no longer a List"));
+                };
+                *values.get_mut(index).ok_or_else(|| {
+                    FosterError::runtime("referenced list element no longer exists")
+                })? = value;
+                origin.write(current)
+            }
+        }
+    }
+
+    fn reshape(
+        &self,
+        update: impl FnOnce(&mut Value) -> Result<(), FosterError>,
+    ) -> Result<(), FosterError> {
+        let origin = self.origin()?;
+        match self.projection {
+            PlaceProjection::Whole => origin.reshape(update),
+            PlaceProjection::Index { index, generation } => {
+                ensure_generation(&origin, generation)?;
+                let mut current = origin.read()?;
+                let Value::List(values) = &mut current else {
+                    return Err(FosterError::runtime("reference origin is no longer a List"));
+                };
+                let value = values.get_mut(index).ok_or_else(|| {
+                    FosterError::runtime("referenced list element no longer exists")
+                })?;
+                update(value)?;
+                origin.write(current)
+            }
+        }
+    }
+}
+
+fn ensure_generation(origin: &Slot, generation: u64) -> Result<(), FosterError> {
+    if origin.generation.get() == generation {
+        Ok(())
+    } else {
+        Err(FosterError::runtime(
+            "reference was invalidated by structural mutation",
+        ))
     }
 }
 
@@ -549,4 +612,51 @@ pub(crate) fn next_remote_id() -> u64 {
 
 pub(crate) fn next_future_id() -> u64 {
     NEXT_FUTURE_ID.fetch_add(1, Ordering::Relaxed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vm::Capture;
+    use la_arena::{Idx, RawIdx};
+
+    #[test]
+    fn expired_place_handles_fail_safely() {
+        let origin = Slot::new(Value::Integer(42));
+        let place = Slot::place(&origin);
+        drop(origin);
+
+        let error = place.read().unwrap_err();
+        assert!(error.message.contains("borrowed place has expired"));
+    }
+
+    #[test]
+    fn reference_captures_do_not_retain_their_origin_cycle() {
+        let origin = Slot::new(Value::Unit);
+        let weak_origin = Rc::downgrade(&origin);
+        let place = Slot::place(&origin);
+        let function = Idx::from_raw(RawIdx::from_u32(0));
+        origin
+            .write(Value::VmClosure {
+                function,
+                captures: vec![Capture::Place(place)],
+            })
+            .unwrap();
+
+        drop(origin);
+        assert!(weak_origin.upgrade().is_none());
+    }
+
+    #[test]
+    fn capturing_a_reference_flattens_its_wrapper_slot() {
+        let origin = Slot::new(Value::List(vec![Value::Integer(42)]));
+        let projected = PlaceHandle::indexed(origin.clone(), 0).unwrap();
+        let wrapper = Slot::new(Value::Reference(projected.clone()));
+
+        let flattened = Slot::place(&wrapper);
+        drop(wrapper);
+
+        assert_eq!(flattened.read().unwrap(), Value::Integer(42));
+        assert_eq!(flattened, projected);
+    }
 }

@@ -9,9 +9,13 @@ struct Loan {
     projected_item: bool,
 }
 
-pub(super) fn check_loan_safety(hir: &PackageHir) -> Result<(), FosterError> {
+pub(super) fn check_loan_safety(
+    hir: &PackageHir,
+    types: &crate::types::TypeInformation,
+) -> Result<(), FosterError> {
     for (_, function) in hir.functions.iter() {
         let mut loans = HashMap::<LocalId, Loan>::new();
+        let mut provenance = HashMap::<LocalId, HashSet<LocalId>>::new();
         let mut invalid = HashMap::<LocalId, Loan>::new();
 
         for (index, statement) in function.body.iter().enumerate() {
@@ -36,10 +40,24 @@ pub(super) fn check_loan_safety(hir: &PackageHir) -> Result<(), FosterError> {
                 check_escape(hir, function, expression, &loans)?;
             }
 
+            reject_self_origin_storage(hir, types, function, statement, &provenance)?;
+
             if let Stmt::Bind { local, value } = statement
                 && let Some(loan) = expression_loan(hir, *value, &loans)
             {
                 loans.insert(*local, loan);
+            }
+
+            match statement {
+                Stmt::Bind { local, value } | Stmt::Assign { local, value } => {
+                    let roots = expression_borrow_roots(hir, types, *value, &provenance);
+                    if roots.is_empty() {
+                        provenance.remove(local);
+                    } else {
+                        provenance.insert(*local, roots);
+                    }
+                }
+                _ => {}
             }
 
             let mut reshaped = HashSet::new();
@@ -55,6 +73,143 @@ pub(super) fn check_loan_safety(hir: &PackageHir) -> Result<(), FosterError> {
         }
     }
     Ok(())
+}
+
+fn reject_self_origin_storage(
+    hir: &PackageHir,
+    types: &crate::types::TypeInformation,
+    function: &Function,
+    statement: &Stmt,
+    provenance: &HashMap<LocalId, HashSet<LocalId>>,
+) -> Result<(), FosterError> {
+    let (origin, value) = match statement {
+        Stmt::Set { place, value } => (place_root(hir, *place), *value),
+        Stmt::Assign { local, value } => (Some(*local), *value),
+        _ => return Ok(()),
+    };
+    let Some(origin) = origin else {
+        return Ok(());
+    };
+    if expression_borrow_roots(hir, types, value, provenance).contains(&origin) {
+        return Err(FosterError::runtime(format!(
+            "in `{}.{}`: cannot store a value borrowing `{}` into its own origin",
+            hir.modules[function.module].name, function.name, hir.locals[origin].name
+        )));
+    }
+    Ok(())
+}
+
+fn expression_borrow_roots(
+    hir: &PackageHir,
+    types: &crate::types::TypeInformation,
+    expression: ExprId,
+    provenance: &HashMap<LocalId, HashSet<LocalId>>,
+) -> HashSet<LocalId> {
+    if types.expression_type(expression).is_some_and(|ty| {
+        matches!(
+            types.types[ty],
+            crate::types::Type::Unit
+                | crate::types::Type::Bool
+                | crate::types::Type::Int
+                | crate::types::Type::Float
+                | crate::types::Type::String
+                | crate::types::Type::CodePoint
+                | crate::types::Type::Symbol
+                | crate::types::Type::Module(_)
+        )
+    }) {
+        return HashSet::new();
+    }
+    let mut roots = HashSet::new();
+    collect_borrow_roots(hir, expression, provenance, &mut roots);
+    roots
+}
+
+fn collect_borrow_roots(
+    hir: &PackageHir,
+    expression: ExprId,
+    provenance: &HashMap<LocalId, HashSet<LocalId>>,
+    roots: &mut HashSet<LocalId>,
+) {
+    match &hir.expressions[expression] {
+        Expr::Reference(place) => {
+            if let Some(root) = place_root(hir, *place) {
+                roots.extend(
+                    provenance
+                        .get(&root)
+                        .cloned()
+                        .unwrap_or_else(|| HashSet::from([root])),
+                );
+            }
+        }
+        Expr::Closure { captures, .. } => {
+            for capture in captures
+                .iter()
+                .filter(|capture| capture.mode == CaptureMode::Ref)
+            {
+                roots.extend(
+                    provenance
+                        .get(&capture.local)
+                        .cloned()
+                        .unwrap_or_else(|| HashSet::from([capture.local])),
+                );
+            }
+        }
+        Expr::Name(ResolvedName::Local(local)) => {
+            roots.extend(provenance.get(local).into_iter().flatten().copied());
+        }
+        Expr::List(values) => {
+            for value in values {
+                collect_borrow_roots(hir, *value, provenance, roots);
+            }
+        }
+        Expr::Call { callee, arguments } => {
+            collect_borrow_roots(hir, *callee, provenance, roots);
+            for argument in arguments {
+                collect_borrow_roots(hir, *argument, provenance, roots);
+            }
+        }
+        Expr::Member { object, .. }
+        | Expr::MoveOut(object)
+        | Expr::Remote(object)
+        | Expr::Await(object)
+        | Expr::Unary {
+            operand: object, ..
+        } => collect_borrow_roots(hir, *object, provenance, roots),
+        Expr::Index { object, index }
+        | Expr::Binary {
+            left: object,
+            right: index,
+            ..
+        } => {
+            collect_borrow_roots(hir, *object, provenance, roots);
+            collect_borrow_roots(hir, *index, provenance, roots);
+        }
+        Expr::Record { fields, .. } => {
+            for (_, value) in fields {
+                collect_borrow_roots(hir, *value, provenance, roots);
+            }
+        }
+        Expr::Branch { subject, arms } => {
+            if let Some(subject) = subject {
+                collect_borrow_roots(hir, *subject, provenance, roots);
+            }
+            for arm in arms {
+                if let BranchTest::Condition(condition) = arm.test {
+                    collect_borrow_roots(hir, condition, provenance, roots);
+                }
+                collect_borrow_roots(hir, arm.value, provenance, roots);
+            }
+        }
+        Expr::Unit
+        | Expr::Bool(_)
+        | Expr::Integer(_)
+        | Expr::Float(_)
+        | Expr::String(_)
+        | Expr::CodePoint(_)
+        | Expr::Symbol(_)
+        | Expr::Name(_) => {}
+    }
 }
 
 fn statement_expression(statement: &Stmt) -> ExprId {

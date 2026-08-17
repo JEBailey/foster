@@ -1,0 +1,5 @@
+import values
+
+func main() -> Int {
+    HIDDEN
+}

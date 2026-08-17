@@ -14,6 +14,7 @@ impl PackageHir {
                 source_path: package.modules[name].source_path.clone(),
                 imports_with_spans: Vec::new(),
                 functions: BTreeMap::new(),
+                constants: BTreeMap::new(),
                 records: BTreeMap::new(),
                 variant_types: BTreeMap::new(),
                 imports: BTreeMap::new(),
@@ -26,9 +27,33 @@ impl PackageHir {
                 continue;
             };
             let module = hir.modules_by_name[module_name];
+            for source in &program.constants {
+                if hir.modules[module].constants.contains_key(&source.name)
+                    || hir.modules[module].functions.contains_key(&source.name)
+                    || hir.modules[module].records.contains_key(&source.name)
+                    || hir.modules[module].variant_types.contains_key(&source.name)
+                {
+                    return Err(FosterError::runtime(format!(
+                        "module `{module_name}` defines `{}` more than once",
+                        source.name
+                    )));
+                }
+                let constant = hir.constants.alloc(Constant {
+                    span: source.span.clone(),
+                    documentation: source.documentation.clone(),
+                    module,
+                    name: source.name.clone(),
+                    public: source.public,
+                    value: ConstantValue::Unit,
+                });
+                hir.modules[module]
+                    .constants
+                    .insert(source.name.clone(), constant);
+            }
             for source in &program.variants {
                 if hir.modules[module].records.contains_key(&source.name)
                     || hir.modules[module].variant_types.contains_key(&source.name)
+                    || hir.modules[module].constants.contains_key(&source.name)
                 {
                     return Err(FosterError::runtime(format!(
                         "module `{module_name}` defines `{}` more than once",
@@ -86,6 +111,9 @@ impl PackageHir {
                     .functions
                     .contains_key(&source_record.name)
                     || hir.modules[module]
+                        .constants
+                        .contains_key(&source_record.name)
+                    || hir.modules[module]
                         .records
                         .contains_key(&source_record.name)
                 {
@@ -119,6 +147,9 @@ impl PackageHir {
                 if hir.modules[module]
                     .records
                     .contains_key(&source_function.name)
+                    || hir.modules[module]
+                        .constants
+                        .contains_key(&source_function.name)
                 {
                     return Err(FosterError::runtime(format!(
                         "module `{module_name}` defines `{}` more than once",
@@ -178,6 +209,11 @@ impl PackageHir {
                     }
                 })
                 .collect();
+            for source in &program.constants {
+                let constant = hir.modules[module].constants[&source.name];
+                hir.constants[constant].value =
+                    lower_constant_value(&hir, module, &imports, &source.value)?;
+            }
             for source_function in &program.functions {
                 let function = hir.modules[module].functions[&source_function.name];
                 let mut lowerer = FunctionLowerer {
@@ -202,6 +238,10 @@ impl PackageHir {
 
     pub fn function_named(&self, module: ModuleId, name: &str) -> Option<FunctionId> {
         self.modules[module].functions.get(name).copied()
+    }
+
+    pub fn constant_named(&self, module: ModuleId, name: &str) -> Option<ConstantId> {
+        self.modules[module].constants.get(name).copied()
     }
 
     pub fn record_named(&self, module: ModuleId, name: &str) -> Option<RecordId> {
@@ -233,6 +273,104 @@ fn resolve_imports(
         imports.insert(local_name, module);
     }
     Ok(imports)
+}
+
+fn lower_constant_value(
+    hir: &PackageHir,
+    module: ModuleId,
+    imports: &HashMap<String, ModuleId>,
+    expression: &ast::Expr,
+) -> Result<ConstantValue, FosterError> {
+    use ast::{Expr, UnaryOp};
+
+    Ok(match expression.unspanned() {
+        Expr::Unit => ConstantValue::Unit,
+        Expr::Bool(value) => ConstantValue::Bool(*value),
+        Expr::Integer(value) => ConstantValue::Integer(*value),
+        Expr::Float(value) => ConstantValue::Float(*value),
+        Expr::String(value) => ConstantValue::String(value.clone()),
+        Expr::CodePoint(value) => ConstantValue::CodePoint(
+            value
+                .chars()
+                .next()
+                .expect("parsed CodePoint constants contain one scalar value"),
+        ),
+        Expr::Symbol(value) => ConstantValue::Symbol(value.clone()),
+        Expr::List(values) => ConstantValue::List(
+            values
+                .iter()
+                .map(|value| lower_constant_value(hir, module, imports, value))
+                .collect::<Result<_, _>>()?,
+        ),
+        Expr::Unary {
+            operator: UnaryOp::Negate,
+            operand,
+        } => match lower_constant_value(hir, module, imports, operand)? {
+            ConstantValue::Integer(value) => ConstantValue::Integer(-value),
+            ConstantValue::Float(value) => ConstantValue::Float(-value),
+            _ => {
+                return Err(FosterError::runtime(
+                    "constant negation requires an Int or Float literal",
+                ));
+            }
+        },
+        Expr::Name(name) => {
+            ConstantValue::Constant(resolve_constant_name(hir, module, imports, name)?)
+        }
+        Expr::Member { object, name } => {
+            let Expr::Name(import) = object.unspanned() else {
+                return Err(FosterError::runtime(
+                    "constant initializer contains a non-constant member expression",
+                ));
+            };
+            let imported = imports.get(import).ok_or_else(|| {
+                FosterError::runtime(format!("unknown imported module `{import}`"))
+            })?;
+            let constant = hir.constant_named(*imported, name).ok_or_else(|| {
+                FosterError::runtime(format!(
+                    "module `{}` has no constant `{name}`",
+                    hir.modules[*imported].name
+                ))
+            })?;
+            if !hir.constants[constant].public {
+                return Err(FosterError::runtime(format!(
+                    "constant `{}.{name}` is private",
+                    hir.modules[*imported].name
+                )));
+            }
+            ConstantValue::Constant(constant)
+        }
+        _ => {
+            return Err(FosterError::runtime(
+                "constant initializer must contain only literals, constant names, and lists",
+            ));
+        }
+    })
+}
+
+fn resolve_constant_name(
+    hir: &PackageHir,
+    module: ModuleId,
+    imports: &HashMap<String, ModuleId>,
+    name: &str,
+) -> Result<ConstantId, FosterError> {
+    if let Some(constant) = hir.constant_named(module, name) {
+        return Ok(constant);
+    }
+    let imported = imports
+        .values()
+        .filter_map(|module| hir.constant_named(*module, name))
+        .filter(|constant| hir.constants[*constant].public)
+        .collect::<Vec<_>>();
+    match imported.as_slice() {
+        [constant] => Ok(*constant),
+        [_, _, ..] => Err(FosterError::runtime(format!(
+            "imported constant `{name}` is ambiguous; qualify it with its module"
+        ))),
+        [] => Err(FosterError::runtime(format!(
+            "constant initializer references unknown constant `{name}`"
+        ))),
+    }
 }
 
 struct FunctionLowerer<'a> {

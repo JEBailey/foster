@@ -1,19 +1,17 @@
-use std::rc::Rc;
-
 use super::Value;
-use super::value::Slot;
+use super::value::PlaceHandle;
 
 #[derive(Debug, Clone)]
 pub enum Capture {
     Value(Value),
-    Slot(Rc<Slot>),
+    Place(PlaceHandle),
 }
 
 impl PartialEq for Capture {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Self::Value(left), Self::Value(right)) => left == right,
-            (Self::Slot(left), Self::Slot(right)) => Rc::ptr_eq(left, right),
+            (Self::Place(left), Self::Place(right)) => left == right,
             _ => false,
         }
     }

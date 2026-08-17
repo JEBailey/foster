@@ -93,7 +93,7 @@ mixed = [move name, ref person] () -> rename(person, name)
 
 Capture modes are:
 
-- `ref local`: capture a shared VM slot for the local's place;
+- `ref local`: capture a non-owning `PlaceHandle` for the local's place;
 - `move value`: transfer ownership into the closure environment;
 - `copy value`: copy one of Foster's built-in copy types.
 
@@ -137,6 +137,13 @@ The runtime closure value is the pair:
 The register VM currently stores captures in a managed environment vector. Native closure layout,
 including when environments can be inline or require allocation, is a backend decision rather than
 a promise of the bootstrap VM.
+
+Reference captures and explicit projected references share the same runtime `PlaceHandle`
+representation. A handle contains a weak origin slot plus its projection and structural generation.
+Capturing a reference parameter flattens the parameter wrapper, so an escaping closure points to
+the caller's original place. Borrow edges therefore cannot keep their own origin alive or form an
+`Rc` cycle; the static loan rules guarantee liveness, while a failed weak upgrade is a defensive
+`borrowed place has expired` runtime error.
 
 ## Inferred captures
 

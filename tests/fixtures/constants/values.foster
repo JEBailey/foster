@@ -1,0 +1,7 @@
+/// The public answer used by the constants package fixture.
+pub const EXPORTED = 40
+
+/// A second public constant, accessed through the module qualifier.
+pub const OFFSET = 2
+
+const HIDDEN = 1

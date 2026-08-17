@@ -132,6 +132,19 @@ impl Workspace {
             .source
             .as_deref()?;
         let mut symbols = Vec::new();
+        for (_, constant) in compilation
+            .hir
+            .constants
+            .iter()
+            .filter(|(_, constant)| constant.module == module_id)
+        {
+            symbols.push(symbol(
+                &constant.name,
+                SymbolKind::CONSTANT,
+                source,
+                constant.span.clone(),
+            ));
+        }
         for (_, record) in compilation
             .hir
             .records
@@ -513,6 +526,7 @@ impl Workspace {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SymbolIdentity {
     Local(crate::hir::LocalId),
+    Constant(crate::hir::ConstantId),
     Function(crate::hir::FunctionId),
     Record(crate::hir::RecordId),
     Variant(crate::hir::VariantTypeId),
@@ -563,6 +577,9 @@ fn symbol_at(
             crate::hir::Expr::Name(resolved) => match *resolved {
                 crate::hir::ResolvedName::Local(local) => {
                     return Some(SymbolIdentity::Local(local));
+                }
+                crate::hir::ResolvedName::Constant(constant) => {
+                    return Some(SymbolIdentity::Constant(constant));
                 }
                 crate::hir::ResolvedName::Function(function) => {
                     return Some(SymbolIdentity::Function(function));
@@ -635,6 +652,19 @@ fn symbol_hover(compilation: &crate::hir::Compilation, symbol: SymbolIdentity) -
                 None,
             )
         }),
+        SymbolIdentity::Constant(constant) => {
+            let definition = &compilation.hir.constants[constant];
+            compilation.types.constants.get(&constant).map(|ty| {
+                documented_hover(
+                    format!(
+                        "const {}: {}",
+                        definition.name,
+                        compilation.types.display(*ty)
+                    ),
+                    definition.documentation.as_deref(),
+                )
+            })
+        }
         SymbolIdentity::Function(function) => declaration_hover(
             compilation,
             compilation.hir.functions[function].module,
@@ -671,10 +701,17 @@ fn declaration_identity(
 ) -> Option<SymbolIdentity> {
     let definitions = &compilation.hir.modules[module];
     definitions
-        .functions
+        .constants
         .get(name)
         .copied()
-        .map(SymbolIdentity::Function)
+        .map(SymbolIdentity::Constant)
+        .or_else(|| {
+            definitions
+                .functions
+                .get(name)
+                .copied()
+                .map(SymbolIdentity::Function)
+        })
         .or_else(|| {
             definitions
                 .records
@@ -753,6 +790,7 @@ fn qualified_name_ranges(source: &str, expected: &str) -> Vec<std::ops::Range<us
 fn symbol_name(compilation: &crate::hir::Compilation, symbol: SymbolIdentity) -> &str {
     match symbol {
         SymbolIdentity::Local(local) => &compilation.hir.locals[local].name,
+        SymbolIdentity::Constant(constant) => &compilation.hir.constants[constant].name,
         SymbolIdentity::Function(function) => &compilation.hir.functions[function].name,
         SymbolIdentity::Record(record) => &compilation.hir.records[record].name,
         SymbolIdentity::Variant(variant) => &compilation.hir.variant_types[variant].name,
@@ -771,6 +809,15 @@ pub(super) fn symbol_declaration(
             location(
                 compilation,
                 function.module,
+                definition.span.clone(),
+                &definition.name,
+            )
+        }
+        SymbolIdentity::Constant(constant) => {
+            let definition = &compilation.hir.constants[constant];
+            location(
+                compilation,
+                definition.module,
                 definition.span.clone(),
                 &definition.name,
             )
@@ -866,6 +913,21 @@ fn declaration_hover(
     name: &str,
 ) -> Option<String> {
     let definitions = &compilation.hir.modules[module];
+    if let Some(constant) = definitions.constants.get(name) {
+        let definition = &compilation.hir.constants[*constant];
+        return Some(documented_hover(
+            format!(
+                "const {}: {}",
+                definition.name,
+                compilation
+                    .types
+                    .constants
+                    .get(constant)
+                    .map_or_else(|| "unknown".into(), |ty| compilation.types.display(*ty))
+            ),
+            definition.documentation.as_deref(),
+        ));
+    }
     if let Some(function) = definitions.functions.get(name) {
         let definition = &compilation.hir.functions[*function];
         return Some(documented_hover(
@@ -897,6 +959,22 @@ fn add_module_completions(
     items: &mut std::collections::BTreeMap<String, CompletionItem>,
 ) {
     let definitions = &compilation.hir.modules[module];
+    for (name, constant) in &definitions.constants {
+        let definition = &compilation.hir.constants[*constant];
+        if !public_only || definition.public {
+            insert_documented_completion(
+                items,
+                name,
+                CompletionItemKind::CONSTANT,
+                compilation
+                    .types
+                    .constants
+                    .get(constant)
+                    .map(|ty| compilation.types.display(*ty)),
+                definition.documentation.as_deref(),
+            );
+        }
+    }
     for (name, function) in &definitions.functions {
         let definition = &compilation.hir.functions[*function];
         if !definition.name.contains('$') && (!public_only || definition.public) {
@@ -1360,9 +1438,15 @@ fn definition_in_module(
 ) -> Option<Location> {
     let definition = &compilation.hir.modules[module];
     let span = definition
-        .functions
+        .constants
         .get(name)
-        .map(|id| compilation.hir.functions[*id].span.clone())
+        .map(|id| compilation.hir.constants[*id].span.clone())
+        .or_else(|| {
+            definition
+                .functions
+                .get(name)
+                .map(|id| compilation.hir.functions[*id].span.clone())
+        })
         .or_else(|| {
             definition
                 .records
@@ -1650,6 +1734,58 @@ mod tests {
             "{}",
             function.value
         );
+    }
+
+    #[test]
+    fn constants_have_symbols_hover_and_cross_module_definitions() {
+        let root = std::env::current_dir()
+            .unwrap()
+            .join("tests/fixtures/constants");
+        let main_uri = path_to_uri(&root.join("main.foster")).unwrap();
+        let values_uri = path_to_uri(&root.join("values.foster")).unwrap();
+        let workspace = Workspace {
+            root: Some(root.clone()),
+            documents: HashMap::new(),
+            published: HashSet::new(),
+        };
+
+        let Some(DocumentSymbolResponse::Nested(symbols)) = workspace.document_symbols(&values_uri)
+        else {
+            panic!("expected document symbols")
+        };
+        assert!(
+            symbols
+                .iter()
+                .any(|symbol| { symbol.name == "EXPORTED" && symbol.kind == SymbolKind::CONSTANT })
+        );
+
+        let hover = workspace
+            .hover(&TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(main_uri.clone()),
+                Position::new(3, 6),
+            ))
+            .unwrap();
+        let HoverContents::Markup(hover) = hover.contents else {
+            panic!("expected markdown hover")
+        };
+        assert!(
+            hover.value.contains("const EXPORTED: Int"),
+            "{}",
+            hover.value
+        );
+        assert!(hover.value.contains("public answer"), "{}", hover.value);
+
+        let definition = workspace
+            .definition(&TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(main_uri),
+                Position::new(3, 6),
+            ))
+            .unwrap();
+        assert_eq!(
+            uri_to_path(&definition.uri).unwrap(),
+            root.join("values.foster")
+        );
+        assert_eq!(definition.range.start, Position::new(1, 10));
     }
 
     #[test]

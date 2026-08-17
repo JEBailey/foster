@@ -25,6 +25,10 @@ fn protected_slots(program: &Program) -> HashMap<crate::hir::FunctionId, HashSet
             }
         }
         for instruction in &function.instructions {
+            if let Instruction::MakeReference { object, .. } = instruction {
+                // PlaceHandle is weak; retain its origin slot for this frame.
+                protected.entry(*caller).or_default().insert(*object);
+            }
             match instruction {
                 Instruction::MakeClosure {
                     function: target,
@@ -108,9 +112,11 @@ fn insert_function(function: &mut BytecodeFunction, protected: HashSet<Register>
             Instruction::JumpIfFalse { condition, target } => {
                 let false_drops =
                     edge_drops(&live.live_in[index], &live.live_in[target], &protected);
-                let fallthrough_drops = (index + 1 < live.live_in.len())
-                    .then(|| edge_drops(&live.live_in[index], &live.live_in[index + 1], &protected))
-                    .unwrap_or_default();
+                let fallthrough_drops = if index + 1 < live.live_in.len() {
+                    edge_drops(&live.live_in[index], &live.live_in[index + 1], &protected)
+                } else {
+                    Default::default()
+                };
                 let branch = instructions.len();
                 instructions.push(Instruction::JumpIfFalse {
                     condition,
