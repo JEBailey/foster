@@ -6,3 +6,4 @@
 - Add package-aware diagnostics, hover documentation, navigation, references, rename, completion,
   signature help, document symbols, and inlay hints through the Foster language server.
 - Bundle the Foster compiler and core-library sources in platform-specific extension packages.
+- Add **Foster: Run Current File**, **Foster: Run Current Package**, and an editor-title run button.

@@ -13,6 +13,7 @@ and launches the Foster language server. Language features include:
 - inferred local-type and argument-name inlay hints, with clickable parameter hints;
 - scope-aware completion for locals, declarations, imports, qualified modules, and keywords;
 - automatic diagnostic refresh when Foster files change on disk.
+- commands to run the active file or its nearest `main.fos` package in a shared task terminal.
 
 The bundled grammar highlights line comments, nested block-comment delimiters, documentation
 comments, code-point literals, effect clauses, sequence types, and structural intersection types.
@@ -22,6 +23,18 @@ comments, code-point literals, effect clauses, sequence types, and structural in
 Marketplace and VSIX releases include the Foster compiler, language server, and core-library
 sources for the selected platform. No separate compiler installation is required. Set
 `foster.server.path` only to override the bundled compiler with a local build.
+
+## Running Foster
+
+Open a saved `.fos` file and use one of these commands from the Command Palette:
+
+- **Foster: Run Current File** executes the active file as a standalone program.
+- **Foster: Run Current Package** searches upward, within the current workspace folder, for the
+  nearest directory containing `main.fos` and executes that package.
+
+The ▶ button in the editor title runs the current file. Foster saves a modified file before
+starting it and shows compiler output in the shared Foster task terminal. Use the package command
+when the program imports sibling filesystem modules.
 
 ## Development
 

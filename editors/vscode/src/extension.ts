@@ -14,6 +14,8 @@ let client: LanguageClient | undefined;
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push(
     vscode.commands.registerCommand("foster.restartLanguageServer", () => restart(context)),
+    vscode.commands.registerCommand("foster.runCurrentFile", () => runCurrentFile(context)),
+    vscode.commands.registerCommand("foster.runCurrentPackage", () => runCurrentPackage(context)),
     vscode.workspace.onDidChangeConfiguration(async (event) => {
       if (event.affectsConfiguration("foster.server")) {
         await restart(context);
@@ -21,6 +23,108 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
   );
   await start(context);
+}
+
+async function runCurrentFile(context: vscode.ExtensionContext): Promise<void> {
+  const document = await runnableDocument();
+  if (document === undefined) {
+    return;
+  }
+  await executeFoster(context, document.uri.fsPath, path.dirname(document.uri.fsPath));
+}
+
+async function runCurrentPackage(context: vscode.ExtensionContext): Promise<void> {
+  const document = await runnableDocument();
+  if (document === undefined) {
+    return;
+  }
+
+  const workspaceFolder = vscode.workspace.getWorkspaceFolder(document.uri);
+  const packageRoot = findPackageRoot(document.uri.fsPath, workspaceFolder?.uri.fsPath);
+  if (packageRoot === undefined) {
+    await vscode.window.showErrorMessage(
+      "Foster could not find a package root containing main.fos for the active file.",
+    );
+    return;
+  }
+  await executeFoster(context, packageRoot, packageRoot, workspaceFolder);
+}
+
+async function runnableDocument(): Promise<vscode.TextDocument | undefined> {
+  const document = vscode.window.activeTextEditor?.document;
+  if (document === undefined || document.languageId !== "foster") {
+    await vscode.window.showErrorMessage("Open a Foster .fos file before running Foster code.");
+    return undefined;
+  }
+  if (document.isUntitled || document.uri.scheme !== "file") {
+    await vscode.window.showErrorMessage("Save the Foster file before running it.");
+    return undefined;
+  }
+  if (document.isDirty && !(await document.save())) {
+    await vscode.window.showErrorMessage("Foster could not save the active file before running it.");
+    return undefined;
+  }
+  return document;
+}
+
+function findPackageRoot(file: string, workspaceRoot: string | undefined): string | undefined {
+  let directory = path.dirname(path.resolve(file));
+  const boundary = path.resolve(workspaceRoot ?? directory);
+  if (!pathWithin(directory, boundary)) {
+    return undefined;
+  }
+
+  while (true) {
+    if (fs.existsSync(path.join(directory, "main.fos"))) {
+      return directory;
+    }
+    if (samePath(directory, boundary)) {
+      return undefined;
+    }
+    const parent = path.dirname(directory);
+    if (parent === directory || !pathWithin(parent, boundary)) {
+      return undefined;
+    }
+    directory = parent;
+  }
+}
+
+function pathWithin(candidate: string, root: string): boolean {
+  const relative = path.relative(root, candidate);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function samePath(left: string, right: string): boolean {
+  return process.platform === "win32"
+    ? left.toLowerCase() === right.toLowerCase()
+    : left === right;
+}
+
+async function executeFoster(
+  context: vscode.ExtensionContext,
+  target: string,
+  cwd: string,
+  workspaceFolder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(target)),
+): Promise<void> {
+  const execution = new vscode.ProcessExecution(resolveServerCommand(context), ["run", target], {
+    cwd,
+  });
+  const task = new vscode.Task(
+    { type: "foster", target },
+    workspaceFolder ?? vscode.TaskScope.Workspace,
+    "Run",
+    "Foster",
+    execution,
+    [],
+  );
+  task.presentationOptions = {
+    clear: true,
+    echo: true,
+    focus: false,
+    panel: vscode.TaskPanelKind.Shared,
+    reveal: vscode.TaskRevealKind.Always,
+  };
+  await vscode.tasks.executeTask(task);
 }
 
 export async function deactivate(): Promise<void> {

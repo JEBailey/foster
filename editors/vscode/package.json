@@ -24,7 +24,9 @@
   ],
   "activationEvents": [
     "onLanguage:foster",
-    "onCommand:foster.restartLanguageServer"
+    "onCommand:foster.restartLanguageServer",
+    "onCommand:foster.runCurrentFile",
+    "onCommand:foster.runCurrentPackage"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -52,8 +54,26 @@
       {
         "command": "foster.restartLanguageServer",
         "title": "Foster: Restart Language Server"
+      },
+      {
+        "command": "foster.runCurrentFile",
+        "title": "Foster: Run Current File",
+        "icon": "$(play)"
+      },
+      {
+        "command": "foster.runCurrentPackage",
+        "title": "Foster: Run Current Package"
       }
     ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "foster.runCurrentFile",
+          "when": "resourceLangId == foster",
+          "group": "navigation@1"
+        }
+      ]
+    },
     "configuration": {
       "title": "Foster",
       "properties": {
