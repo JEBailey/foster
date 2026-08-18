@@ -4,7 +4,7 @@ use std::time::Duration;
 use criterion::{Criterion, criterion_group, criterion_main};
 use foster::vm::{CompileOptions, Machine};
 
-const SOURCE: &str = include_str!("../benchmarks/fibonacci.foster");
+const SOURCE: &str = include_str!("../benchmarks/fibonacci.fos");
 
 fn runtime_benchmarks(criterion: &mut Criterion) {
     let compilation = foster::compile(SOURCE).unwrap();

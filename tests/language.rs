@@ -18,7 +18,7 @@ func main() {
 
 #[test]
 fn branch_and_recursion() {
-    let source = include_str!("../examples/whitespace.foster");
+    let source = include_str!("../examples/whitespace.fos");
     assert_eq!(foster::run(source).unwrap(), Value::String("Foster".into()));
 }
 
@@ -771,7 +771,7 @@ fn checks_qualified_call_arguments() {
 #[test]
 fn executes_nested_and_anonymous_closures() {
     assert_eq!(
-        foster::run(include_str!("../examples/pima/closure.foster")).unwrap(),
+        foster::run(include_str!("../examples/pima/closure.fos")).unwrap(),
         Value::Integer(36)
     );
 }
@@ -780,7 +780,7 @@ fn executes_nested_and_anonymous_closures() {
 fn classifies_copy_and_move_captures() {
     use foster::hir::{CaptureMode, Expr};
 
-    let compilation = foster::compile(include_str!("../examples/pima/closure.foster")).unwrap();
+    let compilation = foster::compile(include_str!("../examples/pima/closure.fos")).unwrap();
     let mut modes = compilation
         .hir
         .expressions
@@ -1135,16 +1135,16 @@ func main() -> Int {
 #[test]
 fn runs_newly_unblocked_pima_ports() {
     assert_eq!(
-        foster::run(include_str!("../examples/pima/curried_example.foster")).unwrap(),
+        foster::run(include_str!("../examples/pima/curried_example.fos")).unwrap(),
         Value::Integer(19)
     );
-    let Value::Float(root) = foster::run(include_str!("../examples/pima/newton.foster")).unwrap()
+    let Value::Float(root) = foster::run(include_str!("../examples/pima/newton.fos")).unwrap()
     else {
         panic!("Newton example should return Float")
     };
     assert!((root - 4.0).abs() < 0.001);
     assert_eq!(
-        foster::run(include_str!("../examples/pima/birthday_paradox.foster")).unwrap(),
+        foster::run(include_str!("../examples/pima/birthday_paradox.fos")).unwrap(),
         Value::Float(23.0)
     );
 }
@@ -1465,7 +1465,7 @@ func main() { 0 }
 }
 
 fn json_parser_with_main(expression: &str) -> String {
-    let parser = include_str!("../examples/pima/json_parser/parser.foster");
+    let parser = include_str!("../examples/pima/json_parser/parser.fos");
     format!("{parser}\nfunc main() {{ {expression} }}")
 }
 
@@ -2224,7 +2224,7 @@ func main() -> Unit { println() }
 #[test]
 fn runs_the_live_inventory_pipeline() {
     assert_eq!(
-        foster::run(include_str!("../examples/live_inventory_pipeline.foster")).unwrap(),
+        foster::run(include_str!("../examples/live_inventory_pipeline.fos")).unwrap(),
         Value::Integer(1242)
     );
 }
@@ -2736,7 +2736,7 @@ func main() -> String {
 
 #[test]
 fn runs_the_generic_recursive_linked_list_example() {
-    let source = include_str!("../examples/linked_list.foster");
+    let source = include_str!("../examples/linked_list.fos");
     for optimize in [false, true] {
         assert_eq!(
             foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),

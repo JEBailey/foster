@@ -1,6 +1,6 @@
 # Variants, destructuring, and patterns
 
-> Historical design note. `../patterns.foster` is the authoritative variant-pattern port.
+> Historical design note. `../patterns.fos` is the authoritative variant-pattern port.
 
 Pima's `patterns.pima` maps naturally to closed Foster variants and exhaustive `branch`:
 

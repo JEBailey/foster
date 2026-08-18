@@ -1,6 +1,6 @@
 # Maps
 
-> Historical design note. `../maps.foster` is the authoritative typed-map port.
+> Historical design note. `../maps.fos` is the authoritative typed-map port.
 
 Pima's `maps.pima` becomes:
 

@@ -1,7 +1,7 @@
 # Closures and partial application
 
-> Historical design note. The executable `../closure.foster` and
-> `../closure_ownership.foster` ports supersede this pre-implementation sketch.
+> Historical design note. The executable `../closure.fos` and
+> `../closure_ownership.fos` ports supersede this pre-implementation sketch.
 
 Pima's `closure.pima` and `curried_example.pima` suggest first-class closures and placeholder-based
 partial application. The intended Foster spelling is:

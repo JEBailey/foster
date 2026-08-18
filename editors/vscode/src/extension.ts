@@ -47,7 +47,7 @@ async function start(): Promise<void> {
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ language: "foster", scheme: "file" }],
     synchronize: {
-      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.foster"),
+      fileEvents: vscode.workspace.createFileSystemWatcher("**/*.fos"),
     },
   };
 

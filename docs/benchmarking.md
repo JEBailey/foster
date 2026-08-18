@@ -3,8 +3,8 @@
 Optimization is enabled by default. It can be selected explicitly from the CLI:
 
 ```text
-foster run program.foster --optimize
-foster run program.foster --no-optimize
+foster run program.fos --optimize
+foster run program.fos --no-optimize
 ```
 
 Library users select the same behavior with `vm::CompileOptions { optimize }` and

@@ -1,7 +1,7 @@
 # HTTP and file servers
 
-> Historical design note. The root-level `file_server*.foster` and
-> `http_server_lib.foster` files are the authoritative capability-neutral ports.
+> Historical design note. The root-level `file_server*.fos` and
+> `http_server_lib.fos` files are the authoritative capability-neutral ports.
 
 The Pima file and HTTP server examples exercise capabilities, byte streams, errors, concurrency,
 actors/remote blocks, maps, records, and filesystem security. Their Foster entry point should make

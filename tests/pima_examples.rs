@@ -35,7 +35,7 @@ fn examples_root() -> PathBuf {
 #[test]
 fn every_pima_example_has_a_foster_counterpart() {
     for name in PIMA_COUNTERPARTS {
-        let file = examples_root().join(format!("{name}.foster"));
+        let file = examples_root().join(format!("{name}.fos"));
         let package = examples_root().join(name);
         assert!(
             file.is_file() || package.is_dir(),
@@ -51,10 +51,7 @@ fn pima_corpus_runs_with_and_without_optimization() {
     let mut examples = fs::read_dir(examples_root())
         .unwrap()
         .map(|entry| entry.unwrap().path())
-        .filter(|path| {
-            path.extension()
-                .is_some_and(|extension| extension == "foster")
-        })
+        .filter(|path| path.extension().is_some_and(|extension| extension == "fos"))
         .collect::<Vec<_>>();
     examples.sort();
 

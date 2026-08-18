@@ -9,7 +9,7 @@ objects running on virtual threads. The bootstrap compiler and register VM are w
 ## Try it
 
 ```powershell
-cargo run --bin foster -- run examples/live_inventory_pipeline.foster
+cargo run --bin foster -- run examples/live_inventory_pipeline.fos
 cargo run --bin foster -- check examples/pima/json_parser
 cargo run --bin foster -- check tests/fixtures/modules
 cargo run --bin foster -- run tests/fixtures/modules --no-optimize
@@ -19,7 +19,7 @@ cargo test
 ```
 
 `run` invokes the zero-argument `main` function. A file is treated as a one-module package; a
-directory is discovered as a filesystem module tree whose entry point is `main.foster`.
+directory is discovered as a filesystem module tree whose entry point is `main.fos`.
 Optimization is enabled by default and can be selected with `--optimize` or `--no-optimize`.
 
 ## Generated documentation
@@ -89,16 +89,16 @@ func unwrap_or(result: Result<Int, String>, fallback: Int) -> Int {
 
 ## Filesystem modules
 
-Directories implicitly define empty modules. A same-named `.foster` file optionally supplies the
+Directories implicitly define empty modules. A same-named `.fos` file optionally supplies the
 body of that module:
 
 ```text
-json.foster          json (with declarations)
+json.fos          json (with declarations)
 json/                json (the same module, with children)
-  parser.foster      json.parser
+  parser.fos      json.parser
 tools/               tools (implicit and empty)
   text/
-    trim.foster      tools.text.trim
+    trim.fos      tools.text.trim
 ```
 
 There are no `_module` or `index` files. Module components must be portable identifiers and cannot
@@ -172,5 +172,5 @@ scope-aware completion. The development VS Code extension lives in
 - [Optimization and benchmarks](docs/benchmarking.md)
 - [Executable examples](examples/README.md)
 
-Files under `examples/pima/design/` are explicitly historical notes. Executable `.foster` files and
+Files under `examples/pima/design/` are explicitly historical notes. Executable `.fos` files and
 the documents above describe the current implementation.

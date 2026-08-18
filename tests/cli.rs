@@ -7,7 +7,7 @@ fn foster() -> Command {
 }
 
 fn benchmark_source() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("benchmarks/fibonacci.foster")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("benchmarks/fibonacci.fos")
 }
 
 #[test]

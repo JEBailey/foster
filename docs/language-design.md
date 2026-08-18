@@ -19,19 +19,19 @@ function effect.
 Filesystem structure determines module structure.
 
 - A directory implicitly defines an empty module.
-- A `.foster` file defines the body of its corresponding module.
+- A `.fos` file defines the body of its corresponding module.
 - A same-named file and directory describe one module: the file contains its declarations and the
   directory contains its children.
 - Module components must be portable identifiers and may not differ only by case.
 - The package source root is implicit and is not itself a named module.
 
 ```text
-json.foster          json, with declarations
+json.fos          json, with declarations
 json/
-  parser.foster      json.parser
+  parser.fos      json.parser
 tools/               tools, implicit and empty
   text/              tools.text, implicit and empty
-    trim.foster      tools.text.trim
+    trim.fos      tools.text.trim
 ```
 
 Imports use canonical dotted names and may bind an alias:
@@ -51,7 +51,7 @@ component as a module qualifier. Thus `import core.option` permits both `Option<
 the same unqualified name, Foster requires a module-qualified use at that point; importing the
 modules themselves remains valid.
 
-Modules and declarations occupy one logical name system. Modules established by a `.foster` file,
+Modules and declarations occupy one logical name system. Modules established by a `.fos` file,
 a directory, or both are implicitly public and may always be addressed by canonical path. Every
 declaration inside a module is private unless explicitly marked `pub`:
 

@@ -1,6 +1,6 @@
 # Foster Language Support for VS Code
 
-This extension registers `.foster` files, provides Foster syntax highlighting and editing rules,
+This extension registers `.fos` files, provides Foster syntax highlighting and editing rules,
 and launches the Foster language server. Language features include:
 
 - package-wide compiler errors and warnings with open-buffer overlays;

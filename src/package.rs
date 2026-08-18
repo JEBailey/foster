@@ -183,7 +183,7 @@ impl Package {
                 .expect("walked source paths are beneath the package root");
             if path.is_dir() {
                 self.ensure_implicit(&module_components(relative, false)?);
-            } else if path.extension() == Some("foster") {
+            } else if path.extension() == Some("fos") {
                 self.add_explicit(module_components(relative, true)?, path, overlays)?;
             }
         }
@@ -334,57 +334,54 @@ impl Package {
 }
 
 fn core_source_path(module: &str) -> Option<Utf8PathBuf> {
-    let relative = format!("library/{}.foster", module.replace('.', "/"));
+    let relative = format!("library/{}.fos", module.replace('.', "/"));
     let path = Utf8PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative);
     path.is_file().then_some(path)
 }
 
 const CORE_MODULES: &[(&str, &str)] = &[
-    ("core.option", include_str!("../library/core/option.foster")),
-    ("core.byte", include_str!("../library/core/byte.foster")),
-    ("core.bytes", include_str!("../library/core/bytes.foster")),
-    ("core.stream", include_str!("../library/core/stream.foster")),
+    ("core.option", include_str!("../library/core/option.fos")),
+    ("core.byte", include_str!("../library/core/byte.fos")),
+    ("core.bytes", include_str!("../library/core/bytes.fos")),
+    ("core.stream", include_str!("../library/core/stream.fos")),
     (
         "core.byte_buffer",
-        include_str!("../library/core/byte_buffer.foster"),
+        include_str!("../library/core/byte_buffer.fos"),
     ),
     (
         "core.iteration",
-        include_str!("../library/core/iteration.foster"),
+        include_str!("../library/core/iteration.fos"),
     ),
     (
         "core.collection",
-        include_str!("../library/core/collection.foster"),
+        include_str!("../library/core/collection.fos"),
     ),
-    ("core.result", include_str!("../library/core/result.foster")),
+    ("core.result", include_str!("../library/core/result.fos")),
     (
         "core.ordering",
-        include_str!("../library/core/ordering.foster"),
+        include_str!("../library/core/ordering.fos"),
     ),
-    ("core.list", include_str!("../library/core/list.foster")),
+    ("core.list", include_str!("../library/core/list.fos")),
     (
         "core.sequence",
-        include_str!("../library/core/sequence.foster"),
+        include_str!("../library/core/sequence.fos"),
     ),
     (
         "core.character",
-        include_str!("../library/core/character.foster"),
+        include_str!("../library/core/character.fos"),
     ),
-    ("core.bool", include_str!("../library/core/bool.foster")),
-    ("core.int", include_str!("../library/core/int.foster")),
-    ("core.float", include_str!("../library/core/float.foster")),
-    ("core.string", include_str!("../library/core/string.foster")),
-    ("core.map", include_str!("../library/core/map.foster")),
-    ("core.set", include_str!("../library/core/set.foster")),
-    ("core.queue", include_str!("../library/core/queue.foster")),
-    ("core.deque", include_str!("../library/core/deque.foster")),
-    ("core.stack", include_str!("../library/core/stack.foster")),
-    ("core.range", include_str!("../library/core/range.foster")),
-    ("core.io", include_str!("../library/core/io.foster")),
-    (
-        "core.net.tcp",
-        include_str!("../library/core/net/tcp.foster"),
-    ),
+    ("core.bool", include_str!("../library/core/bool.fos")),
+    ("core.int", include_str!("../library/core/int.fos")),
+    ("core.float", include_str!("../library/core/float.fos")),
+    ("core.string", include_str!("../library/core/string.fos")),
+    ("core.map", include_str!("../library/core/map.fos")),
+    ("core.set", include_str!("../library/core/set.fos")),
+    ("core.queue", include_str!("../library/core/queue.fos")),
+    ("core.deque", include_str!("../library/core/deque.fos")),
+    ("core.stack", include_str!("../library/core/stack.fos")),
+    ("core.range", include_str!("../library/core/range.fos")),
+    ("core.io", include_str!("../library/core/io.fos")),
+    ("core.net.tcp", include_str!("../library/core/net/tcp.fos")),
 ];
 
 fn module_components(path: &Utf8Path, strip_extension: bool) -> Result<Vec<String>, FosterError> {
@@ -395,7 +392,7 @@ fn module_components(path: &Utf8Path, strip_extension: bool) -> Result<Vec<Strin
     if strip_extension {
         let last = components.last_mut().expect("a source file has a filename");
         *last = last
-            .strip_suffix(".foster")
+            .strip_suffix(".fos")
             .expect("source extension was checked")
             .to_owned();
     }

@@ -1,6 +1,6 @@
 # Showcase translation
 
-> Historical design note. `../showcase.foster` is the authoritative executable port.
+> Historical design note. `../showcase.fos` is the authoritative executable port.
 
 Pima's showcase combines typed errors, mutable objects, closures, collection pipelines, code blocks,
 and attempted error capture. In intended Foster syntax, its central API becomes:

@@ -1,6 +1,6 @@
 # Stateful objects as records
 
-> Historical design note. `../object_test.foster` is the authoritative record-and-method port.
+> Historical design note. `../object_test.fos` is the authoritative record-and-method port.
 
 Pima's `object_test.pima` does not require class inheritance. In Foster it should be a record with
 methods and mutation effects:

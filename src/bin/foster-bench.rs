@@ -10,7 +10,7 @@ use foster::vm::{CompileOptions, Machine, Program, ProgramMetrics};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = Options::parse()?;
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let foster_path = root.join("benchmarks/fibonacci.foster");
+    let foster_path = root.join("benchmarks/fibonacci.fos");
     let lua_path = root.join("benchmarks/fibonacci.lua");
     let source = fs::read_to_string(&foster_path)?;
 

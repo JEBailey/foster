@@ -1,6 +1,6 @@
 # Code blocks
 
-> Historical design note. `../code_blocks.foster` is the authoritative lexical-closure port.
+> Historical design note. `../code_blocks.fos` is the authoritative lexical-closure port.
 
 Pima code blocks are unusual: they are inert templates whose free names can be supplied by the
 environment of a later `do`. They are not ordinary lexical closures.

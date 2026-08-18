@@ -1724,7 +1724,7 @@ mod tests {
         let root = std::env::current_dir()
             .unwrap()
             .join("tests/fixtures/modules");
-        let main = root.join("main.foster");
+        let main = root.join("main.fos");
         let uri = path_to_uri(&main).unwrap();
         (
             Workspace {
@@ -1740,7 +1740,7 @@ mod tests {
     #[test]
     fn document_symbols_use_open_buffer_overlays() {
         let (mut workspace, uri, root) = fixture_workspace();
-        let mut source = std::fs::read_to_string(root.join("main.foster")).unwrap();
+        let mut source = std::fs::read_to_string(root.join("main.fos")).unwrap();
         source.push_str("\nfunc from_overlay() -> Int { 7 }\n");
         workspace.open(uri.clone(), source, 2);
         let Some(DocumentSymbolResponse::Nested(symbols)) = workspace.document_symbols(&uri) else {
@@ -1760,7 +1760,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             uri_to_path(&location.uri).unwrap(),
-            root.join("json/parser.foster")
+            root.join("json/parser.fos")
         );
         assert_eq!(location.range.start.line, 0);
     }
@@ -1770,7 +1770,7 @@ mod tests {
         let root = std::env::current_dir()
             .unwrap()
             .join("tests/fixtures/associated_function");
-        let main = root.join("main.foster");
+        let main = root.join("main.fos");
         let uri = path_to_uri(&main).unwrap();
         let workspace = Workspace {
             root: Some(root.clone()),
@@ -1786,7 +1786,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             uri_to_path(&location.uri).unwrap(),
-            root.join("collection.foster")
+            root.join("collection.fos")
         );
         assert_eq!(location.range.start, Position::new(4, 13));
         assert_eq!(location.range.end, Position::new(4, 19));
@@ -1810,7 +1810,7 @@ mod tests {
             .completion(&CompletionParams {
                 text_document_position: TextDocumentPositionParams::new(
                     lsp_types::TextDocumentIdentifier::new(
-                        path_to_uri(&root.join("main.foster")).unwrap(),
+                        path_to_uri(&root.join("main.fos")).unwrap(),
                     ),
                     Position::new(3, 17),
                 ),
@@ -1862,8 +1862,8 @@ mod tests {
         let root = std::env::current_dir()
             .unwrap()
             .join("tests/fixtures/constants");
-        let main_uri = path_to_uri(&root.join("main.foster")).unwrap();
-        let values_uri = path_to_uri(&root.join("values.foster")).unwrap();
+        let main_uri = path_to_uri(&root.join("main.fos")).unwrap();
+        let values_uri = path_to_uri(&root.join("values.fos")).unwrap();
         let workspace = Workspace {
             root: Some(root.clone()),
             documents: HashMap::new(),
@@ -1904,7 +1904,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             uri_to_path(&definition.uri).unwrap(),
-            root.join("values.foster")
+            root.join("values.fos")
         );
         assert_eq!(definition.range.start, Position::new(1, 10));
     }
@@ -2013,7 +2013,7 @@ func main() -> Int {
             .unwrap();
         assert_eq!(references.len(), 3);
         assert!(references.iter().any(|location| {
-            uri_to_path(&location.uri).as_deref() == Some(root.join("json/parser.foster").as_path())
+            uri_to_path(&location.uri).as_deref() == Some(root.join("json/parser.fos").as_path())
         }));
     }
 
@@ -2202,7 +2202,7 @@ func main() -> Int { apply(User { value: 40 }) }
         let root = std::env::current_dir()
             .unwrap()
             .join("tests/fixtures/associated_function");
-        let uri = path_to_uri(&root.join("main.foster")).unwrap();
+        let uri = path_to_uri(&root.join("main.fos")).unwrap();
         let workspace = Workspace {
             root: Some(root.clone()),
             documents: HashMap::new(),
@@ -2217,7 +2217,7 @@ func main() -> Int { apply(User { value: 40 }) }
             .unwrap();
         assert_eq!(
             uri_to_path(&location.uri).unwrap(),
-            root.join("collection.foster")
+            root.join("collection.fos")
         );
         assert_eq!(location.range.start, Position::new(8, 9));
     }
@@ -2227,7 +2227,7 @@ func main() -> Int { apply(User { value: 40 }) }
         let root = std::env::current_dir()
             .unwrap()
             .join("tests/fixtures/core_consumer");
-        let uri = path_to_uri(&root.join("main.foster")).unwrap();
+        let uri = path_to_uri(&root.join("main.fos")).unwrap();
         let workspace = Workspace {
             root: Some(root),
             documents: HashMap::new(),
@@ -2244,7 +2244,7 @@ func main() -> Int { apply(User { value: 40 }) }
             uri_to_path(&location.uri).unwrap(),
             std::env::current_dir()
                 .unwrap()
-                .join("library/core/list.foster")
+                .join("library/core/list.fos")
         );
         assert_eq!(location.range.start, Position::new(21, 9));
     }
@@ -2252,7 +2252,7 @@ func main() -> Int { apply(User { value: 40 }) }
     #[test]
     fn examples_compile_in_their_own_document_context() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
-        let example = root.join("examples/pima/repository_analyzer.foster");
+        let example = root.join("examples/pima/repository_analyzer.fos");
         let uri = path_to_uri(&example).unwrap();
         let workspace = Workspace {
             root: Some(root.clone()),
@@ -2274,7 +2274,7 @@ func main() -> Int { apply(User { value: 40 }) }
         let location = workspace.definition(&position).unwrap();
         assert_eq!(
             uri_to_path(&location.uri).unwrap(),
-            root.join("library/core/sequence.foster")
+            root.join("library/core/sequence.fos")
         );
         assert_eq!(location.range.start, Position::new(106, 9));
     }
