@@ -1,6 +1,10 @@
 .gitignore
 .vscode/**
 node_modules/**
+out/**
 src/**
+scripts/**
 tsconfig.json
+esbuild.js
+package-lock.json
 *.map

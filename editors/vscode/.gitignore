@@ -1,3 +1,9 @@
 node_modules/
 out/
+dist/
+server/
+library/
+LICENSE
+LICENSE-APACHE
+LICENSE-MIT
 *.vsix

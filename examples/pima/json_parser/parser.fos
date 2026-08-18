@@ -189,7 +189,7 @@ func parse_low_surrogate(high: Parsed<Int>) -> ParseResult<Parsed<String>> {
         high.rest.rest.empty? -> fail(HIGH_SURROGATE_LOW_MESSAGE)
         high.rest.rest.head != 'u' -> fail(HIGH_SURROGATE_LOW_MESSAGE)
         _ -> combine_surrogates(high.value, consume_hex(high.rest.rest.rest, 0, 4))
-    }   
+    }
 }
 
 func combine_surrogates(high: Int, low_result: ParseResult<Parsed<Int>>) -> ParseResult<Parsed<String>> {

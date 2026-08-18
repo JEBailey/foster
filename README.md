@@ -74,6 +74,18 @@ func skip_whitespace(characters: String) -> String {
 }
 ```
 
+`if` is reserved for postfix control guards. The implemented form conditionally returns early:
+
+```foster
+func clamp_positive(value: Int) -> Int {
+    return 0 if value < 0
+    value
+}
+```
+
+It is not a prefix conditional or a guard for ordinary calls and assignments; use `branch` for
+value-producing conditional logic.
+
 Subject branches destructure closed variants:
 
 ```foster

@@ -17,6 +17,57 @@ func main() {
 }
 
 #[test]
+fn postfix_guards_conditionally_transfer_control() {
+    let source = r#"
+func choose(early: Bool) -> Int {
+    return 10 if early
+    20
+}
+
+func main() -> Int {
+    choose(true) + choose(false)
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(30));
+}
+
+#[test]
+fn postfix_guard_falls_through_to_a_parameter_result() {
+    let source = r#"
+func either(left: Bool, right: Bool) -> Bool {
+    return true if left
+    right
+}
+
+func main() -> Bool {
+    either(false, false)
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Bool(false));
+}
+
+#[test]
+fn postfix_guards_require_boolean_conditions() {
+    let error = foster::compile("func main() -> Int { return 1 if 42\n0 }").unwrap_err();
+    assert!(error.message.contains("Bool"), "{}", error.message);
+}
+
+#[test]
+fn postfix_guards_only_apply_to_control_statements() {
+    let expression = foster::compile("func main() { println() if true }").unwrap_err();
+    assert_eq!(
+        expression.message,
+        "postfix `if` may only guard a control statement"
+    );
+
+    let binding = foster::compile("func main() { value = 1 if true\nvalue }").unwrap_err();
+    assert_eq!(
+        binding.message,
+        "postfix `if` may only guard a control statement"
+    );
+}
+
+#[test]
 fn branch_and_recursion() {
     let source = include_str!("../examples/whitespace.fos");
     assert_eq!(foster::run(source).unwrap(), Value::String("Foster".into()));

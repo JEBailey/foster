@@ -76,7 +76,7 @@ func double(value: Int) -> Int {
 }
 ```
 
-Explicit `return` performs an early return. A postfix guard is supported:
+Explicit `return` performs an early return. Control transfers may have a postfix `if` guard:
 
 ```foster
 func first(values: List<String>) -> String {
@@ -84,6 +84,17 @@ func first(values: List<String>) -> String {
     values.head
 }
 ```
+
+The value is evaluated and returned only when the guard is `true`; execution continues with the
+next statement when it is `false`. The guard must have type `Bool`.
+
+`if` is deliberately not a general conditional statement or expression. It may only follow a
+control-transfer statement, so `write(value) if ready` and `value = next() if ready` are invalid.
+Use `branch` when choosing whether to evaluate a value-producing operation.
+
+`return` is currently Foster's only control-transfer statement. Future transfers such as `break`
+and `continue` will use the same postfix form if they are added. Foster has no `throw` statement;
+recoverable errors remain ordinary typed `Result` values.
 
 Identifiers may end in `?`, conventionally marking Boolean observations such as `empty?` and
 `whitespace?`. Commas separate arguments and generic parameters. Newlines separate statements.

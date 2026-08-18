@@ -335,8 +335,16 @@ impl Package {
 
 fn core_source_path(module: &str) -> Option<Utf8PathBuf> {
     let relative = format!("library/{}.fos", module.replace('.', "/"));
-    let path = Utf8PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(relative);
-    path.is_file().then_some(path)
+    let source_tree = Utf8PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(&relative);
+    if source_tree.is_file() {
+        return Some(source_tree);
+    }
+
+    let executable = std::env::current_exe().ok()?;
+    let extension_root = executable.parent()?.parent()?;
+    let bundled = extension_root.join(relative);
+    let bundled = Utf8PathBuf::from_path_buf(bundled).ok()?;
+    bundled.is_file().then_some(bundled)
 }
 
 const CORE_MODULES: &[(&str, &str)] = &[

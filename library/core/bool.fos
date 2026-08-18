@@ -1,39 +1,29 @@
 /// Returns the logical negation of `value`.
 pub func not(value: Bool) -> Bool {
-    branch {
-        value -> false
-        _ -> true
-    }
+    return false if value
+    true
 }
 
 /// Returns true only when both values are true.
 pub func and(left: Bool, right: Bool) -> Bool {
-    branch {
-        left -> right
-        _ -> false
-    }
+    return right if left
+    false
 }
 
 /// Returns true when either value is true.
 pub func or(left: Bool, right: Bool) -> Bool {
-    branch {
-        left -> true
-        _ -> right
-    }
+    return true if left
+    right
 }
 
 /// Returns true when exactly one value is true.
 pub func xor(left: Bool, right: Bool) -> Bool {
-    branch {
-        left -> not(right)
-        _ -> right
-    }
+    return not(right) if left
+    right
 }
 
 /// Returns a singleton list containing `value` when `condition` is true, or an empty list otherwise.
 pub func then<T>(condition: Bool, value: T) -> List<T> [consume value] {
-    branch {
-        condition -> [value]
-        _ -> []
-    }
+    return [value] if condition
+    []
 }

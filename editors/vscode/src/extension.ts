@@ -13,31 +13,31 @@ let client: LanguageClient | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push(
-    vscode.commands.registerCommand("foster.restartLanguageServer", restart),
+    vscode.commands.registerCommand("foster.restartLanguageServer", () => restart(context)),
     vscode.workspace.onDidChangeConfiguration(async (event) => {
       if (event.affectsConfiguration("foster.server")) {
-        await restart();
+        await restart(context);
       }
     }),
   );
-  await start();
+  await start(context);
 }
 
 export async function deactivate(): Promise<void> {
   await stop();
 }
 
-async function restart(): Promise<void> {
+async function restart(context: vscode.ExtensionContext): Promise<void> {
   await stop();
-  await start();
+  await start(context);
 }
 
-async function start(): Promise<void> {
+async function start(context: vscode.ExtensionContext): Promise<void> {
   if (client !== undefined) {
     return;
   }
 
-  const command = resolveServerCommand();
+  const command = resolveServerCommand(context);
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   const serverOptions: ServerOptions = {
     command,
@@ -69,13 +69,19 @@ async function stop(): Promise<void> {
   }
 }
 
-function resolveServerCommand(): string {
+function resolveServerCommand(context: vscode.ExtensionContext): string {
   const configured = vscode.workspace
     .getConfiguration("foster.server")
     .get<string>("path", "")
     .trim();
   if (configured.length > 0) {
     return configured;
+  }
+
+  const executable = process.platform === "win32" ? "foster.exe" : "foster";
+  const bundled = context.asAbsolutePath(path.join("server", executable));
+  if (fs.existsSync(bundled)) {
+    return bundled;
   }
 
   for (const folder of vscode.workspace.workspaceFolders ?? []) {

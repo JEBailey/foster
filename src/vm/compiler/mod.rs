@@ -208,7 +208,11 @@ impl Compiler<'_> {
                 }
             }
         }
-        if !matches!(lower.instructions.last(), Some(Instruction::Return { .. })) {
+        let ends_with_unconditional_return = matches!(
+            function.body.last(),
+            Some(hir::Stmt::Return { guard: None, .. })
+        );
+        if !ends_with_unconditional_return {
             lower.emit(
                 Instruction::Return { source: result },
                 function.span.clone(),

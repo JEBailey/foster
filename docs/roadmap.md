@@ -27,6 +27,8 @@ work.
 
 - Add record and list patterns, branch guards, and more precise exhaustiveness checking for literal
   domains.
+- Design loops and their `break`/`continue` transfers; if added, transfers use the existing postfix
+  `if` control-guard form.
 - Design functional record updates.
 - Decide on transparent aliases and distinct wrapper declarations.
 - Improve compile-time constants while retaining declaration-only module bodies and avoiding

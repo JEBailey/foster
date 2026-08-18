@@ -540,11 +540,7 @@ impl Parser {
         }
         if self.take(&TokenKind::Return) {
             let value = self.expression()?;
-            let guard = if self.take(&TokenKind::If) {
-                Some(self.expression()?)
-            } else {
-                None
-            };
+            let guard = self.control_guard()?;
             return Ok(Stmt::Return { value, guard });
         }
         if let TokenKind::Ident(name) = self.peek().kind.clone()
@@ -552,18 +548,30 @@ impl Parser {
         {
             self.advance();
             self.advance();
-            return Ok(Stmt::Bind {
-                name,
-                value: self.expression()?,
-            });
+            let value = self.expression()?;
+            self.reject_value_guard()?;
+            return Ok(Stmt::Bind { name, value });
         }
         let place = self.expression()?;
         if self.take(&TokenKind::Equal) {
-            return Ok(Stmt::Set {
-                place,
-                value: self.expression()?,
-            });
+            let value = self.expression()?;
+            self.reject_value_guard()?;
+            return Ok(Stmt::Set { place, value });
         }
+        self.reject_value_guard()?;
         Ok(Stmt::Expr(place))
+    }
+
+    fn control_guard(&mut self) -> Result<Option<Expr>, FosterError> {
+        self.take(&TokenKind::If)
+            .then(|| self.expression())
+            .transpose()
+    }
+
+    fn reject_value_guard(&self) -> Result<(), FosterError> {
+        if self.at(&TokenKind::If) {
+            return Err(self.error("postfix `if` may only guard a control statement"));
+        }
+        Ok(())
     }
 }
