@@ -45,6 +45,9 @@ impl Checker<'_> {
                     ("Float", []) => Some(Ty::Float),
                     ("String", []) => Some(Ty::String),
                     ("CodePoint", []) => Some(Ty::CodePoint),
+                    ("Byte", []) => Some(Ty::Byte),
+                    ("Bytes", []) => Some(Ty::Bytes),
+                    ("ByteBuffer", []) => Some(Ty::ByteBuffer),
                     ("Symbol", []) => Some(Ty::Symbol),
                     ("List", [element]) => Some(Ty::List(Box::new(
                         self.annotation_type(module, element, generics)?,
@@ -61,7 +64,16 @@ impl Checker<'_> {
                     (builtin, _)
                         if matches!(
                             builtin,
-                            "Unit" | "Bool" | "Int" | "Float" | "String" | "CodePoint" | "Symbol"
+                            "Unit"
+                                | "Bool"
+                                | "Int"
+                                | "Float"
+                                | "String"
+                                | "CodePoint"
+                                | "Byte"
+                                | "Bytes"
+                                | "ByteBuffer"
+                                | "Symbol"
                         ) =>
                     {
                         return Err(FosterError::runtime(format!(

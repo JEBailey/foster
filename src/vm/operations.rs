@@ -20,8 +20,10 @@ pub(super) fn unary(operator: UnaryOp, value: &Value) -> Result<Value, FosterErr
     match (operator, value) {
         (UnaryOp::Negate, Value::Integer(value)) => Ok(Value::Integer(-value)),
         (UnaryOp::Negate, Value::CodePoint(value)) => Ok(Value::Integer(-(*value as i64))),
+        (UnaryOp::Negate, Value::Byte(value)) => Ok(Value::Integer(-i64::from(*value))),
         (UnaryOp::Negate, Value::Float(value)) => Ok(Value::Float(-value)),
         (UnaryOp::Not, Value::Bool(value)) => Ok(Value::Bool(!value)),
+        (UnaryOp::BitNot, Value::Byte(value)) => Ok(Value::Byte(!value)),
         _ => Err(FosterError::runtime(
             "invalid typed unary bytecode operation",
         )),
@@ -34,12 +36,36 @@ pub(super) fn binary(
     right: &Value,
 ) -> Result<Value, FosterError> {
     use BinaryOp::*;
+    if let (Value::Byte(left), Value::Byte(right)) = (left, right) {
+        match operator {
+            BitAnd => return Ok(Value::Byte(left & right)),
+            BitOr => return Ok(Value::Byte(left | right)),
+            BitXor => return Ok(Value::Byte(left ^ right)),
+            _ => {}
+        }
+    }
+    if let (Value::Byte(left), Value::Integer(right)) = (left, right)
+        && matches!(operator, ShiftLeft | ShiftRight)
+    {
+        let shift = u32::try_from(*right)
+            .ok()
+            .filter(|shift| *shift < 8)
+            .ok_or_else(|| FosterError::runtime("Byte shift must be between 0 and 7"))?;
+        return Ok(Value::Byte(match operator {
+            ShiftLeft => left << shift,
+            ShiftRight => left >> shift,
+            _ => unreachable!(),
+        }));
+    }
     if let (Some(left), Some(right)) = (integer_value(left), integer_value(right)) {
         return match operator {
             Add => checked_integer(left.checked_add(right)),
             Subtract => checked_integer(left.checked_sub(right)),
             Multiply => checked_integer(left.checked_mul(right)),
             Divide => checked_integer(left.checked_div(right)),
+            BitAnd | BitOr | BitXor | ShiftLeft | ShiftRight => Err(FosterError::runtime(
+                "bitwise operations require Byte operands",
+            )),
             Equal => Ok(Value::Bool(left == right)),
             NotEqual => Ok(Value::Bool(left != right)),
             Less => Ok(Value::Bool(left < right)),
@@ -70,6 +96,7 @@ fn integer_value(value: &Value) -> Option<i64> {
     match value {
         Value::Integer(value) => Some(*value),
         Value::CodePoint(value) => Some(*value as i64),
+        Value::Byte(value) => Some(i64::from(*value)),
         _ => None,
     }
 }

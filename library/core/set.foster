@@ -1,0 +1,77 @@
+import core.collection
+import core.iteration
+
+/// An insertion-ordered collection containing no duplicate values.
+pub type Set<T> & Collection<T> {
+    values: List<T>
+}
+
+/// Creates an empty set.
+pub func Set.empty<T>() -> Set<T> {
+    Set { values: [] }
+}
+
+/// Creates a set containing each input value once.
+pub func Set.from<T>(values: List<T>) -> Set<T> [consume values] {
+    Set { values: unique(move values, []) }
+}
+
+/// Returns the number of values in the set.
+pub func length<T>(self: Set<T>) -> Int {
+    self.values.length
+}
+
+/// Returns whether the set contains no values.
+pub func empty?<T>(self: Set<T>) -> Bool {
+    self.values.empty?
+}
+
+/// Creates an independent iterator in insertion order.
+pub func iterator<T>(self: Set<T>) -> Iterator<T> {
+    self.values.iterator
+}
+
+/// Returns whether `value` is present.
+pub func contains?<T>(self: Set<T>, value: T) -> Bool {
+    contains_value?(self.values, value)
+}
+
+/// Returns a set containing `value`.
+pub func insert<T>(self: Set<T>, value: T) -> Set<T> [consume self, consume value] {
+    branch {
+        self.contains?(value) -> self
+        _ -> Set { values: self.values.append(value) }
+    }
+}
+
+/// Returns a set without `value`.
+pub func remove<T>(self: Set<T>, value: T) -> Set<T> [consume self] {
+    Set { values: without(move self.values, value, []) }
+}
+
+/// Searches the remaining backing values for `expected`.
+func contains_value?<T>(values: List<T>, expected: T) -> Bool {
+    branch {
+        values.empty? -> false
+        values.head == expected -> true
+        _ -> contains_value?(values.rest, expected)
+    }
+}
+
+/// Appends values not already present in the result accumulator.
+func unique<T>(remaining: List<T>, result: List<T>) -> List<T> [consume remaining, consume result] {
+    branch {
+        remaining.empty? -> result
+        contains_value?(result, remaining.head) -> unique(remaining.rest, move result)
+        _ -> unique(remaining.rest, result.append(remaining.head))
+    }
+}
+
+/// Copies values other than `expected` into the result accumulator.
+func without<T>(remaining: List<T>, expected: T, result: List<T>) -> List<T> [consume remaining, consume result] {
+    branch {
+        remaining.empty? -> result
+        remaining.head == expected -> without(remaining.rest, expected, move result)
+        _ -> without(remaining.rest, expected, result.append(remaining.head))
+    }
+}

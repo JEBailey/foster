@@ -77,6 +77,11 @@ pub(super) fn connect(address: &str, port: i64) -> Result<i64, String> {
 }
 
 pub(super) fn read(connection: i64, maximum: i64) -> Result<String, String> {
+    String::from_utf8(read_bytes(connection, maximum)?)
+        .map_err(|_| "TCP input is not valid UTF-8".to_owned())
+}
+
+pub(super) fn read_bytes(connection: i64, maximum: i64) -> Result<Vec<u8>, String> {
     let maximum = usize::try_from(maximum)
         .ok()
         .filter(|maximum| (1..=1024 * 1024).contains(maximum))
@@ -89,14 +94,18 @@ pub(super) fn read(connection: i64, maximum: i64) -> Result<String, String> {
         .read(&mut bytes)
         .map_err(|error| format!("could not read TCP connection: {error}"))?;
     bytes.truncate(read);
-    String::from_utf8(bytes).map_err(|_| "TCP input is not valid UTF-8".to_owned())
+    Ok(bytes)
 }
 
 pub(super) fn write(connection: i64, text: &str) -> Result<(), String> {
+    write_bytes(connection, text.as_bytes())
+}
+
+pub(super) fn write_bytes(connection: i64, bytes: &[u8]) -> Result<(), String> {
     connection_for(connection)?
         .lock()
         .map_err(|_| "TCP connection lock was poisoned".to_owned())?
-        .write_all(text.as_bytes())
+        .write_all(bytes)
         .map_err(|error| format!("could not write TCP connection: {error}"))
 }
 

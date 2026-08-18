@@ -227,6 +227,7 @@ mod tests {
         let mut function = BytecodeFunction {
             name: "branch".to_owned(),
             parameters: 1,
+            mutable_parameters: vec![false],
             captures: 0,
             registers: 2,
             instructions: vec![

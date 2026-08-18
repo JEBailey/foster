@@ -12,6 +12,7 @@ impl Checker<'_> {
         match (expected, actual) {
             (Ty::Sequence(expected), Ty::List(actual)) => self.unify(*expected, *actual, function),
             (Ty::Sequence(expected), Ty::String) => self.unify(*expected, Ty::CodePoint, function),
+            (Ty::Sequence(expected), Ty::Bytes) => self.unify(*expected, Ty::Byte, function),
             (Ty::Sequence(expected), actual @ Ty::Record(_, _)) => {
                 self.coerce_sequence_shape(function, *expected, actual)
             }
@@ -43,6 +44,10 @@ impl Checker<'_> {
                     Ty::Record(actual, actual_arguments),
                 )
             }
+            (
+                Ty::Record(expected, expected_arguments),
+                actual @ (Ty::List(_) | Ty::Sequence(_) | Ty::String | Ty::Bytes),
+            ) => self.coerce_record_shape(function, expected, &expected_arguments, actual),
             (expected, actual) => self.unify(expected, actual, function),
         }
     }
@@ -184,9 +189,14 @@ impl Checker<'_> {
             else {
                 unreachable!("structural method lookup returns a callable")
             };
+            let mut allowed_effects = method.effects.clone();
+            allowed_effects.push(crate::ast::Effect {
+                kind: crate::ast::EffectKind::Read,
+                target: crate::ast::GroupPath::root("self"),
+            });
             if parameters.len() != method.parameters.len()
                 || parameter_modes != method.parameter_modes
-                || !effects_are_subset(&effects, &method.effects)
+                || !effects_are_subset(&effects, &allowed_effects)
                 || (suspends && !method.suspends)
             {
                 return Err(self.error(
@@ -212,7 +222,11 @@ impl Checker<'_> {
         actual: &Ty,
         name: &str,
     ) -> Result<Option<Ty>, FosterError> {
-        let Ty::Record(record, arguments) = self.resolved(actual.clone()) else {
+        let actual = self.resolved(actual.clone());
+        if let Some(method) = self.builtin_collection_method(&actual, name) {
+            return Ok(Some(method));
+        }
+        let Ty::Record(record, arguments) = actual.clone() else {
             return Ok(None);
         };
         if let Some(method) = self
@@ -234,7 +248,7 @@ impl Checker<'_> {
         {
             return Ok(Some(method));
         }
-        if let Some(field) = self.structural_field_type(function, actual, name)? {
+        if let Some(field) = self.structural_field_type(function, &actual, name)? {
             return Ok(Some(Ty::Callable {
                 parameters: Vec::new(),
                 parameter_modes: Vec::new(),
@@ -248,6 +262,35 @@ impl Checker<'_> {
             }));
         }
         Ok(None)
+    }
+
+    fn builtin_collection_method(&self, actual: &Ty, name: &str) -> Option<Ty> {
+        let element = match actual {
+            Ty::List(element) | Ty::Sequence(element) => (**element).clone(),
+            Ty::String => Ty::CodePoint,
+            Ty::Bytes => Ty::Byte,
+            _ => return None,
+        };
+        let result = match name {
+            "empty?" => Ty::Bool,
+            "length" => Ty::Int,
+            "iterator" => self.core_record_type("core.iteration", "Iterator", element)?,
+            _ => return None,
+        };
+        Some(Ty::Callable {
+            parameters: Vec::new(),
+            parameter_modes: Vec::new(),
+            result: Box::new(result),
+            erased: false,
+            effects: Vec::new(),
+            suspends: false,
+        })
+    }
+
+    fn core_record_type(&self, module: &str, name: &str, argument: Ty) -> Option<Ty> {
+        let module = self.hir.module_named(module)?;
+        let record = self.hir.modules[module].records.get(name).copied()?;
+        Some(Ty::Record(record, vec![argument]))
     }
 
     fn structural_field_type(

@@ -1,0 +1,40 @@
+import core.iteration
+import core.option
+
+type RangeIterator & Iterator<Int> {
+    current: Int
+    end: Int
+}
+
+func next(self: RangeIterator) -> Option<Int> {
+    value = self.current
+    self.current = self.current + 1
+    branch {
+        value >= self.end -> Option.None
+        _ -> Option.Some(value)
+    }
+}
+
+type Range & Iterable<Int> {
+    start: Int
+    end: Int
+}
+
+func iterator(self: Range) -> Iterator<Int> {
+    RangeIterator { current: self.start, end: self.end }
+}
+
+func value_or(candidate: Option<Int>, fallback: Int) -> Int {
+    branch candidate {
+        Option.Some(value) -> value
+        Option.None -> fallback
+    }
+}
+
+func main() -> Int {
+    values = Range { start: 3, end: 5 }.iterator
+    first = value_or(values.next(), -1)
+    second = value_or(values.next(), -1)
+    exhausted = value_or(values.next(), -1)
+    first + second + exhausted
+}

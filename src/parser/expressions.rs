@@ -6,7 +6,7 @@ impl Parser {
     }
 
     pub(super) fn equality(&mut self) -> Result<Expr, FosterError> {
-        let mut expr = self.comparison()?;
+        let mut expr = self.bit_or()?;
         while let Some(operator) = if self.take(&TokenKind::EqualEqual) {
             Some(BinaryOp::Equal)
         } else if self.take(&TokenKind::BangEqual) {
@@ -15,7 +15,41 @@ impl Parser {
             None
         } {
             let start = expr.span().map_or(0, |span| span.start);
-            let right = self.comparison()?;
+            let right = self.bit_or()?;
+            expr = self.spanned(
+                start,
+                Expr::Binary {
+                    left: Box::new(expr),
+                    operator,
+                    right: Box::new(right),
+                },
+            );
+        }
+        Ok(expr)
+    }
+
+    fn bit_or(&mut self) -> Result<Expr, FosterError> {
+        self.binary_level(Self::bit_xor, &TokenKind::Pipe, BinaryOp::BitOr)
+    }
+
+    fn bit_xor(&mut self) -> Result<Expr, FosterError> {
+        self.binary_level(Self::bit_and, &TokenKind::Caret, BinaryOp::BitXor)
+    }
+
+    fn bit_and(&mut self) -> Result<Expr, FosterError> {
+        self.binary_level(Self::comparison, &TokenKind::Ampersand, BinaryOp::BitAnd)
+    }
+
+    fn binary_level(
+        &mut self,
+        operand: fn(&mut Self) -> Result<Expr, FosterError>,
+        token: &TokenKind,
+        operator: BinaryOp,
+    ) -> Result<Expr, FosterError> {
+        let mut expr = operand(self)?;
+        while self.take(token) {
+            let start = expr.span().map_or(0, |span| span.start);
+            let right = operand(self)?;
             expr = self.spanned(
                 start,
                 Expr::Binary {
@@ -29,7 +63,7 @@ impl Parser {
     }
 
     pub(super) fn comparison(&mut self) -> Result<Expr, FosterError> {
-        let mut expr = self.term()?;
+        let mut expr = self.shift()?;
         loop {
             let operator = if self.take(&TokenKind::Less) {
                 Some(BinaryOp::Less)
@@ -39,6 +73,45 @@ impl Parser {
                 Some(BinaryOp::Greater)
             } else if self.take(&TokenKind::GreaterEqual) {
                 Some(BinaryOp::GreaterEqual)
+            } else {
+                None
+            };
+            let Some(operator) = operator else { break };
+            let start = expr.span().map_or(0, |span| span.start);
+            let right = self.shift()?;
+            expr = self.spanned(
+                start,
+                Expr::Binary {
+                    left: Box::new(expr),
+                    operator,
+                    right: Box::new(right),
+                },
+            );
+        }
+        Ok(expr)
+    }
+
+    fn shift(&mut self) -> Result<Expr, FosterError> {
+        let mut expr = self.term()?;
+        loop {
+            let operator = if self.at(&TokenKind::Less)
+                && self
+                    .tokens
+                    .get(self.current + 1)
+                    .is_some_and(|token| token.kind == TokenKind::Less)
+            {
+                self.take(&TokenKind::Less);
+                self.take(&TokenKind::Less);
+                Some(BinaryOp::ShiftLeft)
+            } else if self.at(&TokenKind::Greater)
+                && self
+                    .tokens
+                    .get(self.current + 1)
+                    .is_some_and(|token| token.kind == TokenKind::Greater)
+            {
+                self.take(&TokenKind::Greater);
+                self.take(&TokenKind::Greater);
+                Some(BinaryOp::ShiftRight)
             } else {
                 None
             };
@@ -129,6 +202,16 @@ impl Parser {
                 start,
                 Expr::Unary {
                     operator: UnaryOp::Not,
+                    operand: Box::new(operand),
+                },
+            ));
+        }
+        if self.take(&TokenKind::Tilde) {
+            let operand = self.unary()?;
+            return Ok(self.spanned(
+                start,
+                Expr::Unary {
+                    operator: UnaryOp::BitNot,
                     operand: Box::new(operand),
                 },
             ));

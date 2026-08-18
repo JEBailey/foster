@@ -376,6 +376,7 @@ impl Pattern {
 pub enum UnaryOp {
     Negate,
     Not,
+    BitNot,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -384,6 +385,11 @@ pub enum BinaryOp {
     Subtract,
     Multiply,
     Divide,
+    BitAnd,
+    BitOr,
+    BitXor,
+    ShiftLeft,
+    ShiftRight,
     Equal,
     NotEqual,
     Less,

@@ -15,7 +15,10 @@ impl Checker<'_> {
             }
             let object = self.infer_expression(function, object)?;
             let element = self.infer_expression(function, arguments[0])?;
-            self.unify(object, Ty::List(Box::new(element.clone())), function)?;
+            match self.resolved(object.clone()) {
+                Ty::ByteBuffer => self.unify(Ty::Byte, element.clone(), function)?,
+                _ => self.unify(object, Ty::List(Box::new(element.clone())), function)?,
+            }
             self.expressions
                 .insert(callee, Ty::Function(vec![element], Box::new(Ty::Unit)));
             return Ok(Ty::Unit);
@@ -82,6 +85,15 @@ impl Checker<'_> {
 
         if let hir::Expr::Member { object, name } = self.hir.expressions[callee].clone() {
             let object_type = self.infer_expression(function, object)?;
+            if name == "freeze"
+                && matches!(self.resolved(object_type.clone()), Ty::ByteBuffer)
+                && !matches!(self.hir.expressions[object], hir::Expr::MoveOut(_))
+            {
+                return Err(self.error(
+                    function,
+                    "method `freeze` consumes its receiver; call `(move buffer).freeze()`",
+                ));
+            }
             if let Some(method) = self.contract_method_type(function, object_type, &name)? {
                 self.expressions.insert(callee, method);
             }
@@ -130,10 +142,38 @@ impl Checker<'_> {
             Builtin::CodePoint => (vec![Ty::CodePoint], Ty::Int),
             Builtin::FromCodePoint => (vec![Ty::Int], Ty::CodePoint),
             Builtin::ParseFloat => (vec![Ty::String], Ty::Float),
+            Builtin::ByteValid => (vec![Ty::Int], Ty::Bool),
+            Builtin::ByteUnchecked => (vec![Ty::Int], Ty::Byte),
+            Builtin::BytesEmpty => (Vec::new(), Ty::Bytes),
+            Builtin::BytesFromList => (vec![Ty::List(Box::new(Ty::Byte))], Ty::Bytes),
+            Builtin::BytesConcat => (vec![Ty::Bytes, Ty::Bytes], Ty::Bytes),
+            Builtin::BytesSlice => (vec![Ty::Bytes, Ty::Int, Ty::Int], Ty::Bytes),
+            Builtin::BytesToList => (vec![Ty::Bytes], Ty::List(Box::new(Ty::Byte))),
+            Builtin::BytesHex => (vec![Ty::Bytes], Ty::String),
+            Builtin::BytesFromHex => (
+                vec![Ty::String],
+                self.host_result(Ty::Bytes, "core.bytes", "HexError")?,
+            ),
+            Builtin::StringUtf8 => (vec![Ty::String], Ty::Bytes),
+            Builtin::BytesUtf8Valid => (vec![Ty::Bytes], Ty::Bool),
+            Builtin::BytesDecodeUtf8 => (vec![Ty::Bytes], Ty::String),
+            Builtin::ByteBufferEmpty => (Vec::new(), Ty::ByteBuffer),
+            Builtin::ByteBufferWithCapacity => (vec![Ty::Int], Ty::ByteBuffer),
+            Builtin::ByteBufferPush => (vec![Ty::ByteBuffer, Ty::Byte], Ty::Unit),
+            Builtin::ByteBufferExtend => (vec![Ty::ByteBuffer, Ty::Bytes], Ty::Unit),
+            Builtin::ByteBufferClear => (vec![Ty::ByteBuffer], Ty::Unit),
+            Builtin::ByteBufferTruncate | Builtin::ByteBufferReserve => {
+                (vec![Ty::ByteBuffer, Ty::Int], Ty::Unit)
+            }
+            Builtin::ByteBufferFreeze | Builtin::ByteBufferSnapshot => {
+                (vec![Ty::ByteBuffer], Ty::Bytes)
+            }
             Builtin::IoReadText | Builtin::IoCanonicalize => {
                 (vec![Ty::String], io_result(Ty::String)?)
             }
             Builtin::IoWriteText => (vec![Ty::String, Ty::String], io_result(Ty::Unit)?),
+            Builtin::IoReadBytes => (vec![Ty::String], io_result(Ty::Bytes)?),
+            Builtin::IoWriteBytes => (vec![Ty::String, Ty::Bytes], io_result(Ty::Unit)?),
             Builtin::IoListDirectory => {
                 (vec![Ty::String], io_result(Ty::List(Box::new(Ty::String)))?)
             }
@@ -150,6 +190,8 @@ impl Checker<'_> {
             Builtin::TcpAccept => (vec![Ty::Int], tcp_result(Ty::Int)?),
             Builtin::TcpRead => (vec![Ty::Int, Ty::Int], tcp_result(Ty::String)?),
             Builtin::TcpWrite => (vec![Ty::Int, Ty::String], tcp_result(Ty::Unit)?),
+            Builtin::TcpReadBytes => (vec![Ty::Int, Ty::Int], tcp_result(Ty::Bytes)?),
+            Builtin::TcpWriteBytes => (vec![Ty::Int, Ty::Bytes], tcp_result(Ty::Unit)?),
             Builtin::TcpSetTimeout => (vec![Ty::Int, Ty::Int], tcp_result(Ty::Unit)?),
             Builtin::TcpCloseListener | Builtin::TcpCloseConnection => {
                 (vec![Ty::Int], tcp_result(Ty::Unit)?)
@@ -242,16 +284,34 @@ impl Checker<'_> {
             (Ty::String, "length") => Ok(Ty::Int),
             (Ty::String, "head") => Ok(Ty::CodePoint),
             (Ty::String, "rest") => Ok(Ty::String),
+            (Ty::String, "utf8") => Ok(Ty::Bytes),
+            (Ty::String, "iterator") => self.collection_iterator(Ty::CodePoint, function),
             (Ty::CodePoint, "whitespace?") => Ok(Ty::Bool),
             (Ty::CodePoint, "string") => Ok(Ty::String),
+            (Ty::Byte, "int") => Ok(Ty::Int),
+            (Ty::Bytes, "empty?") => Ok(Ty::Bool),
+            (Ty::Bytes, "length") => Ok(Ty::Int),
+            (Ty::Bytes, "head") => Ok(Ty::Byte),
+            (Ty::Bytes, "rest") => Ok(Ty::Bytes),
+            (Ty::Bytes, "iterator") => self.collection_iterator(Ty::Byte, function),
+            (Ty::Bytes, member) => {
+                self.primitive_method_type(function, Ty::Bytes, "core.bytes", member)
+            }
+            (Ty::ByteBuffer, "empty?") => Ok(Ty::Bool),
+            (Ty::ByteBuffer, "length" | "capacity") => Ok(Ty::Int),
+            (Ty::ByteBuffer, member) => {
+                self.primitive_method_type(function, Ty::ByteBuffer, "core.byte_buffer", member)
+            }
             (Ty::Sequence(_), "empty?") => Ok(Ty::Bool),
             (Ty::Sequence(_), "length") => Ok(Ty::Int),
             (Ty::Sequence(element), "head") => Ok(*element),
             (sequence @ Ty::Sequence(_), "rest") => Ok(sequence),
+            (Ty::Sequence(element), "iterator") => self.collection_iterator(*element, function),
             (Ty::List(_), "empty?") => Ok(Ty::Bool),
             (Ty::List(_), "length") => Ok(Ty::Int),
             (Ty::List(element), "head") => Ok(*element),
             (list @ Ty::List(_), "rest") => Ok(list),
+            (Ty::List(element), "iterator") => self.collection_iterator(*element, function),
             (Ty::List(element), "append") => Ok(Ty::Function(
                 vec![(*element).clone()],
                 Box::new(Ty::List(element)),
@@ -357,6 +417,83 @@ impl Checker<'_> {
                 function,
                 format!("type `{}` has no member `{name}`", self.describe(&ty)),
             )),
+        }
+    }
+
+    fn collection_iterator(&self, element: Ty, function: FunctionId) -> Result<Ty, FosterError> {
+        let module = self.hir.module_named("core.iteration").ok_or_else(|| {
+            self.error(function, "collection iteration requires `core.iteration`")
+        })?;
+        let record = self.hir.modules[module]
+            .records
+            .get("Iterator")
+            .copied()
+            .ok_or_else(|| self.error(function, "core.iteration does not define `Iterator`"))?;
+        Ok(Ty::Record(record, vec![element]))
+    }
+
+    fn primitive_method_type(
+        &mut self,
+        caller: FunctionId,
+        receiver: Ty,
+        module: &str,
+        name: &str,
+    ) -> Result<Ty, FosterError> {
+        let module = self
+            .hir
+            .module_named(module)
+            .ok_or_else(|| self.error(caller, "primitive core module is unavailable"))?;
+        let function = self
+            .hir
+            .function_named(module, name)
+            .ok_or_else(|| self.error(caller, format!("type has no member `{name}`")))?;
+        let definition = &self.hir.functions[function];
+        let property = definition
+            .effects
+            .iter()
+            .all(|effect| effect.kind == crate::ast::EffectKind::Read);
+        if !definition.public && definition.module != self.hir.functions[caller].module {
+            return Err(self.error(caller, format!("method `{name}` is private")));
+        }
+        let signature = self.functions[&function].clone();
+        let mut generics = HashMap::new();
+        let mut parameters = signature
+            .parameters
+            .into_iter()
+            .map(|ty| self.instantiate(ty, &mut generics))
+            .collect::<Vec<_>>();
+        let mut parameter_modes = signature.parameter_modes;
+        let expected_receiver = parameters
+            .first()
+            .cloned()
+            .ok_or_else(|| self.error(caller, format!("function `{name}` is not a method")))?;
+        self.unify(expected_receiver, receiver, caller)?;
+        parameters.remove(0);
+        parameter_modes.remove(0);
+        let result = self.instantiate(signature.result, &mut generics);
+        let method = Ty::Callable {
+            parameters,
+            parameter_modes,
+            result: Box::new(result.clone()),
+            erased: false,
+            effects: callable_effects(self.hir, function),
+            suspends: definition.suspends,
+        };
+        match &method {
+            Ty::Callable {
+                parameters,
+                effects,
+                suspends: false,
+                ..
+            } if property
+                && parameters.is_empty()
+                && effects
+                    .iter()
+                    .all(|effect| effect.kind == crate::ast::EffectKind::Read) =>
+            {
+                Ok(result)
+            }
+            _ => Ok(method),
         }
     }
 
@@ -512,7 +649,7 @@ impl Checker<'_> {
 fn copy_type(ty: &Ty) -> bool {
     matches!(
         ty,
-        Ty::Unit | Ty::Bool | Ty::Int | Ty::Float | Ty::CodePoint | Ty::Symbol
+        Ty::Unit | Ty::Bool | Ty::Int | Ty::Float | Ty::CodePoint | Ty::Byte | Ty::Symbol
     )
 }
 

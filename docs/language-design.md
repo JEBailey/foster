@@ -433,6 +433,140 @@ inaccessible private member, so records with private representation remain encap
 their defining module. `&` does not add a wrapper or establish a nominal subtype chain; contract
 method calls dispatch against the original runtime record.
 
+## Iteration contracts
+
+Iteration is expressed with two Foster-written callable contracts from `core.iteration`, rather
+than a compiler-owned protocol:
+
+```foster
+import core.option
+
+pub type Iterator<T> {
+    pub func next(self) -> Option<T> [mut self]
+}
+
+pub type Iterable<T> {
+    pub func iterator(self) -> Iterator<T>
+}
+```
+
+`Iterator<T>` is stateful. Each `next()` call has exclusive mutation access to the iterator and
+returns `Option.None` after exhaustion. `Iterable<T>` is repeatable: its read-only `iterator`
+accessor creates an independent iterator. Because zero-argument read-only contract functions use
+property syntax, an iterable is opened with `value.iterator`; `next` remains call syntax because
+it mutates its receiver.
+
+Both contracts use the same static duck typing and zero-conversion dispatch as other composed
+types. A concrete type implements them with `type Cursor<T> & Iterator<T> { ... }` or
+`type Collection<T> & Iterable<T> { ... }`. The core adapter
+`Iterator.from_sequence(values)` consumes a `Sequence<T>` into an independent iterator, so lists,
+strings, and user-defined sequence implementations can participate immediately.
+
+The standard collection hierarchy is behavioral rather than representational:
+
+```text
+Iterable<T>
+└── Collection<T>
+    ├── Sequence<T> → List<T>, String as Sequence<CodePoint>, Range<T>
+    ├── Set<T>
+    ├── Queue<T>
+    ├── Deque<T>
+    └── Stack<T>
+
+Map<K, V> & Collection<Entry<K, V>>
+```
+
+`List`, `String`, and `Sequence` expose `.iterator` as a compiler-backed intrinsic whose public
+contract is an ordinary borrowed accessor. The VM creates an independent cursor over the source's
+read-only value view. Advancing the cursor mutates only cursor state, while explicit
+`Iterator.from_sequence` remains the ownership-transferring form.
+
+## Binary values
+
+Foster separates one bounded octet, immutable binary data, and mutable construction storage:
+
+```foster
+byte = Byte.from(255)
+data = Bytes.from_hex("89504e47")
+
+buffer = ByteBuffer.with_capacity(4096)
+buffer.extend("Foster".utf8)
+snapshot = buffer.snapshot
+finished = (move buffer).freeze()
+```
+
+`Byte` is a copy type in the inclusive range `0..255`. Ordinary arithmetic widens it to `Int`;
+bitwise and shift operators retain `Byte`. `Bytes` is immutable contiguous storage implementing
+the read-only `Sequence<Byte>` and `Collection<Byte>` behavior. `ByteBuffer` is mutable and
+growable, but deliberately has no implicit position or limit; stateful reading can be introduced
+separately as a cursor contract.
+
+Passing all three types borrows by default. A buffer mutation requires `mut` access, indexed loans
+are invalidated by structural changes, and converting a buffer without copying requires an
+explicit move through `(move buffer).freeze()`. `buffer.snapshot` is the copying alternative.
+Strings never convert to bytes implicitly: `.utf8` encodes, and `String.from_utf8` performs checked
+decoding.
+
+## Stream contracts
+
+Stream behavior is expressed with generic structural contracts rather than a common resource base
+class:
+
+```foster
+pub type Reader<E> {
+    pub func read(self, maximum: Int) -> Result<Bytes, E> [mut self]
+}
+
+pub type Writer<E> {
+    pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
+    pub func flush(self) -> Result<Unit, E> [mut self]
+}
+```
+
+`TextReader<E>` and `TextWriter<E>` provide the corresponding text operations. The error parameter
+allows a file to expose `IoError` while a socket exposes `NetworkError`; no universal I/O error is
+required. Empty bytes or text signal clean EOF. A binary write may be partial and therefore returns
+the number accepted. Successful non-empty reads and writes must make progress.
+
+Mutable parameters are borrowed places in VM call frames. Consequently, calling a generic helper
+such as `stream.copy(reader, writer)` mutates the original stateful values rather than temporary
+copies. Consuming parameters still transfer ownership, and read-only parameters retain ordinary
+borrow behavior.
+
+## Equality, ordering, and hashing contracts
+
+`core.ordering` separates comparison capabilities from the `Ordering` result value:
+
+```foster
+pub type Equality<T> {
+    pub func equal?(self, other: T) -> Bool
+}
+
+pub type Ordered<T> & Equality<T> {
+    pub func compare(self, other: T) -> Ordering
+}
+
+pub type Hashing {
+    pub func hash(self) -> Int
+}
+```
+
+`Ordered<T>` composes `Equality<T>`, so a conforming concrete type must provide both `equal?` and
+`compare`. `Hashing` is separate because ordered values do not necessarily need hashing and hashed
+values do not need a total order. These are statically checked, structurally dispatched contracts;
+they add no hidden fields or wrappers.
+
+A type declaration containing bodyless method requirements is itself a contract, so it may compose
+other contracts without supplying implementations. A concrete type has no bodyless requirements;
+when it composes a contract, its module must provide all inherited functions.
+
+Implementations must preserve the usual laws: equality is reflexive, symmetric, and transitive;
+`compare` returns `Ordering.Equal` exactly when `equal?` is true; and equal values produce the same
+hash. Hash collisions between unequal values are valid. The compiler checks member signatures and
+effects, while these semantic laws remain the implementation's responsibility. Because `hash` is
+a zero-argument read-only member it uses property syntax (`value.hash`); `equal?` and `compare`
+take arguments and use call syntax.
+
 ## Ownership and groups
 
 Every value has one owner: a local, containing value, collection, allocation, or global. Moving a

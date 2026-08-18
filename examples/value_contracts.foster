@@ -1,0 +1,34 @@
+import core.ordering
+
+type Version & Ordered<Version> & Hashing {
+    number: Int
+}
+
+func equal?(self: Version, other: Version) -> Bool {
+    self.number == other.number
+}
+
+func compare(self: Version, other: Version) -> Ordering {
+    branch {
+        self.number < other.number -> Ordering.Less
+        self.number > other.number -> Ordering.Greater
+        _ -> Ordering.Equal
+    }
+}
+
+func hash(self: Version) -> Int {
+    self.number * 31
+}
+
+func compare_score(left: Ordered<Version>, right: Version) -> Int {
+    branch left.compare(right) {
+        Ordering.Less -> -1
+        Ordering.Equal -> 0
+        Ordering.Greater -> 1
+    }
+}
+
+func main() -> Int {
+    version = Version { number: 7 }
+    version.hash + compare_score(version, Version { number: 8 })
+}

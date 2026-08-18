@@ -111,9 +111,21 @@ impl Checker<'_> {
                 let object = self.infer_expression(function, object)?;
                 let index = self.infer_expression(function, index)?;
                 self.unify(Ty::Int, index, function)?;
-                let element = self.fresh();
-                self.unify(object, Ty::List(Box::new(element.clone())), function)?;
-                element
+                match self.resolved(object.clone()) {
+                    Ty::Bytes | Ty::ByteBuffer => Ty::Byte,
+                    Ty::List(element) => *element,
+                    Ty::Variable(_) => {
+                        let element = self.fresh();
+                        self.unify(object, Ty::List(Box::new(element.clone())), function)?;
+                        element
+                    }
+                    other => {
+                        return Err(self.error(
+                            function,
+                            format!("type `{}` does not support indexing", self.describe(&other)),
+                        ));
+                    }
+                }
             }
             hir::Expr::Reference(place) => {
                 let value = self.infer_expression(function, place)?;
@@ -160,6 +172,10 @@ impl Checker<'_> {
                     UnaryOp::Not => {
                         self.unify(Ty::Bool, operand, function)?;
                         Ty::Bool
+                    }
+                    UnaryOp::BitNot => {
+                        self.unify(Ty::Byte, operand, function)?;
+                        Ty::Byte
                     }
                 }
             }
@@ -336,6 +352,16 @@ impl Checker<'_> {
             BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Divide => {
                 self.infer_numeric_binary(function, left, right)
             }
+            BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => {
+                self.unify(Ty::Byte, left, function)?;
+                self.unify(Ty::Byte, right, function)?;
+                Ok(Ty::Byte)
+            }
+            BinaryOp::ShiftLeft | BinaryOp::ShiftRight => {
+                self.unify(Ty::Byte, left, function)?;
+                self.unify(Ty::Int, right, function)?;
+                Ok(Ty::Byte)
+            }
             BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => {
                 self.infer_numeric_binary(function, left, right)?;
                 Ok(Ty::Bool)
@@ -377,7 +403,8 @@ impl Checker<'_> {
         operand: Ty,
         function: FunctionId,
     ) -> Result<(), FosterError> {
-        if numeric == Ty::Int && matches!(self.resolved(operand.clone()), Ty::CodePoint) {
+        if numeric == Ty::Int && matches!(self.resolved(operand.clone()), Ty::CodePoint | Ty::Byte)
+        {
             Ok(())
         } else {
             self.unify(numeric, operand, function)
@@ -511,5 +538,5 @@ impl Checker<'_> {
 }
 
 fn integer_like(ty: &Ty) -> bool {
-    matches!(ty, Ty::Int | Ty::CodePoint)
+    matches!(ty, Ty::Int | Ty::CodePoint | Ty::Byte)
 }

@@ -1,0 +1,39 @@
+import core.option
+
+/// A stateful source that yields one value at a time.
+///
+/// Calling `next` mutates the iterator cursor and returns `None` after exhaustion.
+pub type Iterator<T> {
+    /// Advances this iterator and returns its next value, if one remains.
+    pub func next(self) -> Option<T> [mut self]
+}
+
+/// A value that can create an independent iterator over a read-only view of its elements.
+pub type Iterable<T> {
+    /// Creates an iterator positioned before this iterable's first element.
+    pub func iterator(self) -> Iterator<T>
+}
+
+type SequenceIterator<T> & Iterator<T> {
+    remaining: Sequence<T>
+}
+
+/// Advances a sequence-backed iterator unless it has been exhausted.
+func next<T>(self: SequenceIterator<T>) -> Option<T> {
+    branch {
+        self.remaining.empty? -> Option.None
+        _ -> self.advance()
+    }
+}
+
+/// Removes and returns the current head of a non-empty sequence cursor.
+func advance<T>(self: SequenceIterator<T>) -> Option<T> {
+    value = self.remaining.head
+    self.remaining = self.remaining.rest
+    Option.Some(value)
+}
+
+/// Consumes a sequence into an independent stateful iterator.
+pub func Iterator.from_sequence<T>(values: Sequence<T>) -> Iterator<T> [consume values] {
+    SequenceIterator { remaining: move values }
+}

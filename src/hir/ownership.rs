@@ -448,6 +448,7 @@ fn is_copy_type(types: &crate::types::TypeInformation, ty: crate::types::TypeId)
             | crate::types::Type::Int
             | crate::types::Type::Float
             | crate::types::Type::CodePoint
+            | crate::types::Type::Byte
             | crate::types::Type::Symbol
     )
 }

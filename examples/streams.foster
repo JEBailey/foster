@@ -1,0 +1,57 @@
+import core.byte_buffer
+import core.bytes
+import core.result
+import core.stream
+
+type StreamError {
+    message: String
+}
+
+type MemoryReader & Reader<StreamError> {
+    remaining: Bytes
+}
+
+type MemoryWriter & Writer<StreamError> {
+    contents: Bytes
+}
+
+func read(self: MemoryReader, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining] {
+    amount = branch {
+        self.remaining.length < maximum -> self.remaining.length
+        _ -> maximum
+    }
+    chunk = self.remaining.slice(0, amount)
+    self.remaining = self.remaining.slice(amount, self.remaining.length)
+    Result.Ok(chunk)
+}
+
+func write(self: MemoryWriter, contents: Bytes) -> Result<Int, StreamError> [mut self.contents] {
+    // Deliberately accept at most two bytes to exercise partial-write retrying.
+    amount = branch {
+        contents.length < 2 -> contents.length
+        _ -> 2
+    }
+    self.contents = self.contents.concat(contents.slice(0, amount))
+    Result.Ok(amount)
+}
+
+func flush(self: MemoryWriter) -> Result<Unit, StreamError> {
+    scratch = ByteBuffer.empty()
+    Result.Ok(scratch.reserve(0))
+}
+
+func render(outcome: Result<Int, StreamError>, writer: MemoryWriter) -> String {
+    branch outcome {
+        Result.Error(error) -> error.message
+        Result.Ok(_) -> branch String.from_utf8(writer.contents) {
+            Result.Error(error) -> error.message
+            Result.Ok(text) -> text
+        }
+    }
+}
+
+func main() -> String {
+    reader = MemoryReader { remaining: "Foster!".utf8 }
+    writer = MemoryWriter { contents: Bytes.empty() }
+    render(stream.copy(reader, writer), writer)
+}

@@ -134,15 +134,15 @@ impl Machine {
                     let Value::Integer(index) = read(frame, index)? else {
                         return Err(FosterError::runtime("VM list index is not an integer"));
                     };
-                    let Value::List(values) = read(frame, object)? else {
-                        return Err(FosterError::runtime("VM indexing requires a list"));
-                    };
                     let index = usize::try_from(index)
-                        .map_err(|_| FosterError::runtime("list index is out of bounds"))?;
-                    let value = values
-                        .get(index)
-                        .cloned()
-                        .ok_or_else(|| FosterError::runtime("list index is out of bounds"))?;
+                        .map_err(|_| FosterError::runtime("index is out of bounds"))?;
+                    let value = match read(frame, object)? {
+                        Value::List(values) => values.get(index).cloned(),
+                        Value::Bytes(values) => values.get(index).copied().map(Value::Byte),
+                        Value::ByteBuffer(values) => values.get(index).copied().map(Value::Byte),
+                        _ => return Err(FosterError::runtime("value does not support indexing")),
+                    }
+                    .ok_or_else(|| FosterError::runtime("index is out of bounds"))?;
                     write(frame, destination, value)?;
                 }
                 Instruction::MakeRecord {
@@ -215,15 +215,33 @@ impl Machine {
                         return Err(FosterError::runtime("list index is not an integer"));
                     };
                     let mut value = read(frame, object)?;
-                    let Value::List(values) = &mut value else {
-                        return Err(FosterError::runtime("indexed assignment requires a list"));
-                    };
                     let index = usize::try_from(index)
-                        .map_err(|_| FosterError::runtime("list index is out of bounds"))?;
-                    *values
-                        .get_mut(index)
-                        .ok_or_else(|| FosterError::runtime("list index is out of bounds"))? =
-                        read(frame, source)?;
+                        .map_err(|_| FosterError::runtime("index is out of bounds"))?;
+                    let source = read(frame, source)?;
+                    match &mut value {
+                        Value::List(values) => {
+                            *values
+                                .get_mut(index)
+                                .ok_or_else(|| FosterError::runtime("index is out of bounds"))? =
+                                source;
+                        }
+                        Value::ByteBuffer(values) => {
+                            let Value::Byte(source) = source else {
+                                return Err(FosterError::runtime(
+                                    "byte-buffer elements require Byte values",
+                                ));
+                            };
+                            *values
+                                .get_mut(index)
+                                .ok_or_else(|| FosterError::runtime("index is out of bounds"))? =
+                                source;
+                        }
+                        _ => {
+                            return Err(FosterError::runtime(
+                                "indexed assignment requires mutable indexed storage",
+                            ));
+                        }
+                    }
                     write(frame, object, value)?;
                 }
                 Instruction::MakeReference {
@@ -258,7 +276,16 @@ impl Machine {
                             values.push(value);
                             Ok(())
                         }
-                        _ => Err(FosterError::runtime("`push` requires a List")),
+                        Value::ByteBuffer(values) => {
+                            let Value::Byte(value) = value else {
+                                return Err(FosterError::runtime(
+                                    "ByteBuffer.push requires a Byte",
+                                ));
+                            };
+                            values.push(value);
+                            Ok(())
+                        }
+                        _ => Err(FosterError::runtime("`push` requires a List or ByteBuffer")),
                     })?;
                     write(frame, destination, Value::Unit)?;
                 }
@@ -291,6 +318,25 @@ impl Machine {
                     builtin,
                     arguments,
                 } => {
+                    if builtin == Builtin::ByteBufferFreeze {
+                        let [buffer] = arguments.as_slice() else {
+                            return Err(FosterError::runtime(
+                                "ByteBuffer.freeze requires one ByteBuffer",
+                            ));
+                        };
+                        let value = frame.registers[buffer.0 as usize].replace(Value::Unit);
+                        let Value::ByteBuffer(values) = value else {
+                            return Err(FosterError::runtime(
+                                "ByteBuffer.freeze requires a ByteBuffer",
+                            ));
+                        };
+                        write(frame, destination, Value::Bytes(Arc::new(values)))?;
+                        continue;
+                    }
+                    if mutate_byte_buffer(frame, builtin, &arguments)? {
+                        write(frame, destination, Value::Unit)?;
+                        continue;
+                    }
                     let arguments = arguments
                         .into_iter()
                         .map(|argument| read(frame, argument))
@@ -338,8 +384,14 @@ impl Machine {
                     function,
                     arguments,
                 } => {
-                    let arguments = values(frame, arguments)?;
-                    frames.push(self.frame(function, Vec::new(), arguments, Some(destination))?);
+                    let next = self.call_frame(
+                        function,
+                        Vec::new(),
+                        frame,
+                        &arguments,
+                        Some(destination),
+                    )?;
+                    frames.push(next);
                 }
                 Instruction::CallMethod {
                     destination,
@@ -347,15 +399,15 @@ impl Machine {
                     function,
                     arguments,
                 } => {
-                    let arguments = values(frame, arguments)?;
                     let receiver = frame.registers[receiver.0 as usize].clone();
                     if let Some(shared) = receiver.shared() {
                         let (lease, state) = shared.write_snapshot()?;
                         let local = Slot::new(Value::from_wire(state)?);
-                        let mut method = self.method_frame(
+                        let mut method = self.method_call_frame(
                             function,
                             local.clone(),
-                            arguments,
+                            frame,
+                            &arguments,
                             Some(destination),
                         )?;
                         method.shared_commit = Some(SharedCommit {
@@ -365,12 +417,14 @@ impl Machine {
                         });
                         frames.push(method);
                     } else {
-                        frames.push(self.method_frame(
+                        let next = self.method_call_frame(
                             function,
                             receiver,
-                            arguments,
+                            frame,
+                            &arguments,
                             Some(destination),
-                        )?);
+                        )?;
+                        frames.push(next);
                     }
                 }
                 Instruction::CallContractMethod {
@@ -379,7 +433,6 @@ impl Machine {
                     name,
                     arguments,
                 } => {
-                    let arguments = values(frame, arguments)?;
                     let receiver = frame.registers[receiver.0 as usize].clone();
                     let value = receiver.read()?;
                     if let Value::Record { fields, .. } = &value
@@ -420,10 +473,11 @@ impl Machine {
                     if let Some(shared) = receiver.shared() {
                         let (lease, state) = shared.write_snapshot()?;
                         let local = Slot::new(Value::from_wire(state)?);
-                        let mut method = self.method_frame(
+                        let mut method = self.method_call_frame(
                             function,
                             local.clone(),
-                            arguments,
+                            frame,
+                            &arguments,
                             Some(destination),
                         )?;
                         method.shared_commit = Some(SharedCommit {
@@ -433,12 +487,14 @@ impl Machine {
                         });
                         frames.push(method);
                     } else {
-                        frames.push(self.method_frame(
+                        let next = self.method_call_frame(
                             function,
                             receiver,
-                            arguments,
+                            frame,
+                            &arguments,
                             Some(destination),
-                        )?);
+                        )?;
+                        frames.push(next);
                     }
                 }
                 Instruction::CallValue {
@@ -449,8 +505,9 @@ impl Machine {
                     let Value::VmClosure { function, captures } = read(frame, callee)? else {
                         return Err(FosterError::runtime("VM dynamic call requires a closure"));
                     };
-                    let arguments = values(frame, arguments)?;
-                    frames.push(self.frame(function, captures, arguments, Some(destination))?);
+                    let next =
+                        self.call_frame(function, captures, frame, &arguments, Some(destination))?;
+                    frames.push(next);
                 }
                 Instruction::CallClosure {
                     destination,
@@ -458,9 +515,10 @@ impl Machine {
                     captures,
                     arguments,
                 } => {
-                    let arguments = values(frame, arguments)?;
                     let captures = capture(frame, captures)?;
-                    frames.push(self.frame(function, captures, arguments, Some(destination))?);
+                    let next =
+                        self.call_frame(function, captures, frame, &arguments, Some(destination))?;
+                    frames.push(next);
                 }
                 Instruction::SpawnRemote { destination, value } => {
                     let state = read(frame, value)?.into_wire()?;
@@ -689,6 +747,60 @@ impl Machine {
         frame.registers[offset] = receiver;
         Ok(frame)
     }
+
+    fn call_frame(
+        &self,
+        function: FunctionId,
+        captures: Vec<Capture>,
+        caller: &Frame,
+        arguments: &[Register],
+        return_destination: Option<Register>,
+    ) -> Result<Frame, FosterError> {
+        let values = arguments
+            .iter()
+            .map(|argument| caller.registers[argument.0 as usize].argument())
+            .collect();
+        let mut frame = self.frame(function, captures, values, return_destination)?;
+        let bytecode = &self.program.functions[&function];
+        let offset = usize::from(bytecode.captures);
+        for (index, (argument, mutable)) in arguments
+            .iter()
+            .zip(&bytecode.mutable_parameters)
+            .enumerate()
+        {
+            if *mutable {
+                frame.registers[offset + index] = caller.registers[argument.0 as usize].clone();
+            }
+        }
+        Ok(frame)
+    }
+
+    fn method_call_frame(
+        &self,
+        function: FunctionId,
+        receiver: Rc<Slot>,
+        caller: &Frame,
+        arguments: &[Register],
+        return_destination: Option<Register>,
+    ) -> Result<Frame, FosterError> {
+        let values = arguments
+            .iter()
+            .map(|argument| caller.registers[argument.0 as usize].argument())
+            .collect::<Vec<_>>();
+        let mut frame = self.method_frame(function, receiver, values, return_destination)?;
+        let bytecode = &self.program.functions[&function];
+        let offset = usize::from(bytecode.captures);
+        for (index, (argument, mutable)) in arguments
+            .iter()
+            .zip(bytecode.mutable_parameters.iter().skip(1))
+            .enumerate()
+        {
+            if *mutable {
+                frame.registers[offset + index + 1] = caller.registers[argument.0 as usize].clone();
+            }
+        }
+        Ok(frame)
+    }
 }
 
 fn drop_register(frame: &mut Frame, register: Register) {
@@ -700,13 +812,6 @@ fn drop_register(frame: &mut Frame, register: Register) {
         // remotely shared slot would change the value seen by another owner.
         *slot = Slot::new(Value::Unit);
     }
-}
-
-fn values(frame: &Frame, registers: Vec<Register>) -> Result<Vec<Value>, FosterError> {
-    Ok(registers
-        .into_iter()
-        .map(|register| frame.registers[register.0 as usize].argument())
-        .collect())
 }
 
 fn materialize_remote_arguments(
@@ -781,8 +886,23 @@ fn member(value: Value, field: &str) -> Result<Value, FosterError> {
         (Value::String(value), "whitespace?") => {
             Ok(Value::Bool(value.chars().all(char::is_whitespace)))
         }
+        (Value::String(value), "utf8") => Ok(Value::Bytes(Arc::new(value.into_bytes()))),
         (Value::CodePoint(value), "whitespace?") => Ok(Value::Bool(value.is_whitespace())),
         (Value::CodePoint(value), "string") => Ok(Value::String(value.to_string())),
+        (Value::Byte(value), "int") => Ok(Value::Integer(i64::from(value))),
+        (Value::Bytes(values), "empty?") => Ok(Value::Bool(values.is_empty())),
+        (Value::Bytes(values), "length") => Ok(Value::Integer(values.len() as i64)),
+        (Value::Bytes(values), "head") => values
+            .first()
+            .copied()
+            .map(Value::Byte)
+            .ok_or_else(|| FosterError::runtime("cannot take `head` of empty Bytes")),
+        (Value::Bytes(values), "rest") => Ok(Value::Bytes(Arc::new(
+            values.get(1..).unwrap_or_default().to_vec(),
+        ))),
+        (Value::ByteBuffer(values), "empty?") => Ok(Value::Bool(values.is_empty())),
+        (Value::ByteBuffer(values), "length") => Ok(Value::Integer(values.len() as i64)),
+        (Value::ByteBuffer(values), "capacity") => Ok(Value::Integer(values.capacity() as i64)),
         (_, field) => Err(FosterError::runtime(format!(
             "value has no field `{field}`"
         ))),
@@ -814,6 +934,81 @@ fn call_builtin(builtin: Builtin, arguments: &[Value]) -> Result<Value, FosterEr
             .parse::<f64>()
             .map(Value::Float)
             .map_err(|_| FosterError::runtime("invalid Float text")),
+        (Builtin::ByteValid, [Value::Integer(value)]) => {
+            Ok(Value::Bool(u8::try_from(*value).is_ok()))
+        }
+        (Builtin::ByteUnchecked, [Value::Integer(value)]) => u8::try_from(*value)
+            .map(Value::Byte)
+            .map_err(|_| FosterError::runtime("Byte is outside 0..255")),
+        (Builtin::BytesEmpty, []) => Ok(Value::Bytes(Arc::new(Vec::new()))),
+        (Builtin::BytesFromList, [Value::List(values)]) => {
+            let bytes = values
+                .iter()
+                .map(|value| match value {
+                    Value::Byte(value) => Ok(*value),
+                    _ => Err(FosterError::runtime("Bytes.from requires List<Byte>")),
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Value::Bytes(Arc::new(bytes)))
+        }
+        (Builtin::BytesConcat, [Value::Bytes(left), Value::Bytes(right)]) => {
+            let mut bytes = Vec::with_capacity(left.len() + right.len());
+            bytes.extend_from_slice(left);
+            bytes.extend_from_slice(right);
+            Ok(Value::Bytes(Arc::new(bytes)))
+        }
+        (
+            Builtin::BytesSlice,
+            [
+                Value::Bytes(values),
+                Value::Integer(start),
+                Value::Integer(end),
+            ],
+        ) => {
+            let start = usize::try_from(*start)
+                .map_err(|_| FosterError::runtime("byte slice start is out of bounds"))?;
+            let end = usize::try_from(*end)
+                .map_err(|_| FosterError::runtime("byte slice end is out of bounds"))?;
+            let slice = values
+                .get(start..end)
+                .ok_or_else(|| FosterError::runtime("byte slice is out of bounds"))?;
+            Ok(Value::Bytes(Arc::new(slice.to_vec())))
+        }
+        (Builtin::BytesToList, [Value::Bytes(values)]) => Ok(Value::List(
+            values.iter().copied().map(Value::Byte).collect(),
+        )),
+        (Builtin::BytesHex, [Value::Bytes(values)]) => Ok(Value::String(
+            values.iter().map(|byte| format!("{byte:02x}")).collect(),
+        )),
+        (Builtin::BytesFromHex, [Value::String(value)]) => Ok(match decode_hex(value) {
+            Ok(bytes) => result_ok(Value::Bytes(Arc::new(bytes))),
+            Err((offset, message)) => result_error(Value::Record {
+                record: None,
+                name: "HexError".into(),
+                fields: BTreeMap::from([
+                    ("offset".into(), Value::Integer(offset as i64)),
+                    ("message".into(), Value::String(message)),
+                ]),
+            }),
+        }),
+        (Builtin::StringUtf8, [Value::String(value)]) => {
+            Ok(Value::Bytes(Arc::new(value.as_bytes().to_vec())))
+        }
+        (Builtin::BytesUtf8Valid, [Value::Bytes(value)]) => {
+            Ok(Value::Bool(std::str::from_utf8(value).is_ok()))
+        }
+        (Builtin::BytesDecodeUtf8, [Value::Bytes(value)]) => std::str::from_utf8(value)
+            .map(|value| Value::String(value.to_owned()))
+            .map_err(|_| FosterError::runtime("Bytes are not valid UTF-8")),
+        (Builtin::ByteBufferEmpty, []) => Ok(Value::ByteBuffer(Vec::new())),
+        (Builtin::ByteBufferWithCapacity, [Value::Integer(capacity)]) => {
+            let capacity = usize::try_from(*capacity)
+                .map_err(|_| FosterError::runtime("ByteBuffer capacity cannot be negative"))?;
+            Ok(Value::ByteBuffer(Vec::with_capacity(capacity)))
+        }
+        (Builtin::ByteBufferFreeze | Builtin::ByteBufferSnapshot, [Value::ByteBuffer(values)]) => {
+            Ok(Value::Bytes(Arc::new(values.clone())))
+        }
         (Builtin::IoReadText, [Value::String(path)]) => Ok(io_result(
             "read_text",
             path,
@@ -823,6 +1018,16 @@ fn call_builtin(builtin: Builtin, arguments: &[Value]) -> Result<Value, FosterEr
             "write_text",
             path,
             std::fs::write(path, text).map(|()| Value::Unit),
+        )),
+        (Builtin::IoReadBytes, [Value::String(path)]) => Ok(io_result(
+            "read_bytes",
+            path,
+            std::fs::read(path).map(|bytes| Value::Bytes(Arc::new(bytes))),
+        )),
+        (Builtin::IoWriteBytes, [Value::String(path), Value::Bytes(bytes)]) => Ok(io_result(
+            "write_bytes",
+            path,
+            std::fs::write(path, bytes.as_slice()).map(|()| Value::Unit),
         )),
         (Builtin::IoListDirectory, [Value::String(path)]) => {
             let entries = std::fs::read_dir(path).and_then(|entries| {
@@ -896,6 +1101,19 @@ fn call_builtin(builtin: Builtin, arguments: &[Value]) -> Result<Value, FosterEr
             "write",
             super::host::write(*connection, text).map(|()| Value::Unit),
         )),
+        (Builtin::TcpReadBytes, [Value::Integer(connection), Value::Integer(maximum)]) => {
+            Ok(tcp_result(
+                "read_bytes",
+                super::host::read_bytes(*connection, *maximum)
+                    .map(|bytes| Value::Bytes(Arc::new(bytes))),
+            ))
+        }
+        (Builtin::TcpWriteBytes, [Value::Integer(connection), Value::Bytes(bytes)]) => {
+            Ok(tcp_result(
+                "write_bytes",
+                super::host::write_bytes(*connection, bytes).map(|()| Value::Unit),
+            ))
+        }
         (Builtin::TcpSetTimeout, [Value::Integer(connection), Value::Integer(milliseconds)]) => {
             Ok(tcp_result(
                 "set_timeout",
@@ -911,6 +1129,108 @@ fn call_builtin(builtin: Builtin, arguments: &[Value]) -> Result<Value, FosterEr
             super::host::close_connection(*connection).map(|()| Value::Unit),
         )),
         _ => Err(FosterError::runtime("invalid builtin arguments")),
+    }
+}
+
+fn mutate_byte_buffer(
+    frame: &Frame,
+    builtin: Builtin,
+    arguments: &[Register],
+) -> Result<bool, FosterError> {
+    let mutation = match (builtin, arguments) {
+        (Builtin::ByteBufferPush, [buffer, value]) => {
+            let Value::Byte(value) = read(frame, *value)? else {
+                return Err(FosterError::runtime("ByteBuffer.push requires a Byte"));
+            };
+            Some((*buffer, ByteBufferMutation::Push(value)))
+        }
+        (Builtin::ByteBufferExtend, [buffer, values]) => {
+            let Value::Bytes(values) = read(frame, *values)? else {
+                return Err(FosterError::runtime("ByteBuffer.extend requires Bytes"));
+            };
+            Some((*buffer, ByteBufferMutation::Extend(values)))
+        }
+        (Builtin::ByteBufferClear, [buffer]) => Some((*buffer, ByteBufferMutation::Clear)),
+        (Builtin::ByteBufferTruncate, [buffer, length]) => {
+            let Value::Integer(length) = read(frame, *length)? else {
+                return Err(FosterError::runtime("ByteBuffer.truncate requires Int"));
+            };
+            let length = usize::try_from(length)
+                .map_err(|_| FosterError::runtime("truncate length cannot be negative"))?;
+            Some((*buffer, ByteBufferMutation::Truncate(length)))
+        }
+        (Builtin::ByteBufferReserve, [buffer, additional]) => {
+            let Value::Integer(additional) = read(frame, *additional)? else {
+                return Err(FosterError::runtime("ByteBuffer.reserve requires Int"));
+            };
+            let additional = usize::try_from(additional)
+                .map_err(|_| FosterError::runtime("reserve amount cannot be negative"))?;
+            Some((*buffer, ByteBufferMutation::Reserve(additional)))
+        }
+        _ => None,
+    };
+    let Some((buffer, mutation)) = mutation else {
+        return Ok(false);
+    };
+    frame.registers[buffer.0 as usize].reshape(|value| {
+        let Value::ByteBuffer(values) = value else {
+            return Err(FosterError::runtime(
+                "byte-buffer mutation requires ByteBuffer",
+            ));
+        };
+        match mutation {
+            ByteBufferMutation::Push(value) => values.push(value),
+            ByteBufferMutation::Extend(value) => values.extend_from_slice(&value),
+            ByteBufferMutation::Clear => values.clear(),
+            ByteBufferMutation::Truncate(length) => values.truncate(length),
+            ByteBufferMutation::Reserve(additional) => values.reserve(additional),
+        }
+        Ok(())
+    })?;
+    Ok(true)
+}
+
+enum ByteBufferMutation {
+    Push(u8),
+    Extend(Arc<Vec<u8>>),
+    Clear,
+    Truncate(usize),
+    Reserve(usize),
+}
+
+fn decode_hex(value: &str) -> Result<Vec<u8>, (usize, String)> {
+    if !value.len().is_multiple_of(2) {
+        return Err((
+            value.len(),
+            "hexadecimal byte text must have even length".into(),
+        ));
+    }
+    let mut decoded = Vec::with_capacity(value.len() / 2);
+    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+        let offset = index * 2;
+        let high = hex_nibble(pair[0]).ok_or_else(|| {
+            (
+                offset,
+                format!("invalid hexadecimal digit `{}`", pair[0] as char),
+            )
+        })?;
+        let low = hex_nibble(pair[1]).ok_or_else(|| {
+            (
+                offset + 1,
+                format!("invalid hexadecimal digit `{}`", pair[1] as char),
+            )
+        })?;
+        decoded.push((high << 4) | low);
+    }
+    Ok(decoded)
+}
+
+fn hex_nibble(value: u8) -> Option<u8> {
+    match value {
+        b'0'..=b'9' => Some(value - b'0'),
+        b'a'..=b'f' => Some(value - b'a' + 10),
+        b'A'..=b'F' => Some(value - b'A' + 10),
+        _ => None,
     }
 }
 

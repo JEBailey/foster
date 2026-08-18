@@ -43,6 +43,8 @@ pub enum TokenKind {
     Suspend,
     Pipe,
     Ampersand,
+    Caret,
+    Tilde,
     LParen,
     RParen,
     LBrace,
@@ -186,6 +188,14 @@ impl<'a> Lexer<'a> {
                         column,
                         offset..self.byte_index,
                     ));
+                }
+                '^' => {
+                    self.advance();
+                    out.push(tok(TokenKind::Caret, line, column, offset..self.byte_index));
+                }
+                '~' => {
+                    self.advance();
+                    out.push(tok(TokenKind::Tilde, line, column, offset..self.byte_index));
                 }
                 ']' => {
                     self.advance();

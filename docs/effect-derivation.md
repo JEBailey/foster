@@ -38,6 +38,11 @@ read < mut < reshape
   ordering.
 - `suspend` is a function property rather than an effect on one group.
 
+One scoped exception supports stateful containers: `mut owner` permits consuming a descendant
+while replacing that descendant as part of the mutation. It does not permit consuming `owner`
+itself. For example, an iterator may yield its current element under `[mut self]` while advancing
+its cursor; transferring ownership of the complete iterator still requires `[consume self]`.
+
 Effects use structured paths. A root permission covers its descendants, while a child permission
 does not cover its parent or siblings:
 

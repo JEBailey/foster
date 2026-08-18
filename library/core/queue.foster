@@ -1,0 +1,47 @@
+import core.collection
+import core.iteration
+import core.option
+
+/// A first-in, first-out collection.
+pub type Queue<T> & Collection<T> {
+    values: List<T>
+}
+
+/// Creates an empty queue.
+pub func Queue.empty<T>() -> Queue<T> {
+    Queue { values: [] }
+}
+
+/// Returns the number of queued values.
+pub func length<T>(self: Queue<T>) -> Int {
+    self.values.length
+}
+
+/// Returns whether the queue contains no values.
+pub func empty?<T>(self: Queue<T>) -> Bool {
+    self.values.empty?
+}
+
+/// Creates an independent iterator from front to back.
+pub func iterator<T>(self: Queue<T>) -> Iterator<T> {
+    self.values.iterator
+}
+
+/// Returns a queue with `value` added at the back.
+pub func push<T>(self: Queue<T>, value: T) -> Queue<T> [consume self, consume value] {
+    Queue { values: self.values.append(value) }
+}
+
+/// Removes the front value and returns the remaining queue.
+pub func pop<T>(self: Queue<T>) -> Option<QueueItem<T>> [consume self] {
+    branch {
+        self.values.empty? -> Option.None
+        _ -> Option.Some(QueueItem { value: self.values.head, remaining: Queue { values: self.values.rest } })
+    }
+}
+
+/// The result of removing one value from a queue.
+pub type QueueItem<T> {
+    pub value: T
+    pub remaining: Queue<T>
+}

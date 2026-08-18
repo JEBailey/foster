@@ -1,11 +1,15 @@
 import core.option
+import core.collection
+import core.iteration
 
-type Entry<K, V> {
-    key: K
-    value: V
+/// A key-value pair yielded while iterating a map.
+pub type Entry<K, V> {
+    pub key: K
+    pub value: V
 }
 
-pub type Map<K, V> {
+/// An insertion-ordered associative collection.
+pub type Map<K, V> & Collection<Entry<K, V>> {
     entries: List<Entry<K, V>>
 }
 
@@ -64,6 +68,11 @@ pub func length<K, V>(self: Map<K, V>) -> Int {
 /// Returns whether the map contains no entries.
 pub func empty?<K, V>(self: Map<K, V>) -> Bool {
     self.entries.empty?
+}
+
+/// Creates an independent iterator over entries in storage order.
+pub func iterator<K, V>(self: Map<K, V>) -> Iterator<Entry<K, V>> {
+    self.entries.iterator
 }
 
 /// Consumes the map and returns its keys in storage order.

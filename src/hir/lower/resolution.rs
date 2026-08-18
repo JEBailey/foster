@@ -7,6 +7,28 @@ impl FunctionLowerer<'_> {
     ) -> Result<Option<FunctionId>, FosterError> {
         let (module, type_name, member, imported) = match path {
             [type_name, member] => {
+                if matches!(*type_name, "Byte" | "Bytes" | "ByteBuffer" | "String") {
+                    let qualified_name = format!("{type_name}.{member}");
+                    let mut candidates = std::iter::once(self.module)
+                        .chain(self.imports.values().copied())
+                        .filter_map(|module| {
+                            self.hir
+                                .function_named(module, &qualified_name)
+                                .filter(|function| {
+                                    module == self.module || self.hir.functions[*function].public
+                                })
+                        })
+                        .collect::<Vec<_>>();
+                    candidates.sort();
+                    candidates.dedup();
+                    return match candidates.as_slice() {
+                        [function] => Ok(Some(*function)),
+                        [] => Ok(None),
+                        _ => Err(self.error(format!(
+                            "associated function `{qualified_name}` is ambiguous"
+                        ))),
+                    };
+                }
                 let resolved = self.resolve_name(type_name)?;
                 let type_module = match resolved {
                     ResolvedName::Record(record) => self.hir.records[record].module,
@@ -22,7 +44,12 @@ impl FunctionLowerer<'_> {
                     return Ok(None);
                 };
                 let names_type = self.hir.record_named(module, type_name).is_some()
-                    || self.hir.variant_type_named(module, type_name).is_some();
+                    || self.hir.variant_type_named(module, type_name).is_some()
+                    || (matches!(*type_name, "Byte" | "Bytes" | "ByteBuffer" | "String")
+                        && self
+                            .hir
+                            .function_named(module, &format!("{type_name}.{member}"))
+                            .is_some());
                 if !names_type {
                     return Ok(None);
                 }
@@ -266,8 +293,33 @@ impl FunctionLowerer<'_> {
                 "code_point" => Ok(ResolvedName::Builtin(Builtin::CodePoint)),
                 "from_code_point" => Ok(ResolvedName::Builtin(Builtin::FromCodePoint)),
                 "parse_float" => Ok(ResolvedName::Builtin(Builtin::ParseFloat)),
+                "__byte_valid" => Ok(ResolvedName::Builtin(Builtin::ByteValid)),
+                "__byte_unchecked" => Ok(ResolvedName::Builtin(Builtin::ByteUnchecked)),
+                "__bytes_empty" => Ok(ResolvedName::Builtin(Builtin::BytesEmpty)),
+                "__bytes_from_list" => Ok(ResolvedName::Builtin(Builtin::BytesFromList)),
+                "__bytes_concat" => Ok(ResolvedName::Builtin(Builtin::BytesConcat)),
+                "__bytes_slice" => Ok(ResolvedName::Builtin(Builtin::BytesSlice)),
+                "__bytes_to_list" => Ok(ResolvedName::Builtin(Builtin::BytesToList)),
+                "__bytes_hex" => Ok(ResolvedName::Builtin(Builtin::BytesHex)),
+                "__bytes_from_hex" => Ok(ResolvedName::Builtin(Builtin::BytesFromHex)),
+                "__string_utf8" => Ok(ResolvedName::Builtin(Builtin::StringUtf8)),
+                "__bytes_utf8_valid" => Ok(ResolvedName::Builtin(Builtin::BytesUtf8Valid)),
+                "__bytes_decode_utf8" => Ok(ResolvedName::Builtin(Builtin::BytesDecodeUtf8)),
+                "__byte_buffer_empty" => Ok(ResolvedName::Builtin(Builtin::ByteBufferEmpty)),
+                "__byte_buffer_with_capacity" => {
+                    Ok(ResolvedName::Builtin(Builtin::ByteBufferWithCapacity))
+                }
+                "__byte_buffer_push" => Ok(ResolvedName::Builtin(Builtin::ByteBufferPush)),
+                "__byte_buffer_extend" => Ok(ResolvedName::Builtin(Builtin::ByteBufferExtend)),
+                "__byte_buffer_clear" => Ok(ResolvedName::Builtin(Builtin::ByteBufferClear)),
+                "__byte_buffer_truncate" => Ok(ResolvedName::Builtin(Builtin::ByteBufferTruncate)),
+                "__byte_buffer_reserve" => Ok(ResolvedName::Builtin(Builtin::ByteBufferReserve)),
+                "__byte_buffer_freeze" => Ok(ResolvedName::Builtin(Builtin::ByteBufferFreeze)),
+                "__byte_buffer_snapshot" => Ok(ResolvedName::Builtin(Builtin::ByteBufferSnapshot)),
                 "__io_read_text" => Ok(ResolvedName::Builtin(Builtin::IoReadText)),
                 "__io_write_text" => Ok(ResolvedName::Builtin(Builtin::IoWriteText)),
+                "__io_read_bytes" => Ok(ResolvedName::Builtin(Builtin::IoReadBytes)),
+                "__io_write_bytes" => Ok(ResolvedName::Builtin(Builtin::IoWriteBytes)),
                 "__io_list_directory" => Ok(ResolvedName::Builtin(Builtin::IoListDirectory)),
                 "__io_exists" => Ok(ResolvedName::Builtin(Builtin::IoExists)),
                 "__io_is_file" => Ok(ResolvedName::Builtin(Builtin::IoIsFile)),
@@ -283,6 +335,8 @@ impl FunctionLowerer<'_> {
                 "__tcp_accept" => Ok(ResolvedName::Builtin(Builtin::TcpAccept)),
                 "__tcp_read" => Ok(ResolvedName::Builtin(Builtin::TcpRead)),
                 "__tcp_write" => Ok(ResolvedName::Builtin(Builtin::TcpWrite)),
+                "__tcp_read_bytes" => Ok(ResolvedName::Builtin(Builtin::TcpReadBytes)),
+                "__tcp_write_bytes" => Ok(ResolvedName::Builtin(Builtin::TcpWriteBytes)),
                 "__tcp_set_timeout" => Ok(ResolvedName::Builtin(Builtin::TcpSetTimeout)),
                 "__tcp_close_listener" => Ok(ResolvedName::Builtin(Builtin::TcpCloseListener)),
                 "__tcp_close_connection" => Ok(ResolvedName::Builtin(Builtin::TcpCloseConnection)),

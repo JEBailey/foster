@@ -31,16 +31,21 @@ operations; they will move behind trusted intrinsic declarations once that mecha
 Current modules:
 
 - `core.option`: `Option`, `map`, `and_then`, `unwrap_or`, and `present?`
+- `core.iteration`: stateful `Iterator<T>` and repeatable `Iterable<T>` contracts
 - `core.result`: `Result`, `map`, `map_error`, `and_then`, and `success?`
-- `core.ordering`: `Ordering` and `reverse`
+- `core.ordering`: `Ordering`, `Equality<T>`, `Ordered<T>`, `Hashing`, and `reverse`
 - `core.sequence`: map, filter, fold, search, slicing, and query algorithms shared by strings and lists
 - `core.list`: safe access, map, filter, fold, find, predicates, reverse, and concatenation
 - `core.character`: validated Unicode scalar construction and conversion
 - `core.string`: slicing, splitting, joining, trimming, case conversion, and Unicode helpers
 - `core.bool`, `core.int`, and `core.float`: scalar algorithms and comparisons
+- `core.byte`: checked construction and integer conversion for eight-bit unsigned values
+- `core.bytes`: immutable compact bytes, hexadecimal conversion, hashing, and UTF-8 conversion
+- `core.byte_buffer`: mutable binary construction with consuming `freeze` and borrowing `snapshot`
+- `core.stream`: generic binary/text stream contracts plus `read_all`, `write_all`, and `copy`
 - `core.map`: a generic Foster-written map with opaque list-backed storage
-- `core.io`: typed text-file, directory, and path operations
-- `core.net.tcp`: typed TCP listeners and connections
+- `core.io`: typed text and binary file, directory, and path operations
+- `core.net.tcp`: typed TCP listeners and `Duplex<NetworkError>` connections
 
 The register VM executes imported core code and calls across modules after the normal checked-HIR
 pipeline. Filesystem and TCP operations necessarily cross into the host runtime; their public

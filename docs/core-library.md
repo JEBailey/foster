@@ -26,8 +26,19 @@ being added accidentally.
 | Module | Purpose |
 | --- | --- |
 | `core.option` | Optional values, mapping, chaining, fallbacks, flattening, and queries |
+| `core.iteration` | Stateful `Iterator<T>` and repeatable `Iterable<T>` callable contracts |
+| `core.collection` | The sized, repeatable `Collection<T>` contract |
+| `core.byte` | Bounded byte construction and `ByteError` |
+| `core.bytes` | Immutable compact bytes, hexadecimal conversion, and UTF-8 decoding |
+| `core.byte_buffer` | Mutable growable byte storage |
+| `core.stream` | Generic binary/text stream contracts and binary transfer algorithms |
+| `core.set` | Insertion-ordered `Set<T>` |
+| `core.queue` | First-in, first-out `Queue<T>` |
+| `core.deque` | Double-ended `Deque<T>` |
+| `core.stack` | Last-in, first-out `Stack<T>` |
+| `core.range` | Generic reusable `Range<T>` sequence view |
 | `core.result` | Success/error values, transformations, recovery, flattening, and queries |
-| `core.ordering` | `Less`, `Equal`, and `Greater`, with ordering queries and reversal |
+| `core.ordering` | Equality, total-ordering, and hashing contracts plus `Less`, `Equal`, and `Greater` |
 | `core.sequence` | Shared map, filter, fold, search, slicing, and query algorithms for strings and lists |
 | `core.list` | Search, map, filter, folds, slicing, flattening, joining, and predicates |
 | `core.map` | Generic maps with associated construction, lookup, insertion, keys, and values |
@@ -67,12 +78,14 @@ this table for an intrinsic because it has no Foster implementation body.
 | `print`, `println` | Write values to standard output, without or with a trailing newline |
 | `code_point`, `from_code_point` | Legacy explicit widening and checked construction of `CodePoint`; ordinary widening uses integer operators |
 | `parse_float` | Parse a binary64 floating-point value from text |
-| `__io_read_text`, `__io_write_text`, `__io_list_directory` | Perform text-file and directory operations |
+| `__io_read_text`, `__io_write_text`, `__io_read_bytes`, `__io_write_bytes` | Perform whole-file text and binary operations |
+| `__io_list_directory` | List directory entries |
 | `__io_exists`, `__io_is_file`, `__io_is_directory` | Query host filesystem paths |
 | `__io_join`, `__io_parent`, `__io_file_name`, `__io_extension` | Apply host path rules |
 | `__io_canonicalize`, `__io_current_directory` | Resolve host filesystem locations |
 | `__tcp_listen`, `__tcp_connect`, `__tcp_accept` | Establish TCP resources |
-| `__tcp_read`, `__tcp_write`, `__tcp_set_timeout` | Operate on TCP connections |
+| `__tcp_read`, `__tcp_write`, `__tcp_read_bytes`, `__tcp_write_bytes` | Operate on TCP connections |
+| `__tcp_set_timeout` | Configure TCP connection timeouts |
 | `__tcp_close_listener`, `__tcp_close_connection` | Close TCP resources |
 
 `String` implements `Sequence<CodePoint>`, and `List<T>` implements `Sequence<T>`. This is a
@@ -89,9 +102,76 @@ Code-point literals use single quotes, while string literals use double quotes. 
 return an owned generic element, such as `sequence.first`, consume their sequence argument;
 observations such as `count`, `contains?`, `any?`, and `all?` borrow it.
 
-TCP currently transports UTF-8 text. It is deliberately a small blocking transport layer rather
-than an HTTP library; protocol parsing and higher-level policy belong in Foster. Byte buffers,
-socket readiness, TLS, and explicit filesystem/network capability tokens remain future work.
+`core.iteration` defines the stateful `Iterator<T>` and repeatable `Iterable<T>` contracts.
+`Iterator.from_sequence` consumes any `Sequence<T>` into a private Foster-written cursor. Calling
+`next()` mutates that cursor and returns `Option<T>`; it does not mutate the original collection.
+
+`core.collection` defines `Collection<T> & Iterable<T>` with `length` and `empty?`. The collection
+family has this shape:
+
+```text
+Iterable<T>
+└── Collection<T>
+    ├── Sequence<T>
+    │   ├── List<T>
+    │   ├── String as Sequence<CodePoint>
+    │   └── Range<T>
+    ├── Set<T>
+    ├── Queue<T>
+    ├── Deque<T>
+    └── Stack<T>
+
+Map<K, V> & Collection<Entry<K, V>>
+```
+
+`List<T>`, `String`, and `Sequence<T>` expose `.iterator` directly. Creating the cursor borrows the
+source at the language level; the VM materializes an independent cursor over the source's read-only
+value view, so advancing it neither consumes nor mutates the collection. The explicit
+`Iterator.from_sequence` adapter remains available when ownership should be transferred.
+
+`Map<K, V>` iterates public `Entry<K, V>` values in storage order. `Set`, `Queue`, `Deque`, `Stack`,
+and `Range` are implemented in Foster on top of `List`, keeping only representation primitives in
+the compiler and VM.
+
+## Binary data
+
+`Byte` is a copyable integer subtype bounded to `0..255`. `Byte.from(value)` performs checked
+construction and returns `Result<Byte, ByteError>`. Arithmetic with a byte widens to `Int`, while
+`&`, `|`, `^`, `~`, `<<`, and `>>` retain `Byte`; shift counts must be between zero and seven.
+
+`Bytes` is immutable compact storage and structurally implements `Sequence<Byte>` and
+`Collection<Byte>`. It supports indexing, slicing, concatenation, iteration, list conversion,
+lowercase hexadecimal encoding, and checked hexadecimal decoding. The VM stores it as shared
+contiguous byte storage rather than `List<Byte>`.
+
+`ByteBuffer` is mutable growable storage with direct indexing, indexed replacement, `push`,
+`extend`, `clear`, `truncate`, and `reserve`. `buffer.snapshot` borrows the buffer and copies its
+current contents. `(move buffer).freeze()` consumes it and transfers the contents into immutable
+`Bytes`. Structural mutations invalidate outstanding element loans.
+
+Text conversion is explicit: `text.utf8` encodes a string, while `String.from_utf8(bytes)` returns
+`Result<String, Utf8Error>`. Filesystem and TCP modules provide parallel `read_bytes` and
+`write_bytes` operations without changing their existing UTF-8 text APIs.
+
+`core.stream` defines `Reader<E>`, `Writer<E>`, `TextReader<E>`, and `TextWriter<E>` as generic
+structural contracts. Binary reads return at most the requested number of bytes and use empty
+`Bytes` for clean EOF. Binary writes report the accepted byte count, permitting partial writes;
+successful non-empty operations must make progress. `read_all`, `write_all`, and `copy` implement
+the retry and accumulation policy in Foster. `Duplex<E>` is the combined binary contract.
+
+`core.net.tcp.Connection` implements `Duplex<NetworkError>`. Its `read` and `write` methods are the
+contract operations, while `read_text`, `write_text`, `read_bytes`, and `write_bytes` are explicit
+convenience spellings. Filesystem path functions remain whole-file operations rather than claiming
+to be stateful streams.
+
+`core.ordering` also defines the structural contracts `Equality<T>`, `Ordered<T>`, and `Hashing`.
+`Ordered<T>` composes equality and returns the existing `Ordering` variant from `compare`.
+`Hashing.hash` returns a stable `Int`; equal values must hash identically, although unequal values
+may collide.
+
+TCP is deliberately a small blocking binary transport layer rather than an HTTP library; explicit
+UTF-8 helpers remain available, while protocol parsing and higher-level policy belong in Foster.
+Socket readiness, TLS, and explicit filesystem/network capability tokens remain future work.
 
 Core APIs should not bypass ownership. In particular, operations that must retain an owned generic
 value after invoking user code require a borrowed-callback type; they are intentionally omitted

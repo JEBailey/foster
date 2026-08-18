@@ -1,0 +1,117 @@
+import core.byte_buffer
+import core.bytes
+import core.result
+
+/// A stateful source of binary data.
+///
+/// `read` returns at most `maximum` bytes. Empty bytes indicate clean end-of-stream.
+/// A successful read of a non-empty stream must return at least one byte.
+pub type Reader<E> {
+    pub func read(self, maximum: Int) -> Result<Bytes, E> [mut self]
+}
+
+/// A stateful destination for binary data.
+///
+/// `write` may accept fewer bytes than supplied and reports the accepted count. A successful write
+/// of non-empty bytes must accept at least one byte. `flush` makes buffered output visible to the
+/// destination.
+pub type Writer<E> {
+    pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
+    pub func flush(self) -> Result<Unit, E> [mut self]
+}
+
+/// A stateful source which decodes text while preserving character boundaries between reads.
+/// Empty text indicates clean end-of-stream.
+pub type TextReader<E> {
+    pub func read_text(self, maximum: Int) -> Result<String, E> [mut self]
+}
+
+/// A stateful text destination.
+///
+/// `write_text` accepts the complete string or returns an error. `flush` makes buffered text visible
+/// to the destination.
+pub type TextWriter<E> {
+    pub func write_text(self, text: String) -> Result<Unit, E> [mut self]
+    pub func flush(self) -> Result<Unit, E> [mut self]
+}
+
+/// A bidirectional binary stream combining the `Reader<E>` and `Writer<E>` contracts.
+pub type Duplex<E> {
+    pub func read(self, maximum: Int) -> Result<Bytes, E> [mut self]
+    pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
+    pub func flush(self) -> Result<Unit, E> [mut self]
+}
+
+/// Reads a stream through EOF into compact immutable bytes.
+pub func read_all<E>(reader: Reader<E>) -> Result<Bytes, E> [mut reader] {
+    buffer = ByteBuffer.empty()
+    read_remaining(reader, move buffer)
+}
+
+/// Writes every byte, retrying successful partial writes, and then flushes the destination.
+pub func write_all<E>(writer: Writer<E>, contents: Bytes) -> Result<Unit, E> [mut writer] {
+    branch {
+        contents.empty? -> writer.flush()
+        _ -> continue_write(writer, contents, writer.write(contents))
+    }
+}
+
+/// Copies bytes through EOF and returns the number written.
+pub func copy<E>(reader: Reader<E>, writer: Writer<E>) -> Result<Int, E> [mut reader, mut writer] {
+    copy_remaining(reader, writer, 0)
+}
+
+/// Continues accumulating chunks until the reader reports EOF.
+func read_remaining<E>(reader: Reader<E>, buffer: ByteBuffer) -> Result<Bytes, E> [mut reader, mut buffer, consume buffer] {
+    branch reader.read(8192) {
+        Result.Error(error) -> Result.Error(error)
+        Result.Ok(chunk) -> branch {
+            chunk.empty? -> Result.Ok((move buffer).freeze())
+            _ -> append_and_read(reader, move buffer, chunk)
+        }
+    }
+}
+
+/// Appends one successful read before requesting another chunk.
+func append_and_read<E>(reader: Reader<E>, buffer: ByteBuffer, chunk: Bytes) -> Result<Bytes, E> [mut reader, mut buffer, consume buffer] {
+    buffer.extend(chunk)
+    read_remaining(reader, move buffer)
+}
+
+/// Handles one partial write and retries the unwritten suffix.
+func continue_write<E>(writer: Writer<E>, contents: Bytes, outcome: Result<Int, E>) -> Result<Unit, E> [mut writer] {
+    branch outcome {
+        Result.Error(error) -> Result.Error(error)
+        Result.Ok(written) -> write_all(writer, contents.slice(written, contents.length))
+    }
+}
+
+/// Continues copying after requesting one chunk.
+func copy_remaining<E>(reader: Reader<E>, writer: Writer<E>, total: Int) -> Result<Int, E> [mut reader, mut writer] {
+    branch reader.read(8192) {
+        Result.Error(error) -> Result.Error(error)
+        Result.Ok(chunk) -> branch {
+            chunk.empty? -> finish_copy(total, writer.flush())
+            _ -> write_copy_chunk(reader, writer, chunk, total, writer.write(chunk))
+        }
+    }
+}
+
+/// Handles a partial chunk write without flushing between input chunks.
+func write_copy_chunk<E>(reader: Reader<E>, writer: Writer<E>, chunk: Bytes, total: Int, outcome: Result<Int, E>) -> Result<Int, E> [mut reader, mut writer] {
+    branch outcome {
+        Result.Error(error) -> Result.Error(error)
+        Result.Ok(written) -> branch {
+            written == chunk.length -> copy_remaining(reader, writer, total + written)
+            _ -> write_copy_chunk(reader, writer, chunk.slice(written, chunk.length), total + written, writer.write(chunk.slice(written, chunk.length)))
+        }
+    }
+}
+
+/// Converts the final flush result into the completed byte count.
+func finish_copy<E>(total: Int, outcome: Result<Unit, E>) -> Result<Int, E> {
+    branch outcome {
+        Result.Error(error) -> Result.Error(error)
+        Result.Ok(_) -> Result.Ok(total)
+    }
+}

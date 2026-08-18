@@ -1,0 +1,80 @@
+import core.byte
+import core.result
+
+/// Describes a failed UTF-8 decoding operation.
+pub type Utf8Error {
+    pub offset: Int
+    pub message: String
+}
+
+/// Describes malformed hexadecimal byte text.
+pub type HexError {
+    pub offset: Int
+    pub message: String
+}
+
+/// Creates an empty immutable byte sequence.
+pub func Bytes.empty() -> Bytes {
+    __bytes_empty()
+}
+
+/// Packs a list of bytes into compact immutable storage.
+pub func Bytes.from(values: List<Byte>) -> Bytes [consume values] {
+    __bytes_from_list(move values)
+}
+
+/// Decodes an even-length hexadecimal string.
+pub func Bytes.from_hex(value: String) -> Result<Bytes, HexError> {
+    __bytes_from_hex(value)
+}
+
+/// Concatenates two immutable byte sequences.
+pub func concat(self: Bytes, other: Bytes) -> Bytes {
+    __bytes_concat(self, other)
+}
+
+/// Returns bytes in the half-open range `start..end`.
+pub func slice(self: Bytes, start: Int, end: Int) -> Bytes {
+    __bytes_slice(self, start, end)
+}
+
+/// Expands compact bytes into a Foster list.
+pub func list(self: Bytes) -> List<Byte> {
+    __bytes_to_list(self)
+}
+
+/// Encodes bytes as lowercase hexadecimal text.
+pub func hex(self: Bytes) -> String {
+    __bytes_hex(self)
+}
+
+/// Returns whether two byte sequences contain identical values.
+pub func equal?(self: Bytes, other: Bytes) -> Bool {
+    self == other
+}
+
+/// Computes a deterministic hash over the byte sequence.
+pub func hash(self: Bytes) -> Int {
+    hash_remaining(self, 17)
+}
+
+/// Encodes a string as UTF-8.
+pub func utf8(value: String) -> Bytes {
+    __string_utf8(value)
+}
+
+/// Decodes valid UTF-8 or returns a typed error.
+pub func String.from_utf8(value: Bytes) -> Result<String, Utf8Error> {
+    branch {
+        __bytes_utf8_valid(value) -> Result.Ok(__bytes_decode_utf8(value))
+        _ -> Result.Error(Utf8Error { offset: -1, message: "Bytes are not valid UTF-8" })
+    }
+}
+
+/// Accumulates a stable byte hash.
+func hash_remaining(values: Bytes, state: Int) -> Int {
+    branch {
+        values.empty? -> state
+        _ -> hash_remaining(values.rest, state + values.head)
+    }
+}

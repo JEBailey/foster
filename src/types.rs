@@ -16,6 +16,9 @@ pub enum Type {
     Float,
     String,
     CodePoint,
+    Byte,
+    Bytes,
+    ByteBuffer,
     Symbol,
     Reference {
         group: String,
@@ -66,7 +69,13 @@ impl TypeInformation {
     pub fn is_copy(&self, ty: TypeId) -> bool {
         matches!(
             self.types[ty],
-            Type::Unit | Type::Bool | Type::Int | Type::Float | Type::CodePoint | Type::Symbol
+            Type::Unit
+                | Type::Bool
+                | Type::Int
+                | Type::Float
+                | Type::CodePoint
+                | Type::Byte
+                | Type::Symbol
         )
     }
 
@@ -91,6 +100,9 @@ impl TypeInformation {
             Type::Float => "Float".into(),
             Type::String => "String".into(),
             Type::CodePoint => "CodePoint".into(),
+            Type::Byte => "Byte".into(),
+            Type::Bytes => "Bytes".into(),
+            Type::ByteBuffer => "ByteBuffer".into(),
             Type::Symbol => "Symbol".into(),
             Type::Reference { group, value } => {
                 format!("ref[{group}] {}", self.display(*value))

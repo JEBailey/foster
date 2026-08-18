@@ -47,6 +47,7 @@ The built-in copy types are currently:
 - `Int`
 - `Float`
 - `CodePoint`
+- `Byte`
 - `Symbol`
 
 Other values are ownership-bearing and default to move semantics when captured. Explicit move-out
@@ -71,10 +72,17 @@ inspect(message)     // borrowed; message remains usable
 send(move message)   // transferred; message is now uninitialized
 ```
 
-Copy arguments (`Unit`, `Bool`, `Int`, `Float`, `CodePoint`, and `Symbol`) need no `move`, even when the
-parameter has a `consume` contract. Fresh temporaries also transfer directly because there is no
-source place to invalidate. Explicit `ref[group] T` remains available when a borrow must be named,
-stored, returned, captured, or related to group effects; it is not required for an ordinary call.
+Copy arguments (`Unit`, `Bool`, `Int`, `Float`, `CodePoint`, `Byte`, and `Symbol`) need no `move`, even
+when the parameter has a `consume` contract. Fresh temporaries also transfer directly because there
+is no source place to invalidate. Explicit `ref[group] T` remains available when a borrow must be
+named, stored, returned, captured, or related to group effects; it is not required for an ordinary
+call.
+
+A borrowed parameter with a `mut` effect shares its caller place for the duration of the call. This
+allows generic stateful algorithms to update readers, writers, iterators, and ordinary records
+without manufacturing explicit reference types at every call boundary. Read-only borrowed
+parameters may be represented by an independent read view because their contract cannot expose a
+mutation; consuming parameters receive the transferred value instead.
 
 Structural record adaptation follows the same ownership rules. Passing a wider record where a
 narrower public shape is expected borrows the original value without allocating a wrapper.
@@ -147,6 +155,10 @@ read < mut < reshape
 - `consume group-or-parameter` is independent of that ordering and permits ownership to be
   extracted. Naming a parameter is the ordinary ownership-taking function contract.
 - `suspend` is a separate function property, not an ownership effect.
+
+`mut owner` also covers extracting an owned descendant when the operation replaces that part of
+the owner, which is how `Iterator.next()` yields `T` while advancing its cursor. It never covers
+consuming `owner` itself.
 
 The compiler derives effects from typed HIR. When a function omits an effect clause, its inferred
 effects become the function contract. When a function provides an explicit bracketed clause, the
@@ -284,6 +296,13 @@ At runtime, VM references retain the origin's structural generation but only a w
 the origin slot. A reshape increments that generation, and dereferencing an older reference fails.
 An expired weak place also fails safely. These are defensive runtime backstops; well-typed programs
 should be rejected statically before reaching either condition.
+
+Mutable binary construction follows the same rules. `ByteBuffer.snapshot` borrows the buffer and
+copies its current contents into immutable `Bytes`. `ByteBuffer.freeze` consumes the buffer, written
+as `(move buffer).freeze()`, and transfers its allocation into `Bytes`. Structural operations such
+as `push`, `extend`, `clear`, `truncate`, and `reserve` invalidate outstanding indexed loans because
+they may relocate or remove elements; replacing an existing byte through an indexed mutable loan
+does not change the buffer's shape.
 
 ## Diagnostics
 

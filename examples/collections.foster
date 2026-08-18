@@ -1,0 +1,23 @@
+import core.collection
+import core.option
+import core.range
+import core.set
+
+func size<T>(values: Collection<T>) -> Int {
+    values.length
+}
+
+func value_or(candidate: Option<Int>, fallback: Int) -> Int {
+    branch candidate {
+        Option.Some(value) -> value
+        Option.None -> fallback
+    }
+}
+
+func main() -> Int {
+    distinct = Set.from([2, 2, 4, 6])
+    values = Range.from([10, 20, 30])
+    cursor = values.iterator
+
+    size(distinct) + size(values) + value_or(cursor.next(), 0)
+}

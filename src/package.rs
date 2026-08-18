@@ -260,7 +260,9 @@ impl Package {
             }
             for function in &program.functions {
                 if let Some((owner, _)) = function.name.split_once('.') {
-                    if !program.records.iter().any(|record| record.name == owner) {
+                    if !program.records.iter().any(|record| record.name == owner)
+                        && !matches!(owner, "Byte" | "Bytes" | "ByteBuffer" | "String")
+                    {
                         return Err(FosterError::runtime(format!(
                             "module `{}` defines associated function `{}` for unknown record type `{owner}`",
                             module.name, function.name
@@ -339,6 +341,21 @@ fn core_source_path(module: &str) -> Option<Utf8PathBuf> {
 
 const CORE_MODULES: &[(&str, &str)] = &[
     ("core.option", include_str!("../library/core/option.foster")),
+    ("core.byte", include_str!("../library/core/byte.foster")),
+    ("core.bytes", include_str!("../library/core/bytes.foster")),
+    ("core.stream", include_str!("../library/core/stream.foster")),
+    (
+        "core.byte_buffer",
+        include_str!("../library/core/byte_buffer.foster"),
+    ),
+    (
+        "core.iteration",
+        include_str!("../library/core/iteration.foster"),
+    ),
+    (
+        "core.collection",
+        include_str!("../library/core/collection.foster"),
+    ),
     ("core.result", include_str!("../library/core/result.foster")),
     (
         "core.ordering",
@@ -358,6 +375,11 @@ const CORE_MODULES: &[(&str, &str)] = &[
     ("core.float", include_str!("../library/core/float.foster")),
     ("core.string", include_str!("../library/core/string.foster")),
     ("core.map", include_str!("../library/core/map.foster")),
+    ("core.set", include_str!("../library/core/set.foster")),
+    ("core.queue", include_str!("../library/core/queue.foster")),
+    ("core.deque", include_str!("../library/core/deque.foster")),
+    ("core.stack", include_str!("../library/core/stack.foster")),
+    ("core.range", include_str!("../library/core/range.foster")),
     ("core.io", include_str!("../library/core/io.foster")),
     (
         "core.net.tcp",

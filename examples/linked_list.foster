@@ -1,0 +1,130 @@
+import core.option
+
+// The recursive storage node is private to this example. `LinkedList<T>` owns the first link, and
+// every `Node` owns both its value and the remainder of the chain.
+type Link<T> =
+    | End
+    | Node(T, Link<T>)
+
+type LinkedList<T> {
+    head: Link<T>
+    size: Int
+}
+
+type LinkedListItem<T> {
+    value: T
+    remaining: LinkedList<T>
+}
+
+// Creates an empty linked list for any element type.
+func LinkedList.empty<T>() -> LinkedList<T> {
+    LinkedList { head: Link.End, size: 0 }
+}
+
+// Returns the number of elements in constant time.
+func length<T>(self: LinkedList<T>) -> Int {
+    self.size
+}
+
+// Returns whether this list contains no elements.
+func empty?<T>(self: LinkedList<T>) -> Bool {
+    self.size == 0
+}
+
+// Consumes the list and adds `value` at its front in constant time.
+func prepend<T>(self: LinkedList<T>, value: T) -> LinkedList<T> [consume self, consume value] {
+    LinkedList {
+        head: Link.Node(value, self.head)
+        size: self.size + 1
+    }
+}
+
+// Consumes the list and returns its first value together with the remaining list.
+func pop_front<T>(self: LinkedList<T>) -> Option<LinkedListItem<T>> [consume self] {
+    branch self.head {
+        Link.End -> Option.None
+        Link.Node(value, next) -> Option.Some(LinkedListItem {
+            value
+            remaining: LinkedList { head: next, size: self.size - 1 }
+        })
+    }
+}
+
+// Consumes this list and returns its elements in reverse order.
+func reverse<T>(self: LinkedList<T>) -> LinkedList<T> [consume self] {
+    LinkedList {
+        head: reverse_links(move self.head, Link.End)
+        size: self.size
+    }
+}
+
+// Consumes this list and transforms every element without using the built-in `List<T>` type.
+func map<T, U>(self: LinkedList<T>, transform: func(consume T) -> U) -> LinkedList<U> [consume self] {
+    LinkedList {
+        head: map_links(move self.head, transform)
+        size: self.size
+    }
+}
+
+// Consumes this list and combines its values from front to back.
+func fold<T, U>(self: LinkedList<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [consume self, consume initial] {
+    fold_links(move self.head, move initial, combine)
+}
+
+// Consumes this linked list and materializes a built-in list in the same order.
+func to_list<T>(self: LinkedList<T>) -> List<T> [consume self] {
+    collect_links(move self.head, [])
+}
+
+// Reverses owned links into the accumulating chain.
+func reverse_links<T>(remaining: Link<T>, result: Link<T>) -> Link<T> [consume remaining, consume result] {
+    branch remaining {
+        Link.End -> result
+        Link.Node(value, next) -> reverse_links(move next, Link.Node(value, move result))
+    }
+}
+
+// Transforms an owned chain recursively.
+func map_links<T, U>(remaining: Link<T>, transform: func(consume T) -> U) -> Link<U> [consume remaining] {
+    branch remaining {
+        Link.End -> Link.End
+        Link.Node(value, next) -> Link.Node(transform(move value), map_links(move next, transform))
+    }
+}
+
+// Reduces an owned chain recursively.
+func fold_links<T, U>(remaining: Link<T>, result: U, combine: func(consume U, consume T) -> U) -> U [consume remaining, consume result] {
+    branch remaining {
+        Link.End -> result
+        Link.Node(value, next) -> fold_links(move next, combine(move result, move value), combine)
+    }
+}
+
+// Appends owned node values to a built-in list accumulator.
+func collect_links<T>(remaining: Link<T>, result: List<T>) -> List<T> [consume remaining, consume result] {
+    branch remaining {
+        Link.End -> result
+        Link.Node(value, next) -> collect_links(move next, result.append(value))
+    }
+}
+
+func render(item: Option<LinkedListItem<Int>>) -> Int {
+    branch item {
+        Option.None -> -1
+        Option.Some(found) -> found.value + length(found.remaining)
+    }
+}
+
+func numbers() -> LinkedList<Int> {
+    LinkedList.empty().prepend(3).prepend(2).prepend(1)
+}
+
+func main() -> Int {
+    doubled = map(numbers(), (value: Int) -> value * 2)
+    first_score = render(pop_front(move doubled))
+
+    total = fold(numbers(), 0, (result: Int, value: Int) -> result + value)
+    reversed = to_list(reverse(numbers()))
+
+    first_score + total + reversed[0]
+}

@@ -472,7 +472,11 @@ func take[g: group Int](value: ref[g] Int) -> Int [read g, consume g] {
 func main() { 0 }
 "#;
     let error = foster::compile(reused).unwrap_err();
-    assert!(error.message.contains("used after it was moved"));
+    assert!(
+        error.message.contains("used after it was moved"),
+        "{}",
+        error.message
+    );
 }
 
 #[test]
@@ -1819,6 +1823,252 @@ func main() -> Int {
 }
 
 #[test]
+fn iterator_and_iterable_contracts_dispatch_stateful_iteration() {
+    let source = r#"
+import core.iteration
+import core.option
+
+type Counter & Iterator<Int> {
+    current: Int
+    end: Int
+}
+
+func next(self: Counter) -> Option<Int> {
+    value = self.current
+    self.current = self.current + 1
+    branch {
+        value >= self.end -> Option.None
+        _ -> Option.Some(value)
+    }
+}
+
+type Range & Iterable<Int> {
+    start: Int
+    end: Int
+}
+
+func iterator(self: Range) -> Iterator<Int> {
+    Counter { current: self.start, end: self.end }
+}
+
+func value_or(candidate: Option<Int>, fallback: Int) -> Int {
+    branch candidate {
+        Option.Some(value) -> value
+        Option.None -> fallback
+    }
+}
+
+func main() -> Int {
+    values = Range { start: 3, end: 5 }.iterator
+    first = value_or(values.next(), -1)
+    second = value_or(values.next(), -1)
+    exhausted = value_or(values.next(), -1)
+    first + second + exhausted
+}
+"#;
+
+    let compilation = foster::compile(source).unwrap();
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap(),
+            Value::Integer(6)
+        );
+    }
+}
+
+#[test]
+fn core_iterator_adapts_sequences_and_advances_in_place() {
+    let source = r#"
+import core.iteration
+import core.option
+
+func value_or(candidate: Option<Int>, fallback: Int) -> Int {
+    branch candidate {
+        Option.Some(value) -> value
+        Option.None -> fallback
+    }
+}
+
+func main() -> Int {
+    values = Iterator.from_sequence([7, 8])
+    first = value_or(values.next(), -1)
+    second = value_or(values.next(), -1)
+    exhausted = value_or(values.next(), -1)
+    first + second + exhausted
+}
+"#;
+
+    let compilation = foster::compile(source).unwrap();
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap(),
+            Value::Integer(14)
+        );
+    }
+}
+
+#[test]
+fn builtin_sequences_adapt_to_collection_and_iterable() {
+    let source = r#"
+import core.collection
+import core.option
+
+func size<T>(values: Collection<T>) -> Int {
+    values.length
+}
+
+func value_or(candidate: Option<Int>, fallback: Int) -> Int {
+    branch candidate {
+        Option.Some(value) -> value
+        Option.None -> fallback
+    }
+}
+
+func main() -> Int {
+    values = [4, 5]
+    cursor = values.iterator
+    size(values) + size("abc") + value_or(cursor.next(), -10) + value_or(cursor.next(), -10)
+}
+"#;
+
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(14));
+}
+
+#[test]
+fn map_is_an_iterable_collection_of_public_entries() {
+    let source = r#"
+import core.map
+import core.option
+
+func first_value(candidate: Option<Entry<String, Int>>) -> Int {
+    branch candidate {
+        Option.Some(entry) -> entry.value
+        Option.None -> -1
+    }
+}
+
+func main() -> Int {
+    state = Map.empty()
+    values = put(move state, "answer", 42)
+    cursor = values.iterator
+    values.length + first_value(cursor.next())
+}
+"#;
+
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(43));
+}
+
+#[test]
+fn foster_collections_and_range_share_collection_contract() {
+    let source = r#"
+import core.collection
+import core.range
+import core.set
+
+func size<T>(values: Collection<T>) -> Int {
+    values.length
+}
+
+func main() -> Int {
+    distinct = Set.from([1, 1, 2])
+    span = Range.from([3, 4, 5])
+    size(distinct) * 10 + size(span)
+}
+"#;
+
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(23));
+}
+
+#[test]
+fn mutable_effect_allows_extracting_children_but_not_consuming_the_owner() {
+    let source = r#"
+type Resource { value: String }
+
+func invalid(self: Resource) -> Resource [mut self] {
+    move self
+}
+
+func main() -> Int { 0 }
+"#;
+
+    let error = foster::compile(source).unwrap_err();
+    assert!(error.message.contains("consume self"), "{}", error.message);
+}
+
+#[test]
+fn equality_ordering_and_hashing_contracts_compose_and_dispatch() {
+    let source = r#"
+import core.ordering
+
+type Key & Ordered<Key> & Hashing {
+    value: Int
+}
+
+func equal?(self: Key, other: Key) -> Bool {
+    self.value == other.value
+}
+
+func compare(self: Key, other: Key) -> Ordering {
+    branch {
+        self.value < other.value -> Ordering.Less
+        self.value > other.value -> Ordering.Greater
+        _ -> Ordering.Equal
+    }
+}
+
+func hash(self: Key) -> Int {
+    self.value * 31
+}
+
+func equality_score(left: Equality<Key>, right: Key) -> Int {
+    branch {
+        left.equal?(right) -> 1
+        _ -> 0
+    }
+}
+
+func ordering_score(left: Ordered<Key>, right: Key) -> Int {
+    branch left.compare(right) {
+        Ordering.Less -> 10
+        Ordering.Equal -> 20
+        Ordering.Greater -> 30
+    }
+}
+
+func hash_score(value: Hashing) -> Int {
+    value.hash
+}
+
+func main() -> Int {
+    key = Key { value: 7 }
+    equality_score(key, Key { value: 7 }) + ordering_score(key, Key { value: 8 }) + hash_score(key)
+}
+"#;
+
+    let compilation = foster::compile(source).unwrap();
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap(),
+            Value::Integer(228)
+        );
+    }
+
+    let missing_equality = source.replace(
+        "func equal?(self: Key, other: Key) -> Bool {\n    self.value == other.value\n}\n\n",
+        "",
+    );
+    let error = foster::compile(&missing_equality).unwrap_err();
+    assert!(
+        error.message.contains("missing required method `equal?`"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn matching_contracts_conform_without_an_explicit_composition_clause() {
     let source = r#"
 type TextSlice {
@@ -2210,4 +2460,287 @@ func main() -> Int {
 fn code_points_do_not_expose_a_value_member() {
     let error = foster::compile("func main() -> Int { 'A'.value }").unwrap_err();
     assert!(error.message.contains("has no member `value`"));
+}
+
+#[test]
+fn bytes_and_byte_buffers_enforce_bounds_and_round_trip_utf8() {
+    let source = r#"
+import core.byte
+import core.byte_buffer
+import core.bytes
+import core.result
+
+func byte_or(value: Result<Byte, ByteError>, fallback: Byte) -> Byte {
+    branch value {
+        Result.Ok(item) -> item
+        Result.Error(_) -> fallback
+    }
+}
+
+func text_or(value: Result<String, Utf8Error>) -> String {
+    branch value {
+        Result.Ok(text) -> text
+        Result.Error(_) -> "invalid"
+    }
+}
+
+func main() -> String {
+    zero = byte_or(Byte.from(0), __byte_unchecked(0))
+    capital_a = byte_or(Byte.from(65), zero)
+    lower_x = byte_or(Byte.from(120), zero)
+
+    buffer = ByteBuffer.with_capacity(4)
+    buffer.push(capital_a)
+    buffer.extend("BC".utf8)
+    buffer[1] = lower_x
+
+    data = buffer.snapshot
+    text_or(String.from_utf8(data)) + ":" + data.hex
+}
+"#;
+
+    let compilation = foster::compile(source).unwrap();
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap(),
+            Value::String("AxC:417843".into())
+        );
+    }
+}
+
+#[test]
+fn byte_construction_rejects_out_of_range_integers() {
+    let source = r#"
+import core.byte
+import core.result
+
+func main() -> Int {
+    branch Byte.from(256) {
+        Result.Ok(value) -> value.int
+        Result.Error(error) -> error.value
+    }
+}
+
+"#;
+
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(256));
+}
+
+#[test]
+fn byte_bitwise_operators_preserve_byte_values() {
+    let source = r#"
+func main() -> Int {
+    high = __byte_unchecked(240)
+    low = __byte_unchecked(15)
+    mixed = (high & ~low) | (low ^ __byte_unchecked(3))
+    shifted = mixed >> 2
+    shifted.int + (__byte_unchecked(1) << 7).int
+}
+
+"#;
+
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(191));
+}
+
+#[test]
+fn bytes_decode_hex_and_report_invalid_utf8() {
+    let source = r#"
+import core.bytes
+import core.result
+
+func decode(value: Result<Bytes, HexError>) -> String {
+    branch value {
+        Result.Error(error) -> error.message
+        Result.Ok(data) -> branch String.from_utf8(data) {
+            Result.Ok(text) -> text
+            Result.Error(_) -> data.hex
+        }
+    }
+}
+
+func main() -> String {
+    decode(Bytes.from_hex("4869")) + ":" + decode(Bytes.from_hex("ff"))
+}
+"#;
+
+    assert_eq!(foster::run(source).unwrap(), Value::String("Hi:ff".into()));
+}
+
+#[test]
+fn bytes_are_iterable_collections() {
+    let source = r#"
+import core.bytes
+import core.collection
+import core.option
+import core.result
+
+func size(values: Collection<Byte>) -> Int {
+    values.length
+}
+
+func first(value: Option<Byte>) -> Int {
+    branch value {
+        Option.Some(item) -> item.int
+        Option.None -> -1
+    }
+}
+
+func unpack(value: Result<Bytes, HexError>) -> Int {
+    branch value {
+        Result.Error(_) -> -1
+        Result.Ok(data) -> size(data) * 100 + first(data.iterator.next())
+    }
+}
+
+func main() -> Int {
+    unpack(Bytes.from_hex("2a2b"))
+}
+"#;
+
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(242));
+}
+
+#[test]
+fn freezing_a_byte_buffer_produces_bytes_and_consumes_the_buffer() {
+    let source = r#"
+import core.byte_buffer
+
+func main() -> String {
+    buffer = ByteBuffer.empty()
+    buffer.push(__byte_unchecked(42))
+    data = (move buffer).freeze()
+    data.hex
+}
+"#;
+
+    assert_eq!(foster::run(source).unwrap(), Value::String("2a".into()));
+
+    let invalid = source.replace("    data.hex", "    buffer.length\n    data.hex");
+    let error = foster::compile(&invalid).unwrap_err();
+    assert!(
+        error.message.contains("used after it was moved"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn structural_byte_buffer_mutation_invalidates_element_loans() {
+    let source = r#"
+import core.byte_buffer
+
+func main() -> Int {
+    buffer = ByteBuffer.empty()
+    buffer.push(__byte_unchecked(1))
+    item = ref buffer[0]
+    buffer.extend("more".utf8)
+    item.int
+}
+"#;
+
+    let error = foster::compile(source).unwrap_err();
+    assert!(error.message.contains("invalidated"), "{}", error.message);
+}
+
+#[test]
+fn generic_stream_contracts_handle_partial_io_and_eof() {
+    let source = r#"
+import core.byte_buffer
+import core.bytes
+import core.int
+import core.result
+import core.stream
+
+type StreamError {
+    message: String
+}
+
+type ChunkReader & Reader<StreamError> {
+    remaining: Bytes
+    chunk_size: Int
+}
+
+type CollectWriter & Writer<StreamError> {
+    contents: Bytes
+    chunk_size: Int
+}
+
+func read(self: ChunkReader, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining, read self.chunk_size] {
+    limit = smaller(maximum, self.chunk_size)
+    amount = smaller(limit, self.remaining.length)
+    chunk = self.remaining.slice(0, amount)
+    self.remaining = self.remaining.slice(amount, self.remaining.length)
+    Result.Ok(chunk)
+}
+
+func write(self: CollectWriter, contents: Bytes) -> Result<Int, StreamError> [mut self.contents, read self.chunk_size] {
+    amount = smaller(self.chunk_size, contents.length)
+    self.contents = self.contents.concat(contents.slice(0, amount))
+    Result.Ok(amount)
+}
+
+func flush(self: CollectWriter) -> Result<Unit, StreamError> {
+    scratch = ByteBuffer.empty()
+    Result.Ok(scratch.reserve(0))
+}
+
+func smaller(left: Int, right: Int) -> Int {
+    branch {
+        left < right -> left
+        _ -> right
+    }
+}
+
+func decoded(outcome: Result<Bytes, HexError>) -> Bytes {
+    branch outcome {
+        Result.Error(_) -> Bytes.empty()
+        Result.Ok(contents) -> contents
+    }
+}
+
+func rendered(outcome: Result<Bytes, StreamError>) -> String {
+    branch outcome {
+        Result.Error(error) -> error.message
+        Result.Ok(contents) -> contents.hex
+    }
+}
+
+func copied(outcome: Result<Int, StreamError>) -> String {
+    branch outcome {
+        Result.Error(error) -> error.message
+        Result.Ok(count) -> int.to_string(count)
+    }
+}
+
+func main() -> String {
+    all_contents = decoded(Bytes.from_hex("00010203040506"))
+    all_reader = ChunkReader { remaining: all_contents, chunk_size: 2 }
+    all = rendered(read_all(all_reader))
+
+    copy_contents = decoded(Bytes.from_hex("00010203040506"))
+    copy_reader = ChunkReader { remaining: copy_contents, chunk_size: 2 }
+    writer = CollectWriter { contents: Bytes.empty(), chunk_size: 3 }
+    count = copied(stream.copy(copy_reader, writer))
+    all + ":" + writer.contents.hex + ":" + count
+}
+"#;
+
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),
+            Value::String("00010203040506:00010203040506:7".into())
+        );
+    }
+}
+
+#[test]
+fn runs_the_generic_recursive_linked_list_example() {
+    let source = include_str!("../examples/linked_list.foster");
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),
+            Value::Integer(13)
+        );
+    }
 }

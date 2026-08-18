@@ -1,0 +1,76 @@
+import core.collection
+import core.iteration
+import core.option
+
+/// A double-ended queue.
+pub type Deque<T> & Collection<T> {
+    values: List<T>
+}
+
+/// Creates an empty deque.
+pub func Deque.empty<T>() -> Deque<T> {
+    Deque { values: [] }
+}
+
+/// Returns the number of values in the deque.
+pub func length<T>(self: Deque<T>) -> Int {
+    self.values.length
+}
+
+/// Returns whether the deque contains no values.
+pub func empty?<T>(self: Deque<T>) -> Bool {
+    self.values.empty?
+}
+
+/// Creates an independent iterator from front to back.
+pub func iterator<T>(self: Deque<T>) -> Iterator<T> {
+    self.values.iterator
+}
+
+/// Returns a deque with `value` added at the front.
+pub func push_front<T>(self: Deque<T>, value: T) -> Deque<T> [consume self, consume value] {
+    Deque { values: append_all(move self.values, [value]) }
+}
+
+/// Returns a deque with `value` added at the back.
+pub func push_back<T>(self: Deque<T>, value: T) -> Deque<T> [consume self, consume value] {
+    Deque { values: self.values.append(value) }
+}
+
+/// Removes the front value and returns the remaining deque.
+pub func pop_front<T>(self: Deque<T>) -> Option<DequeItem<T>> [consume self] {
+    branch {
+        self.values.empty? -> Option.None
+        _ -> Option.Some(DequeItem { value: self.values.head, remaining: Deque { values: self.values.rest } })
+    }
+}
+
+/// Removes the back value and returns the remaining deque.
+pub func pop_back<T>(self: Deque<T>) -> Option<DequeItem<T>> [consume self] {
+    branch {
+        self.values.empty? -> Option.None
+        _ -> pop_back_values(move self.values, [])
+    }
+}
+
+/// The result of removing one value from a deque.
+pub type DequeItem<T> {
+    pub value: T
+    pub remaining: Deque<T>
+}
+
+/// Walks to the final value while rebuilding the preceding values.
+func pop_back_values<T>(remaining: List<T>, prefix: List<T>) -> Option<DequeItem<T>> [consume remaining, consume prefix] {
+    branch {
+        remaining.rest.empty? -> Option.Some(DequeItem { value: remaining.head, remaining: Deque { values: prefix } })
+        _ -> pop_back_values(remaining.rest, prefix.append(remaining.head))
+    }
+}
+
+/// Appends all remaining values to the result accumulator.
+func append_all<T>(remaining: List<T>, result: List<T>) -> List<T> [consume remaining, consume result] {
+    branch {
+        remaining.empty? -> result
+        _ -> append_all(remaining.rest, result.append(remaining.head))
+    }
+}

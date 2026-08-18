@@ -187,6 +187,24 @@ impl FunctionCompiler<'_> {
                         }
                         return Ok(destination);
                     }
+                    if let Some(function) = self.primitive_method(*object, name) {
+                        let receiver = self.expression(*object)?;
+                        let arguments = arguments
+                            .iter()
+                            .map(|argument| self.expression(*argument))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let destination = self.allocate();
+                        self.emit(
+                            Instruction::CallMethod {
+                                destination,
+                                receiver,
+                                function,
+                                arguments,
+                            },
+                            span,
+                        );
+                        return Ok(destination);
+                    }
                     if let Some((function, remote)) = self.record_method(*object, name) {
                         let receiver = self.expression(*object)?;
                         let arguments = arguments
@@ -410,6 +428,41 @@ impl FunctionCompiler<'_> {
                 Ok(destination)
             }
             hir::Expr::Member { object, name } => {
+                if name == "iterator" && self.sequence_type(*object) {
+                    let source = self.expression(*object)?;
+                    let destination = self.allocate();
+                    let module = self
+                        .hir
+                        .module_named("core.iteration")
+                        .ok_or_else(|| self.unsupported("core.iteration module"))?;
+                    let function = self
+                        .hir
+                        .function_named(module, "Iterator.from_sequence")
+                        .ok_or_else(|| self.unsupported("Iterator.from_sequence"))?;
+                    self.emit(
+                        Instruction::Call {
+                            destination,
+                            function,
+                            arguments: vec![source],
+                        },
+                        span,
+                    );
+                    return Ok(destination);
+                }
+                if let Some(function) = self.primitive_method(*object, name) {
+                    let receiver = self.expression(*object)?;
+                    let destination = self.allocate();
+                    self.emit(
+                        Instruction::CallMethod {
+                            destination,
+                            receiver,
+                            function,
+                            arguments: Vec::new(),
+                        },
+                        span,
+                    );
+                    return Ok(destination);
+                }
                 if self.contract_property(*object, name) {
                     let receiver = self.expression(*object)?;
                     let destination = self.allocate();
@@ -536,8 +589,36 @@ impl FunctionCompiler<'_> {
         }
     }
 
+    fn primitive_method(&self, object: ExprId, name: &str) -> Option<hir::FunctionId> {
+        let ty = self.types.expression_type(object)?;
+        let module = match self.types.types[ty] {
+            crate::types::Type::Bytes => "core.bytes",
+            crate::types::Type::ByteBuffer => "core.byte_buffer",
+            _ => return None,
+        };
+        let module = self.hir.module_named(module)?;
+        let function = self.hir.function_named(module, name)?;
+        self.hir.functions[function]
+            .parameters
+            .first()
+            .is_some_and(|parameter| self.hir.locals[*parameter].name == "self")
+            .then_some(function)
+    }
+
     fn contract_property(&self, object: ExprId, name: &str) -> bool {
         self.contract_member(object, name, true)
+    }
+
+    fn sequence_type(&self, expression: ExprId) -> bool {
+        self.types.expression_type(expression).is_some_and(|ty| {
+            matches!(
+                self.types.types[ty],
+                crate::types::Type::List(_)
+                    | crate::types::Type::Sequence(_)
+                    | crate::types::Type::String
+                    | crate::types::Type::Bytes
+            )
+        })
     }
 
     fn contract_method(&self, object: ExprId, name: &str) -> bool {

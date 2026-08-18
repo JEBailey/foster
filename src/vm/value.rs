@@ -17,6 +17,9 @@ pub enum Value {
     Float(f64),
     String(String),
     CodePoint(char),
+    Byte(u8),
+    Bytes(Arc<Vec<u8>>),
+    ByteBuffer(Vec<u8>),
     Symbol(String),
     List(Vec<Value>),
     VmClosure {
@@ -302,7 +305,12 @@ impl PlaceHandle {
     }
 
     pub(crate) fn indexed(origin: Rc<Slot>, index: usize) -> Result<Self, FosterError> {
-        let exists = matches!(origin.read()?, Value::List(values) if index < values.len());
+        let exists = match origin.read()? {
+            Value::List(values) => index < values.len(),
+            Value::Bytes(values) => index < values.len(),
+            Value::ByteBuffer(values) => index < values.len(),
+            _ => false,
+        };
         if !exists {
             return Err(FosterError::runtime("reference index is out of bounds"));
         }
@@ -325,13 +333,13 @@ impl PlaceHandle {
             PlaceProjection::Whole => origin.read(),
             PlaceProjection::Index { index, generation } => {
                 ensure_generation(&origin, generation)?;
-                let Value::List(values) = origin.read()? else {
-                    return Err(FosterError::runtime("reference origin is no longer a List"));
-                };
-                values
-                    .get(index)
-                    .cloned()
-                    .ok_or_else(|| FosterError::runtime("referenced list element no longer exists"))
+                match origin.read()? {
+                    Value::List(values) => values.get(index).cloned(),
+                    Value::Bytes(values) => values.get(index).copied().map(Value::Byte),
+                    Value::ByteBuffer(values) => values.get(index).copied().map(Value::Byte),
+                    _ => None,
+                }
+                .ok_or_else(|| FosterError::runtime("referenced indexed value no longer exists"))
             }
         }
     }
@@ -343,12 +351,28 @@ impl PlaceHandle {
             PlaceProjection::Index { index, generation } => {
                 ensure_generation(&origin, generation)?;
                 let mut current = origin.read()?;
-                let Value::List(values) = &mut current else {
-                    return Err(FosterError::runtime("reference origin is no longer a List"));
-                };
-                *values.get_mut(index).ok_or_else(|| {
-                    FosterError::runtime("referenced list element no longer exists")
-                })? = value;
+                match &mut current {
+                    Value::List(values) => {
+                        *values.get_mut(index).ok_or_else(|| {
+                            FosterError::runtime("referenced list element no longer exists")
+                        })? = value;
+                    }
+                    Value::ByteBuffer(values) => {
+                        let Value::Byte(value) = value else {
+                            return Err(FosterError::runtime(
+                                "byte-buffer elements require Byte values",
+                            ));
+                        };
+                        *values.get_mut(index).ok_or_else(|| {
+                            FosterError::runtime("referenced byte no longer exists")
+                        })? = value;
+                    }
+                    _ => {
+                        return Err(FosterError::runtime(
+                            "reference origin is not mutable indexed storage",
+                        ));
+                    }
+                }
                 origin.write(current)
             }
         }
@@ -364,13 +388,32 @@ impl PlaceHandle {
             PlaceProjection::Index { index, generation } => {
                 ensure_generation(&origin, generation)?;
                 let mut current = origin.read()?;
-                let Value::List(values) = &mut current else {
-                    return Err(FosterError::runtime("reference origin is no longer a List"));
-                };
-                let value = values.get_mut(index).ok_or_else(|| {
-                    FosterError::runtime("referenced list element no longer exists")
-                })?;
-                update(value)?;
+                match &mut current {
+                    Value::List(values) => {
+                        let value = values.get_mut(index).ok_or_else(|| {
+                            FosterError::runtime("referenced list element no longer exists")
+                        })?;
+                        update(value)?;
+                    }
+                    Value::ByteBuffer(values) => {
+                        let byte = values.get_mut(index).ok_or_else(|| {
+                            FosterError::runtime("referenced byte no longer exists")
+                        })?;
+                        let mut value = Value::Byte(*byte);
+                        update(&mut value)?;
+                        let Value::Byte(updated) = value else {
+                            return Err(FosterError::runtime(
+                                "byte-buffer elements require Byte values",
+                            ));
+                        };
+                        *byte = updated;
+                    }
+                    _ => {
+                        return Err(FosterError::runtime(
+                            "reference origin is not mutable indexed storage",
+                        ));
+                    }
+                }
                 origin.write(current)
             }
         }
@@ -395,6 +438,9 @@ pub(crate) enum WireValue {
     Float(f64),
     String(String),
     CodePoint(char),
+    Byte(u8),
+    Bytes(Arc<Vec<u8>>),
+    ByteBuffer(Vec<u8>),
     Symbol(String),
     List(Vec<WireValue>),
     Record {
@@ -472,6 +518,9 @@ impl Value {
             Self::Float(value) => WireValue::Float(value),
             Self::String(value) => WireValue::String(value),
             Self::CodePoint(value) => WireValue::CodePoint(value),
+            Self::Byte(value) => WireValue::Byte(value),
+            Self::Bytes(value) => WireValue::Bytes(value),
+            Self::ByteBuffer(value) => WireValue::ByteBuffer(value),
             Self::Symbol(value) => WireValue::Symbol(value),
             Self::List(values) => WireValue::List(
                 values
@@ -520,6 +569,9 @@ impl Value {
             WireValue::Float(value) => Self::Float(value),
             WireValue::String(value) => Self::String(value),
             WireValue::CodePoint(value) => Self::CodePoint(value),
+            WireValue::Byte(value) => Self::Byte(value),
+            WireValue::Bytes(value) => Self::Bytes(value),
+            WireValue::ByteBuffer(value) => Self::ByteBuffer(value),
             WireValue::Symbol(value) => Self::Symbol(value),
             WireValue::List(values) => Self::List(
                 values
@@ -565,6 +617,15 @@ impl fmt::Display for Value {
             Self::Float(value) => write!(formatter, "{value}"),
             Self::String(value) => write!(formatter, "{value}"),
             Self::CodePoint(value) => write!(formatter, "{value}"),
+            Self::Byte(value) => write!(formatter, "{value}"),
+            Self::Bytes(value) => {
+                write!(formatter, "0x")?;
+                for byte in value.iter() {
+                    write!(formatter, "{byte:02x}")?;
+                }
+                Ok(())
+            }
+            Self::ByteBuffer(value) => write!(formatter, "ByteBuffer(len={})", value.len()),
             Self::Symbol(value) => write!(formatter, ":{value}"),
             Self::List(values) => {
                 write!(formatter, "[")?;

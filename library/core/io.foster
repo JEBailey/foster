@@ -1,5 +1,6 @@
 import core.option
 import core.result
+import core.bytes
 
 /// Describes a failed host filesystem or path operation.
 pub type IoError {
@@ -16,6 +17,16 @@ pub func read_text(path: String) -> Result<String, IoError> {
 /// Replaces a file with UTF-8 text, creating it when necessary.
 pub func write_text(path: String, text: String) -> Result<Unit, IoError> {
     __io_write_text(path, text)
+}
+
+/// Reads an entire file without applying text decoding.
+pub func read_bytes(path: String) -> Result<Bytes, IoError> {
+    __io_read_bytes(path)
+}
+
+/// Replaces a file with raw bytes, creating it when necessary.
+pub func write_bytes(path: String, contents: Bytes) -> Result<Unit, IoError> {
+    __io_write_bytes(path, contents)
 }
 
 /// Returns the names directly inside a directory in deterministic order.

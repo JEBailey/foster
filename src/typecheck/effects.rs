@@ -165,6 +165,13 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
 
     fn walk_consumed_expr(&mut self, expression: ExprId) {
         match &self.checker.hir.expressions[expression] {
+            hir::Expr::Member { name, .. }
+                if matches!(name.as_str(), "iterator" | "head" | "rest") =>
+            {
+                // Sequence views and Iterable cursors are borrowed projections;
+                // producing one does not transfer the source collection.
+                self.walk_expr(expression);
+            }
             hir::Expr::Name(hir::ResolvedName::Local(local))
                 if !self.expression_is_copy(expression) =>
             {
@@ -222,7 +229,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
         self.checker.expressions.get(&expression).is_some_and(|ty| {
             matches!(
                 self.checker.resolved(ty.clone()),
-                Ty::Unit | Ty::Bool | Ty::Int | Ty::Float | Ty::CodePoint | Ty::Symbol
+                Ty::Unit | Ty::Bool | Ty::Int | Ty::Float | Ty::CodePoint | Ty::Byte | Ty::Symbol
             )
         })
     }
@@ -408,6 +415,21 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             _ => {}
         }
         match self.checker.hir.expressions[callee] {
+            hir::Expr::Name(ResolvedName::Builtin(
+                Builtin::ByteBufferPush
+                | Builtin::ByteBufferExtend
+                | Builtin::ByteBufferClear
+                | Builtin::ByteBufferTruncate
+                | Builtin::ByteBufferReserve
+                | Builtin::TcpRead
+                | Builtin::TcpWrite
+                | Builtin::TcpReadBytes
+                | Builtin::TcpWriteBytes,
+            )) => {
+                if let Some(buffer) = arguments.first() {
+                    self.add(crate::ast::EffectKind::Mut, self.place_group(*buffer));
+                }
+            }
             hir::Expr::Name(ResolvedName::Function(target)) => {
                 self.apply_callee(target, None, arguments)
             }
@@ -479,17 +501,16 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     }
 
     fn method_for(&self, object: ExprId, name: &str) -> Option<FunctionId> {
-        let record = match self
+        let receiver = self
             .checker
-            .resolved(self.checker.expressions.get(&object)?.clone())
-        {
-            Ty::Record(record, _) => record,
+            .resolved(self.checker.expressions.get(&object)?.clone());
+        let module = match receiver {
+            Ty::Record(record, _) => self.checker.hir.records[record].module,
+            Ty::Bytes => self.checker.hir.module_named("core.bytes")?,
+            Ty::ByteBuffer => self.checker.hir.module_named("core.byte_buffer")?,
             _ => return None,
         };
-        let method = self
-            .checker
-            .hir
-            .function_named(self.checker.hir.records[record].module, name)?;
+        let method = self.checker.hir.function_named(module, name)?;
         self.checker.hir.functions[method]
             .parameters
             .first()

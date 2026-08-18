@@ -219,6 +219,24 @@ impl Compiler<'_> {
             BytecodeFunction {
                 name: function.name.clone(),
                 parameters: function.parameters.len() as u16,
+                mutable_parameters: function
+                    .parameters
+                    .iter()
+                    .enumerate()
+                    .map(|(index, parameter)| {
+                        let name = &self.hir.locals[*parameter].name;
+                        self.types
+                            .function_type(function_id)
+                            .is_some_and(|signature| {
+                                signature.parameter_modes[index]
+                                    == crate::ast::ParameterMode::Borrow
+                            })
+                            && function.effects.iter().any(|effect| {
+                                effect.kind == crate::ast::EffectKind::Mut
+                                    && effect.target.root == *name
+                            })
+                    })
+                    .collect(),
                 captures: captures.len() as u16,
                 registers: lower.next_register,
                 instructions: lower.instructions,

@@ -114,6 +114,7 @@ fn expression_borrow_roots(
                 | crate::types::Type::Float
                 | crate::types::Type::String
                 | crate::types::Type::CodePoint
+                | crate::types::Type::Byte
                 | crate::types::Type::Symbol
                 | crate::types::Type::Module(_)
         )
@@ -299,7 +300,10 @@ fn collect_invalidations(
         }
         Expr::Call { callee, arguments } => {
             if let Expr::Member { object, name } = &hir.expressions[*callee]
-                && name == "push"
+                && matches!(
+                    name.as_str(),
+                    "push" | "extend" | "clear" | "truncate" | "reserve"
+                )
                 && let Some(root) = place_root(hir, *object)
             {
                 reshaped.insert(root);

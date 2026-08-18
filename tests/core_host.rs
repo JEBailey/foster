@@ -28,7 +28,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 146);
+    assert_eq!(checked, 231);
 }
 
 #[test]
@@ -113,6 +113,59 @@ func main() -> String {{
 }
 
 #[test]
+fn core_io_preserves_arbitrary_binary_files() {
+    let directory = std::env::temp_dir().join(format!(
+        "foster-core-binary-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("payload.bin");
+    let path_literal = serde_json::to_string(&path.to_string_lossy()).unwrap();
+    let source = format!(
+        r#"
+import core.bytes
+import core.io
+import core.result
+
+func bytes_or_empty(outcome: Result<Bytes, HexError>) -> Bytes {{
+    branch outcome {{
+        Result.Error(_) -> Bytes.empty()
+        Result.Ok(contents) -> contents
+    }}
+}}
+
+func read_after_write(path: String, outcome: Result<Unit, IoError>) -> String {{
+    branch outcome {{
+        Result.Error(error) -> error.message
+        Result.Ok(_) -> render(read_bytes(path))
+    }}
+}}
+
+func render(outcome: Result<Bytes, IoError>) -> String {{
+    branch outcome {{
+        Result.Error(error) -> error.message
+        Result.Ok(contents) -> contents.hex
+    }}
+}}
+
+func main() -> String {{
+    path = {path_literal}
+    contents = bytes_or_empty(Bytes.from_hex("00ff8041"))
+    read_after_write(path, write_bytes(path, contents))
+}}
+"#
+    );
+
+    assert_eq!(
+        foster::run(&source).unwrap(),
+        Value::String("00ff8041".into())
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), [0, 255, 128, 65]);
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
 fn core_tcp_accepts_reads_and_writes_a_connection() {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -132,14 +185,14 @@ import core.result
 func start(outcome: Result<Connection, NetworkError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
-        Result.Ok(connection) -> send(connection, tcp.write(connection, "ping"))
+        Result.Ok(connection) -> send(connection, tcp.write_text(connection, "ping"))
     }}
 }}
 
 func send(connection: Connection, outcome: Result<Unit, NetworkError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
-        Result.Ok(_) -> receive(connection, tcp.read(connection, 64))
+        Result.Ok(_) -> receive(connection, tcp.read_text(connection, 64))
     }}
 }}
 

@@ -1,0 +1,40 @@
+import core.collection
+import core.iteration
+
+/// A reusable sequence view over a bounded list of values.
+///
+/// This generic representation keeps range traversal independent of arithmetic. Numeric range
+/// constructors can be layered on it once constrained generic operators are available.
+pub type Range<T> & Sequence<T> & Collection<T> {
+    values: List<T>
+}
+
+/// Creates a range view over `values`.
+pub func Range.from<T>(values: List<T>) -> Range<T> [consume values] {
+    Range { values: move values }
+}
+
+/// Returns whether the range is empty.
+pub func empty?<T>(self: Range<T>) -> Bool {
+    self.values.empty?
+}
+
+/// Returns the number of values remaining in the range.
+pub func length<T>(self: Range<T>) -> Int {
+    self.values.length
+}
+
+/// Returns the first range value.
+pub func head<T>(self: Range<T>) -> T {
+    self.values.head
+}
+
+/// Returns a sequence containing all values after the head.
+pub func rest<T>(self: Range<T>) -> Sequence<T> {
+    self.values.rest
+}
+
+/// Creates an independent iterator over the range values.
+pub func iterator<T>(self: Range<T>) -> Iterator<T> {
+    self.values.iterator
+}

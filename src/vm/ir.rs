@@ -408,6 +408,7 @@ impl Instruction {
 pub struct BytecodeFunction {
     pub name: String,
     pub parameters: u16,
+    pub mutable_parameters: Vec<bool>,
     pub captures: u16,
     pub registers: u16,
     pub instructions: Vec<Instruction>,

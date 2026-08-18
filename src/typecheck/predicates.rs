@@ -121,6 +121,8 @@ pub(super) fn effects_are_subset(
     actual: &[crate::ast::Effect],
     expected: &[crate::ast::Effect],
 ) -> bool {
+    // Mutating an owner may move values out of its descendants as part of replacing
+    // them, but it never grants permission to consume the owner itself.
     actual.iter().all(|actual| {
         expected.iter().any(|expected| {
             expected.target.covers(&actual.target)
@@ -146,7 +148,11 @@ pub(super) fn effects_are_subset(
                             crate::ast::EffectKind::Consume,
                             crate::ast::EffectKind::Consume
                         )
+                        | (crate::ast::EffectKind::Consume, crate::ast::EffectKind::Mut)
                 )
+                && !(actual.kind == crate::ast::EffectKind::Consume
+                    && expected.kind == crate::ast::EffectKind::Mut
+                    && actual.target == expected.target)
         })
     })
 }

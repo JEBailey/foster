@@ -1,0 +1,26 @@
+import core.byte_buffer
+import core.bytes
+import core.result
+
+func render(value: Result<Bytes, HexError>) -> String {
+    branch value {
+        Result.Error(error) -> error.message
+        Result.Ok(data) -> buffer_and_decode(data)
+    }
+}
+
+func buffer_and_decode(data: Bytes) -> String {
+    buffer = ByteBuffer.with_capacity(data.length + 1)
+    buffer.extend(data)
+    buffer.extend("!".utf8)
+    encoded = (move buffer).freeze()
+
+    branch String.from_utf8(encoded) {
+        Result.Ok(text) -> text
+        Result.Error(error) -> error.message
+    }
+}
+
+func main() -> String {
+    render(Bytes.from_hex("466f73746572"))
+}

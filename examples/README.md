@@ -1,5 +1,10 @@
 # Foster examples
 
+`iteration.foster` demonstrates structural `Iterable<T>` conformance, a mutable `Iterator<T>`
+cursor, and `Option<T>` exhaustion through dynamically dispatched contract methods.
+
+`value_contracts.foster` demonstrates composed equality, total-ordering, and hashing contracts.
+
 `live_inventory_pipeline.foster` is the flagship end-to-end example. It models
 a concurrent inventory audit with owned remote actors, futures, borrowed remote
 arguments, a persistent read-only loan, atomic owner mutation, records, and
@@ -27,3 +32,14 @@ static duck typing without a wrapper or runtime conversion:
 ```console
 cargo run --bin foster -- run examples/type_composition.foster
 ```
+`collections.foster` demonstrates the shared `Collection<T>` contract, a Foster-written `Set<T>`,
+the generic `Range<T>` sequence view, and borrowed `.iterator` creation.
+
+`bytes.foster` demonstrates bounded `Byte` values, compact immutable `Bytes`, UTF-8 and hexadecimal
+boundaries, and mutation followed by ownership-transferring `ByteBuffer.freeze`.
+
+`streams.foster` demonstrates generic `Reader<E>` and `Writer<E>` conformance, partial writes,
+clean EOF, and the Foster-written `stream.copy` algorithm.
+
+`linked_list.foster` implements an owned generic linked list as a recursive variant, including
+constant-time prepend/pop, reverse, map, fold, and conversion to the built-in list type.

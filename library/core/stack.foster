@@ -1,0 +1,63 @@
+import core.collection
+import core.iteration
+import core.option
+
+/// A last-in, first-out collection.
+pub type Stack<T> & Collection<T> {
+    values: List<T>
+}
+
+/// Creates an empty stack.
+pub func Stack.empty<T>() -> Stack<T> {
+    Stack { values: [] }
+}
+
+/// Returns the number of stacked values.
+pub func length<T>(self: Stack<T>) -> Int {
+    self.values.length
+}
+
+/// Returns whether the stack contains no values.
+pub func empty?<T>(self: Stack<T>) -> Bool {
+    self.values.empty?
+}
+
+/// Creates an independent iterator from top to bottom.
+pub func iterator<T>(self: Stack<T>) -> Iterator<T> {
+    reverse(self.values, []).iterator
+}
+
+/// Returns a stack with `value` placed on top.
+pub func push<T>(self: Stack<T>, value: T) -> Stack<T> [consume self, consume value] {
+    Stack { values: self.values.append(value) }
+}
+
+/// Removes the top value and returns the remaining stack.
+pub func pop<T>(self: Stack<T>) -> Option<StackItem<T>> [consume self] {
+    branch {
+        self.values.empty? -> Option.None
+        _ -> pop_values(move self.values, [])
+    }
+}
+
+/// The result of removing one value from a stack.
+pub type StackItem<T> {
+    pub value: T
+    pub remaining: Stack<T>
+}
+
+/// Walks to the final stored value while rebuilding the remaining prefix.
+func pop_values<T>(remaining: List<T>, prefix: List<T>) -> Option<StackItem<T>> [consume remaining, consume prefix] {
+    branch {
+        remaining.rest.empty? -> Option.Some(StackItem { value: remaining.head, remaining: Stack { values: prefix } })
+        _ -> pop_values(remaining.rest, prefix.append(remaining.head))
+    }
+}
+
+/// Reverses stored values into iterator order.
+func reverse<T>(remaining: List<T>, result: List<T>) -> List<T> [consume result] {
+    branch {
+        remaining.empty? -> result
+        _ -> reverse(remaining.rest, move result).append(remaining.head)
+    }
+}

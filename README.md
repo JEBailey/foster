@@ -116,7 +116,7 @@ qualifier. Modules are public; declarations and record fields are private unless
 ## Core library
 
 Foster has no prelude. Programs explicitly import embedded Foster-written modules such as
-`core.option`, `core.result`, `core.sequence`, `core.list`, `core.map`, `core.io`, and
+`core.option`, `core.iteration`, `core.result`, `core.sequence`, `core.list`, `core.map`, `core.io`, and
 `core.net.tcp`. Host-dependent filesystem and socket operations cross a narrow VM boundary; public
 types, typed errors, and policy wrappers remain Foster code. See
 [the core library reference](docs/core-library.md).

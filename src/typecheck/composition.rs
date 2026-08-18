@@ -55,11 +55,16 @@ impl Checker<'_> {
                     )));
                 }
             }
-            for method in methods
-                .iter()
-                .filter(|method| method.required_by_composition)
-            {
-                self.check_method_implementation(record, &arguments, method)?;
+            // A declaration with bodyless methods is itself a contract. It inherits
+            // composed requirements without implementing them; concrete composing
+            // records have no such declarations and must provide every method.
+            if definition.methods.is_empty() {
+                for method in methods
+                    .iter()
+                    .filter(|method| method.required_by_composition)
+                {
+                    self.check_method_implementation(record, &arguments, method)?;
+                }
             }
         }
         Ok(())
@@ -204,10 +209,7 @@ impl Checker<'_> {
                             parameters: Vec::new(),
                             parameter_modes: Vec::new(),
                             result,
-                            effects: vec![crate::ast::Effect {
-                                kind: crate::ast::EffectKind::Read,
-                                target: crate::ast::GroupPath::root("self"),
-                            }],
+                            effects: Vec::new(),
                             suspends: false,
                             required_by_composition: true,
                         },
@@ -370,6 +372,10 @@ impl Checker<'_> {
         }
         self.coerce(required.result.clone(), signature.result, function)?;
         let mut allowed_effects = required.effects.clone();
+        allowed_effects.push(crate::ast::Effect {
+            kind: crate::ast::EffectKind::Read,
+            target: crate::ast::GroupPath::root("self"),
+        });
         for (parameter, mode) in implementation
             .parameters
             .iter()
