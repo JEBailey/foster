@@ -2,6 +2,15 @@ import core.character
 import core.list
 import core.option
 
+/// Immutable Unicode text stored as validated UTF-8 bytes.
+///
+/// The backing bytes are private so every `String` value preserves the UTF-8
+/// validity invariant. String literals and checked decoding are its trusted
+/// construction paths.
+pub type String {
+    value: Bytes
+}
+
 /// Returns the first code point, or `None` when the string is empty.
 pub func first(value: String) -> Option<CodePoint> {
     branch {

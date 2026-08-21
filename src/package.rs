@@ -49,6 +49,7 @@ impl Package {
     ) -> Result<Self, FosterError> {
         let mut package = Self::from_program(name, program);
         package.install_core_modules_if_imported()?;
+        package.install_string_bootstrap()?;
         package.validate()?;
         Ok(package)
     }
@@ -80,8 +81,46 @@ impl Package {
         };
         package.discover_modules(overlays)?;
         package.install_core_modules_if_imported()?;
+        package.install_string_bootstrap()?;
         package.validate()?;
         Ok(package)
+    }
+
+    fn install_string_bootstrap(&mut self) -> Result<(), FosterError> {
+        const NAME: &str = "core.string";
+        if self.modules.contains_key(NAME) {
+            return Ok(());
+        }
+        self.modules.entry("core".into()).or_insert(Module {
+            name: "core".into(),
+            source_path: None,
+            program: None,
+            source: None,
+        });
+        let source = include_str!("../library/core/string.fos");
+        let mut program = crate::parse(source).map_err(|error| {
+            FosterError::runtime(format!("embedded module `{NAME}` is invalid: {error}"))
+        })?;
+        program.imports.clear();
+        program.constants.clear();
+        program.variants.clear();
+        program.functions.clear();
+        program.records.retain(|record| record.name == "String");
+        if program.records.len() != 1 {
+            return Err(FosterError::runtime(
+                "embedded `core.string` must define exactly one `String` type",
+            ));
+        }
+        self.modules.insert(
+            NAME.into(),
+            Module {
+                name: NAME.into(),
+                source_path: core_source_path(NAME),
+                program: Some(program),
+                source: Some(source.to_owned()),
+            },
+        );
+        Ok(())
     }
 
     fn install_core_modules_if_imported(&mut self) -> Result<(), FosterError> {
