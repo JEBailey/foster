@@ -1886,26 +1886,6 @@ type Identified = {
     pub func offset(self, amount: Int) -> Int [read self]
 }
 
-#[test]
-fn type_definitions_use_equals_and_aligned_composition() {
-    let source = r#"
-type Named = {
-    pub name: String
-}
-
-type Person =
-    & Named
-
-func main() -> Int {
-    Person { name: "Foster" }.name.length
-}
-"#;
-    assert_eq!(foster::run(source).unwrap(), Value::Integer(6));
-
-    let legacy = foster::compile("type Legacy {}\nfunc main() { 0 }").unwrap_err();
-    assert!(legacy.message.contains("expected `=` after type name"));
-}
-
 type User = & Identified & {
     value: Int
 }
@@ -1936,6 +1916,26 @@ func main() -> Int {
         );
     let error = foster::compile(&missing).unwrap_err();
     assert!(error.message.contains("missing accessible method `id`"));
+}
+
+#[test]
+fn type_definitions_use_equals_and_aligned_composition() {
+    let source = r#"
+type Named = {
+    pub name: String
+}
+
+type Person =
+    & Named
+
+func main() -> Int {
+    Person { name: "Foster" }.name.length
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(6));
+
+    let legacy = foster::compile("type Legacy {}\nfunc main() { 0 }").unwrap_err();
+    assert!(legacy.message.contains("expected `=` after type name"));
 }
 
 #[test]
