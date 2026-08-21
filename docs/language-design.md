@@ -148,11 +148,11 @@ bounded integer-like primitive: integer arithmetic and comparisons promote its U
 value, and arithmetic produces `Int`. This permits expressions such as `'9' - '0'` and
 `character < 32` without an extraction member. Conversion from an arbitrary `Int` remains checked
 because surrogate values and values above `0x10FFFF` are not Unicode scalar values.
-The bootstrap compiler supplies the `String` and `List<T>` conformances. A declaration states that
-a type includes a contract with `&` after its name:
+The bootstrap compiler supplies the `String` and `List<T>` conformances. A type definition begins
+after `=`, and each composed contract is aligned with `&` on the right-hand side:
 
 ```foster
-type Foo & Sequence<CodePoint> {
+type Foo = & Sequence<CodePoint> & {
     source: String
 }
 ```
@@ -167,7 +167,7 @@ initialize fields written in its effective stored-field contract.
 Required callable members can be declared directly in a structural type:
 
 ```foster
-type Identified {
+type Identified = {
     pub func id(self) -> Int [read self]
     pub func offset(self, amount: Int) -> Int [read self]
 }
@@ -185,7 +185,7 @@ also form structural contracts, as described below. Types and fields are private
 filesystem modules remain implicitly public:
 
 ```foster
-pub type Person {
+pub type Person = {
     pub name: String
     pub age: Int
     internal_id: Int
@@ -203,7 +203,7 @@ Functions may be associated with a record's type namespace by qualifying their d
 do not receive an instance and are called through the type:
 
 ```foster
-pub type Map<K, V> {
+pub type Map<K, V> = {
     entries: List<Entry<K, V>>
 }
 
@@ -325,11 +325,13 @@ numeric or nullable conversions.
 Types, traits, and functions may be qualified by modules. The HIR resolves every source-level name
 to a local binding, function, module, builtin, or later a type-level definition before type checking.
 
-The bootstrap compiler resolves `Unit`, `Bool`, `Int`, `Float`, `String`, `CodePoint`, `Symbol`,
+The bootstrap compiler resolves `Unit`, `Bool`, `Int`, `Float`, `CodePoint`, `Symbol`,
 `List<T>`, `Sequence<T>`, `Remote<T>`, `Future<T>`, callable types with internally inferred
 representation erasure, records,
 variants, generics, and record intersections. Decimal and scientific-notation literals produce
 `Float`; there are no implicit conversions between `Int` and `Float`.
+`String` is instead the always-available opaque record declared in `core.string`; its private
+`Bytes` field stores valid UTF-8, and string literals lower to that nominal type.
 Representation-level operations such as functional `List.append`, checked `from_code_point(Int)`,
 and `parse_float(String)` form the narrow primitive boundary beneath the Foster-written core
 library. The older `code_point(CodePoint)` intrinsic is also accepted for compatibility; source
@@ -369,7 +371,7 @@ with newlines and attach to the function, record, or variant type that immediate
 /// A TCP connection owned by the runtime.
 ///
 /// Obtain one with `connect` or `accept`.
-pub type Connection {
+pub type Connection = {
     handle: Int
 }
 ```
@@ -386,11 +388,11 @@ every accessible field required by the destination type with the same field type
 remain on the value but are hidden by the destination's static view:
 
 ```foster
-type Named {
+type Named = {
     pub name: String
 }
 
-type User {
+type User = {
     pub name: String
     pub email: String
 }
@@ -412,10 +414,10 @@ contract includes accessible fields and callable members, including their generi
 parameter ownership modes, result types, effects, and suspension behavior. Private representation
 does not participate outside its defining module.
 
-A type declaration may explicitly compose and assert a contract with `&`:
+A type declaration may explicitly compose and assert contracts with right-hand-side `&` clauses:
 
 ```foster
-type TextCursor & Sequence<CodePoint> {
+type TextCursor = & Sequence<CodePoint> & {
     source: String
     offset: Int
 }
@@ -452,11 +454,11 @@ than a compiler-owned protocol:
 ```foster
 import core.option
 
-pub type Iterator<T> {
+pub type Iterator<T> = {
     pub func next(self) -> Option<T> [mut self]
 }
 
-pub type Iterable<T> {
+pub type Iterable<T> = {
     pub func iterator(self) -> Iterator<T>
 }
 ```
@@ -468,8 +470,8 @@ property syntax, an iterable is opened with `value.iterator`; `next` remains cal
 it mutates its receiver.
 
 Both contracts use the same static duck typing and zero-conversion dispatch as other composed
-types. A concrete type implements them with `type Cursor<T> & Iterator<T> { ... }` or
-`type Collection<T> & Iterable<T> { ... }`. The core adapter
+types. A concrete type implements them with `type Cursor<T> = & Iterator<T> & { ... }` or
+`type Collection<T> = & Iterable<T> & { ... }`. The core adapter
 `Iterator.from_sequence(values)` consumes a `Sequence<T>` into an independent iterator, so lists,
 strings, and user-defined sequence implementations can participate immediately.
 
@@ -524,11 +526,11 @@ Stream behavior is expressed with generic structural contracts rather than a com
 class:
 
 ```foster
-pub type Reader<E> {
+pub type Reader<E> = {
     pub func read(self, maximum: Int) -> Result<Bytes, E> [mut self]
 }
 
-pub type Writer<E> {
+pub type Writer<E> = {
     pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
     pub func flush(self) -> Result<Unit, E> [mut self]
 }
@@ -549,15 +551,15 @@ borrow behavior.
 `core.ordering` separates comparison capabilities from the `Ordering` result value:
 
 ```foster
-pub type Equality<T> {
+pub type Equality<T> = {
     pub func equal?(self, other: T) -> Bool
 }
 
-pub type Ordered<T> & Equality<T> {
+pub type Ordered<T> = & Equality<T> & {
     pub func compare(self, other: T) -> Ordering
 }
 
-pub type Hashing {
+pub type Hashing = {
     pub func hash(self) -> Int
 }
 ```

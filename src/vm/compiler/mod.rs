@@ -51,6 +51,10 @@ pub fn compile_with_options(
         .iter()
         .map(|(id, value)| (id, value.name.clone()))
         .collect();
+    compiler.program.string_record = compilation
+        .hir
+        .module_named("core.string")
+        .and_then(|module| compilation.hir.record_named(module, "String"));
     for (record, definition) in compilation.hir.records.iter() {
         for (name, function) in &compilation.hir.modules[definition.module].functions {
             let receiver_matches = compilation

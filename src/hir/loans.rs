@@ -112,7 +112,6 @@ fn expression_borrow_roots(
                 | crate::types::Type::Bool
                 | crate::types::Type::Int
                 | crate::types::Type::Float
-                | crate::types::Type::String
                 | crate::types::Type::CodePoint
                 | crate::types::Type::Byte
                 | crate::types::Type::Symbol

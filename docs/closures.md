@@ -119,7 +119,7 @@ triple = [copy factor] (value: Int) -> factor * value
 lowers conceptually to:
 
 ```foster
-type __TripleEnvironment {
+type __TripleEnvironment = {
     factor: Int
 }
 

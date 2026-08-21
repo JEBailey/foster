@@ -3,18 +3,18 @@ import core.bytes
 import core.stream
 
 /// Describes a failed TCP operation at the host boundary.
-pub type NetworkError {
+pub type NetworkError = {
     pub operation: String
     pub message: String
 }
 
 /// An opaque listening TCP socket.
-pub type Listener {
+pub type Listener = {
     handle: Int
 }
 
 /// An opaque connected TCP stream.
-pub type Connection & Duplex<NetworkError> {
+pub type Connection = & Duplex<NetworkError> & {
     handle: Int
 }
 

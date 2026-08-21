@@ -115,7 +115,7 @@ impl Checker<'_> {
         let ty = self.resolved(ty);
         if contains_variable(&ty) {
             Err(FosterError::runtime(format!(
-                "cannot infer the type of {context}; add a type annotation"
+                "cannot infer the type of = {context}; add a type annotation"
             )))
         } else {
             Ok(ty)
@@ -130,7 +130,6 @@ impl Checker<'_> {
             Ty::Bool => "Bool".into(),
             Ty::Int => "Int".into(),
             Ty::Float => "Float".into(),
-            Ty::String => "String".into(),
             Ty::CodePoint => "CodePoint".into(),
             Ty::Byte => "Byte".into(),
             Ty::Bytes => "Bytes".into(),
@@ -247,7 +246,6 @@ fn intern_type(
         Ty::Bool => Type::Bool,
         Ty::Int => Type::Int,
         Ty::Float => Type::Float,
-        Ty::String => Type::String,
         Ty::CodePoint => Type::CodePoint,
         Ty::Byte => Type::Byte,
         Ty::Bytes => Type::Bytes,

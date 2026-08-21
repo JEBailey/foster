@@ -1347,10 +1347,21 @@ fn record_signature(record: &crate::hir::Record) -> String {
             .iter()
             .map(|method| format!("    {}", method_requirement_signature(method))),
     );
+    let visibility = if record.public { "pub " } else { "" };
+    if members.is_empty() && !record.compositions.is_empty() {
+        return format!(
+            "{visibility}type {}{parameters} ={compositions}",
+            record.name
+        );
+    }
     let members = members.join("\n");
+    let body_separator = if record.compositions.is_empty() {
+        ""
+    } else {
+        " &"
+    };
     format!(
-        "{}type {}{parameters}{compositions} {{\n{members}\n}}",
-        if record.public { "pub " } else { "" },
+        "{visibility}type {}{parameters} ={compositions}{body_separator} {{\n{members}\n}}",
         record.name
     )
 }
@@ -2141,12 +2152,12 @@ func main() -> Int {
     #[test]
     fn callable_contract_members_provide_hover_signature_and_definition() {
         let (mut workspace, uri, _) = fixture_workspace();
-        let source = r#"type Identified {
+        let source = r#"type Identified = {
     /// Adds an amount to this value.
     pub func offset(self, amount: Int) -> Int [read self]
 }
 
-type User & Identified { value: Int }
+type User = & Identified & { value: Int }
 func offset(self: User, amount: Int) -> Int { self.value + amount }
 
 func apply(value: Identified) -> Int {
@@ -2344,8 +2355,8 @@ func main() -> Int { apply(User { value: 40 }) }
     fn record_signatures_show_declared_type_composition() {
         let compilation = crate::compile(
             r#"
-type Named { pub name: String }
-type TextSlice & Named {}
+type Named = { pub name: String }
+type TextSlice = & Named & {}
 func main() { 0 }
 "#,
         )
@@ -2354,7 +2365,7 @@ func main() { 0 }
         let record = compilation.hir.record_named(module, "TextSlice").unwrap();
         let signature = record_signature(&compilation.hir.records[record]);
         assert!(
-            signature.starts_with("type TextSlice & Named"),
+            signature.starts_with("type TextSlice = & Named"),
             "{signature}"
         );
     }

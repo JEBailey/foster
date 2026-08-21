@@ -4,28 +4,28 @@
 // The owner then restocks the inventory while a persistent remote read loan
 // observes the updated state. A report actor serializes the final aggregation.
 
-type Inventory {
+type Inventory = {
     apples: Int
     bolts: Int
     version: Int
 }
 
-type Policy {
+type Policy = {
     minimum_apples: Int
     minimum_bolts: Int
 }
 
-type Auditor {
+type Auditor = {
     weight: Int
 }
 
-type Assessment {
+type Assessment = {
     version: Int
     missing: Int
     weighted: Int
 }
 
-type Report {
+type Report = {
     alerts: Int
     healthy: Int
     score: Int

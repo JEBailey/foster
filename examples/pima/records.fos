@@ -1,9 +1,9 @@
-pub type Parsed<T> {
+pub type Parsed<T> = {
     pub value: T
     pub remaining: String
 }
 
-pub type JsonError {
+pub type JsonError = {
     pub message: String
     pub offset: Int
 }

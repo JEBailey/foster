@@ -4,13 +4,16 @@ use crate::error::FosterError;
 
 use super::Constant;
 
-pub(super) fn constant_value(constant: &Constant) -> Value {
+pub(super) fn constant_value(
+    constant: &Constant,
+    string_record: Option<crate::hir::RecordId>,
+) -> Value {
     match constant {
         Constant::Unit => Value::Unit,
         Constant::Bool(value) => Value::Bool(*value),
         Constant::Integer(value) => Value::Integer(*value),
         Constant::Float(value) => Value::Float(*value),
-        Constant::String(value) => Value::String(value.clone()),
+        Constant::String(value) => Value::string(string_record, value.as_bytes().to_vec()),
         Constant::CodePoint(value) => Value::CodePoint(*value),
         Constant::Symbol(value) => Value::Symbol(value.clone()),
     }
@@ -79,7 +82,15 @@ pub(super) fn binary(
         (Subtract, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a - b)),
         (Multiply, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
         (Divide, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
-        (Add, Value::String(a), Value::String(b)) => Ok(Value::String(a.clone() + b)),
+        (Add, a, b) if a.string_bytes().is_some() && b.string_bytes().is_some() => {
+            let mut value = a.string_bytes().unwrap().to_vec();
+            value.extend_from_slice(b.string_bytes().unwrap());
+            let record = match a {
+                Value::Record { record, .. } => *record,
+                _ => None,
+            };
+            Ok(Value::string(record, value))
+        }
         (Equal, a, b) => Ok(Value::Bool(a == b)),
         (NotEqual, a, b) => Ok(Value::Bool(a != b)),
         (Less, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a < b)),

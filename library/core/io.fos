@@ -3,7 +3,7 @@ import core.result
 import core.bytes
 
 /// Describes a failed host filesystem or path operation.
-pub type IoError {
+pub type IoError = {
     pub operation: String
     pub path: String
     pub message: String

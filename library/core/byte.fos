@@ -1,7 +1,7 @@
 import core.result
 
 /// Describes an integer that cannot be represented by `Byte`.
-pub type ByteError {
+pub type ByteError = {
     pub value: Int
     pub message: String
 }

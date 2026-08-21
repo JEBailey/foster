@@ -420,6 +420,7 @@ pub struct Program {
     pub constants: Vec<Constant>,
     pub functions: HashMap<FunctionId, BytecodeFunction>,
     pub main: Option<FunctionId>,
+    pub string_record: Option<RecordId>,
     pub records: HashMap<RecordId, String>,
     pub methods: HashMap<(RecordId, String), FunctionId>,
     pub variants: HashMap<VariantId, (String, String)>,

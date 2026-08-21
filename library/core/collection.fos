@@ -4,7 +4,7 @@ import core.iteration
 ///
 /// Collection access borrows the value. Creating an iterator produces an independent
 /// cursor over the collection's read-only value view.
-pub type Collection<T> & Iterable<T> {
+pub type Collection<T> = & Iterable<T> & {
     /// Returns the number of elements in this collection.
     pub func length(self) -> Int
 

@@ -1,6 +1,10 @@
 use foster::vm::Value;
 use std::path::Path;
 
+fn assert_string(value: Value, expected: &str) {
+    assert_eq!(value.as_string(), Some(expected));
+}
+
 #[test]
 fn guard_return_and_implicit_result() {
     let source = r#"
@@ -13,7 +17,48 @@ func main() {
     first(["F", "o"])
 }
 "#;
-    assert_eq!(foster::run(source).unwrap(), Value::String("F".into()));
+    assert_string(foster::run(source).unwrap(), "F");
+}
+
+#[test]
+fn strings_use_the_foster_record_representation() {
+    let source = r#"func main() -> String { "Foster λ" }"#;
+    let compilation = foster::compile(source).unwrap();
+    let main = compilation.hir.module_named("main").unwrap();
+    let main = compilation.hir.function_named(main, "main").unwrap();
+    let result = compilation.types.function_type(main).unwrap().result;
+    let string_module = compilation.hir.module_named("core.string").unwrap();
+    let string_record = compilation
+        .hir
+        .record_named(string_module, "String")
+        .unwrap();
+    assert!(matches!(
+        compilation.types.types[result],
+        foster::types::Type::Record { record, ref arguments }
+            if record == string_record && arguments.is_empty()
+    ));
+
+    let Value::Record {
+        record,
+        name,
+        fields,
+    } = foster::run(source).unwrap()
+    else {
+        panic!("String did not use its Foster record representation")
+    };
+    assert_eq!(record, Some(string_record));
+    assert_eq!(name, "String");
+    let Value::Bytes(bytes) = &fields["value"] else {
+        panic!("String.value was not Bytes")
+    };
+    assert_eq!(bytes.as_slice(), "Foster λ".as_bytes());
+
+    let error = foster::compile(r#"func main() -> Bytes { "private".value }"#).unwrap_err();
+    assert!(
+        error.message.contains("field `String.value` is private"),
+        "{}",
+        error.message
+    );
 }
 
 #[test]
@@ -70,7 +115,7 @@ fn postfix_guards_only_apply_to_control_statements() {
 #[test]
 fn branch_and_recursion() {
     let source = include_str!("../examples/whitespace.fos");
-    assert_eq!(foster::run(source).unwrap(), Value::String("Foster".into()));
+    assert_string(foster::run(source).unwrap(), "Foster");
 }
 
 #[test]
@@ -100,7 +145,7 @@ fn conditional_branches_require_a_wildcard_arm() {
 #[test]
 fn remote_objects_process_methods_on_virtual_threads() {
     let source = r#"
-type Counter {
+type Counter = {
     value: Int
 }
 
@@ -122,7 +167,7 @@ func main() -> Int {
 #[test]
 fn remote_read_loans_observe_owner_mutation() {
     let source = r#"
-type Counter {
+type Counter = {
     value: Int
 }
 
@@ -150,7 +195,7 @@ func main() -> Int {
 #[test]
 fn remote_read_loans_serialize_reads_with_owner_methods() {
     let source = r#"
-type Pair {
+type Pair = {
     left: Int
     right: Int
 }
@@ -185,7 +230,7 @@ func main() -> Int {
 #[test]
 fn remote_read_loans_reject_mutating_methods() {
     let source = r#"
-type Counter { value: Int }
+type Counter = { value: Int }
 
 func increment(self: Counter) -> Int [mut self] {
     self.value = self.value + 1
@@ -209,8 +254,8 @@ func main() {
 #[test]
 fn remote_borrowed_arguments_are_live_read_only_loans() {
     let source = r#"
-type Document { value: Int }
-type Inspector {}
+type Document = { value: Int }
+type Inspector = {}
 
 func inspect(self: Inspector, document: Document) -> Int [read document.value] {
     document.value
@@ -236,8 +281,8 @@ func main() -> Int {
 #[test]
 fn remote_borrowed_arguments_serialize_with_owner_mutation() {
     let source = r#"
-type Pair { left: Int, right: Int }
-type Inspector {}
+type Pair = { left: Int, right: Int }
+type Inspector = {}
 
 func total(self: Inspector, pair: Pair) -> Int [read pair.left, read pair.right] {
     pair.left + pair.right
@@ -268,8 +313,8 @@ func main() -> Int {
 #[test]
 fn remote_borrowed_arguments_reject_mutation() {
     let source = r#"
-type Document { value: Int }
-type Worker {}
+type Document = { value: Int }
+type Worker = {}
 
 func rewrite(self: Worker, document: Document) -> Int [mut document] {
     document.value = 42
@@ -293,7 +338,7 @@ func main() {
 #[test]
 fn remote_calls_reject_borrowed_messages() {
     let source = r#"
-type Box { value: Int }
+type Box = { value: Int }
 
 func read[g: group Int](self: Box, value: ref[g] Int) -> Int {
     value
@@ -316,7 +361,7 @@ func main() {
 #[test]
 fn remote_calls_require_moves_for_consumed_messages() {
     let source = r#"
-type Worker {}
+type Worker = {}
 
 func submit(self: Worker, message: String) -> Unit [consume message] {
     println(message)
@@ -380,7 +425,7 @@ func main() { 0 }
 #[test]
 fn derives_suspend_from_await_and_callee_contracts() {
     let source = r#"
-type Worker {}
+type Worker = {}
 func value(self: Worker) -> Int { 1 }
 func wait(worker: Remote<Worker>) -> Int {
     await worker.value()
@@ -396,7 +441,7 @@ func main() { 0 }
 #[test]
 fn accepts_declared_suspension() {
     let source = r#"
-type Worker {}
+type Worker = {}
 func value(self: Worker) -> Int { 1 }
 func wait(worker: Remote<Worker>) -> Int [suspend] {
     await worker.value()
@@ -410,7 +455,7 @@ func main() { 0 }
 fn supports_dotted_effects_and_rejects_non_method_self_effects() {
     foster::compile(
         r#"
-type Box { value: Int }
+type Box = { value: Int }
 func update[g: group Box](box: ref[g] Box) -> Int [mut g.value] {
     box.value = box.value + 1
     box.value
@@ -534,7 +579,7 @@ func main() { 0 }
 fn reports_overdeclared_effect_and_suspend_warnings() {
     let source = r#"
 // λ keeps token ranges byte-accurate
-type Box { value: Int }
+type Box = { value: Int }
 func inspect(self: Box) -> Int [mut self, suspend] { self.value }
 func main() { 0 }
 "#;
@@ -1213,7 +1258,7 @@ fn declarations_are_private_by_default_across_public_modules() {
 #[test]
 fn constructs_reads_and_mutates_nominal_records() {
     let source = r#"
-pub type Person {
+pub type Person = {
     pub name: String
     pub age: Int
     internal_id: Int
@@ -1236,7 +1281,7 @@ func main() -> Int {
 #[test]
 fn infers_generic_record_arguments() {
     let source = r#"
-type Parsed<T> {
+type Parsed<T> = {
     value: T
     remaining: String
 }
@@ -1258,7 +1303,7 @@ func main() -> Int {
 #[test]
 fn calls_functions_associated_with_record_types() {
     let source = r#"
-type Box<T> { value: T }
+type Box<T> = { value: T }
 
 func Box.create<T>(value: T) -> Box<T> {
     Box { value }
@@ -1282,7 +1327,7 @@ func main() -> Int {
     assert!(unknown.message.contains("unknown record type `Missing`"));
 
     let receiver = foster::compile(
-        "type Box { value: Int }\nfunc Box.read(self: Box) { self.value }\nfunc main() { 0 }",
+        "type Box = { value: Int }\nfunc Box.read(self: Box) { self.value }\nfunc main() { 0 }",
     )
     .unwrap_err();
     assert!(
@@ -1304,7 +1349,7 @@ fn associated_functions_construct_private_record_representations() {
 fn rejects_incomplete_and_duplicate_record_initialization() {
     let missing = foster::compile(
         r#"
-type Pair { left: Int, right: Int }
+type Pair = { left: Int, right: Int }
 func main() { Pair { left: 1 } }
 "#,
     )
@@ -1313,7 +1358,7 @@ func main() { Pair { left: 1 } }
 
     let duplicate = foster::compile(
         r#"
-type Pair { left: Int, right: Int }
+type Pair = { left: Int, right: Int }
 func main() { Pair { left: 1, left: 2, right: 3 } }
 "#,
     )
@@ -1335,7 +1380,7 @@ fn enforces_record_and_field_visibility_across_modules() {
 #[test]
 fn rejects_private_types_in_public_signatures() {
     let source = r#"
-type Secret { value: Int }
+type Secret = { value: Int }
 pub func expose() -> Secret { Secret { value: 1 } }
 "#;
     let error = foster::compile(source).unwrap_err();
@@ -1349,7 +1394,7 @@ pub func expose() -> Secret { Secret { value: 1 } }
 #[test]
 fn mutable_ref_capture_can_update_record_fields() {
     let source = r#"
-type Counter { value: Int }
+type Counter = { value: Int }
 
 func main() -> Int {
     counter = Counter { value: 0 }
@@ -1367,7 +1412,7 @@ func main() -> Int {
 #[test]
 fn rejects_storing_a_borrower_into_its_own_origin() {
     let source = r#"
-type Counter {
+type Counter = {
     value: Int,
     callback: func() -> Int
 }
@@ -1394,7 +1439,7 @@ func main() -> Int {
 #[test]
 fn permits_storing_a_value_derived_from_a_borrower() {
     let source = r#"
-type Counter { value: Int }
+type Counter = { value: Int }
 
 func main() -> Int {
     counter = Counter { value: 1 }
@@ -1573,7 +1618,7 @@ func main() -> String {
 }
 "#;
     foster::compile(source).unwrap();
-    assert_eq!(foster::run(source).unwrap(), Value::String("Foster".into()));
+    assert_string(foster::run(source).unwrap(), "Foster");
 
     let error = foster::compile(
         r#"
@@ -1811,7 +1856,7 @@ fn declared_type_composition_conforms_without_runtime_conversion() {
     let source = r#"
 import core.string as strings
 
-type TextSlice & Sequence<CodePoint> {
+type TextSlice = & Sequence<CodePoint> & {
     text: String
 }
 
@@ -1836,12 +1881,32 @@ func main() -> CodePoint {
 #[test]
 fn callable_contract_members_dispatch_through_structural_types() {
     let source = r#"
-type Identified {
+type Identified = {
     pub func id(self) -> Int [read self]
     pub func offset(self, amount: Int) -> Int [read self]
 }
 
-type User & Identified {
+#[test]
+fn type_definitions_use_equals_and_aligned_composition() {
+    let source = r#"
+type Named = {
+    pub name: String
+}
+
+type Person =
+    & Named
+
+func main() -> Int {
+    Person { name: "Foster" }.name.length
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(6));
+
+    let legacy = foster::compile("type Legacy {}\nfunc main() { 0 }").unwrap_err();
+    assert!(legacy.message.contains("expected `=` after type name"));
+}
+
+type User = & Identified & {
     value: Int
 }
 
@@ -1864,7 +1929,7 @@ func main() -> Int {
     assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
 
     let missing = source
-        .replace("type User & Identified", "type User")
+        .replace("type User = & Identified &", "type User =")
         .replace(
             "func id(self: User) -> Int {\n    self.value\n}\n\nfunc offset(self: User, amount: Int) -> Int {\n    self.value + amount\n}\n",
             "",
@@ -1879,7 +1944,7 @@ fn iterator_and_iterable_contracts_dispatch_stateful_iteration() {
 import core.iteration
 import core.option
 
-type Counter & Iterator<Int> {
+type Counter = & Iterator<Int> & {
     current: Int
     end: Int
 }
@@ -1893,7 +1958,7 @@ func next(self: Counter) -> Option<Int> {
     }
 }
 
-type Range & Iterable<Int> {
+type Range = & Iterable<Int> & {
     start: Int
     end: Int
 }
@@ -2035,7 +2100,7 @@ func main() -> Int {
 #[test]
 fn mutable_effect_allows_extracting_children_but_not_consuming_the_owner() {
     let source = r#"
-type Resource { value: String }
+type Resource = { value: String }
 
 func invalid(self: Resource) -> Resource [mut self] {
     move self
@@ -2053,7 +2118,7 @@ fn equality_ordering_and_hashing_contracts_compose_and_dispatch() {
     let source = r#"
 import core.ordering
 
-type Key & Ordered<Key> & Hashing {
+type Key = & Ordered<Key> & Hashing & {
     value: Int
 }
 
@@ -2122,7 +2187,7 @@ func main() -> Int {
 #[test]
 fn matching_contracts_conform_without_an_explicit_composition_clause() {
     let source = r#"
-type TextSlice {
+type TextSlice = {
     pub empty?: Bool
     pub length: Int
     pub head: CodePoint
@@ -2145,11 +2210,11 @@ fn intersection_parameters_require_every_composed_contract() {
     let source = r#"
 import core.string as strings
 
-type Named {
+type Named = {
     pub name: String
 }
 
-type TextSlice & Named & Sequence<CodePoint> {
+type TextSlice = & Named & Sequence<CodePoint> & {
     text: String
 }
 
@@ -2169,17 +2234,14 @@ func main() -> String {
     })
 }
 "#;
-    assert_eq!(
-        foster::run(source).unwrap(),
-        Value::String("answer: Y".into())
-    );
+    assert_string(foster::run(source).unwrap(), "answer: Y");
 }
 
 #[test]
 fn declared_composition_requires_callable_members() {
     let error = foster::compile(
         r#"
-type Broken & Sequence<CodePoint> {}
+type Broken = & Sequence<CodePoint> & {}
 
 func main() { 0 }
 "#,
@@ -2192,15 +2254,15 @@ func main() { 0 }
 fn declared_composition_rejects_incompatible_contract_members() {
     let error = foster::compile(
         r#"
-type TextNamed {
+type TextNamed = {
     pub name: String
 }
 
-type NumericNamed {
+type NumericNamed = {
     pub name: Int
 }
 
-type Broken & TextNamed & NumericNamed {}
+type Broken = & TextNamed & NumericNamed & {}
 
 func main() { 0 }
 "#,
@@ -2257,7 +2319,7 @@ func main() -> Unit { println() }
 fn permits_disjoint_field_use_after_a_partial_move() {
     foster::compile(
         r#"
-type Pair {
+type Pair = {
     left: String
     right: String
 }
@@ -2287,7 +2349,7 @@ fn supports_line_block_and_documentation_comments() {
 /**
  * The second paragraph is retained as Markdown.
  */
-pub type Named {
+pub type Named = {
     pub value: Int
 }
 
@@ -2321,15 +2383,15 @@ func main() -> Int { value(Named { value: 7 }) }
 #[test]
 fn structurally_adapts_records_with_additional_public_fields() {
     let source = r#"
-type Named {
+type Named = {
     pub name: String
 }
 
-type Located {
+type Located = {
     pub location: String
 }
 
-type User {
+type User = {
     pub name: String
     pub location: String
     pub email: String
@@ -2370,8 +2432,8 @@ func main() -> Int {
 fn structural_adaptation_reports_missing_and_incompatible_fields() {
     let missing = foster::compile(
         r#"
-type Named { pub name: String }
-type Product { pub title: String }
+type Named = { pub name: String }
+type Product = { pub title: String }
 func name(value: Named) -> String { value.name }
 func main() -> String { name(Product { title: "Book" }) }
 "#,
@@ -2381,8 +2443,8 @@ func main() -> String { name(Product { title: "Book" }) }
 
     let incompatible = foster::compile(
         r#"
-type Named { pub name: String }
-type NumericName { pub name: Int }
+type Named = { pub name: String }
+type NumericName = { pub name: Int }
 func name(value: Named) -> String { value.name }
 func main() -> String { name(NumericName { name: 42 }) }
 "#,
@@ -2398,8 +2460,8 @@ func main() -> String { name(NumericName { name: 42 }) }
 #[test]
 fn consuming_a_structural_view_moves_the_original_value() {
     let source = r#"
-type Named { pub name: String }
-type User {
+type Named = { pub name: String }
+type User = {
     pub name: String
     pub email: String
 }
@@ -2409,7 +2471,7 @@ func main() -> String {
     take(move user)
 }
 "#;
-    assert_eq!(foster::run(source).unwrap(), Value::String("Jason".into()));
+    assert_string(foster::run(source).unwrap(), "Jason");
 
     let invalid = source.replace("take(move user)\n}", "take(move user)\n    user.email\n}");
     let error = foster::compile(&invalid).unwrap_err();
@@ -2425,8 +2487,8 @@ fn private_record_fields_prevent_cross_module_structural_adaptation() {
 #[test]
 fn structural_return_conversion_moves_and_narrows_the_value() {
     let source = r#"
-type Named { pub name: String }
-type User {
+type Named = { pub name: String }
+type User = {
     pub name: String
     pub email: String
 }
@@ -2443,9 +2505,9 @@ func main() -> Int {
 #[test]
 fn structurally_adapts_records_containing_the_required_value() {
     let source = r#"
-type Bar { pub value: Int }
-type Foo { pub bar: Bar }
-type Container {
+type Bar = { pub value: Int }
+type Foo = { pub bar: Bar }
+type Container = {
     pub bar: Bar
     pub label: String
 }
@@ -2483,7 +2545,7 @@ func main() -> String {
     }
 }
 "#;
-    assert_eq!(foster::run(source).unwrap(), Value::String("λ".into()));
+    assert_string(foster::run(source).unwrap(), "λ");
 }
 
 #[test]
@@ -2552,10 +2614,10 @@ func main() -> String {
 
     let compilation = foster::compile(source).unwrap();
     for optimize in [false, true] {
-        assert_eq!(
+        assert_string(
             foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
                 .unwrap(),
-            Value::String("AxC:417843".into())
+            "AxC:417843",
         );
     }
 }
@@ -2615,7 +2677,7 @@ func main() -> String {
 }
 "#;
 
-    assert_eq!(foster::run(source).unwrap(), Value::String("Hi:ff".into()));
+    assert_string(foster::run(source).unwrap(), "Hi:ff");
 }
 
 #[test]
@@ -2665,7 +2727,7 @@ func main() -> String {
 }
 "#;
 
-    assert_eq!(foster::run(source).unwrap(), Value::String("2a".into()));
+    assert_string(foster::run(source).unwrap(), "2a");
 
     let invalid = source.replace("    data.hex", "    buffer.length\n    data.hex");
     let error = foster::compile(&invalid).unwrap_err();
@@ -2703,16 +2765,16 @@ import core.int
 import core.result
 import core.stream
 
-type StreamError {
+type StreamError = {
     message: String
 }
 
-type ChunkReader & Reader<StreamError> {
+type ChunkReader = & Reader<StreamError> & {
     remaining: Bytes
     chunk_size: Int
 }
 
-type CollectWriter & Writer<StreamError> {
+type CollectWriter = & Writer<StreamError> & {
     contents: Bytes
     chunk_size: Int
 }
@@ -2778,9 +2840,9 @@ func main() -> String {
 "#;
 
     for optimize in [false, true] {
-        assert_eq!(
+        assert_string(
             foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),
-            Value::String("00010203040506:00010203040506:7".into())
+            "00010203040506:00010203040506:7",
         );
     }
 }

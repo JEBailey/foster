@@ -7,7 +7,7 @@ import core.option
 /// The backing bytes are private so every `String` value preserves the UTF-8
 /// validity invariant. String literals and checked decoding are its trusted
 /// construction paths.
-pub type String {
+pub type String = {
     value: Bytes
 }
 
@@ -198,20 +198,7 @@ func upper_character(value: CodePoint) -> String {
 
 /// Returns the number of bytes required by the string's UTF-8 encoding.
 pub func byte_length(value: String) -> Int {
-    branch {
-        value.empty? -> 0
-        _ -> utf8_width(value.head) + byte_length(value.rest)
-    }
-}
-
-/// Returns the UTF-8 width of a valid Unicode scalar value.
-func utf8_width(code: CodePoint) -> Int {
-    branch {
-        code <= 127 -> 1
-        code <= 2047 -> 2
-        code <= 65535 -> 3
-        _ -> 4
-    }
+    value.value.length
 }
 
 /// Joins strings with `separator` between adjacent values.

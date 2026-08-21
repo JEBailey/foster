@@ -2,13 +2,13 @@ import core.byte
 import core.result
 
 /// Describes a failed UTF-8 decoding operation.
-pub type Utf8Error {
+pub type Utf8Error = {
     pub offset: Int
     pub message: String
 }
 
 /// Describes malformed hexadecimal byte text.
-pub type HexError {
+pub type HexError = {
     pub offset: Int
     pub message: String
 }

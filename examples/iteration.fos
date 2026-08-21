@@ -1,7 +1,7 @@
 import core.iteration
 import core.option
 
-type RangeIterator & Iterator<Int> {
+type RangeIterator = & Iterator<Int> & {
     current: Int
     end: Int
 }
@@ -15,7 +15,7 @@ func next(self: RangeIterator) -> Option<Int> {
     }
 }
 
-type Range & Iterable<Int> {
+type Range = & Iterable<Int> & {
     start: Int
     end: Int
 }

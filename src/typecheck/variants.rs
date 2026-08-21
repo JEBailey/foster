@@ -25,7 +25,7 @@ impl Checker<'_> {
             hir::Pattern::Bool(_) => self.unify(expected, Ty::Bool, function)?,
             hir::Pattern::Integer(_) => self.unify(expected, Ty::Int, function)?,
             hir::Pattern::Float(_) => self.unify(expected, Ty::Float, function)?,
-            hir::Pattern::String(_) => self.unify(expected, Ty::String, function)?,
+            hir::Pattern::String(_) => self.unify(expected, self.string_type(), function)?,
             hir::Pattern::CodePoint(_) => self.unify(expected, Ty::CodePoint, function)?,
             hir::Pattern::Symbol(_) => self.unify(expected, Ty::Symbol, function)?,
             hir::Pattern::Variant { variant, fields } => {

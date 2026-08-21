@@ -86,16 +86,9 @@ impl Parser {
             }
             self.expect(&TokenKind::Greater, "expected `>` after type parameters")?;
         }
-        let mut compositions = Vec::new();
-        while self.take(&TokenKind::Ampersand) {
-            compositions.push(self.primary_type_expr()?);
-        }
+        self.expect(&TokenKind::Equal, "expected `=` after type name")?;
         self.newlines();
-        if self.take(&TokenKind::Equal) {
-            if !compositions.is_empty() {
-                return Err(self.error("variant types cannot declare composed contracts"));
-            }
-            self.newlines();
+        if self.at(&TokenKind::Pipe) {
             let mut alternatives = Vec::new();
             while self.take(&TokenKind::Pipe) {
                 let alternative = self.expect_ident("expected variant name after `|`")?;
@@ -132,7 +125,37 @@ impl Parser {
                 }),
             ));
         }
-        self.expect(&TokenKind::LBrace, "expected `{` in record declaration")?;
+        let mut compositions = Vec::new();
+        let mut has_body = self.take(&TokenKind::LBrace);
+        while !has_body && self.take(&TokenKind::Ampersand) {
+            self.newlines();
+            if self.take(&TokenKind::LBrace) {
+                has_body = true;
+                break;
+            }
+            compositions.push(self.primary_type_expr()?);
+            if self.at(&TokenKind::Newline) {
+                self.newlines();
+            }
+        }
+        if !has_body {
+            if compositions.is_empty() {
+                return Err(self.error("expected `{`, `&`, or `|` after `=` in type declaration"));
+            }
+            return Ok((
+                Some(RecordDecl {
+                    span: start..self.tokens[self.current.saturating_sub(1)].range.end,
+                    documentation,
+                    name,
+                    public,
+                    parameters,
+                    compositions,
+                    fields: Vec::new(),
+                    methods: Vec::new(),
+                }),
+                None,
+            ));
+        }
         self.newlines();
         let mut fields = Vec::new();
         let mut methods = Vec::new();

@@ -3,13 +3,13 @@ import core.collection
 import core.iteration
 
 /// A key-value pair yielded while iterating a map.
-pub type Entry<K, V> {
+pub type Entry<K, V> = {
     pub key: K
     pub value: V
 }
 
 /// An insertion-ordered associative collection.
-pub type Map<K, V> & Collection<Entry<K, V>> {
+pub type Map<K, V> = & Collection<Entry<K, V>> & {
     entries: List<Entry<K, V>>
 }
 

@@ -1,4 +1,4 @@
-pub type Box<T> {
+pub type Box<T> = {
     value: T
 }
 

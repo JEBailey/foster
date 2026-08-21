@@ -47,7 +47,7 @@ impl Checker<'_> {
             hir::ConstantValue::Bool(_) => Ty::Bool,
             hir::ConstantValue::Integer(_) => Ty::Int,
             hir::ConstantValue::Float(_) => Ty::Float,
-            hir::ConstantValue::String(_) => Ty::String,
+            hir::ConstantValue::String(_) => self.string_type(),
             hir::ConstantValue::CodePoint(_) => Ty::CodePoint,
             hir::ConstantValue::Symbol(_) => Ty::Symbol,
             hir::ConstantValue::Constant(constant) => self.constant_type(*constant, visiting)?,

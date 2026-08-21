@@ -3,7 +3,7 @@ import core.iteration
 import core.option
 
 /// A double-ended queue.
-pub type Deque<T> & Collection<T> {
+pub type Deque<T> = & Collection<T> & {
     values: List<T>
 }
 
@@ -54,7 +54,7 @@ pub func pop_back<T>(self: Deque<T>) -> Option<DequeItem<T>> [consume self] {
 }
 
 /// The result of removing one value from a deque.
-pub type DequeItem<T> {
+pub type DequeItem<T> = {
     pub value: T
     pub remaining: Deque<T>
 }

@@ -3,6 +3,10 @@ use std::net::TcpListener;
 
 use foster::vm::Value;
 
+fn assert_string(value: Value, expected: &str) {
+    assert_eq!(value.as_string(), Some(expected));
+}
+
 #[test]
 fn every_core_library_function_has_attached_documentation() {
     let compilation = foster::compile(
@@ -28,7 +32,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 231);
+    assert_eq!(checked, 230);
 }
 
 #[test]
@@ -42,10 +46,7 @@ func main() -> String {
     string.upper(string.join(parts, "-") + ":" + int.to_string(-42))
 }
 "#;
-    assert_eq!(
-        foster::run(source).unwrap(),
-        Value::String("ONE-TWO-THREE:-42".into())
-    );
+    assert_string(foster::run(source).unwrap(), "ONE-TWO-THREE:-42");
 }
 
 #[test]
@@ -107,7 +108,7 @@ func main() -> String {{
     );
 
     let value = foster::run(&source).unwrap();
-    assert_eq!(value, Value::String("hello from Foster".into()));
+    assert_string(value, "hello from Foster");
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "hello from Foster");
     std::fs::remove_dir_all(&directory).unwrap();
 }
@@ -157,10 +158,7 @@ func main() -> String {{
 "#
     );
 
-    assert_eq!(
-        foster::run(&source).unwrap(),
-        Value::String("00ff8041".into())
-    );
+    assert_string(foster::run(&source).unwrap(), "00ff8041");
     assert_eq!(std::fs::read(&path).unwrap(), [0, 255, 128, 65]);
     std::fs::remove_dir_all(&directory).unwrap();
 }
@@ -213,6 +211,6 @@ func main() -> String {{
 }}
 "#
     );
-    assert_eq!(foster::run(&source).unwrap(), Value::String("pong".into()));
+    assert_string(foster::run(&source).unwrap(), "pong");
     assert_eq!(&server.join().unwrap(), b"ping");
 }

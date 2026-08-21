@@ -9,9 +9,13 @@ impl Checker<'_> {
     ) -> Result<(), FosterError> {
         let expected = self.resolved(expected);
         let actual = self.resolved(actual);
+        if let Ty::Sequence(element) = &expected
+            && self.is_string_type(&actual)
+        {
+            return self.unify((**element).clone(), Ty::CodePoint, function);
+        }
         match (expected, actual) {
             (Ty::Sequence(expected), Ty::List(actual)) => self.unify(*expected, *actual, function),
-            (Ty::Sequence(expected), Ty::String) => self.unify(*expected, Ty::CodePoint, function),
             (Ty::Sequence(expected), Ty::Bytes) => self.unify(*expected, Ty::Byte, function),
             (Ty::Sequence(expected), actual @ Ty::Record(_, _)) => {
                 self.coerce_sequence_shape(function, *expected, actual)
@@ -46,7 +50,7 @@ impl Checker<'_> {
             }
             (
                 Ty::Record(expected, expected_arguments),
-                actual @ (Ty::List(_) | Ty::Sequence(_) | Ty::String | Ty::Bytes),
+                actual @ (Ty::List(_) | Ty::Sequence(_) | Ty::Bytes),
             ) => self.coerce_record_shape(function, expected, &expected_arguments, actual),
             (expected, actual) => self.unify(expected, actual, function),
         }
@@ -265,11 +269,14 @@ impl Checker<'_> {
     }
 
     fn builtin_collection_method(&self, actual: &Ty, name: &str) -> Option<Ty> {
-        let element = match actual {
-            Ty::List(element) | Ty::Sequence(element) => (**element).clone(),
-            Ty::String => Ty::CodePoint,
-            Ty::Bytes => Ty::Byte,
-            _ => return None,
+        let element = if self.is_string_type(actual) {
+            Ty::CodePoint
+        } else {
+            match actual {
+                Ty::List(element) | Ty::Sequence(element) => (**element).clone(),
+                Ty::Bytes => Ty::Byte,
+                _ => return None,
+            }
         };
         let result = match name {
             "empty?" => Ty::Bool,

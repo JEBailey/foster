@@ -6,7 +6,7 @@ import core.result
 ///
 /// `read` returns at most `maximum` bytes. Empty bytes indicate clean end-of-stream.
 /// A successful read of a non-empty stream must return at least one byte.
-pub type Reader<E> {
+pub type Reader<E> = {
     pub func read(self, maximum: Int) -> Result<Bytes, E> [mut self]
 }
 
@@ -15,14 +15,14 @@ pub type Reader<E> {
 /// `write` may accept fewer bytes than supplied and reports the accepted count. A successful write
 /// of non-empty bytes must accept at least one byte. `flush` makes buffered output visible to the
 /// destination.
-pub type Writer<E> {
+pub type Writer<E> = {
     pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
     pub func flush(self) -> Result<Unit, E> [mut self]
 }
 
 /// A stateful source which decodes text while preserving character boundaries between reads.
 /// Empty text indicates clean end-of-stream.
-pub type TextReader<E> {
+pub type TextReader<E> = {
     pub func read_text(self, maximum: Int) -> Result<String, E> [mut self]
 }
 
@@ -30,13 +30,13 @@ pub type TextReader<E> {
 ///
 /// `write_text` accepts the complete string or returns an error. `flush` makes buffered text visible
 /// to the destination.
-pub type TextWriter<E> {
+pub type TextWriter<E> = {
     pub func write_text(self, text: String) -> Result<Unit, E> [mut self]
     pub func flush(self) -> Result<Unit, E> [mut self]
 }
 
 /// A bidirectional binary stream combining the `Reader<E>` and `Writer<E>` contracts.
-pub type Duplex<E> {
+pub type Duplex<E> = {
     pub func read(self, maximum: Int) -> Result<Bytes, E> [mut self]
     pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
     pub func flush(self) -> Result<Unit, E> [mut self]

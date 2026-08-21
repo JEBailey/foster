@@ -1,4 +1,4 @@
-pub type Person {
+pub type Person = {
     pub name: String
     secret: Int
 }

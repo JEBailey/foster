@@ -6,12 +6,12 @@ pub type Json =
     | Array(List<Json>)
     | Object(List<JsonMember>)
 
-pub type JsonMember {
+pub type JsonMember = {
     pub key: String
     pub value: Json
 }
 
-pub type JsonError {
+pub type JsonError = {
     pub message: String
 }
 
@@ -19,12 +19,12 @@ pub type ParseResult<T> =
     | Ok(T)
     | Error(JsonError)
 
-type Parsed<T> {
+type Parsed<T> = {
     value: T
     rest: String
 }
 
-type ScannedNumber {
+type ScannedNumber = {
     token: String
     rest: String
     digits: Int

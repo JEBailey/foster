@@ -25,8 +25,9 @@ role in the implementation. The compiler retains these comments for language-ser
 completion information, and the test suite enforces complete function coverage.
 The implementations use fully qualified variant constructors and patterns, explicit public
 signatures, and explicit record fields. Operators and primitive members such as `List.head`,
-`List.rest`, `List.append`, `String.head`, and `String.rest` are the current lowest-level language
-operations; they will move behind trusted intrinsic declarations once that mechanism exists.
+`List.rest` and `List.append` are current low-level language operations. `String` is an opaque
+Foster record backed by valid UTF-8 `Bytes`; literals and host decoding are its trusted construction
+paths, while its library algorithms are ordinary Foster functions.
 
 Current modules:
 

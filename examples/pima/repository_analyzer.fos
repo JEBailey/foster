@@ -1,6 +1,6 @@
 import core.sequence
 
-type Analysis {
+type Analysis = {
     files: Int
     lines: Int
     todos: Int
@@ -8,7 +8,7 @@ type Analysis {
     imports: Int
 }
 
-type SourceWorker {
+type SourceWorker = {
     source: String
 }
 

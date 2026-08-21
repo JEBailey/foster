@@ -91,7 +91,7 @@ this table for an intrinsic because it has no Foster implementation body.
 `String` implements `Sequence<CodePoint>`, and `List<T>` implements `Sequence<T>`. This is a
 zero-conversion view: generic sequence functions operate on the original string or list value.
 Foster's settled declaration syntax composes the same contract into a user type as
-`type Foo & Sequence<CodePoint> { }`. Sequence members are required accessor functions rather than
+`type Foo = & Sequence<CodePoint> & { }`. Sequence members are required accessor functions rather than
 implied storage, so constructors do not initialize `empty?`, `length`, `head`, or `rest`. A user
 type supplies compatible instance functions; read-only zero-argument accessors retain property
 syntax such as `value.head`. Conformance is statically duck typed, so matching readable fields can

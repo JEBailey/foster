@@ -3,15 +3,15 @@ import core.bytes
 import core.result
 import core.stream
 
-type StreamError {
+type StreamError = {
     message: String
 }
 
-type MemoryReader & Reader<StreamError> {
+type MemoryReader = & Reader<StreamError> & {
     remaining: Bytes
 }
 
-type MemoryWriter & Writer<StreamError> {
+type MemoryWriter = & Writer<StreamError> & {
     contents: Bytes
 }
 

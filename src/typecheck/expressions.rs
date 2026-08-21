@@ -88,7 +88,7 @@ impl Checker<'_> {
             hir::Expr::Bool(_) => Ty::Bool,
             hir::Expr::Integer(_) => Ty::Int,
             hir::Expr::Float(_) => Ty::Float,
-            hir::Expr::String(_) => Ty::String,
+            hir::Expr::String(_) => self.string_type(),
             hir::Expr::CodePoint(_) => Ty::CodePoint,
             hir::Expr::Symbol(_) => Ty::Symbol,
             hir::Expr::List(items) => {
@@ -339,12 +339,11 @@ impl Checker<'_> {
         let right = self.infer_expression(function, right)?;
         match operator {
             BinaryOp::Add => {
-                if matches!(self.resolved(left.clone()), Ty::String)
-                    || matches!(self.resolved(right.clone()), Ty::String)
-                {
-                    self.unify(Ty::String, left, function)?;
-                    self.unify(Ty::String, right, function)?;
-                    Ok(Ty::String)
+                if self.is_string_type(&left) || self.is_string_type(&right) {
+                    let string = self.string_type();
+                    self.unify(string.clone(), left, function)?;
+                    self.unify(string.clone(), right, function)?;
+                    Ok(string)
                 } else {
                     self.infer_numeric_binary(function, left, right)
                 }

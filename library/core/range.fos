@@ -5,7 +5,7 @@ import core.iteration
 ///
 /// This generic representation keeps range traversal independent of arithmetic. Numeric range
 /// constructors can be layered on it once constrained generic operators are available.
-pub type Range<T> & Sequence<T> & Collection<T> {
+pub type Range<T> = & Sequence<T> & Collection<T> & {
     values: List<T>
 }
 

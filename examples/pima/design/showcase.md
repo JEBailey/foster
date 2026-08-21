@@ -9,7 +9,7 @@ and attempted error capture. In intended Foster syntax, its central API becomes:
 type AccountError =
     | InvalidOpeningBalance
 
-type Account {
+type Account = {
     owner: String
     balance: Int
     history: List<Int>

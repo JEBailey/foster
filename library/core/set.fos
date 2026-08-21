@@ -2,7 +2,7 @@ import core.collection
 import core.iteration
 
 /// An insertion-ordered collection containing no duplicate values.
-pub type Set<T> & Collection<T> {
+pub type Set<T> = & Collection<T> & {
     values: List<T>
 }
 

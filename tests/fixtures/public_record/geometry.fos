@@ -1,4 +1,4 @@
-pub type Point {
+pub type Point = {
     pub x: Int
     pub y: Int
 }

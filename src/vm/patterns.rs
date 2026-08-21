@@ -18,7 +18,9 @@ pub(super) fn matches(
         (Pattern::Bool(expected), Value::Bool(actual)) => expected == actual,
         (Pattern::Integer(expected), Value::Integer(actual)) => expected == actual,
         (Pattern::Float(expected), Value::Float(actual)) => expected == actual,
-        (Pattern::String(expected), Value::String(actual)) => expected == actual,
+        (Pattern::String(expected), actual) => actual
+            .string_bytes()
+            .is_some_and(|bytes| bytes == expected.as_bytes()),
         (Pattern::CodePoint(expected), Value::CodePoint(actual)) => expected.starts_with(*actual),
         (Pattern::Symbol(expected), Value::Symbol(actual)) => expected == actual,
         (

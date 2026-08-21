@@ -1,6 +1,6 @@
 import secret
 
-type Imitation {
+type Imitation = {
     pub value: String
 }
 

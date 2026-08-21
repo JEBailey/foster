@@ -1,13 +1,13 @@
 import parser
 
-type ParserWorker {}
+type ParserWorker = {}
 
-type Statistics {
+type Statistics = {
     processed: Int
     failed: Int
 }
 
-type PipelineReport {
+type PipelineReport = {
     processed: Int
     failed: Int
 }

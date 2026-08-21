@@ -1,4 +1,4 @@
-type Account {
+type Account = {
     owner: String
     balance: Int
     transactions: List<Int>

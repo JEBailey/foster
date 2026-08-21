@@ -6,12 +6,12 @@ type Link<T> =
     | End
     | Node(T, Link<T>)
 
-type LinkedList<T> {
+type LinkedList<T> = {
     head: Link<T>
     size: Int
 }
 
-type LinkedListItem<T> {
+type LinkedListItem<T> = {
     value: T
     remaining: LinkedList<T>
 }

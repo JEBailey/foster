@@ -45,7 +45,7 @@ pub(super) fn fold(program: &mut Program) {
                     operator,
                     operand,
                 } => known.get(operand).and_then(|value| {
-                    operations::unary(*operator, &operations::constant_value(value))
+                    operations::unary(*operator, &operations::constant_value(value, None))
                         .ok()
                         .and_then(value_constant)
                         .map(|value| (*destination, value))
@@ -61,8 +61,8 @@ pub(super) fn fold(program: &mut Program) {
                     .and_then(|(left, right)| {
                         operations::binary(
                             *operator,
-                            &operations::constant_value(left),
-                            &operations::constant_value(right),
+                            &operations::constant_value(left, None),
+                            &operations::constant_value(right, None),
                         )
                         .ok()
                         .and_then(value_constant)
@@ -188,7 +188,9 @@ fn value_constant(value: Value) -> Option<Constant> {
         Value::Bool(value) => Some(Constant::Bool(value)),
         Value::Integer(value) => Some(Constant::Integer(value)),
         Value::Float(value) => Some(Constant::Float(value)),
-        Value::String(value) => Some(Constant::String(value)),
+        Value::Record { .. } if value.string_bytes().is_some() => Some(Constant::String(
+            std::str::from_utf8(value.string_bytes()?).ok()?.to_owned(),
+        )),
         Value::CodePoint(value) => Some(Constant::CodePoint(value)),
         Value::Symbol(value) => Some(Constant::Symbol(value)),
         _ => None,

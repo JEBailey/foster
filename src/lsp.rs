@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn publishes_compiler_warnings() {
         let diagnostics = diagnostics(
-            "type Box { value: Int }\nfunc inspect(self: Box) -> Int [mut self] { self.value }",
+            "type Box = { value: Int }\nfunc inspect(self: Box) -> Int [mut self] { self.value }",
         );
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].severity, Some(DiagnosticSeverity::WARNING));

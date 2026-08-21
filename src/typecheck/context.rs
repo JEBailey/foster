@@ -8,7 +8,6 @@ pub(super) enum Ty {
     Bool,
     Int,
     Float,
-    String,
     CodePoint,
     Byte,
     Bytes,

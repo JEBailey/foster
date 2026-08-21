@@ -14,7 +14,7 @@ type Json =
     | Array(List<Json>)
     | Object(Map<String, Json>)
 
-type JsonError {
+type JsonError = {
     message: String
     offset: Int
 }

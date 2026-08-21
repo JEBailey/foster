@@ -65,7 +65,7 @@ mod tests {
         let sources = [
             "func main() -> Int { branch { true -> 20 + 22 _ -> 0 } }",
             "func count(value: Int) -> Int { branch { value == 0 -> 42 _ -> count(value - 1) } }\nfunc main() -> Int { count(100) }",
-            "type Pair { left: Int, right: Int }\nfunc main() -> Int {\n pair = Pair { left: 20, right: 22 }\n pair.left + pair.right\n}",
+            "type Pair = { left: Int, right: Int }\nfunc main() -> Int {\n pair = Pair { left: 20, right: 22 }\n pair.left + pair.right\n}",
             "func main() -> Int {\n offset = 2\n multiply = [copy offset] (value: Int) -> { value * offset }\n multiply(21)\n}",
         ];
 
@@ -316,7 +316,7 @@ mod tests {
         assert_eq!(run(&branching).unwrap(), Value::Integer(42));
 
         let record = crate::compile(
-            "type Pair { left: Int, right: Int }\n\
+            "type Pair = { left: Int, right: Int }\n\
              func main() -> Int {\n\
                  pair = Pair { left: 20, right: 22 }\n\
                  pair.left + pair.right\n\

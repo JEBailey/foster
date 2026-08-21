@@ -1,13 +1,13 @@
 import core.sequence
 
-type Metrics {
+type Metrics = {
     lines: Int
     todos: Int
     functions: Int
     imports: Int
 }
 
-type Analyzer {
+type Analyzer = {
     source: String
 }
 

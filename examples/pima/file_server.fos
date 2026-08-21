@@ -1,9 +1,9 @@
-type FileResponse {
+type FileResponse = {
     status: Int
     reason: String
 }
 
-type StaticServer {
+type StaticServer = {
     home: String
     stylesheet: String
 }

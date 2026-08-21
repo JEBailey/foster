@@ -6,7 +6,7 @@ pub type Ordering =
 /// A type whose values can be compared for semantic equality with `T`.
 ///
 /// Implementations must be reflexive, symmetric, and transitive.
-pub type Equality<T> {
+pub type Equality<T> = {
     /// Returns whether this value and `other` are semantically equal.
     pub func equal?(self, other: T) -> Bool
 }
@@ -15,7 +15,7 @@ pub type Equality<T> {
 ///
 /// `compare` must agree with the composed `Equality<T>` implementation:
 /// it returns `Ordering.Equal` exactly when `equal?` returns true.
-pub type Ordered<T> & Equality<T> {
+pub type Ordered<T> = & Equality<T> & {
     /// Compares this value with `other`.
     pub func compare(self, other: T) -> Ordering
 }
@@ -23,7 +23,7 @@ pub type Ordered<T> & Equality<T> {
 /// A type that provides a stable integer hash for its semantic value.
 ///
 /// Values considered equal must return the same hash. Unequal values may collide.
-pub type Hashing {
+pub type Hashing = {
     /// Returns this value's stable integer hash.
     pub func hash(self) -> Int
 }

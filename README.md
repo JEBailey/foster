@@ -51,7 +51,8 @@ The current implementation includes:
 - generic records, associated factories, instance methods, private-by-default declarations, and
   closed variants with exhaustive pattern branches;
 - statically checked structural record adaptation, declaration-side composition such as
-  `type Text & Sequence<CodePoint>`, and intersection contracts such as `Named & Located`;
+  `type Text = & Sequence<CodePoint> & { ... }`, and intersection contracts such as
+  `Named & Located`;
 - borrow-by-default calls, explicit `move`, positional consuming callable types, group references,
   closure capture modes, move/initialization checking, and structural invalidation;
 - inferred or explicit `read`, `mut`, `reshape`, `consume`, and `suspend` effects;

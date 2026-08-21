@@ -8,14 +8,14 @@ actors/remote blocks, maps, records, and filesystem security. Their Foster entry
 capabilities and effects explicit:
 
 ```foster
-type Request {
+type Request = {
     method: Method
     target: String
     headers: Map<String, String>
     body: Bytes
 }
 
-type Response {
+type Response = {
     status: Int
     reason: String
     headers: Map<String, String>

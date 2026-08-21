@@ -1,9 +1,9 @@
-type Entry {
+type Entry = {
     key: Symbol
     value: Int
 }
 
-pub type Map {
+pub type Map = {
     entries: List<Entry>
 }
 

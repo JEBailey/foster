@@ -1,6 +1,6 @@
 import core.ordering
 
-type Version & Ordered<Version> & Hashing {
+type Version = & Ordered<Version> & Hashing & {
     number: Int
 }
 

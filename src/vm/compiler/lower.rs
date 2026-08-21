@@ -615,7 +615,6 @@ impl FunctionCompiler<'_> {
                 self.types.types[ty],
                 crate::types::Type::List(_)
                     | crate::types::Type::Sequence(_)
-                    | crate::types::Type::String
                     | crate::types::Type::Bytes
             )
         })

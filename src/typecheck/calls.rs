@@ -138,10 +138,11 @@ impl Checker<'_> {
     pub(super) fn builtin_signature(&self, builtin: Builtin) -> Result<(Vec<Ty>, Ty), FosterError> {
         let io_result = |ok| self.host_result(ok, "core.io", "IoError");
         let tcp_result = |ok| self.host_result(ok, "core.net.tcp", "NetworkError");
+        let string = self.string_type();
         Ok(match builtin {
             Builtin::CodePoint => (vec![Ty::CodePoint], Ty::Int),
             Builtin::FromCodePoint => (vec![Ty::Int], Ty::CodePoint),
-            Builtin::ParseFloat => (vec![Ty::String], Ty::Float),
+            Builtin::ParseFloat => (vec![string.clone()], Ty::Float),
             Builtin::ByteValid => (vec![Ty::Int], Ty::Bool),
             Builtin::ByteUnchecked => (vec![Ty::Int], Ty::Byte),
             Builtin::BytesEmpty => (Vec::new(), Ty::Bytes),
@@ -149,14 +150,14 @@ impl Checker<'_> {
             Builtin::BytesConcat => (vec![Ty::Bytes, Ty::Bytes], Ty::Bytes),
             Builtin::BytesSlice => (vec![Ty::Bytes, Ty::Int, Ty::Int], Ty::Bytes),
             Builtin::BytesToList => (vec![Ty::Bytes], Ty::List(Box::new(Ty::Byte))),
-            Builtin::BytesHex => (vec![Ty::Bytes], Ty::String),
+            Builtin::BytesHex => (vec![Ty::Bytes], string.clone()),
             Builtin::BytesFromHex => (
-                vec![Ty::String],
+                vec![string.clone()],
                 self.host_result(Ty::Bytes, "core.bytes", "HexError")?,
             ),
-            Builtin::StringUtf8 => (vec![Ty::String], Ty::Bytes),
+            Builtin::StringUtf8 => (vec![string.clone()], Ty::Bytes),
             Builtin::BytesUtf8Valid => (vec![Ty::Bytes], Ty::Bool),
-            Builtin::BytesDecodeUtf8 => (vec![Ty::Bytes], Ty::String),
+            Builtin::BytesDecodeUtf8 => (vec![Ty::Bytes], string.clone()),
             Builtin::ByteBufferEmpty => (Vec::new(), Ty::ByteBuffer),
             Builtin::ByteBufferWithCapacity => (vec![Ty::Int], Ty::ByteBuffer),
             Builtin::ByteBufferPush => (vec![Ty::ByteBuffer, Ty::Byte], Ty::Unit),
@@ -169,27 +170,28 @@ impl Checker<'_> {
                 (vec![Ty::ByteBuffer], Ty::Bytes)
             }
             Builtin::IoReadText | Builtin::IoCanonicalize => {
-                (vec![Ty::String], io_result(Ty::String)?)
+                (vec![string.clone()], io_result(string.clone())?)
             }
-            Builtin::IoWriteText => (vec![Ty::String, Ty::String], io_result(Ty::Unit)?),
-            Builtin::IoReadBytes => (vec![Ty::String], io_result(Ty::Bytes)?),
-            Builtin::IoWriteBytes => (vec![Ty::String, Ty::Bytes], io_result(Ty::Unit)?),
-            Builtin::IoListDirectory => {
-                (vec![Ty::String], io_result(Ty::List(Box::new(Ty::String)))?)
-            }
+            Builtin::IoWriteText => (vec![string.clone(), string.clone()], io_result(Ty::Unit)?),
+            Builtin::IoReadBytes => (vec![string.clone()], io_result(Ty::Bytes)?),
+            Builtin::IoWriteBytes => (vec![string.clone(), Ty::Bytes], io_result(Ty::Unit)?),
+            Builtin::IoListDirectory => (
+                vec![string.clone()],
+                io_result(Ty::List(Box::new(string.clone())))?,
+            ),
             Builtin::IoExists | Builtin::IoIsFile | Builtin::IoIsDirectory => {
-                (vec![Ty::String], Ty::Bool)
+                (vec![string.clone()], Ty::Bool)
             }
-            Builtin::IoJoin => (vec![Ty::String, Ty::String], Ty::String),
+            Builtin::IoJoin => (vec![string.clone(), string.clone()], string.clone()),
             Builtin::IoParent | Builtin::IoFileName | Builtin::IoExtension => {
-                (vec![Ty::String], Ty::String)
+                (vec![string.clone()], string.clone())
             }
-            Builtin::IoCurrentDirectory => (Vec::new(), io_result(Ty::String)?),
-            Builtin::TcpListen => (vec![Ty::String, Ty::Int], tcp_result(Ty::Int)?),
-            Builtin::TcpConnect => (vec![Ty::String, Ty::Int], tcp_result(Ty::Int)?),
+            Builtin::IoCurrentDirectory => (Vec::new(), io_result(string.clone())?),
+            Builtin::TcpListen => (vec![string.clone(), Ty::Int], tcp_result(Ty::Int)?),
+            Builtin::TcpConnect => (vec![string.clone(), Ty::Int], tcp_result(Ty::Int)?),
             Builtin::TcpAccept => (vec![Ty::Int], tcp_result(Ty::Int)?),
-            Builtin::TcpRead => (vec![Ty::Int, Ty::Int], tcp_result(Ty::String)?),
-            Builtin::TcpWrite => (vec![Ty::Int, Ty::String], tcp_result(Ty::Unit)?),
+            Builtin::TcpRead => (vec![Ty::Int, Ty::Int], tcp_result(string.clone())?),
+            Builtin::TcpWrite => (vec![Ty::Int, string], tcp_result(Ty::Unit)?),
             Builtin::TcpReadBytes => (vec![Ty::Int, Ty::Int], tcp_result(Ty::Bytes)?),
             Builtin::TcpWriteBytes => (vec![Ty::Int, Ty::Bytes], tcp_result(Ty::Unit)?),
             Builtin::TcpSetTimeout => (vec![Ty::Int, Ty::Int], tcp_result(Ty::Unit)?),
@@ -265,10 +267,9 @@ impl Checker<'_> {
     fn argument_is_owned_place(&self, expression: ExprId) -> bool {
         match self.hir.expressions[expression] {
             hir::Expr::Name(ResolvedName::Local(_)) | hir::Expr::Index { .. } => true,
-            hir::Expr::Member { object, .. } => self
-                .expressions
-                .get(&object)
-                .is_some_and(|ty| matches!(self.resolved(ty.clone()), Ty::Record(_, _))),
+            hir::Expr::Member { object, .. } => self.expressions.get(&object).is_some_and(|ty| {
+                !self.is_string_type(ty) && matches!(self.resolved(ty.clone()), Ty::Record(_, _))
+            }),
             _ => false,
         }
     }
@@ -279,15 +280,29 @@ impl Checker<'_> {
         object: Ty,
         name: &str,
     ) -> Result<Ty, FosterError> {
-        match (self.resolved(object), name) {
-            (Ty::String, "empty?" | "whitespace?") => Ok(Ty::Bool),
-            (Ty::String, "length") => Ok(Ty::Int),
-            (Ty::String, "head") => Ok(Ty::CodePoint),
-            (Ty::String, "rest") => Ok(Ty::String),
-            (Ty::String, "utf8") => Ok(Ty::Bytes),
-            (Ty::String, "iterator") => self.collection_iterator(Ty::CodePoint, function),
+        let object = self.resolved(object);
+        if self.is_string_type(&object) {
+            if name == "value" {
+                let Ty::Record(record, arguments) = object else {
+                    unreachable!("the Foster String type is a record")
+                };
+                return self.record_field_type(function, record, &arguments, name);
+            }
+            return match name {
+                "empty?" | "whitespace?" => Ok(Ty::Bool),
+                "length" => Ok(Ty::Int),
+                "head" => Ok(Ty::CodePoint),
+                "rest" => Ok(self.string_type()),
+                "utf8" => Ok(Ty::Bytes),
+                "iterator" => self.collection_iterator(Ty::CodePoint, function),
+                member => {
+                    self.primitive_method_type(function, self.string_type(), "core.string", member)
+                }
+            };
+        }
+        match (object, name) {
             (Ty::CodePoint, "whitespace?") => Ok(Ty::Bool),
-            (Ty::CodePoint, "string") => Ok(Ty::String),
+            (Ty::CodePoint, "string") => Ok(self.string_type()),
             (Ty::Byte, "int") => Ok(Ty::Int),
             (Ty::Bytes, "empty?") => Ok(Ty::Bool),
             (Ty::Bytes, "length") => Ok(Ty::Int),

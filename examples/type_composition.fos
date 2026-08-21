@@ -1,10 +1,10 @@
 import core.string as strings
 
-type Named {
+type Named = {
     pub name: String
 }
 
-type TextSlice & Named & Sequence<CodePoint> {
+type TextSlice = & Named & Sequence<CodePoint> & {
     text: String
 }
 

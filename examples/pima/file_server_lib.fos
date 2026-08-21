@@ -1,20 +1,20 @@
 // Transport-independent static-file handling. This corpus keeps files as owned
 // data for deterministic tests; applications can load them through core.io.
 
-type File {
+type File = {
     path: String
     media_type: String
     body: String
 }
 
-type Response {
+type Response = {
     status: Int
     reason: String
     media_type: String
     body: String
 }
 
-type FileServer {
+type FileServer = {
     files: List<File>
 }
 

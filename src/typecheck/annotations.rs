@@ -43,7 +43,7 @@ impl Checker<'_> {
                     ("Bool", []) => Some(Ty::Bool),
                     ("Int", []) => Some(Ty::Int),
                     ("Float", []) => Some(Ty::Float),
-                    ("String", []) => Some(Ty::String),
+                    ("String", []) => Some(self.string_type()),
                     ("CodePoint", []) => Some(Ty::CodePoint),
                     ("Byte", []) => Some(Ty::Byte),
                     ("Bytes", []) => Some(Ty::Bytes),

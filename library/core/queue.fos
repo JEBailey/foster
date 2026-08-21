@@ -3,7 +3,7 @@ import core.iteration
 import core.option
 
 /// A first-in, first-out collection.
-pub type Queue<T> & Collection<T> {
+pub type Queue<T> = & Collection<T> & {
     values: List<T>
 }
 
@@ -41,7 +41,7 @@ pub func pop<T>(self: Queue<T>) -> Option<QueueItem<T>> [consume self] {
 }
 
 /// The result of removing one value from a queue.
-pub type QueueItem<T> {
+pub type QueueItem<T> = {
     pub value: T
     pub remaining: Queue<T>
 }

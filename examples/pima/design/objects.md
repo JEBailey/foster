@@ -6,7 +6,7 @@ Pima's `object_test.pima` does not require class inheritance. In Foster it shoul
 methods and mutation effects:
 
 ```foster
-type Square {
+type Square = {
     length: Int
     width: Int
 }

@@ -74,6 +74,23 @@ impl<'a> Checker<'a> {
         }
     }
 
+    fn string_type(&self) -> Ty {
+        let module = self
+            .hir
+            .module_named("core.string")
+            .expect("the Foster String bootstrap module is installed");
+        let record = self.hir.modules[module]
+            .records
+            .get("String")
+            .copied()
+            .expect("core.string defines String");
+        Ty::Record(record, Vec::new())
+    }
+
+    fn is_string_type(&self, ty: &Ty) -> bool {
+        self.resolved(ty.clone()) == self.string_type()
+    }
+
     fn check(mut self, validate_effects: bool) -> Result<CheckOutput, FosterError> {
         self.check_record_declarations()?;
         self.check_variant_declarations()?;

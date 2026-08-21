@@ -95,7 +95,10 @@ impl Machine {
                 } => write(
                     frame,
                     destination,
-                    constant_value(&self.program.constants[constant as usize]),
+                    constant_value(
+                        &self.program.constants[constant as usize],
+                        self.program.string_record,
+                    ),
                 )?,
                 Instruction::Move {
                     destination,
@@ -189,7 +192,7 @@ impl Machine {
                     object,
                     field,
                 } => {
-                    let value = member(read(frame, object)?, &field)?;
+                    let value = member(read(frame, object)?, &field, self.program.string_record)?;
                     write(frame, destination, value)?;
                 }
                 Instruction::StoreField {
@@ -341,7 +344,11 @@ impl Machine {
                         .into_iter()
                         .map(|argument| read(frame, argument))
                         .collect::<Result<Vec<_>, _>>()?;
-                    write(frame, destination, call_builtin(builtin, &arguments)?)?;
+                    write(
+                        frame,
+                        destination,
+                        call_builtin(builtin, &arguments, self.program.string_record)?,
+                    )?;
                 }
                 Instruction::MatchPattern {
                     destination,
@@ -438,8 +445,22 @@ impl Machine {
                     if let Value::Record { fields, .. } = &value
                         && arguments.is_empty()
                         && let Some(field) = fields.get(&name)
+                        && value.string_bytes().is_none()
                     {
                         write(frame, destination, field.clone())?;
+                        continue;
+                    }
+                    if value.string_bytes().is_some() {
+                        if !arguments.is_empty() {
+                            return Err(FosterError::runtime(format!(
+                                "contract member `{name}` does not accept arguments"
+                            )));
+                        }
+                        write(
+                            frame,
+                            destination,
+                            member(value, &name, self.program.string_record)?,
+                        )?;
                         continue;
                     }
                     if !matches!(value, Value::Record { .. }) {
@@ -448,7 +469,11 @@ impl Machine {
                                 "contract member `{name}` does not accept arguments"
                             )));
                         }
-                        write(frame, destination, member(value, &name)?)?;
+                        write(
+                            frame,
+                            destination,
+                            member(value, &name, self.program.string_record)?,
+                        )?;
                         continue;
                     }
                     let Value::Record {
@@ -860,7 +885,33 @@ fn write(frame: &Frame, register: Register, value: Value) -> Result<(), FosterEr
     frame.registers[register.0 as usize].write(value)
 }
 
-fn member(value: Value, field: &str) -> Result<Value, FosterError> {
+fn member(
+    value: Value,
+    field: &str,
+    string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, FosterError> {
+    if let Some(bytes) = value.string_bytes() {
+        let text = std::str::from_utf8(bytes)
+            .map_err(|_| FosterError::runtime("Foster String contains invalid UTF-8"))?;
+        return match field {
+            "empty?" => Ok(Value::Bool(bytes.is_empty())),
+            "length" => Ok(Value::Integer(text.chars().count() as i64)),
+            "head" => text
+                .chars()
+                .next()
+                .map(Value::CodePoint)
+                .ok_or_else(|| FosterError::runtime("cannot take `head` of an empty string")),
+            "rest" => {
+                let offset = text.chars().next().map_or(0, char::len_utf8);
+                Ok(Value::string(string_record, bytes[offset..].to_vec()))
+            }
+            "whitespace?" => Ok(Value::Bool(text.chars().all(char::is_whitespace))),
+            "utf8" | "value" => Ok(Value::Bytes(Arc::new(bytes.to_vec()))),
+            _ => Err(FosterError::runtime(format!(
+                "value has no field `{field}`"
+            ))),
+        };
+    }
     match (value, field) {
         (Value::Record { fields, .. }, field) => fields
             .get(field)
@@ -875,20 +926,10 @@ fn member(value: Value, field: &str) -> Result<Value, FosterError> {
         (Value::List(values), "rest") => {
             Ok(Value::List(values.get(1..).unwrap_or_default().to_vec()))
         }
-        (Value::String(value), "empty?") => Ok(Value::Bool(value.is_empty())),
-        (Value::String(value), "length") => Ok(Value::Integer(value.chars().count() as i64)),
-        (Value::String(value), "head") => value
-            .chars()
-            .next()
-            .map(Value::CodePoint)
-            .ok_or_else(|| FosterError::runtime("cannot take `head` of an empty string")),
-        (Value::String(value), "rest") => Ok(Value::String(value.chars().skip(1).collect())),
-        (Value::String(value), "whitespace?") => {
-            Ok(Value::Bool(value.chars().all(char::is_whitespace)))
-        }
-        (Value::String(value), "utf8") => Ok(Value::Bytes(Arc::new(value.into_bytes()))),
         (Value::CodePoint(value), "whitespace?") => Ok(Value::Bool(value.is_whitespace())),
-        (Value::CodePoint(value), "string") => Ok(Value::String(value.to_string())),
+        (Value::CodePoint(value), "string") => {
+            Ok(Value::string(string_record, value.to_string().into_bytes()))
+        }
         (Value::Byte(value), "int") => Ok(Value::Integer(i64::from(value))),
         (Value::Bytes(values), "empty?") => Ok(Value::Bool(values.is_empty())),
         (Value::Bytes(values), "length") => Ok(Value::Integer(values.len() as i64)),
@@ -909,7 +950,11 @@ fn member(value: Value, field: &str) -> Result<Value, FosterError> {
     }
 }
 
-fn call_builtin(builtin: Builtin, arguments: &[Value]) -> Result<Value, FosterError> {
+fn call_builtin(
+    builtin: Builtin,
+    arguments: &[Value],
+    string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, FosterError> {
     match (builtin, arguments) {
         (Builtin::Print | Builtin::Println, arguments) => {
             let rendered = arguments
@@ -930,7 +975,8 @@ fn call_builtin(builtin: Builtin, arguments: &[Value]) -> Result<Value, FosterEr
             .and_then(char::from_u32)
             .map(Value::CodePoint)
             .ok_or_else(|| FosterError::runtime("invalid Unicode scalar value")),
-        (Builtin::ParseFloat, [Value::String(value)]) => value
+        (Builtin::ParseFloat, [value]) if value.string_bytes().is_some() => value
+            .string_text()?
             .parse::<f64>()
             .map(Value::Float)
             .map_err(|_| FosterError::runtime("invalid Float text")),
@@ -977,28 +1023,38 @@ fn call_builtin(builtin: Builtin, arguments: &[Value]) -> Result<Value, FosterEr
         (Builtin::BytesToList, [Value::Bytes(values)]) => Ok(Value::List(
             values.iter().copied().map(Value::Byte).collect(),
         )),
-        (Builtin::BytesHex, [Value::Bytes(values)]) => Ok(Value::String(
-            values.iter().map(|byte| format!("{byte:02x}")).collect(),
+        (Builtin::BytesHex, [Value::Bytes(values)]) => Ok(Value::string(
+            string_record,
+            values
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+                .into_bytes(),
         )),
-        (Builtin::BytesFromHex, [Value::String(value)]) => Ok(match decode_hex(value) {
-            Ok(bytes) => result_ok(Value::Bytes(Arc::new(bytes))),
-            Err((offset, message)) => result_error(Value::Record {
-                record: None,
-                name: "HexError".into(),
-                fields: BTreeMap::from([
-                    ("offset".into(), Value::Integer(offset as i64)),
-                    ("message".into(), Value::String(message)),
-                ]),
-            }),
-        }),
-        (Builtin::StringUtf8, [Value::String(value)]) => {
-            Ok(Value::Bytes(Arc::new(value.as_bytes().to_vec())))
+        (Builtin::BytesFromHex, [value]) if value.string_bytes().is_some() => {
+            Ok(match decode_hex(value.string_text()?) {
+                Ok(bytes) => result_ok(Value::Bytes(Arc::new(bytes))),
+                Err((offset, message)) => result_error(Value::Record {
+                    record: None,
+                    name: "HexError".into(),
+                    fields: BTreeMap::from([
+                        ("offset".into(), Value::Integer(offset as i64)),
+                        (
+                            "message".into(),
+                            Value::string(string_record, message.into_bytes()),
+                        ),
+                    ]),
+                }),
+            })
         }
+        (Builtin::StringUtf8, [value]) if value.string_bytes().is_some() => Ok(Value::Bytes(
+            Arc::new(value.string_bytes().unwrap().to_vec()),
+        )),
         (Builtin::BytesUtf8Valid, [Value::Bytes(value)]) => {
             Ok(Value::Bool(std::str::from_utf8(value).is_ok()))
         }
         (Builtin::BytesDecodeUtf8, [Value::Bytes(value)]) => std::str::from_utf8(value)
-            .map(|value| Value::String(value.to_owned()))
+            .map(|value| Value::string(string_record, value.as_bytes().to_vec()))
             .map_err(|_| FosterError::runtime("Bytes are not valid UTF-8")),
         (Builtin::ByteBufferEmpty, []) => Ok(Value::ByteBuffer(Vec::new())),
         (Builtin::ByteBufferWithCapacity, [Value::Integer(capacity)]) => {
@@ -1009,27 +1065,46 @@ fn call_builtin(builtin: Builtin, arguments: &[Value]) -> Result<Value, FosterEr
         (Builtin::ByteBufferFreeze | Builtin::ByteBufferSnapshot, [Value::ByteBuffer(values)]) => {
             Ok(Value::Bytes(Arc::new(values.clone())))
         }
-        (Builtin::IoReadText, [Value::String(path)]) => Ok(io_result(
-            "read_text",
-            path,
-            std::fs::read_to_string(path).map(Value::String),
-        )),
-        (Builtin::IoWriteText, [Value::String(path), Value::String(text)]) => Ok(io_result(
-            "write_text",
-            path,
-            std::fs::write(path, text).map(|()| Value::Unit),
-        )),
-        (Builtin::IoReadBytes, [Value::String(path)]) => Ok(io_result(
-            "read_bytes",
-            path,
-            std::fs::read(path).map(|bytes| Value::Bytes(Arc::new(bytes))),
-        )),
-        (Builtin::IoWriteBytes, [Value::String(path), Value::Bytes(bytes)]) => Ok(io_result(
-            "write_bytes",
-            path,
-            std::fs::write(path, bytes.as_slice()).map(|()| Value::Unit),
-        )),
-        (Builtin::IoListDirectory, [Value::String(path)]) => {
+        (Builtin::IoReadText, [path]) if path.string_bytes().is_some() => {
+            let path = path.string_text()?;
+            Ok(io_result(
+                "read_text",
+                path,
+                std::fs::read(path).map(|bytes| Value::string(string_record, bytes)),
+                string_record,
+            ))
+        }
+        (Builtin::IoWriteText, [path, text])
+            if path.string_bytes().is_some() && text.string_bytes().is_some() =>
+        {
+            let path = path.string_text()?;
+            Ok(io_result(
+                "write_text",
+                path,
+                std::fs::write(path, text.string_bytes().unwrap()).map(|()| Value::Unit),
+                string_record,
+            ))
+        }
+        (Builtin::IoReadBytes, [path]) if path.string_bytes().is_some() => {
+            let path = path.string_text()?;
+            Ok(io_result(
+                "read_bytes",
+                path,
+                std::fs::read(path).map(|bytes| Value::Bytes(Arc::new(bytes))),
+                string_record,
+            ))
+        }
+        (Builtin::IoWriteBytes, [path, Value::Bytes(bytes)]) if path.string_bytes().is_some() => {
+            let path = path.string_text()?;
+            Ok(io_result(
+                "write_bytes",
+                path,
+                std::fs::write(path, bytes.as_slice()).map(|()| Value::Unit),
+                string_record,
+            ))
+        }
+        (Builtin::IoListDirectory, [path]) if path.string_bytes().is_some() => {
+            let path = path.string_text()?;
             let entries = std::fs::read_dir(path).and_then(|entries| {
                 let mut names = Vec::new();
                 for entry in entries {
@@ -1039,94 +1114,130 @@ fn call_builtin(builtin: Builtin, arguments: &[Value]) -> Result<Value, FosterEr
                             "directory entry name is not valid UTF-8",
                         )
                     })?;
-                    names.push(Value::String(name));
+                    names.push(Value::string(string_record, name.into_bytes()));
                 }
                 names.sort_by_key(|name| name.to_string());
                 Ok(Value::List(names))
             });
-            Ok(io_result("list_directory", path, entries))
+            Ok(io_result("list_directory", path, entries, string_record))
         }
-        (Builtin::IoExists, [Value::String(path)]) => {
-            Ok(Value::Bool(std::path::Path::new(path).exists()))
+        (Builtin::IoExists, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
+            std::path::Path::new(path.string_text()?).exists(),
+        )),
+        (Builtin::IoIsFile, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
+            std::path::Path::new(path.string_text()?).is_file(),
+        )),
+        (Builtin::IoIsDirectory, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
+            std::path::Path::new(path.string_text()?).is_dir(),
+        )),
+        (Builtin::IoJoin, [left, right])
+            if left.string_bytes().is_some() && right.string_bytes().is_some() =>
+        {
+            path_value(
+                std::path::Path::new(left.string_text()?).join(right.string_text()?),
+                string_record,
+            )
         }
-        (Builtin::IoIsFile, [Value::String(path)]) => {
-            Ok(Value::Bool(std::path::Path::new(path).is_file()))
-        }
-        (Builtin::IoIsDirectory, [Value::String(path)]) => {
-            Ok(Value::Bool(std::path::Path::new(path).is_dir()))
-        }
-        (Builtin::IoJoin, [Value::String(left), Value::String(right)]) => {
-            path_value(std::path::Path::new(left).join(right))
-        }
-        (Builtin::IoParent, [Value::String(path)]) => optional_path_component(
-            std::path::Path::new(path)
+        (Builtin::IoParent, [path]) if path.string_bytes().is_some() => optional_path_component(
+            std::path::Path::new(path.string_text()?)
                 .parent()
                 .map(std::path::Path::to_path_buf),
+            string_record,
         ),
-        (Builtin::IoFileName, [Value::String(path)]) => {
-            optional_os_component(std::path::Path::new(path).file_name())
+        (Builtin::IoFileName, [path]) if path.string_bytes().is_some() => optional_os_component(
+            std::path::Path::new(path.string_text()?).file_name(),
+            string_record,
+        ),
+        (Builtin::IoExtension, [path]) if path.string_bytes().is_some() => optional_os_component(
+            std::path::Path::new(path.string_text()?).extension(),
+            string_record,
+        ),
+        (Builtin::IoCanonicalize, [path]) if path.string_bytes().is_some() => {
+            let path = path.string_text()?;
+            Ok(io_result(
+                "canonicalize",
+                path,
+                std::fs::canonicalize(path).and_then(|path| path_value_io(path, string_record)),
+                string_record,
+            ))
         }
-        (Builtin::IoExtension, [Value::String(path)]) => {
-            optional_os_component(std::path::Path::new(path).extension())
-        }
-        (Builtin::IoCanonicalize, [Value::String(path)]) => Ok(io_result(
-            "canonicalize",
-            path,
-            std::fs::canonicalize(path).and_then(path_value_io),
-        )),
         (Builtin::IoCurrentDirectory, []) => Ok(io_result(
             "current_directory",
             "",
-            std::env::current_dir().and_then(path_value_io),
+            std::env::current_dir().and_then(|path| path_value_io(path, string_record)),
+            string_record,
         )),
-        (Builtin::TcpListen, [Value::String(address), Value::Integer(port)]) => Ok(tcp_result(
-            "listen",
-            super::host::listen(address, *port).map(Value::Integer),
-        )),
-        (Builtin::TcpConnect, [Value::String(address), Value::Integer(port)]) => Ok(tcp_result(
-            "connect",
-            super::host::connect(address, *port).map(Value::Integer),
-        )),
+        (Builtin::TcpListen, [address, Value::Integer(port)])
+            if address.string_bytes().is_some() =>
+        {
+            Ok(tcp_result(
+                "listen",
+                super::host::listen(address.string_text()?, *port).map(Value::Integer),
+                string_record,
+            ))
+        }
+        (Builtin::TcpConnect, [address, Value::Integer(port)])
+            if address.string_bytes().is_some() =>
+        {
+            Ok(tcp_result(
+                "connect",
+                super::host::connect(address.string_text()?, *port).map(Value::Integer),
+                string_record,
+            ))
+        }
         (Builtin::TcpAccept, [Value::Integer(listener)]) => Ok(tcp_result(
             "accept",
             super::host::accept(*listener).map(Value::Integer),
+            string_record,
         )),
         (Builtin::TcpRead, [Value::Integer(connection), Value::Integer(maximum)]) => {
             Ok(tcp_result(
                 "read",
-                super::host::read(*connection, *maximum).map(Value::String),
+                super::host::read(*connection, *maximum)
+                    .map(|value| Value::string(string_record, value.into_bytes())),
+                string_record,
             ))
         }
-        (Builtin::TcpWrite, [Value::Integer(connection), Value::String(text)]) => Ok(tcp_result(
-            "write",
-            super::host::write(*connection, text).map(|()| Value::Unit),
-        )),
+        (Builtin::TcpWrite, [Value::Integer(connection), text])
+            if text.string_bytes().is_some() =>
+        {
+            Ok(tcp_result(
+                "write",
+                super::host::write(*connection, text.string_text()?).map(|()| Value::Unit),
+                string_record,
+            ))
+        }
         (Builtin::TcpReadBytes, [Value::Integer(connection), Value::Integer(maximum)]) => {
             Ok(tcp_result(
                 "read_bytes",
                 super::host::read_bytes(*connection, *maximum)
                     .map(|bytes| Value::Bytes(Arc::new(bytes))),
+                string_record,
             ))
         }
         (Builtin::TcpWriteBytes, [Value::Integer(connection), Value::Bytes(bytes)]) => {
             Ok(tcp_result(
                 "write_bytes",
                 super::host::write_bytes(*connection, bytes).map(|()| Value::Unit),
+                string_record,
             ))
         }
         (Builtin::TcpSetTimeout, [Value::Integer(connection), Value::Integer(milliseconds)]) => {
             Ok(tcp_result(
                 "set_timeout",
                 super::host::set_timeout(*connection, *milliseconds).map(|()| Value::Unit),
+                string_record,
             ))
         }
         (Builtin::TcpCloseListener, [Value::Integer(listener)]) => Ok(tcp_result(
             "close_listener",
             super::host::close_listener(*listener).map(|()| Value::Unit),
+            string_record,
         )),
         (Builtin::TcpCloseConnection, [Value::Integer(connection)]) => Ok(tcp_result(
             "close_connection",
             super::host::close_connection(*connection).map(|()| Value::Unit),
+            string_record,
         )),
         _ => Err(FosterError::runtime("invalid builtin arguments")),
     }
@@ -1234,30 +1345,54 @@ fn hex_nibble(value: u8) -> Option<u8> {
     }
 }
 
-fn io_result(operation: &str, path: &str, result: Result<Value, std::io::Error>) -> Value {
+fn io_result(
+    operation: &str,
+    path: &str,
+    result: Result<Value, std::io::Error>,
+    string_record: Option<crate::hir::RecordId>,
+) -> Value {
     match result {
         Ok(value) => result_ok(value),
         Err(error) => result_error(Value::Record {
             record: None,
             name: "IoError".into(),
             fields: BTreeMap::from([
-                ("operation".into(), Value::String(operation.into())),
-                ("path".into(), Value::String(path.into())),
-                ("message".into(), Value::String(error.to_string())),
+                (
+                    "operation".into(),
+                    Value::string(string_record, operation.as_bytes().to_vec()),
+                ),
+                (
+                    "path".into(),
+                    Value::string(string_record, path.as_bytes().to_vec()),
+                ),
+                (
+                    "message".into(),
+                    Value::string(string_record, error.to_string().into_bytes()),
+                ),
             ]),
         }),
     }
 }
 
-fn tcp_result(operation: &str, result: Result<Value, String>) -> Value {
+fn tcp_result(
+    operation: &str,
+    result: Result<Value, String>,
+    string_record: Option<crate::hir::RecordId>,
+) -> Value {
     match result {
         Ok(value) => result_ok(value),
         Err(message) => result_error(Value::Record {
             record: None,
             name: "NetworkError".into(),
             fields: BTreeMap::from([
-                ("operation".into(), Value::String(operation.into())),
-                ("message".into(), Value::String(message)),
+                (
+                    "operation".into(),
+                    Value::string(string_record, operation.as_bytes().to_vec()),
+                ),
+                (
+                    "message".into(),
+                    Value::string(string_record, message.into_bytes()),
+                ),
             ]),
         }),
     }
@@ -1279,35 +1414,47 @@ fn result_error(error: Value) -> Value {
     }
 }
 
-fn path_value(path: std::path::PathBuf) -> Result<Value, FosterError> {
+fn path_value(
+    path: std::path::PathBuf,
+    string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, FosterError> {
     path.into_os_string()
         .into_string()
-        .map(Value::String)
+        .map(|value| Value::string(string_record, value.into_bytes()))
         .map_err(|_| FosterError::runtime("path is not valid UTF-8"))
 }
 
-fn path_value_io(path: std::path::PathBuf) -> Result<Value, std::io::Error> {
+fn path_value_io(
+    path: std::path::PathBuf,
+    string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, std::io::Error> {
     path.into_os_string()
         .into_string()
-        .map(Value::String)
+        .map(|value| Value::string(string_record, value.into_bytes()))
         .map_err(|_| {
             std::io::Error::new(std::io::ErrorKind::InvalidData, "path is not valid UTF-8")
         })
 }
 
-fn optional_path_component(path: Option<std::path::PathBuf>) -> Result<Value, FosterError> {
+fn optional_path_component(
+    path: Option<std::path::PathBuf>,
+    string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, FosterError> {
     match path {
-        Some(path) => path_value(path),
-        None => Ok(Value::String(String::new())),
+        Some(path) => path_value(path, string_record),
+        None => Ok(Value::string(string_record, Vec::new())),
     }
 }
 
-fn optional_os_component(value: Option<&std::ffi::OsStr>) -> Result<Value, FosterError> {
+fn optional_os_component(
+    value: Option<&std::ffi::OsStr>,
+    string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, FosterError> {
     match value {
         Some(value) => value
             .to_str()
-            .map(|value| Value::String(value.into()))
+            .map(|value| Value::string(string_record, value.as_bytes().to_vec()))
             .ok_or_else(|| FosterError::runtime("path component is not valid UTF-8")),
-        None => Ok(Value::String(String::new())),
+        None => Ok(Value::string(string_record, Vec::new())),
     }
 }

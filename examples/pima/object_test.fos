@@ -1,4 +1,4 @@
-type Square {
+type Square = {
     length: Int
     width: Int
     total_area: Int

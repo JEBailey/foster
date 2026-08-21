@@ -3,7 +3,7 @@ import core.iteration
 import core.option
 
 /// A last-in, first-out collection.
-pub type Stack<T> & Collection<T> {
+pub type Stack<T> = & Collection<T> & {
     values: List<T>
 }
 
@@ -41,7 +41,7 @@ pub func pop<T>(self: Stack<T>) -> Option<StackItem<T>> [consume self] {
 }
 
 /// The result of removing one value from a stack.
-pub type StackItem<T> {
+pub type StackItem<T> = {
     pub value: T
     pub remaining: Stack<T>
 }

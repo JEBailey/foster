@@ -5,7 +5,7 @@ type Request =
     | Get(String)
     | BadRequest(String)
 
-type HttpResponse {
+type HttpResponse = {
     status: Int
     reason: String
     body: String

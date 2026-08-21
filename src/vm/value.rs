@@ -15,7 +15,6 @@ pub enum Value {
     Bool(bool),
     Integer(i64),
     Float(f64),
-    String(String),
     CodePoint(char),
     Byte(u8),
     Bytes(Arc<Vec<u8>>),
@@ -436,7 +435,6 @@ pub(crate) enum WireValue {
     Bool(bool),
     Integer(i64),
     Float(f64),
-    String(String),
     CodePoint(char),
     Byte(u8),
     Bytes(Arc<Vec<u8>>),
@@ -510,13 +508,43 @@ pub(crate) static NEXT_REMOTE_ID: AtomicU64 = AtomicU64::new(1);
 pub(crate) static NEXT_FUTURE_ID: AtomicU64 = AtomicU64::new(1);
 
 impl Value {
+    /// Returns the UTF-8 text when this value is a Foster `String` record.
+    pub fn as_string(&self) -> Option<&str> {
+        std::str::from_utf8(self.string_bytes()?).ok()
+    }
+
+    pub(crate) fn string(record: Option<crate::hir::RecordId>, value: impl Into<Vec<u8>>) -> Self {
+        Self::Record {
+            record,
+            name: "String".into(),
+            fields: BTreeMap::from([("value".into(), Self::Bytes(Arc::new(value.into())))]),
+        }
+    }
+
+    pub(crate) fn string_bytes(&self) -> Option<&[u8]> {
+        let Self::Record { name, fields, .. } = self else {
+            return None;
+        };
+        if name != "String" {
+            return None;
+        }
+        match fields.get("value") {
+            Some(Self::Bytes(value)) => Some(value.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn string_text(&self) -> Result<&str, FosterError> {
+        self.as_string()
+            .ok_or_else(|| FosterError::runtime("expected a valid Foster String value"))
+    }
+
     pub(crate) fn into_wire(self) -> Result<WireValue, FosterError> {
         Ok(match self {
             Self::Unit => WireValue::Unit,
             Self::Bool(value) => WireValue::Bool(value),
             Self::Integer(value) => WireValue::Integer(value),
             Self::Float(value) => WireValue::Float(value),
-            Self::String(value) => WireValue::String(value),
             Self::CodePoint(value) => WireValue::CodePoint(value),
             Self::Byte(value) => WireValue::Byte(value),
             Self::Bytes(value) => WireValue::Bytes(value),
@@ -567,7 +595,6 @@ impl Value {
             WireValue::Bool(value) => Self::Bool(value),
             WireValue::Integer(value) => Self::Integer(value),
             WireValue::Float(value) => Self::Float(value),
-            WireValue::String(value) => Self::String(value),
             WireValue::CodePoint(value) => Self::CodePoint(value),
             WireValue::Byte(value) => Self::Byte(value),
             WireValue::Bytes(value) => Self::Bytes(value),
@@ -615,7 +642,6 @@ impl fmt::Display for Value {
             Self::Bool(value) => write!(formatter, "{value}"),
             Self::Integer(value) => write!(formatter, "{value}"),
             Self::Float(value) => write!(formatter, "{value}"),
-            Self::String(value) => write!(formatter, "{value}"),
             Self::CodePoint(value) => write!(formatter, "{value}"),
             Self::Byte(value) => write!(formatter, "{value}"),
             Self::Bytes(value) => {
@@ -633,10 +659,13 @@ impl fmt::Display for Value {
                     if index > 0 {
                         write!(formatter, ", ")?;
                     }
-                    match value {
-                        Self::String(value) => write!(formatter, "{value:?}")?,
-                        Self::CodePoint(value) => write!(formatter, "'{value}'")?,
-                        value => write!(formatter, "{value}")?,
+                    if let Ok(value) = value.string_text() {
+                        write!(formatter, "{value:?}")?;
+                    } else {
+                        match value {
+                            Self::CodePoint(value) => write!(formatter, "'{value}'")?,
+                            value => write!(formatter, "{value}")?,
+                        }
                     }
                 }
                 write!(formatter, "]")
@@ -648,6 +677,9 @@ impl fmt::Display for Value {
             Self::Remote(remote) => write!(formatter, "<remote {}>", remote.id),
             Self::Future(future) => write!(formatter, "<future {}>", future.id),
             Self::Record { name, fields, .. } => {
+                if let Ok(value) = self.string_text() {
+                    return write!(formatter, "{value}");
+                }
                 write!(formatter, "{name} {{")?;
                 for (index, (field, value)) in fields.iter().enumerate() {
                     if index > 0 {
