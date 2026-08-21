@@ -172,7 +172,7 @@ impl Machine {
                     variant,
                     payload,
                 } => {
-                    let (type_name, alternative) = &self.program.variants[&variant];
+                    let (variant_type, type_name, alternative) = &self.program.variants[&variant];
                     let payload = payload
                         .into_iter()
                         .map(|register| read(frame, register))
@@ -181,6 +181,7 @@ impl Machine {
                         frame,
                         destination,
                         Value::Variant {
+                            variant: Some(*variant_type),
                             type_name: type_name.clone(),
                             alternative: alternative.clone(),
                             payload,
@@ -463,7 +464,14 @@ impl Machine {
                         )?;
                         continue;
                     }
-                    if !matches!(value, Value::Record { .. }) {
+                    if !matches!(
+                        value,
+                        Value::Record { .. }
+                            | Value::Variant {
+                                variant: Some(_),
+                                ..
+                            }
+                    ) {
                         if !arguments.is_empty() {
                             return Err(FosterError::runtime(format!(
                                 "contract member `{name}` does not accept arguments"
@@ -476,25 +484,26 @@ impl Machine {
                         )?;
                         continue;
                     }
-                    let Value::Record {
-                        record: Some(record),
-                        ..
-                    } = value
-                    else {
-                        return Err(FosterError::runtime(format!(
-                            "record cannot dispatch required method `{name}`"
-                        )));
+                    let function = match &value {
+                        Value::Record {
+                            record: Some(record),
+                            ..
+                        } => self.program.methods.get(&(*record, name.clone())).copied(),
+                        Value::Variant {
+                            variant: Some(variant),
+                            ..
+                        } => self
+                            .program
+                            .variant_methods
+                            .get(&(*variant, name.clone()))
+                            .copied(),
+                        _ => None,
                     };
-                    let function = self
-                        .program
-                        .methods
-                        .get(&(record, name.clone()))
-                        .copied()
-                        .ok_or_else(|| {
-                            FosterError::runtime(format!(
-                                "record has no implementation of required method `{name}`"
-                            ))
-                        })?;
+                    let function = function.ok_or_else(|| {
+                        FosterError::runtime(format!(
+                            "value has no implementation of required method `{name}`"
+                        ))
+                    })?;
                     if let Some(shared) = receiver.shared() {
                         let (lease, state) = shared.write_snapshot()?;
                         let local = Slot::new(Value::from_wire(state)?);
@@ -1400,6 +1409,7 @@ fn tcp_result(
 
 fn result_ok(value: Value) -> Value {
     Value::Variant {
+        variant: None,
         type_name: "Result".into(),
         alternative: "Ok".into(),
         payload: vec![value],
@@ -1408,6 +1418,7 @@ fn result_ok(value: Value) -> Value {
 
 fn result_error(error: Value) -> Value {
     Value::Variant {
+        variant: None,
         type_name: "Result".into(),
         alternative: "Error".into(),
         payload: vec![error],

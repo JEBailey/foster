@@ -24,6 +24,8 @@ pub struct VariantDecl {
     pub public: bool,
     pub parameters: Vec<String>,
     pub alternatives: Vec<VariantAlternative>,
+    pub compositions: Vec<TypeExpr>,
+    pub methods: Vec<MethodRequirement>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

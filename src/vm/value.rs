@@ -34,6 +34,7 @@ pub enum Value {
         fields: BTreeMap<String, Value>,
     },
     Variant {
+        variant: Option<crate::hir::VariantTypeId>,
         type_name: String,
         alternative: String,
         payload: Vec<Value>,
@@ -447,6 +448,7 @@ pub(crate) enum WireValue {
         fields: BTreeMap<String, WireValue>,
     },
     Variant {
+        variant: Option<crate::hir::VariantTypeId>,
         type_name: String,
         alternative: String,
         payload: Vec<WireValue>,
@@ -569,10 +571,12 @@ impl Value {
                     .collect::<Result<_, FosterError>>()?,
             },
             Self::Variant {
+                variant,
                 type_name,
                 alternative,
                 payload,
             } => WireValue::Variant {
+                variant,
                 type_name,
                 alternative,
                 payload: payload
@@ -619,10 +623,12 @@ impl Value {
                     .collect::<Result<_, FosterError>>()?,
             },
             WireValue::Variant {
+                variant,
                 type_name,
                 alternative,
                 payload,
             } => Self::Variant {
+                variant,
                 type_name,
                 alternative,
                 payload: payload
@@ -693,6 +699,7 @@ impl fmt::Display for Value {
                 type_name,
                 alternative,
                 payload,
+                ..
             } => {
                 write!(formatter, "{type_name}.{alternative}")?;
                 if payload.is_empty() {

@@ -26,12 +26,13 @@ pub(super) fn matches(
         (
             Pattern::Variant { variant, fields },
             Value::Variant {
+                variant: _,
                 type_name,
                 alternative,
                 payload,
             },
         ) => {
-            let (expected_type, expected_alternative) = &program.variants[variant];
+            let (_, expected_type, expected_alternative) = &program.variants[variant];
             if type_name != expected_type
                 || alternative != expected_alternative
                 || fields.len() != payload.len()

@@ -2276,6 +2276,77 @@ func main() { 0 }
 }
 
 #[test]
+fn variants_support_shared_contract_bodies_and_instance_methods() {
+    let source = r#"
+type Choice =
+    | Number(Int)
+    | Empty
+    & {
+        pub func score(self) -> Int
+    }
+
+func score(self: Choice) -> Int {
+    branch self {
+        Choice.Number(value) -> value
+        Choice.Empty -> 0
+    }
+}
+
+func main() -> Int { Choice.Number(42).score() }
+"#;
+
+    let compilation = foster::compile(source).unwrap();
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap(),
+            Value::Integer(42)
+        );
+    }
+}
+
+#[test]
+fn variants_compose_method_only_contracts() {
+    let source = r#"
+type Scored = {
+    pub func score(self) -> Int
+}
+
+type Choice =
+    | Number(Int)
+    | Empty
+    & Scored
+
+func score(self: Choice) -> Int { 42 }
+func score_of(value: Scored) -> Int { value.score }
+func main() -> Int { score_of(Choice.Empty) }
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+
+    let missing = source.replace("func score(self: Choice) -> Int { 42 }\n", "");
+    let error = foster::compile(&missing).unwrap_err();
+    assert!(error.message.contains("missing required method `score`"));
+}
+
+#[test]
+fn variant_shared_bodies_reject_stored_fields() {
+    let error = foster::compile(
+        r#"
+type Choice =
+    | Empty
+    & { value: Int }
+func main() { 0 }
+"#,
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("variant shared bodies may only declare required methods")
+    );
+}
+
+#[test]
 fn assignment_reinitializes_a_moved_local() {
     foster::compile(
         r#"

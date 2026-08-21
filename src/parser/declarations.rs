@@ -113,6 +113,45 @@ impl Parser {
             if alternatives.is_empty() {
                 return Err(self.error("variant type requires at least one `|` alternative"));
             }
+            let mut compositions = Vec::new();
+            let mut has_body = false;
+            while self.take(&TokenKind::Ampersand) {
+                self.newlines();
+                if self.take(&TokenKind::LBrace) {
+                    has_body = true;
+                    break;
+                }
+                compositions.push(self.primary_type_expr()?);
+                if self.at(&TokenKind::Newline) {
+                    self.newlines();
+                }
+            }
+            let mut methods = Vec::new();
+            if has_body {
+                self.newlines();
+                while !self.at(&TokenKind::RBrace) && !self.at(&TokenKind::Eof) {
+                    let documentation = self.documentation();
+                    let method_follows = self.at(&TokenKind::Func)
+                        || (self.at(&TokenKind::Pub)
+                            && self
+                                .peek_n(1)
+                                .is_some_and(|token| token.kind == TokenKind::Func));
+                    if !method_follows {
+                        return Err(
+                            self.error("variant shared bodies may only declare required methods")
+                        );
+                    }
+                    methods.push(self.method_requirement(documentation)?);
+                    if !self.at(&TokenKind::RBrace) {
+                        self.expect(
+                            &TokenKind::Newline,
+                            "expected newline after required method signature",
+                        )?;
+                    }
+                    self.newlines();
+                }
+                self.expect(&TokenKind::RBrace, "expected `}` after variant shared body")?;
+            }
             return Ok((
                 None,
                 Some(VariantDecl {
@@ -122,6 +161,8 @@ impl Parser {
                     public,
                     parameters,
                     alternatives,
+                    compositions,
+                    methods,
                 }),
             ));
         }

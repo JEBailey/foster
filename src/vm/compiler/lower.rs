@@ -584,6 +584,23 @@ impl FunctionCompiler<'_> {
                         });
                     return receiver_matches.then_some((function, remote));
                 }
+                crate::types::Type::Variant { variant, .. } => {
+                    let function = self
+                        .hir
+                        .function_named(self.hir.variant_types[*variant].module, name)?;
+                    let receiver_matches = self
+                        .types
+                        .function_type(function)
+                        .and_then(|signature| signature.parameters.first())
+                        .is_some_and(|ty| {
+                            matches!(
+                                self.types.types[*ty],
+                                crate::types::Type::Variant { variant: receiver, .. }
+                                    if receiver == *variant
+                            )
+                        });
+                    return receiver_matches.then_some((function, remote));
+                }
                 _ => return None,
             }
         }

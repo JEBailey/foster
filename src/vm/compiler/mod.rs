@@ -81,6 +81,31 @@ pub fn compile_with_options(
             }
         }
     }
+    for (variant, definition) in compilation.hir.variant_types.iter() {
+        for (name, function) in &compilation.hir.modules[definition.module].functions {
+            let receiver_matches = compilation
+                .types
+                .function_type(*function)
+                .and_then(|signature| signature.parameters.first())
+                .is_some_and(|ty| {
+                    matches!(
+                        compilation.types.types[*ty],
+                        crate::types::Type::Variant { variant: receiver, .. } if receiver == variant
+                    )
+                });
+            if receiver_matches
+                && compilation.hir.functions[*function]
+                    .parameters
+                    .first()
+                    .is_some_and(|parameter| compilation.hir.locals[*parameter].name == "self")
+            {
+                compiler
+                    .program
+                    .variant_methods
+                    .insert((variant, name.clone()), *function);
+            }
+        }
+    }
     compiler.program.variants = compilation
         .hir
         .variants
@@ -89,6 +114,7 @@ pub fn compile_with_options(
             (
                 id,
                 (
+                    value.parent,
                     compilation.hir.variant_types[value.parent].name.clone(),
                     value.name.clone(),
                 ),

@@ -97,6 +97,7 @@ impl<'a> Checker<'a> {
         self.declare_constants()?;
         self.declare_signatures()?;
         self.check_record_compositions()?;
+        self.check_variant_compositions()?;
         for (function, _) in self.hir.functions.iter() {
             self.check_function(function)?;
         }

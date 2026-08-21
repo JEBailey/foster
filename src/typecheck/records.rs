@@ -48,6 +48,9 @@ impl Checker<'_> {
                     Ty::Record(actual, actual_arguments),
                 )
             }
+            (Ty::Record(expected, expected_arguments), actual @ Ty::Variant(_, _)) => {
+                self.coerce_record_shape(function, expected, &expected_arguments, actual)
+            }
             (
                 Ty::Record(expected, expected_arguments),
                 actual @ (Ty::List(_) | Ty::Sequence(_) | Ty::Bytes),
@@ -229,6 +232,12 @@ impl Checker<'_> {
         let actual = self.resolved(actual.clone());
         if let Some(method) = self.builtin_collection_method(&actual, name) {
             return Ok(Some(method));
+        }
+        if let Ty::Variant(variant, arguments) = actual.clone() {
+            return self
+                .variant_method_type(function, variant, arguments, name)
+                .map(Some)
+                .or_else(|_| Ok(None));
         }
         let Ty::Record(record, arguments) = actual.clone() else {
             return Ok(None);

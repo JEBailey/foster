@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::hir::{Builtin, FunctionId, RecordId, VariantId};
+use crate::hir::{Builtin, FunctionId, RecordId, VariantId, VariantTypeId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Register(pub u16);
@@ -423,7 +423,8 @@ pub struct Program {
     pub string_record: Option<RecordId>,
     pub records: HashMap<RecordId, String>,
     pub methods: HashMap<(RecordId, String), FunctionId>,
-    pub variants: HashMap<VariantId, (String, String)>,
+    pub variant_methods: HashMap<(VariantTypeId, String), FunctionId>,
+    pub variants: HashMap<VariantId, (VariantTypeId, String, String)>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

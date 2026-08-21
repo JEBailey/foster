@@ -234,6 +234,37 @@ Alternatives may have zero or more positional payload values. Constructors are q
 type, such as `Result.Ok(42)` and `Option.None`. Generic arguments are inferred from constructors,
 function calls, and branch patterns.
 
+A variant may place shared contract clauses after its alternatives:
+
+```foster
+type Foo =
+    | Bar
+    | What
+    & SomeContract
+    & {
+        pub func describe(self) -> String
+    }
+```
+
+The trailing intersection applies to every alternative. The declaration is equivalent, as a
+contract, to:
+
+```text
+(Bar & SomeContract & { describe })
+    | (What & SomeContract & { describe })
+```
+
+Consequently, every `Foo` value satisfies `SomeContract` and provides `describe`, regardless of
+which alternative constructed it. The defining module implements a shared requirement with an
+ordinary instance function whose receiver is the variant type, such as
+`func describe(self: Foo) -> String`. Its body may branch on `self` when alternatives need
+different behavior. A variant can be structurally adapted to the method-only contracts it
+satisfies, and calls through such a contract dispatch to the original variant value.
+
+The shared `{ ... }` body declares callable requirements only. Stored fields are rejected because
+variant alternatives carry their own positional payloads; there is no additional record storage
+shared by every alternative.
+
 An alternative may be written without its type qualifier when its name uniquely identifies an
 alternative in the current module. This applies to both constructors and patterns, allowing
 `Ok(value)` and `Error(error)` in code centered on one result type. If two variant types declare the

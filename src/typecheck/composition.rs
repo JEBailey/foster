@@ -22,6 +22,222 @@ pub(super) struct EffectiveMethod {
 }
 
 impl Checker<'_> {
+    pub(super) fn check_variant_compositions(&mut self) -> Result<(), FosterError> {
+        let variants = self
+            .hir
+            .variant_types
+            .iter()
+            .map(|(id, definition)| (id, definition.clone()))
+            .collect::<Vec<_>>();
+        for (variant, definition) in variants {
+            let arguments = definition
+                .parameters
+                .iter()
+                .map(|parameter| Ty::Generic(parameter.clone()))
+                .collect::<Vec<_>>();
+            let generics = definition
+                .parameters
+                .iter()
+                .cloned()
+                .zip(arguments.iter().cloned())
+                .collect::<HashMap<_, _>>();
+            let mut methods = Vec::new();
+            for composition in &definition.compositions {
+                let contract = self.annotation_type(definition.module, composition, &generics)?;
+                if definition.public
+                    && let Some(private) = self.private_type_in(&contract)
+                {
+                    return Err(FosterError::runtime(format!(
+                        "public type `{}` composes private type `{private}`",
+                        definition.name
+                    )));
+                }
+                self.collect_variant_contract_methods(&definition, contract, &mut methods)?;
+            }
+            for requirement in &definition.methods {
+                let method = self.method_requirement(
+                    &definition.name,
+                    definition.module,
+                    requirement,
+                    &generics,
+                    false,
+                )?;
+                Self::merge_variant_method(&definition.name, &mut methods, method)?;
+            }
+            for method in &methods {
+                self.check_variant_method_implementation(variant, &arguments, method)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn collect_variant_contract_methods(
+        &mut self,
+        owner: &hir::VariantType,
+        contract: Ty,
+        methods: &mut Vec<EffectiveMethod>,
+    ) -> Result<(), FosterError> {
+        match self.resolved(contract) {
+            Ty::Record(record, arguments) => {
+                if !self.effective_record_fields(record, &arguments)?.is_empty() {
+                    return Err(FosterError::runtime(format!(
+                        "variant type `{}` cannot compose contract `{}` because it requires stored fields",
+                        owner.name, self.hir.records[record].name
+                    )));
+                }
+                for mut method in self.effective_record_methods(record, &arguments)? {
+                    if method.public {
+                        method.required_by_composition = true;
+                        Self::merge_variant_method(&owner.name, methods, method)?;
+                    }
+                }
+                Ok(())
+            }
+            Ty::Intersection(members) => {
+                for member in members {
+                    self.collect_variant_contract_methods(owner, member, methods)?;
+                }
+                Ok(())
+            }
+            other => Err(FosterError::runtime(format!(
+                "variant type `{}` cannot compose non-contract type `{}`",
+                owner.name,
+                self.describe(&other)
+            ))),
+        }
+    }
+
+    fn merge_variant_method(
+        owner: &str,
+        methods: &mut Vec<EffectiveMethod>,
+        incoming: EffectiveMethod,
+    ) -> Result<(), FosterError> {
+        let Some(existing) = methods
+            .iter_mut()
+            .find(|method| method.name == incoming.name)
+        else {
+            methods.push(incoming);
+            return Ok(());
+        };
+        if existing.parameters != incoming.parameters
+            || existing.parameter_modes != incoming.parameter_modes
+            || existing.result != incoming.result
+            || existing.effects != incoming.effects
+            || existing.suspends != incoming.suspends
+        {
+            return Err(FosterError::runtime(format!(
+                "type `{owner}` composes incompatible definitions of method `{}`",
+                incoming.name
+            )));
+        }
+        existing.public |= incoming.public;
+        Ok(())
+    }
+
+    fn check_variant_method_implementation(
+        &mut self,
+        owner: VariantTypeId,
+        arguments: &[Ty],
+        required: &EffectiveMethod,
+    ) -> Result<(), FosterError> {
+        let definition = self.hir.variant_types[owner].clone();
+        let Some(function) = self.hir.function_named(definition.module, &required.name) else {
+            return Err(FosterError::runtime(format!(
+                "type `{}` is missing required method `{}`",
+                definition.name, required.name
+            )));
+        };
+        let implementation = &self.hir.functions[function];
+        if definition.public && required.public && !implementation.public {
+            return Err(self.error(
+                function,
+                format!(
+                    "public type `{}` requires method `{}` to be public",
+                    definition.name, required.name
+                ),
+            ));
+        }
+        if implementation
+            .parameters
+            .first()
+            .is_none_or(|parameter| self.hir.locals[*parameter].name != "self")
+        {
+            return Err(self.error(
+                function,
+                format!(
+                    "required method `{}` must be an instance method with `self` first",
+                    required.name
+                ),
+            ));
+        }
+        let signature = self.functions[&function].clone();
+        if signature.parameters.len() != required.parameters.len() + 1 {
+            return Err(self.error(function, format!(
+                "method `{}` does not match its composed contract: expected {} argument(s) after `self`",
+                required.name, required.parameters.len()
+            )));
+        }
+        self.unify(
+            Ty::Variant(owner, arguments.to_vec()),
+            signature.parameters[0].clone(),
+            function,
+        )?;
+        for (expected, actual) in required
+            .parameters
+            .iter()
+            .cloned()
+            .zip(signature.parameters.iter().skip(1).cloned())
+        {
+            self.unify(expected, actual, function)?;
+        }
+        if signature.parameter_modes[1..] != required.parameter_modes {
+            return Err(self.error(
+                function,
+                format!(
+                    "method `{}` has incompatible consuming parameters",
+                    required.name
+                ),
+            ));
+        }
+        self.coerce(required.result.clone(), signature.result, function)?;
+        let mut allowed_effects = required.effects.clone();
+        allowed_effects.push(crate::ast::Effect {
+            kind: crate::ast::EffectKind::Read,
+            target: crate::ast::GroupPath::root("self"),
+        });
+        for (parameter, mode) in implementation
+            .parameters
+            .iter()
+            .skip(1)
+            .zip(&required.parameter_modes)
+        {
+            if *mode == crate::ast::ParameterMode::Borrow {
+                allowed_effects.push(crate::ast::Effect {
+                    kind: crate::ast::EffectKind::Read,
+                    target: crate::ast::GroupPath::root(self.hir.locals[*parameter].name.clone()),
+                });
+            }
+        }
+        if !effects_are_subset(&implementation.effects, &allowed_effects) {
+            return Err(self.error(function, format!(
+                "method `{}` requires effects outside its composed contract: inferred [{}], allowed [{}]",
+                required.name,
+                describe_effects(&implementation.effects),
+                describe_effects(&allowed_effects)
+            )));
+        }
+        if implementation.suspends && !required.suspends {
+            return Err(self.error(
+                function,
+                format!(
+                    "method `{}` suspends but its composed contract does not",
+                    required.name
+                ),
+            ));
+        }
+        Ok(())
+    }
+
     pub(super) fn check_record_compositions(&mut self) -> Result<(), FosterError> {
         let records = self
             .hir
@@ -165,7 +381,13 @@ impl Checker<'_> {
             self.collect_contract_methods(record, contract, visiting, &mut methods)?;
         }
         for requirement in &definition.methods {
-            let method = self.method_requirement(&definition, requirement, &generics, inherited)?;
+            let method = self.method_requirement(
+                &definition.name,
+                definition.module,
+                requirement,
+                &generics,
+                inherited,
+            )?;
             self.merge_effective_method(record, &mut methods, method)?;
         }
         visiting.remove(&record);
@@ -229,7 +451,8 @@ impl Checker<'_> {
 
     fn method_requirement(
         &mut self,
-        owner: &hir::Record,
+        owner_name: &str,
+        owner_module: hir::ModuleId,
         requirement: &crate::ast::MethodRequirement,
         record_generics: &HashMap<String, Ty>,
         inherited: bool,
@@ -237,19 +460,19 @@ impl Checker<'_> {
         if !requirement.type_parameters.is_empty() || !requirement.groups.is_empty() {
             return Err(FosterError::runtime(format!(
                 "required method `{}.{}` cannot yet declare method-level type or group parameters",
-                owner.name, requirement.name
+                owner_name, requirement.name
             )));
         }
         let Some(receiver) = requirement.parameters.first() else {
             return Err(FosterError::runtime(format!(
                 "required method `{}.{}` must declare `self` as its first parameter",
-                owner.name, requirement.name
+                owner_name, requirement.name
             )));
         };
         if receiver.name != "self" || receiver.ty.is_some() {
             return Err(FosterError::runtime(format!(
                 "required method `{}.{}` must begin with an untyped `self` parameter",
-                owner.name, requirement.name
+                owner_name, requirement.name
             )));
         }
         let parameters = requirement
@@ -260,10 +483,10 @@ impl Checker<'_> {
                 let annotation = parameter.ty.as_ref().ok_or_else(|| {
                     FosterError::runtime(format!(
                         "required method `{}.{}` parameter `{}` needs a type",
-                        owner.name, requirement.name, parameter.name
+                        owner_name, requirement.name, parameter.name
                     ))
                 })?;
-                self.annotation_type(owner.module, annotation, record_generics)
+                self.annotation_type(owner_module, annotation, record_generics)
             })
             .collect::<Result<Vec<_>, _>>()?;
         let parameter_modes = requirement
@@ -284,7 +507,7 @@ impl Checker<'_> {
         let result = requirement
             .return_type
             .as_ref()
-            .map(|ty| self.annotation_type(owner.module, ty, record_generics))
+            .map(|ty| self.annotation_type(owner_module, ty, record_generics))
             .transpose()?
             .unwrap_or(Ty::Unit);
         Ok(EffectiveMethod {

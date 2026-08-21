@@ -100,6 +100,8 @@ pub struct VariantType {
     pub public: bool,
     pub parameters: Vec<String>,
     pub alternatives: Vec<VariantId>,
+    pub compositions: Vec<ast::TypeExpr>,
+    pub methods: Vec<ast::MethodRequirement>,
 }
 
 #[derive(Debug, Clone)]

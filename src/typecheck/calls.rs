@@ -361,6 +361,9 @@ impl Checker<'_> {
                     self.record_method_type(function, record, arguments, member, false, false)
                 }
             }
+            (Ty::Variant(variant, arguments), member) => {
+                self.variant_method_type(function, variant, arguments, member)
+            }
             (Ty::Intersection(members), member) => {
                 let mut found: Option<Ty> = None;
                 for component in members {
@@ -657,6 +660,55 @@ impl Checker<'_> {
                 callable_effects(self.hir, method)
             },
             suspends: if remote { false } else { definition.suspends },
+        })
+    }
+
+    pub(super) fn variant_method_type(
+        &mut self,
+        caller: FunctionId,
+        variant: VariantTypeId,
+        arguments: Vec<Ty>,
+        name: &str,
+    ) -> Result<Ty, FosterError> {
+        let definition = self.hir.variant_types[variant].clone();
+        let Some(method) = self.hir.function_named(definition.module, name) else {
+            return Err(self.error(
+                caller,
+                format!("type `{}` has no member `{name}`", definition.name),
+            ));
+        };
+        let function = &self.hir.functions[method];
+        if function
+            .parameters
+            .first()
+            .is_none_or(|parameter| self.hir.locals[*parameter].name != "self")
+        {
+            return Err(self.error(caller, format!(
+                "function `{name}` is not an instance method because its first parameter is not `self`"
+            )));
+        }
+        if function.module != self.hir.functions[caller].module && !function.public {
+            return Err(self.error(caller, format!("method `{name}` is private")));
+        }
+        let signature = self.functions[&method].clone();
+        let mut parameter_modes = signature.parameter_modes.clone();
+        let mut generics = HashMap::new();
+        let mut parameters = signature
+            .parameters
+            .into_iter()
+            .map(|ty| self.instantiate(ty, &mut generics))
+            .collect::<Vec<_>>();
+        let receiver = parameters.remove(0);
+        parameter_modes.remove(0);
+        self.unify(receiver, Ty::Variant(variant, arguments), caller)?;
+        let result = self.instantiate(signature.result, &mut generics);
+        Ok(Ty::Callable {
+            parameters,
+            parameter_modes,
+            result: Box::new(result),
+            erased: false,
+            effects: callable_effects(self.hir, method),
+            suspends: function.suspends,
         })
     }
 }

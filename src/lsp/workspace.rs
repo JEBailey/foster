@@ -1417,9 +1417,35 @@ fn variant_signature(
             }
         })
         .collect::<Vec<_>>()
-        .join(" | ");
+        .into_iter()
+        .map(|alternative| format!("    | {alternative}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let compositions = variant
+        .compositions
+        .iter()
+        .map(|composition| format!("    & {}", display_type_expr(composition)))
+        .collect::<Vec<_>>();
+    let body = if variant.methods.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n    & {{\n{}\n    }}",
+            variant
+                .methods
+                .iter()
+                .map(|method| format!("        {}", method_requirement_signature(method)))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    };
+    let contracts = if compositions.is_empty() {
+        String::new()
+    } else {
+        format!("\n{}", compositions.join("\n"))
+    };
     format!(
-        "{}type {}{parameters} = {alternatives}",
+        "{}type {}{parameters} =\n{alternatives}{contracts}{body}",
         if variant.public { "pub " } else { "" },
         variant.name
     )

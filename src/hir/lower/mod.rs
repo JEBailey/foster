@@ -68,6 +68,8 @@ impl PackageHir {
                     public: source.public,
                     parameters: source.parameters.clone(),
                     alternatives: Vec::new(),
+                    compositions: source.compositions.clone(),
+                    methods: source.methods.clone(),
                 });
                 let mut names = std::collections::HashSet::new();
                 for alternative in &source.alternatives {

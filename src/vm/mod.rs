@@ -329,7 +329,7 @@ mod tests {
             crate::compile("type Answer = | Value(Int)\nfunc main() { Answer.Value(42) }").unwrap();
         assert!(matches!(
             run(&variant).unwrap(),
-            Value::Variant { type_name, alternative, payload }
+            Value::Variant { type_name, alternative, payload, .. }
                 if type_name == "Answer" && alternative == "Value" && payload == [Value::Integer(42)]
         ));
     }
