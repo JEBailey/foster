@@ -14,9 +14,14 @@ impl Checker<'_> {
         {
             return self.unify((**element).clone(), Ty::CodePoint, function);
         }
+        if let Ty::Sequence(element) = &expected
+            && self.is_bytes_type(&actual)
+        {
+            return self.unify((**element).clone(), Ty::Byte, function);
+        }
         match (expected, actual) {
             (Ty::Sequence(expected), Ty::List(actual)) => self.unify(*expected, *actual, function),
-            (Ty::Sequence(expected), Ty::Bytes) => self.unify(*expected, Ty::Byte, function),
+            (Ty::Sequence(expected), Ty::RawBytes) => self.unify(*expected, Ty::Byte, function),
             (Ty::Sequence(expected), actual @ Ty::Record(_, _)) => {
                 self.coerce_sequence_shape(function, *expected, actual)
             }
@@ -53,7 +58,7 @@ impl Checker<'_> {
             }
             (
                 Ty::Record(expected, expected_arguments),
-                actual @ (Ty::List(_) | Ty::Sequence(_) | Ty::Bytes),
+                actual @ (Ty::List(_) | Ty::Sequence(_) | Ty::RawBytes),
             ) => self.coerce_record_shape(function, expected, &expected_arguments, actual),
             (expected, actual) => self.unify(expected, actual, function),
         }
@@ -280,10 +285,12 @@ impl Checker<'_> {
     fn builtin_collection_method(&self, actual: &Ty, name: &str) -> Option<Ty> {
         let element = if self.is_string_type(actual) {
             Ty::CodePoint
+        } else if self.is_bytes_type(actual) {
+            Ty::Byte
         } else {
             match actual {
                 Ty::List(element) | Ty::Sequence(element) => (**element).clone(),
-                Ty::Bytes => Ty::Byte,
+                Ty::RawBytes => Ty::Byte,
                 _ => return None,
             }
         };

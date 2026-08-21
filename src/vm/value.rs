@@ -17,9 +17,8 @@ pub enum Value {
     Float(f64),
     CodePoint(char),
     Byte(u8),
-    Bytes(Arc<Vec<u8>>),
+    RawBytes(Arc<Vec<u8>>),
     ByteBuffer(Vec<u8>),
-    Symbol(String),
     List(Vec<Value>),
     VmClosure {
         function: crate::hir::FunctionId,
@@ -305,11 +304,13 @@ impl PlaceHandle {
     }
 
     pub(crate) fn indexed(origin: Rc<Slot>, index: usize) -> Result<Self, FosterError> {
-        let exists = match origin.read()? {
+        let value = origin.read()?;
+        let exists = match value {
             Value::List(values) => index < values.len(),
-            Value::Bytes(values) => index < values.len(),
             Value::ByteBuffer(values) => index < values.len(),
-            _ => false,
+            value => value
+                .bytes_value()
+                .is_some_and(|values| index < values.len()),
         };
         if !exists {
             return Err(FosterError::runtime("reference index is out of bounds"));
@@ -333,11 +334,14 @@ impl PlaceHandle {
             PlaceProjection::Whole => origin.read(),
             PlaceProjection::Index { index, generation } => {
                 ensure_generation(&origin, generation)?;
-                match origin.read()? {
+                let value = origin.read()?;
+                match value {
                     Value::List(values) => values.get(index).cloned(),
-                    Value::Bytes(values) => values.get(index).copied().map(Value::Byte),
                     Value::ByteBuffer(values) => values.get(index).copied().map(Value::Byte),
-                    _ => None,
+                    value => value
+                        .bytes_value()
+                        .and_then(|values| values.get(index).copied())
+                        .map(Value::Byte),
                 }
                 .ok_or_else(|| FosterError::runtime("referenced indexed value no longer exists"))
             }
@@ -438,9 +442,8 @@ pub(crate) enum WireValue {
     Float(f64),
     CodePoint(char),
     Byte(u8),
-    Bytes(Arc<Vec<u8>>),
+    RawBytes(Arc<Vec<u8>>),
     ByteBuffer(Vec<u8>),
-    Symbol(String),
     List(Vec<WireValue>),
     Record {
         record: Option<crate::hir::RecordId>,
@@ -515,11 +518,42 @@ impl Value {
         std::str::from_utf8(self.string_bytes()?).ok()
     }
 
+    /// Returns the identifier text when this value is a Foster `Symbol` type.
+    pub fn as_symbol(&self) -> Option<&str> {
+        std::str::from_utf8(self.symbol_bytes()?).ok()
+    }
+
+    /// Returns the contents when this value is a Foster `Bytes` type.
+    pub fn as_bytes(&self) -> Option<&[u8]> {
+        self.bytes_value()
+    }
+
     pub(crate) fn string(record: Option<crate::hir::RecordId>, value: impl Into<Vec<u8>>) -> Self {
         Self::Record {
             record,
             name: "String".into(),
-            fields: BTreeMap::from([("value".into(), Self::Bytes(Arc::new(value.into())))]),
+            fields: BTreeMap::from([("value".into(), Self::bytes(value))]),
+        }
+    }
+
+    pub(crate) fn bytes(value: impl Into<Vec<u8>>) -> Self {
+        Self::Record {
+            record: None,
+            name: "Bytes".into(),
+            fields: BTreeMap::from([("value".into(), Self::RawBytes(Arc::new(value.into())))]),
+        }
+    }
+
+    pub(crate) fn bytes_value(&self) -> Option<&[u8]> {
+        let Self::Record { name, fields, .. } = self else {
+            return None;
+        };
+        if name != "Bytes" {
+            return None;
+        }
+        match fields.get("value") {
+            Some(Self::RawBytes(value)) => Some(value.as_slice()),
+            _ => None,
         }
     }
 
@@ -530,10 +564,28 @@ impl Value {
         if name != "String" {
             return None;
         }
-        match fields.get("value") {
-            Some(Self::Bytes(value)) => Some(value.as_slice()),
-            _ => None,
+        fields.get("value")?.bytes_value()
+    }
+
+    pub(crate) fn symbol(
+        symbol_record: Option<crate::hir::RecordId>,
+        string_record: Option<crate::hir::RecordId>,
+        value: impl Into<Vec<u8>>,
+    ) -> Self {
+        Self::Record {
+            record: symbol_record,
+            name: "Symbol".into(),
+            fields: BTreeMap::from([("value".into(), Self::string(string_record, value))]),
         }
+    }
+
+    pub(crate) fn symbol_bytes(&self) -> Option<&[u8]> {
+        let Self::Record { name, fields, .. } = self else {
+            return None;
+        };
+        (name == "Symbol")
+            .then(|| fields.get("value")?.string_bytes())
+            .flatten()
     }
 
     pub(crate) fn string_text(&self) -> Result<&str, FosterError> {
@@ -549,9 +601,8 @@ impl Value {
             Self::Float(value) => WireValue::Float(value),
             Self::CodePoint(value) => WireValue::CodePoint(value),
             Self::Byte(value) => WireValue::Byte(value),
-            Self::Bytes(value) => WireValue::Bytes(value),
+            Self::RawBytes(value) => WireValue::RawBytes(value),
             Self::ByteBuffer(value) => WireValue::ByteBuffer(value),
-            Self::Symbol(value) => WireValue::Symbol(value),
             Self::List(values) => WireValue::List(
                 values
                     .into_iter()
@@ -601,9 +652,8 @@ impl Value {
             WireValue::Float(value) => Self::Float(value),
             WireValue::CodePoint(value) => Self::CodePoint(value),
             WireValue::Byte(value) => Self::Byte(value),
-            WireValue::Bytes(value) => Self::Bytes(value),
+            WireValue::RawBytes(value) => Self::RawBytes(value),
             WireValue::ByteBuffer(value) => Self::ByteBuffer(value),
-            WireValue::Symbol(value) => Self::Symbol(value),
             WireValue::List(values) => Self::List(
                 values
                     .into_iter()
@@ -650,7 +700,7 @@ impl fmt::Display for Value {
             Self::Float(value) => write!(formatter, "{value}"),
             Self::CodePoint(value) => write!(formatter, "{value}"),
             Self::Byte(value) => write!(formatter, "{value}"),
-            Self::Bytes(value) => {
+            Self::RawBytes(value) => {
                 write!(formatter, "0x")?;
                 for byte in value.iter() {
                     write!(formatter, "{byte:02x}")?;
@@ -658,7 +708,11 @@ impl fmt::Display for Value {
                 Ok(())
             }
             Self::ByteBuffer(value) => write!(formatter, "ByteBuffer(len={})", value.len()),
-            Self::Symbol(value) => write!(formatter, ":{value}"),
+            value if value.symbol_bytes().is_some() => write!(
+                formatter,
+                ":{}",
+                String::from_utf8_lossy(value.symbol_bytes().unwrap())
+            ),
             Self::List(values) => {
                 write!(formatter, "[")?;
                 for (index, value) in values.iter().enumerate() {

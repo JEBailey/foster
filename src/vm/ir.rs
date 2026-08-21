@@ -404,7 +404,7 @@ impl Instruction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BytecodeFunction {
     pub name: String,
     pub parameters: u16,
@@ -415,12 +415,13 @@ pub struct BytecodeFunction {
     pub instruction_spans: Vec<Range<usize>>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Program {
     pub constants: Vec<Constant>,
     pub functions: HashMap<FunctionId, BytecodeFunction>,
     pub main: Option<FunctionId>,
     pub string_record: Option<RecordId>,
+    pub symbol_record: Option<RecordId>,
     pub records: HashMap<RecordId, String>,
     pub methods: HashMap<(RecordId, String), FunctionId>,
     pub variant_methods: HashMap<(VariantTypeId, String), FunctionId>,

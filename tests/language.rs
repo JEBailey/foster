@@ -48,14 +48,54 @@ fn strings_use_the_foster_record_representation() {
     };
     assert_eq!(record, Some(string_record));
     assert_eq!(name, "String");
-    let Value::Bytes(bytes) = &fields["value"] else {
-        panic!("String.value was not Bytes")
-    };
-    assert_eq!(bytes.as_slice(), "Foster λ".as_bytes());
+    assert_eq!(fields["value"].as_bytes(), Some("Foster λ".as_bytes()));
 
     let error = foster::compile(r#"func main() -> Bytes { "private".value }"#).unwrap_err();
     assert!(
         error.message.contains("field `String.value` is private"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn symbols_and_bytes_use_foster_type_representations() {
+    let compilation = foster::compile(
+        r#"
+func symbol() -> Symbol { :ready }
+func bytes() -> Bytes { "data".utf8 }
+func main() -> Symbol { symbol() }
+"#,
+    )
+    .unwrap();
+    let main = compilation.hir.module_named("main").unwrap();
+    for (function_name, module_name, type_name) in [
+        ("symbol", "core.symbol", "Symbol"),
+        ("bytes", "core.bytes", "Bytes"),
+    ] {
+        let function = compilation.hir.function_named(main, function_name).unwrap();
+        let result = compilation.types.function_type(function).unwrap().result;
+        let module = compilation.hir.module_named(module_name).unwrap();
+        let expected = compilation.hir.record_named(module, type_name).unwrap();
+        assert!(matches!(
+            compilation.types.types[result],
+            foster::types::Type::Record { record, ref arguments }
+                if record == expected && arguments.is_empty()
+        ));
+    }
+    assert_eq!(
+        foster::run("func main() { :ready }").unwrap().as_symbol(),
+        Some("ready")
+    );
+    assert_eq!(
+        foster::run("func main() { \"data\".utf8 }")
+            .unwrap()
+            .as_bytes(),
+        Some(b"data".as_slice())
+    );
+    let error = foster::compile("func main(value: RawBytes) { value }").unwrap_err();
+    assert!(
+        error.message.contains("unknown type `RawBytes`"),
         "{}",
         error.message
     );
@@ -130,7 +170,7 @@ func choose(value: Int) {
 
 func main() { choose(6 * 2) }
 "#;
-    assert_eq!(foster::run(source).unwrap(), Value::Symbol("large".into()));
+    assert_eq!(foster::run(source).unwrap().as_symbol(), Some("large"));
 }
 
 #[test]
@@ -604,8 +644,8 @@ func main() { 0 }
 fn discovers_implicit_and_companion_modules() {
     let compilation = foster::check_package(Path::new("tests/fixtures/modules")).unwrap();
     let package = &compilation.package;
-    assert_eq!(package.modules.len(), 8);
-    assert_eq!(package.explicit_module_count(), 5);
+    assert_eq!(package.modules.len(), 10);
+    assert_eq!(package.explicit_module_count(), 7);
     assert_eq!(package.implicit_module_count(), 3);
     assert!(!package.module("json").unwrap().is_implicit());
     assert!(package.module("tools").unwrap().is_implicit());

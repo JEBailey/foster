@@ -32,7 +32,7 @@ fn execute() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
     let command = args
         .next()
-        .ok_or("usage: foster <run|check|docs|serve-docs> [path] | foster lsp")?;
+        .ok_or("usage: foster <run|build|check|docs|serve-docs> [path] | foster lsp")?;
     if command == "lsp" {
         if args.next().is_some() {
             return Err("usage: foster lsp".into());
@@ -73,6 +73,18 @@ fn execute() -> Result<(), Box<dyn std::error::Error>> {
                 println!("ok: checked {} function(s)", program.functions.len());
             }
         }
+        "build" => {
+            let (optimize, output) = parse_build_flags(&flags, path)?;
+            let compilation = compile_path(path)?;
+            report_warnings(&compilation, None, None)?;
+            let program = foster::vm::compile_with_options(
+                &compilation,
+                foster::vm::CompileOptions { optimize },
+            )?;
+            let bytes = foster::vm::encode_program(&program)?;
+            fs::write(&output, bytes)?;
+            println!("built {}", output.display());
+        }
         "run" => {
             let optimize = match flags.as_slice() {
                 [] => true,
@@ -82,7 +94,11 @@ fn execute() -> Result<(), Box<dyn std::error::Error>> {
                 _ => return Err("`run` accepts at most one optimization flag".into()),
             };
             let options = foster::vm::CompileOptions { optimize };
-            let value = if path.is_dir() {
+            let value = if path.extension().is_some_and(|extension| extension == "fbc") {
+                let bytes = fs::read(path)?;
+                let program = foster::vm::decode_program(&bytes)?;
+                foster::vm::Machine::new(&program).run_main()?
+            } else if path.is_dir() {
                 let compilation = foster::check_package(path)?;
                 report_warnings(&compilation, None, None)?;
                 foster::vm::run_with_options(&compilation, options)?
@@ -102,13 +118,41 @@ fn execute() -> Result<(), Box<dyn std::error::Error>> {
         _ => {
             return Err(
                 format!(
-                    "unknown command `{command}`; expected `run`, `check`, `docs`, `serve-docs`, or `lsp`"
+                    "unknown command `{command}`; expected `run`, `build`, `check`, `docs`, `serve-docs`, or `lsp`"
                 )
                 .into(),
             );
         }
     }
     Ok(())
+}
+
+fn parse_build_flags(flags: &[String], source: &Path) -> Result<(bool, PathBuf), Box<dyn Error>> {
+    let mut optimize = true;
+    let mut output = None;
+    let mut index = 0;
+    while index < flags.len() {
+        match flags[index].as_str() {
+            "--optimize" => optimize = true,
+            "--no-optimize" => optimize = false,
+            "--output" | "-o" => {
+                index += 1;
+                output = Some(PathBuf::from(
+                    flags.get(index).ok_or("`--output` requires a path")?,
+                ));
+            }
+            flag => return Err(format!("unknown build flag `{flag}`").into()),
+        }
+        index += 1;
+    }
+    let output = output.unwrap_or_else(|| {
+        if source.is_dir() {
+            source.join("main.fbc")
+        } else {
+            source.with_extension("fbc")
+        }
+    });
+    Ok((optimize, output))
 }
 
 fn docs(args: Vec<String>) -> Result<(), Box<dyn Error>> {

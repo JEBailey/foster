@@ -356,13 +356,16 @@ numeric or nullable conversions.
 Types, traits, and functions may be qualified by modules. The HIR resolves every source-level name
 to a local binding, function, module, builtin, or later a type-level definition before type checking.
 
-The bootstrap compiler resolves `Unit`, `Bool`, `Int`, `Float`, `CodePoint`, `Symbol`,
+The bootstrap compiler resolves `Unit`, `Bool`, `Int`, `Float`, `CodePoint`,
 `List<T>`, `Sequence<T>`, `Remote<T>`, `Future<T>`, callable types with internally inferred
 representation erasure, records,
 variants, generics, and record intersections. Decimal and scientific-notation literals produce
 `Float`; there are no implicit conversions between `Int` and `Float`.
-`String` is instead the always-available opaque record declared in `core.string`; its private
-`Bytes` field stores valid UTF-8, and string literals lower to that nominal type.
+`String`, `Symbol`, and `Bytes` are instead always-available opaque Foster types declared in their
+respective core modules. `String` contains private `Bytes`, `Symbol` contains private `String`, and
+`Bytes` contains the private implementation-only `RawBytes` storage type. Their literals and
+trusted constructors lower to these nominal Foster types; `RawBytes` cannot be named by user
+modules.
 Representation-level operations such as functional `List.append`, checked `from_code_point(Int)`,
 and `parse_float(String)` form the narrow primitive boundary beneath the Foster-written core
 library. The older `code_point(CodePoint)` intrinsic is also accepted for compatibility; source
@@ -540,7 +543,8 @@ finished = (move buffer).freeze()
 ```
 
 `Byte` is a copy type in the inclusive range `0..255`. Ordinary arithmetic widens it to `Int`;
-bitwise and shift operators retain `Byte`. `Bytes` is immutable contiguous storage implementing
+bitwise and shift operators retain `Byte`. `Bytes` is an opaque Foster type over immutable
+contiguous raw storage, implementing
 the read-only `Sequence<Byte>` and `Collection<Byte>` behavior. `ByteBuffer` is mutable and
 growable, but deliberately has no implicit position or limit; stateful reading can be introduced
 separately as a cursor contract.

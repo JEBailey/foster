@@ -1,0 +1,6 @@
+/// An immutable symbolic identifier.
+///
+/// Symbol literals are the trusted construction path for the private text.
+pub type Symbol = {
+    value: String
+}

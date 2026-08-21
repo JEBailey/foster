@@ -22,7 +22,9 @@ pub(super) fn matches(
             .string_bytes()
             .is_some_and(|bytes| bytes == expected.as_bytes()),
         (Pattern::CodePoint(expected), Value::CodePoint(actual)) => expected.starts_with(*actual),
-        (Pattern::Symbol(expected), Value::Symbol(actual)) => expected == actual,
+        (Pattern::Symbol(expected), actual) => actual
+            .symbol_bytes()
+            .is_some_and(|value| value == expected.as_bytes()),
         (
             Pattern::Variant { variant, fields },
             Value::Variant {

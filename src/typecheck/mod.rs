@@ -91,6 +91,43 @@ impl<'a> Checker<'a> {
         self.resolved(ty.clone()) == self.string_type()
     }
 
+    fn symbol_type(&self) -> Ty {
+        let module = self
+            .hir
+            .module_named("core.symbol")
+            .expect("the Foster Symbol bootstrap module is installed");
+        let record = self.hir.modules[module]
+            .records
+            .get("Symbol")
+            .copied()
+            .expect("core.symbol defines Symbol");
+        Ty::Record(record, Vec::new())
+    }
+
+    fn is_copy_type(&self, ty: &Ty) -> bool {
+        matches!(
+            self.resolved(ty.clone()),
+            Ty::Unit | Ty::Bool | Ty::Int | Ty::Float | Ty::CodePoint | Ty::Byte
+        ) || self.resolved(ty.clone()) == self.symbol_type()
+    }
+
+    fn bytes_type(&self) -> Ty {
+        let module = self
+            .hir
+            .module_named("core.bytes")
+            .expect("the Foster Bytes bootstrap module is installed");
+        let record = self.hir.modules[module]
+            .records
+            .get("Bytes")
+            .copied()
+            .expect("core.bytes defines Bytes");
+        Ty::Record(record, Vec::new())
+    }
+
+    fn is_bytes_type(&self, ty: &Ty) -> bool {
+        self.resolved(ty.clone()) == self.bytes_type()
+    }
+
     fn check(mut self, validate_effects: bool) -> Result<CheckOutput, FosterError> {
         self.check_record_declarations()?;
         self.check_variant_declarations()?;

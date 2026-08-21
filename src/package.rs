@@ -49,7 +49,9 @@ impl Package {
     ) -> Result<Self, FosterError> {
         let mut package = Self::from_program(name, program);
         package.install_core_modules_if_imported()?;
+        package.install_bytes_bootstrap()?;
         package.install_string_bootstrap()?;
+        package.install_symbol_bootstrap()?;
         package.validate()?;
         Ok(package)
     }
@@ -81,7 +83,9 @@ impl Package {
         };
         package.discover_modules(overlays)?;
         package.install_core_modules_if_imported()?;
+        package.install_bytes_bootstrap()?;
         package.install_string_bootstrap()?;
+        package.install_symbol_bootstrap()?;
         package.validate()?;
         Ok(package)
     }
@@ -111,6 +115,65 @@ impl Package {
                 "embedded `core.string` must define exactly one `String` type",
             ));
         }
+        self.modules.insert(
+            NAME.into(),
+            Module {
+                name: NAME.into(),
+                source_path: core_source_path(NAME),
+                program: Some(program),
+                source: Some(source.to_owned()),
+            },
+        );
+        Ok(())
+    }
+
+    fn install_bytes_bootstrap(&mut self) -> Result<(), FosterError> {
+        const NAME: &str = "core.bytes";
+        if self.modules.contains_key(NAME) {
+            return Ok(());
+        }
+        self.modules.entry("core".into()).or_insert(Module {
+            name: "core".into(),
+            source_path: None,
+            program: None,
+            source: None,
+        });
+        let source = include_str!("../library/core/bytes.fos");
+        let mut program = crate::parse(source).map_err(|error| {
+            FosterError::runtime(format!("embedded module `{NAME}` is invalid: {error}"))
+        })?;
+        program.imports.clear();
+        program.constants.clear();
+        program.variants.clear();
+        program.functions.clear();
+        program.records.retain(|record| record.name == "Bytes");
+        self.modules.insert(
+            NAME.into(),
+            Module {
+                name: NAME.into(),
+                source_path: core_source_path(NAME),
+                program: Some(program),
+                source: Some(source.to_owned()),
+            },
+        );
+        Ok(())
+    }
+
+    fn install_symbol_bootstrap(&mut self) -> Result<(), FosterError> {
+        const NAME: &str = "core.symbol";
+        if self.modules.contains_key(NAME) {
+            return Ok(());
+        }
+        self.modules.entry("core".into()).or_insert(Module {
+            name: "core".into(),
+            source_path: None,
+            program: None,
+            source: None,
+        });
+        let source = include_str!("../library/core/symbol.fos");
+        let program = crate::parse(source).map_err(|error| {
+            FosterError::runtime(format!("embedded module `{NAME}` is invalid: {error}"))
+        })?;
         self.modules.insert(
             NAME.into(),
             Module {
@@ -421,6 +484,7 @@ const CORE_MODULES: &[(&str, &str)] = &[
     ("core.int", include_str!("../library/core/int.fos")),
     ("core.float", include_str!("../library/core/float.fos")),
     ("core.string", include_str!("../library/core/string.fos")),
+    ("core.symbol", include_str!("../library/core/symbol.fos")),
     ("core.map", include_str!("../library/core/map.fos")),
     ("core.set", include_str!("../library/core/set.fos")),
     ("core.queue", include_str!("../library/core/queue.fos")),

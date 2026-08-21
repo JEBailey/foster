@@ -55,6 +55,10 @@ pub fn compile_with_options(
         .hir
         .module_named("core.string")
         .and_then(|module| compilation.hir.record_named(module, "String"));
+    compiler.program.symbol_record = compilation
+        .hir
+        .module_named("core.symbol")
+        .and_then(|module| compilation.hir.record_named(module, "Symbol"));
     for (record, definition) in compilation.hir.records.iter() {
         for (name, function) in &compilation.hir.modules[definition.module].functions {
             let receiver_matches = compilation

@@ -106,17 +106,7 @@ fn expression_borrow_roots(
     provenance: &HashMap<LocalId, HashSet<LocalId>>,
 ) -> HashSet<LocalId> {
     if types.expression_type(expression).is_some_and(|ty| {
-        matches!(
-            types.types[ty],
-            crate::types::Type::Unit
-                | crate::types::Type::Bool
-                | crate::types::Type::Int
-                | crate::types::Type::Float
-                | crate::types::Type::CodePoint
-                | crate::types::Type::Byte
-                | crate::types::Type::Symbol
-                | crate::types::Type::Module(_)
-        )
+        types.is_copy(ty) || matches!(types.types[ty], crate::types::Type::Module(_))
     }) {
         return HashSet::new();
     }

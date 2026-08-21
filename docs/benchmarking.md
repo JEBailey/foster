@@ -31,7 +31,9 @@ Run one suite with `cargo bench --bench compiler` or `cargo bench --bench runtim
 reports beneath `target/criterion/`; open `target/criterion/report/index.html` for the complete HTML
 report. The compiler suite separates front-end plus checked-HIR work from optimized and
 unoptimized bytecode lowering. The runtime suite executes already compiled bytecode so compiler
-time is not mixed into VM measurements.
+time is not mixed into VM measurements. It includes recursive Fibonacci plus focused workloads
+for Foster-defined `String`, `Symbol`, and `Bytes` values. Each workload reports optimized and
+unoptimized VM execution separately.
 
 ## Lua comparison harness
 

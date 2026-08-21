@@ -7,6 +7,7 @@ use super::Constant;
 pub(super) fn constant_value(
     constant: &Constant,
     string_record: Option<crate::hir::RecordId>,
+    symbol_record: Option<crate::hir::RecordId>,
 ) -> Value {
     match constant {
         Constant::Unit => Value::Unit,
@@ -15,7 +16,9 @@ pub(super) fn constant_value(
         Constant::Float(value) => Value::Float(*value),
         Constant::String(value) => Value::string(string_record, value.as_bytes().to_vec()),
         Constant::CodePoint(value) => Value::CodePoint(*value),
-        Constant::Symbol(value) => Value::Symbol(value.clone()),
+        Constant::Symbol(value) => {
+            Value::symbol(symbol_record, string_record, value.as_bytes().to_vec())
+        }
     }
 }
 

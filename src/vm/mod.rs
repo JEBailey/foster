@@ -3,6 +3,7 @@
 //! The structured instruction representation intentionally doubles as the
 //! executable format while the language semantics are still evolving.
 
+mod binary;
 mod compiler;
 mod host;
 mod ir;
@@ -14,6 +15,7 @@ mod runtime;
 mod value;
 mod verifier;
 
+pub use binary::{BinaryError, FORMAT_VERSION, decode_program, encode_program};
 pub use compiler::{CompileOptions, compile, compile_with_options};
 pub use ir::{BytecodeFunction, Constant, Instruction, Program, ProgramMetrics, Register};
 pub use machine::Machine;

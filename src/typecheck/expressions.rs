@@ -90,7 +90,7 @@ impl Checker<'_> {
             hir::Expr::Float(_) => Ty::Float,
             hir::Expr::String(_) => self.string_type(),
             hir::Expr::CodePoint(_) => Ty::CodePoint,
-            hir::Expr::Symbol(_) => Ty::Symbol,
+            hir::Expr::Symbol(_) => self.symbol_type(),
             hir::Expr::List(items) => {
                 let element = self.fresh();
                 for item in items {
@@ -111,19 +111,26 @@ impl Checker<'_> {
                 let object = self.infer_expression(function, object)?;
                 let index = self.infer_expression(function, index)?;
                 self.unify(Ty::Int, index, function)?;
-                match self.resolved(object.clone()) {
-                    Ty::Bytes | Ty::ByteBuffer => Ty::Byte,
-                    Ty::List(element) => *element,
-                    Ty::Variable(_) => {
-                        let element = self.fresh();
-                        self.unify(object, Ty::List(Box::new(element.clone())), function)?;
-                        element
-                    }
-                    other => {
-                        return Err(self.error(
-                            function,
-                            format!("type `{}` does not support indexing", self.describe(&other)),
-                        ));
+                if self.is_bytes_type(&object) {
+                    Ty::Byte
+                } else {
+                    match self.resolved(object.clone()) {
+                        Ty::RawBytes | Ty::ByteBuffer => Ty::Byte,
+                        Ty::List(element) => *element,
+                        Ty::Variable(_) => {
+                            let element = self.fresh();
+                            self.unify(object, Ty::List(Box::new(element.clone())), function)?;
+                            element
+                        }
+                        other => {
+                            return Err(self.error(
+                                function,
+                                format!(
+                                    "type `{}` does not support indexing",
+                                    self.describe(&other)
+                                ),
+                            ));
+                        }
                     }
                 }
             }

@@ -441,14 +441,5 @@ pub(super) fn infer_capture_modes(
 }
 
 fn is_copy_type(types: &crate::types::TypeInformation, ty: crate::types::TypeId) -> bool {
-    matches!(
-        types.types[ty],
-        crate::types::Type::Unit
-            | crate::types::Type::Bool
-            | crate::types::Type::Int
-            | crate::types::Type::Float
-            | crate::types::Type::CodePoint
-            | crate::types::Type::Byte
-            | crate::types::Type::Symbol
-    )
+    types.is_copy(ty)
 }

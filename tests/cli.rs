@@ -49,6 +49,40 @@ fn run_rejects_unknown_optimizer_settings() {
 }
 
 #[test]
+fn build_writes_runnable_compiled_bytecode() {
+    let output_path = std::env::temp_dir().join(format!(
+        "foster-bytecode-{}-{}.fbc",
+        std::process::id(),
+        time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let build = foster()
+        .arg("build")
+        .arg(benchmark_source())
+        .arg("--output")
+        .arg(&output_path)
+        .output()
+        .unwrap();
+    assert!(
+        build.status.success(),
+        "{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    assert_eq!(&fs::read(&output_path).unwrap()[..8], b"FOSTERBC");
+
+    let run = foster().arg("run").arg(&output_path).output().unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8(run.stdout).unwrap().trim(), "6765");
+    fs::remove_file(output_path).unwrap();
+}
+
+#[test]
 fn docs_generates_a_static_site_from_resolved_declarations() {
     let unique = format!(
         "foster-docs-{}-{}",

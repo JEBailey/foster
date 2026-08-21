@@ -46,9 +46,12 @@ impl Checker<'_> {
                     ("String", []) => Some(self.string_type()),
                     ("CodePoint", []) => Some(Ty::CodePoint),
                     ("Byte", []) => Some(Ty::Byte),
-                    ("Bytes", []) => Some(Ty::Bytes),
+                    ("Bytes", []) => Some(self.bytes_type()),
+                    ("RawBytes", []) if self.hir.modules[module].name == "core.bytes" => {
+                        Some(Ty::RawBytes)
+                    }
                     ("ByteBuffer", []) => Some(Ty::ByteBuffer),
-                    ("Symbol", []) => Some(Ty::Symbol),
+                    ("Symbol", []) => Some(self.symbol_type()),
                     ("List", [element]) => Some(Ty::List(Box::new(
                         self.annotation_type(module, element, generics)?,
                     ))),

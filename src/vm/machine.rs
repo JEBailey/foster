@@ -98,6 +98,7 @@ impl Machine {
                     constant_value(
                         &self.program.constants[constant as usize],
                         self.program.string_record,
+                        self.program.symbol_record,
                     ),
                 )?,
                 Instruction::Move {
@@ -139,10 +140,16 @@ impl Machine {
                     };
                     let index = usize::try_from(index)
                         .map_err(|_| FosterError::runtime("index is out of bounds"))?;
-                    let value = match read(frame, object)? {
+                    let object = read(frame, object)?;
+                    let value = match object {
                         Value::List(values) => values.get(index).cloned(),
-                        Value::Bytes(values) => values.get(index).copied().map(Value::Byte),
                         Value::ByteBuffer(values) => values.get(index).copied().map(Value::Byte),
+                        value if value.bytes_value().is_some() => value
+                            .bytes_value()
+                            .unwrap()
+                            .get(index)
+                            .copied()
+                            .map(Value::Byte),
                         _ => return Err(FosterError::runtime("value does not support indexing")),
                     }
                     .ok_or_else(|| FosterError::runtime("index is out of bounds"))?;
@@ -334,7 +341,7 @@ impl Machine {
                                 "ByteBuffer.freeze requires a ByteBuffer",
                             ));
                         };
-                        write(frame, destination, Value::Bytes(Arc::new(values)))?;
+                        write(frame, destination, Value::bytes(values))?;
                         continue;
                     }
                     if mutate_byte_buffer(frame, builtin, &arguments)? {
@@ -452,6 +459,19 @@ impl Machine {
                         continue;
                     }
                     if value.string_bytes().is_some() {
+                        if !arguments.is_empty() {
+                            return Err(FosterError::runtime(format!(
+                                "contract member `{name}` does not accept arguments"
+                            )));
+                        }
+                        write(
+                            frame,
+                            destination,
+                            member(value, &name, self.program.string_record)?,
+                        )?;
+                        continue;
+                    }
+                    if value.bytes_value().is_some() {
                         if !arguments.is_empty() {
                             return Err(FosterError::runtime(format!(
                                 "contract member `{name}` does not accept arguments"
@@ -915,7 +935,22 @@ fn member(
                 Ok(Value::string(string_record, bytes[offset..].to_vec()))
             }
             "whitespace?" => Ok(Value::Bool(text.chars().all(char::is_whitespace))),
-            "utf8" | "value" => Ok(Value::Bytes(Arc::new(bytes.to_vec()))),
+            "utf8" | "value" => Ok(Value::bytes(bytes.to_vec())),
+            _ => Err(FosterError::runtime(format!(
+                "value has no field `{field}`"
+            ))),
+        };
+    }
+    if let Some(values) = value.bytes_value() {
+        return match field {
+            "empty?" => Ok(Value::Bool(values.is_empty())),
+            "length" => Ok(Value::Integer(values.len() as i64)),
+            "head" => values
+                .first()
+                .copied()
+                .map(Value::Byte)
+                .ok_or_else(|| FosterError::runtime("cannot take `head` of empty Bytes")),
+            "rest" => Ok(Value::bytes(values.get(1..).unwrap_or_default().to_vec())),
             _ => Err(FosterError::runtime(format!(
                 "value has no field `{field}`"
             ))),
@@ -940,16 +975,6 @@ fn member(
             Ok(Value::string(string_record, value.to_string().into_bytes()))
         }
         (Value::Byte(value), "int") => Ok(Value::Integer(i64::from(value))),
-        (Value::Bytes(values), "empty?") => Ok(Value::Bool(values.is_empty())),
-        (Value::Bytes(values), "length") => Ok(Value::Integer(values.len() as i64)),
-        (Value::Bytes(values), "head") => values
-            .first()
-            .copied()
-            .map(Value::Byte)
-            .ok_or_else(|| FosterError::runtime("cannot take `head` of empty Bytes")),
-        (Value::Bytes(values), "rest") => Ok(Value::Bytes(Arc::new(
-            values.get(1..).unwrap_or_default().to_vec(),
-        ))),
         (Value::ByteBuffer(values), "empty?") => Ok(Value::Bool(values.is_empty())),
         (Value::ByteBuffer(values), "length") => Ok(Value::Integer(values.len() as i64)),
         (Value::ByteBuffer(values), "capacity") => Ok(Value::Integer(values.capacity() as i64)),
@@ -995,7 +1020,7 @@ fn call_builtin(
         (Builtin::ByteUnchecked, [Value::Integer(value)]) => u8::try_from(*value)
             .map(Value::Byte)
             .map_err(|_| FosterError::runtime("Byte is outside 0..255")),
-        (Builtin::BytesEmpty, []) => Ok(Value::Bytes(Arc::new(Vec::new()))),
+        (Builtin::BytesEmpty, []) => Ok(Value::bytes(Vec::new())),
         (Builtin::BytesFromList, [Value::List(values)]) => {
             let bytes = values
                 .iter()
@@ -1004,22 +1029,22 @@ fn call_builtin(
                     _ => Err(FosterError::runtime("Bytes.from requires List<Byte>")),
                 })
                 .collect::<Result<Vec<_>, _>>()?;
-            Ok(Value::Bytes(Arc::new(bytes)))
+            Ok(Value::bytes(bytes))
         }
-        (Builtin::BytesConcat, [Value::Bytes(left), Value::Bytes(right)]) => {
+        (Builtin::BytesConcat, [left, right])
+            if left.bytes_value().is_some() && right.bytes_value().is_some() =>
+        {
+            let left = left.bytes_value().unwrap();
+            let right = right.bytes_value().unwrap();
             let mut bytes = Vec::with_capacity(left.len() + right.len());
             bytes.extend_from_slice(left);
             bytes.extend_from_slice(right);
-            Ok(Value::Bytes(Arc::new(bytes)))
+            Ok(Value::bytes(bytes))
         }
-        (
-            Builtin::BytesSlice,
-            [
-                Value::Bytes(values),
-                Value::Integer(start),
-                Value::Integer(end),
-            ],
-        ) => {
+        (Builtin::BytesSlice, [values, Value::Integer(start), Value::Integer(end)])
+            if values.bytes_value().is_some() =>
+        {
+            let values = values.bytes_value().unwrap();
             let start = usize::try_from(*start)
                 .map_err(|_| FosterError::runtime("byte slice start is out of bounds"))?;
             let end = usize::try_from(*end)
@@ -1027,14 +1052,22 @@ fn call_builtin(
             let slice = values
                 .get(start..end)
                 .ok_or_else(|| FosterError::runtime("byte slice is out of bounds"))?;
-            Ok(Value::Bytes(Arc::new(slice.to_vec())))
+            Ok(Value::bytes(slice.to_vec()))
         }
-        (Builtin::BytesToList, [Value::Bytes(values)]) => Ok(Value::List(
-            values.iter().copied().map(Value::Byte).collect(),
+        (Builtin::BytesToList, [values]) if values.bytes_value().is_some() => Ok(Value::List(
+            values
+                .bytes_value()
+                .unwrap()
+                .iter()
+                .copied()
+                .map(Value::Byte)
+                .collect(),
         )),
-        (Builtin::BytesHex, [Value::Bytes(values)]) => Ok(Value::string(
+        (Builtin::BytesHex, [values]) if values.bytes_value().is_some() => Ok(Value::string(
             string_record,
             values
+                .bytes_value()
+                .unwrap()
                 .iter()
                 .map(|byte| format!("{byte:02x}"))
                 .collect::<String>()
@@ -1042,7 +1075,7 @@ fn call_builtin(
         )),
         (Builtin::BytesFromHex, [value]) if value.string_bytes().is_some() => {
             Ok(match decode_hex(value.string_text()?) {
-                Ok(bytes) => result_ok(Value::Bytes(Arc::new(bytes))),
+                Ok(bytes) => result_ok(Value::bytes(bytes)),
                 Err((offset, message)) => result_error(Value::Record {
                     record: None,
                     name: "HexError".into(),
@@ -1056,15 +1089,17 @@ fn call_builtin(
                 }),
             })
         }
-        (Builtin::StringUtf8, [value]) if value.string_bytes().is_some() => Ok(Value::Bytes(
-            Arc::new(value.string_bytes().unwrap().to_vec()),
-        )),
-        (Builtin::BytesUtf8Valid, [Value::Bytes(value)]) => {
-            Ok(Value::Bool(std::str::from_utf8(value).is_ok()))
+        (Builtin::StringUtf8, [value]) if value.string_bytes().is_some() => {
+            Ok(Value::bytes(value.string_bytes().unwrap().to_vec()))
         }
-        (Builtin::BytesDecodeUtf8, [Value::Bytes(value)]) => std::str::from_utf8(value)
-            .map(|value| Value::string(string_record, value.as_bytes().to_vec()))
-            .map_err(|_| FosterError::runtime("Bytes are not valid UTF-8")),
+        (Builtin::BytesUtf8Valid, [value]) if value.bytes_value().is_some() => Ok(Value::Bool(
+            std::str::from_utf8(value.bytes_value().unwrap()).is_ok(),
+        )),
+        (Builtin::BytesDecodeUtf8, [value]) if value.bytes_value().is_some() => {
+            std::str::from_utf8(value.bytes_value().unwrap())
+                .map(|value| Value::string(string_record, value.as_bytes().to_vec()))
+                .map_err(|_| FosterError::runtime("Bytes are not valid UTF-8"))
+        }
         (Builtin::ByteBufferEmpty, []) => Ok(Value::ByteBuffer(Vec::new())),
         (Builtin::ByteBufferWithCapacity, [Value::Integer(capacity)]) => {
             let capacity = usize::try_from(*capacity)
@@ -1072,7 +1107,7 @@ fn call_builtin(
             Ok(Value::ByteBuffer(Vec::with_capacity(capacity)))
         }
         (Builtin::ByteBufferFreeze | Builtin::ByteBufferSnapshot, [Value::ByteBuffer(values)]) => {
-            Ok(Value::Bytes(Arc::new(values.clone())))
+            Ok(Value::bytes(values.clone()))
         }
         (Builtin::IoReadText, [path]) if path.string_bytes().is_some() => {
             let path = path.string_text()?;
@@ -1099,16 +1134,18 @@ fn call_builtin(
             Ok(io_result(
                 "read_bytes",
                 path,
-                std::fs::read(path).map(|bytes| Value::Bytes(Arc::new(bytes))),
+                std::fs::read(path).map(Value::bytes),
                 string_record,
             ))
         }
-        (Builtin::IoWriteBytes, [path, Value::Bytes(bytes)]) if path.string_bytes().is_some() => {
+        (Builtin::IoWriteBytes, [path, bytes])
+            if path.string_bytes().is_some() && bytes.bytes_value().is_some() =>
+        {
             let path = path.string_text()?;
             Ok(io_result(
                 "write_bytes",
                 path,
-                std::fs::write(path, bytes.as_slice()).map(|()| Value::Unit),
+                std::fs::write(path, bytes.bytes_value().unwrap()).map(|()| Value::Unit),
                 string_record,
             ))
         }
@@ -1219,15 +1256,17 @@ fn call_builtin(
         (Builtin::TcpReadBytes, [Value::Integer(connection), Value::Integer(maximum)]) => {
             Ok(tcp_result(
                 "read_bytes",
-                super::host::read_bytes(*connection, *maximum)
-                    .map(|bytes| Value::Bytes(Arc::new(bytes))),
+                super::host::read_bytes(*connection, *maximum).map(Value::bytes),
                 string_record,
             ))
         }
-        (Builtin::TcpWriteBytes, [Value::Integer(connection), Value::Bytes(bytes)]) => {
+        (Builtin::TcpWriteBytes, [Value::Integer(connection), bytes])
+            if bytes.bytes_value().is_some() =>
+        {
             Ok(tcp_result(
                 "write_bytes",
-                super::host::write_bytes(*connection, bytes).map(|()| Value::Unit),
+                super::host::write_bytes(*connection, bytes.bytes_value().unwrap())
+                    .map(|()| Value::Unit),
                 string_record,
             ))
         }
@@ -1265,10 +1304,14 @@ fn mutate_byte_buffer(
             Some((*buffer, ByteBufferMutation::Push(value)))
         }
         (Builtin::ByteBufferExtend, [buffer, values]) => {
-            let Value::Bytes(values) = read(frame, *values)? else {
+            let values = read(frame, *values)?;
+            let Some(values) = values.bytes_value() else {
                 return Err(FosterError::runtime("ByteBuffer.extend requires Bytes"));
             };
-            Some((*buffer, ByteBufferMutation::Extend(values)))
+            Some((
+                *buffer,
+                ByteBufferMutation::Extend(Arc::new(values.to_vec())),
+            ))
         }
         (Builtin::ByteBufferClear, [buffer]) => Some((*buffer, ByteBufferMutation::Clear)),
         (Builtin::ByteBufferTruncate, [buffer, length]) => {

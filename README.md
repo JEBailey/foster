@@ -153,11 +153,20 @@ source
 ```
 
 The VM is the sole execution engine; there is no AST interpreter fallback. Optimization can be
-disabled without changing semantics. The intended native evolution is to lower a stable
+disabled without changing semantics. Programs can be compiled to deterministic `.fbc` artifacts
+and run without their source:
+
+```powershell
+cargo run --bin foster -- build examples/pima/fibonacci.fos -o fibonacci.fbc
+cargo run --bin foster -- run fibonacci.fbc
+```
+
+The intended native evolution is to lower a stable
 backend-neutral IR to Cranelift for JIT and object-file output. That native backend is not yet
 implemented.
 
-See [the VM design](docs/vm.md) and [benchmarking guide](docs/benchmarking.md).
+See [the VM design](docs/vm.md), [binary format](docs/binary-format.md), and
+[benchmarking guide](docs/benchmarking.md).
 
 ## Language server
 
@@ -181,6 +190,7 @@ scope-aware completion. The development VS Code extension lives in
 - [Closures and group borrowing](docs/closures.md)
 - [Effect derivation](docs/effect-derivation.md)
 - [Register VM](docs/vm.md)
+- [Compiled bytecode format](docs/binary-format.md)
 - [Core library](docs/core-library.md)
 - [Optimization and benchmarks](docs/benchmarking.md)
 - [Executable examples](examples/README.md)

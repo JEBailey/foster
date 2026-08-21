@@ -4,10 +4,67 @@ use std::time::Duration;
 use criterion::{Criterion, criterion_group, criterion_main};
 use foster::vm::{CompileOptions, Machine};
 
-const SOURCE: &str = include_str!("../benchmarks/fibonacci.fos");
+const FIBONACCI_SOURCE: &str = include_str!("../benchmarks/fibonacci.fos");
+
+const STRING_SOURCE: &str = r#"
+import core.string
+
+func repeat(value: String, count: Int, result: String) -> String [consume result] {
+    branch {
+        count <= 0 -> result
+        _ -> repeat(value, count - 1, result + value)
+    }
+}
+
+func main() -> Int {
+    string.upper(string.reverse(repeat("Foster λ ", 32, ""))).length
+}
+"#;
+
+const SYMBOL_SOURCE: &str = r#"
+func classify(value: Symbol) -> Int {
+    branch value {
+        :alpha -> 1
+        :beta -> 2
+        :gamma -> 3
+        _ -> 4
+    }
+}
+
+func accumulate(count: Int, total: Int) -> Int {
+    branch {
+        count <= 0 -> total
+        _ -> accumulate(count - 1, total + classify(:gamma))
+    }
+}
+
+func main() -> Int { accumulate(512, 0) }
+"#;
+
+const BYTES_SOURCE: &str = r#"
+import core.bytes
+
+func grow(value: Bytes, count: Int) -> Bytes {
+    branch {
+        count <= 0 -> value
+        _ -> grow(value.concat(value), count - 1)
+    }
+}
+
+func main() -> Int {
+    grow("Foster bytes".utf8, 7).hex.length
+}
+"#;
 
 fn runtime_benchmarks(criterion: &mut Criterion) {
-    let compilation = foster::compile(SOURCE).unwrap();
+    benchmark_workload(criterion, "fibonacci_20", FIBONACCI_SOURCE);
+    benchmark_workload(criterion, "string", STRING_SOURCE);
+    benchmark_workload(criterion, "symbol", SYMBOL_SOURCE);
+    benchmark_workload(criterion, "bytes", BYTES_SOURCE);
+}
+
+fn benchmark_workload(criterion: &mut Criterion, name: &str, source: &str) {
+    let compilation = foster::compile(source).unwrap();
     let unoptimized =
         foster::vm::compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
     let optimized =
@@ -22,7 +79,7 @@ fn runtime_benchmarks(criterion: &mut Criterion) {
         optimized_machine.run_main().unwrap()
     );
 
-    let mut group = criterion.benchmark_group("vm/fibonacci_20");
+    let mut group = criterion.benchmark_group(format!("vm/{name}"));
     group
         .sample_size(10)
         .warm_up_time(Duration::from_secs(1))

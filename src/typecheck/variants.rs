@@ -27,7 +27,7 @@ impl Checker<'_> {
             hir::Pattern::Float(_) => self.unify(expected, Ty::Float, function)?,
             hir::Pattern::String(_) => self.unify(expected, self.string_type(), function)?,
             hir::Pattern::CodePoint(_) => self.unify(expected, Ty::CodePoint, function)?,
-            hir::Pattern::Symbol(_) => self.unify(expected, Ty::Symbol, function)?,
+            hir::Pattern::Symbol(_) => self.unify(expected, self.symbol_type(), function)?,
             hir::Pattern::Variant { variant, fields } => {
                 let definition = self.hir.variants[*variant].clone();
                 let parent = self.hir.variant_types[definition.parent].clone();

@@ -139,42 +139,43 @@ impl Checker<'_> {
         let io_result = |ok| self.host_result(ok, "core.io", "IoError");
         let tcp_result = |ok| self.host_result(ok, "core.net.tcp", "NetworkError");
         let string = self.string_type();
+        let bytes = self.bytes_type();
         Ok(match builtin {
             Builtin::CodePoint => (vec![Ty::CodePoint], Ty::Int),
             Builtin::FromCodePoint => (vec![Ty::Int], Ty::CodePoint),
             Builtin::ParseFloat => (vec![string.clone()], Ty::Float),
             Builtin::ByteValid => (vec![Ty::Int], Ty::Bool),
             Builtin::ByteUnchecked => (vec![Ty::Int], Ty::Byte),
-            Builtin::BytesEmpty => (Vec::new(), Ty::Bytes),
-            Builtin::BytesFromList => (vec![Ty::List(Box::new(Ty::Byte))], Ty::Bytes),
-            Builtin::BytesConcat => (vec![Ty::Bytes, Ty::Bytes], Ty::Bytes),
-            Builtin::BytesSlice => (vec![Ty::Bytes, Ty::Int, Ty::Int], Ty::Bytes),
-            Builtin::BytesToList => (vec![Ty::Bytes], Ty::List(Box::new(Ty::Byte))),
-            Builtin::BytesHex => (vec![Ty::Bytes], string.clone()),
+            Builtin::BytesEmpty => (Vec::new(), bytes.clone()),
+            Builtin::BytesFromList => (vec![Ty::List(Box::new(Ty::Byte))], bytes.clone()),
+            Builtin::BytesConcat => (vec![bytes.clone(), bytes.clone()], bytes.clone()),
+            Builtin::BytesSlice => (vec![bytes.clone(), Ty::Int, Ty::Int], bytes.clone()),
+            Builtin::BytesToList => (vec![bytes.clone()], Ty::List(Box::new(Ty::Byte))),
+            Builtin::BytesHex => (vec![bytes.clone()], string.clone()),
             Builtin::BytesFromHex => (
                 vec![string.clone()],
-                self.host_result(Ty::Bytes, "core.bytes", "HexError")?,
+                self.host_result(bytes.clone(), "core.bytes", "HexError")?,
             ),
-            Builtin::StringUtf8 => (vec![string.clone()], Ty::Bytes),
-            Builtin::BytesUtf8Valid => (vec![Ty::Bytes], Ty::Bool),
-            Builtin::BytesDecodeUtf8 => (vec![Ty::Bytes], string.clone()),
+            Builtin::StringUtf8 => (vec![string.clone()], bytes.clone()),
+            Builtin::BytesUtf8Valid => (vec![bytes.clone()], Ty::Bool),
+            Builtin::BytesDecodeUtf8 => (vec![bytes.clone()], string.clone()),
             Builtin::ByteBufferEmpty => (Vec::new(), Ty::ByteBuffer),
             Builtin::ByteBufferWithCapacity => (vec![Ty::Int], Ty::ByteBuffer),
             Builtin::ByteBufferPush => (vec![Ty::ByteBuffer, Ty::Byte], Ty::Unit),
-            Builtin::ByteBufferExtend => (vec![Ty::ByteBuffer, Ty::Bytes], Ty::Unit),
+            Builtin::ByteBufferExtend => (vec![Ty::ByteBuffer, bytes.clone()], Ty::Unit),
             Builtin::ByteBufferClear => (vec![Ty::ByteBuffer], Ty::Unit),
             Builtin::ByteBufferTruncate | Builtin::ByteBufferReserve => {
                 (vec![Ty::ByteBuffer, Ty::Int], Ty::Unit)
             }
             Builtin::ByteBufferFreeze | Builtin::ByteBufferSnapshot => {
-                (vec![Ty::ByteBuffer], Ty::Bytes)
+                (vec![Ty::ByteBuffer], bytes.clone())
             }
             Builtin::IoReadText | Builtin::IoCanonicalize => {
                 (vec![string.clone()], io_result(string.clone())?)
             }
             Builtin::IoWriteText => (vec![string.clone(), string.clone()], io_result(Ty::Unit)?),
-            Builtin::IoReadBytes => (vec![string.clone()], io_result(Ty::Bytes)?),
-            Builtin::IoWriteBytes => (vec![string.clone(), Ty::Bytes], io_result(Ty::Unit)?),
+            Builtin::IoReadBytes => (vec![string.clone()], io_result(bytes.clone())?),
+            Builtin::IoWriteBytes => (vec![string.clone(), bytes.clone()], io_result(Ty::Unit)?),
             Builtin::IoListDirectory => (
                 vec![string.clone()],
                 io_result(Ty::List(Box::new(string.clone())))?,
@@ -192,8 +193,8 @@ impl Checker<'_> {
             Builtin::TcpAccept => (vec![Ty::Int], tcp_result(Ty::Int)?),
             Builtin::TcpRead => (vec![Ty::Int, Ty::Int], tcp_result(string.clone())?),
             Builtin::TcpWrite => (vec![Ty::Int, string], tcp_result(Ty::Unit)?),
-            Builtin::TcpReadBytes => (vec![Ty::Int, Ty::Int], tcp_result(Ty::Bytes)?),
-            Builtin::TcpWriteBytes => (vec![Ty::Int, Ty::Bytes], tcp_result(Ty::Unit)?),
+            Builtin::TcpReadBytes => (vec![Ty::Int, Ty::Int], tcp_result(bytes.clone())?),
+            Builtin::TcpWriteBytes => (vec![Ty::Int, bytes], tcp_result(Ty::Unit)?),
             Builtin::TcpSetTimeout => (vec![Ty::Int, Ty::Int], tcp_result(Ty::Unit)?),
             Builtin::TcpCloseListener | Builtin::TcpCloseConnection => {
                 (vec![Ty::Int], tcp_result(Ty::Unit)?)
@@ -248,7 +249,7 @@ impl Checker<'_> {
             );
             if mode == crate::ast::ParameterMode::Consume
                 && !generated_partial_parameter
-                && !copy_type(&self.resolved(argument_type.clone()))
+                && !self.is_copy_type(argument_type)
                 && self.argument_is_owned_place(*argument)
                 && !matches!(self.hir.expressions[*argument], hir::Expr::MoveOut(_))
             {
@@ -293,10 +294,22 @@ impl Checker<'_> {
                 "length" => Ok(Ty::Int),
                 "head" => Ok(Ty::CodePoint),
                 "rest" => Ok(self.string_type()),
-                "utf8" => Ok(Ty::Bytes),
+                "utf8" => Ok(self.bytes_type()),
                 "iterator" => self.collection_iterator(Ty::CodePoint, function),
                 member => {
                     self.primitive_method_type(function, self.string_type(), "core.string", member)
+                }
+            };
+        }
+        if self.is_bytes_type(&object) {
+            return match name {
+                "empty?" => Ok(Ty::Bool),
+                "length" => Ok(Ty::Int),
+                "head" => Ok(Ty::Byte),
+                "rest" => Ok(self.bytes_type()),
+                "iterator" => self.collection_iterator(Ty::Byte, function),
+                member => {
+                    self.primitive_method_type(function, self.bytes_type(), "core.bytes", member)
                 }
             };
         }
@@ -304,13 +317,13 @@ impl Checker<'_> {
             (Ty::CodePoint, "whitespace?") => Ok(Ty::Bool),
             (Ty::CodePoint, "string") => Ok(self.string_type()),
             (Ty::Byte, "int") => Ok(Ty::Int),
-            (Ty::Bytes, "empty?") => Ok(Ty::Bool),
-            (Ty::Bytes, "length") => Ok(Ty::Int),
-            (Ty::Bytes, "head") => Ok(Ty::Byte),
-            (Ty::Bytes, "rest") => Ok(Ty::Bytes),
-            (Ty::Bytes, "iterator") => self.collection_iterator(Ty::Byte, function),
-            (Ty::Bytes, member) => {
-                self.primitive_method_type(function, Ty::Bytes, "core.bytes", member)
+            (Ty::RawBytes, "empty?") => Ok(Ty::Bool),
+            (Ty::RawBytes, "length") => Ok(Ty::Int),
+            (Ty::RawBytes, "head") => Ok(Ty::Byte),
+            (Ty::RawBytes, "rest") => Ok(Ty::RawBytes),
+            (Ty::RawBytes, "iterator") => self.collection_iterator(Ty::Byte, function),
+            (Ty::RawBytes, member) => {
+                self.primitive_method_type(function, Ty::RawBytes, "core.bytes", member)
             }
             (Ty::ByteBuffer, "empty?") => Ok(Ty::Bool),
             (Ty::ByteBuffer, "length" | "capacity") => Ok(Ty::Int),
@@ -711,13 +724,6 @@ impl Checker<'_> {
             suspends: function.suspends,
         })
     }
-}
-
-fn copy_type(ty: &Ty) -> bool {
-    matches!(
-        ty,
-        Ty::Unit | Ty::Bool | Ty::Int | Ty::Float | Ty::CodePoint | Ty::Byte | Ty::Symbol
-    )
 }
 
 fn instantiate_call_groups(callee: Ty, arguments: &[Ty]) -> Ty {

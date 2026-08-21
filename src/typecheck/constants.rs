@@ -49,7 +49,7 @@ impl Checker<'_> {
             hir::ConstantValue::Float(_) => Ty::Float,
             hir::ConstantValue::String(_) => self.string_type(),
             hir::ConstantValue::CodePoint(_) => Ty::CodePoint,
-            hir::ConstantValue::Symbol(_) => Ty::Symbol,
+            hir::ConstantValue::Symbol(_) => self.symbol_type(),
             hir::ConstantValue::Constant(constant) => self.constant_type(*constant, visiting)?,
             hir::ConstantValue::List(values) => {
                 let Some((first, rest)) = values.split_first() else {

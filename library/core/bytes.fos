@@ -1,6 +1,11 @@
 import core.byte
 import core.result
 
+/// Immutable binary data backed by compact private host storage.
+pub type Bytes = {
+    value: RawBytes
+}
+
 /// Describes a failed UTF-8 decoding operation.
 pub type Utf8Error = {
     pub offset: Int

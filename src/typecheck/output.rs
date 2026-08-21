@@ -132,9 +132,8 @@ impl Checker<'_> {
             Ty::Float => "Float".into(),
             Ty::CodePoint => "CodePoint".into(),
             Ty::Byte => "Byte".into(),
-            Ty::Bytes => "Bytes".into(),
+            Ty::RawBytes => "RawBytes".into(),
             Ty::ByteBuffer => "ByteBuffer".into(),
-            Ty::Symbol => "Symbol".into(),
             Ty::List(element) => format!("List<{}>", self.describe(&element)),
             Ty::Sequence(element) => format!("Sequence<{}>", self.describe(&element)),
             Ty::Remote(value) => format!("Remote<{}>", self.describe(&value)),
@@ -248,9 +247,8 @@ fn intern_type(
         Ty::Float => Type::Float,
         Ty::CodePoint => Type::CodePoint,
         Ty::Byte => Type::Byte,
-        Ty::Bytes => Type::Bytes,
+        Ty::RawBytes => Type::RawBytes,
         Ty::ByteBuffer => Type::ByteBuffer,
-        Ty::Symbol => Type::Symbol,
         Ty::List(element) => {
             let element = intern_type(information, interner, *element);
             Type::List(element)

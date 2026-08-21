@@ -226,12 +226,10 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     }
 
     fn expression_is_copy(&self, expression: ExprId) -> bool {
-        self.checker.expressions.get(&expression).is_some_and(|ty| {
-            matches!(
-                self.checker.resolved(ty.clone()),
-                Ty::Unit | Ty::Bool | Ty::Int | Ty::Float | Ty::CodePoint | Ty::Byte | Ty::Symbol
-            )
-        })
+        self.checker
+            .expressions
+            .get(&expression)
+            .is_some_and(|ty| self.checker.is_copy_type(ty))
     }
 
     fn walk_expr(&mut self, expression: ExprId) {
@@ -506,7 +504,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             .resolved(self.checker.expressions.get(&object)?.clone());
         let module = match receiver {
             Ty::Record(record, _) => self.checker.hir.records[record].module,
-            Ty::Bytes => self.checker.hir.module_named("core.bytes")?,
+            Ty::RawBytes => self.checker.hir.module_named("core.bytes")?,
             Ty::ByteBuffer => self.checker.hir.module_named("core.byte_buffer")?,
             _ => return None,
         };

@@ -15,7 +15,9 @@ language evolves. The explicit optimizer pipeline performs typed constant and br
 control-flow cleanup, CFG-aware copy propagation, liveness-based dead-write elimination and
 register reuse, and constant-pool deduplication. Rewrites preserve the parallel instruction
 source-span table. Capture/parameter frame prefixes and reference origins are pinned where identity
-is observable. Compact byte encoding remains deferred. Bytecode is verified before execution.
+is observable. The structured program has a deterministic, versioned
+[compiled bytecode format](binary-format.md) for caching and distribution. Bytecode is verified
+before execution and again after deserialization.
 
 After all optional representational rewrites, the compiler inserts explicit `Drop` instructions
 at register last-use points. A drop detaches the frame register from its slot, allowing ordinary
@@ -68,6 +70,7 @@ conditions, not repeat static analysis.
 5. Remote construction, remote calls, futures, and suspension.
 6. The legacy AST execution path was removed after the complete example and conformance suite ran
    on the VM.
+7. A portable `.fbc` serialization with canonical map ordering and defensive decoding.
 
 ## Next backend work
 
