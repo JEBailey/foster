@@ -8,6 +8,12 @@ struct Loan {
     place: Place,
 }
 
+#[derive(Debug, Clone)]
+struct InvalidBorrow {
+    origin: Place,
+    invalidated_at: std::ops::Range<usize>,
+}
+
 pub(super) fn check_loan_safety(
     hir: &PackageHir,
     types: &crate::types::TypeInformation,
@@ -15,7 +21,7 @@ pub(super) fn check_loan_safety(
     for (_, function) in hir.functions.iter() {
         let mut loans = HashMap::<LocalId, Loan>::new();
         let mut provenance = HashMap::<LocalId, HashSet<Place>>::new();
-        let mut invalid = HashMap::<LocalId, Place>::new();
+        let mut invalid = HashMap::<LocalId, InvalidBorrow>::new();
 
         for (index, statement) in function.body.iter().enumerate() {
             let expression = statement_expression(statement);
@@ -71,9 +77,9 @@ fn reject_invalid_uses(
     types: &crate::types::TypeInformation,
     function: &Function,
     expression: ExprId,
-    invalid: &HashMap<LocalId, Place>,
+    invalid: &HashMap<LocalId, InvalidBorrow>,
 ) -> Result<(), FosterError> {
-    let Some((local, origin)) = invalid
+    let Some((local, invalidation)) = invalid
         .iter()
         .find(|(local, _)| expression_uses_local(hir, expression, **local))
     else {
@@ -90,16 +96,28 @@ fn reject_invalid_uses(
             hir.modules[function.module].name,
             function.name,
             hir.locals[*local].name,
-            hir.locals[origin.root].name
-        )));
+            hir.locals[invalidation.origin.root].name
+        ))
+        .with_code("E0401")
+        .with_source_module(hir.modules[function.module].name.clone())
+        .with_primary_label(expression_span(hir, expression), "this call uses an invalidated captured reference")
+        .with_label(hir.locals[*local].span.clone(), "closure containing the borrow was created here")
+        .with_label(invalidation.invalidated_at.clone(), format!("this operation reshaped `{}`", hir.locals[invalidation.origin.root].name))
+        .with_help(format!("recreate `{}` after reshaping `{}`", hir.locals[*local].name, hir.locals[invalidation.origin.root].name)));
     }
     Err(FosterError::runtime(format!(
         "in `{}.{}`: borrowed value `{}` is no longer usable; its reference into `{}` was invalidated",
         hir.modules[function.module].name,
         function.name,
         hir.locals[*local].name,
-        hir.locals[origin.root].name
-    )))
+        hir.locals[invalidation.origin.root].name
+    ))
+    .with_code("E0401")
+    .with_source_module(hir.modules[function.module].name.clone())
+    .with_primary_label(expression_span(hir, expression), format!("invalidated borrow `{}` is used here", hir.locals[*local].name))
+    .with_label(hir.locals[*local].span.clone(), "borrow was stored here")
+    .with_label(invalidation.invalidated_at.clone(), format!("this operation reshaped `{}`", hir.locals[invalidation.origin.root].name))
+    .with_help(format!("use `{}` before reshaping `{}`, or reacquire the reference afterward", hir.locals[*local].name, hir.locals[invalidation.origin.root].name)))
 }
 
 fn invalidate_expression(
@@ -107,7 +125,7 @@ fn invalidate_expression(
     types: &crate::types::TypeInformation,
     expression: ExprId,
     provenance: &HashMap<LocalId, HashSet<Place>>,
-    invalid: &mut HashMap<LocalId, Place>,
+    invalid: &mut HashMap<LocalId, InvalidBorrow>,
 ) {
     let mut reshaped = HashSet::new();
     let mut consumed = HashSet::new();
@@ -121,9 +139,22 @@ fn invalidate_expression(
                 && reshaped.iter().any(|place| places_overlap(place, origin)))
                 || consumed.iter().any(|place| places_overlap(place, origin))
         }) {
-            invalid.insert(*local, origin.clone());
+            invalid.insert(
+                *local,
+                InvalidBorrow {
+                    origin: origin.clone(),
+                    invalidated_at: expression_span(hir, expression),
+                },
+            );
         }
     }
+}
+
+fn expression_span(hir: &PackageHir, expression: ExprId) -> std::ops::Range<usize> {
+    hir.expression_spans
+        .get(&expression)
+        .cloned()
+        .unwrap_or(0..0)
 }
 
 fn expression_calls_local(hir: &PackageHir, expression: ExprId, local: LocalId) -> bool {
@@ -193,7 +224,20 @@ fn reject_self_origin_storage(
         return Err(FosterError::runtime(format!(
             "in `{}.{}`: cannot store a value borrowing `{}` into its own origin",
             hir.modules[function.module].name, function.name, hir.locals[origin.root].name
-        )));
+        ))
+        .with_code("E0403")
+        .with_source_module(hir.modules[function.module].name.clone())
+        .with_primary_label(
+            expression_span(hir, value),
+            "this value borrows from its destination",
+        )
+        .with_label(
+            hir.locals[origin.root].span.clone(),
+            "the destination owns the borrowed place",
+        )
+        .with_help(
+            "store the borrower outside its origin, or capture the required value by ownership",
+        ));
     }
     Ok(())
 }
@@ -347,7 +391,7 @@ fn check_escape(
         returned.insert(loan.place);
     }
     for place in returned {
-        check_place_escape(hir, function, &place)?;
+        check_place_escape(hir, function, &place, expression_span(hir, expression))?;
     }
     Ok(())
 }
@@ -356,6 +400,7 @@ fn check_place_escape(
     hir: &PackageHir,
     function: &Function,
     place: &Place,
+    returned_at: std::ops::Range<usize>,
 ) -> Result<(), FosterError> {
     let Some(parameter) = function
         .parameters
@@ -365,19 +410,50 @@ fn check_place_escape(
         return Err(FosterError::runtime(format!(
             "in `{}.{}`: returned reference borrows local `{}`",
             hir.modules[function.module].name, function.name, hir.locals[place.root].name
-        )));
+        ))
+        .with_code("E0402")
+        .with_source_module(hir.modules[function.module].name.clone())
+        .with_primary_label(returned_at, "this returned value contains a reference to frame-local storage")
+        .with_label(hir.locals[place.root].span.clone(), "borrowed local is declared here")
+        .with_help("return an owned value, or borrow from a reference parameter whose group appears in the result type"));
     };
     let Some(ast::TypeExpr::Reference { group, .. }) = function.parameter_types[parameter].as_ref()
     else {
         return Err(FosterError::runtime(format!(
             "in `{}.{}`: returned reference borrows parameter `{}` without an exposed group",
             hir.modules[function.module].name, function.name, hir.locals[place.root].name
-        )));
+        ))
+        .with_code("E0402")
+        .with_source_module(hir.modules[function.module].name.clone())
+        .with_primary_label(
+            returned_at,
+            "this return exposes a borrow without a named result group",
+        )
+        .with_label(
+            hir.locals[place.root].span.clone(),
+            "parameter is not declared as a grouped reference",
+        )
+        .with_help(
+            "declare the parameter as `ref[group] T` and expose `group` in the result type",
+        ));
     };
     if !type_exposes_group(function.return_type.as_ref(), group) {
         return Err(FosterError::runtime(format!(
             "in `{}.{}`: returned reference group `{group}` is absent from the result type",
             hir.modules[function.module].name, function.name
+        ))
+        .with_code("E0402")
+        .with_source_module(hir.modules[function.module].name.clone())
+        .with_primary_label(
+            returned_at,
+            format!("returned borrow belongs to group `{group}`"),
+        )
+        .with_label(
+            function.span.clone(),
+            "function result contract does not expose this group",
+        )
+        .with_help(format!(
+            "include group `{group}` in the declared result type"
         )));
     }
     Ok(())

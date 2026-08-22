@@ -1230,6 +1230,18 @@ func main() -> Int {
             .message
             .contains("reference into `values` was invalidated")
     );
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+    assert_eq!(error.source_module.as_deref(), Some("main"));
+    assert_eq!(error.labels.len(), 3);
+    assert!(error.labels[0].primary);
+    assert!(error.labels[0].message.contains("used here"));
+    assert!(error.labels[2].message.contains("reshaped `values`"));
+    assert!(
+        error
+            .help
+            .as_deref()
+            .is_some_and(|help| help.contains("reacquire"))
+    );
 }
 
 #[test]
@@ -1929,6 +1941,16 @@ func main() -> String {
         moved
             .message
             .contains("value `value` is used after it was moved")
+    );
+    assert_eq!(moved.code.as_deref(), Some("E0382"));
+    assert_eq!(moved.labels.len(), 3);
+    assert!(moved.labels[0].primary);
+    assert!(moved.labels[2].message.contains("ownership was moved"));
+    assert!(
+        moved
+            .help
+            .as_deref()
+            .is_some_and(|help| help.contains("borrow"))
     );
 
     foster::compile(

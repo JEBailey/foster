@@ -48,11 +48,7 @@ impl FosterError {
         self
     }
 
-    pub fn with_primary_label(
-        mut self,
-        range: Range<usize>,
-        message: impl Into<String>,
-    ) -> Self {
+    pub fn with_primary_label(mut self, range: Range<usize>, message: impl Into<String>) -> Self {
         self.labels.push(ErrorLabel {
             range,
             message: message.into(),

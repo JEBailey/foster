@@ -1,4 +1,5 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
+use std::ops::Range;
 
 use crate::error::FosterError;
 use crate::hir::{LocalId, PackageHir};
@@ -9,7 +10,8 @@ use super::{Function, Operation, Program, UseMode};
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct State {
     initialized: HashSet<LocalId>,
-    moved: HashSet<crate::hir::Place>,
+    moved: HashMap<crate::hir::Place, Range<usize>>,
+    last_move: HashMap<LocalId, Range<usize>>,
 }
 
 pub(super) fn check(
@@ -32,7 +34,8 @@ fn check_function(
     let mut entries = vec![None::<State>; mir.blocks.len()];
     entries[mir.entry] = Some(State {
         initialized: HashSet::new(),
-        moved: HashSet::new(),
+        moved: HashMap::new(),
+        last_move: HashMap::new(),
     });
     let mut work = VecDeque::from([mir.entry]);
 
@@ -42,15 +45,34 @@ fn check_function(
         };
         for operation in &mir.blocks[block_id].operations {
             match operation {
-                Operation::Use { place, mode, .. } => {
+                Operation::Use { place, mode, span } => {
                     if !place_is_usable(&state, place) {
                         let local = &hir.locals[place.root];
-                        return Err(FosterError::runtime(format!(
+                        let definition = &hir.functions[function];
+                        let mut error = FosterError::runtime(format!(
                             "in `{}.{}`: value `{}` is used after it was moved or before it was initialized",
-                            hir.modules[hir.functions[function].module].name,
-                            hir.functions[function].name,
+                            hir.modules[definition.module].name,
+                            definition.name,
                             local.name
-                        )));
+                        ))
+                        .with_code("E0382")
+                        .with_source_module(hir.modules[definition.module].name.clone())
+                        .with_primary_label(span.clone(), format!("`{}` is not usable here", local.name))
+                        .with_label(local.span.clone(), "value is declared here");
+                        if let Some(moved_at) = move_origin(&state, place) {
+                            error = error
+                                .with_label(moved_at, "ownership was moved from this place")
+                                .with_help(format!(
+                                    "borrow `{}` instead, or move it only after its final use",
+                                    local.name
+                                ));
+                        } else {
+                            error = error.with_help(format!(
+                                "initialize `{}` on every control-flow path before using it",
+                                local.name
+                            ));
+                        }
+                        return Err(error);
                     }
                     if *mode == UseMode::Move {
                         if hir.functions[function].parameters.contains(&place.root)
@@ -64,19 +86,26 @@ fn check_function(
                                 "in `{}.{}`: borrowed parameter `{name}` is consumed; add `consume {name}` to the function contract",
                                 hir.modules[hir.functions[function].module].name,
                                 hir.functions[function].name,
-                            )));
+                            ))
+                            .with_code("E0507")
+                            .with_source_module(hir.modules[hir.functions[function].module].name.clone())
+                            .with_primary_label(span.clone(), format!("ownership of borrowed parameter `{name}` is taken here"))
+                            .with_label(hir.locals[place.root].span.clone(), "this parameter borrows by default")
+                            .with_help(format!("add `consume {name}` to the function contract and pass existing values with `move`")));
                         }
                         if place.projections.is_empty() {
                             state.initialized.remove(&place.root);
-                            state.moved.retain(|moved| moved.root != place.root);
+                            state.moved.retain(|moved, _| moved.root != place.root);
+                            state.last_move.insert(place.root, span.clone());
                         } else {
-                            state.moved.insert(place.clone());
+                            state.moved.insert(place.clone(), span.clone());
                         }
                     }
                 }
                 Operation::Initialize { local, .. } => {
                     state.initialized.insert(*local);
-                    state.moved.retain(|place| place.root != *local);
+                    state.moved.retain(|place, _| place.root != *local);
+                    state.last_move.remove(local);
                 }
             }
         }
@@ -93,16 +122,23 @@ fn check_function(
                         .intersection(&state.initialized)
                         .copied()
                         .collect::<HashSet<_>>();
-                    let moved = existing
-                        .moved
-                        .union(&state.moved)
-                        .cloned()
-                        .collect::<HashSet<_>>();
-                    if merged == existing.initialized && moved == existing.moved {
+                    let mut moved = existing.moved.clone();
+                    for (place, span) in &state.moved {
+                        moved.entry(place.clone()).or_insert_with(|| span.clone());
+                    }
+                    let mut last_move = existing.last_move.clone();
+                    for (local, span) in &state.last_move {
+                        last_move.entry(*local).or_insert_with(|| span.clone());
+                    }
+                    if merged == existing.initialized
+                        && moved == existing.moved
+                        && last_move == existing.last_move
+                    {
                         false
                     } else {
                         existing.initialized = merged;
                         existing.moved = moved;
+                        existing.last_move = last_move;
                         true
                     }
                 }
@@ -147,7 +183,18 @@ fn parameter_can_be_consumed(
 
 fn place_is_usable(state: &State, place: &crate::hir::Place) -> bool {
     state.initialized.contains(&place.root)
-        && !state.moved.iter().any(|moved| places_overlap(moved, place))
+        && !state.moved.keys().any(|moved| places_overlap(moved, place))
+}
+
+fn move_origin(state: &State, place: &crate::hir::Place) -> Option<Range<usize>> {
+    if !state.initialized.contains(&place.root) {
+        return state.last_move.get(&place.root).cloned();
+    }
+    state
+        .moved
+        .iter()
+        .find(|(moved, _)| places_overlap(moved, place))
+        .map(|(_, span)| span.clone())
 }
 
 fn places_overlap(moved: &crate::hir::Place, used: &crate::hir::Place) -> bool {

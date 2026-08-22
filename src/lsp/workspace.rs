@@ -1546,10 +1546,15 @@ fn documented_hover(signature: String, documentation: Option<&str>) -> String {
 }
 
 fn compiler_diagnostic(source: &str, diagnostic: &crate::diagnostic::Diagnostic) -> Diagnostic {
-    let range = diagnostic.labels.first().map_or_else(
-        || lsp_types::Range::new(Position::new(0, 0), Position::new(0, 1)),
-        |label| byte_range_to_lsp(source, label.range.clone()),
-    );
+    let range = diagnostic
+        .labels
+        .iter()
+        .find(|label| label.primary)
+        .or_else(|| diagnostic.labels.first())
+        .map_or_else(
+            || lsp_types::Range::new(Position::new(0, 0), Position::new(0, 1)),
+            |label| byte_range_to_lsp(source, label.range.clone()),
+        );
     Diagnostic {
         range,
         severity: Some(match diagnostic.severity {
@@ -1559,11 +1564,28 @@ fn compiler_diagnostic(source: &str, diagnostic: &crate::diagnostic::Diagnostic)
         code: diagnostic.code.clone().map(NumberOrString::String),
         code_description: None,
         source: Some("foster".into()),
-        message: diagnostic.message.clone(),
+        message: lsp_diagnostic_message(diagnostic),
         related_information: None,
         tags: None,
         data: None,
     }
+}
+
+fn lsp_diagnostic_message(diagnostic: &crate::diagnostic::Diagnostic) -> String {
+    let mut message = diagnostic.message.clone();
+    for label in diagnostic.labels.iter().filter(|label| !label.primary) {
+        message.push_str("\n\n");
+        message.push_str(&label.message);
+    }
+    for note in &diagnostic.notes {
+        message.push_str("\n\nnote: ");
+        message.push_str(note);
+    }
+    if let Some(help) = &diagnostic.help {
+        message.push_str("\n\nhelp: ");
+        message.push_str(help);
+    }
+    message
 }
 
 fn symbol(

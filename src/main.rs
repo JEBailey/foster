@@ -154,11 +154,10 @@ fn check(path: &Path) -> Result<(), Box<dyn Error>> {
     } else {
         let source = fs::read_to_string(path)?;
         let program = parse_file(path, &source)?;
-        let compilation = foster::hir::Compilation::new(
-            foster::package::Package::from_program_with_core("main", program.clone())?,
-        )?;
+        let function_count = program.functions.len();
+        let compilation = compile_single_file(path, &source, program)?;
         report_warnings(&compilation, Some(path), Some(&source))?;
-        println!("ok: checked {} function(s)", program.functions.len());
+        println!("ok: checked {function_count} function(s)");
     }
     Ok(())
 }
@@ -320,9 +319,32 @@ fn compile_path(path: &Path) -> Result<foster::hir::Compilation, Box<dyn Error>>
     }
     let source = fs::read_to_string(path)?;
     let program = parse_file(path, &source)?;
-    Ok(foster::hir::Compilation::new(
-        foster::package::Package::from_program_with_core("main", program)?,
-    )?)
+    compile_single_file(path, &source, program)
+}
+
+fn compile_single_file(
+    path: &Path,
+    source: &str,
+    program: foster::ast::Program,
+) -> Result<foster::hir::Compilation, Box<dyn Error>> {
+    let package = foster::package::Package::from_program_with_core("main", program)?;
+    foster::hir::Compilation::new(package).map_err(|error| {
+        if error
+            .source_module
+            .as_deref()
+            .is_none_or(|module| module == "main")
+        {
+            let diagnostic = foster::diagnostic::Diagnostic::from_source_error(source, &error);
+            if let Err(render_error) =
+                foster::diagnostic::eprint(&path.to_string_lossy(), source, &diagnostic)
+            {
+                eprintln!("error: could not render diagnostic: {render_error}");
+            }
+        } else {
+            eprintln!("error: {error}");
+        }
+        Box::new(Reported) as Box<dyn Error>
+    })
 }
 
 fn report_warnings(

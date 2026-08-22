@@ -204,6 +204,42 @@ fn diagnostics(source: &str) -> Vec<Diagnostic> {
 }
 
 pub(super) fn error_diagnostic(source: &str, error: crate::error::FosterError) -> Diagnostic {
+    let compiler = crate::diagnostic::Diagnostic::from_source_error(source, &error);
+    if !compiler.labels.is_empty() || compiler.code.is_some() {
+        let range = compiler
+            .labels
+            .iter()
+            .find(|label| label.primary)
+            .or_else(|| compiler.labels.first())
+            .map_or_else(
+                || Range::new(Position::new(0, 0), Position::new(0, 1)),
+                |label| byte_range_to_lsp(source, label.range.clone()),
+            );
+        let mut message = compiler.message;
+        for label in compiler.labels.iter().filter(|label| !label.primary) {
+            message.push_str("\n\n");
+            message.push_str(&label.message);
+        }
+        for note in compiler.notes {
+            message.push_str("\n\nnote: ");
+            message.push_str(&note);
+        }
+        if let Some(help) = compiler.help {
+            message.push_str("\n\nhelp: ");
+            message.push_str(&help);
+        }
+        return Diagnostic {
+            range,
+            severity: Some(DiagnosticSeverity::ERROR),
+            code: compiler.code.map(lsp_types::NumberOrString::String),
+            code_description: None,
+            source: Some("foster".into()),
+            message,
+            related_information: None,
+            tags: None,
+            data: None,
+        };
+    }
     let position = if error.line == 0 {
         Position::new(0, 0)
     } else {

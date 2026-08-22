@@ -68,11 +68,7 @@ impl Diagnostic {
         self
     }
 
-    pub fn with_secondary_label(
-        mut self,
-        range: Range<usize>,
-        message: impl Into<String>,
-    ) -> Self {
+    pub fn with_secondary_label(mut self, range: Range<usize>, message: impl Into<String>) -> Self {
         self.labels.push(Label {
             range,
             message: message.into(),
@@ -118,7 +114,12 @@ impl Diagnostic {
     }
 }
 
-pub fn eprint(source_name: &str, source: &str, diagnostic: &Diagnostic) -> io::Result<()> {
+pub fn write(
+    output: &mut impl io::Write,
+    source_name: &str,
+    source: &str,
+    diagnostic: &Diagnostic,
+) -> io::Result<()> {
     let kind = match diagnostic.severity {
         Severity::Error => ReportKind::Error,
         Severity::Warning => ReportKind::Warning,
@@ -155,7 +156,13 @@ pub fn eprint(source_name: &str, source: &str, diagnostic: &Diagnostic) -> io::R
     if let Some(help) = &diagnostic.help {
         report = report.with_help(help);
     }
-    report.finish().eprint((source_name, Source::from(source)))
+    report
+        .finish()
+        .write((source_name, Source::from(source)), output)
+}
+
+pub fn eprint(source_name: &str, source: &str, diagnostic: &Diagnostic) -> io::Result<()> {
+    write(&mut io::stderr().lock(), source_name, source, diagnostic)
 }
 
 fn byte_offset(source: &str, line: usize, column: usize) -> usize {
@@ -182,5 +189,29 @@ mod tests {
         let error = FosterError::new("unexpected token", 2, 2);
         let diagnostic = Diagnostic::from_source_error(source, &error);
         assert_eq!(diagnostic.labels[0].range, 8..9);
+    }
+
+    #[test]
+    fn renders_codes_labels_notes_and_help() {
+        let source = "values.push(30)\nselected\n";
+        let diagnostic = Diagnostic::error("borrowed value was invalidated")
+            .with_label(16..24, "invalidated borrow is used here")
+            .with_secondary_label(0..15, "this operation reshaped `values`")
+            .with_note("indexed references are relocation-sensitive")
+            .with_help("reacquire the reference after reshaping");
+        let diagnostic = Diagnostic {
+            code: Some("E0401".into()),
+            ..diagnostic
+        };
+        let mut rendered = Vec::new();
+        write(&mut rendered, "example.fos", source, &diagnostic).unwrap();
+        let rendered = String::from_utf8(rendered).unwrap();
+        assert!(rendered.contains("E0401"), "{rendered}");
+        assert!(
+            rendered.contains("invalidated borrow is used here"),
+            "{rendered}"
+        );
+        assert!(rendered.contains("this operation reshaped"), "{rendered}");
+        assert!(rendered.contains("reacquire the reference"), "{rendered}");
     }
 }

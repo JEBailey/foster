@@ -196,6 +196,7 @@ scope-aware completion. The development VS Code extension lives in
 - [Ownership and borrowing](docs/ownership.md)
 - [Closures and group borrowing](docs/closures.md)
 - [Effect derivation](docs/effect-derivation.md)
+- [Compiler diagnostics](docs/diagnostics.md)
 - [Register VM](docs/vm.md)
 - [Compiled bytecode format](docs/binary-format.md)
 - [Core library](docs/core-library.md)
