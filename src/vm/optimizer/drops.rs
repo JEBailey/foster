@@ -25,7 +25,9 @@ fn protected_slots(program: &Program) -> HashMap<crate::hir::FunctionId, HashSet
             }
         }
         for instruction in &function.instructions {
-            if let Instruction::MakeReference { object, .. } = instruction {
+            if let Instruction::MakeReference { object, .. }
+            | Instruction::MakeFieldReference { object, .. } = instruction
+            {
                 // PlaceHandle is weak; retain its origin slot for this frame.
                 protected.entry(*caller).or_default().insert(*object);
             }

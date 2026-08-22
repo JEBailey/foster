@@ -23,8 +23,20 @@ impl Checker<'_> {
                 } else {
                     self.unify(object, self.list_type(element.clone()), function)?;
                 }
-                self.expressions
-                    .insert(callee, Ty::Function(vec![element], Box::new(Ty::Unit)));
+                self.expressions.insert(
+                    callee,
+                    Ty::Callable {
+                        parameters: vec![element],
+                        parameter_modes: vec![crate::ast::ParameterMode::Borrow],
+                        result: Box::new(Ty::Unit),
+                        erased: false,
+                        effects: vec![crate::ast::Effect {
+                            kind: crate::ast::EffectKind::Reshape,
+                            target: crate::ast::GroupPath::root("self").child("items"),
+                        }],
+                        suspends: false,
+                    },
+                );
                 return Ok(Ty::Unit);
             }
         }

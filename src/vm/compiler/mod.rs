@@ -51,6 +51,32 @@ pub fn compile_with_options(
         .iter()
         .map(|(id, value)| (id, value.name.clone()))
         .collect();
+    compiler.program.record_layouts = compilation
+        .hir
+        .records
+        .iter()
+        .map(|(id, value)| {
+            let mut fields = compilation
+                .types
+                .record_fields
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| {
+                    value
+                        .fields
+                        .iter()
+                        .map(|field| field.name.clone())
+                        .collect()
+                })
+                .into_iter()
+                .collect::<Vec<_>>();
+            fields.sort();
+            (
+                id,
+                std::sync::Arc::new(super::value::RecordLayout::new(fields)),
+            )
+        })
+        .collect();
     compiler.program.string_record = compilation
         .hir
         .module_named("core.string")
@@ -110,6 +136,12 @@ pub fn compile_with_options(
             }
         }
     }
+    let variant_type_names = compilation
+        .hir
+        .variant_types
+        .iter()
+        .map(|(id, value)| (id, std::sync::Arc::<str>::from(value.name.as_str())))
+        .collect::<HashMap<_, _>>();
     compiler.program.variants = compilation
         .hir
         .variants
@@ -119,8 +151,8 @@ pub fn compile_with_options(
                 id,
                 (
                     value.parent,
-                    compilation.hir.variant_types[value.parent].name.clone(),
-                    value.name.clone(),
+                    variant_type_names[&value.parent].clone(),
+                    std::sync::Arc::from(value.name.as_str()),
                 ),
             )
         })

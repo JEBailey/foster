@@ -18,9 +18,10 @@ Implemented today:
 - projected list references with structural-invalidation diagnostics;
 - `_` placeholder partial application.
 
-Move and initialization analysis now runs over ownership MIR control flow, including conservative
-branch joins. Direct and captured loan invalidation still uses conservative HIR provenance;
-aggregate provenance and generalized interprocedural reshape metadata remain future work.
+Move and initialization analysis runs over ownership MIR control flow, including conservative
+branch joins. Direct references, aggregate-held references, and captured references share one HIR
+provenance analysis. Structural invalidation is driven by callable `reshape`/`consume` metadata
+rather than a list of recognized method names.
 
 This document records Foster's accepted closure model and the parts implemented by the compiler
 and VM. Capture semantics affect parsing, type inference, ownership, groups, effects, HIR, and the

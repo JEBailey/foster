@@ -11,7 +11,7 @@ use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::hir::{Builtin, CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 2;
+pub const FORMAT_VERSION: u16 = 4;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -65,6 +65,14 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
     for (id, name) in records {
         w.id(*id);
         w.string(name)?;
+        let layout = program
+            .record_layouts
+            .get(id)
+            .ok_or_else(|| BinaryError::new("record is missing its field layout"))?;
+        w.u32(layout.names().len())?;
+        for field in layout.names() {
+            w.string(field)?;
+        }
     }
 
     let mut methods: Vec<_> = program.methods.iter().collect();
@@ -120,14 +128,32 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
     let main = r.option_id::<Function>()?;
     let string_record = r.option_id::<Record>()?;
     let symbol_record = r.option_id::<Record>()?;
-    let records = r.map(|r| Ok((r.id::<Record>()?, r.string()?)))?;
+    let record_entries = r.vec(|r| {
+        Ok((
+            r.id::<Record>()?,
+            r.string()?,
+            std::sync::Arc::new(super::value::RecordLayout::new(r.vec(|r| r.string())?)),
+        ))
+    })?;
+    let records = record_entries
+        .iter()
+        .map(|(id, name, _)| (*id, name.clone()))
+        .collect();
+    let record_layouts = record_entries
+        .into_iter()
+        .map(|(id, _, fields)| (id, fields))
+        .collect();
     let methods = r.map(|r| Ok(((r.id::<Record>()?, r.string()?), r.id::<Function>()?)))?;
     let variant_methods =
         r.map(|r| Ok(((r.id::<VariantType>()?, r.string()?), r.id::<Function>()?)))?;
     let variants = r.map(|r| {
         Ok((
             r.id::<Variant>()?,
-            (r.id::<VariantType>()?, r.string()?, r.string()?),
+            (
+                r.id::<VariantType>()?,
+                std::sync::Arc::from(r.string()?),
+                std::sync::Arc::from(r.string()?),
+            ),
         ))
     })?;
     if r.offset != bytes.len() {
@@ -142,6 +168,7 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         string_record,
         symbol_record,
         records,
+        record_layouts,
         methods,
         variant_methods,
         variants,
@@ -450,6 +477,16 @@ impl Writer {
                 self.reg(*destination);
                 self.reg(*object);
                 self.reg(*index);
+            }
+            Instruction::MakeFieldReference {
+                destination,
+                object,
+                field,
+            } => {
+                self.u8(32);
+                self.reg(*destination);
+                self.reg(*object);
+                self.string(field)?;
             }
             Instruction::MoveOut {
                 destination,
@@ -1014,6 +1051,11 @@ impl<'a> Reader<'a> {
                 arguments: self.regs()?,
             },
             31 => Instruction::Return { source: r!() },
+            32 => Instruction::MakeFieldReference {
+                destination: r!(),
+                object: r!(),
+                field: self.string()?,
+            },
             tag => {
                 return Err(BinaryError::new(format!(
                     "unknown instruction opcode {tag}"

@@ -24,6 +24,11 @@ slot only when it is borrowed, captured by reference, shared remotely, or used a
 method receiver. Consuming call parameters transfer values out of caller registers; read-only
 borrowed parameters observe a promoted caller slot but detach if the parameter local is reassigned.
 
+Record instances use dense indexed value arrays. Field names and their index table live once in a
+shared record layout, including fields contributed by composed contracts. Variants similarly share
+their type and alternative names through program metadata rather than allocating those strings per
+value. Wire conversion restores names only at the remote serialization boundary.
+
 After all optional representational rewrites, the compiler inserts explicit `Drop` instructions
 at register last-use points. A drop clears an inline value or detaches a promoted register from its
 slot, allowing ordinary acyclic values to be reclaimed immediately. It does not write through an
@@ -38,6 +43,9 @@ fresh virtual registers before copy propagation, so assigning to a parameter can
 caller's argument slot. Escape analysis recognizes single-use closure values when delaying capture
 is safe and replaces the allocation plus dynamic dispatch pair with `CallClosure`. Reference
 captures preserve slot identity; move captures are specialized only for immediate invocation.
+Projected references contain one weak root plus a field/index path. Extending a projection through
+an intermediate reference wrapper flattens onto that root, so nested method receivers do not need a
+strong keep-alive edge or form an `Rc` cycle.
 
 The current instruction set covers constants, moves, typed unary and binary operations, direct and
 method calls, guarded returns, conditional and subject-based pattern branches, jumps, lists and

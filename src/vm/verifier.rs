@@ -3,6 +3,16 @@ use crate::error::FosterError;
 use super::{Instruction, Program};
 
 pub fn verify(program: &Program) -> Result<(), FosterError> {
+    if program.records.len() != program.record_layouts.len()
+        || program
+            .records
+            .keys()
+            .any(|record| !program.record_layouts.contains_key(record))
+    {
+        return Err(FosterError::runtime(
+            "bytecode record layouts are incomplete",
+        ));
+    }
     for (id, function) in &program.functions {
         if function.parameter_modes.len() != usize::from(function.parameters)
             || function.mutable_parameters.len() != usize::from(function.parameters)

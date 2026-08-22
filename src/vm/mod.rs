@@ -332,7 +332,7 @@ mod tests {
         assert!(matches!(
             run(&variant).unwrap(),
             Value::Variant { type_name, alternative, payload, .. }
-                if type_name == "Answer" && alternative == "Value" && payload == [Value::Integer(42)]
+                if type_name.as_ref() == "Answer" && alternative.as_ref() == "Value" && payload == [Value::Integer(42)]
         ));
     }
 

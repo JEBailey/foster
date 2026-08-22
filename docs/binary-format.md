@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 2, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 4, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after lowering and optimization. It contains everything needed to verify and
@@ -25,14 +25,14 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `2` |
+| version | `u16` | `4` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
 | main | optional `FunctionId` | entry point |
 | string record | optional `RecordId` | String wrapper |
 | symbol record | optional `RecordId` | Symbol wrapper |
-| records | `vector<(RecordId, string)>` | runtime names |
+| records | `vector<(RecordId, string, vector<string>)>` | runtime name and indexed field layout |
 | methods | `vector<(RecordId, string, FunctionId)>` | record dispatch |
 | variant methods | `vector<(VariantTypeId, string, FunctionId)>` | variant dispatch |
 | variants | `vector<(VariantId, VariantTypeId, string, string)>` | parent, type, alternative |
@@ -95,10 +95,11 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 29 | CallValue | `R destination, R callee, regs` |
 | 30 | CallClosure | `R destination, F, vector<(CaptureMode, R)>, regs` |
 | 31 | Return | `R source` |
+| 32 | MakeFieldReference | `R destination, R object, string field` |
 
 ## Compatibility and canonical form
 
-Version 2 readers accept only version 2 with zero flags. Changing any existing tag, opcode, field,
+Version 4 readers accept only version 4 with zero flags. Changing any existing tag, opcode, field,
 or meaning requires a new version. A canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of
 `HashMap` iteration order.

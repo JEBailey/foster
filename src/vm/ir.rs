@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::Arc;
 
 use crate::ast::{BinaryOp, UnaryOp};
 use crate::hir::{Builtin, FunctionId, RecordId, VariantId, VariantTypeId};
@@ -85,6 +86,11 @@ pub enum Instruction {
         destination: Register,
         object: Register,
         index: Register,
+    },
+    MakeFieldReference {
+        destination: Register,
+        object: Register,
+        field: String,
     },
     MoveOut {
         destination: Register,
@@ -271,6 +277,14 @@ impl Instruction {
                 visit(*object);
                 visit(*index);
             }
+            Self::MakeFieldReference {
+                destination,
+                object,
+                ..
+            } => {
+                visit(*destination);
+                visit(*object);
+            }
             Self::MoveOut {
                 destination,
                 source,
@@ -425,9 +439,10 @@ pub struct Program {
     pub string_record: Option<RecordId>,
     pub symbol_record: Option<RecordId>,
     pub records: HashMap<RecordId, String>,
+    pub record_layouts: HashMap<RecordId, Arc<super::value::RecordLayout>>,
     pub methods: HashMap<(RecordId, String), FunctionId>,
     pub variant_methods: HashMap<(VariantTypeId, String), FunctionId>,
-    pub variants: HashMap<VariantId, (VariantTypeId, String, String)>,
+    pub variants: HashMap<VariantId, (VariantTypeId, Arc<str>, Arc<str>)>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

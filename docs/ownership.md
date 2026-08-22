@@ -189,8 +189,16 @@ first.name // error: the projected reference was invalidated
 Consuming the root invalidates all loans from it. The compiler permits structural mutation after a
 loan's last use; it does not require the loan to remain active until the end of the lexical block.
 
-Closures are checked as well. If a closure captures a projected reference and its origin is later
-reshaped, calling that closure is rejected because the captured reference is no longer valid.
+Borrow provenance follows values stored in records, lists, and closures. If any such value contains
+a projected reference and its origin is later reshaped, using the aggregate or calling the closure
+is rejected. Field-sensitive overlap permits a reshape through a disjoint record field. Index
+projections remain conservatively aliasing because Foster does not attempt to prove index values
+different.
+
+Invalidation comes from the callee's typed `reshape` and `consume` effects, including indirect and
+extension calls; it is not inferred from a method's spelling. A guarded return applies effects from
+its guard to both successors, while effects that occur only while evaluating its returned value do
+not leak onto the continuation path.
 
 ## Borrowed closure escape
 
@@ -263,8 +271,7 @@ AST
   → infer types and derive body effects
   → resolve pending closure capture modes
   → check moves and borrowed closure escape
-  → check direct loans, escape, and invalidation
-  → check captured-reference invalidation
+  → check projected loans, aggregate provenance, escape, and invalidation
   → lower canonical places into ownership MIR
   → run control-flow initialization and move analysis
 ```
@@ -274,9 +281,10 @@ The implementation is divided by responsibility:
 - `src/hir/lower/` resolves names and converts source references, moves, captures, and places into
   stable HIR IDs.
 - `src/typecheck/effects.rs` derives group access, consume, and suspension requirements.
-- `src/hir/ownership.rs` validates groups, resolves capture modes, checks borrowed closure escape,
-  and checks captured-reference invalidation.
-- `src/hir/loans.rs` tracks direct loans and rejects invalid use or escape.
+- `src/hir/ownership.rs` validates groups, resolves capture modes, and checks borrowed closure
+  escape.
+- `src/hir/loans.rs` tracks projection-path provenance through direct values, aggregates, and
+  closures, then rejects invalid use, self-origin storage, or escape.
 - `src/hir/queries.rs` contains shared, policy-free place and expression queries used by the
   ownership passes.
 - `src/ownership/` lowers typed HIR to ownership MIR basic blocks containing explicit
@@ -288,12 +296,14 @@ The implementation is divided by responsibility:
 
 HIR uses resolved `LocalId` and `ExprId` identities, so ownership checks do not compare source names.
 Canonical places contain a root local plus field, index, or dereference projections. Ownership MIR
-uses those places to distinguish whole-value moves from partial moves of disjoint fields. A loan
-currently records its root local and whether it projects an indexed item. Moves and invalidations
-are found by recursively walking each statement's expression tree.
+uses those places to distinguish whole-value moves from partial moves of disjoint fields. Loans and
+aggregate provenance retain those complete places. Effect targets are substituted onto call-site
+receiver and argument places, and invalidation uses field-sensitive projection overlap.
 
-At runtime, VM references retain the origin's structural generation but only a weak connection to
-the origin slot. A reshape increments that generation, and dereferencing an older reference fails.
+At runtime, VM references retain a field/index projection path and the origin's structural
+generation but only a weak connection to the root slot. Projection through another reference is
+flattened onto the same root. A reshape increments that generation, and dereferencing an older
+reference fails.
 An expired weak place also fails safely. These are defensive runtime backstops; well-typed programs
 should be rejected statically before reaching either condition.
 
@@ -326,23 +336,24 @@ Effect over-declaration is safe and therefore uses the compiler's warning channe
 
 The implemented model is useful but is not yet a general Rust-equivalent borrow checker:
 
-- Move and initialization analysis is control-flow-aware, but direct-loan analysis remains a
-  conservative forward pass over HIR statements.
-- Ownership places model field, index, and dereference projections. Loan invalidation still reduces
-  these to a root and whether an indexed projection is relocation-sensitive.
-- Structural invalidation currently recognizes the implemented reshape operations, notably list
-  `push`, rather than a trait- or metadata-driven set of operations.
-- Closure invalidation tracks closures bound directly to locals; ownership flowing through records,
-  variants, containers, and returned higher-order values needs a more general provenance analysis.
+- Move and initialization analysis is fully control-flow-aware. Loan analysis conservatively joins
+  branch-arm provenance and invalidation in its HIR forward pass; it does not yet implement
+  path-sensitive predicates or prove mutually exclusive index values.
+- Ownership and loan places model field, index, and dereference projections. Different named fields
+  are disjoint; index projections conservatively overlap.
+- Provenance flows through the implemented aggregate and closure expressions. Interprocedural
+  result provenance is conservative: a non-copy call result may retain provenance supplied through
+  its callee or arguments unless its type rules it out.
 - Copy behavior is currently a built-in type classification. User-defined copy types have not been
   designed.
-- Runtime values still use managed host representations in the VM. Ordinary registers are inline
+- Runtime values still use managed host representations in the VM. Records now use shared layouts
+  with dense indexed fields, and variants share their runtime names. Ordinary registers are inline
   and promote to stable slots only when their identity becomes observable. The bytecode compiler
   emits deterministic `Drop` instructions after register last use, while observable shared slots
   remain alive through frame teardown. Borrow edges are weak and therefore do not create reference
   cycles. Native layout, arbitrary cyclic owned graphs, resource destructors, and destructor
   ordering remain backend work.
 
-The intended evolution is richer place/provenance tracking and control-flow-aware loan states while
-preserving the source model: ownership transfer stays explicit, references name groups, and API
-effects remain readable contracts rather than inferred lifetime syntax.
+The intended evolution is path-sensitive loan states and more precise result-group substitution
+while preserving the source model: ownership transfer stays explicit, references name groups, and
+API effects remain readable contracts rather than inferred lifetime syntax.

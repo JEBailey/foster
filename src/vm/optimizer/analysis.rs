@@ -38,6 +38,7 @@ pub(super) fn definitions(instruction: &Instruction) -> Vec<Register> {
         | Instruction::MakeVariant { destination, .. }
         | Instruction::LoadField { destination, .. }
         | Instruction::MakeReference { destination, .. }
+        | Instruction::MakeFieldReference { destination, .. }
         | Instruction::MoveOut { destination, .. }
         | Instruction::Push { destination, .. }
         | Instruction::Append { destination, .. }
@@ -108,6 +109,7 @@ pub(super) fn uses(instruction: &Instruction) -> Vec<Register> {
             uses.push(*object);
             uses.push(*index);
         }
+        Instruction::MakeFieldReference { object, .. } => uses.push(*object),
         Instruction::MoveOut { source, .. } => uses.push(*source),
         Instruction::Push { object, value, .. } | Instruction::Append { object, value, .. } => {
             uses.push(*object);

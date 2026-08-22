@@ -1,6 +1,5 @@
-use std::collections::BTreeMap;
 use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::error::FosterError;
 use crate::hir::{Builtin, CaptureMode, FunctionId};
@@ -8,8 +7,8 @@ use crate::hir::{Builtin, CaptureMode, FunctionId};
 use super::operations::{binary, constant_value, unary};
 use super::patterns::matches as match_pattern;
 use super::value::{
-    AccessLease, FutureValue, PlaceHandle, RecordFields, RemoteArgument, RemoteMessage, RemoteValue,
-    SharedValue, Slot, next_future_id, next_remote_id,
+    AccessLease, FutureValue, PlaceHandle, RecordFields, RemoteArgument, RemoteMessage,
+    RemoteValue, SharedValue, Slot, next_future_id, next_remote_id,
 };
 use super::{Capture, Instruction, Program, Register, Value};
 
@@ -267,17 +266,19 @@ impl Machine {
                     record,
                     fields,
                 } => {
-                    let fields = fields
+                    let values = fields
                         .into_iter()
-                        .map(|(name, register)| Ok((name, read(frame, register)?)))
+                        .map(|(_, register)| read(frame, register))
                         .collect::<Result<Vec<_>, FosterError>>()?;
+                    let fields =
+                        RecordFields::new(self.program.record_layouts[&record].clone(), values)?;
                     write(
                         frame,
                         destination,
                         Value::Record {
                             record: Some(record),
                             name: self.program.records[&record].clone(),
-                            fields: RecordFields::from_pairs(fields),
+                            fields,
                         },
                     )?;
                 }
@@ -384,6 +385,14 @@ impl Machine {
                     let index = usize::try_from(index)
                         .map_err(|_| FosterError::runtime("reference index is out of bounds"))?;
                     let reference = PlaceHandle::indexed(place(frame, object), index)?;
+                    write(frame, destination, Value::Reference(reference))?;
+                }
+                Instruction::MakeFieldReference {
+                    destination,
+                    object,
+                    field,
+                } => {
+                    let reference = PlaceHandle::field(place(frame, object), field)?;
                     write(frame, destination, Value::Reference(reference))?;
                 }
                 Instruction::MoveOut {
@@ -1661,21 +1670,36 @@ fn tcp_result(
 }
 
 fn result_ok(value: Value) -> Value {
+    let (type_name, alternative) = result_variant_names(true);
     Value::Variant {
         variant: None,
-        type_name: "Result".into(),
-        alternative: "Ok".into(),
+        type_name,
+        alternative,
         payload: vec![value],
     }
 }
 
 fn result_error(error: Value) -> Value {
+    let (type_name, alternative) = result_variant_names(false);
     Value::Variant {
         variant: None,
-        type_name: "Result".into(),
-        alternative: "Error".into(),
+        type_name,
+        alternative,
         payload: vec![error],
     }
+}
+
+fn result_variant_names(ok: bool) -> (Arc<str>, Arc<str>) {
+    static RESULT: OnceLock<Arc<str>> = OnceLock::new();
+    static OK: OnceLock<Arc<str>> = OnceLock::new();
+    static ERROR: OnceLock<Arc<str>> = OnceLock::new();
+    let type_name = RESULT.get_or_init(|| Arc::from("Result")).clone();
+    let alternative = if ok {
+        OK.get_or_init(|| Arc::from("Ok")).clone()
+    } else {
+        ERROR.get_or_init(|| Arc::from("Error")).clone()
+    };
+    (type_name, alternative)
 }
 
 fn path_value(

@@ -69,7 +69,7 @@ pub func copy<E>(reader: Reader<E>, writer: Writer<E>) -> Result<Int, E> [mut re
 }
 
 /// Continues accumulating chunks until the reader reports EOF.
-func read_remaining<E>(reader: Reader<E>, buffer: ByteBuffer) -> Result<Bytes, E> [mut reader, mut buffer, consume buffer] {
+func read_remaining<E>(reader: Reader<E>, buffer: ByteBuffer) -> Result<Bytes, E> [mut reader, reshape buffer, consume buffer] {
     branch reader.read(8192) {
         Result.Error(error) -> Result.Error(error)
         Result.Ok(chunk) -> branch {
@@ -80,7 +80,7 @@ func read_remaining<E>(reader: Reader<E>, buffer: ByteBuffer) -> Result<Bytes, E
 }
 
 /// Appends one successful read before requesting another chunk.
-func append_and_read<E>(reader: Reader<E>, buffer: ByteBuffer, chunk: Bytes) -> Result<Bytes, E> [mut reader, mut buffer, consume buffer] {
+func append_and_read<E>(reader: Reader<E>, buffer: ByteBuffer, chunk: Bytes) -> Result<Bytes, E> [mut reader, reshape buffer, consume buffer] {
     buffer.extend(chunk)
     read_remaining(reader, move buffer)
 }

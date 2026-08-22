@@ -34,35 +34,58 @@ pub enum Value {
     },
     Variant {
         variant: Option<crate::hir::VariantTypeId>,
-        type_name: String,
-        alternative: String,
+        type_name: Arc<str>,
+        alternative: Arc<str>,
         payload: Vec<Value>,
     },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecordFields {
-    names: Arc<Vec<String>>,
+    layout: Arc<RecordLayout>,
     values: Vec<Value>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct RecordLayout {
+    names: Vec<String>,
+    indices: BTreeMap<String, usize>,
+}
+
+impl RecordLayout {
+    pub(crate) fn new(names: Vec<String>) -> Self {
+        let indices = names
+            .iter()
+            .enumerate()
+            .map(|(index, name)| (name.clone(), index))
+            .collect();
+        Self { names, indices }
+    }
+
+    pub(crate) fn names(&self) -> &[String] {
+        &self.names
+    }
+}
+
 impl RecordFields {
-    pub(crate) fn new(names: Arc<Vec<String>>, values: Vec<Value>) -> Result<Self, FosterError> {
-        if names.len() != values.len() {
-            return Err(FosterError::runtime("record layout does not match its values"));
+    pub(crate) fn new(layout: Arc<RecordLayout>, values: Vec<Value>) -> Result<Self, FosterError> {
+        if layout.names.len() != values.len() {
+            return Err(FosterError::runtime(
+                "record layout does not match its values",
+            ));
         }
-        Ok(Self { names, values })
+        Ok(Self { layout, values })
     }
 
     pub(crate) fn from_pairs(fields: impl IntoIterator<Item = (String, Value)>) -> Self {
         let (names, values) = fields.into_iter().unzip();
         Self {
-            names: Arc::new(names),
+            layout: Arc::new(RecordLayout::new(names)),
             values,
         }
     }
 
-    pub(crate) fn get(&self, name: &str) -> Option<&Value> {
+    pub fn get(&self, name: &str) -> Option<&Value> {
         self.index(name).and_then(|index| self.values.get(index))
     }
 
@@ -76,17 +99,29 @@ impl RecordFields {
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&String, &Value)> {
-        self.names.iter().zip(&self.values)
+        self.layout.names.iter().zip(&self.values)
     }
 
     pub(crate) fn into_pairs(self) -> impl Iterator<Item = (String, Value)> {
-        Arc::unwrap_or_clone(self.names)
-            .into_iter()
-            .zip(self.values)
+        self.layout.names.clone().into_iter().zip(self.values)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn shares_layout_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.layout, &other.layout)
     }
 
     fn index(&self, name: &str) -> Option<usize> {
-        self.names.iter().position(|candidate| candidate == name)
+        self.layout.indices.get(name).copied()
+    }
+}
+
+impl std::ops::Index<&str> for RecordFields {
+    type Output = Value;
+
+    fn index(&self, name: &str) -> &Self::Output {
+        self.get(name)
+            .unwrap_or_else(|| panic!("record has no field `{name}`"))
     }
 }
 
@@ -95,20 +130,20 @@ impl<'a> IntoIterator for &'a RecordFields {
     type IntoIter = std::iter::Zip<std::slice::Iter<'a, String>, std::slice::Iter<'a, Value>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.names.iter().zip(&self.values)
+        self.layout.names.iter().zip(&self.values)
     }
 }
 
-fn value_layout() -> Arc<Vec<String>> {
-    static VALUE_LAYOUT: OnceLock<Arc<Vec<String>>> = OnceLock::new();
+fn value_layout() -> Arc<RecordLayout> {
+    static VALUE_LAYOUT: OnceLock<Arc<RecordLayout>> = OnceLock::new();
     VALUE_LAYOUT
-        .get_or_init(|| Arc::new(vec!["value".to_owned()]))
+        .get_or_init(|| Arc::new(RecordLayout::new(vec!["value".to_owned()])))
         .clone()
 }
 
 fn value_fields(value: Value) -> RecordFields {
     RecordFields {
-        names: value_layout(),
+        layout: value_layout(),
         values: vec![value],
     }
 }
@@ -461,7 +496,9 @@ impl PlaceHandle {
         }
         let mut current = origin.read()?;
         update_projected(&mut current, &self.projections, &origin, update)?;
-        origin.write(current)
+        origin.write(current)?;
+        origin.generation.set(origin.generation.get() + 1);
+        Ok(())
     }
 }
 
@@ -842,8 +879,8 @@ impl Value {
                 payload,
             } => WireValue::Variant {
                 variant,
-                type_name,
-                alternative,
+                type_name: type_name.to_string(),
+                alternative: alternative.to_string(),
                 payload: payload
                     .into_iter()
                     .map(Self::into_wire)
@@ -895,8 +932,8 @@ impl Value {
                 payload,
             } => Self::Variant {
                 variant,
-                type_name,
-                alternative,
+                type_name: Arc::from(type_name),
+                alternative: Arc::from(alternative),
                 payload: payload
                     .into_iter()
                     .map(Self::from_wire)
@@ -1057,5 +1094,65 @@ mod tests {
 
         assert_eq!(flattened.read().unwrap(), Value::Integer(42));
         assert_eq!(flattened, projected);
+    }
+
+    #[test]
+    fn nested_projections_share_one_weak_root_without_retaining_wrappers() {
+        let origin = Slot::new(Value::Record {
+            record: None,
+            name: "Outer".into(),
+            fields: RecordFields::from_pairs([(
+                "inner".into(),
+                Value::Record {
+                    record: None,
+                    name: "Inner".into(),
+                    fields: RecordFields::from_pairs([("value".into(), Value::Integer(1))]),
+                },
+            )]),
+        });
+        let inner = PlaceHandle::field(origin.clone(), "inner".into()).unwrap();
+        let wrapper = Slot::new(Value::Reference(inner));
+        let value = PlaceHandle::field(wrapper.clone(), "value".into()).unwrap();
+
+        drop(wrapper);
+        value.write(Value::Integer(42)).unwrap();
+        assert_eq!(value.read().unwrap(), Value::Integer(42));
+
+        drop(origin);
+        assert!(value.read().unwrap_err().message.contains("expired"));
+    }
+
+    #[test]
+    fn record_values_share_their_indexed_layout() {
+        let layout = Arc::new(RecordLayout::new(vec!["left".into(), "right".into()]));
+        let first =
+            RecordFields::new(layout.clone(), vec![Value::Integer(1), Value::Integer(2)]).unwrap();
+        let second = RecordFields::new(layout, vec![Value::Integer(3), Value::Integer(4)]).unwrap();
+        assert!(first.shares_layout_with(&second));
+        assert_eq!(first.get("right"), Some(&Value::Integer(2)));
+    }
+
+    #[test]
+    fn nested_reshape_invalidates_an_older_index_projection() {
+        let origin = Slot::new(Value::Record {
+            record: None,
+            name: "Outer".into(),
+            fields: RecordFields::from_pairs([(
+                "items".into(),
+                Value::list(vec![Value::Integer(1)]),
+            )]),
+        });
+        let items = PlaceHandle::field(origin.clone(), "items".into()).unwrap();
+        let wrapper = Slot::new(Value::Reference(items.clone()));
+        let first = PlaceHandle::indexed(wrapper, 0).unwrap();
+
+        items
+            .reshape(|value| {
+                value.list_value_mut().unwrap().push(Value::Integer(2));
+                Ok(())
+            })
+            .unwrap();
+
+        assert!(first.read().unwrap_err().message.contains("invalidated"));
     }
 }

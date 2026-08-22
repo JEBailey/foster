@@ -22,6 +22,7 @@ pub fn optimize(program: &mut Program) {
                 Instruction::StoreField { .. }
                     | Instruction::StoreIndex { .. }
                     | Instruction::MakeReference { .. }
+                    | Instruction::MakeFieldReference { .. }
                     | Instruction::MoveOut { .. }
                     | Instruction::Push { .. }
                     | Instruction::Append { .. }

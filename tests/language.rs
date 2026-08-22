@@ -1264,6 +1264,70 @@ func main() -> Int {
 }
 
 #[test]
+fn propagates_projected_borrow_invalidation_through_records() {
+    let source = r#"
+type Selection = {
+    item: Int
+}
+
+func main() -> Int {
+    values = [10, 20]
+    selected = ref values[0]
+    saved = Selection { item: selected }
+    values.push(30)
+    saved.item
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert!(
+        error.message.contains("borrowed value `saved`"),
+        "{}",
+        error.message
+    );
+    assert!(
+        error.message.contains("reference into `values`"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn permits_reshape_of_a_disjoint_record_field() {
+    let source = r#"
+type Pair = {
+    left: List<Int>
+    right: List<Int>
+}
+
+func main() -> Int {
+    pair = Pair { left: [10], right: [20] }
+    selected = ref pair.left[0]
+    pair.right.push(30)
+    selected
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+}
+
+#[test]
+fn guarded_return_value_reshape_does_not_invalidate_the_continuation() {
+    let source = r#"
+func reshape_and_return(values: List<Int>) -> Int [reshape values.items] {
+    values.push(30)
+    0
+}
+
+func main() -> Int {
+    values = [10, 20]
+    selected = ref values[0]
+    return reshape_and_return(values) if false
+    selected
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+}
+
+#[test]
 fn rejects_returning_a_reference_into_a_frame_local() {
     let source = r#"
 func invalid() {
@@ -1686,7 +1750,7 @@ fn runs_the_foster_json_parser() {
     ))
     .unwrap();
     assert!(
-        matches!(value, Value::Variant { ref type_name, ref alternative, .. } if type_name == "ParseResult" && alternative == "Ok")
+        matches!(value, Value::Variant { ref type_name, ref alternative, .. } if type_name.as_ref() == "ParseResult" && alternative.as_ref() == "Ok")
     );
     assert!(value.to_string().contains("Json.String("));
     assert!(value.to_string().contains("Json.Number(25)"));
@@ -1715,7 +1779,7 @@ fn json_parser_returns_typed_errors_for_malformed_input() {
         let expression = format!("parse_json({document:?})");
         let value = foster::run(&json_parser_with_main(&expression)).unwrap();
         assert!(
-            matches!(value, Value::Variant { ref type_name, ref alternative, .. } if type_name == "ParseResult" && alternative == "Error"),
+            matches!(value, Value::Variant { ref type_name, ref alternative, .. } if type_name.as_ref() == "ParseResult" && alternative.as_ref() == "Error"),
             "expected typed error for {document}, got {value}"
         );
     }

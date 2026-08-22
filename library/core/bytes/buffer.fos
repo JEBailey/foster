@@ -49,19 +49,19 @@ pub func ByteBuffer.with_capacity(capacity: Int) -> ByteBuffer {
 }
 
 /// Appends one byte.
-pub func push(self: ByteBuffer, value: Byte) -> Unit [mut self] {
+pub func push(self: ByteBuffer, value: Byte) -> Unit [reshape self] {
     self.value = self.value.push(value)
     discard(self.value)
 }
 
 /// Appends an immutable byte sequence.
-pub func extend(self: ByteBuffer, values: Bytes) -> Unit [mut self] {
+pub func extend(self: ByteBuffer, values: Bytes) -> Unit [reshape self] {
     self.value = self.value.extend(values)
     discard(self.value)
 }
 
 /// Removes every buffered byte while retaining allocated capacity.
-pub func clear(self: ByteBuffer) -> Unit [mut self] {
+pub func clear(self: ByteBuffer) -> Unit [reshape self] {
     self.value = self.value.clear()
     discard(self.value)
 }

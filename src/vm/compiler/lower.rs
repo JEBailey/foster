@@ -389,25 +389,29 @@ impl FunctionCompiler<'_> {
                 Ok(destination)
             }
             hir::Expr::Reference(place) => {
-                let hir::Expr::Index { object, index } = self.hir.expressions[*place] else {
-                    return Err(self.unsupported("non-indexed reference"));
+                let Some(place) = crate::hir::queries::expression_place(self.hir, *place) else {
+                    return Err(self.unsupported("reference to a non-place expression"));
                 };
-                let hir::Expr::Name(ResolvedName::Local(local)) = self.hir.expressions[object]
-                else {
-                    return Err(self.unsupported("non-local reference origin"));
-                };
-                let object = self.locals[&local];
-                let index = self.expression(index)?;
-                let destination = self.allocate();
-                self.emit(
-                    Instruction::MakeReference {
-                        destination,
-                        object,
-                        index,
-                    },
-                    span,
-                );
-                Ok(destination)
+                let mut object = self.locals[&place.root];
+                for projection in place.projections {
+                    let destination = self.allocate();
+                    let instruction = match projection {
+                        hir::Projection::Field(field) => Instruction::MakeFieldReference {
+                            destination,
+                            object,
+                            field,
+                        },
+                        hir::Projection::Index(index) => Instruction::MakeReference {
+                            destination,
+                            object,
+                            index: self.expression(index)?,
+                        },
+                        hir::Projection::Dereference => continue,
+                    };
+                    self.emit(instruction, span.clone());
+                    object = destination;
+                }
+                Ok(object)
             }
             hir::Expr::MoveOut(place) => {
                 if let hir::Expr::Name(ResolvedName::Local(local)) = self.hir.expressions[*place] {
@@ -457,9 +461,20 @@ impl FunctionCompiler<'_> {
                 Ok(destination)
             }
             hir::Expr::Record { record, fields } => {
-                let fields = fields
+                let values = fields.iter().cloned().collect::<HashMap<_, _>>();
+                let mut layout = self.types.record_fields[record]
                     .iter()
-                    .map(|(name, value)| Ok((name.clone(), self.expression(*value)?)))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                layout.sort();
+                let fields = layout
+                    .iter()
+                    .map(|name| {
+                        let value = values
+                            .get(name)
+                            .ok_or_else(|| self.unsupported("record field layout"))?;
+                        Ok((name.clone(), self.expression(*value)?))
+                    })
                     .collect::<Result<Vec<_>, FosterError>>()?;
                 let destination = self.allocate();
                 self.emit(

@@ -12,8 +12,8 @@ mod ownership;
 pub(crate) mod queries;
 use loans::check_loan_safety;
 use ownership::{
-    check_capture_invalidation, check_closure_ownership, infer_capture_modes,
-    infer_ref_capture_effects, validate_groups_and_effects,
+    check_closure_ownership, infer_capture_modes, infer_ref_capture_effects,
+    validate_groups_and_effects,
 };
 
 pub type ModuleId = Idx<Module>;
@@ -391,7 +391,6 @@ impl Compilation {
         validate_groups_and_effects(&hir)?;
         check_closure_ownership(&hir)?;
         check_loan_safety(&hir, &types)?;
-        check_capture_invalidation(&hir)?;
         let ownership = crate::ownership::build_and_check(&hir, &types)?;
         Ok(Self {
             package,

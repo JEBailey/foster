@@ -15,6 +15,7 @@ pub enum Severity {
 pub struct Label {
     pub range: Range<usize>,
     pub message: String,
+    pub primary: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +26,7 @@ pub struct Diagnostic {
     pub message: String,
     pub labels: Vec<Label>,
     pub notes: Vec<String>,
+    pub help: Option<String>,
 }
 
 impl Diagnostic {
@@ -36,6 +38,7 @@ impl Diagnostic {
             message: message.into(),
             labels: Vec::new(),
             notes: Vec::new(),
+            help: None,
         }
     }
 
@@ -47,6 +50,7 @@ impl Diagnostic {
             message: message.into(),
             labels: Vec::new(),
             notes: Vec::new(),
+            help: None,
         }
     }
 
@@ -59,6 +63,20 @@ impl Diagnostic {
         self.labels.push(Label {
             range,
             message: message.into(),
+            primary: self.labels.is_empty(),
+        });
+        self
+    }
+
+    pub fn with_secondary_label(
+        mut self,
+        range: Range<usize>,
+        message: impl Into<String>,
+    ) -> Self {
+        self.labels.push(Label {
+            range,
+            message: message.into(),
+            primary: false,
         });
         self
     }
@@ -68,9 +86,27 @@ impl Diagnostic {
         self
     }
 
+    pub fn with_help(mut self, help: impl Into<String>) -> Self {
+        self.help = Some(help.into());
+        self
+    }
+
     pub fn from_source_error(source: &str, error: &FosterError) -> Self {
         let mut diagnostic = Self::error(error.message.clone());
-        if error.line > 0 {
+        diagnostic.code.clone_from(&error.code);
+        diagnostic.source_module.clone_from(&error.source_module);
+        diagnostic.notes.clone_from(&error.notes);
+        diagnostic.help.clone_from(&error.help);
+        diagnostic.labels = error
+            .labels
+            .iter()
+            .map(|label| Label {
+                range: label.range.clone(),
+                message: label.message.clone(),
+                primary: label.primary,
+            })
+            .collect();
+        if diagnostic.labels.is_empty() && error.line > 0 {
             let offset = byte_offset(source, error.line, error.column);
             let end = source[offset..]
                 .chars()
@@ -89,24 +125,35 @@ pub fn eprint(source_name: &str, source: &str, diagnostic: &Diagnostic) -> io::R
     };
     let primary = diagnostic
         .labels
-        .first()
+        .iter()
+        .find(|label| label.primary)
+        .or_else(|| diagnostic.labels.first())
         .map_or(0..0, |label| label.range.clone());
     let mut report = Report::build(kind, (source_name, primary)).with_message(&diagnostic.message);
     if let Some(code) = &diagnostic.code {
         report = report.with_code(code);
     }
-    for label in &diagnostic.labels {
+    for (index, label) in diagnostic.labels.iter().enumerate() {
         report = report.with_label(
             AriadneLabel::new((source_name, label.range.clone()))
                 .with_message(&label.message)
-                .with_color(match diagnostic.severity {
-                    Severity::Error => Color::Red,
-                    Severity::Warning => Color::Yellow,
+                .with_order(i32::try_from(index).unwrap_or(i32::MAX))
+                .with_priority(i32::from(label.primary))
+                .with_color(if label.primary {
+                    match diagnostic.severity {
+                        Severity::Error => Color::Red,
+                        Severity::Warning => Color::Yellow,
+                    }
+                } else {
+                    Color::Blue
                 }),
         );
     }
     for note in &diagnostic.notes {
         report = report.with_note(note);
+    }
+    if let Some(help) = &diagnostic.help {
+        report = report.with_help(help);
     }
     report.finish().eprint((source_name, Source::from(source)))
 }
