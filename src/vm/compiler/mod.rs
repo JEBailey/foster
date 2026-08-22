@@ -300,18 +300,24 @@ impl Compiler<'_> {
                     .parameters
                     .iter()
                     .enumerate()
-                    .map(|(index, parameter)| {
-                        let name = &self.hir.locals[*parameter].name;
-                        self.types
-                            .function_type(function_id)
-                            .is_some_and(|signature| {
-                                signature.parameter_modes[index]
-                                    == crate::ast::ParameterMode::Borrow
-                            })
-                            && function.effects.iter().any(|effect| {
-                                effect.kind == crate::ast::EffectKind::Mut
-                                    && effect.target.root == *name
-                            })
+                    .map(|(index, _)| {
+                        let Some(signature) = self.types.function_type(function_id) else {
+                            return false;
+                        };
+                        if signature.parameter_modes[index] != crate::ast::ParameterMode::Borrow {
+                            return false;
+                        }
+                        let crate::types::Type::Reference { group, .. } =
+                            &self.types.types[signature.parameters[index]]
+                        else {
+                            return false;
+                        };
+                        function.effects.iter().any(|effect| {
+                            matches!(
+                                effect.kind,
+                                crate::ast::EffectKind::Mut | crate::ast::EffectKind::Reshape
+                            ) && effect.target.root == *group
+                        })
                     })
                     .collect(),
                 captures: captures.len() as u16,

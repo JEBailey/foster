@@ -72,6 +72,21 @@ func main() -> Int {
 }
 "#,
         ),
+        (
+            "mutable-ref-parameter-writes-through-to-caller",
+            r#"
+type Person = { name: Int }
+func rename[people: group Person](person: ref[people] Person, name: Int) -> Unit [mut people.name] {
+    person.name = name
+    ()
+}
+func main() -> Int {
+    person = Person { name: 0 }
+    rename(ref person, 42)
+    person.name
+}
+"#,
+        ),
     ];
     for (rule, source) in pass {
         foster::compile(source).unwrap_or_else(|error| panic!("{rule} should pass: {error:?}"));
@@ -125,11 +140,60 @@ func main() -> Int {
 }
 "#,
         ),
+        (
+            "replace-invalidates-parentless-loan",
+            r#"
+func main() -> Int {
+    values = [1]
+    selected = ref values[0]
+    values = [9]
+    selected
+}
+"#,
+        ),
+        (
+            "replace-invalidates-captured-call-effect",
+            r#"
+func make[state: group Int](value: ref[state] Int) -> func() -> Int [read state] {
+    [ref value] () -> [read state] { value }
+}
+func main() -> Int {
+    values = [1]
+    probe = make(ref values[0])
+    values = [9]
+    probe()
+}
+"#,
+        ),
     ];
     for (rule, source) in fail {
         assert!(
             foster::compile(source).is_err(),
             "{rule} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn mutable_ref_parameter_runtime_witness_updates_the_caller() {
+    let source = r#"
+type Person = { name: Int }
+func rename[people: group Person](person: ref[people] Person, name: Int) -> Unit [mut people.name] {
+    person.name = name
+    ()
+}
+func main() -> Int {
+    person = Person { name: 0 }
+    rename(ref person, 42)
+    person.name
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap(),
+            foster::vm::Value::Integer(42)
         );
     }
 }

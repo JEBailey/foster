@@ -608,10 +608,10 @@ fn find_conflict(
                     let loan = &function.loans[id.0];
                     let issued_here = loan.issued_at.block == block
                         && loan.issued_at.operation == operation_index;
-                    let replacement_restricts_loan =
-                        kind != InvalidationKind::Replace || !loan.parents.is_empty();
+                    let replacement_through_parameter =
+                        kind == InvalidationKind::Replace && is_parameter_reborrow(function, loan);
                     (!issued_here
-                        && replacement_restricts_loan
+                        && !replacement_through_parameter
                         && invalidates(place, kind, &loan.origin))
                     .then_some((loan, use_span))
                 })
@@ -627,6 +627,17 @@ fn find_conflict(
         }
     }
     None
+}
+
+fn is_parameter_reborrow(function: &Function, loan: &super::LoanDefinition) -> bool {
+    matches!(
+        &function.blocks[loan.issued_at.block].operations[loan.issued_at.operation],
+        Operation::StoreBorrower {
+            destination,
+            value: BorrowValue::Reborrow { loan: issued, origin },
+            ..
+        } if destination == origin && *issued == loan.id
+    )
 }
 
 fn invalidates(invalidated: &Place, kind: InvalidationKind, origin: &Place) -> bool {

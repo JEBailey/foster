@@ -113,8 +113,11 @@ Closure captures make the choice visible:
 ```
 
 `copy` requires a copy type. `move` transfers the captured value into the closure. `ref` stores a
-borrowed connection to the original place. When no capture mode is written, type checking resolves
-the pending mode to `copy` for copy types and `move` otherwise.
+borrowed connection to the original place rather than a snapshot of its value. Reading through a
+stored reference observes the current value in that place while the loan remains valid. Replacing,
+consuming, or structurally invalidating an overlapping origin ends the loan; the reference does not
+retarget to replacement storage. When no capture mode is written, type checking resolves the
+pending mode to `copy` for copy types and `move` otherwise.
 
 ## References and groups
 
@@ -122,14 +125,17 @@ A reference type names the group from which it borrows:
 
 ```foster
 func rename[people: group Person](person: ref[people] Person, name: String)
-    -> Unit [mut people]
+    -> Unit
 {
     person.name = name
+    ()
 }
 ```
 
 `people` is a group parameter. `ref[people] Person` says that `person` may refer into that group.
-`mut people` says the body may mutate values in it. Group names are part of the function contract:
+The inferred `mut people.name` effect says the body may replace that field. A mutable reference
+parameter remains connected to the caller's place, so `rename(ref person, "new name")` updates the
+caller's `person.name`; it does not detach a callee-local copy. Group names are part of the function contract:
 using an undeclared group is an error, and a type parameter and group parameter may not share a
 name.
 
