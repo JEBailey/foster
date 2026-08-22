@@ -1009,6 +1009,26 @@ func main() -> Int {
 }
 
 #[test]
+fn reacquiring_a_projected_reference_replaces_invalid_loan_state() {
+    let source = r#"
+type Selection = {
+    item: Int
+}
+
+func main() -> Int {
+    values = [10, 20]
+    first = ref values[0]
+    selected = Selection { item: first }
+    values.push(30)
+    second = ref values[1]
+    selected = Selection { item: second }
+    selected.item
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(20));
+}
+
+#[test]
 fn conservatively_joins_branch_invalidation() {
     let source = r#"
 func main() -> Int {

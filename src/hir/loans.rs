@@ -43,20 +43,26 @@ pub(super) fn check_loan_safety(
 
             reject_self_origin_storage(hir, types, function, statement, &provenance)?;
 
-            if let Stmt::Bind { local, value } = statement
-                && let Some(loan) = expression_loan(hir, *value, &loans)
-            {
-                loans.insert(*local, loan);
-            }
-
             match statement {
                 Stmt::Bind { local, value } | Stmt::Assign { local, value } => {
+                    // Binding or assigning replaces the destination's complete loan
+                    // state. In particular, reacquiring a reference after a reshape
+                    // must not inherit the invalidation of the reference previously
+                    // stored in the same local, and assigning a non-reference must
+                    // not retain stale direct-loan metadata used by escape checking.
+                    if let Some(loan) = expression_loan(hir, *value, &loans) {
+                        loans.insert(*local, loan);
+                    } else {
+                        loans.remove(local);
+                    }
+
                     let places = expression_borrow_places(hir, types, *value, &provenance);
                     if places.is_empty() {
                         provenance.remove(local);
                     } else {
                         provenance.insert(*local, places);
                     }
+                    invalid.remove(local);
                 }
                 _ => {}
             }
