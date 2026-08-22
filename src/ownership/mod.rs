@@ -20,6 +20,8 @@ pub(crate) fn build_and_check(
 ) -> Result<Program, FosterError> {
     let mut program = lower::lower(hir, types);
     program.provenance = regions::analyze(&program);
+    regions::populate_reborrow_parents(&mut program);
+    regions::infer_result_provenance(hir, &mut program);
     program.requirements = regions::analyze_requirements(&program);
     check::check(hir, types, &program)?;
     regions::validate(hir, &program)?;

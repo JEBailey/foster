@@ -110,7 +110,8 @@ fn check_function(
                 Operation::StoreBorrower { .. }
                 | Operation::ReturnBorrower { .. }
                 | Operation::Invalidate { .. }
-                | Operation::Suspend { .. } => {}
+                | Operation::Suspend { .. }
+                | Operation::Destroy { .. } => {}
             }
         }
 

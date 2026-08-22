@@ -100,6 +100,7 @@ impl<'a> Builder<'a> {
             self.blocks[self.current].terminator,
             Terminator::Unreachable
         ) {
+            self.emit_scope_destruction(definition.span.clone());
             self.blocks[self.current].terminator = Terminator::Return;
         }
         Function {
@@ -121,11 +122,13 @@ impl<'a> Builder<'a> {
                     self.current = returned;
                     self.expression(*value, Context::Consume);
                     self.emit_return(*value);
+                    self.emit_scope_destruction(self.span(*value));
                     self.terminate(Terminator::Return);
                     self.current = continued;
                 } else {
                     self.expression(*value, Context::Consume);
                     self.emit_return(*value);
+                    self.emit_scope_destruction(self.span(*value));
                     self.terminate(Terminator::Return);
                     self.current = self.block();
                 }
@@ -491,7 +494,7 @@ impl<'a> Builder<'a> {
                 block: self.current,
                 operation: self.blocks[self.current].operations.len(),
             },
-            parent: None,
+            parents: std::collections::HashSet::new(),
             span,
         });
         BorrowValue::Reborrow { loan: id, origin }
@@ -592,6 +595,25 @@ impl<'a> Builder<'a> {
 
     fn emit(&mut self, operation: Operation) {
         self.blocks[self.current].operations.push(operation);
+    }
+
+    fn emit_scope_destruction(&mut self, span: std::ops::Range<usize>) {
+        let mut locals = self
+            .hir
+            .locals
+            .iter()
+            .filter_map(|(local, definition)| {
+                (definition.function == self.function && definition.kind == hir::LocalKind::Binding)
+                    .then_some(local)
+            })
+            .collect::<Vec<_>>();
+        locals.reverse();
+        for local in locals {
+            self.emit(Operation::Destroy {
+                place: Self::local_place(local),
+                span: span.clone(),
+            });
+        }
     }
 
     fn terminate(&mut self, terminator: Terminator) {

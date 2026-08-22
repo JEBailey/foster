@@ -282,8 +282,13 @@ model must preserve these rules:
 
 1. A loan is valid only while its owner and every component of its origin path remain alive and no
    invalidating operation has occurred.
-2. Derived loans and reborrows cannot outlive their source loan. Reborrowing must define whether a
-   child temporarily restricts its parent and when the parent becomes usable again.
+2. Derived loans and reborrows cannot outlive their source loan. A child loan's inferred region is
+   contained in every possible parent loan's region. Because Foster references are shared and
+   mutation authority is expressed by effects rather than a distinct mutable-reference type, a
+   live child permits reads and copies through its parent but prevents replacing, moving,
+   consuming, or structurally invalidating the source path. Those restrictions end immediately
+   after the child's last required use. A reborrow reached through a control-flow join may have
+   multiple possible parents; all of them constrain the child.
 3. Returned references and closures preserve their dependence on input groups. Calls must retain
    enough result provenance to distinguish borrowing from one input, another input, or either.
 4. Control-flow joins compute loan validity precisely enough to remain useful while conservatively
@@ -319,6 +324,44 @@ model must preserve these rules:
 These rules do not imply source-level lifetime syntax. Surface lifetime parameters should be
 considered only if real APIs expose relationships that groups plus inferred regions cannot express
 clearly and precisely.
+
+### Ownership specification status
+
+The numbered rules above are the normative ownership contract. A production compiler must classify
+each rule as enforced, deliberately conservative, or unsupported; it must not silently accept a
+program outside the implemented model. The current status is:
+
+| Rules | Status | Production requirement |
+| --- | --- | --- |
+| 1-4, 6-7, 9-10, 14, 16 | Enforced, with documented conservative place overlap at dynamic indices and erased callable calls | Maintain compile-pass and compile-fail coverage for every rule and CFG shape. |
+| 5, 8, 11, 13 | Enforced for named locals, ordinary return, `await`, and cancellation in the current non-unwinding runtime; temporaries and future unwinding remain partial | Finish expression-temporary destruction and define unwinding before stable release. |
+| 12 | Partial | Loans remain governed by task ownership and effects; crossing-task storage and exclusivity still require a complete specification. |
+| 15 | Unsupported as a general boundary | Host and foreign interfaces must not retain references until retention contracts are implemented. |
+
+Normative reborrow behavior is therefore fixed: loan issuance records all reaching source loans as
+parents; backward demand for a child also demands its complete parent chain; destructive access to
+the source is rejected while that demand is live; and ordinary parent reads remain legal. This is
+an internal region relationship and adds no source-level lifetime syntax.
+
+Result provenance stored on ownership MIR is inferred from every reachable return point after
+forward provenance is known. Inference follows each returned loan's complete reborrow ancestry back
+to receiver and parameter roots. The inferred summary is validated against the declared result
+groups; declarations may conservatively expose more origins, but may never omit an origin actually
+returned. Direct calls substitute these summaries at their arguments. Calls through erased or
+otherwise indirect callable values conservatively retain provenance from the callable and every
+argument until callable types carry an equally precise origin summary.
+
+An `await` parks the complete invocation frame without relocating its storage. Loans into named
+frame locals and borrowed parameters may cross suspension when ordinary region analysis proves
+them required afterward; the caller invocation remains active for borrowed parameters. Cancellation
+destroys the parked frame and does not resume it, so no post-cancellation loan use exists. Borrowed
+values still cannot cross remote or task-message boundaries. Ownership MIR emits `Destroy`
+operations for named bindings in reverse declaration order on every ordinary function exit.
+Borrower escape is checked before destruction, and a destruction conflicts with any loan demanded
+after it. Runtime last-use drops may occur earlier only when observably equivalent. Expression
+temporaries are destroyed at the end of their containing expression unless their value and
+provenance are transferred into a destination; explicit temporary MIR points remain required before
+this part of the model is considered complete.
 
 ## Compiler implementation
 

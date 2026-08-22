@@ -33,6 +33,121 @@ pub(super) fn analyze_requirements(
         .collect()
 }
 
+pub(super) fn populate_reborrow_parents(program: &mut Program) {
+    for (function_id, function) in &mut program.functions {
+        let analysis = &program.provenance[function_id];
+        for (block, definition) in function.blocks.iter().enumerate() {
+            let Some(points) = &analysis.points[block] else {
+                continue;
+            };
+            for (operation_index, operation) in definition.operations.iter().enumerate() {
+                let (Operation::StoreBorrower { value, .. }
+                | Operation::ReturnBorrower { value, .. }) = operation
+                else {
+                    continue;
+                };
+                collect_reborrow_parents(value, &points[operation_index], &mut function.loans);
+            }
+        }
+    }
+}
+
+pub(super) fn infer_result_provenance(hir: &PackageHir, program: &mut Program) {
+    for (function_id, function) in &mut program.functions {
+        let definition = &hir.functions[*function_id];
+        let analysis = &program.provenance[function_id];
+        let mut parameters = HashSet::new();
+        let mut returns_borrower = false;
+        for (block, basic_block) in function.blocks.iter().enumerate() {
+            let Some(points) = &analysis.points[block] else {
+                continue;
+            };
+            for (operation_index, operation) in basic_block.operations.iter().enumerate() {
+                let Operation::ReturnBorrower { value, .. } = operation else {
+                    continue;
+                };
+                let mut state = points[operation_index].clone();
+                let loans = evaluate(value, &mut state);
+                returns_borrower |= !loans.is_empty();
+                for loan in loans {
+                    collect_parameter_origins(
+                        function,
+                        definition,
+                        loan,
+                        &mut HashSet::new(),
+                        &mut parameters,
+                    );
+                }
+            }
+        }
+        let mut parameters = parameters.into_iter().collect::<Vec<_>>();
+        parameters.sort_unstable();
+        let receiver = parameters.first().is_some_and(|parameter| {
+            *parameter == 0
+                && definition
+                    .parameters
+                    .first()
+                    .is_some_and(|local| hir.locals[*local].name == "self")
+        });
+        function.result_provenance = super::ResultProvenance {
+            fresh_owned: !returns_borrower,
+            parameters,
+            receiver,
+        };
+    }
+}
+
+fn collect_parameter_origins(
+    function: &Function,
+    definition: &crate::hir::Function,
+    loan: LoanId,
+    visited: &mut HashSet<LoanId>,
+    parameters: &mut HashSet<usize>,
+) {
+    if !visited.insert(loan) {
+        return;
+    }
+    let loan = &function.loans[loan.0];
+    if let Some(parameter) = definition
+        .parameters
+        .iter()
+        .position(|local| *local == loan.origin.root)
+    {
+        parameters.insert(parameter);
+    }
+    for parent in &loan.parents {
+        collect_parameter_origins(function, definition, *parent, visited, parameters);
+    }
+}
+
+fn collect_reborrow_parents(
+    value: &BorrowValue,
+    state: &ProvenanceState,
+    definitions: &mut [super::LoanDefinition],
+) {
+    match value {
+        BorrowValue::Reborrow { loan, origin } => {
+            definitions[loan.0]
+                .parents
+                .extend(contents_at(state, origin));
+        }
+        BorrowValue::Merge(values) => {
+            for value in values {
+                collect_reborrow_parents(value, state, definitions);
+            }
+        }
+        BorrowValue::Fields(fields) => {
+            for (_, value) in fields {
+                collect_reborrow_parents(value, state, definitions);
+            }
+        }
+        BorrowValue::Empty
+        | BorrowValue::Loan(_)
+        | BorrowValue::Place(_)
+        | BorrowValue::MovePlace(_) => {}
+    }
+}
+
 fn analyze_function_requirements(
     function: &Function,
     provenance: &ProvenanceAnalysis,
@@ -148,7 +263,25 @@ fn transfer_requirement(
         Operation::StoreBorrower { .. } => {
             remove_issued_at(function, block, operation_index, state);
         }
-        Operation::Initialize { .. } | Operation::Invalidate { .. } | Operation::Suspend { .. } => {
+        Operation::Initialize { .. }
+        | Operation::Invalidate { .. }
+        | Operation::Suspend { .. }
+        | Operation::Destroy { .. } => {}
+    }
+    require_ancestors(function, state);
+}
+
+fn require_ancestors(function: &Function, state: &mut RequirementState) {
+    let mut work = state.loans.keys().copied().collect::<Vec<_>>();
+    while let Some(child) = work.pop() {
+        let Some(required_use) = state.loans.get(&child).cloned() else {
+            continue;
+        };
+        for parent in &function.loans[child.0].parents {
+            if !state.loans.contains_key(parent) {
+                state.loans.insert(*parent, required_use.clone());
+                work.push(*parent);
+            }
         }
     }
 }
@@ -195,6 +328,7 @@ pub(super) fn validate(hir: &PackageHir, program: &Program) -> Result<(), Foster
             &program.provenance[function_id],
         )?;
         let requirements = &program.requirements[function_id];
+        validate_suspensions(hir, *function_id, function, requirements)?;
         if let Some(conflict) = find_conflict(function, requirements) {
             let definition = &hir.functions[*function_id];
             let origin_name = &hir.locals[conflict.loan.origin.root].name;
@@ -235,9 +369,47 @@ pub(super) fn validate(hir: &PackageHir, program: &Program) -> Result<(), Foster
                     InvalidationKind::Consume => {
                         format!("this operation consumes `{origin_name}`")
                     }
+                    InvalidationKind::Replace => {
+                        format!("this operation replaces `{origin_name}`")
+                    }
                 },
             )
             .with_help("use or propagate the borrower before this invalidating operation, or reacquire it afterward"));
+        }
+    }
+    Ok(())
+}
+
+fn validate_suspensions(
+    hir: &PackageHir,
+    function_id: FunctionId,
+    function: &Function,
+    requirements: &RequirementAnalysis,
+) -> Result<(), FosterError> {
+    for (block, definition) in function.blocks.iter().enumerate() {
+        let Some(points) = &requirements.points[block] else {
+            continue;
+        };
+        for (operation_index, operation) in definition.operations.iter().enumerate() {
+            let Operation::Suspend { span } = operation else {
+                continue;
+            };
+            for loan in points[operation_index + 1].loans.keys() {
+                let loan = &function.loans[loan.0];
+                let owner = &hir.locals[loan.origin.root];
+                if owner.function != function_id {
+                    let definition = &hir.functions[function_id];
+                    return Err(FosterError::runtime(format!(
+                        "in `{}.{}`: a loan required after suspension does not belong to the parked invocation",
+                        hir.modules[definition.module].name, definition.name
+                    ))
+                    .with_code("E0728")
+                    .with_source_module(hir.modules[definition.module].name.clone())
+                    .with_primary_label(span.clone(), "this suspension cannot preserve the loan's storage")
+                    .with_label(loan.span.clone(), "loan is issued from non-frame storage here")
+                    .with_help("move owned data into the invocation frame before awaiting"));
+                }
+            }
         }
     }
     Ok(())
@@ -291,7 +463,11 @@ fn validate_storage_and_escape(
                 Operation::ReturnBorrower { value, kind, span } => {
                     let mut temporary = before.clone();
                     let loans = evaluate(value, &mut temporary);
-                    let mut returned = loans
+                    let mut roots = HashSet::new();
+                    for loan in loans {
+                        collect_root_loans(function, loan, &mut HashSet::new(), &mut roots);
+                    }
+                    let mut returned = roots
                         .iter()
                         .map(|loan| &function.loans[loan.0])
                         .collect::<Vec<_>>();
@@ -306,6 +482,25 @@ fn validate_storage_and_escape(
         }
     }
     Ok(())
+}
+
+fn collect_root_loans(
+    function: &Function,
+    loan: LoanId,
+    visited: &mut HashSet<LoanId>,
+    roots: &mut HashSet<LoanId>,
+) {
+    if !visited.insert(loan) {
+        return;
+    }
+    let definition = &function.loans[loan.0];
+    if definition.parents.is_empty() {
+        roots.insert(loan);
+    } else {
+        for parent in &definition.parents {
+            collect_root_loans(function, *parent, visited, roots);
+        }
+    }
 }
 
 fn validate_returned_loan(
@@ -391,8 +586,18 @@ fn find_conflict(
             continue;
         };
         for (operation_index, operation) in definition.operations.iter().enumerate() {
-            let Operation::Invalidate { place, kind, span } = operation else {
-                continue;
+            let (place, kind, span) = match operation {
+                Operation::Invalidate { place, kind, span } => (place, *kind, span),
+                Operation::Use {
+                    place,
+                    mode: super::UseMode::Move,
+                    span,
+                } => (place, InvalidationKind::Consume, span),
+                Operation::StoreBorrower {
+                    destination, span, ..
+                } => (destination, InvalidationKind::Replace, span),
+                Operation::Destroy { place, span } => (place, InvalidationKind::Consume, span),
+                _ => continue,
             };
             let required_after = &points[operation_index + 1];
             if let Some((loan, required_use)) = required_after
@@ -400,13 +605,20 @@ fn find_conflict(
                 .iter()
                 .filter_map(|(id, use_span)| {
                     let loan = &function.loans[id.0];
-                    invalidates(place, *kind, &loan.origin).then_some((loan, use_span))
+                    let issued_here = loan.issued_at.block == block
+                        && loan.issued_at.operation == operation_index;
+                    let replacement_restricts_loan =
+                        kind != InvalidationKind::Replace || !loan.parents.is_empty();
+                    (!issued_here
+                        && replacement_restricts_loan
+                        && invalidates(place, kind, &loan.origin))
+                    .then_some((loan, use_span))
                 })
                 .min_by_key(|(loan, _)| loan.id)
             {
                 return Some(InvalidationConflict {
                     loan: loan.clone(),
-                    kind: *kind,
+                    kind,
                     invalidated_at: span.clone(),
                     required_use: required_use.clone(),
                 });
@@ -418,7 +630,7 @@ fn find_conflict(
 
 fn invalidates(invalidated: &Place, kind: InvalidationKind, origin: &Place) -> bool {
     places_overlap(invalidated, origin)
-        && (kind == InvalidationKind::Consume
+        && (matches!(kind, InvalidationKind::Consume | InvalidationKind::Replace)
             || origin
                 .projections
                 .iter()
@@ -454,6 +666,8 @@ fn analyze_function(function: &Function) -> ProvenanceAnalysis {
             } = operation
             {
                 store(destination, value, &mut state);
+            } else if let Operation::Destroy { place, .. } = operation {
+                replace(place, HashSet::new(), &mut state);
             }
         }
         block_points.push(state.clone());
@@ -514,14 +728,7 @@ fn evaluate(value: &BorrowValue, state: &mut ProvenanceState) -> HashSet<LoanId>
     match value {
         BorrowValue::Empty => HashSet::new(),
         BorrowValue::Loan(loan) => HashSet::from([*loan]),
-        BorrowValue::Reborrow { loan, origin } => {
-            let inherited = contents_at(state, origin);
-            if inherited.is_empty() {
-                HashSet::from([*loan])
-            } else {
-                inherited
-            }
-        }
+        BorrowValue::Reborrow { loan, .. } => HashSet::from([*loan]),
         BorrowValue::Place(place) => state
             .contents
             .iter()
@@ -759,7 +966,7 @@ mod tests {
                 block: 0,
                 operation: 0,
             },
-            parent: None,
+            parents: HashSet::new(),
             span: 0..1,
         };
         let function = Function {
@@ -849,7 +1056,7 @@ mod tests {
                     block: 0,
                     operation: 0,
                 },
-                parent: None,
+                parents: HashSet::new(),
                 span: 0..1,
             }],
             result_provenance: Default::default(),
@@ -909,7 +1116,7 @@ mod tests {
                     block: 0,
                     operation: 0,
                 },
-                parent: None,
+                parents: HashSet::new(),
                 span: 0..1,
             }],
             result_provenance: Default::default(),

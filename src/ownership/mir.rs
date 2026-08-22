@@ -41,7 +41,9 @@ pub struct LoanDefinition {
     pub id: LoanId,
     pub origin: Place,
     pub issued_at: MirPoint,
-    pub parent: Option<LoanId>,
+    /// Loans contained by the place from which this loan was derived. There
+    /// may be more than one after a control-flow join.
+    pub parents: std::collections::HashSet<LoanId>,
     pub span: Range<usize>,
 }
 
@@ -65,6 +67,7 @@ pub enum BorrowValue {
 pub enum InvalidationKind {
     Reshape,
     Consume,
+    Replace,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -137,6 +140,12 @@ pub enum Operation {
         span: Range<usize>,
     },
     Suspend {
+        span: Range<usize>,
+    },
+    /// Semantic destruction at function-scope exit. Runtime last-use drops
+    /// may occur earlier when they are observationally equivalent.
+    Destroy {
+        place: Place,
         span: Range<usize>,
     },
 }

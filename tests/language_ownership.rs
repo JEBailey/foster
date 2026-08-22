@@ -1160,9 +1160,26 @@ func main() -> Int {
         })
         .unwrap();
     let analysis = &compilation.ownership.provenance[&main];
-    let exit = analysis.exits.iter().flatten().last().unwrap();
+    let before_return = mir
+        .blocks
+        .iter()
+        .enumerate()
+        .find_map(|(block, definition)| {
+            definition
+                .operations
+                .iter()
+                .position(|operation| {
+                    matches!(
+                        operation,
+                        foster::ownership::Operation::ReturnBorrower { .. }
+                    )
+                })
+                .map(|operation| &analysis.points[block].as_ref().unwrap()[operation])
+        })
+        .unwrap();
     assert_eq!(
-        exit.contents
+        before_return
+            .contents
             .get(&foster::hir::Place {
                 root: selected,
                 projections: Vec::new(),
@@ -1170,10 +1187,84 @@ func main() -> Int {
             .unwrap(),
         &std::collections::HashSet::from([foster::ownership::LoanId(0)])
     );
-    assert!(!exit.contents.contains_key(&foster::hir::Place {
+    assert!(!before_return.contents.contains_key(&foster::hir::Place {
         root: description,
         projections: Vec::new(),
     }));
+}
+
+#[test]
+fn ownership_mir_records_reborrow_parent_relationships() {
+    let source = r#"
+func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
+    ref value
+}
+
+func main() { 0 }
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let preserve = compilation.hir.function_named(module, "preserve").unwrap();
+    let loans = &compilation.ownership.functions[&preserve].loans;
+    assert_eq!(loans.len(), 2);
+    assert!(loans[0].parents.is_empty());
+    assert_eq!(
+        loans[1].parents,
+        std::collections::HashSet::from([foster::ownership::LoanId(0)])
+    );
+}
+
+#[test]
+fn nested_reborrow_of_parameter_is_not_a_local_escape() {
+    let source = r#"
+func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
+    first = ref value
+    ref first
+}
+
+func main() { 0 }
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let preserve = compilation.hir.function_named(module, "preserve").unwrap();
+    assert_eq!(
+        compilation.ownership.functions[&preserve]
+            .result_provenance
+            .parameters,
+        vec![0]
+    );
+}
+
+#[test]
+fn live_reborrow_restricts_consuming_its_source() {
+    let source = r#"
+func main() -> Int {
+    values = [10, 20]
+    parent = ref values[0]
+    child = ref parent
+    moved = move parent
+    child
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+    assert!(error.message.contains("borrowed value `child`"));
+}
+
+#[test]
+fn reborrow_allows_parent_reads_and_releases_parent_after_last_use() {
+    let source = r#"
+func main() -> Int {
+    values = [10, 20]
+    parent = ref values[0]
+    child = ref parent
+    parent
+    child
+    moved = move parent
+    moved
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
 }
 
 #[test]
@@ -1278,14 +1369,32 @@ func main() -> Int {
     };
     let saved = local("saved");
     let moved = local("moved");
-    let exit = compilation.ownership.provenance[&main]
-        .exits
+    let mir = &compilation.ownership.functions[&main];
+    let analysis = &compilation.ownership.provenance[&main];
+    let before_return = mir
+        .blocks
         .iter()
-        .flatten()
-        .last()
+        .enumerate()
+        .find_map(|(block, definition)| {
+            definition
+                .operations
+                .iter()
+                .position(|operation| {
+                    matches!(
+                        operation,
+                        foster::ownership::Operation::ReturnBorrower { .. }
+                    )
+                })
+                .map(|operation| &analysis.points[block].as_ref().unwrap()[operation])
+        })
         .unwrap();
-    assert!(!exit.contents.keys().any(|place| place.root == saved));
-    let moved_loans = exit
+    assert!(
+        !before_return
+            .contents
+            .keys()
+            .any(|place| place.root == saved)
+    );
+    let moved_loans = before_return
         .contents
         .iter()
         .filter(|(place, _)| place.root == moved)
@@ -1441,4 +1550,74 @@ func main() -> Int {
 "#;
     foster::compile(source).unwrap();
     assert_eq!(foster::run(source).unwrap(), Value::Integer(7));
+}
+
+#[test]
+fn result_provenance_is_inferred_from_reachable_mir_returns() {
+    let source = r#"
+func first[a: group Int, b: group Int](left: ref[a] Int, right: ref[b] Int)
+    -> func() -> Int [read a, read b]
+{
+    [ref left] () -> [read a] { left }
+}
+
+func main() { 0 }
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let first = compilation.hir.function_named(module, "first").unwrap();
+    assert_eq!(
+        compilation.ownership.functions[&first]
+            .result_provenance
+            .parameters,
+        vec![0]
+    );
+}
+
+#[test]
+fn ownership_mir_models_loans_across_suspend_and_scope_destruction() {
+    let source = r#"
+type Worker = {}
+func value(self: Worker) -> Int { 1 }
+
+func wait(worker: Remote<Worker>) -> Int {
+    values = [10, 20]
+    selected = ref values[0]
+    waited = await worker.value()
+    selected + waited
+}
+
+func main() { 0 }
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let wait = compilation.hir.function_named(module, "wait").unwrap();
+    let function = &compilation.ownership.functions[&wait];
+    let requirements = &compilation.ownership.requirements[&wait];
+    let (block, operation) = function
+        .blocks
+        .iter()
+        .enumerate()
+        .find_map(|(block, definition)| {
+            definition
+                .operations
+                .iter()
+                .position(|operation| {
+                    matches!(operation, foster::ownership::Operation::Suspend { .. })
+                })
+                .map(|operation| (block, operation))
+        })
+        .unwrap();
+    assert!(
+        !requirements.points[block].as_ref().unwrap()[operation + 1]
+            .loans
+            .is_empty()
+    );
+    assert!(
+        function
+            .blocks
+            .iter()
+            .flat_map(|block| &block.operations)
+            .any(|operation| matches!(operation, foster::ownership::Operation::Destroy { .. }))
+    );
 }
