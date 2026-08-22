@@ -27,11 +27,7 @@ pub(crate) fn expression_place(hir: &PackageHir, expression: ExprId) -> Option<P
     }
 }
 
-pub(super) fn place_root(hir: &PackageHir, expression: ExprId) -> Option<LocalId> {
-    expression_place(hir, expression).map(|place| place.root)
-}
-
-pub(super) fn type_exposes_group(ty: Option<&ast::TypeExpr>, group: &str) -> bool {
+pub(crate) fn type_exposes_group(ty: Option<&ast::TypeExpr>, group: &str) -> bool {
     match ty {
         Some(ast::TypeExpr::Reference {
             group: found,

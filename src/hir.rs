@@ -6,11 +6,9 @@ use crate::ast;
 use crate::error::FosterError;
 use crate::package::Package;
 
-mod loans;
 mod lower;
 mod ownership;
 pub(crate) mod queries;
-use loans::check_loan_safety;
 use ownership::{
     check_closure_ownership, infer_capture_modes, infer_ref_capture_effects,
     validate_groups_and_effects,
@@ -400,7 +398,6 @@ impl Compilation {
             crate::typecheck::check(&mut hir).map_err(CompileError::types)?;
         validate_groups_and_effects(&hir).map_err(CompileError::effects)?;
         check_closure_ownership(&hir).map_err(CompileError::ownership)?;
-        check_loan_safety(&hir, &types).map_err(CompileError::loans)?;
         let ownership =
             crate::ownership::build_and_check(&hir, &types).map_err(CompileError::ownership)?;
         Ok(Self {

@@ -267,6 +267,15 @@ separate temporal question of how long a borrow remains usable. The compiler may
 solve region constraints internally, but ordinary APIs should continue to express borrowing with
 groups unless a concrete relationship cannot be expressed without excessive conservatism.
 
+Region solving is eager and intraprocedural. It runs after types, effects, parameter modes, and
+closure capture modes have settled; Foster does not defer region obligations back into type
+inference. A region is a set of ownership-MIR control-flow points, not necessarily one linear source
+interval. Every borrow-producing MIR operation has a distinct loan identity. Forward dataflow maps
+borrower contents to possible loan origins, backward dataflow identifies the points that still
+require those contents, and validation rejects an overlapping invalidation on a path between loan
+issuance and a required use. Public group contracts bound symbolic parameter/result provenance at
+function boundaries without exposing these inferred regions in source.
+
 A loan remains valid while its complete origin chain is live, its referenced storage identity
 remains stable, and no operation has invalidated its provenance or permission. In particular, the
 model must preserve these rules:
@@ -322,10 +331,8 @@ AST
   → validate group and effect declarations
   → infer types and derive body effects
   → resolve pending closure capture modes
-  → check moves and borrowed closure escape
-  → check projected loans, aggregate provenance, escape, and invalidation
   → lower canonical places into ownership MIR
-  → run control-flow initialization and move analysis
+  → run control-flow initialization, move, provenance, required-loan, escape, and invalidation analysis
 ```
 
 The implementation is divided by responsibility:
@@ -333,15 +340,19 @@ The implementation is divided by responsibility:
 - `src/hir/lower/` resolves names and converts source references, moves, captures, and places into
   stable HIR IDs.
 - `src/typecheck/effects.rs` derives group access, consume, and suspension requirements.
-- `src/hir/ownership.rs` validates groups, resolves capture modes, and checks borrowed closure
-  escape.
-- `src/hir/loans.rs` tracks projection-path provenance through direct values, aggregates, and
-  closures, then rejects invalid use, self-origin storage, or escape.
+- `src/hir/ownership.rs` validates groups, resolves capture modes, and rejects use after a closure
+  capture moved its source.
 - `src/hir/queries.rs` contains shared, policy-free place and expression queries used by the
   ownership passes.
 - `src/ownership/` lowers typed HIR to ownership MIR basic blocks containing explicit
   read/copy/move/borrow/initialize operations, validates consuming call contracts, then checks
-  initialization and partial-move state at control-flow joins.
+  initialization and partial-move state at control-flow joins. Ownership MIR also carries stable
+  loan identities, borrower stores, typed invalidations, writes, and suspension points. Its region
+  pass computes forward reaching provenance and backward required-loan sets at every MIR point,
+  then diagnoses a reshape or consume that overlaps a loan required later on the same CFG path.
+  The same pass validates returned borrower escape and self-origin storage. Typed effect-to-place
+  substitution is shared by MIR lowering and effect validation; there is no separate HIR temporal
+  loan checker.
 - `src/vm/value.rs` implements slots and the common weak `PlaceHandle` used by projected references
   and borrowed captures.
 - `src/vm/runtime.rs` and VM capture instructions represent copied/moved values and borrowed places.
@@ -388,14 +399,15 @@ Effect over-declaration is safe and therefore uses the compiler's warning channe
 
 The implemented model is useful but is not yet a general Rust-equivalent borrow checker:
 
-- Move and initialization analysis is fully control-flow-aware. Loan analysis conservatively joins
-  branch-arm provenance and invalidation in its HIR forward pass; it does not yet implement
-  path-sensitive predicates or prove mutually exclusive index values.
+- Move, initialization, provenance, and required-loan analysis are control-flow-aware. CFG joins
+  retain the union of reaching loan identities and successor requirements. The compiler does not
+  yet correlate predicates across separate branches or prove mutually exclusive index values.
 - Ownership and loan places model field, index, and dereference projections. Different named fields
   are disjoint; index projections conservatively overlap.
-- Provenance flows through the implemented aggregate and closure expressions. Interprocedural
-  result provenance is conservative: a non-copy call result may retain provenance supplied through
-  its callee or arguments unless its type rules it out.
+- Provenance flows through the implemented aggregate and closure expressions. Direct calls use the
+  callee's declared result groups as a symbolic provenance summary and substitute only matching
+  grouped reference parameters. Indirect and erased callable results remain conservative until
+  callable types carry equivalent parameter/result provenance metadata.
 - Copy behavior is currently a built-in type classification. User-defined copy types have not been
   designed.
 - Runtime values still use managed host representations in the VM. Records now use shared layouts

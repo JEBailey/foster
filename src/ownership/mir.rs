@@ -5,15 +5,103 @@ use crate::hir::{FunctionId, LocalId, Place};
 
 pub type BlockId = usize;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct LoanId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct MirPoint {
+    pub block: BlockId,
+    pub operation: usize,
+}
+
 #[derive(Debug, Default)]
 pub struct Program {
     pub functions: HashMap<FunctionId, Function>,
+    pub provenance: HashMap<FunctionId, ProvenanceAnalysis>,
+    pub requirements: HashMap<FunctionId, RequirementAnalysis>,
 }
 
 #[derive(Debug)]
 pub struct Function {
     pub entry: BlockId,
     pub blocks: Vec<BasicBlock>,
+    pub loans: Vec<LoanDefinition>,
+    pub result_provenance: ResultProvenance,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ResultProvenance {
+    pub parameters: Vec<usize>,
+    pub receiver: bool,
+    pub fresh_owned: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoanDefinition {
+    pub id: LoanId,
+    pub origin: Place,
+    pub issued_at: MirPoint,
+    pub parent: Option<LoanId>,
+    pub span: Range<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub enum BorrowValue {
+    Empty,
+    Loan(LoanId),
+    /// A newly issued loan that flattens to loans already contained by its
+    /// immediate origin, or remains itself when borrowing owned storage.
+    Reborrow {
+        loan: LoanId,
+        origin: Place,
+    },
+    Place(Place),
+    MovePlace(Place),
+    Merge(Vec<BorrowValue>),
+    Fields(Vec<(Vec<crate::hir::Projection>, BorrowValue)>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InvalidationKind {
+    Reshape,
+    Consume,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ProvenanceAnalysis {
+    pub entries: Vec<Option<ProvenanceState>>,
+    pub exits: Vec<Option<ProvenanceState>>,
+    /// State before each operation, followed by the state after the block's
+    /// final operation. Unreachable blocks have no point states.
+    pub points: Vec<Option<Vec<ProvenanceState>>>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ProvenanceState {
+    pub contents: HashMap<Place, std::collections::HashSet<LoanId>>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct RequirementAnalysis {
+    pub entries: Vec<Option<RequirementState>>,
+    pub exits: Vec<Option<RequirementState>>,
+    /// State before each operation, followed by the state after the block's
+    /// final operation. Unreachable blocks have no point states.
+    pub points: Vec<Option<Vec<RequirementState>>>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RequirementState {
+    /// Each required loan maps to a representative later use that keeps its
+    /// region live. This is also the third site in invalidation diagnostics.
+    pub loans: HashMap<LoanId, RequiredUse>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequiredUse {
+    pub place: Place,
+    pub mode: UseMode,
+    pub span: Range<usize>,
 }
 
 #[derive(Debug, Default)]
@@ -33,6 +121,31 @@ pub enum Operation {
         local: LocalId,
         span: Range<usize>,
     },
+    StoreBorrower {
+        destination: Place,
+        value: BorrowValue,
+        span: Range<usize>,
+    },
+    ReturnBorrower {
+        value: BorrowValue,
+        kind: ReturnKind,
+        span: Range<usize>,
+    },
+    Invalidate {
+        place: Place,
+        kind: InvalidationKind,
+        span: Range<usize>,
+    },
+    Suspend {
+        span: Range<usize>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReturnKind {
+    Reference,
+    Closure,
+    Aggregate,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,6 +154,10 @@ pub enum UseMode {
     Copy,
     Move,
     Borrow,
+    /// Access needed only to replace a destination. Existing borrower
+    /// contents are not inspected and therefore do not extend their regions.
+    Write,
+    Call,
 }
 
 #[derive(Debug, Clone, Default)]

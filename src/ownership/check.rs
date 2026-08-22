@@ -107,6 +107,10 @@ fn check_function(
                     state.moved.retain(|place, _| place.root != *local);
                     state.last_move.remove(local);
                 }
+                Operation::StoreBorrower { .. }
+                | Operation::ReturnBorrower { .. }
+                | Operation::Invalidate { .. }
+                | Operation::Suspend { .. } => {}
             }
         }
 

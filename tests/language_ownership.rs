@@ -1074,6 +1074,261 @@ func main() -> Int {
 }
 
 #[test]
+fn direct_owned_call_results_do_not_inherit_argument_provenance() {
+    let source = r#"
+func describe(value: Int) -> String {
+    "number"
+}
+
+func main() -> Int {
+    values = [10, 20]
+    selected = ref values[0]
+    description = describe(selected)
+    values.push(30)
+    description.length
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(6));
+}
+
+#[test]
+fn ownership_mir_records_explicit_result_provenance_summaries() {
+    let source = r#"
+func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
+    ref value
+}
+
+func describe(value: Int) -> String {
+    "number"
+}
+
+func main() { 0 }
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let preserve = compilation.hir.function_named(module, "preserve").unwrap();
+    let describe = compilation.hir.function_named(module, "describe").unwrap();
+    assert_eq!(
+        compilation.ownership.functions[&preserve]
+            .result_provenance
+            .parameters,
+        vec![0]
+    );
+    assert!(
+        !compilation.ownership.functions[&preserve]
+            .result_provenance
+            .fresh_owned
+    );
+    assert!(
+        compilation.ownership.functions[&describe]
+            .result_provenance
+            .fresh_owned
+    );
+}
+
+#[test]
+fn ownership_mir_records_loan_identity_and_forward_provenance() {
+    let source = r#"
+func describe(value: Int) -> String { "number" }
+
+func main() -> Int {
+    values = [10, 20]
+    selected = ref values[0]
+    description = describe(selected)
+    selected
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let main = compilation.hir.function_named(module, "main").unwrap();
+    let mir = &compilation.ownership.functions[&main];
+    assert_eq!(mir.loans.len(), 1);
+    assert_eq!(mir.loans[0].id, foster::ownership::LoanId(0));
+
+    let selected = compilation
+        .hir
+        .locals
+        .iter()
+        .find_map(|(id, local)| (local.function == main && local.name == "selected").then_some(id))
+        .unwrap();
+    let description = compilation
+        .hir
+        .locals
+        .iter()
+        .find_map(|(id, local)| {
+            (local.function == main && local.name == "description").then_some(id)
+        })
+        .unwrap();
+    let analysis = &compilation.ownership.provenance[&main];
+    let exit = analysis.exits.iter().flatten().last().unwrap();
+    assert_eq!(
+        exit.contents
+            .get(&foster::hir::Place {
+                root: selected,
+                projections: Vec::new(),
+            })
+            .unwrap(),
+        &std::collections::HashSet::from([foster::ownership::LoanId(0)])
+    );
+    assert!(!exit.contents.contains_key(&foster::hir::Place {
+        root: description,
+        projections: Vec::new(),
+    }));
+}
+
+#[test]
+fn ownership_mir_emits_typed_reshape_invalidations() {
+    let source = r#"
+func main() -> Int {
+    values = [10, 20]
+    selected = ref values[0]
+    selected
+    values.push(30)
+    values.length
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let main = compilation.hir.function_named(module, "main").unwrap();
+    let invalidations = compilation.ownership.functions[&main]
+        .blocks
+        .iter()
+        .flat_map(|block| &block.operations)
+        .filter(|operation| {
+            matches!(
+                operation,
+                foster::ownership::Operation::Invalidate {
+                    kind: foster::ownership::InvalidationKind::Reshape,
+                    ..
+                }
+            )
+        })
+        .count();
+    assert_eq!(invalidations, 1);
+}
+
+#[test]
+fn ownership_mir_preserves_dotted_invalidation_paths() {
+    let source = r#"
+type Pair = {
+    left: List<Int>
+    right: List<Int>
+}
+
+func grow[g: group Pair](pair: ref[g] Pair) -> Unit [reshape g.left.items] {
+    pair.left.push(30)
+}
+
+func main() -> Int {
+    pair = Pair { left: [10], right: [20] }
+    grow(ref pair)
+    pair.left.length
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let main = compilation.hir.function_named(module, "main").unwrap();
+    let place = compilation.ownership.functions[&main]
+        .blocks
+        .iter()
+        .flat_map(|block| &block.operations)
+        .find_map(|operation| match operation {
+            foster::ownership::Operation::Invalidate {
+                place,
+                kind: foster::ownership::InvalidationKind::Reshape,
+                ..
+            } => Some(place),
+            _ => None,
+        })
+        .unwrap();
+    assert!(place.projections.ends_with(&[
+        foster::hir::Projection::Field("left".into()),
+        foster::hir::Projection::Field("items".into()),
+    ]));
+}
+
+#[test]
+fn ownership_mir_tracks_disjoint_fields_and_move_transfer() {
+    let source = r#"
+type Saved = {
+    left: Int
+    right: Int
+}
+
+func main() -> Int {
+    values = [10, 20]
+    left = ref values[0]
+    right = ref values[1]
+    saved = Saved { left: left, right: right }
+    saved.left = 0
+    moved = move saved
+    moved.right
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let main = compilation.hir.function_named(module, "main").unwrap();
+    let local = |name: &str| {
+        compilation
+            .hir
+            .locals
+            .iter()
+            .find_map(|(id, local)| (local.function == main && local.name == name).then_some(id))
+            .unwrap()
+    };
+    let saved = local("saved");
+    let moved = local("moved");
+    let exit = compilation.ownership.provenance[&main]
+        .exits
+        .iter()
+        .flatten()
+        .last()
+        .unwrap();
+    assert!(!exit.contents.keys().any(|place| place.root == saved));
+    let moved_loans = exit
+        .contents
+        .iter()
+        .filter(|(place, _)| place.root == moved)
+        .flat_map(|(_, loans)| loans)
+        .copied()
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(moved_loans.len(), 1);
+}
+
+#[test]
+fn direct_borrowed_call_results_substitute_parameter_provenance() {
+    let source = r#"
+func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
+    ref value
+}
+
+func main() -> Int {
+    values = [10, 20]
+    selected = preserve(ref values[0])
+    show = [ref selected] () -> {
+        println(selected)
+        0
+    }
+    values.push(30)
+    show()
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("closure `show` is no longer callable"),
+        "{}",
+        error.message
+    );
+    assert!(
+        error.message.contains("reference into `values`"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn permits_reshape_of_a_disjoint_record_field() {
     let source = r#"
 type Pair = {

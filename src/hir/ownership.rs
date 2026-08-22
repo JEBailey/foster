@@ -1,12 +1,9 @@
-use std::collections::HashMap;
-
-use super::queries::{expression_uses_local, type_exposes_group};
+use super::queries::expression_uses_local;
 use super::*;
 
 pub(super) fn check_closure_ownership(hir: &PackageHir) -> Result<(), FosterError> {
     for (_, function) in hir.functions.iter() {
         let mut moved = std::collections::HashSet::<LocalId>::new();
-        let mut closure_bindings = HashMap::<LocalId, ExprId>::new();
         for statement in &function.body {
             let expression = match statement {
                 Stmt::Return { value, .. }
@@ -39,62 +36,10 @@ pub(super) fn check_closure_ownership(hir: &PackageHir) -> Result<(), FosterErro
                         .filter(|capture| capture.mode == CaptureMode::Move)
                         .map(|capture| capture.local),
                 );
-                if let Stmt::Bind { local, .. } = statement {
-                    closure_bindings.insert(*local, expression);
-                }
-            }
-        }
-
-        let Some(last) = function.body.last() else {
-            continue;
-        };
-        let returned = match last {
-            Stmt::Bind { local, value }
-                if matches!(hir.expressions[*value], Expr::Closure { .. }) =>
-            {
-                Some(*value)
-            }
-            Stmt::Expr(value) | Stmt::Return { value, .. } => match hir.expressions[*value] {
-                Expr::Closure { .. } => Some(*value),
-                Expr::Name(ResolvedName::Local(local)) => closure_bindings.get(&local).copied(),
-                _ => None,
-            },
-            _ => None,
-        };
-        if let Some(returned) = returned
-            && let Expr::Closure { captures, .. } = &hir.expressions[returned]
-        {
-            for capture in captures
-                .iter()
-                .filter(|capture| capture.mode == CaptureMode::Ref)
-            {
-                if !borrow_can_escape(hir, function, capture.local) {
-                    return Err(FosterError::runtime(format!(
-                        "in `{}.{}`: returned closure borrows local `{}`; move or copy it instead",
-                        hir.modules[function.module].name,
-                        function.name,
-                        hir.locals[capture.local].name
-                    )));
-                }
             }
         }
     }
     Ok(())
-}
-
-fn borrow_can_escape(_hir: &PackageHir, function: &Function, local: LocalId) -> bool {
-    let Some(index) = function
-        .parameters
-        .iter()
-        .position(|parameter| *parameter == local)
-    else {
-        return false;
-    };
-    let Some(ast::TypeExpr::Reference { group, .. }) = function.parameter_types[index].as_ref()
-    else {
-        return false;
-    };
-    type_exposes_group(function.return_type.as_ref(), group)
 }
 
 pub(super) fn validate_groups_and_effects(hir: &PackageHir) -> Result<(), FosterError> {

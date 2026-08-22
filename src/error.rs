@@ -131,7 +131,6 @@ pub(crate) enum CompileError {
     Effects(Box<FosterError>),
     Types(Box<FosterError>),
     Ownership(Box<FosterError>),
-    Loans(Box<FosterError>),
 }
 
 impl CompileError {
@@ -150,10 +149,6 @@ impl CompileError {
     pub(crate) fn ownership(error: FosterError) -> Self {
         Self::Ownership(Box::new(error))
     }
-
-    pub(crate) fn loans(error: FosterError) -> Self {
-        Self::Loans(Box::new(error))
-    }
 }
 
 impl From<CompileError> for FosterError {
@@ -162,8 +157,7 @@ impl From<CompileError> for FosterError {
             CompileError::Lowering(error)
             | CompileError::Effects(error)
             | CompileError::Types(error)
-            | CompileError::Ownership(error)
-            | CompileError::Loans(error) => *error,
+            | CompileError::Ownership(error) => *error,
         }
     }
 }
