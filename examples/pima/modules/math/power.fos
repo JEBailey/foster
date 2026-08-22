@@ -1,6 +1,4 @@
 pub func raise(value: Int, exponent: Int) -> Int {
-    branch {
-        exponent < 2 -> value
-        _ -> value * raise(value, exponent - 1)
-    }
+    return value if exponent < 2
+    value * raise(value, exponent - 1)
 }

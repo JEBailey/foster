@@ -103,3 +103,16 @@ pub func count<T>(self: Iterator<T>) -> Int [mut self] {
         Option.None -> 0
     }
 }
+
+/// Collects every remaining element into a list and leaves this iterator exhausted.
+pub func collect<T>(self: Iterator<T>) -> List<T> [mut self] {
+    collect_into(self, [])
+}
+
+/// Pulls remaining elements into the owned list accumulator.
+func collect_into<T>(self: Iterator<T>, result: List<T>) -> List<T> [mut self, consume result] {
+    branch self.next() {
+        Option.Some(value) -> collect_into(self, result.append(value))
+        Option.None -> result
+    }
+}

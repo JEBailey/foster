@@ -4,6 +4,14 @@ use super::{Instruction, Program};
 
 pub fn verify(program: &Program) -> Result<(), FosterError> {
     for (id, function) in &program.functions {
+        if function.parameter_modes.len() != usize::from(function.parameters)
+            || function.mutable_parameters.len() != usize::from(function.parameters)
+        {
+            return Err(FosterError::runtime(format!(
+                "bytecode function `{}` has invalid parameter metadata",
+                function.name
+            )));
+        }
         if function.captures.saturating_add(function.parameters) > function.registers {
             return Err(FosterError::runtime(format!(
                 "bytecode function `{}` has an invalid capture/parameter register prefix",

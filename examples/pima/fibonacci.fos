@@ -1,15 +1,11 @@
 func fibonacci_from(remaining: Int, current: Int, next: Int) -> Int {
-    branch {
-        remaining == 0 -> current
-        _ -> fibonacci_from(remaining - 1, next, current + next)
-    }
+    return current if remaining == 0
+    fibonacci_from(remaining - 1, next, current + next)
 }
 
 func fibonacci(position: Int) -> Int {
-    branch {
-        position < 1 -> 0
-        _ -> fibonacci_from(position, 0, 1)
-    }
+    return 0 if position < 1
+    fibonacci_from(position, 0, 1)
 }
 
 func main() -> Unit {

@@ -1,0 +1,26 @@
+import core.option
+import std.iter
+
+type TakeIterator<T> = & Iterator<T> & {
+    source: Iterator<T>
+    remaining: Int
+}
+
+/// Pulls one value while the take limit remains positive.
+func next<T>(self: TakeIterator<T>) -> Option<T> {
+    branch {
+        self.remaining <= 0 -> Option.None
+        _ -> self.take_next()
+    }
+}
+
+/// Decrements a positive take limit before pulling from the source iterator.
+func take_next<T>(self: TakeIterator<T>) -> Option<T> {
+    self.remaining = self.remaining - 1
+    self.source.next()
+}
+
+/// Lazily yields at most `amount` remaining elements.
+pub func take<T>(self: Iterator<T>, amount: Int) -> Iterator<T> [consume self] {
+    TakeIterator { source: move self, remaining: amount }
+}

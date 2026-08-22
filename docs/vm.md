@@ -19,9 +19,15 @@ is observable. The structured program has a deterministic, versioned
 [compiled bytecode format](binary-format.md) for caching and distribution. Bytecode is verified
 before execution and again after deserialization.
 
+Frames store ordinary register values inline. A register is promoted to a stable reference-counted
+slot only when it is borrowed, captured by reference, shared remotely, or used as an observable
+method receiver. Consuming call parameters transfer values out of caller registers; read-only
+borrowed parameters observe a promoted caller slot but detach if the parameter local is reassigned.
+
 After all optional representational rewrites, the compiler inserts explicit `Drop` instructions
-at register last-use points. A drop detaches the frame register from its slot, allowing ordinary
-acyclic values to be reclaimed immediately. It does not write through the slot: reference captures,
+at register last-use points. A drop clears an inline value or detaches a promoted register from its
+slot, allowing ordinary acyclic values to be reclaimed immediately. It does not write through an
+observable slot: reference captures,
 projected-reference parameters, and method receivers can share slot identity and are protected for
 as long as that identity remains observable. Conditional branches receive cleanup on both outgoing
 edges when their condition dies at the branch. Frame teardown remains the final cleanup boundary

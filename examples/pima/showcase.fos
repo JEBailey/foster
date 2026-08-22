@@ -1,3 +1,6 @@
+import std.iter
+import std.iter.filter as filtering
+
 type Account = {
     owner: String
     balance: Int
@@ -9,10 +12,8 @@ type AccountResult =
     | InvalidOpeningBalance(String)
 
 func create_account(owner: String, opening_balance: Int) -> AccountResult {
-    branch {
-        opening_balance < 0 -> InvalidOpeningBalance("opening balance must not be negative")
-        _ -> Created(Account { owner, balance: opening_balance, transactions: [] })
-    }
+    return InvalidOpeningBalance("opening balance must not be negative") if opening_balance < 0
+    Created(Account { owner, balance: opening_balance, transactions: [] })
 }
 
 func deposit(self: Account, amount: Int) -> Int {
@@ -29,20 +30,9 @@ func multiplier(factor: Int) -> func(Int) -> Int {
     (value: Int) -> factor * value
 }
 
-func select_over_ten(values: List<Int>, selected: List<Int>) -> List<Int> {
-    branch {
-        values.empty? -> selected
-        values.head > 10 -> select_over_ten(values.rest, selected.append(values.head))
-        _ -> select_over_ten(values.rest, move selected)
-    }
-}
+func over_ten?(value: Int) -> Bool { value > 10 }
 
-func sum(values: List<Int>, total: Int) -> Int {
-    branch {
-        values.empty? -> total
-        _ -> sum(values.rest, total + values.head)
-    }
-}
+func add(total: Int, value: Int) -> Int { total + value }
 
 func use_account(result: AccountResult) -> Int {
     branch result {
@@ -66,8 +56,7 @@ func operate(account: Account) -> Int {
 func main() -> Int {
     triple = multiplier(3)
     generated = [triple(1), triple(2), triple(3), triple(4), triple(5), triple(6)]
-    selected = select_over_ten(generated, [])
-    total = sum(selected, 0)
+    total = generated.iterator.filter(over_ten?).fold(0, add)
     println("Selected total:", total)
     use_account(create_account("Ada", total)) + use_account(create_account("Grace", -1))
 }

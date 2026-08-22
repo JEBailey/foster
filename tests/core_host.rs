@@ -34,7 +34,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 284);
+    assert_eq!(checked, 297);
 }
 
 #[test]

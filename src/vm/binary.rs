@@ -11,7 +11,7 @@ use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::hir::{Builtin, CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 1;
+pub const FORMAT_VERSION: u16 = 2;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -299,6 +299,10 @@ impl Writer {
     fn function(&mut self, f: &BytecodeFunction) -> Result<(), BinaryError> {
         self.string(&f.name)?;
         self.u16(f.parameters);
+        self.u32(f.parameter_modes.len())?;
+        for mode in &f.parameter_modes {
+            self.parameter_mode(*mode);
+        }
         self.u32(f.mutable_parameters.len())?;
         for value in &f.mutable_parameters {
             self.u8(*value as u8);
@@ -409,11 +413,13 @@ impl Writer {
                 destination,
                 object,
                 field,
+                by_reference,
             } => {
                 self.u8(9);
                 self.reg(*destination);
                 self.reg(*object);
                 self.string(field)?;
+                self.u8(u8::from(*by_reference));
             }
             Instruction::StoreField {
                 object,
@@ -839,6 +845,7 @@ impl<'a> Reader<'a> {
         Ok(BytecodeFunction {
             name: self.string()?,
             parameters: self.u16()?,
+            parameter_modes: self.vec(|r| r.parameter_mode())?,
             mutable_parameters: self.vec(|r| r.bool())?,
             captures: self.u16()?,
             registers: self.u16()?,
@@ -901,6 +908,7 @@ impl<'a> Reader<'a> {
                 destination: r!(),
                 object: r!(),
                 field: self.string()?,
+                by_reference: self.u8()? != 0,
             },
             10 => Instruction::StoreField {
                 object: r!(),

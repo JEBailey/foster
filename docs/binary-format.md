@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 1, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 2, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after lowering and optimization. It contains everything needed to verify and
@@ -25,7 +25,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `1` |
+| version | `u16` | `2` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -37,8 +37,9 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | variant methods | `vector<(VariantTypeId, string, FunctionId)>` | variant dispatch |
 | variants | `vector<(VariantId, VariantTypeId, string, string)>` | parent, type, alternative |
 
-A function is `string name`, `u16 parameter_count`, `vector<bool> mutable_parameters`, `u16
-capture_count`, `u16 register_count`, `vector<Instruction>`, then `vector<Span>`. A span is `u32
+A function is `string name`, `u16 parameter_count`, `vector<ParameterMode> parameter_modes`,
+`vector<bool> mutable_parameters`, `u16 capture_count`, `u16 register_count`,
+`vector<Instruction>`, then `vector<Span>`. A span is `u32
 start, u32 end` in source byte offsets. Instruction and span counts must match.
 
 ## Tagged values
@@ -71,7 +72,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 6 | Index | `R destination, R object, R index` |
 | 7 | MakeRecord | `R destination, RecordId, vector<(string, R)>` |
 | 8 | MakeVariant | `R destination, VariantId, regs` |
-| 9 | LoadField | `R destination, R object, string` |
+| 9 | LoadField | `R destination, R object, string, bool by_reference` |
 | 10 | StoreField | `R object, string, R source` |
 | 11 | StoreIndex | `R object, R index, R source` |
 | 12 | MakeReference | `R destination, R object, R index` |
@@ -97,7 +98,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 1 readers accept only version 1 with zero flags. Changing any existing tag, opcode, field,
+Version 2 readers accept only version 2 with zero flags. Changing any existing tag, opcode, field,
 or meaning requires a new version. A canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of
 `HashMap` iteration order.

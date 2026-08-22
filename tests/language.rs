@@ -1205,7 +1205,12 @@ func main() -> Int {
     show()
 }
 "#;
-    assert_eq!(foster::run(source).unwrap(), Value::Integer(20));
+    let compilation = foster::compile(source).unwrap();
+    assert_eq!(
+        foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize: false })
+            .unwrap(),
+        Value::Integer(20)
+    );
 }
 
 #[test]
@@ -2168,6 +2173,34 @@ func main() -> Int {
 "#;
 
     assert_eq!(foster::run(source).unwrap(), Value::Integer(129));
+}
+
+#[test]
+fn foster_written_iterator_adaptors_build_lazy_pipelines() {
+    let source = r#"
+import std.iter
+import std.iter.map as mapping
+import std.iter.filter as filtering
+import std.iter.skip as skipping
+import std.iter.take as taking
+
+func double(value: Int) -> Int [consume value] { value * 2 }
+func greater_than_four?(value: Int) -> Bool { value > 4 }
+
+func main() -> Int {
+    result = [1, 2, 3, 4, 5].iterator.map(double).filter(greater_than_four?).skip(1).take(2).collect()
+    result.head + result.rest.head + result.length
+}
+"#;
+
+    let compilation = foster::compile(source).unwrap();
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap(),
+            Value::Integer(20)
+        );
+    }
 }
 
 #[test]

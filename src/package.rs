@@ -572,6 +572,19 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
         include_str!("../library/core/bytes/buffer.fos"),
     ),
     ("std.iter", include_str!("../library/std/iter.fos")),
+    ("std.iter.map", include_str!("../library/std/iter/map.fos")),
+    (
+        "std.iter.filter",
+        include_str!("../library/std/iter/filter.fos"),
+    ),
+    (
+        "std.iter.take",
+        include_str!("../library/std/iter/take.fos"),
+    ),
+    (
+        "std.iter.skip",
+        include_str!("../library/std/iter/skip.fos"),
+    ),
     (
         "std.collections",
         include_str!("../library/std/collections.fos"),

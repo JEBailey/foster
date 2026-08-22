@@ -10,7 +10,10 @@ Foster rather than emulating Pima syntax:
 - lexical closures replace Pima's caller-environment `do` blocks;
 - records and closed variants replace anonymous objects, tuples, and tagged lists;
 - typed result variants replace `throw`/`attempt` where errors are part of the example;
-- recursive functions replace `while` until Foster gains loop syntax;
+- recursive functions replace `while` until Foster gains loop syntax, using postfix guards for
+  simple exit conditions;
+- iterator consumers and lazy adaptors replace hand-written collection traversal where iteration,
+  rather than recursion itself, is the example;
 - the map example builds a small typed persistent map from records and lists;
 - file and HTTP examples currently keep their pure routing/parsing layers and in-memory fixtures;
   the VM now exposes the `std.fs` and `std.net.tcp` capabilities needed to wire them to the host;
@@ -28,7 +31,7 @@ Foster rather than emulating Pima syntax:
 | `fibonacci.pima` | `fibonacci.fos` | Recursive functions |
 | `file_server.pima` | `file_server.fos` | Static route handling |
 | `file_server_lib.pima` | `file_server_lib.fos` | In-memory file-server domain layer |
-| `foreach.pima` | `foreach.fos` | Recursive list traversal |
+| `foreach.pima` | `foreach.fos` | Foster-written iterator consumption |
 | `function_test.pima` | `function_test.fos` | Callable values and Euclidean GCD |
 | `http_server_lib.pima` | `http_server_lib.fos` | Pure HTTP request dispatch |
 | `import_test.pima` | `import_test.fos` | Power function; package imports are also covered by `modules/` |
@@ -41,7 +44,7 @@ Foster rather than emulating Pima syntax:
 | `repository_analyzer.pima` | `repository_analyzer.fos` | Concurrent remote source workers |
 | `repository_analyzer_lib.pima` | `repository_analyzer_lib.fos` | Recursive source metrics |
 | `repository_analyzer_test.pima` | `repository_analyzer_test.fos` | Metrics conformance fixture |
-| `showcase.pima` | `showcase.fos` | Records, variants, closures, lists, and methods |
+| `showcase.pima` | `showcase.fos` | Records, variants, closures, lazy filtering, and methods |
 | `test.pima` | `test.fos` | Minimal Fibonacci smoke test |
 | `timing.pima` | `timing.fos` | Empty-program/import smoke test |
 | `while.pima` | `while.fos` | 12,000-step VM-managed recursion |

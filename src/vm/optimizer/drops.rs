@@ -227,6 +227,7 @@ mod tests {
         let mut function = BytecodeFunction {
             name: "branch".to_owned(),
             parameters: 1,
+            parameter_modes: vec![crate::ast::ParameterMode::Borrow],
             mutable_parameters: vec![false],
             captures: 0,
             registers: 2,

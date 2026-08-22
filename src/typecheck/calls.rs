@@ -99,7 +99,12 @@ impl Checker<'_> {
                     "method `freeze` consumes its receiver; call `(move buffer).freeze()`",
                 ));
             }
-            if let Some(method) = self.contract_method_type(function, object_type, &name)? {
+            if let Some(method) = self.contract_method_type(function, object_type.clone(), &name)? {
+                self.expressions.insert(callee, method);
+            } else if let Some((method_function, method)) =
+                self.extension_method_type(function, object_type, &name)?
+            {
+                self.extension_methods.insert(callee, method_function);
                 self.expressions.insert(callee, method);
             }
         }
@@ -597,6 +602,68 @@ impl Checker<'_> {
             }
             _ => Ok(None),
         }
+    }
+
+    fn extension_method_type(
+        &mut self,
+        caller: FunctionId,
+        receiver: Ty,
+        name: &str,
+    ) -> Result<Option<(FunctionId, Ty)>, FosterError> {
+        let caller_module = self.hir.functions[caller].module;
+        let mut candidates = self.hir.modules[caller_module]
+            .imports
+            .values()
+            .filter_map(|module| self.hir.function_named(*module, name))
+            .filter(|function| {
+                let definition = &self.hir.functions[*function];
+                definition.public
+                    && definition
+                        .parameters
+                        .first()
+                        .is_some_and(|parameter| self.hir.locals[*parameter].name == "self")
+            })
+            .collect::<Vec<_>>();
+        candidates.sort_unstable_by_key(|function| function.into_raw().into_u32());
+        candidates.dedup();
+        let Some(method_function) = candidates.first().copied() else {
+            return Ok(None);
+        };
+        if candidates.len() > 1 {
+            return Err(self.error(
+                caller,
+                format!("extension method `{name}` is imported from more than one module"),
+            ));
+        }
+
+        let definition = &self.hir.functions[method_function];
+        let signature = self.functions[&method_function].clone();
+        let mut generics = HashMap::new();
+        let mut parameters = signature
+            .parameters
+            .into_iter()
+            .map(|ty| self.instantiate(ty, &mut generics))
+            .collect::<Vec<_>>();
+        let mut parameter_modes = signature.parameter_modes;
+        let expected_receiver = parameters
+            .first()
+            .cloned()
+            .ok_or_else(|| self.error(caller, format!("function `{name}` is not a method")))?;
+        self.unify(expected_receiver, receiver, caller)?;
+        parameters.remove(0);
+        parameter_modes.remove(0);
+        let result = self.instantiate(signature.result, &mut generics);
+        Ok(Some((
+            method_function,
+            Ty::Callable {
+                parameters,
+                parameter_modes,
+                result: Box::new(result),
+                erased: false,
+                effects: callable_effects(self.hir, method_function),
+                suspends: definition.suspends,
+            },
+        )))
     }
 
     fn effective_method_type(

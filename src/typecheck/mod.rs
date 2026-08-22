@@ -68,6 +68,7 @@ impl<'a> Checker<'a> {
             locals: HashMap::new(),
             local_groups: HashMap::new(),
             expressions: HashMap::new(),
+            extension_methods: HashMap::new(),
             member_constraints: Vec::new(),
             diagnostics: Vec::new(),
             inferred_effects: HashMap::new(),

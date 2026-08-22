@@ -3,17 +3,13 @@ func say_something(block: func(String) -> Unit, name: String) -> Unit {
 }
 
 func remainder(value: Int, divisor: Int) -> Int {
-    branch {
-        value < divisor -> value
-        _ -> remainder(value - divisor, divisor)
-    }
+    return value if value < divisor
+    remainder(value - divisor, divisor)
 }
 
 func gcd(left: Int, right: Int) -> Int {
-    branch {
-        right == 0 -> left
-        _ -> gcd(right, remainder(left, right))
-    }
+    return left if right == 0
+    gcd(right, remainder(left, right))
 }
 
 func main() -> Int {

@@ -1,0 +1,23 @@
+import core.option
+import std.iter
+
+type FilterIterator<T> = & Iterator<T> & {
+    source: Iterator<T>
+    predicate: func(T) -> Bool
+}
+
+/// Pulls until a filtered iterator finds a matching value or reaches exhaustion.
+func next<T>(self: FilterIterator<T>) -> Option<T> {
+    branch self.source.next() {
+        Option.Some(value) -> branch {
+            self.predicate(value) -> Option.Some(value)
+            _ -> self.next()
+        }
+        Option.None -> Option.None
+    }
+}
+
+/// Lazily retains this iterator's remaining elements that satisfy `predicate`.
+pub func filter<T>(self: Iterator<T>, predicate: func(T) -> Bool) -> Iterator<T> [consume self, consume predicate] {
+    FilterIterator { source: move self, predicate: move predicate }
+}

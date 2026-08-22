@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::{Arc, Condvar, Mutex, OnceLock};
 
 use crate::error::FosterError;
 
@@ -30,7 +30,7 @@ pub enum Value {
     Record {
         record: Option<crate::hir::RecordId>,
         name: String,
-        fields: BTreeMap<String, Value>,
+        fields: RecordFields,
     },
     Variant {
         variant: Option<crate::hir::VariantTypeId>,
@@ -38,6 +38,79 @@ pub enum Value {
         alternative: String,
         payload: Vec<Value>,
     },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecordFields {
+    names: Arc<Vec<String>>,
+    values: Vec<Value>,
+}
+
+impl RecordFields {
+    pub(crate) fn new(names: Arc<Vec<String>>, values: Vec<Value>) -> Result<Self, FosterError> {
+        if names.len() != values.len() {
+            return Err(FosterError::runtime("record layout does not match its values"));
+        }
+        Ok(Self { names, values })
+    }
+
+    pub(crate) fn from_pairs(fields: impl IntoIterator<Item = (String, Value)>) -> Self {
+        let (names, values) = fields.into_iter().unzip();
+        Self {
+            names: Arc::new(names),
+            values,
+        }
+    }
+
+    pub(crate) fn get(&self, name: &str) -> Option<&Value> {
+        self.index(name).and_then(|index| self.values.get(index))
+    }
+
+    pub(crate) fn get_mut(&mut self, name: &str) -> Option<&mut Value> {
+        let index = self.index(name)?;
+        self.values.get_mut(index)
+    }
+
+    pub(crate) fn contains_key(&self, name: &str) -> bool {
+        self.index(name).is_some()
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = (&String, &Value)> {
+        self.names.iter().zip(&self.values)
+    }
+
+    pub(crate) fn into_pairs(self) -> impl Iterator<Item = (String, Value)> {
+        Arc::unwrap_or_clone(self.names)
+            .into_iter()
+            .zip(self.values)
+    }
+
+    fn index(&self, name: &str) -> Option<usize> {
+        self.names.iter().position(|candidate| candidate == name)
+    }
+}
+
+impl<'a> IntoIterator for &'a RecordFields {
+    type Item = (&'a String, &'a Value);
+    type IntoIter = std::iter::Zip<std::slice::Iter<'a, String>, std::slice::Iter<'a, Value>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.names.iter().zip(&self.values)
+    }
+}
+
+fn value_layout() -> Arc<Vec<String>> {
+    static VALUE_LAYOUT: OnceLock<Arc<Vec<String>>> = OnceLock::new();
+    VALUE_LAYOUT
+        .get_or_init(|| Arc::new(vec!["value".to_owned()]))
+        .clone()
+}
+
+fn value_fields(value: Value) -> RecordFields {
+    RecordFields {
+        names: value_layout(),
+        values: vec![value],
+    }
 }
 
 #[derive(Debug)]
@@ -186,6 +259,13 @@ impl Slot {
         }
     }
 
+    pub(crate) fn reference(&self) -> Option<PlaceHandle> {
+        match &*self.storage.borrow() {
+            SlotStorage::Local(Value::Reference(reference)) => Some(reference.clone()),
+            SlotStorage::Local(_) | SlotStorage::Shared(_) => None,
+        }
+    }
+
     pub(crate) fn write(&self, value: Value) -> Result<(), FosterError> {
         let target = match &*self.storage.borrow() {
             SlotStorage::Local(Value::Reference(reference)) => {
@@ -279,19 +359,19 @@ impl Slot {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PlaceProjection {
-    Whole,
     Index { index: usize, generation: u64 },
+    Field { name: String },
 }
 
 #[derive(Debug, Clone)]
 pub struct PlaceHandle {
     origin: Weak<Slot>,
-    projection: PlaceProjection,
+    projections: Vec<PlaceProjection>,
 }
 
 impl PartialEq for PlaceHandle {
     fn eq(&self, other: &Self) -> bool {
-        Weak::ptr_eq(&self.origin, &other.origin) && self.projection == other.projection
+        Weak::ptr_eq(&self.origin, &other.origin) && self.projections == other.projections
     }
 }
 
@@ -299,12 +379,13 @@ impl PlaceHandle {
     fn whole(origin: &Rc<Slot>) -> Self {
         Self {
             origin: Rc::downgrade(origin),
-            projection: PlaceProjection::Whole,
+            projections: Vec::new(),
         }
     }
 
     pub(crate) fn indexed(origin: Rc<Slot>, index: usize) -> Result<Self, FosterError> {
-        let value = origin.read()?;
+        let mut place = Slot::place(&origin);
+        let value = place.read()?;
         let exists = match value {
             Value::RawByteBuffer(values) => index < values.len(),
             value => {
@@ -322,11 +403,27 @@ impl PlaceHandle {
         if !exists {
             return Err(FosterError::runtime("reference index is out of bounds"));
         }
-        let generation = origin.generation.get();
-        Ok(Self {
-            origin: Rc::downgrade(&origin),
-            projection: PlaceProjection::Index { index, generation },
-        })
+        let root = place.origin()?;
+        let generation = root.generation.get();
+        place
+            .projections
+            .push(PlaceProjection::Index { index, generation });
+        Ok(place)
+    }
+
+    pub(crate) fn field(origin: Rc<Slot>, name: String) -> Result<Self, FosterError> {
+        let mut place = Slot::place(&origin);
+        let value = place.read()?;
+        let Value::Record { fields, .. } = value else {
+            return Err(FosterError::runtime("field projection requires a record"));
+        };
+        if !fields.contains_key(&name) {
+            return Err(FosterError::runtime(format!(
+                "record has no field `{name}`"
+            )));
+        }
+        place.projections.push(PlaceProjection::Field { name });
+        Ok(place)
     }
 
     fn origin(&self) -> Result<Rc<Slot>, FosterError> {
@@ -337,108 +434,136 @@ impl PlaceHandle {
 
     pub(crate) fn read(&self) -> Result<Value, FosterError> {
         let origin = self.origin()?;
-        match self.projection {
-            PlaceProjection::Whole => origin.read(),
-            PlaceProjection::Index { index, generation } => {
-                ensure_generation(&origin, generation)?;
-                let value = origin.read()?;
-                match value {
-                    Value::RawByteBuffer(values) => values.get(index).copied().map(Value::Byte),
-                    value if value.list_value().is_some() => {
-                        value.list_value().unwrap().get(index).cloned()
-                    }
-                    value if value.byte_buffer_value().is_some() => value
-                        .byte_buffer_value()
-                        .unwrap()
-                        .get(index)
-                        .copied()
-                        .map(Value::Byte),
-                    value => value
-                        .bytes_value()
-                        .and_then(|values| values.get(index).copied())
-                        .map(Value::Byte),
-                }
-                .ok_or_else(|| FosterError::runtime("referenced indexed value no longer exists"))
-            }
+        let mut value = origin.read()?;
+        for projection in &self.projections {
+            value = project_value(value, projection, &origin)?;
         }
+        Ok(value)
     }
 
     pub(crate) fn write(&self, value: Value) -> Result<(), FosterError> {
         let origin = self.origin()?;
-        match self.projection {
-            PlaceProjection::Whole => origin.write(value),
-            PlaceProjection::Index { index, generation } => {
-                ensure_generation(&origin, generation)?;
-                let mut current = origin.read()?;
-                match &mut current {
-                    receiver if receiver.list_value().is_some() => {
-                        let values = receiver.list_value_mut().unwrap();
-                        *values.get_mut(index).ok_or_else(|| {
-                            FosterError::runtime("referenced list element no longer exists")
-                        })? = value;
-                    }
-                    receiver if receiver.byte_buffer_value().is_some() => {
-                        let values = receiver.byte_buffer_value_mut().unwrap();
-                        let Value::Byte(value) = value else {
-                            return Err(FosterError::runtime(
-                                "byte-buffer elements require Byte values",
-                            ));
-                        };
-                        *values.get_mut(index).ok_or_else(|| {
-                            FosterError::runtime("referenced byte no longer exists")
-                        })? = value;
-                    }
-                    _ => {
-                        return Err(FosterError::runtime(
-                            "reference origin is not mutable indexed storage",
-                        ));
-                    }
-                }
-                origin.write(current)
-            }
+        if self.projections.is_empty() {
+            return origin.write(value);
         }
+        let mut current = origin.read()?;
+        replace_projected(&mut current, &self.projections, &origin, value)?;
+        origin.write(current)
     }
 
-    fn reshape(
+    pub(crate) fn reshape(
         &self,
         update: impl FnOnce(&mut Value) -> Result<(), FosterError>,
     ) -> Result<(), FosterError> {
         let origin = self.origin()?;
-        match self.projection {
-            PlaceProjection::Whole => origin.reshape(update),
-            PlaceProjection::Index { index, generation } => {
-                ensure_generation(&origin, generation)?;
-                let mut current = origin.read()?;
-                match &mut current {
-                    value if value.list_value().is_some() => {
-                        let values = value.list_value_mut().unwrap();
-                        let value = values.get_mut(index).ok_or_else(|| {
-                            FosterError::runtime("referenced list element no longer exists")
-                        })?;
-                        update(value)?;
-                    }
-                    value if value.byte_buffer_value().is_some() => {
-                        let values = value.byte_buffer_value_mut().unwrap();
-                        let byte = values.get_mut(index).ok_or_else(|| {
-                            FosterError::runtime("referenced byte no longer exists")
-                        })?;
-                        let mut value = Value::Byte(*byte);
-                        update(&mut value)?;
-                        let Value::Byte(updated) = value else {
-                            return Err(FosterError::runtime(
-                                "byte-buffer elements require Byte values",
-                            ));
-                        };
-                        *byte = updated;
-                    }
-                    _ => {
-                        return Err(FosterError::runtime(
-                            "reference origin is not mutable indexed storage",
-                        ));
-                    }
-                }
-                origin.write(current)
+        if self.projections.is_empty() {
+            return origin.reshape(update);
+        }
+        let mut current = origin.read()?;
+        update_projected(&mut current, &self.projections, &origin, update)?;
+        origin.write(current)
+    }
+}
+
+fn project_value(
+    value: Value,
+    projection: &PlaceProjection,
+    origin: &Slot,
+) -> Result<Value, FosterError> {
+    match projection {
+        PlaceProjection::Field { name } => {
+            let Value::Record { fields, .. } = value else {
+                return Err(FosterError::runtime("field projection requires a record"));
+            };
+            fields
+                .get(name)
+                .cloned()
+                .ok_or_else(|| FosterError::runtime(format!("record has no field `{name}`")))
+        }
+        PlaceProjection::Index { index, generation } => {
+            ensure_generation(origin, *generation)?;
+            indexed_value(value, *index)
+        }
+    }
+}
+
+fn indexed_value(value: Value, index: usize) -> Result<Value, FosterError> {
+    match value {
+        Value::RawByteBuffer(values) => values.get(index).copied().map(Value::Byte),
+        value if value.list_value().is_some() => value.list_value().unwrap().get(index).cloned(),
+        value if value.byte_buffer_value().is_some() => value
+            .byte_buffer_value()
+            .unwrap()
+            .get(index)
+            .copied()
+            .map(Value::Byte),
+        value => value
+            .bytes_value()
+            .and_then(|values| values.get(index).copied())
+            .map(Value::Byte),
+    }
+    .ok_or_else(|| FosterError::runtime("referenced indexed value no longer exists"))
+}
+
+fn replace_projected(
+    root: &mut Value,
+    projections: &[PlaceProjection],
+    origin: &Slot,
+    value: Value,
+) -> Result<(), FosterError> {
+    update_projected(root, projections, origin, |target| {
+        *target = value;
+        Ok(())
+    })
+}
+
+fn update_projected(
+    current: &mut Value,
+    projections: &[PlaceProjection],
+    origin: &Slot,
+    update: impl FnOnce(&mut Value) -> Result<(), FosterError>,
+) -> Result<(), FosterError> {
+    let Some((projection, remaining)) = projections.split_first() else {
+        return update(current);
+    };
+    match projection {
+        PlaceProjection::Field { name } => {
+            let Value::Record { fields, .. } = current else {
+                return Err(FosterError::runtime("field projection requires a record"));
+            };
+            let field = fields
+                .get_mut(name)
+                .ok_or_else(|| FosterError::runtime(format!("record has no field `{name}`")))?;
+            update_projected(field, remaining, origin, update)
+        }
+        PlaceProjection::Index { index, generation } => {
+            ensure_generation(origin, *generation)?;
+            if let Some(values) = current.list_value_mut() {
+                let item = values.get_mut(*index).ok_or_else(|| {
+                    FosterError::runtime("referenced list element no longer exists")
+                })?;
+                return update_projected(item, remaining, origin, update);
             }
+            if let Some(values) = current.byte_buffer_value_mut() {
+                if !remaining.is_empty() {
+                    return Err(FosterError::runtime("byte projection cannot be nested"));
+                }
+                let byte = values
+                    .get_mut(*index)
+                    .ok_or_else(|| FosterError::runtime("referenced byte no longer exists"))?;
+                let mut value = Value::Byte(*byte);
+                update(&mut value)?;
+                let Value::Byte(updated) = value else {
+                    return Err(FosterError::runtime(
+                        "byte-buffer elements require Byte values",
+                    ));
+                };
+                *byte = updated;
+                return Ok(());
+            }
+            Err(FosterError::runtime(
+                "reference origin is not mutable indexed storage",
+            ))
         }
     }
 }
@@ -561,7 +686,7 @@ impl Value {
         Self::Record {
             record,
             name: "String".into(),
-            fields: BTreeMap::from([("value".into(), Self::bytes(value))]),
+            fields: value_fields(Self::bytes(value)),
         }
     }
 
@@ -569,7 +694,7 @@ impl Value {
         Self::Record {
             record: None,
             name: "Bytes".into(),
-            fields: BTreeMap::from([("value".into(), Self::RawBytes(Arc::new(value.into())))]),
+            fields: value_fields(Self::RawBytes(Arc::new(value.into()))),
         }
     }
 
@@ -616,7 +741,7 @@ impl Value {
         Self::Record {
             record: None,
             name: "List".into(),
-            fields: BTreeMap::from([("value".into(), Self::RawList(values))]),
+            fields: value_fields(Self::RawList(values)),
         }
     }
 
@@ -664,7 +789,7 @@ impl Value {
         Self::Record {
             record: symbol_record,
             name: "Symbol".into(),
-            fields: BTreeMap::from([("value".into(), Self::string(string_record, value))]),
+            fields: value_fields(Self::string(string_record, value)),
         }
     }
 
@@ -706,7 +831,7 @@ impl Value {
                 record,
                 name,
                 fields: fields
-                    .into_iter()
+                    .into_pairs()
                     .map(|(name, value)| Ok((name, value.into_wire()?)))
                     .collect::<Result<_, FosterError>>()?,
             },
@@ -756,10 +881,12 @@ impl Value {
             } => Self::Record {
                 record,
                 name,
-                fields: fields
-                    .into_iter()
-                    .map(|(name, value)| Ok((name, Self::from_wire(value)?)))
-                    .collect::<Result<_, FosterError>>()?,
+                fields: RecordFields::from_pairs(
+                    fields
+                        .into_iter()
+                        .map(|(name, value)| Ok((name, Self::from_wire(value)?)))
+                        .collect::<Result<Vec<_>, FosterError>>()?,
+                ),
             },
             WireValue::Variant {
                 variant,

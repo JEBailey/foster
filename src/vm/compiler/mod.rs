@@ -257,6 +257,13 @@ impl Compiler<'_> {
             BytecodeFunction {
                 name: function.name.clone(),
                 parameters: function.parameters.len() as u16,
+                parameter_modes: self
+                    .types
+                    .function_type(function_id)
+                    .map(|signature| signature.parameter_modes.clone())
+                    .unwrap_or_else(|| {
+                        vec![crate::ast::ParameterMode::Borrow; function.parameters.len()]
+                    }),
                 mutable_parameters: function
                     .parameters
                     .iter()

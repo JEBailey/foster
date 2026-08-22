@@ -114,6 +114,18 @@ Iterator consumers are ordinary Foster-written receiver methods. `for_each`, `fo
 short-circuiting query returns early. Consumer callbacks are currently pure callable contracts;
 general callback effect polymorphism remains future language work.
 
+Lazy adaptors are Foster-written iterator records in `std.iter.map`, `std.iter.filter`,
+`std.iter.take`, and `std.iter.skip`. Importing the desired adaptor modules makes their public
+receiver methods available as extensions, so pipelines remain fluent while each private adaptor
+module can independently implement the required `next` method:
+
+```foster
+values.iterator.map(transform).filter(predicate).take(10).collect()
+```
+
+Adaptors do no element work when constructed. Their `next` implementations pull only enough input
+to produce the next output, and terminal consumers in `std.iter` drive the pipeline.
+
 `std.collections` defines `Collection<T> & Iterable<T>` with `length` and `empty?`. The collection
 family has this shape:
 

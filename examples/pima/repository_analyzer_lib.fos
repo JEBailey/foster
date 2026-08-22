@@ -12,27 +12,21 @@ type Analyzer = {
 }
 
 func starts_with(source: String, prefix: String) -> Bool {
-    branch {
-        prefix.empty? -> true
-        source.empty? -> false
-        source.head != prefix.head -> false
-        _ -> starts_with(source.rest, prefix.rest)
-    }
+    return true if prefix.empty?
+    return false if source.empty?
+    return false if source.head != prefix.head
+    starts_with(source.rest, prefix.rest)
 }
 
 func count_occurrences(source: String, word: String) -> Int {
-    branch {
-        source.empty? -> 0
-        starts_with(source, word) -> 1 + count_occurrences(source.rest, word)
-        _ -> count_occurrences(source.rest, word)
-    }
+    return 0 if source.empty?
+    return 1 + count_occurrences(source.rest, word) if starts_with(source, word)
+    count_occurrences(source.rest, word)
 }
 
 func count_lines(source: String) -> Int {
-    branch {
-        source.empty? -> 0
-        _ -> 1 + count_newlines(source)
-    }
+    return 0 if source.empty?
+    1 + count_newlines(source)
 }
 
 func count_newlines(source: String) -> Int {

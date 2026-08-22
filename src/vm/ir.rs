@@ -20,9 +20,9 @@ pub enum Constant {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
-    /// Releases this frame's ownership of a register's slot.
+    /// Releases this frame's ownership of an inline register or promoted slot.
     ///
-    /// This detaches the register rather than writing through the slot because
+    /// A promoted register detaches rather than writing through its slot because
     /// reference captures may still own and observe that slot.
     Drop {
         register: Register,
@@ -69,6 +69,7 @@ pub enum Instruction {
         destination: Register,
         object: Register,
         field: String,
+        by_reference: bool,
     },
     StoreField {
         object: Register,
@@ -408,6 +409,7 @@ impl Instruction {
 pub struct BytecodeFunction {
     pub name: String,
     pub parameters: u16,
+    pub parameter_modes: Vec<crate::ast::ParameterMode>,
     pub mutable_parameters: Vec<bool>,
     pub captures: u16,
     pub registers: u16,

@@ -1,8 +1,6 @@
 func fibonacci(number: Int) -> Int {
-    branch {
-        number < 2 -> number
-        _ -> fibonacci(number - 1) + fibonacci(number - 2)
-    }
+    return number if number < 2
+    fibonacci(number - 1) + fibonacci(number - 2)
 }
 
 func main() -> Int {

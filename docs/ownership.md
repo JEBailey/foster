@@ -336,7 +336,8 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   variants, containers, and returned higher-order values needs a more general provenance analysis.
 - Copy behavior is currently a built-in type classification. User-defined copy types have not been
   designed.
-- Runtime storage still uses managed host representations in the VM. The bytecode compiler now
+- Runtime values still use managed host representations in the VM. Ordinary registers are inline
+  and promote to stable slots only when their identity becomes observable. The bytecode compiler
   emits deterministic `Drop` instructions after register last use, while observable shared slots
   remain alive through frame teardown. Borrow edges are weak and therefore do not create reference
   cycles. Native layout, arbitrary cyclic owned graphs, resource destructors, and destructor

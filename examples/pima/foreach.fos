@@ -1,16 +1,8 @@
-func print_each(values: List<Int>) -> Unit {
-    branch {
-        values.empty? -> println()
-        _ -> print_one_and_continue(values)
-    }
-}
-
-func print_one_and_continue(values: List<Int>) -> Unit {
-    println("number", values.head)
-    print_each(values.rest)
-}
+import std.iter
 
 func main() -> Unit {
-    print_each([1, 2, 3, 4, 5])
+    [1, 2, 3, 4, 5].iterator.for_each((value: Int) -> {
+        println("number", value)
+    })
 }
 

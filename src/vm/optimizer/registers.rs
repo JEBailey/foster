@@ -60,6 +60,14 @@ pub(super) fn compact(program: &mut Program) {
             let definitions = definitions(instruction);
             add_clique(&mut interference, &definitions);
             add_clique(&mut interference, &uses(instruction));
+            if let Instruction::LoadField {
+                destination,
+                object,
+                ..
+            } = instruction
+            {
+                add_edge(&mut interference, *destination, *object);
+            }
             for definition in definitions {
                 for live in &live.live_out[index] {
                     add_edge(&mut interference, definition, *live);

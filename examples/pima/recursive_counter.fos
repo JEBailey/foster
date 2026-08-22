@@ -1,8 +1,6 @@
 func count_to(current: Int, limit: Int) -> Int {
-    branch {
-        current < limit -> count_to(current + 1, limit)
-        _ -> current
-    }
+    return current if current >= limit
+    count_to(current + 1, limit)
 }
 
 func main() -> Int {

@@ -8,18 +8,112 @@ use crate::hir::{Builtin, CaptureMode, FunctionId};
 use super::operations::{binary, constant_value, unary};
 use super::patterns::matches as match_pattern;
 use super::value::{
-    AccessLease, FutureValue, PlaceHandle, RemoteArgument, RemoteMessage, RemoteValue, SharedValue,
-    Slot, next_future_id, next_remote_id,
+    AccessLease, FutureValue, PlaceHandle, RecordFields, RemoteArgument, RemoteMessage, RemoteValue,
+    SharedValue, Slot, next_future_id, next_remote_id,
 };
 use super::{Capture, Instruction, Program, Register, Value};
 
 struct Frame {
     function: FunctionId,
-    registers: Vec<Rc<Slot>>,
+    registers: Vec<RegisterCell>,
     instruction: usize,
     return_destination: Option<Register>,
     shared_commit: Option<SharedCommit>,
     argument_leases: Vec<AccessLease>,
+}
+
+enum RegisterCell {
+    Inline(Value),
+    /// A place whose writes remain observable by its owner.
+    Place(Rc<Slot>),
+    /// A borrowed place. Reads observe the owner, while assignment detaches the local.
+    Borrowed(Rc<Slot>),
+}
+
+impl RegisterCell {
+    fn read(&self) -> Result<Value, FosterError> {
+        match self {
+            Self::Inline(Value::Reference(place)) => place.read(),
+            Self::Inline(value) => Ok(value.clone()),
+            Self::Place(slot) | Self::Borrowed(slot) => slot.read(),
+        }
+    }
+
+    fn reference(&self) -> Option<PlaceHandle> {
+        match self {
+            Self::Inline(Value::Reference(reference)) => Some(reference.clone()),
+            Self::Inline(_) => None,
+            Self::Place(slot) | Self::Borrowed(slot) => slot.reference(),
+        }
+    }
+
+    fn write(&mut self, value: Value) -> Result<(), FosterError> {
+        match self {
+            Self::Inline(Value::Reference(place)) => place.write(value)?,
+            Self::Inline(current) => *current = value,
+            Self::Place(slot) => slot.write(value)?,
+            Self::Borrowed(_) => *self = Self::Inline(value),
+        }
+        Ok(())
+    }
+
+    fn take(&mut self) -> Value {
+        match self {
+            Self::Inline(value) => std::mem::replace(value, Value::Unit),
+            Self::Place(slot) | Self::Borrowed(slot) => slot.replace(Value::Unit),
+        }
+    }
+
+    fn replace(&mut self, value: Value) -> Value {
+        match self {
+            Self::Inline(current) => std::mem::replace(current, value),
+            Self::Place(slot) | Self::Borrowed(slot) => slot.replace(value),
+        }
+    }
+
+    fn reshape(
+        &mut self,
+        update: impl FnOnce(&mut Value) -> Result<(), FosterError>,
+    ) -> Result<(), FosterError> {
+        match self {
+            Self::Inline(Value::Reference(place)) => place.reshape(update),
+            Self::Inline(value) => update(value),
+            Self::Place(slot) => slot.reshape(update),
+            Self::Borrowed(slot) => {
+                let mut value = slot.read()?;
+                update(&mut value)?;
+                *self = Self::Inline(value);
+                Ok(())
+            }
+        }
+    }
+
+    fn share(&mut self) -> Result<Arc<SharedValue>, FosterError> {
+        self.promote().share()
+    }
+
+    fn promote(&mut self) -> Rc<Slot> {
+        match self {
+            Self::Place(slot) | Self::Borrowed(slot) => slot.clone(),
+            Self::Inline(value) => {
+                let slot = Slot::new(std::mem::replace(value, Value::Unit));
+                *self = Self::Place(slot.clone());
+                slot
+            }
+        }
+    }
+
+    fn detach(&mut self) {
+        match self {
+            Self::Inline(value) => *value = Value::Unit,
+            Self::Place(slot) | Self::Borrowed(slot) => {
+                if Rc::strong_count(slot) == 1 && slot.shared().is_none() {
+                    slot.replace(Value::Unit);
+                }
+                *self = Self::Inline(Value::Unit);
+            }
+        }
+    }
 }
 
 struct SharedCommit {
@@ -115,11 +209,17 @@ impl Machine {
                     operator,
                     left,
                     right,
-                } => write(
-                    frame,
-                    destination,
-                    binary(operator, &read(frame, left)?, &read(frame, right)?)?,
-                )?,
+                } => {
+                    let left_value = read(frame, left)?;
+                    let right_value = read(frame, right)?;
+                    let value = binary(operator, &left_value, &right_value).map_err(|error| {
+                        FosterError::runtime(format!(
+                            "{} in `{}` with {left_value:?} and {right_value:?}",
+                            error.message, function.name
+                        ))
+                    })?;
+                    write(frame, destination, value)?;
+                }
                 Instruction::MakeList {
                     destination,
                     elements,
@@ -170,14 +270,14 @@ impl Machine {
                     let fields = fields
                         .into_iter()
                         .map(|(name, register)| Ok((name, read(frame, register)?)))
-                        .collect::<Result<BTreeMap<_, _>, FosterError>>()?;
+                        .collect::<Result<Vec<_>, FosterError>>()?;
                     write(
                         frame,
                         destination,
                         Value::Record {
                             record: Some(record),
                             name: self.program.records[&record].clone(),
-                            fields,
+                            fields: RecordFields::from_pairs(fields),
                         },
                     )?;
                 }
@@ -206,9 +306,18 @@ impl Machine {
                     destination,
                     object,
                     field,
+                    by_reference,
                 } => {
-                    let value = member(read(frame, object)?, &field, self.program.string_record)?;
-                    write(frame, destination, value)?;
+                    let value = read(frame, object)?;
+                    if by_reference
+                        && matches!(&value, Value::Record { fields, .. } if fields.contains_key(&field))
+                    {
+                        let reference = PlaceHandle::field(place(frame, object), field)?;
+                        write(frame, destination, Value::Reference(reference))?;
+                    } else {
+                        let value = member(value, &field, self.program.string_record)?;
+                        write(frame, destination, value)?;
+                    }
                 }
                 Instruction::StoreField {
                     object,
@@ -274,8 +383,7 @@ impl Machine {
                     };
                     let index = usize::try_from(index)
                         .map_err(|_| FosterError::runtime("reference index is out of bounds"))?;
-                    let reference =
-                        PlaceHandle::indexed(frame.registers[object.0 as usize].clone(), index)?;
+                    let reference = PlaceHandle::indexed(place(frame, object), index)?;
                     write(frame, destination, Value::Reference(reference))?;
                 }
                 Instruction::MoveOut {
@@ -397,14 +505,8 @@ impl Machine {
                     function,
                     captures,
                 } => {
-                    write(
-                        frame,
-                        destination,
-                        Value::VmClosure {
-                            function,
-                            captures: capture(frame, captures)?,
-                        },
-                    )?;
+                    let captures = capture(frame, captures)?;
+                    write(frame, destination, Value::VmClosure { function, captures })?;
                 }
                 Instruction::Call {
                     destination,
@@ -426,7 +528,7 @@ impl Machine {
                     function,
                     arguments,
                 } => {
-                    let receiver = frame.registers[receiver.0 as usize].clone();
+                    let receiver = place(frame, receiver);
                     if let Some(shared) = receiver.shared() {
                         let (lease, state) = shared.write_snapshot()?;
                         let local = Slot::new(Value::from_wire(state)?);
@@ -460,7 +562,7 @@ impl Machine {
                     name,
                     arguments,
                 } => {
-                    let receiver = frame.registers[receiver.0 as usize].clone();
+                    let receiver = place(frame, receiver);
                     let value = receiver.read()?;
                     if let Value::Record { fields, .. } = &value
                         && arguments.is_empty()
@@ -698,7 +800,7 @@ impl Machine {
                                 .map(RemoteArgument::Borrowed),
                             crate::ast::ParameterMode::Consume => frame.registers
                                 [register.0 as usize]
-                                .argument()
+                                .take()
                                 .into_wire()
                                 .map(RemoteArgument::Owned),
                         })
@@ -787,17 +889,17 @@ impl Machine {
             )));
         }
         let mut registers = (0..bytecode.registers)
-            .map(|_| Slot::new(Value::Unit))
+            .map(|_| RegisterCell::Inline(Value::Unit))
             .collect::<Vec<_>>();
         for (index, capture) in captures.into_iter().enumerate() {
             registers[index] = match capture {
-                Capture::Value(value) => Slot::new(value),
-                Capture::Place(place) => Slot::new(Value::Reference(place)),
+                Capture::Value(value) => RegisterCell::Inline(value),
+                Capture::Place(place) => RegisterCell::Inline(Value::Reference(place)),
             };
         }
         let offset = usize::from(bytecode.captures);
         for (index, argument) in arguments.into_iter().enumerate() {
-            registers[offset + index].write(argument)?;
+            registers[offset + index] = RegisterCell::Inline(argument);
         }
         Ok(Frame {
             function,
@@ -823,7 +925,7 @@ impl Machine {
             return_destination,
         )?;
         let offset = usize::from(self.program.functions[&function].captures);
-        frame.registers[offset] = receiver;
+        frame.registers[offset] = RegisterCell::Place(receiver);
         Ok(frame)
     }
 
@@ -831,25 +933,26 @@ impl Machine {
         &self,
         function: FunctionId,
         captures: Vec<Capture>,
-        caller: &Frame,
+        caller: &mut Frame,
         arguments: &[Register],
         return_destination: Option<Register>,
     ) -> Result<Frame, FosterError> {
-        let values = arguments
-            .iter()
-            .map(|argument| caller.registers[argument.0 as usize].argument())
-            .collect();
-        let mut frame = self.frame(function, captures, values, return_destination)?;
         let bytecode = &self.program.functions[&function];
+        let mut frame = self.frame(
+            function,
+            captures,
+            vec![Value::Unit; arguments.len()],
+            return_destination,
+        )?;
         let offset = usize::from(bytecode.captures);
-        for (index, (argument, mutable)) in arguments
-            .iter()
-            .zip(&bytecode.mutable_parameters)
-            .enumerate()
-        {
-            if *mutable {
-                frame.registers[offset + index] = caller.registers[argument.0 as usize].clone();
-            }
+        for (index, argument) in arguments.iter().copied().enumerate() {
+            frame.registers[offset + index] = match bytecode.parameter_modes[index] {
+                crate::ast::ParameterMode::Consume => RegisterCell::Inline(take(caller, argument)),
+                crate::ast::ParameterMode::Borrow if bytecode.mutable_parameters[index] => {
+                    RegisterCell::Place(place(caller, argument))
+                }
+                crate::ast::ParameterMode::Borrow => borrow_parameter(caller, argument),
+            };
         }
         Ok(frame)
     }
@@ -858,39 +961,34 @@ impl Machine {
         &self,
         function: FunctionId,
         receiver: Rc<Slot>,
-        caller: &Frame,
+        caller: &mut Frame,
         arguments: &[Register],
         return_destination: Option<Register>,
     ) -> Result<Frame, FosterError> {
-        let values = arguments
-            .iter()
-            .map(|argument| caller.registers[argument.0 as usize].argument())
-            .collect::<Vec<_>>();
-        let mut frame = self.method_frame(function, receiver, values, return_destination)?;
         let bytecode = &self.program.functions[&function];
+        let mut frame = self.method_frame(
+            function,
+            receiver,
+            vec![Value::Unit; arguments.len()],
+            return_destination,
+        )?;
         let offset = usize::from(bytecode.captures);
-        for (index, (argument, mutable)) in arguments
-            .iter()
-            .zip(bytecode.mutable_parameters.iter().skip(1))
-            .enumerate()
-        {
-            if *mutable {
-                frame.registers[offset + index + 1] = caller.registers[argument.0 as usize].clone();
-            }
+        for (index, argument) in arguments.iter().copied().enumerate() {
+            let parameter = index + 1;
+            frame.registers[offset + parameter] = match bytecode.parameter_modes[parameter] {
+                crate::ast::ParameterMode::Consume => RegisterCell::Inline(take(caller, argument)),
+                crate::ast::ParameterMode::Borrow if bytecode.mutable_parameters[parameter] => {
+                    RegisterCell::Place(place(caller, argument))
+                }
+                crate::ast::ParameterMode::Borrow => borrow_parameter(caller, argument),
+            };
         }
         Ok(frame)
     }
 }
 
 fn drop_register(frame: &mut Frame, register: Register) {
-    let slot = &mut frame.registers[register.0 as usize];
-    if Rc::strong_count(slot) == 1 && slot.shared().is_none() {
-        slot.replace(Value::Unit);
-    } else {
-        // Detach from observable storage. Writing Unit through a captured or
-        // remotely shared slot would change the value seen by another owner.
-        *slot = Slot::new(Value::Unit);
-    }
+    frame.registers[register.0 as usize].detach();
 }
 
 fn materialize_remote_arguments(
@@ -912,19 +1010,15 @@ fn materialize_remote_arguments(
 }
 
 fn capture(
-    frame: &Frame,
+    frame: &mut Frame,
     captures: Vec<(CaptureMode, Register)>,
 ) -> Result<Vec<Capture>, FosterError> {
     captures
         .into_iter()
         .map(|(mode, register)| {
             Ok(match mode {
-                CaptureMode::Ref => {
-                    Capture::Place(Slot::place(&frame.registers[register.0 as usize]))
-                }
-                CaptureMode::Move => {
-                    Capture::Value(frame.registers[register.0 as usize].replace(Value::Unit))
-                }
+                CaptureMode::Ref => Capture::Place(Slot::place(&place(frame, register))),
+                CaptureMode::Move => Capture::Value(take(frame, register)),
                 CaptureMode::Copy | CaptureMode::Pending => Capture::Value(read(frame, register)?),
             })
         })
@@ -935,8 +1029,24 @@ fn read(frame: &Frame, register: Register) -> Result<Value, FosterError> {
     frame.registers[register.0 as usize].read()
 }
 
-fn write(frame: &Frame, register: Register, value: Value) -> Result<(), FosterError> {
+fn write(frame: &mut Frame, register: Register, value: Value) -> Result<(), FosterError> {
     frame.registers[register.0 as usize].write(value)
+}
+
+fn place(frame: &mut Frame, register: Register) -> Rc<Slot> {
+    frame.registers[register.0 as usize].promote()
+}
+
+fn take(frame: &mut Frame, register: Register) -> Value {
+    frame.registers[register.0 as usize].take()
+}
+
+fn borrow_parameter(frame: &mut Frame, register: Register) -> RegisterCell {
+    if let Some(reference) = frame.registers[register.0 as usize].reference() {
+        RegisterCell::Inline(Value::Reference(reference))
+    } else {
+        RegisterCell::Borrowed(place(frame, register))
+    }
 }
 
 fn member(
@@ -1016,8 +1126,8 @@ fn member(
             Ok(Value::string(string_record, value.to_string().into_bytes()))
         }
         (Value::Byte(value), "int") => Ok(Value::Integer(i64::from(value))),
-        (_, field) => Err(FosterError::runtime(format!(
-            "value has no field `{field}`"
+        (value, field) => Err(FosterError::runtime(format!(
+            "value {value:?} has no field `{field}`"
         ))),
     }
 }
@@ -1118,7 +1228,7 @@ fn call_builtin(
                 Err((offset, message)) => result_error(Value::Record {
                     record: None,
                     name: "HexError".into(),
-                    fields: BTreeMap::from([
+                    fields: RecordFields::from_pairs([
                         ("offset".into(), Value::Integer(offset as i64)),
                         (
                             "message".into(),
@@ -1366,7 +1476,7 @@ fn call_builtin(
 }
 
 fn transform_raw_byte_buffer(
-    frame: &Frame,
+    frame: &mut Frame,
     builtin: Builtin,
     arguments: &[Register],
 ) -> Result<Option<Value>, FosterError> {
@@ -1429,6 +1539,38 @@ fn transform_raw_byte_buffer(
     Ok(Some(Value::RawByteBuffer(values)))
 }
 
+#[cfg(test)]
+mod register_storage_tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_registers_remain_inline_until_their_place_is_observed() {
+        let mut cell = RegisterCell::Inline(Value::Integer(42));
+        assert!(matches!(cell, RegisterCell::Inline(_)));
+        assert_eq!(cell.read().unwrap(), Value::Integer(42));
+
+        let slot = cell.promote();
+        assert!(matches!(cell, RegisterCell::Place(_)));
+        assert_eq!(slot.read().unwrap(), Value::Integer(42));
+    }
+
+    #[test]
+    fn consuming_an_inline_register_transfers_its_value() {
+        let mut cell = RegisterCell::Inline(Value::RawList(vec![Value::Integer(42)]));
+        assert_eq!(cell.take(), Value::RawList(vec![Value::Integer(42)]));
+        assert_eq!(cell.read().unwrap(), Value::Unit);
+    }
+
+    #[test]
+    fn assigning_to_a_read_only_borrow_detaches_the_parameter() {
+        let origin = Slot::new(Value::Integer(1));
+        let mut cell = RegisterCell::Borrowed(origin.clone());
+        cell.write(Value::Integer(2)).unwrap();
+        assert_eq!(cell.read().unwrap(), Value::Integer(2));
+        assert_eq!(origin.read().unwrap(), Value::Integer(1));
+    }
+}
+
 fn decode_hex(value: &str) -> Result<Vec<u8>, (usize, String)> {
     if !value.len().is_multiple_of(2) {
         return Err((
@@ -1476,7 +1618,7 @@ fn io_result(
         Err(error) => result_error(Value::Record {
             record: None,
             name: "IoError".into(),
-            fields: BTreeMap::from([
+            fields: RecordFields::from_pairs([
                 (
                     "operation".into(),
                     Value::string(string_record, operation.as_bytes().to_vec()),
@@ -1504,7 +1646,7 @@ fn tcp_result(
         Err(message) => result_error(Value::Record {
             record: None,
             name: "NetworkError".into(),
-            fields: BTreeMap::from([
+            fields: RecordFields::from_pairs([
                 (
                     "operation".into(),
                     Value::string(string_record, operation.as_bytes().to_vec()),

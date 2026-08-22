@@ -1,9 +1,7 @@
 func skip_whitespace(characters: String) -> String {
-    branch {
-        characters.empty? -> characters
-        characters.head.whitespace? -> skip_whitespace(characters.rest)
-        _ -> characters
-    }
+    return characters if characters.empty?
+    return characters if !characters.head.whitespace?
+    skip_whitespace(characters.rest)
 }
 
 func main() -> String {

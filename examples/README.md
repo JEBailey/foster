@@ -1,7 +1,8 @@
 # Foster examples
 
 `iteration.fos` demonstrates structural `Iterable<T>` conformance, a mutable `Iterator<T>`
-cursor, and `Option<T>` exhaustion through dynamically dispatched contract methods.
+cursor, and `Option<T>` exhaustion through dynamically dispatched contract methods. The Pima
+`foreach.fos` and `showcase.fos` ports demonstrate terminal iterator consumers and lazy filtering.
 
 `value_contracts.fos` demonstrates composed equality, total-ordering, and hashing contracts.
 

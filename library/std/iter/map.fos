@@ -1,0 +1,20 @@
+import core.option
+import std.iter
+
+type MapIterator<T, U> = & Iterator<U> & {
+    source: Iterator<T>
+    transform: func(consume T) -> U
+}
+
+/// Pulls and transforms one value from a mapped iterator.
+func next<T, U>(self: MapIterator<T, U>) -> Option<U> {
+    branch self.source.next() {
+        Option.Some(value) -> Option.Some(self.transform(move value))
+        Option.None -> Option.None
+    }
+}
+
+/// Lazily transforms this iterator's remaining elements.
+pub func map<T, U>(self: Iterator<T>, transform: func(consume T) -> U) -> Iterator<U> [consume self, consume transform] {
+    MapIterator { source: move self, transform: move transform }
+}

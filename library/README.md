@@ -35,6 +35,8 @@ Current modules:
 - `core.option`: `Option`, `map`, `and_then`, `unwrap_or`, and `present?`
 - `std.iter`: stateful iteration contracts plus Foster-written `for_each`, `fold`, `find`, query,
   and counting consumers
+- `std.iter.map`, `std.iter.filter`, `std.iter.take`, and `std.iter.skip`: lazy Foster-written
+  iterator adaptors used to build fluent pipelines
 - `core.result`: `Result`, `map`, `map_error`, `and_then`, and `success?`
 - `core.ordering`: `Ordering`, `Equality<T>`, `Ordered<T>`, `Hashing`, and `reverse`
 - `std.sequence`: map, filter, fold, search, slicing, and query algorithms shared by strings and lists

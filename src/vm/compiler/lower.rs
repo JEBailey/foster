@@ -191,6 +191,24 @@ impl FunctionCompiler<'_> {
                         }
                         return Ok(destination);
                     }
+                    if let Some(function) = self.types.extension_methods.get(callee).copied() {
+                        let receiver = self.method_receiver(*object)?;
+                        let arguments = arguments
+                            .iter()
+                            .map(|argument| self.expression(*argument))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        let destination = self.allocate();
+                        self.emit(
+                            Instruction::CallMethod {
+                                destination,
+                                receiver,
+                                function,
+                                arguments,
+                            },
+                            span,
+                        );
+                        return Ok(destination);
+                    }
                     if let Some(function) = self.primitive_method(*object, name) {
                         let receiver = self.expression(*object)?;
                         let mut arguments = arguments
@@ -222,7 +240,7 @@ impl FunctionCompiler<'_> {
                         return Ok(destination);
                     }
                     if let Some((function, remote)) = self.record_method(*object, name) {
-                        let receiver = self.expression(*object)?;
+                        let receiver = self.method_receiver(*object)?;
                         let arguments = arguments
                             .iter()
                             .map(|argument| self.expression(*argument))
@@ -263,7 +281,7 @@ impl FunctionCompiler<'_> {
                         return Ok(destination);
                     }
                     if self.contract_method(*object, name) {
-                        let receiver = self.expression(*object)?;
+                        let receiver = self.method_receiver(*object)?;
                         let arguments = arguments
                             .iter()
                             .map(|argument| self.expression(*argument))
@@ -457,6 +475,18 @@ impl FunctionCompiler<'_> {
             hir::Expr::Member { object, name } => {
                 if name == "iterator" && self.sequence_type(*object) {
                     let source = self.expression(*object)?;
+                    // `.iterator` promises an independent cursor over a read-only
+                    // sequence view. Materialize that snapshot explicitly so the
+                    // consuming constructor can transfer it without consuming the
+                    // original collection.
+                    let snapshot = self.allocate();
+                    self.emit(
+                        Instruction::Move {
+                            destination: snapshot,
+                            source,
+                        },
+                        span.clone(),
+                    );
                     let destination = self.allocate();
                     let module = self
                         .hir
@@ -470,7 +500,7 @@ impl FunctionCompiler<'_> {
                         Instruction::Call {
                             destination,
                             function,
-                            arguments: vec![source],
+                            arguments: vec![snapshot],
                         },
                         span,
                     );
@@ -505,7 +535,7 @@ impl FunctionCompiler<'_> {
                     return Ok(destination);
                 }
                 if self.contract_property(*object, name) {
-                    let receiver = self.expression(*object)?;
+                    let receiver = self.method_receiver(*object)?;
                     let destination = self.allocate();
                     if let Some((function, false)) = self.record_method(*object, name) {
                         self.emit(
@@ -537,6 +567,7 @@ impl FunctionCompiler<'_> {
                         destination,
                         object,
                         field: name.clone(),
+                        by_reference: false,
                     },
                     span,
                 );
@@ -596,6 +627,37 @@ impl FunctionCompiler<'_> {
             _ => return Err(self.unsupported("assignment place")),
         }
         Ok(())
+    }
+
+    fn method_receiver(&mut self, id: ExprId) -> Result<Register, FosterError> {
+        let hir::Expr::Member { object, name } = &self.hir.expressions[id] else {
+            return self.expression(id);
+        };
+        if (name == "iterator" && self.sequence_type(*object))
+            || self.primitive_method(*object, name).is_some()
+            || self.contract_property(*object, name)
+            || self.record_method(*object, name).is_some()
+        {
+            return self.expression(id);
+        }
+        let span = self
+            .hir
+            .expression_spans
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| self.hir.functions[self.function].span.clone());
+        let object = self.expression(*object)?;
+        let destination = self.allocate();
+        self.emit(
+            Instruction::LoadField {
+                destination,
+                object,
+                field: name.clone(),
+                by_reference: true,
+            },
+            span,
+        );
+        Ok(destination)
     }
 
     fn record_method(&self, object: ExprId, name: &str) -> Option<(hir::FunctionId, bool)> {
