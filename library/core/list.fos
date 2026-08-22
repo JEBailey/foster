@@ -1,3 +1,5 @@
+//! Owned homogeneous lists and their sequence and iterator operations.
+
 import core.option
 import std.sequence
 
@@ -167,6 +169,15 @@ pub func join(values: List<String>, separator: String) -> String {
         values.empty? -> ""
         _ -> join_rest(values.rest, separator, values.head)
     }
+}
+
+test "list algorithms transform and aggregate values" {
+    values = map([1, 2, 3], (value: Int) -> value * 2)
+    return [()][1] if values.length != 3
+    return [()][1] if values[0] != 2
+    return [()][1] if values[2] != 6
+    return [()][1] if fold(values, 0, (total: Int, value: Int) -> total + value) != 12
+    ()
 }
 
 /// Appends the remaining strings and separators to the accumulated result.

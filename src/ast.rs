@@ -1,5 +1,6 @@
 #[derive(Debug, Clone, PartialEq)]
 pub struct Program {
+    pub documentation: Option<String>,
     pub imports: Vec<Import>,
     pub constants: Vec<ConstDecl>,
     pub records: Vec<RecordDecl>,

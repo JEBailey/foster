@@ -1,3 +1,5 @@
+//! Unicode scalar construction, classification, and UTF-8 encoding.
+
 import core.option
 
 /// Creates a code point from a valid Unicode scalar value.
@@ -23,4 +25,15 @@ pub func to_int(character: CodePoint) -> Int {
 /// Converts one code point to its single-code-point string representation.
 pub func to_string(character: CodePoint) -> String {
     character.string
+}
+
+test "code points round-trip Unicode scalar values" {
+    branch from_int(955) {
+        Option.Some(character) -> branch {
+            to_int(character) != 955 -> [()][1]
+            to_string(character) != "λ" -> [()][1]
+            _ -> ()
+        }
+        Option.None -> [()][1]
+    }
 }

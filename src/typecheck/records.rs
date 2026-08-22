@@ -249,7 +249,7 @@ impl Checker<'_> {
             return self
                 .variant_method_type(function, variant, arguments, name)
                 .map(Some)
-                .or_else(|_| Ok(None));
+                .or(Ok(None));
         }
         let Ty::Record(record, arguments) = actual.clone() else {
             return Ok(None);

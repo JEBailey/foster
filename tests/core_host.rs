@@ -21,6 +21,7 @@ func main() -> Int { 0 }
         let module = &compilation.hir.modules[function.module].name;
         if !(module.starts_with("core.") || module.starts_with("std."))
             || function.name.contains('$')
+            || function.test_description.is_some()
         {
             continue;
         }
@@ -34,7 +35,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 297);
+    assert_eq!(checked, 298);
 }
 
 #[test]

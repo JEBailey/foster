@@ -1,3 +1,5 @@
+//! Portable path inspection, composition, and normalization.
+
 import core.option
 import core.result
 import std.io

@@ -1,3 +1,5 @@
+//! Lazy iterator transformation.
+
 import core.option
 import std.iter
 
@@ -17,4 +19,11 @@ func next<T, U>(self: MapIterator<T, U>) -> Option<U> {
 /// Lazily transforms this iterator's remaining elements.
 pub func map<T, U>(self: Iterator<T>, transform: func(consume T) -> U) -> Iterator<U> [consume self, consume transform] {
     MapIterator { source: move self, transform: move transform }
+}
+
+test "mapped iterators transform lazily" {
+    values = map([1, 2, 3].iterator, (value: Int) -> value * 3).collect()
+    return [()][1] if values.length != 3
+    return [()][1] if values[2] != 9
+    ()
 }

@@ -418,7 +418,9 @@ surface and runtime boundary are documented in `docs/core-library.md`.
 `//` starts an ordinary line comment. `/* ... */` is a block comment and may be nested. Ordinary
 comments do not enter the AST and have no effect on compilation.
 
-`///` and `/** ... */` are documentation comments. Consecutive documentation comments are joined
+`//!` is a module documentation comment and must appear before the module's declarations. Consecutive
+module documentation comments are joined with newlines. `///` and `/** ... */` are declaration
+documentation comments. Consecutive declaration documentation comments are joined
 with newlines and attach to the function, record, or variant type that immediately follows them:
 
 ```foster

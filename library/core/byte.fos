@@ -1,3 +1,5 @@
+//! Checked byte construction and integer conversion.
+
 import core.result
 
 /// Returns whether an integer fits in a byte.
@@ -21,4 +23,14 @@ pub func Byte.from(value: Int) -> Result<Byte, ByteError> {
 /// Converts a byte to its nonnegative integer value.
 pub func to_int(value: Byte) -> Int {
     value.int
+}
+
+test "byte conversion preserves values in range" {
+    branch Byte.from(255) {
+        Result.Ok(value) -> branch {
+            to_int(value) == 255 -> ()
+            _ -> [()][1]
+        }
+        Result.Error(_) -> [()][1]
+    }
 }

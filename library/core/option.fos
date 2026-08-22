@@ -1,6 +1,9 @@
+//! Optional values and transformations that preserve absence.
+
+/// A value that is either present as `Some` or absent as `None`.
 pub type Option<T> =
-    | Some(T)
-    | None
+| Some(T)
+| None
 
 /// Applies `transform` to a present value and preserves `None`.
 pub func map<T, U>(option: Option<T>, transform: func(T) -> U) -> Option<U> {
@@ -31,5 +34,16 @@ pub func present?<T>(option: Option<T>) -> Bool {
     branch option {
         Option.Some(_) -> true
         Option.None -> false
+    }
+}
+
+test "option transformations preserve presence and absence" {
+    mapped = map(Option.Some(20), (value: Int) -> value + 1)
+    branch mapped {
+        Option.Some(value) -> branch {
+            value == 21 -> ()
+            _ -> [()][1]
+        }
+        Option.None -> [()][1]
     }
 }

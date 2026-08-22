@@ -109,7 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn benchmark_program(
     program: &Program,
     iterations: u32,
-) -> Result<Duration, foster::error::FosterError> {
+) -> Result<Duration, Box<dyn std::error::Error>> {
     let machine = Machine::new(program);
     let start = Instant::now();
     for _ in 0..iterations {

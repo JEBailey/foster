@@ -1,3 +1,5 @@
+//! Persistent last-in, first-out stacks backed by Foster lists.
+
 import std.collections
 import std.iter
 import core.option
@@ -44,6 +46,12 @@ pub func pop<T>(self: Stack<T>) -> Option<StackItem<T>> [consume self] {
 pub type StackItem<T> = {
     pub value: T
     pub remaining: Stack<T>
+}
+
+test "stacks retain pushed values" {
+    stack = Stack { values: [1, 2] }
+    return [()][1] if stack.length != 2
+    ()
 }
 
 /// Walks to the final stored value while rebuilding the remaining prefix.

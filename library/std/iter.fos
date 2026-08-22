@@ -1,3 +1,5 @@
+//! Stateful iterators, consumers, and lazy pipeline construction.
+
 import core.option
 
 /// A stateful source that yields one value at a time.
@@ -107,6 +109,15 @@ pub func count<T>(self: Iterator<T>) -> Int [mut self] {
 /// Collects every remaining element into a list and leaves this iterator exhausted.
 pub func collect<T>(self: Iterator<T>) -> List<T> [mut self] {
     collect_into(self, [])
+}
+
+test "iterator consumers process every remaining value" {
+    iterator = [1, 2, 3].iterator
+    total = iterator.fold(0, (sum: Int, value: Int) -> sum + value)
+    branch {
+        total == 6 -> ()
+        _ -> [()][1]
+    }
 }
 
 /// Pulls remaining elements into the owned list accumulator.

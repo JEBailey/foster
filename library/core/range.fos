@@ -1,3 +1,5 @@
+//! Bounded integer ranges exposed as repeatable collections.
+
 import std.collections
 import std.iter
 

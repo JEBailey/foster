@@ -2305,7 +2305,7 @@ func main() -> Int { apply(User { value: 40 }) }
                 .unwrap()
                 .join("library/core/list.fos")
         );
-        assert_eq!(location.range.start, Position::new(29, 9));
+        assert_eq!(location.range.start, Position::new(31, 9));
     }
 
     #[test]
@@ -2335,7 +2335,7 @@ func main() -> Int { apply(User { value: 40 }) }
             uri_to_path(&location.uri).unwrap(),
             root.join("library/std/sequence.fos")
         );
-        assert_eq!(location.range.start, Position::new(106, 9));
+        assert_eq!(location.range.start, Position::new(108, 9));
     }
 
     #[test]

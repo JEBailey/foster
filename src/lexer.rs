@@ -18,6 +18,7 @@ pub enum TokenKind {
     CodePoint(String),
     Symbol(String),
     DocComment(String),
+    ModuleDocComment(String),
     Func,
     Test,
     Const,
@@ -115,8 +116,11 @@ impl<'a> Lexer<'a> {
                         range: offset..self.byte_index,
                     });
                 }
+                '/' if self.peek_next() == Some('/') && self.peek_n(2) == Some('!') => {
+                    out.push(self.doc_line(true));
+                }
                 '/' if self.peek_next() == Some('/') && self.peek_n(2) == Some('/') => {
-                    out.push(self.doc_line());
+                    out.push(self.doc_line(false));
                 }
                 '/' if self.peek_next() == Some('/') => {
                     while !matches!(self.peek(), None | Some('\n')) {
@@ -466,7 +470,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn doc_line(&mut self) -> Token {
+    fn doc_line(&mut self, module: bool) -> Token {
         let (line, column, offset) = (self.line, self.column, self.byte_index);
         self.advance();
         self.advance();
@@ -479,7 +483,11 @@ impl<'a> Lexer<'a> {
             value.push(self.advance().expect("peeked comment character"));
         }
         Token {
-            kind: TokenKind::DocComment(value.trim_end().to_owned()),
+            kind: if module {
+                TokenKind::ModuleDocComment(value.trim_end().to_owned())
+            } else {
+                TokenKind::DocComment(value.trim_end().to_owned())
+            },
             line,
             column,
             range: offset..self.byte_index,

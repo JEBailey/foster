@@ -2723,6 +2723,8 @@ fn runs_the_live_inventory_pipeline() {
 #[test]
 fn supports_line_block_and_documentation_comments() {
     let source = r#"
+//! Public values and documentation-comment behavior used by this test.
+
 /// A named value used by the public API.
 /**
  * The second paragraph is retained as Markdown.
@@ -2743,6 +2745,10 @@ func main() -> Int { value(Named { value: 7 }) }
 "#;
     let program = foster::parse(source).unwrap();
     assert_eq!(
+        program.documentation.as_deref(),
+        Some("Public values and documentation-comment behavior used by this test.")
+    );
+    assert_eq!(
         program.records[0].documentation.as_deref(),
         Some(
             "A named value used by the public API.\nThe second paragraph is retained as Markdown."
@@ -2756,6 +2762,14 @@ func main() -> Int { value(Named { value: 7 }) }
 
     let error = foster::parse("func main() { /* never closed").unwrap_err();
     assert!(error.message.contains("unterminated block comment"));
+}
+
+#[test]
+fn supports_the_unit_literal() {
+    assert_eq!(
+        foster::run("func main() -> Unit { () }").unwrap(),
+        Value::Unit
+    );
 }
 
 #[test]

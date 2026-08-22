@@ -1,6 +1,9 @@
+//! Explicit success and failure values with composable transformations.
+
+/// The successful value `Ok<T>` or the failure value `Error<E>`.
 pub type Result<T, E> =
-    | Ok(T)
-    | Error(E)
+| Ok(T)
+| Error(E)
 
 /// Applies `transform` to a successful value and preserves an error.
 pub func map<T, E, U>(result: Result<T, E>, transform: func(T) -> U) -> Result<U, E> {
@@ -31,5 +34,21 @@ pub func success?<T, E>(result: Result<T, E>) -> Bool {
     branch result {
         Result.Ok(_) -> true
         Result.Error(_) -> false
+    }
+}
+
+/// Supplies a concrete error type for the successful-result test case.
+func successful_test_value() -> Result<Int, String> {
+    Result.Ok(20)
+}
+
+test "result mapping transforms successful values" {
+    mapped = map(successful_test_value(), (value: Int) -> value + 2)
+    branch mapped {
+        Result.Ok(value) -> branch {
+            value == 22 -> ()
+            _ -> [()][1]
+        }
+        Result.Error(_) -> [()][1]
     }
 }

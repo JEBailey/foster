@@ -1,3 +1,5 @@
+//! Typed TCP listeners, connections, addressing, and network errors.
+
 import core.result
 import core.bytes
 import std.io

@@ -1,3 +1,5 @@
+//! Immutable symbolic identifiers constructed from symbol literals.
+
 /// An immutable symbolic identifier.
 ///
 /// Symbol literals are the trusted construction path for the private text.

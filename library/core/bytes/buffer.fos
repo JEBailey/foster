@@ -1,3 +1,5 @@
+//! Mutable byte accumulation with explicit snapshot and ownership-transfer operations.
+
 import core.bytes
 
 /// Private host-backed mutable byte storage.
@@ -86,4 +88,12 @@ pub func freeze(self: ByteBuffer) -> Bytes [consume self] {
 /// Copies the current buffer contents into immutable bytes.
 pub func snapshot(self: ByteBuffer) -> Bytes {
     self.value.snapshot()
+}
+
+test "byte buffers append snapshot and freeze contents" {
+    buffer = ByteBuffer.empty()
+    buffer.extend("ok".utf8)
+    return [()][1] if buffer.snapshot.hex != "6f6b"
+    return [()][1] if (move buffer).freeze().hex != "6f6b"
+    ()
 }

@@ -78,6 +78,11 @@ pub(super) fn site(compilation: &Compilation) -> Site {
 fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
     let module = &compilation.hir.modules[module_id];
     let mut body = String::from("<a class=\"crumb\" href=\"../index.html\">← All modules</a>");
+    if let Some(documentation) = &module.documentation {
+        body.push_str("<article class=\"module-documentation\">");
+        body.push_str(&markdown(documentation));
+        body.push_str("</article>");
+    }
     let mut count = 0;
 
     for constant_id in module.constants.values().copied() {

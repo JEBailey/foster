@@ -1,3 +1,5 @@
+//! Immutable UTF-8 text and Unicode-aware sequence operations.
+
 import core.code_point
 import core.list
 import core.option
@@ -204,4 +206,12 @@ pub func byte_length(value: String) -> Int {
 /// Joins strings with `separator` between adjacent values.
 pub func join(values: List<String>, separator: String) -> String {
     list.join(values, separator)
+}
+
+test "string algorithms preserve Unicode text" {
+    value = "  Foster λ  "
+    return [()][1] if trim(move value) != "Foster λ"
+    return [()][1] if reverse("abλ") != "λba"
+    return [()][1] if starts_with?("Foster", "Fos") == false
+    ()
 }

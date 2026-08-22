@@ -1,3 +1,5 @@
+//! Boolean logic helpers.
+
 /// Returns the logical negation of `value`.
 pub func not(value: Bool) -> Bool {
     return false if value
@@ -26,4 +28,12 @@ pub func xor(left: Bool, right: Bool) -> Bool {
 pub func then<T>(condition: Bool, value: T) -> List<T> [consume value] {
     return [value] if condition
     []
+}
+
+test "boolean helpers implement their truth tables" {
+    return [()][1] if not(true) != false
+    return [()][1] if and(true, true) == false
+    return [()][1] if or(false, true) == false
+    return [()][1] if xor(true, false) == false
+    ()
 }

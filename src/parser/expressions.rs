@@ -318,6 +318,8 @@ impl Parser {
             TokenKind::LParen => {
                 if self.closure_follows_lparen() {
                     self.closure()?
+                } else if self.take(&TokenKind::RParen) {
+                    Expr::Unit
                 } else {
                     let expr = self.expression()?;
                     self.expect(&TokenKind::RParen, "expected `)`")?;

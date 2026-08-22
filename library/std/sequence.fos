@@ -1,3 +1,5 @@
+//! Generic algorithms over immutable indexed sequences.
+
 import core.option
 
 /// Applies `transform` to every element of a string or list and returns the results as a list.
@@ -115,6 +117,14 @@ pub func count<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Int {
 /// Returns at most the first `count` sequence elements as a list.
 pub func take<T>(values: Sequence<T>, count: Int) -> List<T> {
     take_into(values, count, [])
+}
+
+test "sequence algorithms operate on lists without conversion" {
+    values = map([1, 2, 3], (value: Int) -> value + 10)
+    return [()][1] if values.length != 3
+    return [()][1] if values[0] != 11
+    return [()][1] if count(values, (value: Int) -> value > 11) != 2
+    ()
 }
 
 /// Copies at most `count` remaining elements into the result accumulator.

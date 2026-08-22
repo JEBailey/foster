@@ -1565,38 +1565,6 @@ fn transform_raw_byte_buffer(
     Ok(Some(Value::RawByteBuffer(values)))
 }
 
-#[cfg(test)]
-mod register_storage_tests {
-    use super::*;
-
-    #[test]
-    fn ordinary_registers_remain_inline_until_their_place_is_observed() {
-        let mut cell = RegisterCell::Inline(Value::Integer(42));
-        assert!(matches!(cell, RegisterCell::Inline(_)));
-        assert_eq!(cell.read().unwrap(), Value::Integer(42));
-
-        let slot = cell.promote();
-        assert!(matches!(cell, RegisterCell::Place(_)));
-        assert_eq!(slot.read().unwrap(), Value::Integer(42));
-    }
-
-    #[test]
-    fn consuming_an_inline_register_transfers_its_value() {
-        let mut cell = RegisterCell::Inline(Value::RawList(vec![Value::Integer(42)]));
-        assert_eq!(cell.take(), Value::RawList(vec![Value::Integer(42)]));
-        assert_eq!(cell.read().unwrap(), Value::Unit);
-    }
-
-    #[test]
-    fn assigning_to_a_read_only_borrow_detaches_the_parameter() {
-        let origin = Slot::new(Value::Integer(1));
-        let mut cell = RegisterCell::Borrowed(origin.clone());
-        cell.write(Value::Integer(2)).unwrap();
-        assert_eq!(cell.read().unwrap(), Value::Integer(2));
-        assert_eq!(origin.read().unwrap(), Value::Integer(1));
-    }
-}
-
 fn decode_hex(value: &str) -> Result<Vec<u8>, (usize, String)> {
     if !value.len().is_multiple_of(2) {
         return Err((
@@ -1761,5 +1729,37 @@ fn optional_os_component(
             .map(|value| Value::string(string_record, value.as_bytes().to_vec()))
             .ok_or_else(|| FosterError::runtime("path component is not valid UTF-8")),
         None => Ok(Value::string(string_record, Vec::new())),
+    }
+}
+
+#[cfg(test)]
+mod register_storage_tests {
+    use super::*;
+
+    #[test]
+    fn ordinary_registers_remain_inline_until_their_place_is_observed() {
+        let mut cell = RegisterCell::Inline(Value::Integer(42));
+        assert!(matches!(cell, RegisterCell::Inline(_)));
+        assert_eq!(cell.read().unwrap(), Value::Integer(42));
+
+        let slot = cell.promote();
+        assert!(matches!(cell, RegisterCell::Place(_)));
+        assert_eq!(slot.read().unwrap(), Value::Integer(42));
+    }
+
+    #[test]
+    fn consuming_an_inline_register_transfers_its_value() {
+        let mut cell = RegisterCell::Inline(Value::RawList(vec![Value::Integer(42)]));
+        assert_eq!(cell.take(), Value::RawList(vec![Value::Integer(42)]));
+        assert_eq!(cell.read().unwrap(), Value::Unit);
+    }
+
+    #[test]
+    fn assigning_to_a_read_only_borrow_detaches_the_parameter() {
+        let origin = Slot::new(Value::Integer(1));
+        let mut cell = RegisterCell::Borrowed(origin.clone());
+        cell.write(Value::Integer(2)).unwrap();
+        assert_eq!(cell.read().unwrap(), Value::Integer(2));
+        assert_eq!(origin.read().unwrap(), Value::Integer(1));
     }
 }

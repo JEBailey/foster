@@ -53,6 +53,7 @@ pub struct PackageHir {
 #[derive(Debug)]
 pub struct Module {
     pub name: String,
+    pub documentation: Option<String>,
     pub source_path: Option<camino::Utf8PathBuf>,
     pub imports_with_spans: Vec<ImportBinding>,
     pub functions: BTreeMap<String, FunctionId>,

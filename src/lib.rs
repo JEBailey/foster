@@ -1,3 +1,6 @@
+// Foster errors carry structured diagnostics (labels, notes, help, and source context) by value.
+#![allow(clippy::result_large_err)]
+
 pub mod ast;
 pub mod diagnostic;
 pub mod documentation;

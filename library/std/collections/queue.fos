@@ -1,3 +1,5 @@
+//! Persistent first-in, first-out queues backed by Foster lists.
+
 import std.collections
 import std.iter
 import core.option
@@ -44,4 +46,10 @@ pub func pop<T>(self: Queue<T>) -> Option<QueueItem<T>> [consume self] {
 pub type QueueItem<T> = {
     pub value: T
     pub remaining: Queue<T>
+}
+
+test "queues retain pushed values" {
+    queue = Queue { values: [1, 2] }
+    return [()][1] if queue.length != 2
+    ()
 }

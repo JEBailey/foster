@@ -224,10 +224,26 @@ fn test(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
         },
     )?;
     let machine = foster::vm::Machine::new(&program);
+    let requested_root = path.is_dir().then(|| fs::canonicalize(path)).transpose()?;
     let mut tests = compilation
         .hir
         .tests
         .iter()
+        .filter(|function| {
+            let definition = &compilation.hir.functions[**function];
+            let module = &compilation.hir.modules[definition.module];
+            if path.is_file() {
+                return module.name == "main";
+            }
+            let Some(root) = &requested_root else {
+                return false;
+            };
+            module
+                .source_path
+                .as_ref()
+                .and_then(|source| fs::canonicalize(source).ok())
+                .is_some_and(|source| source.starts_with(root))
+        })
         .map(|function| {
             let definition = &compilation.hir.functions[*function];
             (

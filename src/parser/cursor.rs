@@ -1,6 +1,16 @@
 use super::*;
 
 impl Parser {
+    pub(super) fn module_documentation(&mut self) -> Option<String> {
+        let mut lines = Vec::new();
+        while let TokenKind::ModuleDocComment(value) = &self.peek().kind {
+            lines.push(value.clone());
+            self.advance();
+            self.newlines();
+        }
+        (!lines.is_empty()).then(|| lines.join("\n"))
+    }
+
     pub(super) fn documentation(&mut self) -> Option<String> {
         let mut lines = Vec::new();
         while let TokenKind::DocComment(value) = &self.peek().kind {

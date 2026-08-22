@@ -113,6 +113,7 @@ impl Package {
         program.constants.clear();
         program.variants.clear();
         program.functions.clear();
+        program.tests.clear();
         program.records.retain(|record| record.name == "String");
         if program.records.len() != 1 {
             return Err(FosterError::runtime(
@@ -150,6 +151,7 @@ impl Package {
         program.constants.clear();
         program.variants.clear();
         program.functions.clear();
+        program.tests.clear();
         program
             .records
             .retain(|record| matches!(record.name.as_str(), "RawBytes" | "Bytes"));
@@ -184,6 +186,7 @@ impl Package {
         program.constants.clear();
         program.variants.clear();
         program.functions.clear();
+        program.tests.clear();
         program
             .records
             .retain(|record| matches!(record.name.as_str(), "RawByteBuffer" | "ByteBuffer"));
@@ -218,6 +221,7 @@ impl Package {
         program.constants.clear();
         program.variants.clear();
         program.functions.clear();
+        program.tests.clear();
         program
             .records
             .retain(|record| matches!(record.name.as_str(), "RawList" | "List"));

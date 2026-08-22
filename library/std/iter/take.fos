@@ -1,3 +1,5 @@
+//! Lazy limitation of an iterator to a maximum number of values.
+
 import core.option
 import std.iter
 
@@ -23,4 +25,11 @@ func take_next<T>(self: TakeIterator<T>) -> Option<T> {
 /// Lazily yields at most `amount` remaining elements.
 pub func take<T>(self: Iterator<T>, amount: Int) -> Iterator<T> [consume self] {
     TakeIterator { source: move self, remaining: amount }
+}
+
+test "taking limits iterator output" {
+    values = take([1, 2, 3].iterator, 2).collect()
+    return [()][1] if values.length != 2
+    return [()][1] if values[1] != 2
+    ()
 }

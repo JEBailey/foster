@@ -67,7 +67,7 @@ The current implementation includes:
 - remote objects, virtual threads, FIFO method messages, futures, `await`, transferred messages,
   call-scoped borrowed messages, and persistent remote read loans;
 - explicit core-library imports, typed filesystem APIs, and typed TCP connections;
-- line, nested block, and Markdown documentation comments;
+- line, nested block, and Markdown module (`//!`) and declaration (`///`, `/** ... */`) documentation comments;
 - a package-aware LSP and VS Code extension; and
 - first-class `test "description" { ... }` declarations with a package-aware test runner; and
 - an optional optimizing register-bytecode pipeline with a verifier and iterative VM call frames.

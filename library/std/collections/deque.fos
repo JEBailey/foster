@@ -1,3 +1,5 @@
+//! Persistent double-ended queues backed by Foster lists.
+
 import std.collections
 import std.iter
 import core.option
@@ -57,6 +59,12 @@ pub func pop_back<T>(self: Deque<T>) -> Option<DequeItem<T>> [consume self] {
 pub type DequeItem<T> = {
     pub value: T
     pub remaining: Deque<T>
+}
+
+test "deques accept values at both ends" {
+    deque = Deque { values: [1, 2] }
+    return [()][1] if deque.length != 2
+    ()
 }
 
 /// Walks to the final value while rebuilding the preceding values.

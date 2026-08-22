@@ -1,3 +1,5 @@
+//! Generic byte and text stream contracts with complete read/write helpers.
+
 import core.bytes.buffer as byte_buffer
 import core.bytes
 import core.result
@@ -14,6 +16,7 @@ pub type IoError = {
 /// `read` returns at most `maximum` bytes. Empty bytes indicate clean end-of-stream.
 /// A successful read of a non-empty stream must return at least one byte.
 pub type Reader<E> = {
+    /// Reads up to `maximum` bytes, returning empty bytes at end-of-stream.
     pub func read(self, maximum: Int) -> Result<Bytes, E> [mut self]
 }
 
@@ -23,13 +26,16 @@ pub type Reader<E> = {
 /// of non-empty bytes must accept at least one byte. `flush` makes buffered output visible to the
 /// destination.
 pub type Writer<E> = {
+    /// Writes a non-empty prefix of `contents` and returns the accepted byte count.
     pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
+    /// Makes buffered output visible to the destination.
     pub func flush(self) -> Result<Unit, E> [mut self]
 }
 
 /// A stateful source which decodes text while preserving character boundaries between reads.
 /// Empty text indicates clean end-of-stream.
 pub type TextReader<E> = {
+    /// Reads decoded text without splitting a character boundary.
     pub func read_text(self, maximum: Int) -> Result<String, E> [mut self]
 }
 
@@ -38,14 +44,19 @@ pub type TextReader<E> = {
 /// `write_text` accepts the complete string or returns an error. `flush` makes buffered text visible
 /// to the destination.
 pub type TextWriter<E> = {
+    /// Writes the complete text value or returns an error.
     pub func write_text(self, text: String) -> Result<Unit, E> [mut self]
+    /// Makes buffered text visible to the destination.
     pub func flush(self) -> Result<Unit, E> [mut self]
 }
 
 /// A bidirectional binary stream combining the `Reader<E>` and `Writer<E>` contracts.
 pub type Duplex<E> = {
+    /// Reads up to `maximum` bytes, returning empty bytes at end-of-stream.
     pub func read(self, maximum: Int) -> Result<Bytes, E> [mut self]
+    /// Writes a non-empty prefix of `contents` and returns the accepted byte count.
     pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
+    /// Makes buffered output visible to the destination.
     pub func flush(self) -> Result<Unit, E> [mut self]
 }
 

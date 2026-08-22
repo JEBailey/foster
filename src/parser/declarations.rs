@@ -9,6 +9,7 @@ impl Parser {
         let mut functions = Vec::new();
         let mut tests = Vec::new();
         self.newlines();
+        let module_documentation = self.module_documentation();
         let mut documentation = self.documentation();
         while self.at(&TokenKind::Import) {
             imports.push(self.import()?);
@@ -53,6 +54,7 @@ impl Parser {
             return Err(self.error("documentation comment must precede a declaration"));
         }
         Ok(Program {
+            documentation: module_documentation,
             imports,
             constants,
             records,

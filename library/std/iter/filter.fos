@@ -1,3 +1,5 @@
+//! Lazy iterator filtering.
+
 import core.option
 import std.iter
 
@@ -20,4 +22,11 @@ func next<T>(self: FilterIterator<T>) -> Option<T> {
 /// Lazily retains this iterator's remaining elements that satisfy `predicate`.
 pub func filter<T>(self: Iterator<T>, predicate: func(T) -> Bool) -> Iterator<T> [consume self, consume predicate] {
     FilterIterator { source: move self, predicate: move predicate }
+}
+
+test "filtered iterators retain matching values" {
+    values = filter([1, 2, 3, 4].iterator, (value: Int) -> value > 2).collect()
+    return [()][1] if values.length != 2
+    return [()][1] if values[0] != 3
+    ()
 }

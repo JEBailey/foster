@@ -1,3 +1,5 @@
+//! Lazy omission of an iterator prefix.
+
 import core.option
 import std.iter
 
@@ -31,4 +33,11 @@ func decrement_and_continue<T>(self: SkipIterator<T>) -> Option<T> {
 /// Lazily discards the first `amount` remaining elements.
 pub func skip<T>(self: Iterator<T>, amount: Int) -> Iterator<T> [consume self] {
     SkipIterator { source: move self, remaining: amount }
+}
+
+test "skipping removes an iterator prefix" {
+    values = skip([1, 2, 3].iterator, 2).collect()
+    return [()][1] if values.length != 1
+    return [()][1] if values[0] != 3
+    ()
 }

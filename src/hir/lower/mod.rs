@@ -12,6 +12,10 @@ impl PackageHir {
         for name in package.modules.keys() {
             let id = hir.modules.alloc(Module {
                 name: name.clone(),
+                documentation: package.modules[name]
+                    .program
+                    .as_ref()
+                    .and_then(|program| program.documentation.clone()),
                 source_path: package.modules[name].source_path.clone(),
                 imports_with_spans: Vec::new(),
                 functions: BTreeMap::new(),
