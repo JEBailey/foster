@@ -49,6 +49,27 @@ fn run_rejects_unknown_optimizer_settings() {
 }
 
 #[test]
+fn check_can_dump_deterministic_ownership_state() {
+    let first = foster()
+        .arg("check")
+        .arg(benchmark_source())
+        .arg("--dump-ownership")
+        .output()
+        .unwrap();
+    let second = foster()
+        .arg("check")
+        .arg(benchmark_source())
+        .arg("--dump-ownership")
+        .output()
+        .unwrap();
+    assert!(first.status.success());
+    assert_eq!(first.stdout, second.stdout);
+    let output = String::from_utf8(first.stdout).unwrap();
+    assert!(output.contains("foster-language=1 ownership-model=1"));
+    assert!(output.contains("function main.main"));
+}
+
+#[test]
 fn build_writes_runnable_compiled_bytecode() {
     let output_path = std::env::temp_dir().join(format!(
         "foster-bytecode-{}-{}.fbc",

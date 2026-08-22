@@ -401,7 +401,9 @@ impl FunctionCompiler<'_> {
                             object,
                             field,
                         },
-                        hir::Projection::Index(index) => Instruction::MakeReference {
+                        hir::Projection::Index {
+                            expression: index, ..
+                        } => Instruction::MakeReference {
                             destination,
                             object,
                             index: self.expression(index)?,

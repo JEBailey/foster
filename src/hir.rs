@@ -199,7 +199,10 @@ pub struct Place {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Projection {
     Field(String),
-    Index(ExprId),
+    Index {
+        expression: ExprId,
+        constant: Option<i64>,
+    },
     Dereference,
 }
 

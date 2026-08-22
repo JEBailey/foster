@@ -55,7 +55,7 @@ fn check_function(
                             definition.name,
                             local.name
                         ))
-                        .with_code("E0382")
+                        .with_code(super::diagnostics::USE_AFTER_MOVE)
                         .with_source_module(hir.modules[definition.module].name.clone())
                         .with_primary_label(span.clone(), format!("`{}` is not usable here", local.name))
                         .with_label(local.span.clone(), "value is declared here");
@@ -87,7 +87,7 @@ fn check_function(
                                 hir.modules[hir.functions[function].module].name,
                                 hir.functions[function].name,
                             ))
-                            .with_code("E0507")
+                            .with_code(super::diagnostics::BORROWED_PARAMETER_CONSUMED)
                             .with_source_module(hir.modules[hir.functions[function].module].name.clone())
                             .with_primary_label(span.clone(), format!("ownership of borrowed parameter `{name}` is taken here"))
                             .with_label(hir.locals[place.root].span.clone(), "this parameter borrows by default")
@@ -203,14 +203,5 @@ fn move_origin(state: &State, place: &crate::hir::Place) -> Option<Range<usize>>
 }
 
 fn places_overlap(moved: &crate::hir::Place, used: &crate::hir::Place) -> bool {
-    if moved.root != used.root {
-        return false;
-    }
-    let shared = moved
-        .projections
-        .iter()
-        .zip(&used.projections)
-        .take_while(|(left, right)| left == right)
-        .count();
-    shared == moved.projections.len() || shared == used.projections.len()
+    crate::hir::queries::places_overlap(moved, used)
 }

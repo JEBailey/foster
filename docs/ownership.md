@@ -405,6 +405,10 @@ Canonical places contain a root local plus field, index, or dereference projecti
 uses those places to distinguish whole-value moves from partial moves of disjoint fields. Loans and
 aggregate provenance retain those complete places. Effect targets are substituted onto call-site
 receiver and argument places, and invalidation uses field-sensitive projection overlap.
+Integer-literal indices are also disjoint when their values differ; dynamic indices remain
+conservatively overlapping. The rule-indexed corpus, executable reference model, differential
+checks, mutation requirements, and bounded fuzzing policy are specified in
+`docs/ownership-verification.md`.
 
 At runtime, VM references retain a field/index projection path and the origin's structural
 generation but only a weak connection to the root slot. Projection through another reference is

@@ -34,7 +34,7 @@ fn execute() -> Result<(), Box<dyn Error>> {
     let matches = cli().get_matches();
     match matches.subcommand() {
         Some(("lsp", _)) => return foster::lsp::run(),
-        Some(("check", arguments)) => check(required_path(arguments, "path"))?,
+        Some(("check", arguments)) => check(arguments)?,
         Some(("build", arguments)) => build(arguments)?,
         Some(("run", arguments)) => run(arguments)?,
         Some(("fmt", arguments)) => format_path(
@@ -91,7 +91,14 @@ fn cli() -> Command {
                     .value_parser(value_parser!(PathBuf)),
             ),
         )
-        .subcommand(Command::new("check").arg(path()))
+        .subcommand(
+            Command::new("check").arg(path()).arg(
+                Arg::new("dump-ownership")
+                    .long("dump-ownership")
+                    .help("Print deterministic ownership MIR, loan ancestry, and inferred regions")
+                    .action(ArgAction::SetTrue),
+            ),
+        )
         .subcommand(Command::new("test").arg(path()).args(optimizer()))
         .subcommand(
             Command::new("fmt")
@@ -144,10 +151,14 @@ fn required_path<'a>(arguments: &'a ArgMatches, name: &str) -> &'a Path {
         .as_path()
 }
 
-fn check(path: &Path) -> Result<(), Box<dyn Error>> {
+fn check(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
+    let path = required_path(arguments, "path");
     if path.is_dir() {
         let compilation = foster::check_package(path)?;
         report_warnings(&compilation, None, None)?;
+        if arguments.get_flag("dump-ownership") {
+            print!("{}", compilation.ownership.debug_dump(&compilation.hir));
+        }
         println!(
             "ok: checked {} module(s) ({} implicit)",
             compilation.package.modules.len(),
@@ -159,6 +170,9 @@ fn check(path: &Path) -> Result<(), Box<dyn Error>> {
         let function_count = program.functions.len();
         let compilation = compile_single_file(path, &source, program)?;
         report_warnings(&compilation, Some(path), Some(&source))?;
+        if arguments.get_flag("dump-ownership") {
+            print!("{}", compilation.ownership.debug_dump(&compilation.hir));
+        }
         println!("ok: checked {function_count} function(s)");
     }
     Ok(())

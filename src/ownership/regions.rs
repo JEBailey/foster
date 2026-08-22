@@ -1,6 +1,7 @@
 use std::collections::{HashSet, VecDeque};
 
 use crate::error::FosterError;
+use crate::hir::queries::{place_contains, places_overlap};
 use crate::hir::{FunctionId, PackageHir, Place, Projection};
 
 use super::{
@@ -346,7 +347,7 @@ pub(super) fn validate(hir: &PackageHir, program: &Program) -> Result<(), Foster
                 )
             };
             return Err(FosterError::runtime(message)
-            .with_code("E0401")
+            .with_code(super::diagnostics::INVALIDATED_LOAN)
             .with_source_module(hir.modules[definition.module].name.clone())
             .with_primary_label(
                 conflict.required_use.span,
@@ -403,7 +404,7 @@ fn validate_suspensions(
                         "in `{}.{}`: a loan required after suspension does not belong to the parked invocation",
                         hir.modules[definition.module].name, definition.name
                     ))
-                    .with_code("E0728")
+                    .with_code(super::diagnostics::UNSAFE_SUSPENSION)
                     .with_source_module(hir.modules[definition.module].name.clone())
                     .with_primary_label(span.clone(), "this suspension cannot preserve the loan's storage")
                     .with_label(loan.span.clone(), "loan is issued from non-frame storage here")
@@ -453,7 +454,7 @@ fn validate_storage_and_escape(
                             "in `{}.{}`: cannot store a value borrowing `{name}` into its own origin",
                             hir.modules[definition.module].name, definition.name
                         ))
-                        .with_code("E0403")
+                        .with_code(super::diagnostics::SELF_BORROW)
                         .with_source_module(hir.modules[definition.module].name.clone())
                         .with_primary_label(span.clone(), "this value borrows from its destination")
                         .with_label(loan.span.clone(), "the stored borrower originates here")
@@ -527,7 +528,7 @@ fn validate_returned_loan(
             "in `{module}.{}`: returned {noun} borrows local `{name}`",
             function.name
         ))
-        .with_code("E0402")
+        .with_code(super::diagnostics::BORROW_ESCAPE)
         .with_source_module(module.clone())
         .with_primary_label(
             returned_at.clone(),
@@ -543,7 +544,7 @@ fn validate_returned_loan(
             "in `{module}.{}`: returned reference borrows parameter `{name}` without an exposed group",
             function.name
         ))
-        .with_code("E0402")
+        .with_code(super::diagnostics::BORROW_ESCAPE)
         .with_source_module(module.clone())
         .with_primary_label(returned_at.clone(), "this return exposes a borrow without a named result group"));
     };
@@ -552,7 +553,7 @@ fn validate_returned_loan(
             "in `{module}.{}`: returned reference group `{group}` is absent from the result type",
             function.name
         ))
-        .with_code("E0402")
+        .with_code(super::diagnostics::BORROW_ESCAPE)
         .with_source_module(module.clone())
         .with_primary_label(
             returned_at.clone(),
@@ -634,7 +635,7 @@ fn invalidates(invalidated: &Place, kind: InvalidationKind, origin: &Place) -> b
             || origin
                 .projections
                 .iter()
-                .any(|projection| matches!(projection, Projection::Index(_))))
+                .any(|projection| matches!(projection, Projection::Index { .. })))
 }
 
 fn analyze_function(function: &Function) -> ProvenanceAnalysis {
@@ -776,32 +777,6 @@ fn join(existing: &mut ProvenanceState, incoming: &ProvenanceState) -> bool {
         changed |= entry.len() != old;
     }
     changed
-}
-
-fn place_contains(parent: &Place, child: &Place) -> bool {
-    parent.root == child.root
-        && parent.projections.len() <= child.projections.len()
-        && parent
-            .projections
-            .iter()
-            .zip(&child.projections)
-            .all(|(left, right)| left == right)
-}
-
-fn places_overlap(left: &Place, right: &Place) -> bool {
-    if left.root != right.root {
-        return false;
-    }
-    for (left, right) in left.projections.iter().zip(&right.projections) {
-        match (left, right) {
-            (Projection::Field(left), Projection::Field(right)) if left != right => return false,
-            (Projection::Field(_), Projection::Field(_))
-            | (Projection::Index(_), Projection::Index(_))
-            | (Projection::Dereference, Projection::Dereference) => {}
-            _ => return true,
-        }
-    }
-    true
 }
 
 #[cfg(test)]
@@ -960,7 +935,10 @@ mod tests {
             id: LoanId(0),
             origin: Place {
                 root: owner,
-                projections: vec![Projection::Index(index)],
+                projections: vec![Projection::Index {
+                    expression: index,
+                    constant: None,
+                }],
             },
             issued_at: super::super::MirPoint {
                 block: 0,
@@ -1050,7 +1028,10 @@ mod tests {
                 id: LoanId(0),
                 origin: Place {
                     root: owner,
-                    projections: vec![Projection::Index(index)],
+                    projections: vec![Projection::Index {
+                        expression: index,
+                        constant: None,
+                    }],
                 },
                 issued_at: super::super::MirPoint {
                     block: 0,
@@ -1110,7 +1091,10 @@ mod tests {
                 id: LoanId(0),
                 origin: Place {
                     root: owner,
-                    projections: vec![Projection::Index(index)],
+                    projections: vec![Projection::Index {
+                        expression: index,
+                        constant: None,
+                    }],
                 },
                 issued_at: super::super::MirPoint {
                     block: 0,
@@ -1132,5 +1116,154 @@ mod tests {
                 .loans
                 .contains_key(&LoanId(0))
         );
+    }
+
+    fn model_function(events: &[super::super::model::Event]) -> Function {
+        let borrower = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(0));
+        let owner = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(1));
+        let index = crate::hir::ExprId::from_raw(la_arena::RawIdx::from_u32(0));
+        let borrower_place = Place {
+            root: borrower,
+            projections: Vec::new(),
+        };
+        let owner_place = Place {
+            root: owner,
+            projections: Vec::new(),
+        };
+        let operations = events
+            .iter()
+            .enumerate()
+            .map(|(offset, event)| match event {
+                super::super::model::Event::Issue => Operation::StoreBorrower {
+                    destination: borrower_place.clone(),
+                    value: BorrowValue::Loan(LoanId(0)),
+                    span: offset..offset + 1,
+                },
+                super::super::model::Event::Use => Operation::Use {
+                    place: borrower_place.clone(),
+                    mode: super::super::UseMode::Read,
+                    span: offset..offset + 1,
+                },
+                super::super::model::Event::Invalidate => Operation::Invalidate {
+                    place: owner_place.clone(),
+                    kind: InvalidationKind::Reshape,
+                    span: offset..offset + 1,
+                },
+                super::super::model::Event::End => Operation::StoreBorrower {
+                    destination: borrower_place.clone(),
+                    value: BorrowValue::Empty,
+                    span: offset..offset + 1,
+                },
+            })
+            .collect();
+        Function {
+            entry: 0,
+            blocks: vec![BasicBlock {
+                operations,
+                terminator: Terminator::Return,
+            }],
+            loans: vec![super::super::LoanDefinition {
+                id: LoanId(0),
+                origin: Place {
+                    root: owner,
+                    projections: vec![Projection::Index {
+                        expression: index,
+                        constant: None,
+                    }],
+                },
+                issued_at: super::super::MirPoint {
+                    block: 0,
+                    operation: 0,
+                },
+                parents: HashSet::new(),
+                span: 0..1,
+            }],
+            result_provenance: Default::default(),
+        }
+    }
+
+    #[test]
+    fn cfg_checker_matches_reference_model_for_bounded_event_histories() {
+        use super::super::model::{self, Event};
+
+        for encoded in 0usize..3usize.pow(6) {
+            let mut value = encoded;
+            let mut events = vec![Event::Issue];
+            for _ in 0..6 {
+                events.push(match value % 3 {
+                    0 => Event::Use,
+                    1 => Event::Invalidate,
+                    _ => Event::End,
+                });
+                value /= 3;
+            }
+            let function = model_function(&events);
+            let provenance = analyze_function(&function);
+            let requirements = analyze_function_requirements(&function, &provenance);
+            assert_eq!(
+                find_conflict(&function, &requirements).is_none(),
+                model::evaluate(&events).accepted,
+                "reference-model disagreement for {events:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn harmless_cfg_splitting_preserves_the_ownership_decision() {
+        use super::super::model::Event;
+        let linear = model_function(&[Event::Issue, Event::Invalidate, Event::Use]);
+        let mut split = model_function(&[Event::Issue, Event::Invalidate, Event::Use]);
+        let operations = std::mem::take(&mut split.blocks[0].operations);
+        split.blocks = operations
+            .into_iter()
+            .enumerate()
+            .map(|(index, operation)| BasicBlock {
+                operations: vec![operation],
+                terminator: if index == 2 {
+                    Terminator::Return
+                } else {
+                    Terminator::Goto(index + 1)
+                },
+            })
+            .collect();
+        for function in [&linear, &split] {
+            let provenance = analyze_function(function);
+            let requirements = analyze_function_requirements(function, &provenance);
+            assert!(find_conflict(function, &requirements).is_some());
+        }
+    }
+
+    #[test]
+    fn ownership_decision_is_sensitive_to_invalidating_event_mutations() {
+        use super::super::model::Event;
+        for events in [
+            vec![Event::Issue, Event::Invalidate, Event::Use],
+            vec![Event::Issue, Event::Use],
+            vec![Event::Issue, Event::Invalidate, Event::End, Event::Use],
+        ] {
+            let function = model_function(&events);
+            let provenance = analyze_function(&function);
+            let requirements = analyze_function_requirements(&function, &provenance);
+            assert_eq!(
+                find_conflict(&function, &requirements).is_none(),
+                super::super::model::evaluate(&events).accepted
+            );
+        }
+    }
+
+    #[test]
+    fn constant_indices_are_disjoint_while_dynamic_indices_overlap() {
+        let local = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(0));
+        let expression = |value| crate::hir::ExprId::from_raw(la_arena::RawIdx::from_u32(value));
+        let place = |constant, value| Place {
+            root: local,
+            projections: vec![Projection::Index {
+                expression: expression(value),
+                constant,
+            }],
+        };
+        assert!(!places_overlap(&place(Some(0), 0), &place(Some(1), 1)));
+        assert!(places_overlap(&place(Some(0), 0), &place(Some(0), 1)));
+        assert!(places_overlap(&place(Some(0), 0), &place(None, 2)));
     }
 }

@@ -21,6 +21,95 @@ pub struct Program {
     pub requirements: HashMap<FunctionId, RequirementAnalysis>,
 }
 
+impl Program {
+    /// Deterministic ownership report suitable for diagnostics, golden tests,
+    /// and bug reports. It deliberately avoids `HashMap` debug formatting.
+    pub fn debug_dump(&self, hir: &crate::hir::PackageHir) -> String {
+        use std::fmt::Write;
+
+        let mut functions = self.functions.keys().copied().collect::<Vec<_>>();
+        functions.sort_by_key(|id| {
+            let function = &hir.functions[*id];
+            (
+                hir.modules[function.module].name.clone(),
+                function.name.clone(),
+            )
+        });
+        let mut output = format!(
+            "foster-language={} ownership-model={}\n",
+            super::LANGUAGE_VERSION,
+            super::MODEL_VERSION
+        );
+        for id in functions {
+            let definition = &hir.functions[id];
+            let _ = writeln!(
+                output,
+                "\nfunction {}.{}",
+                hir.modules[definition.module].name, definition.name
+            );
+            let function = &self.functions[&id];
+            let _ = writeln!(output, "  result {:?}", function.result_provenance);
+            for loan in &function.loans {
+                let mut parents = loan.parents.iter().map(|loan| loan.0).collect::<Vec<_>>();
+                parents.sort_unstable();
+                let _ = writeln!(
+                    output,
+                    "  loan L{} origin={} issued=b{}:o{} parents={parents:?}",
+                    loan.id.0,
+                    place_label(hir, &loan.origin),
+                    loan.issued_at.block,
+                    loan.issued_at.operation,
+                );
+            }
+            for (block, basic_block) in function.blocks.iter().enumerate() {
+                let _ = writeln!(output, "  block b{block}");
+                for (operation, value) in basic_block.operations.iter().enumerate() {
+                    let _ = writeln!(output, "    o{operation} {value:?}");
+                }
+                let _ = writeln!(output, "    -> {:?}", basic_block.terminator);
+            }
+            if let Some(requirements) = self.requirements.get(&id) {
+                for loan in &function.loans {
+                    let mut points = Vec::new();
+                    for (block, states) in requirements.points.iter().enumerate() {
+                        let Some(states) = states else { continue };
+                        for (operation, state) in states.iter().enumerate() {
+                            if state.loans.contains_key(&loan.id) {
+                                points.push(format!("b{block}:o{operation}"));
+                            }
+                        }
+                    }
+                    let _ = writeln!(
+                        output,
+                        "  region L{} = {{{}}}",
+                        loan.id.0,
+                        points.join(", ")
+                    );
+                }
+            }
+        }
+        output
+    }
+}
+
+fn place_label(hir: &crate::hir::PackageHir, place: &Place) -> String {
+    let mut label = hir.locals[place.root].name.clone();
+    for projection in &place.projections {
+        match projection {
+            crate::hir::Projection::Field(field) => {
+                label.push('.');
+                label.push_str(field);
+            }
+            crate::hir::Projection::Index { constant, .. } => match constant {
+                Some(index) => label.push_str(&format!("[{index}]")),
+                None => label.push_str("[?]"),
+            },
+            crate::hir::Projection::Dereference => label.push_str(".*"),
+        }
+    }
+    label
+}
+
 #[derive(Debug)]
 pub struct Function {
     pub entry: BlockId,
