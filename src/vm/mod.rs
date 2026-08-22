@@ -4,6 +4,7 @@
 //! executable format while the language semantics are still evolving.
 
 mod binary;
+mod builtins;
 mod compiler;
 mod host;
 mod ir;

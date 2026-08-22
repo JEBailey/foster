@@ -1,7 +1,7 @@
 use std::rc::Rc;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
-use crate::error::FosterError;
+use crate::error::{FosterError, RuntimeError};
 use crate::hir::{Builtin, CaptureMode, FunctionId};
 
 use super::operations::{binary, constant_value, unary};
@@ -30,7 +30,7 @@ enum RegisterCell {
 }
 
 impl RegisterCell {
-    fn read(&self) -> Result<Value, FosterError> {
+    fn read(&self) -> Result<Value, RuntimeError> {
         match self {
             Self::Inline(Value::Reference(place)) => place.read(),
             Self::Inline(value) => Ok(value.clone()),
@@ -46,7 +46,7 @@ impl RegisterCell {
         }
     }
 
-    fn write(&mut self, value: Value) -> Result<(), FosterError> {
+    fn write(&mut self, value: Value) -> Result<(), RuntimeError> {
         match self {
             Self::Inline(Value::Reference(place)) => place.write(value)?,
             Self::Inline(current) => *current = value,
@@ -72,8 +72,8 @@ impl RegisterCell {
 
     fn reshape(
         &mut self,
-        update: impl FnOnce(&mut Value) -> Result<(), FosterError>,
-    ) -> Result<(), FosterError> {
+        update: impl FnOnce(&mut Value) -> Result<(), RuntimeError>,
+    ) -> Result<(), RuntimeError> {
         match self {
             Self::Inline(Value::Reference(place)) => place.reshape(update),
             Self::Inline(value) => update(value),
@@ -87,7 +87,7 @@ impl RegisterCell {
         }
     }
 
-    fn share(&mut self) -> Result<Arc<SharedValue>, FosterError> {
+    fn share(&mut self) -> Result<Arc<SharedValue>, RuntimeError> {
         self.promote().share()
     }
 
@@ -123,33 +123,43 @@ struct SharedCommit {
 
 pub struct Machine {
     program: Arc<Program>,
+    host: Arc<dyn super::builtins::HostServices>,
 }
 
 impl Machine {
     pub fn new(program: &Program) -> Self {
         Self {
             program: Arc::new(program.clone()),
+            host: super::builtins::native_host(),
         }
     }
 
     pub fn run_main(&self) -> Result<Value, FosterError> {
+        self.run_main_runtime().map_err(Into::into)
+    }
+
+    fn run_main_runtime(&self) -> Result<Value, RuntimeError> {
         let main = self
             .program
             .main
-            .ok_or_else(|| FosterError::runtime("bytecode has no `main` function"))?;
+            .ok_or_else(|| RuntimeError::runtime("bytecode has no `main` function"))?;
         self.execute(main, Vec::new(), Vec::new(), None)
             .map(|result| result.0)
     }
 
     /// Executes a compiled zero-argument function in a fresh VM frame.
     pub fn run_function(&self, function: FunctionId) -> Result<Value, FosterError> {
+        self.run_function_runtime(function).map_err(Into::into)
+    }
+
+    fn run_function_runtime(&self, function: FunctionId) -> Result<Value, RuntimeError> {
         let definition = self
             .program
             .functions
             .get(&function)
-            .ok_or_else(|| FosterError::runtime("bytecode references an unknown function"))?;
+            .ok_or_else(|| RuntimeError::runtime("bytecode references an unknown function"))?;
         if definition.parameters != 0 || definition.captures != 0 {
-            return Err(FosterError::runtime(format!(
+            return Err(RuntimeError::runtime(format!(
                 "VM entry function `{}` must have no parameters or captures",
                 definition.name
             )));
@@ -164,7 +174,7 @@ impl Machine {
         captures: Vec<Capture>,
         arguments: Vec<Value>,
         receiver: Option<Rc<Slot>>,
-    ) -> Result<(Value, Option<Value>), FosterError> {
+    ) -> Result<(Value, Option<Value>), RuntimeError> {
         self.execute_with_leases(entry, captures, arguments, receiver, Vec::new())
     }
 
@@ -175,7 +185,7 @@ impl Machine {
         arguments: Vec<Value>,
         receiver: Option<Rc<Slot>>,
         argument_leases: Vec<AccessLease>,
-    ) -> Result<(Value, Option<Value>), FosterError> {
+    ) -> Result<(Value, Option<Value>), RuntimeError> {
         let mut frames = vec![if let Some(receiver) = receiver.clone() {
             self.method_frame(entry, receiver, arguments, None)?
         } else {
@@ -191,7 +201,7 @@ impl Machine {
                 .get(frame.instruction)
                 .cloned()
                 .ok_or_else(|| {
-                    FosterError::runtime(format!("VM function `{}` did not return", function.name))
+                    RuntimeError::runtime(format!("VM function `{}` did not return", function.name))
                 })?;
             frame.instruction += 1;
 
@@ -229,7 +239,7 @@ impl Machine {
                     let left_value = read(frame, left)?;
                     let right_value = read(frame, right)?;
                     let value = binary(operator, &left_value, &right_value).map_err(|error| {
-                        FosterError::runtime(format!(
+                        RuntimeError::runtime(format!(
                             "{} in `{}` with {left_value:?} and {right_value:?}",
                             error.message, function.name
                         ))
@@ -252,10 +262,10 @@ impl Machine {
                     index,
                 } => {
                     let Value::Integer(index) = read(frame, index)? else {
-                        return Err(FosterError::runtime("VM list index is not an integer"));
+                        return Err(RuntimeError::runtime("VM list index is not an integer"));
                     };
                     let index = usize::try_from(index)
-                        .map_err(|_| FosterError::runtime("index is out of bounds"))?;
+                        .map_err(|_| RuntimeError::runtime("index is out of bounds"))?;
                     let object = read(frame, object)?;
                     let value = match object {
                         value if value.list_value().is_some() => {
@@ -273,9 +283,9 @@ impl Machine {
                             .get(index)
                             .copied()
                             .map(Value::Byte),
-                        _ => return Err(FosterError::runtime("value does not support indexing")),
+                        _ => return Err(RuntimeError::runtime("value does not support indexing")),
                     }
-                    .ok_or_else(|| FosterError::runtime("index is out of bounds"))?;
+                    .ok_or_else(|| RuntimeError::runtime("index is out of bounds"))?;
                     write(frame, destination, value)?;
                 }
                 Instruction::MakeRecord {
@@ -286,7 +296,7 @@ impl Machine {
                     let values = fields
                         .into_iter()
                         .map(|(_, register)| read(frame, register))
-                        .collect::<Result<Vec<_>, FosterError>>()?;
+                        .collect::<Result<Vec<_>, RuntimeError>>()?;
                     let fields =
                         RecordFields::new(self.program.record_layouts[&record].clone(), values)?;
                     write(
@@ -344,10 +354,10 @@ impl Machine {
                 } => {
                     let mut value = read(frame, object)?;
                     let Value::Record { fields, .. } = &mut value else {
-                        return Err(FosterError::runtime("field assignment requires a record"));
+                        return Err(RuntimeError::runtime("field assignment requires a record"));
                     };
                     *fields.get_mut(&field).ok_or_else(|| {
-                        FosterError::runtime(format!("record has no field `{field}`"))
+                        RuntimeError::runtime(format!("record has no field `{field}`"))
                     })? = read(frame, source)?;
                     write(frame, object, value)?;
                 }
@@ -357,34 +367,34 @@ impl Machine {
                     source,
                 } => {
                     let Value::Integer(index) = read(frame, index)? else {
-                        return Err(FosterError::runtime("list index is not an integer"));
+                        return Err(RuntimeError::runtime("list index is not an integer"));
                     };
                     let mut value = read(frame, object)?;
                     let index = usize::try_from(index)
-                        .map_err(|_| FosterError::runtime("index is out of bounds"))?;
+                        .map_err(|_| RuntimeError::runtime("index is out of bounds"))?;
                     let source = read(frame, source)?;
                     match &mut value {
                         value if value.list_value().is_some() => {
                             let values = value.list_value_mut().unwrap();
                             *values
                                 .get_mut(index)
-                                .ok_or_else(|| FosterError::runtime("index is out of bounds"))? =
+                                .ok_or_else(|| RuntimeError::runtime("index is out of bounds"))? =
                                 source;
                         }
                         receiver if receiver.byte_buffer_value().is_some() => {
                             let values = receiver.byte_buffer_value_mut().unwrap();
                             let Value::Byte(source) = source else {
-                                return Err(FosterError::runtime(
+                                return Err(RuntimeError::runtime(
                                     "byte-buffer elements require Byte values",
                                 ));
                             };
                             *values
                                 .get_mut(index)
-                                .ok_or_else(|| FosterError::runtime("index is out of bounds"))? =
+                                .ok_or_else(|| RuntimeError::runtime("index is out of bounds"))? =
                                 source;
                         }
                         _ => {
-                            return Err(FosterError::runtime(
+                            return Err(RuntimeError::runtime(
                                 "indexed assignment requires mutable indexed storage",
                             ));
                         }
@@ -397,10 +407,10 @@ impl Machine {
                     index,
                 } => {
                     let Value::Integer(index) = read(frame, index)? else {
-                        return Err(FosterError::runtime("reference index must be Int"));
+                        return Err(RuntimeError::runtime("reference index must be Int"));
                     };
                     let index = usize::try_from(index)
-                        .map_err(|_| FosterError::runtime("reference index is out of bounds"))?;
+                        .map_err(|_| RuntimeError::runtime("reference index is out of bounds"))?;
                     let reference = PlaceHandle::indexed(place(frame, object), index)?;
                     write(frame, destination, Value::Reference(reference))?;
                 }
@@ -434,14 +444,16 @@ impl Machine {
                         receiver if receiver.byte_buffer_value().is_some() => {
                             let values = receiver.byte_buffer_value_mut().unwrap();
                             let Value::Byte(value) = value else {
-                                return Err(FosterError::runtime(
+                                return Err(RuntimeError::runtime(
                                     "ByteBuffer.push requires a Byte",
                                 ));
                             };
                             values.push(value);
                             Ok(())
                         }
-                        _ => Err(FosterError::runtime("`push` requires a List or ByteBuffer")),
+                        _ => Err(RuntimeError::runtime(
+                            "`push` requires a List or ByteBuffer",
+                        )),
                     })?;
                     write(frame, destination, Value::Unit)?;
                 }
@@ -452,7 +464,7 @@ impl Machine {
                 } => {
                     let mut list = read(frame, object)?;
                     let Some(values) = list.list_value_mut() else {
-                        return Err(FosterError::runtime("`append` requires a List"));
+                        return Err(RuntimeError::runtime("`append` requires a List"));
                     };
                     values.push(read(frame, value)?);
                     write(frame, destination, list)?;
@@ -477,13 +489,13 @@ impl Machine {
                 } => {
                     if builtin == Builtin::ByteBufferFreeze {
                         let [buffer] = arguments.as_slice() else {
-                            return Err(FosterError::runtime(
+                            return Err(RuntimeError::runtime(
                                 "ByteBuffer.freeze requires one ByteBuffer",
                             ));
                         };
                         let value = frame.registers[buffer.0 as usize].replace(Value::Unit);
                         let Value::RawByteBuffer(values) = value else {
-                            return Err(FosterError::runtime(
+                            return Err(RuntimeError::runtime(
                                 "ByteBuffer.freeze requires a ByteBuffer",
                             ));
                         };
@@ -501,7 +513,12 @@ impl Machine {
                     write(
                         frame,
                         destination,
-                        call_builtin(builtin, &arguments, self.program.string_record)?,
+                        super::builtins::dispatch(
+                            self.host.as_ref(),
+                            builtin,
+                            &arguments,
+                            self.program.string_record,
+                        )?,
                     )?;
                 }
                 Instruction::MatchPattern {
@@ -600,7 +617,7 @@ impl Machine {
                     }
                     if value.string_bytes().is_some() {
                         if !arguments.is_empty() {
-                            return Err(FosterError::runtime(format!(
+                            return Err(RuntimeError::runtime(format!(
                                 "contract member `{name}` does not accept arguments"
                             )));
                         }
@@ -613,7 +630,7 @@ impl Machine {
                     }
                     if value.bytes_value().is_some() {
                         if !arguments.is_empty() {
-                            return Err(FosterError::runtime(format!(
+                            return Err(RuntimeError::runtime(format!(
                                 "contract member `{name}` does not accept arguments"
                             )));
                         }
@@ -626,7 +643,7 @@ impl Machine {
                     }
                     if value.list_value().is_some() {
                         if !arguments.is_empty() {
-                            return Err(FosterError::runtime(format!(
+                            return Err(RuntimeError::runtime(format!(
                                 "contract member `{name}` does not accept arguments"
                             )));
                         }
@@ -646,7 +663,7 @@ impl Machine {
                             }
                     ) {
                         if !arguments.is_empty() {
-                            return Err(FosterError::runtime(format!(
+                            return Err(RuntimeError::runtime(format!(
                                 "contract member `{name}` does not accept arguments"
                             )));
                         }
@@ -673,7 +690,7 @@ impl Machine {
                         _ => None,
                     };
                     let function = function.ok_or_else(|| {
-                        FosterError::runtime(format!(
+                        RuntimeError::runtime(format!(
                             "value has no implementation of required method `{name}`"
                         ))
                     })?;
@@ -710,7 +727,7 @@ impl Machine {
                     arguments,
                 } => {
                     let Value::VmClosure { function, captures } = read(frame, callee)? else {
-                        return Err(FosterError::runtime("VM dynamic call requires a closure"));
+                        return Err(RuntimeError::runtime("VM dynamic call requires a closure"));
                     };
                     let next =
                         self.call_frame(function, captures, frame, &arguments, Some(destination))?;
@@ -731,9 +748,10 @@ impl Machine {
                     let state = read(frame, value)?.into_wire()?;
                     let (sender, inbox) = may::sync::mpsc::channel::<RemoteMessage>();
                     let program = self.program.clone();
+                    let host = self.host.clone();
                     let id = next_remote_id();
                     let _handle = may::go_with!(1024 * 1024, move || {
-                        let machine = Machine { program };
+                        let machine = Machine { program, host };
                         let mut state = state;
                         while let Ok(message) = inbox.recv() {
                             let result = (|| {
@@ -775,9 +793,10 @@ impl Machine {
                     let shared = frame.registers[source.0 as usize].share()?;
                     let (sender, inbox) = may::sync::mpsc::channel::<RemoteMessage>();
                     let program = self.program.clone();
+                    let host = self.host.clone();
                     let id = next_remote_id();
                     let _handle = may::go_with!(1024 * 1024, move || {
-                        let machine = Machine { program };
+                        let machine = Machine { program, host };
                         while let Ok(message) = inbox.recv() {
                             let result = (|| {
                                 let (_lease, state) =
@@ -815,7 +834,9 @@ impl Machine {
                     arguments,
                 } => {
                     let Value::Remote(remote) = read(frame, remote)? else {
-                        return Err(FosterError::runtime("remote call requires a remote object"));
+                        return Err(RuntimeError::runtime(
+                            "remote call requires a remote object",
+                        ));
                     };
                     let arguments = arguments
                         .into_iter()
@@ -839,7 +860,7 @@ impl Machine {
                             arguments,
                             response: sender,
                         })
-                        .map_err(|_| FosterError::runtime("remote object is closed"))?;
+                        .map_err(|_| RuntimeError::runtime("remote object is closed"))?;
                     write(
                         frame,
                         destination,
@@ -854,20 +875,20 @@ impl Machine {
                     future,
                 } => {
                     let Value::Future(future) = read(frame, future)? else {
-                        return Err(FosterError::runtime("`await` requires a Future"));
+                        return Err(RuntimeError::runtime("`await` requires a Future"));
                     };
                     let receiver = future
                         .receiver
                         .lock()
-                        .map_err(|_| FosterError::runtime("future lock was poisoned"))?
+                        .map_err(|_| RuntimeError::runtime("future lock was poisoned"))?
                         .take()
-                        .ok_or_else(|| FosterError::runtime("future has already been awaited"))?;
+                        .ok_or_else(|| RuntimeError::runtime("future has already been awaited"))?;
                     let value = receiver
                         .recv()
                         .map_err(|_| {
-                            FosterError::runtime("remote object terminated before replying")
+                            RuntimeError::runtime("remote object terminated before replying")
                         })?
-                        .map_err(FosterError::runtime)?;
+                        .map_err(RuntimeError::runtime)?;
                     write(frame, destination, Value::from_wire(value)?)?;
                 }
                 Instruction::Return { source } => {
@@ -900,12 +921,12 @@ impl Machine {
         captures: Vec<Capture>,
         arguments: Vec<Value>,
         return_destination: Option<Register>,
-    ) -> Result<Frame, FosterError> {
+    ) -> Result<Frame, RuntimeError> {
         let bytecode = &self.program.functions[&function];
         if captures.len() != usize::from(bytecode.captures)
             || arguments.len() != usize::from(bytecode.parameters)
         {
-            return Err(FosterError::runtime(format!(
+            return Err(RuntimeError::runtime(format!(
                 "VM call to `{}` has an invalid capture or parameter layout (expected {}/{}, received {}/{})",
                 bytecode.name,
                 bytecode.captures,
@@ -943,7 +964,7 @@ impl Machine {
         receiver: Rc<Slot>,
         arguments: Vec<Value>,
         return_destination: Option<Register>,
-    ) -> Result<Frame, FosterError> {
+    ) -> Result<Frame, RuntimeError> {
         let mut frame = self.frame(
             function,
             Vec::new(),
@@ -962,7 +983,7 @@ impl Machine {
         caller: &mut Frame,
         arguments: &[Register],
         return_destination: Option<Register>,
-    ) -> Result<Frame, FosterError> {
+    ) -> Result<Frame, RuntimeError> {
         let bytecode = &self.program.functions[&function];
         let mut frame = self.frame(
             function,
@@ -990,7 +1011,7 @@ impl Machine {
         caller: &mut Frame,
         arguments: &[Register],
         return_destination: Option<Register>,
-    ) -> Result<Frame, FosterError> {
+    ) -> Result<Frame, RuntimeError> {
         let bytecode = &self.program.functions[&function];
         let mut frame = self.method_frame(
             function,
@@ -1019,7 +1040,7 @@ fn drop_register(frame: &mut Frame, register: Register) {
 
 fn materialize_remote_arguments(
     arguments: Vec<RemoteArgument>,
-) -> Result<(Vec<Value>, Vec<AccessLease>), FosterError> {
+) -> Result<(Vec<Value>, Vec<AccessLease>), RuntimeError> {
     let mut values = Vec::with_capacity(arguments.len());
     let mut leases = Vec::new();
     for argument in arguments {
@@ -1038,7 +1059,7 @@ fn materialize_remote_arguments(
 fn capture(
     frame: &mut Frame,
     captures: Vec<(CaptureMode, Register)>,
-) -> Result<Vec<Capture>, FosterError> {
+) -> Result<Vec<Capture>, RuntimeError> {
     captures
         .into_iter()
         .map(|(mode, register)| {
@@ -1051,11 +1072,11 @@ fn capture(
         .collect()
 }
 
-fn read(frame: &Frame, register: Register) -> Result<Value, FosterError> {
+fn read(frame: &Frame, register: Register) -> Result<Value, RuntimeError> {
     frame.registers[register.0 as usize].read()
 }
 
-fn write(frame: &mut Frame, register: Register, value: Value) -> Result<(), FosterError> {
+fn write(frame: &mut Frame, register: Register, value: Value) -> Result<(), RuntimeError> {
     frame.registers[register.0 as usize].write(value)
 }
 
@@ -1079,10 +1100,10 @@ fn member(
     value: Value,
     field: &str,
     string_record: Option<crate::hir::RecordId>,
-) -> Result<Value, FosterError> {
+) -> Result<Value, RuntimeError> {
     if let Some(bytes) = value.string_bytes() {
         let text = std::str::from_utf8(bytes)
-            .map_err(|_| FosterError::runtime("Foster String contains invalid UTF-8"))?;
+            .map_err(|_| RuntimeError::runtime("Foster String contains invalid UTF-8"))?;
         return match field {
             "empty?" => Ok(Value::Bool(bytes.is_empty())),
             "length" => Ok(Value::Integer(text.chars().count() as i64)),
@@ -1090,14 +1111,14 @@ fn member(
                 .chars()
                 .next()
                 .map(Value::CodePoint)
-                .ok_or_else(|| FosterError::runtime("cannot take `head` of an empty string")),
+                .ok_or_else(|| RuntimeError::runtime("cannot take `head` of an empty string")),
             "rest" => {
                 let offset = text.chars().next().map_or(0, char::len_utf8);
                 Ok(Value::string(string_record, bytes[offset..].to_vec()))
             }
             "whitespace?" => Ok(Value::Bool(text.chars().all(char::is_whitespace))),
             "utf8" | "value" => Ok(Value::bytes(bytes.to_vec())),
-            _ => Err(FosterError::runtime(format!(
+            _ => Err(RuntimeError::runtime(format!(
                 "value has no field `{field}`"
             ))),
         };
@@ -1110,9 +1131,9 @@ fn member(
                 .first()
                 .copied()
                 .map(Value::Byte)
-                .ok_or_else(|| FosterError::runtime("cannot take `head` of empty Bytes")),
+                .ok_or_else(|| RuntimeError::runtime("cannot take `head` of empty Bytes")),
             "rest" => Ok(Value::bytes(values.get(1..).unwrap_or_default().to_vec())),
-            _ => Err(FosterError::runtime(format!(
+            _ => Err(RuntimeError::runtime(format!(
                 "value has no field `{field}`"
             ))),
         };
@@ -1123,7 +1144,7 @@ fn member(
             "length" => Ok(Value::Integer(values.len() as i64)),
             "capacity" => Ok(Value::Integer(values.capacity() as i64)),
             "value" => Ok(Value::RawByteBuffer(values.clone())),
-            _ => Err(FosterError::runtime(format!(
+            _ => Err(RuntimeError::runtime(format!(
                 "value has no field `{field}`"
             ))),
         };
@@ -1135,9 +1156,9 @@ fn member(
             "head" => values
                 .first()
                 .cloned()
-                .ok_or_else(|| FosterError::runtime("cannot take `head` of an empty list")),
+                .ok_or_else(|| RuntimeError::runtime("cannot take `head` of an empty list")),
             "rest" => Ok(Value::list(values.get(1..).unwrap_or_default().to_vec())),
-            _ => Err(FosterError::runtime(format!(
+            _ => Err(RuntimeError::runtime(format!(
                 "value has no field `{field}`"
             ))),
         };
@@ -1146,358 +1167,15 @@ fn member(
         (Value::Record { fields, .. }, field) => fields
             .get(field)
             .cloned()
-            .ok_or_else(|| FosterError::runtime(format!("record has no field `{field}`"))),
+            .ok_or_else(|| RuntimeError::runtime(format!("record has no field `{field}`"))),
         (Value::CodePoint(value), "whitespace?") => Ok(Value::Bool(value.is_whitespace())),
         (Value::CodePoint(value), "string") => {
             Ok(Value::string(string_record, value.to_string().into_bytes()))
         }
         (Value::Byte(value), "int") => Ok(Value::Integer(i64::from(value))),
-        (value, field) => Err(FosterError::runtime(format!(
+        (value, field) => Err(RuntimeError::runtime(format!(
             "value {value:?} has no field `{field}`"
         ))),
-    }
-}
-
-fn call_builtin(
-    builtin: Builtin,
-    arguments: &[Value],
-    string_record: Option<crate::hir::RecordId>,
-) -> Result<Value, FosterError> {
-    match (builtin, arguments) {
-        (Builtin::Print | Builtin::Println, arguments) => {
-            let rendered = arguments
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(" ");
-            if builtin == Builtin::Println {
-                println!("{rendered}");
-            } else {
-                print!("{rendered}");
-            }
-            Ok(Value::Unit)
-        }
-        (Builtin::CodePoint, [Value::CodePoint(value)]) => Ok(Value::Integer(*value as i64)),
-        (Builtin::FromCodePoint, [Value::Integer(value)]) => u32::try_from(*value)
-            .ok()
-            .and_then(char::from_u32)
-            .map(Value::CodePoint)
-            .ok_or_else(|| FosterError::runtime("invalid Unicode scalar value")),
-        (Builtin::ParseFloat, [value]) if value.string_bytes().is_some() => value
-            .string_text()?
-            .parse::<f64>()
-            .map(Value::Float)
-            .map_err(|_| FosterError::runtime("invalid Float text")),
-        (Builtin::ByteValid, [Value::Integer(value)]) => {
-            Ok(Value::Bool(u8::try_from(*value).is_ok()))
-        }
-        (Builtin::ByteUnchecked, [Value::Integer(value)]) => u8::try_from(*value)
-            .map(Value::Byte)
-            .map_err(|_| FosterError::runtime("Byte is outside 0..255")),
-        (Builtin::BytesEmpty, []) => Ok(Value::bytes(Vec::new())),
-        (Builtin::BytesFromList, [value]) if value.list_value().is_some() => {
-            let values = value.list_value().unwrap();
-            let bytes = values
-                .iter()
-                .map(|value| match value {
-                    Value::Byte(value) => Ok(*value),
-                    _ => Err(FosterError::runtime("Bytes.from requires List<Byte>")),
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Value::bytes(bytes))
-        }
-        (Builtin::BytesConcat, [left, right])
-            if left.bytes_value().is_some() && right.bytes_value().is_some() =>
-        {
-            let left = left.bytes_value().unwrap();
-            let right = right.bytes_value().unwrap();
-            let mut bytes = Vec::with_capacity(left.len() + right.len());
-            bytes.extend_from_slice(left);
-            bytes.extend_from_slice(right);
-            Ok(Value::bytes(bytes))
-        }
-        (Builtin::BytesSlice, [values, Value::Integer(start), Value::Integer(end)])
-            if values.bytes_value().is_some() =>
-        {
-            let values = values.bytes_value().unwrap();
-            let start = usize::try_from(*start)
-                .map_err(|_| FosterError::runtime("byte slice start is out of bounds"))?;
-            let end = usize::try_from(*end)
-                .map_err(|_| FosterError::runtime("byte slice end is out of bounds"))?;
-            let slice = values
-                .get(start..end)
-                .ok_or_else(|| FosterError::runtime("byte slice is out of bounds"))?;
-            Ok(Value::bytes(slice.to_vec()))
-        }
-        (Builtin::BytesToList, [values]) if values.bytes_value().is_some() => Ok(Value::list(
-            values
-                .bytes_value()
-                .unwrap()
-                .iter()
-                .copied()
-                .map(Value::Byte)
-                .collect(),
-        )),
-        (Builtin::BytesHex, [values]) if values.bytes_value().is_some() => Ok(Value::string(
-            string_record,
-            values
-                .bytes_value()
-                .unwrap()
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect::<String>()
-                .into_bytes(),
-        )),
-        (Builtin::BytesFromHex, [value]) if value.string_bytes().is_some() => {
-            Ok(match decode_hex(value.string_text()?) {
-                Ok(bytes) => result_ok(Value::bytes(bytes)),
-                Err((offset, message)) => result_error(Value::Record {
-                    record: None,
-                    name: "HexError".into(),
-                    fields: RecordFields::from_pairs([
-                        ("offset".into(), Value::Integer(offset as i64)),
-                        (
-                            "message".into(),
-                            Value::string(string_record, message.into_bytes()),
-                        ),
-                    ]),
-                }),
-            })
-        }
-        (Builtin::StringUtf8, [value]) if value.string_bytes().is_some() => {
-            Ok(Value::bytes(value.string_bytes().unwrap().to_vec()))
-        }
-        (Builtin::BytesUtf8Valid, [value]) if value.bytes_value().is_some() => Ok(Value::Bool(
-            std::str::from_utf8(value.bytes_value().unwrap()).is_ok(),
-        )),
-        (Builtin::BytesDecodeUtf8, [value]) if value.bytes_value().is_some() => {
-            std::str::from_utf8(value.bytes_value().unwrap())
-                .map(|value| Value::string(string_record, value.as_bytes().to_vec()))
-                .map_err(|_| FosterError::runtime("Bytes are not valid UTF-8"))
-        }
-        (Builtin::ByteBufferEmpty, []) => Ok(Value::RawByteBuffer(Vec::new())),
-        (Builtin::ByteBufferWithCapacity, [Value::Integer(capacity)]) => {
-            let capacity = usize::try_from(*capacity)
-                .map_err(|_| FosterError::runtime("ByteBuffer capacity cannot be negative"))?;
-            Ok(Value::RawByteBuffer(Vec::with_capacity(capacity)))
-        }
-        (Builtin::ByteBufferPush, [Value::RawByteBuffer(buffer), Value::Byte(value)]) => {
-            let mut buffer = buffer.clone();
-            buffer.push(*value);
-            Ok(Value::RawByteBuffer(buffer))
-        }
-        (Builtin::ByteBufferExtend, [Value::RawByteBuffer(buffer), values])
-            if values.bytes_value().is_some() =>
-        {
-            let mut buffer = buffer.clone();
-            buffer.extend_from_slice(values.bytes_value().unwrap());
-            Ok(Value::RawByteBuffer(buffer))
-        }
-        (Builtin::ByteBufferClear, [Value::RawByteBuffer(buffer)]) => {
-            let mut buffer = buffer.clone();
-            buffer.clear();
-            Ok(Value::RawByteBuffer(buffer))
-        }
-        (Builtin::ByteBufferTruncate, [Value::RawByteBuffer(buffer), Value::Integer(length)]) => {
-            let length = usize::try_from(*length)
-                .map_err(|_| FosterError::runtime("truncate length cannot be negative"))?;
-            let mut buffer = buffer.clone();
-            buffer.truncate(length);
-            Ok(Value::RawByteBuffer(buffer))
-        }
-        (
-            Builtin::ByteBufferReserve,
-            [Value::RawByteBuffer(buffer), Value::Integer(additional)],
-        ) => {
-            let additional = usize::try_from(*additional)
-                .map_err(|_| FosterError::runtime("reserve amount cannot be negative"))?;
-            let mut buffer = buffer.clone();
-            buffer.reserve(additional);
-            Ok(Value::RawByteBuffer(buffer))
-        }
-        (
-            Builtin::ByteBufferFreeze | Builtin::ByteBufferSnapshot,
-            [Value::RawByteBuffer(value)],
-        ) => Ok(Value::bytes(value.clone())),
-        (Builtin::IoReadText, [path]) if path.string_bytes().is_some() => {
-            let path = path.string_text()?;
-            Ok(io_result(
-                "read_text",
-                path,
-                std::fs::read(path).map(|bytes| Value::string(string_record, bytes)),
-                string_record,
-            ))
-        }
-        (Builtin::IoWriteText, [path, text])
-            if path.string_bytes().is_some() && text.string_bytes().is_some() =>
-        {
-            let path = path.string_text()?;
-            Ok(io_result(
-                "write_text",
-                path,
-                std::fs::write(path, text.string_bytes().unwrap()).map(|()| Value::Unit),
-                string_record,
-            ))
-        }
-        (Builtin::IoReadBytes, [path]) if path.string_bytes().is_some() => {
-            let path = path.string_text()?;
-            Ok(io_result(
-                "read_bytes",
-                path,
-                std::fs::read(path).map(Value::bytes),
-                string_record,
-            ))
-        }
-        (Builtin::IoWriteBytes, [path, bytes])
-            if path.string_bytes().is_some() && bytes.bytes_value().is_some() =>
-        {
-            let path = path.string_text()?;
-            Ok(io_result(
-                "write_bytes",
-                path,
-                std::fs::write(path, bytes.bytes_value().unwrap()).map(|()| Value::Unit),
-                string_record,
-            ))
-        }
-        (Builtin::IoListDirectory, [path]) if path.string_bytes().is_some() => {
-            let path = path.string_text()?;
-            let entries = std::fs::read_dir(path).and_then(|entries| {
-                let mut names = Vec::new();
-                for entry in entries {
-                    let name = entry?.file_name().into_string().map_err(|_| {
-                        std::io::Error::new(
-                            std::io::ErrorKind::InvalidData,
-                            "directory entry name is not valid UTF-8",
-                        )
-                    })?;
-                    names.push(Value::string(string_record, name.into_bytes()));
-                }
-                names.sort_by_key(|name| name.to_string());
-                Ok(Value::list(names))
-            });
-            Ok(io_result("list_directory", path, entries, string_record))
-        }
-        (Builtin::IoExists, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
-            std::path::Path::new(path.string_text()?).exists(),
-        )),
-        (Builtin::IoIsFile, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
-            std::path::Path::new(path.string_text()?).is_file(),
-        )),
-        (Builtin::IoIsDirectory, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
-            std::path::Path::new(path.string_text()?).is_dir(),
-        )),
-        (Builtin::IoJoin, [left, right])
-            if left.string_bytes().is_some() && right.string_bytes().is_some() =>
-        {
-            path_value(
-                std::path::Path::new(left.string_text()?).join(right.string_text()?),
-                string_record,
-            )
-        }
-        (Builtin::IoParent, [path]) if path.string_bytes().is_some() => optional_path_component(
-            std::path::Path::new(path.string_text()?)
-                .parent()
-                .map(std::path::Path::to_path_buf),
-            string_record,
-        ),
-        (Builtin::IoFileName, [path]) if path.string_bytes().is_some() => optional_os_component(
-            std::path::Path::new(path.string_text()?).file_name(),
-            string_record,
-        ),
-        (Builtin::IoExtension, [path]) if path.string_bytes().is_some() => optional_os_component(
-            std::path::Path::new(path.string_text()?).extension(),
-            string_record,
-        ),
-        (Builtin::IoCanonicalize, [path]) if path.string_bytes().is_some() => {
-            let path = path.string_text()?;
-            Ok(io_result(
-                "canonicalize",
-                path,
-                std::fs::canonicalize(path).and_then(|path| path_value_io(path, string_record)),
-                string_record,
-            ))
-        }
-        (Builtin::IoCurrentDirectory, []) => Ok(io_result(
-            "current_directory",
-            "",
-            std::env::current_dir().and_then(|path| path_value_io(path, string_record)),
-            string_record,
-        )),
-        (Builtin::TcpListen, [address, Value::Integer(port)])
-            if address.string_bytes().is_some() =>
-        {
-            Ok(tcp_result(
-                "listen",
-                super::host::listen(address.string_text()?, *port).map(Value::Integer),
-                string_record,
-            ))
-        }
-        (Builtin::TcpConnect, [address, Value::Integer(port)])
-            if address.string_bytes().is_some() =>
-        {
-            Ok(tcp_result(
-                "connect",
-                super::host::connect(address.string_text()?, *port).map(Value::Integer),
-                string_record,
-            ))
-        }
-        (Builtin::TcpAccept, [Value::Integer(listener)]) => Ok(tcp_result(
-            "accept",
-            super::host::accept(*listener).map(Value::Integer),
-            string_record,
-        )),
-        (Builtin::TcpRead, [Value::Integer(connection), Value::Integer(maximum)]) => {
-            Ok(tcp_result(
-                "read",
-                super::host::read(*connection, *maximum)
-                    .map(|value| Value::string(string_record, value.into_bytes())),
-                string_record,
-            ))
-        }
-        (Builtin::TcpWrite, [Value::Integer(connection), text])
-            if text.string_bytes().is_some() =>
-        {
-            Ok(tcp_result(
-                "write",
-                super::host::write(*connection, text.string_text()?).map(|()| Value::Unit),
-                string_record,
-            ))
-        }
-        (Builtin::TcpReadBytes, [Value::Integer(connection), Value::Integer(maximum)]) => {
-            Ok(tcp_result(
-                "read_bytes",
-                super::host::read_bytes(*connection, *maximum).map(Value::bytes),
-                string_record,
-            ))
-        }
-        (Builtin::TcpWriteBytes, [Value::Integer(connection), bytes])
-            if bytes.bytes_value().is_some() =>
-        {
-            Ok(tcp_result(
-                "write_bytes",
-                super::host::write_bytes(*connection, bytes.bytes_value().unwrap())
-                    .map(|()| Value::Unit),
-                string_record,
-            ))
-        }
-        (Builtin::TcpSetTimeout, [Value::Integer(connection), Value::Integer(milliseconds)]) => {
-            Ok(tcp_result(
-                "set_timeout",
-                super::host::set_timeout(*connection, *milliseconds).map(|()| Value::Unit),
-                string_record,
-            ))
-        }
-        (Builtin::TcpCloseListener, [Value::Integer(listener)]) => Ok(tcp_result(
-            "close_listener",
-            super::host::close_listener(*listener).map(|()| Value::Unit),
-            string_record,
-        )),
-        (Builtin::TcpCloseConnection, [Value::Integer(connection)]) => Ok(tcp_result(
-            "close_connection",
-            super::host::close_connection(*connection).map(|()| Value::Unit),
-            string_record,
-        )),
-        _ => Err(FosterError::runtime("invalid builtin arguments")),
     }
 }
 
@@ -1505,7 +1183,7 @@ fn transform_raw_byte_buffer(
     frame: &mut Frame,
     builtin: Builtin,
     arguments: &[Register],
-) -> Result<Option<Value>, FosterError> {
+) -> Result<Option<Value>, RuntimeError> {
     if !matches!(
         builtin,
         Builtin::ByteBufferPush
@@ -1517,219 +1195,52 @@ fn transform_raw_byte_buffer(
         return Ok(None);
     }
     let Some(buffer) = arguments.first() else {
-        return Err(FosterError::runtime(
+        return Err(RuntimeError::runtime(
             "raw byte-buffer transform requires storage",
         ));
     };
     let Value::RawByteBuffer(mut values) = frame.registers[buffer.0 as usize].replace(Value::Unit)
     else {
-        return Err(FosterError::runtime(
+        return Err(RuntimeError::runtime(
             "raw byte-buffer transform requires RawByteBuffer",
         ));
     };
     match (builtin, &arguments[1..]) {
         (Builtin::ByteBufferPush, [value]) => {
             let Value::Byte(value) = read(frame, *value)? else {
-                return Err(FosterError::runtime("ByteBuffer.push requires a Byte"));
+                return Err(RuntimeError::runtime("ByteBuffer.push requires a Byte"));
             };
             values.push(value);
         }
         (Builtin::ByteBufferExtend, [value]) => {
             let value = read(frame, *value)?;
             let Some(value) = value.bytes_value() else {
-                return Err(FosterError::runtime("ByteBuffer.extend requires Bytes"));
+                return Err(RuntimeError::runtime("ByteBuffer.extend requires Bytes"));
             };
             values.extend_from_slice(value);
         }
         (Builtin::ByteBufferClear, []) => values.clear(),
         (Builtin::ByteBufferTruncate, [length]) => {
             let Value::Integer(length) = read(frame, *length)? else {
-                return Err(FosterError::runtime("ByteBuffer.truncate requires Int"));
+                return Err(RuntimeError::runtime("ByteBuffer.truncate requires Int"));
             };
             values.truncate(
                 usize::try_from(length)
-                    .map_err(|_| FosterError::runtime("truncate length cannot be negative"))?,
+                    .map_err(|_| RuntimeError::runtime("truncate length cannot be negative"))?,
             );
         }
         (Builtin::ByteBufferReserve, [additional]) => {
             let Value::Integer(additional) = read(frame, *additional)? else {
-                return Err(FosterError::runtime("ByteBuffer.reserve requires Int"));
+                return Err(RuntimeError::runtime("ByteBuffer.reserve requires Int"));
             };
             values.reserve(
                 usize::try_from(additional)
-                    .map_err(|_| FosterError::runtime("reserve amount cannot be negative"))?,
+                    .map_err(|_| RuntimeError::runtime("reserve amount cannot be negative"))?,
             );
         }
-        _ => return Err(FosterError::runtime("invalid raw byte-buffer arguments")),
+        _ => return Err(RuntimeError::runtime("invalid raw byte-buffer arguments")),
     }
     Ok(Some(Value::RawByteBuffer(values)))
-}
-
-fn decode_hex(value: &str) -> Result<Vec<u8>, (usize, String)> {
-    if !value.len().is_multiple_of(2) {
-        return Err((
-            value.len(),
-            "hexadecimal byte text must have even length".into(),
-        ));
-    }
-    let mut decoded = Vec::with_capacity(value.len() / 2);
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
-        let offset = index * 2;
-        let high = hex_nibble(pair[0]).ok_or_else(|| {
-            (
-                offset,
-                format!("invalid hexadecimal digit `{}`", pair[0] as char),
-            )
-        })?;
-        let low = hex_nibble(pair[1]).ok_or_else(|| {
-            (
-                offset + 1,
-                format!("invalid hexadecimal digit `{}`", pair[1] as char),
-            )
-        })?;
-        decoded.push((high << 4) | low);
-    }
-    Ok(decoded)
-}
-
-fn hex_nibble(value: u8) -> Option<u8> {
-    match value {
-        b'0'..=b'9' => Some(value - b'0'),
-        b'a'..=b'f' => Some(value - b'a' + 10),
-        b'A'..=b'F' => Some(value - b'A' + 10),
-        _ => None,
-    }
-}
-
-fn io_result(
-    operation: &str,
-    path: &str,
-    result: Result<Value, std::io::Error>,
-    string_record: Option<crate::hir::RecordId>,
-) -> Value {
-    match result {
-        Ok(value) => result_ok(value),
-        Err(error) => result_error(Value::Record {
-            record: None,
-            name: "IoError".into(),
-            fields: RecordFields::from_pairs([
-                (
-                    "operation".into(),
-                    Value::string(string_record, operation.as_bytes().to_vec()),
-                ),
-                (
-                    "path".into(),
-                    Value::string(string_record, path.as_bytes().to_vec()),
-                ),
-                (
-                    "message".into(),
-                    Value::string(string_record, error.to_string().into_bytes()),
-                ),
-            ]),
-        }),
-    }
-}
-
-fn tcp_result(
-    operation: &str,
-    result: Result<Value, String>,
-    string_record: Option<crate::hir::RecordId>,
-) -> Value {
-    match result {
-        Ok(value) => result_ok(value),
-        Err(message) => result_error(Value::Record {
-            record: None,
-            name: "NetworkError".into(),
-            fields: RecordFields::from_pairs([
-                (
-                    "operation".into(),
-                    Value::string(string_record, operation.as_bytes().to_vec()),
-                ),
-                (
-                    "message".into(),
-                    Value::string(string_record, message.into_bytes()),
-                ),
-            ]),
-        }),
-    }
-}
-
-fn result_ok(value: Value) -> Value {
-    let (type_name, alternative) = result_variant_names(true);
-    Value::Variant {
-        variant: None,
-        type_name,
-        alternative,
-        payload: vec![value],
-    }
-}
-
-fn result_error(error: Value) -> Value {
-    let (type_name, alternative) = result_variant_names(false);
-    Value::Variant {
-        variant: None,
-        type_name,
-        alternative,
-        payload: vec![error],
-    }
-}
-
-fn result_variant_names(ok: bool) -> (Arc<str>, Arc<str>) {
-    static RESULT: OnceLock<Arc<str>> = OnceLock::new();
-    static OK: OnceLock<Arc<str>> = OnceLock::new();
-    static ERROR: OnceLock<Arc<str>> = OnceLock::new();
-    let type_name = RESULT.get_or_init(|| Arc::from("Result")).clone();
-    let alternative = if ok {
-        OK.get_or_init(|| Arc::from("Ok")).clone()
-    } else {
-        ERROR.get_or_init(|| Arc::from("Error")).clone()
-    };
-    (type_name, alternative)
-}
-
-fn path_value(
-    path: std::path::PathBuf,
-    string_record: Option<crate::hir::RecordId>,
-) -> Result<Value, FosterError> {
-    path.into_os_string()
-        .into_string()
-        .map(|value| Value::string(string_record, value.into_bytes()))
-        .map_err(|_| FosterError::runtime("path is not valid UTF-8"))
-}
-
-fn path_value_io(
-    path: std::path::PathBuf,
-    string_record: Option<crate::hir::RecordId>,
-) -> Result<Value, std::io::Error> {
-    path.into_os_string()
-        .into_string()
-        .map(|value| Value::string(string_record, value.into_bytes()))
-        .map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "path is not valid UTF-8")
-        })
-}
-
-fn optional_path_component(
-    path: Option<std::path::PathBuf>,
-    string_record: Option<crate::hir::RecordId>,
-) -> Result<Value, FosterError> {
-    match path {
-        Some(path) => path_value(path, string_record),
-        None => Ok(Value::string(string_record, Vec::new())),
-    }
-}
-
-fn optional_os_component(
-    value: Option<&std::ffi::OsStr>,
-    string_record: Option<crate::hir::RecordId>,
-) -> Result<Value, FosterError> {
-    match value {
-        Some(value) => value
-            .to_str()
-            .map(|value| Value::string(string_record, value.as_bytes().to_vec()))
-            .ok_or_else(|| FosterError::runtime("path component is not valid UTF-8")),
-        None => Ok(Value::string(string_record, Vec::new())),
-    }
 }
 
 #[cfg(test)]

@@ -88,3 +88,82 @@ impl fmt::Display for FosterError {
 }
 
 impl std::error::Error for FosterError {}
+
+/// A compact failure produced while executing verified bytecode.
+///
+/// Runtime code does not construct source diagnostics. Public VM entry points convert this into
+/// `FosterError`, keeping diagnostic presentation at the API boundary.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RuntimeError {
+    pub(crate) message: String,
+}
+
+impl RuntimeError {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+
+    pub(crate) fn runtime(message: impl Into<String>) -> Self {
+        Self::new(message)
+    }
+}
+
+impl fmt::Display for RuntimeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for RuntimeError {}
+
+impl From<RuntimeError> for FosterError {
+    fn from(error: RuntimeError) -> Self {
+        Self::runtime(error.message)
+    }
+}
+
+/// Identifies the compiler phase that rejected a program while retaining its rich diagnostic.
+#[derive(Debug)]
+pub(crate) enum CompileError {
+    Lowering(Box<FosterError>),
+    Effects(Box<FosterError>),
+    Types(Box<FosterError>),
+    Ownership(Box<FosterError>),
+    Loans(Box<FosterError>),
+}
+
+impl CompileError {
+    pub(crate) fn lowering(error: FosterError) -> Self {
+        Self::Lowering(Box::new(error))
+    }
+
+    pub(crate) fn effects(error: FosterError) -> Self {
+        Self::Effects(Box::new(error))
+    }
+
+    pub(crate) fn types(error: FosterError) -> Self {
+        Self::Types(Box::new(error))
+    }
+
+    pub(crate) fn ownership(error: FosterError) -> Self {
+        Self::Ownership(Box::new(error))
+    }
+
+    pub(crate) fn loans(error: FosterError) -> Self {
+        Self::Loans(Box::new(error))
+    }
+}
+
+impl From<CompileError> for FosterError {
+    fn from(error: CompileError) -> Self {
+        match error {
+            CompileError::Lowering(error)
+            | CompileError::Effects(error)
+            | CompileError::Types(error)
+            | CompileError::Ownership(error)
+            | CompileError::Loans(error) => *error,
+        }
+    }
+}

@@ -28,6 +28,41 @@ pub struct Package {
     pub modules: BTreeMap<String, Module>,
 }
 
+#[derive(Clone, Copy)]
+struct BootstrapModule {
+    name: &'static str,
+    source: &'static str,
+    mode: BootstrapMode,
+}
+
+#[derive(Clone, Copy)]
+enum BootstrapMode {
+    Full,
+    TypesOnly(&'static [&'static str]),
+}
+
+impl BootstrapModule {
+    const fn full(name: &'static str, source: &'static str) -> Self {
+        Self {
+            name,
+            source,
+            mode: BootstrapMode::Full,
+        }
+    }
+
+    const fn types_only(
+        name: &'static str,
+        source: &'static str,
+        types: &'static [&'static str],
+    ) -> Self {
+        Self {
+            name,
+            source,
+            mode: BootstrapMode::TypesOnly(types),
+        }
+    }
+}
+
 impl Package {
     pub fn from_program(name: impl Into<String>, program: Program) -> Self {
         let name = name.into();
@@ -95,151 +130,46 @@ impl Package {
     }
 
     fn install_string_bootstrap(&mut self) -> Result<(), FosterError> {
-        const NAME: &str = "core.string";
-        if self.modules.contains_key(NAME) {
-            return Ok(());
-        }
-        self.modules.entry("core".into()).or_insert(Module {
-            name: "core".into(),
-            source_path: None,
-            program: None,
-            source: None,
-        });
-        let source = include_str!("../library/core/string.fos");
-        let mut program = crate::parse(source).map_err(|error| {
-            FosterError::runtime(format!("embedded module `{NAME}` is invalid: {error}"))
-        })?;
-        program.imports.clear();
-        program.constants.clear();
-        program.variants.clear();
-        program.functions.clear();
-        program.tests.clear();
-        program.records.retain(|record| record.name == "String");
-        if program.records.len() != 1 {
-            return Err(FosterError::runtime(
-                "embedded `core.string` must define exactly one `String` type",
-            ));
-        }
-        self.modules.insert(
-            NAME.into(),
-            Module {
-                name: NAME.into(),
-                source_path: embedded_source_path(NAME),
-                program: Some(program),
-                source: Some(source.to_owned()),
-            },
-        );
-        Ok(())
+        self.install_bootstrap(BootstrapModule::types_only(
+            "core.string",
+            include_str!("../library/core/string.fos"),
+            &["String"],
+        ))
     }
 
     fn install_bytes_bootstrap(&mut self) -> Result<(), FosterError> {
-        const NAME: &str = "core.bytes";
-        if self.modules.contains_key(NAME) {
-            return Ok(());
-        }
-        self.modules.entry("core".into()).or_insert(Module {
-            name: "core".into(),
-            source_path: None,
-            program: None,
-            source: None,
-        });
-        let source = include_str!("../library/core/bytes.fos");
-        let mut program = crate::parse(source).map_err(|error| {
-            FosterError::runtime(format!("embedded module `{NAME}` is invalid: {error}"))
-        })?;
-        program.imports.clear();
-        program.constants.clear();
-        program.variants.clear();
-        program.functions.clear();
-        program.tests.clear();
-        program
-            .records
-            .retain(|record| matches!(record.name.as_str(), "RawBytes" | "Bytes"));
-        self.modules.insert(
-            NAME.into(),
-            Module {
-                name: NAME.into(),
-                source_path: embedded_source_path(NAME),
-                program: Some(program),
-                source: Some(source.to_owned()),
-            },
-        );
-        Ok(())
+        self.install_bootstrap(BootstrapModule::types_only(
+            "core.bytes",
+            include_str!("../library/core/bytes.fos"),
+            &["RawBytes", "Bytes"],
+        ))
     }
 
     fn install_byte_buffer_bootstrap(&mut self) -> Result<(), FosterError> {
-        const NAME: &str = "core.bytes.buffer";
-        if self.modules.contains_key(NAME) {
-            return Ok(());
-        }
-        self.modules.entry("core".into()).or_insert(Module {
-            name: "core".into(),
-            source_path: None,
-            program: None,
-            source: None,
-        });
-        let source = include_str!("../library/core/bytes/buffer.fos");
-        let mut program = crate::parse(source).map_err(|error| {
-            FosterError::runtime(format!("embedded module `{NAME}` is invalid: {error}"))
-        })?;
-        program.imports.clear();
-        program.constants.clear();
-        program.variants.clear();
-        program.functions.clear();
-        program.tests.clear();
-        program
-            .records
-            .retain(|record| matches!(record.name.as_str(), "RawByteBuffer" | "ByteBuffer"));
-        self.modules.insert(
-            NAME.into(),
-            Module {
-                name: NAME.into(),
-                source_path: embedded_source_path(NAME),
-                program: Some(program),
-                source: Some(source.to_owned()),
-            },
-        );
-        Ok(())
+        self.install_bootstrap(BootstrapModule::types_only(
+            "core.bytes.buffer",
+            include_str!("../library/core/bytes/buffer.fos"),
+            &["RawByteBuffer", "ByteBuffer"],
+        ))
     }
 
     fn install_list_bootstrap(&mut self) -> Result<(), FosterError> {
-        const NAME: &str = "core.list";
-        if self.modules.contains_key(NAME) {
-            return Ok(());
-        }
-        self.modules.entry("core".into()).or_insert(Module {
-            name: "core".into(),
-            source_path: None,
-            program: None,
-            source: None,
-        });
-        let source = include_str!("../library/core/list.fos");
-        let mut program = crate::parse(source).map_err(|error| {
-            FosterError::runtime(format!("embedded module `{NAME}` is invalid: {error}"))
-        })?;
-        program.imports.clear();
-        program.constants.clear();
-        program.variants.clear();
-        program.functions.clear();
-        program.tests.clear();
-        program
-            .records
-            .retain(|record| matches!(record.name.as_str(), "RawList" | "List"));
-        self.modules.insert(
-            NAME.into(),
-            Module {
-                name: NAME.into(),
-                source_path: embedded_source_path(NAME),
-                program: Some(program),
-                source: Some(source.to_owned()),
-            },
-        );
-        Ok(())
+        self.install_bootstrap(BootstrapModule::types_only(
+            "core.list",
+            include_str!("../library/core/list.fos"),
+            &["RawList", "List"],
+        ))
     }
 
     fn install_symbol_bootstrap(&mut self) -> Result<(), FosterError> {
-        const NAME: &str = "core.symbol";
-        if self.modules.contains_key(NAME) {
+        self.install_bootstrap(BootstrapModule::full(
+            "core.symbol",
+            include_str!("../library/core/symbol.fos"),
+        ))
+    }
+
+    fn install_bootstrap(&mut self, bootstrap: BootstrapModule) -> Result<(), FosterError> {
+        if self.modules.contains_key(bootstrap.name) {
             return Ok(());
         }
         self.modules.entry("core".into()).or_insert(Module {
@@ -248,17 +178,36 @@ impl Package {
             program: None,
             source: None,
         });
-        let source = include_str!("../library/core/symbol.fos");
-        let program = crate::parse(source).map_err(|error| {
-            FosterError::runtime(format!("embedded module `{NAME}` is invalid: {error}"))
+        let mut program = crate::parse(bootstrap.source).map_err(|error| {
+            FosterError::runtime(format!(
+                "embedded module `{}` is invalid: {error}",
+                bootstrap.name
+            ))
         })?;
+        if let BootstrapMode::TypesOnly(types) = bootstrap.mode {
+            program.imports.clear();
+            program.constants.clear();
+            program.variants.clear();
+            program.functions.clear();
+            program.tests.clear();
+            program
+                .records
+                .retain(|record| types.contains(&record.name.as_str()));
+            if program.records.len() != types.len() {
+                return Err(FosterError::runtime(format!(
+                    "embedded `{}` must define bootstrap types {}",
+                    bootstrap.name,
+                    types.join(", ")
+                )));
+            }
+        }
         self.modules.insert(
-            NAME.into(),
+            bootstrap.name.into(),
             Module {
-                name: NAME.into(),
-                source_path: embedded_source_path(NAME),
+                name: bootstrap.name.into(),
+                source_path: embedded_source_path(bootstrap.name),
                 program: Some(program),
-                source: Some(source.to_owned()),
+                source: Some(bootstrap.source.to_owned()),
             },
         );
         Ok(())

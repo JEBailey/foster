@@ -1,6 +1,6 @@
 use super::Value;
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::error::FosterError;
+use crate::error::RuntimeError;
 
 use super::Constant;
 
@@ -22,7 +22,7 @@ pub(super) fn constant_value(
     }
 }
 
-pub(super) fn unary(operator: UnaryOp, value: &Value) -> Result<Value, FosterError> {
+pub(super) fn unary(operator: UnaryOp, value: &Value) -> Result<Value, RuntimeError> {
     match (operator, value) {
         (UnaryOp::Negate, Value::Integer(value)) => Ok(Value::Integer(-value)),
         (UnaryOp::Negate, Value::CodePoint(value)) => Ok(Value::Integer(-(*value as i64))),
@@ -30,7 +30,7 @@ pub(super) fn unary(operator: UnaryOp, value: &Value) -> Result<Value, FosterErr
         (UnaryOp::Negate, Value::Float(value)) => Ok(Value::Float(-value)),
         (UnaryOp::Not, Value::Bool(value)) => Ok(Value::Bool(!value)),
         (UnaryOp::BitNot, Value::Byte(value)) => Ok(Value::Byte(!value)),
-        _ => Err(FosterError::runtime(
+        _ => Err(RuntimeError::runtime(
             "invalid typed unary bytecode operation",
         )),
     }
@@ -40,7 +40,7 @@ pub(super) fn binary(
     operator: BinaryOp,
     left: &Value,
     right: &Value,
-) -> Result<Value, FosterError> {
+) -> Result<Value, RuntimeError> {
     use BinaryOp::*;
     if let (Value::Byte(left), Value::Byte(right)) = (left, right) {
         match operator {
@@ -56,7 +56,7 @@ pub(super) fn binary(
         let shift = u32::try_from(*right)
             .ok()
             .filter(|shift| *shift < 8)
-            .ok_or_else(|| FosterError::runtime("Byte shift must be between 0 and 7"))?;
+            .ok_or_else(|| RuntimeError::runtime("Byte shift must be between 0 and 7"))?;
         return Ok(Value::Byte(match operator {
             ShiftLeft => left << shift,
             ShiftRight => left >> shift,
@@ -69,7 +69,7 @@ pub(super) fn binary(
             Subtract => checked_integer(left.checked_sub(right)),
             Multiply => checked_integer(left.checked_mul(right)),
             Divide => checked_integer(left.checked_div(right)),
-            BitAnd | BitOr | BitXor | ShiftLeft | ShiftRight => Err(FosterError::runtime(
+            BitAnd | BitOr | BitXor | ShiftLeft | ShiftRight => Err(RuntimeError::runtime(
                 "bitwise operations require Byte operands",
             )),
             Equal => Ok(Value::Bool(left == right)),
@@ -100,7 +100,7 @@ pub(super) fn binary(
         (LessEqual, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a <= b)),
         (Greater, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a > b)),
         (GreaterEqual, Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a >= b)),
-        _ => Err(FosterError::runtime(
+        _ => Err(RuntimeError::runtime(
             "invalid typed binary bytecode operation",
         )),
     }
@@ -115,8 +115,8 @@ fn integer_value(value: &Value) -> Option<i64> {
     }
 }
 
-fn checked_integer(value: Option<i64>) -> Result<Value, FosterError> {
+fn checked_integer(value: Option<i64>) -> Result<Value, RuntimeError> {
     value
         .map(Value::Integer)
-        .ok_or_else(|| FosterError::runtime("integer arithmetic overflow or division by zero"))
+        .ok_or_else(|| RuntimeError::runtime("integer arithmetic overflow or division by zero"))
 }

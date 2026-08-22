@@ -15,6 +15,7 @@ use lsp_types::{
 };
 
 mod builtins;
+mod compilation;
 mod hints;
 mod workspace;
 use workspace::Workspace;

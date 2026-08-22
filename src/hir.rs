@@ -385,16 +385,24 @@ impl Pattern {
 
 impl Compilation {
     pub fn new(package: Package) -> Result<Self, FosterError> {
-        let mut hir = PackageHir::lower(&package)?;
+        Self::build(package).map_err(Into::into)
+    }
+
+    fn build(package: Package) -> Result<Self, crate::error::CompileError> {
+        use crate::error::CompileError;
+
+        let mut hir = PackageHir::lower(&package).map_err(CompileError::lowering)?;
         infer_ref_capture_effects(&mut hir);
-        validate_groups_and_effects(&hir)?;
-        let (initial_types, _) = crate::typecheck::check(&mut hir)?;
-        infer_capture_modes(&mut hir, &initial_types)?;
-        let (types, diagnostics) = crate::typecheck::check(&mut hir)?;
-        validate_groups_and_effects(&hir)?;
-        check_closure_ownership(&hir)?;
-        check_loan_safety(&hir, &types)?;
-        let ownership = crate::ownership::build_and_check(&hir, &types)?;
+        validate_groups_and_effects(&hir).map_err(CompileError::effects)?;
+        let (initial_types, _) = crate::typecheck::check(&mut hir).map_err(CompileError::types)?;
+        infer_capture_modes(&mut hir, &initial_types).map_err(CompileError::ownership)?;
+        let (types, diagnostics) =
+            crate::typecheck::check(&mut hir).map_err(CompileError::types)?;
+        validate_groups_and_effects(&hir).map_err(CompileError::effects)?;
+        check_closure_ownership(&hir).map_err(CompileError::ownership)?;
+        check_loan_safety(&hir, &types).map_err(CompileError::loans)?;
+        let ownership =
+            crate::ownership::build_and_check(&hir, &types).map_err(CompileError::ownership)?;
         Ok(Self {
             package,
             hir,

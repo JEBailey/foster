@@ -259,6 +259,58 @@ Owned records, variants, lists, primitives, and other recursively transferable v
 The worker owns its object, so its cleanup is tied to the lifetime of the remote worker/handle rather
 than to an untracked global task.
 
+## Lifetime model
+
+Foster has a lifetime model even though it does not expose Rust-style lifetime parameters. Groups
+are the source-level vocabulary for origin and access permissions; inferred loan regions answer the
+separate temporal question of how long a borrow remains usable. The compiler may represent and
+solve region constraints internally, but ordinary APIs should continue to express borrowing with
+groups unless a concrete relationship cannot be expressed without excessive conservatism.
+
+A loan remains valid while its complete origin chain is live, its referenced storage identity
+remains stable, and no operation has invalidated its provenance or permission. In particular, the
+model must preserve these rules:
+
+1. A loan is valid only while its owner and every component of its origin path remain alive and no
+   invalidating operation has occurred.
+2. Derived loans and reborrows cannot outlive their source loan. Reborrowing must define whether a
+   child temporarily restricts its parent and when the parent becomes usable again.
+3. Returned references and closures preserve their dependence on input groups. Calls must retain
+   enough result provenance to distinguish borrowing from one input, another input, or either.
+4. Control-flow joins compute loan validity precisely enough to remain useful while conservatively
+   rejecting a use that is invalid on any incoming path.
+5. Destruction and asynchronous suspension have defined effects on borrowed values. A loan that
+   crosses `await` must refer to storage that remains live and stable through suspension, movement,
+   cancellation, and resumption.
+6. Loan validity and access permission remain distinct. A reference may still be live even when a
+   read, mutation, reshape, move, or consume operation is not permitted at that point.
+7. Provenance survives storage, projection, structural adaptation, callable erasure, partial
+   application, variants, and collection insertion; none of these operations may silently turn a
+   borrower into an owner-independent value.
+8. Temporary values have specified destruction points, including temporaries borrowed for calls,
+   guards, returned expressions, and chained method invocations.
+9. Partial moves, replacement, and reshape invalidate only overlapping places when the compiler
+   can establish disjointness. Moving one named field does not invalidate a loan into another.
+10. Assignment cannot create an owned self-borrowing cycle or otherwise make a borrower responsible
+    for keeping its own origin alive.
+11. Every control transfer ends or carries loans consistently, including normal and guarded return,
+    future `break` and `continue`, error propagation, cancellation, and runtime unwinding.
+12. Temporal validity alone does not permit concurrent mutation. Loans crossing task or remote
+    boundaries remain subject to task ownership, overlapping-group, transfer, and synchronization
+    rules.
+13. Destructors cannot observe already-invalid fields, resurrect references into destroyed storage,
+    or violate the language's declared destruction order.
+14. Structural conformance, generic substitution, and callable variance preserve lifetime
+    dependence rather than widening a borrowed value into a longer-lived contract.
+15. Unsafe, host, or foreign boundaries declare whether they retain, move, invalidate, or use a
+    reference asynchronously; static lifetime guarantees cannot silently assume otherwise.
+16. Diagnostics retain the causal chain: where a loan originated, the operation that invalidated
+    or restricted it, and the later use that required it to remain valid.
+
+These rules do not imply source-level lifetime syntax. Surface lifetime parameters should be
+considered only if real APIs expose relationships that groups plus inferred regions cannot express
+clearly and precisely.
+
 ## Compiler implementation
 
 The relevant compilation order is:
