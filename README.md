@@ -12,6 +12,8 @@ objects running on virtual threads. The bootstrap compiler and register VM are w
 cargo run --bin foster -- run examples/live_inventory_pipeline.fos
 cargo run --bin foster -- check examples/pima/json_parser
 cargo run --bin foster -- check tests/fixtures/modules
+cargo run --bin foster -- fmt examples
+cargo run --bin foster -- fmt examples --check
 cargo run --bin foster -- run tests/fixtures/modules --no-optimize
 cargo run --bin foster -- docs tests/fixtures/modules
 cargo run --bin foster -- docs tests/fixtures/modules --serve
@@ -21,6 +23,11 @@ cargo test
 `run` invokes the zero-argument `main` function. A file is treated as a one-module package; a
 directory is discovered as a filesystem module tree whose entry point is `main.fos`.
 Optimization is enabled by default and can be selected with `--optimize` or `--no-optimize`.
+
+`foster fmt [file-or-directory]` formats `.fos` source in place. It preserves comments and literal
+contents while normalizing indentation, line endings, trailing whitespace, blank lines, and the
+final newline. `foster fmt --check` reports files that differ without writing them, making it
+suitable for CI. The current directory is used when no path is supplied.
 
 ## Generated documentation
 

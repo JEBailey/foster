@@ -44,7 +44,7 @@ fn run_rejects_unknown_optimizer_settings() {
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()
-            .contains("unknown run flag `--turbo`")
+            .contains("unexpected argument '--turbo'")
     );
 }
 
@@ -123,6 +123,50 @@ fn docs_rejects_server_only_options_without_serve() {
     assert!(
         String::from_utf8(output.stderr)
             .unwrap()
-            .contains("require `--serve`")
+            .contains("required arguments were not provided")
     );
+}
+
+#[test]
+fn fmt_formats_files_and_supports_check_mode() {
+    let directory = std::env::temp_dir().join(format!(
+        "foster-fmt-{}-{}",
+        std::process::id(),
+        time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let source_path = directory.join("main.fos");
+    fs::write(
+        &source_path,
+        "// preserve {\r\nfunc main() -> Int {  \r\nvalue = 42\r\nvalue\r\n}\r\n",
+    )
+    .unwrap();
+
+    let check = foster()
+        .arg("fmt")
+        .arg(&directory)
+        .arg("--check")
+        .output()
+        .unwrap();
+    assert!(!check.status.success());
+    assert!(String::from_utf8_lossy(&check.stderr).contains("needs formatting"));
+
+    let format = foster().arg("fmt").arg(&directory).output().unwrap();
+    assert!(format.status.success());
+    assert_eq!(
+        fs::read_to_string(&source_path).unwrap(),
+        "// preserve {\nfunc main() -> Int {\n    value = 42\n    value\n}\n"
+    );
+
+    let check = foster()
+        .arg("fmt")
+        .arg(&directory)
+        .arg("--check")
+        .output()
+        .unwrap();
+    assert!(check.status.success());
+    fs::remove_dir_all(directory).unwrap();
 }

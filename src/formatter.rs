@@ -38,7 +38,7 @@ pub fn format(source: &str) -> Result<String, FosterError> {
             delimiter_indents
                 .get(retained)
                 .copied()
-                .unwrap_or(1)
+                .unwrap_or(1usize)
                 .saturating_sub(1)
         } else {
             delimiter_indents.last().copied().unwrap_or(0)
@@ -48,12 +48,7 @@ pub fn format(source: &str) -> Result<String, FosterError> {
         }
 
         output.push(format!("{}{}", INDENT.repeat(indent), content));
-        scan_line(
-            content,
-            indent,
-            &mut state,
-            &mut delimiter_indents,
-        );
+        scan_line(content, indent, &mut state, &mut delimiter_indents);
 
         if type_continuation
             && delimiter_indents.is_empty()
