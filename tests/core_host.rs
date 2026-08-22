@@ -36,6 +36,87 @@ func main() -> Int { 0 }
         );
     }
     assert_eq!(checked, 298);
+
+    let mut modules = 0;
+    let mut types = 0;
+    let mut required_methods = 0;
+    for (_, module) in compilation.hir.modules.iter() {
+        if !(module.name.starts_with("core.") || module.name.starts_with("std."))
+            || module.source_path.is_none()
+        {
+            continue;
+        }
+        modules += 1;
+        assert!(
+            module
+                .documentation
+                .as_deref()
+                .is_some_and(|documentation| !documentation.trim().is_empty()),
+            "{} is missing module documentation",
+            module.name
+        );
+        for record_id in module.records.values() {
+            let record = &compilation.hir.records[*record_id];
+            if !record.public {
+                continue;
+            }
+            types += 1;
+            assert!(
+                record
+                    .documentation
+                    .as_deref()
+                    .is_some_and(|documentation| !documentation.trim().is_empty()),
+                "{}.{} is missing type documentation",
+                module.name,
+                record.name
+            );
+            for method in &record.methods {
+                required_methods += 1;
+                assert!(
+                    method
+                        .documentation
+                        .as_deref()
+                        .is_some_and(|documentation| !documentation.trim().is_empty()),
+                    "{}.{}.{} is missing required-method documentation",
+                    module.name,
+                    record.name,
+                    method.name
+                );
+            }
+        }
+        for variant_id in module.variant_types.values() {
+            let variant = &compilation.hir.variant_types[*variant_id];
+            if !variant.public {
+                continue;
+            }
+            types += 1;
+            assert!(
+                variant
+                    .documentation
+                    .as_deref()
+                    .is_some_and(|documentation| !documentation.trim().is_empty()),
+                "{}.{} is missing variant documentation",
+                module.name,
+                variant.name
+            );
+            for method in &variant.methods {
+                required_methods += 1;
+                assert!(
+                    method
+                        .documentation
+                        .as_deref()
+                        .is_some_and(|documentation| !documentation.trim().is_empty()),
+                    "{}.{}.{} is missing required-method documentation",
+                    module.name,
+                    variant.name,
+                    method.name
+                );
+            }
+        }
+    }
+    assert!(modules >= 30);
+    assert!(types >= 30);
+    assert!(required_methods >= 10);
 }
 
 #[test]

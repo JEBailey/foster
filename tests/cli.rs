@@ -130,7 +130,12 @@ fn docs_generates_a_static_site_from_resolved_declarations() {
     let index = fs::read_to_string(output_directory.join("index.html")).unwrap();
     let module = fs::read_to_string(output_directory.join("modules/main.html")).unwrap();
     assert!(index.contains("Foster documentation"));
+    assert!(index.contains("data-module-filter"));
+    assert!(index.contains("declarations</span>"));
     assert!(module.contains("func fibonacci"));
+    assert!(module.contains("aria-label=\"On this page\""));
+    assert!(module.contains("class=\"badge kind\">function"));
+    assert!(module.contains("class=\"anchor\" href=\"#fibonacci\""));
     assert!(output_directory.join("style.css").is_file());
 
     fs::remove_dir_all(output_directory).unwrap();

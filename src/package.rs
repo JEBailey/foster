@@ -672,7 +672,8 @@ fn is_ignored_directory(entry: &DirEntry) -> bool {
         return false;
     }
     match entry.file_name().to_str() {
-        Some("target" | ".git" | ".foster") => true,
+        Some(name) if name.starts_with('.') => true,
+        Some("target") => true,
         Some("documentation") => entry.depth() == 1,
         _ => false,
     }

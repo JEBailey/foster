@@ -16,8 +16,8 @@ cargo run --bin foster -- fmt examples
 cargo run --bin foster -- fmt examples --check
 cargo run --bin foster -- test tests/fixtures/modules
 cargo run --bin foster -- run tests/fixtures/modules --no-optimize
-cargo run --bin foster -- docs tests/fixtures/modules
-cargo run --bin foster -- docs tests/fixtures/modules --serve
+cargo run --bin foster -- docs library
+cargo run --bin foster -- docs library --serve
 cargo test
 ```
 
@@ -33,16 +33,17 @@ suitable for CI. The current directory is used when no path is supplied.
 ## Generated documentation
 
 `foster docs [file-or-directory]` type-checks the package and generates a static API site in a
-neighboring `documentation/` directory. The site is built from resolved HIR, so signatures include
+`documentation/` directory within the selected package. The site is built from resolved HIR, so signatures include
 inferred types and effects. It includes public and private declarations, their visibility, and all
-attached Markdown documentation comments.
+attached Markdown documentation comments. Module pages summarize the public types they provide,
+including fields, variants, required methods, and linked functions or methods.
 
 Use `--output <directory>` to choose another destination. Add `--serve` to start a local server and
 open the site in the system browser:
 
 ```powershell
-foster docs . --serve
-foster docs . --output build/api-docs
+foster docs library --serve
+foster docs library --output build/api-docs
 foster serve-docs documentation
 ```
 
