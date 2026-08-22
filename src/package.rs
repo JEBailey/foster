@@ -48,8 +48,10 @@ impl Package {
         program: Program,
     ) -> Result<Self, FosterError> {
         let mut package = Self::from_program(name, program);
-        package.install_core_modules_if_imported()?;
+        package.install_standard_modules_if_imported()?;
         package.install_bytes_bootstrap()?;
+        package.install_byte_buffer_bootstrap()?;
+        package.install_list_bootstrap()?;
         package.install_string_bootstrap()?;
         package.install_symbol_bootstrap()?;
         package.validate()?;
@@ -82,8 +84,10 @@ impl Package {
             modules: BTreeMap::new(),
         };
         package.discover_modules(overlays)?;
-        package.install_core_modules_if_imported()?;
+        package.install_standard_modules_if_imported()?;
         package.install_bytes_bootstrap()?;
+        package.install_byte_buffer_bootstrap()?;
+        package.install_list_bootstrap()?;
         package.install_string_bootstrap()?;
         package.install_symbol_bootstrap()?;
         package.validate()?;
@@ -119,7 +123,7 @@ impl Package {
             NAME.into(),
             Module {
                 name: NAME.into(),
-                source_path: core_source_path(NAME),
+                source_path: embedded_source_path(NAME),
                 program: Some(program),
                 source: Some(source.to_owned()),
             },
@@ -146,12 +150,82 @@ impl Package {
         program.constants.clear();
         program.variants.clear();
         program.functions.clear();
-        program.records.retain(|record| record.name == "Bytes");
+        program
+            .records
+            .retain(|record| matches!(record.name.as_str(), "RawBytes" | "Bytes"));
         self.modules.insert(
             NAME.into(),
             Module {
                 name: NAME.into(),
-                source_path: core_source_path(NAME),
+                source_path: embedded_source_path(NAME),
+                program: Some(program),
+                source: Some(source.to_owned()),
+            },
+        );
+        Ok(())
+    }
+
+    fn install_byte_buffer_bootstrap(&mut self) -> Result<(), FosterError> {
+        const NAME: &str = "core.bytes.buffer";
+        if self.modules.contains_key(NAME) {
+            return Ok(());
+        }
+        self.modules.entry("core".into()).or_insert(Module {
+            name: "core".into(),
+            source_path: None,
+            program: None,
+            source: None,
+        });
+        let source = include_str!("../library/core/bytes/buffer.fos");
+        let mut program = crate::parse(source).map_err(|error| {
+            FosterError::runtime(format!("embedded module `{NAME}` is invalid: {error}"))
+        })?;
+        program.imports.clear();
+        program.constants.clear();
+        program.variants.clear();
+        program.functions.clear();
+        program
+            .records
+            .retain(|record| matches!(record.name.as_str(), "RawByteBuffer" | "ByteBuffer"));
+        self.modules.insert(
+            NAME.into(),
+            Module {
+                name: NAME.into(),
+                source_path: embedded_source_path(NAME),
+                program: Some(program),
+                source: Some(source.to_owned()),
+            },
+        );
+        Ok(())
+    }
+
+    fn install_list_bootstrap(&mut self) -> Result<(), FosterError> {
+        const NAME: &str = "core.list";
+        if self.modules.contains_key(NAME) {
+            return Ok(());
+        }
+        self.modules.entry("core".into()).or_insert(Module {
+            name: "core".into(),
+            source_path: None,
+            program: None,
+            source: None,
+        });
+        let source = include_str!("../library/core/list.fos");
+        let mut program = crate::parse(source).map_err(|error| {
+            FosterError::runtime(format!("embedded module `{NAME}` is invalid: {error}"))
+        })?;
+        program.imports.clear();
+        program.constants.clear();
+        program.variants.clear();
+        program.functions.clear();
+        program
+            .records
+            .retain(|record| matches!(record.name.as_str(), "RawList" | "List"));
+        self.modules.insert(
+            NAME.into(),
+            Module {
+                name: NAME.into(),
+                source_path: embedded_source_path(NAME),
                 program: Some(program),
                 source: Some(source.to_owned()),
             },
@@ -178,7 +252,7 @@ impl Package {
             NAME.into(),
             Module {
                 name: NAME.into(),
-                source_path: core_source_path(NAME),
+                source_path: embedded_source_path(NAME),
                 program: Some(program),
                 source: Some(source.to_owned()),
             },
@@ -186,28 +260,30 @@ impl Package {
         Ok(())
     }
 
-    fn install_core_modules_if_imported(&mut self) -> Result<(), FosterError> {
-        let imports_core = self.modules.values().any(|module| {
+    fn install_standard_modules_if_imported(&mut self) -> Result<(), FosterError> {
+        let imports_embedded = self.modules.values().any(|module| {
             module.program.as_ref().is_some_and(|program| {
-                program
-                    .imports
-                    .iter()
-                    .any(|import| import.path.first().is_some_and(|name| name == "core"))
+                program.imports.iter().any(|import| {
+                    import
+                        .path
+                        .first()
+                        .is_some_and(|name| matches!(name.as_str(), "core" | "std"))
+                })
             })
         });
-        if !imports_core {
+        if !imports_embedded {
             return Ok(());
         }
-        let existing = CORE_MODULES
+        let existing = EMBEDDED_MODULES
             .iter()
             .filter(|(name, _)| self.modules.contains_key(*name))
             .count();
-        if existing == CORE_MODULES.len() {
+        if existing == EMBEDDED_MODULES.len() {
             return Ok(());
         }
         if existing != 0 {
             return Err(FosterError::runtime(
-                "the embedded `core` namespace cannot be partially redefined",
+                "the embedded `core` and `std` namespaces cannot be partially redefined",
             ));
         }
         self.modules.entry("core".into()).or_insert(Module {
@@ -216,13 +292,15 @@ impl Package {
             program: None,
             source: None,
         });
-        self.modules.entry("core.net".into()).or_insert(Module {
-            name: "core.net".into(),
-            source_path: None,
-            program: None,
-            source: None,
-        });
-        for (name, source) in CORE_MODULES {
+        for namespace in ["core.bytes", "std", "std.net"] {
+            self.modules.entry(namespace.into()).or_insert(Module {
+                name: namespace.into(),
+                source_path: None,
+                program: None,
+                source: None,
+            });
+        }
+        for (name, source) in EMBEDDED_MODULES {
             let program = crate::parse(source).map_err(|error| {
                 FosterError::runtime(format!("embedded module `{name}` is invalid: {error}"))
             })?;
@@ -230,7 +308,7 @@ impl Package {
                 (*name).into(),
                 Module {
                     name: (*name).into(),
-                    source_path: core_source_path(name),
+                    source_path: embedded_source_path(name),
                     program: Some(program),
                     source: Some((*source).to_owned()),
                 },
@@ -339,12 +417,26 @@ impl Package {
 
     fn validate(&self) -> Result<(), FosterError> {
         self.validate_portable_names()?;
+        let mut intrinsic_keys = HashSet::new();
         for module in self.modules.values() {
             let Some(program) = &module.program else {
                 continue;
             };
             let mut definitions = HashSet::new();
             for record in &program.records {
+                if record.intrinsic
+                    && !matches!(
+                        (module.name.as_str(), record.name.as_str()),
+                        ("core.bytes", "RawBytes")
+                            | ("core.bytes.buffer", "RawByteBuffer")
+                            | ("core.list", "RawList")
+                    )
+                {
+                    return Err(FosterError::runtime(format!(
+                        "intrinsic type `{}.{}` has no registered runtime representation",
+                        module.name, record.name
+                    )));
+                }
                 if !definitions.insert(record.name.as_str()) {
                     return Err(FosterError::runtime(format!(
                         "module `{}` defines `{}` more than once",
@@ -361,6 +453,26 @@ impl Package {
                 }
             }
             for function in &program.functions {
+                if let Some(key) = &function.intrinsic {
+                    let registered = match module.name.as_str() {
+                        "core.byte" => matches!(key.as_str(), "byte.valid" | "byte.unchecked"),
+                        "core.bytes" => key.starts_with("bytes."),
+                        "core.bytes.buffer" => key.starts_with("byte_buffer."),
+                        "std.fs" | "std.path" | "std.env" => key.starts_with("io."),
+                        "std.net.tcp" => key.starts_with("tcp."),
+                        _ => false,
+                    } && intrinsic_key_registered(key);
+                    if !registered {
+                        return Err(FosterError::runtime(format!(
+                            "intrinsic key `{key}` has no registered runtime implementation"
+                        )));
+                    }
+                    if !intrinsic_keys.insert(key.as_str()) {
+                        return Err(FosterError::runtime(format!(
+                            "intrinsic key `{key}` is declared more than once"
+                        )));
+                    }
+                }
                 if let Some((owner, _)) = function.name.split_once('.') {
                     if !program.records.iter().any(|record| record.name == owner)
                         && !matches!(owner, "Byte" | "Bytes" | "ByteBuffer" | "String")
@@ -374,6 +486,7 @@ impl Package {
                         .parameters
                         .first()
                         .is_some_and(|parameter| parameter.name == "self")
+                        && function.intrinsic.is_none()
                     {
                         return Err(FosterError::runtime(format!(
                             "associated function `{}` cannot declare a `self` parameter; declare an instance method as `func {}`",
@@ -435,7 +548,7 @@ impl Package {
     }
 }
 
-fn core_source_path(module: &str) -> Option<Utf8PathBuf> {
+fn embedded_source_path(module: &str) -> Option<Utf8PathBuf> {
     let relative = format!("library/{}.fos", module.replace('.', "/"));
     let source_tree = Utf8PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(&relative);
     if source_tree.is_file() {
@@ -449,22 +562,19 @@ fn core_source_path(module: &str) -> Option<Utf8PathBuf> {
     bundled.is_file().then_some(bundled)
 }
 
-const CORE_MODULES: &[(&str, &str)] = &[
+const EMBEDDED_MODULES: &[(&str, &str)] = &[
     ("core.option", include_str!("../library/core/option.fos")),
     ("core.byte", include_str!("../library/core/byte.fos")),
     ("core.bytes", include_str!("../library/core/bytes.fos")),
-    ("core.stream", include_str!("../library/core/stream.fos")),
+    ("std.io", include_str!("../library/std/io.fos")),
     (
-        "core.byte_buffer",
-        include_str!("../library/core/byte_buffer.fos"),
+        "core.bytes.buffer",
+        include_str!("../library/core/bytes/buffer.fos"),
     ),
+    ("std.iter", include_str!("../library/std/iter.fos")),
     (
-        "core.iteration",
-        include_str!("../library/core/iteration.fos"),
-    ),
-    (
-        "core.collection",
-        include_str!("../library/core/collection.fos"),
+        "std.collections",
+        include_str!("../library/std/collections.fos"),
     ),
     ("core.result", include_str!("../library/core/result.fos")),
     (
@@ -472,28 +582,93 @@ const CORE_MODULES: &[(&str, &str)] = &[
         include_str!("../library/core/ordering.fos"),
     ),
     ("core.list", include_str!("../library/core/list.fos")),
+    ("std.sequence", include_str!("../library/std/sequence.fos")),
     (
-        "core.sequence",
-        include_str!("../library/core/sequence.fos"),
-    ),
-    (
-        "core.character",
-        include_str!("../library/core/character.fos"),
+        "core.code_point",
+        include_str!("../library/core/code_point.fos"),
     ),
     ("core.bool", include_str!("../library/core/bool.fos")),
     ("core.int", include_str!("../library/core/int.fos")),
     ("core.float", include_str!("../library/core/float.fos")),
     ("core.string", include_str!("../library/core/string.fos")),
     ("core.symbol", include_str!("../library/core/symbol.fos")),
-    ("core.map", include_str!("../library/core/map.fos")),
-    ("core.set", include_str!("../library/core/set.fos")),
-    ("core.queue", include_str!("../library/core/queue.fos")),
-    ("core.deque", include_str!("../library/core/deque.fos")),
-    ("core.stack", include_str!("../library/core/stack.fos")),
+    (
+        "std.collections.map",
+        include_str!("../library/std/collections/map.fos"),
+    ),
+    (
+        "std.collections.set",
+        include_str!("../library/std/collections/set.fos"),
+    ),
+    (
+        "std.collections.queue",
+        include_str!("../library/std/collections/queue.fos"),
+    ),
+    (
+        "std.collections.deque",
+        include_str!("../library/std/collections/deque.fos"),
+    ),
+    (
+        "std.collections.stack",
+        include_str!("../library/std/collections/stack.fos"),
+    ),
     ("core.range", include_str!("../library/core/range.fos")),
-    ("core.io", include_str!("../library/core/io.fos")),
-    ("core.net.tcp", include_str!("../library/core/net/tcp.fos")),
+    ("std.fs", include_str!("../library/std/fs.fos")),
+    ("std.path", include_str!("../library/std/path.fos")),
+    ("std.env", include_str!("../library/std/env.fos")),
+    ("std.net.tcp", include_str!("../library/std/net/tcp.fos")),
 ];
+
+fn intrinsic_key_registered(key: &str) -> bool {
+    matches!(
+        key,
+        "byte.valid"
+            | "byte.unchecked"
+            | "bytes.empty"
+            | "bytes.from_list"
+            | "bytes.from_hex"
+            | "bytes.concat"
+            | "bytes.slice"
+            | "bytes.to_list"
+            | "bytes.hex"
+            | "bytes.encode_utf8"
+            | "bytes.utf8_valid"
+            | "bytes.decode_utf8"
+            | "byte_buffer.empty"
+            | "byte_buffer.with_capacity"
+            | "byte_buffer.push"
+            | "byte_buffer.extend"
+            | "byte_buffer.clear"
+            | "byte_buffer.truncate"
+            | "byte_buffer.reserve"
+            | "byte_buffer.freeze"
+            | "byte_buffer.snapshot"
+            | "io.read_text"
+            | "io.write_text"
+            | "io.read_bytes"
+            | "io.write_bytes"
+            | "io.list_directory"
+            | "io.exists"
+            | "io.is_file"
+            | "io.is_directory"
+            | "io.join"
+            | "io.parent"
+            | "io.file_name"
+            | "io.extension"
+            | "io.canonicalize"
+            | "io.current_directory"
+            | "tcp.listen"
+            | "tcp.connect"
+            | "tcp.accept"
+            | "tcp.read"
+            | "tcp.write"
+            | "tcp.read_bytes"
+            | "tcp.write_bytes"
+            | "tcp.set_timeout"
+            | "tcp.close_listener"
+            | "tcp.close_connection"
+    )
+}
 
 fn module_components(path: &Utf8Path, strip_extension: bool) -> Result<Vec<String>, FosterError> {
     let mut components = path

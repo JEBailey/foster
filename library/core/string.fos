@@ -1,4 +1,4 @@
-import core.character
+import core.code_point
 import core.list
 import core.option
 

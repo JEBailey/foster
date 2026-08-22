@@ -19,8 +19,15 @@ impl Checker<'_> {
         {
             return self.unify((**element).clone(), Ty::Byte, function);
         }
+        if let Ty::Sequence(element) = &expected
+            && let Some(actual) = self.list_element(&actual)
+        {
+            return self.unify((**element).clone(), actual, function);
+        }
         match (expected, actual) {
-            (Ty::Sequence(expected), Ty::List(actual)) => self.unify(*expected, *actual, function),
+            (Ty::Sequence(expected), Ty::RawList(actual)) => {
+                self.unify(*expected, *actual, function)
+            }
             (Ty::Sequence(expected), Ty::RawBytes) => self.unify(*expected, Ty::Byte, function),
             (Ty::Sequence(expected), actual @ Ty::Record(_, _)) => {
                 self.coerce_sequence_shape(function, *expected, actual)
@@ -58,7 +65,7 @@ impl Checker<'_> {
             }
             (
                 Ty::Record(expected, expected_arguments),
-                actual @ (Ty::List(_) | Ty::Sequence(_) | Ty::RawBytes),
+                actual @ (Ty::RawList(_) | Ty::Sequence(_) | Ty::RawBytes),
             ) => self.coerce_record_shape(function, expected, &expected_arguments, actual),
             (expected, actual) => self.unify(expected, actual, function),
         }
@@ -287,9 +294,11 @@ impl Checker<'_> {
             Ty::CodePoint
         } else if self.is_bytes_type(actual) {
             Ty::Byte
+        } else if let Some(element) = self.list_element(actual) {
+            element
         } else {
             match actual {
-                Ty::List(element) | Ty::Sequence(element) => (**element).clone(),
+                Ty::RawList(element) | Ty::Sequence(element) => (**element).clone(),
                 Ty::RawBytes => Ty::Byte,
                 _ => return None,
             }
@@ -297,7 +306,7 @@ impl Checker<'_> {
         let result = match name {
             "empty?" => Ty::Bool,
             "length" => Ty::Int,
-            "iterator" => self.core_record_type("core.iteration", "Iterator", element)?,
+            "iterator" => self.core_record_type("std.iter", "Iterator", element)?,
             _ => return None,
         };
         Some(Ty::Callable {

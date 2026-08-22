@@ -1,4 +1,4 @@
-import core.sequence
+import std.sequence
 
 type Metrics = {
     lines: Int

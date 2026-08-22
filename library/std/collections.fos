@@ -1,4 +1,4 @@
-import core.iteration
+import std.iter
 
 /// A repeatable collection with a known number of elements.
 ///

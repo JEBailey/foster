@@ -128,6 +128,46 @@ impl<'a> Checker<'a> {
         self.resolved(ty.clone()) == self.bytes_type()
     }
 
+    fn byte_buffer_type(&self) -> Ty {
+        let module = self
+            .hir
+            .module_named("core.bytes.buffer")
+            .expect("the Foster ByteBuffer bootstrap module is installed");
+        let record = self.hir.modules[module]
+            .records
+            .get("ByteBuffer")
+            .copied()
+            .expect("core.bytes.buffer defines ByteBuffer");
+        Ty::Record(record, Vec::new())
+    }
+
+    fn is_byte_buffer_type(&self, ty: &Ty) -> bool {
+        self.resolved(ty.clone()) == self.byte_buffer_type()
+    }
+
+    fn list_type(&self, element: Ty) -> Ty {
+        let module = self
+            .hir
+            .module_named("core.list")
+            .expect("the Foster List bootstrap module is installed");
+        let record = self.hir.modules[module]
+            .records
+            .get("List")
+            .copied()
+            .expect("core.list defines List");
+        Ty::Record(record, vec![element])
+    }
+
+    fn list_element(&self, ty: &Ty) -> Option<Ty> {
+        let Ty::Record(record, arguments) = self.resolved(ty.clone()) else {
+            return None;
+        };
+        let module = self.hir.module_named("core.list")?;
+        (self.hir.modules[module].records.get("List").copied() == Some(record))
+            .then(|| arguments.into_iter().next())
+            .flatten()
+    }
+
     fn check(mut self, validate_effects: bool) -> Result<CheckOutput, FosterError> {
         self.check_record_declarations()?;
         self.check_variant_declarations()?;
@@ -151,6 +191,9 @@ impl<'a> Checker<'a> {
 
     fn check_derived_effects(&mut self, validate: bool) -> Result<(), FosterError> {
         for (function, definition) in self.hir.functions.iter() {
+            if definition.intrinsic.is_some() {
+                continue;
+            }
             let mut derivation = EffectDerivation::new(self, function);
             derivation.walk_statements(&definition.body);
             let actual = derivation.effects();

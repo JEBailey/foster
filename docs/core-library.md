@@ -1,7 +1,8 @@
-# Foster core library
+# Foster standard library
 
-Foster has no prelude. Core modules are available to every package, but programs explicitly import
-the modules they use:
+Foster has no prelude. Embedded library modules are available to every package, but programs
+explicitly import the modules they use. The `core` namespace contains foundational language types;
+the `std` namespace contains general-purpose collections and host-facing facilities:
 
 ```foster
 import core.list
@@ -16,7 +17,7 @@ Importing a module makes its public declarations directly available and also bin
 component for qualification. Qualification is preferred when common names such as `map`, `first`,
 `minimum`, or `contains?` would otherwise be ambiguous.
 
-Every core function, including private implementation helpers, has an attached Markdown
+Every standard-library function, including private implementation helpers, has an attached Markdown
 documentation comment. Public documentation is available through language-server hover and
 completion details. A compiled-HIR coverage test prevents undocumented library functions from
 being added accidentally.
@@ -26,29 +27,31 @@ being added accidentally.
 | Module | Purpose |
 | --- | --- |
 | `core.option` | Optional values, mapping, chaining, fallbacks, flattening, and queries |
-| `core.iteration` | Stateful `Iterator<T>` and repeatable `Iterable<T>` callable contracts |
-| `core.collection` | The sized, repeatable `Collection<T>` contract |
+| `std.iter` | Stateful `Iterator<T>` and repeatable `Iterable<T>` callable contracts |
+| `std.collections` | The sized, repeatable `Collection<T>` contract |
 | `core.byte` | Bounded byte construction and `ByteError` |
 | `core.bytes` | Immutable compact bytes, hexadecimal conversion, and UTF-8 decoding |
-| `core.byte_buffer` | Mutable growable byte storage |
-| `core.stream` | Generic binary/text stream contracts and binary transfer algorithms |
-| `core.set` | Insertion-ordered `Set<T>` |
-| `core.queue` | First-in, first-out `Queue<T>` |
-| `core.deque` | Double-ended `Deque<T>` |
-| `core.stack` | Last-in, first-out `Stack<T>` |
+| `core.bytes.buffer` | Mutable growable byte storage |
+| `std.io` | Generic binary/text stream contracts and binary transfer algorithms |
+| `std.collections.set` | Insertion-ordered `Set<T>` |
+| `std.collections.queue` | First-in, first-out `Queue<T>` |
+| `std.collections.deque` | Double-ended `Deque<T>` |
+| `std.collections.stack` | Last-in, first-out `Stack<T>` |
 | `core.range` | Generic reusable `Range<T>` sequence view |
 | `core.result` | Success/error values, transformations, recovery, flattening, and queries |
 | `core.ordering` | Equality, total-ordering, and hashing contracts plus `Less`, `Equal`, and `Greater` |
-| `core.sequence` | Shared map, filter, fold, search, slicing, and query algorithms for strings and lists |
+| `std.sequence` | Shared map, filter, fold, search, slicing, and query algorithms for strings and lists |
 | `core.list` | Search, map, filter, folds, slicing, flattening, joining, and predicates |
-| `core.map` | Generic maps with associated construction, lookup, insertion, keys, and values |
-| `core.character` | Unicode scalar validation and ASCII/whitespace classification |
+| `std.collections.map` | Generic maps with associated construction, lookup, insertion, keys, and values |
+| `core.code_point` | Unicode scalar validation and ASCII/whitespace classification |
 | `core.string` | Boundary queries, slicing, splitting, joining, case conversion, trimming, and characters |
 | `core.bool` | Boolean composition and conditional singleton-list construction |
 | `core.int` | Bounds, comparison, sign, parity, ranges, formatting, and integer powers |
 | `core.float` | Bounds, comparison, sign, and clamping |
-| `core.io` | Typed text-file, directory, and path operations |
-| `core.net.tcp` | Typed TCP listeners and connections |
+| `std.fs` | Typed text-file and directory operations |
+| `std.path` | Platform path composition, inspection, and canonicalization |
+| `std.env` | Process environment queries such as the current directory |
+| `std.net.tcp` | Typed TCP listeners and connections |
 
 ## Boundary with the runtime
 
@@ -60,8 +63,8 @@ runtime supplies representation-level primitives and capabilities that must cros
 - string concatenation;
 - integer-like `CodePoint` operators, checked `from_code_point`, and `parse_float`;
 - printing and remote-object runtime operations;
-- filesystem and platform path operations used by `core.io`;
-- TCP socket operations used by `core.net.tcp`.
+- filesystem, platform path, and environment operations used by `std.fs`, `std.path`, and `std.env`;
+- TCP socket operations used by `std.net.tcp`.
 
 The host-facing intrinsics are private implementation details. Public APIs, opaque resource records,
 and conversion into `Result` values are defined in Foster. `IoError` includes the operation, path,
@@ -78,15 +81,16 @@ this table for an intrinsic because it has no Foster implementation body.
 | `print`, `println` | Write values to standard output, without or with a trailing newline |
 | `code_point`, `from_code_point` | Legacy explicit widening and checked construction of `CodePoint`; ordinary widening uses integer operators |
 | `parse_float` | Parse a binary64 floating-point value from text |
-| `__io_read_text`, `__io_write_text`, `__io_read_bytes`, `__io_write_bytes` | Perform whole-file text and binary operations |
-| `__io_list_directory` | List directory entries |
-| `__io_exists`, `__io_is_file`, `__io_is_directory` | Query host filesystem paths |
-| `__io_join`, `__io_parent`, `__io_file_name`, `__io_extension` | Apply host path rules |
-| `__io_canonicalize`, `__io_current_directory` | Resolve host filesystem locations |
-| `__tcp_listen`, `__tcp_connect`, `__tcp_accept` | Establish TCP resources |
-| `__tcp_read`, `__tcp_write`, `__tcp_read_bytes`, `__tcp_write_bytes` | Operate on TCP connections |
-| `__tcp_set_timeout` | Configure TCP connection timeouts |
-| `__tcp_close_listener`, `__tcp_close_connection` | Close TCP resources |
+| `FsHost.read_text`, `FsHost.write_text`, `FsHost.read_bytes`, `FsHost.write_bytes` | Perform whole-file text and binary operations |
+| `FsHost.list_directory` | List directory entries |
+| `FsHost.exists`, `FsHost.is_file`, `FsHost.is_directory` | Query host filesystem paths |
+| `PathHost.join`, `PathHost.parent`, `PathHost.file_name`, `PathHost.extension` | Apply host path rules |
+| `PathHost.canonicalize` | Resolve a host filesystem location |
+| `EnvHost.current_directory` | Read the process working directory |
+| `TcpHost.listen`, `TcpHost.connect`, `TcpHost.accept` | Establish TCP resources |
+| `TcpHost.read`, `TcpHost.write`, `TcpHost.read_bytes`, `TcpHost.write_bytes` | Operate on TCP connections |
+| `TcpHost.set_timeout` | Configure TCP connection timeouts |
+| `TcpHost.close_listener`, `TcpHost.close_connection` | Close TCP resources |
 
 `String` implements `Sequence<CodePoint>`, and `List<T>` implements `Sequence<T>`. This is a
 zero-conversion view: generic sequence functions operate on the original string or list value.
@@ -96,17 +100,17 @@ implied storage, so constructors do not initialize `empty?`, `length`, `head`, o
 type supplies compatible instance functions; read-only zero-argument accessors retain property
 syntax such as `value.head`. Conformance is statically duck typed, so matching readable fields can
 also satisfy those accessor requirements without an `&` clause. Composition adds no wrapper or
-conversion. Functions in `core.sequence` are generic algorithms rather than stored members: they
+conversion. Functions in `std.sequence` are generic algorithms rather than stored members: they
 are not copied into `Foo`, and already accept it through its `Sequence<T>` contract.
 Code-point literals use single quotes, while string literals use double quotes. Operations that
 return an owned generic element, such as `sequence.first`, consume their sequence argument;
 observations such as `count`, `contains?`, `any?`, and `all?` borrow it.
 
-`core.iteration` defines the stateful `Iterator<T>` and repeatable `Iterable<T>` contracts.
+`std.iter` defines the stateful `Iterator<T>` and repeatable `Iterable<T>` contracts.
 `Iterator.from_sequence` consumes any `Sequence<T>` into a private Foster-written cursor. Calling
 `next()` mutates that cursor and returns `Option<T>`; it does not mutate the original collection.
 
-`core.collection` defines `Collection<T> & Iterable<T>` with `length` and `empty?`. The collection
+`std.collections` defines `Collection<T> & Iterable<T>` with `length` and `empty?`. The collection
 family has this shape:
 
 ```text
@@ -153,13 +157,13 @@ Text conversion is explicit: `text.utf8` encodes a string, while `String.from_ut
 `Result<String, Utf8Error>`. Filesystem and TCP modules provide parallel `read_bytes` and
 `write_bytes` operations without changing their existing UTF-8 text APIs.
 
-`core.stream` defines `Reader<E>`, `Writer<E>`, `TextReader<E>`, and `TextWriter<E>` as generic
+`std.io` defines `Reader<E>`, `Writer<E>`, `TextReader<E>`, and `TextWriter<E>` as generic
 structural contracts. Binary reads return at most the requested number of bytes and use empty
 `Bytes` for clean EOF. Binary writes report the accepted byte count, permitting partial writes;
 successful non-empty operations must make progress. `read_all`, `write_all`, and `copy` implement
 the retry and accumulation policy in Foster. `Duplex<E>` is the combined binary contract.
 
-`core.net.tcp.Connection` implements `Duplex<NetworkError>`. Its `read` and `write` methods are the
+`std.net.tcp.Connection` implements `Duplex<NetworkError>`. Its `read` and `write` methods are the
 contract operations, while `read_text`, `write_text`, `read_bytes`, and `write_bytes` are explicit
 convenience spellings. Filesystem path functions remain whole-file operations rather than claiming
 to be stateful streams.
@@ -176,5 +180,5 @@ Socket readiness, TLS, and explicit filesystem/network capability tokens remain 
 Core APIs should not bypass ownership. In particular, operations that must retain an owned generic
 value after invoking user code require a borrowed-callback type; they are intentionally omitted
 until that contract can be expressed without weakening move checking. For the same reason,
-`core.map.get`, `keys`, and `values` consume the map when returning owned generic values, while
+`std.collections.map.get`, `keys`, and `values` consume the map when returning owned generic values, while
 queries such as `contains_key?`, `length`, and `empty?` only borrow it.

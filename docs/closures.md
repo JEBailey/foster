@@ -119,11 +119,11 @@ triple = [copy factor] (value: Int) -> factor * value
 lowers conceptually to:
 
 ```foster
-type __TripleEnvironment = {
+type TripleEnvironmentGenerated = {
     factor: Int
 }
 
-func __triple_call(self: ref __TripleEnvironment, value: Int) -> Int {
+func triple_call_generated(self: ref TripleEnvironmentGenerated, value: Int) -> Int {
     self.factor * value
 }
 ```

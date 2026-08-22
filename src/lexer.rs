@@ -41,6 +41,7 @@ pub enum TokenKind {
     Reshape,
     Consume,
     Suspend,
+    Intrinsic,
     Pipe,
     Ampersand,
     Caret,
@@ -545,6 +546,7 @@ impl<'a> Lexer<'a> {
             "reshape" => TokenKind::Reshape,
             "consume" => TokenKind::Consume,
             "suspend" => TokenKind::Suspend,
+            "intrinsic" => TokenKind::Intrinsic,
             _ => TokenKind::Ident(name),
         };
         Token {

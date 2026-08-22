@@ -56,11 +56,40 @@ func main() -> Int {
 }
 "#;
 
+const BYTE_BUFFER_SOURCE: &str = r#"
+import core.bytes.buffer as byte_buffer
+
+func fill(buffer: ByteBuffer, count: Int) -> ByteBuffer [consume buffer] {
+    branch {
+        count <= 0 -> buffer
+        _ -> {
+            buffer.push(65)
+            fill(move buffer, count - 1)
+        }
+    }
+}
+
+func main() -> Int { (move fill(ByteBuffer.with_capacity(512), 512)).freeze().length }
+"#;
+
+const LIST_SOURCE: &str = r#"
+func grow(values: List<Int>, count: Int) -> List<Int> [consume values] {
+    branch {
+        count <= 0 -> values
+        _ -> grow(move values.append(count), count - 1)
+    }
+}
+
+func main() -> Int { grow([], 512).length }
+"#;
+
 fn runtime_benchmarks(criterion: &mut Criterion) {
     benchmark_workload(criterion, "fibonacci_20", FIBONACCI_SOURCE);
     benchmark_workload(criterion, "string", STRING_SOURCE);
     benchmark_workload(criterion, "symbol", SYMBOL_SOURCE);
     benchmark_workload(criterion, "bytes", BYTES_SOURCE);
+    benchmark_workload(criterion, "byte_buffer", BYTE_BUFFER_SOURCE);
+    benchmark_workload(criterion, "list", LIST_SOURCE);
 }
 
 fn benchmark_workload(criterion: &mut Criterion, name: &str, source: &str) {

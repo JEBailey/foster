@@ -1,5 +1,13 @@
 import core.option
-import core.sequence
+import std.sequence
+
+/// Private host-backed contiguous list storage.
+intrinsic type RawList<T>
+
+/// An immutable ordered collection backed by private contiguous storage.
+pub type List<T> = {
+    value: RawList<T>
+}
 
 /// Returns the first element, or `None` when the list is empty.
 pub func first<T>(values: List<T>) -> Option<T> {

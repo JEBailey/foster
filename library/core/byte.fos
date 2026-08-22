@@ -1,5 +1,11 @@
 import core.result
 
+/// Returns whether an integer fits in a byte.
+pub func Byte.valid(value: Int) -> Bool = intrinsic("byte.valid")
+
+/// Constructs a byte without repeating range validation.
+pub func Byte.unchecked(value: Int) -> Byte = intrinsic("byte.unchecked")
+
 /// Describes an integer that cannot be represented by `Byte`.
 pub type ByteError = {
     pub value: Int
@@ -8,7 +14,7 @@ pub type ByteError = {
 
 /// Converts an integer in the inclusive range 0 through 255 to `Byte`.
 pub func Byte.from(value: Int) -> Result<Byte, ByteError> {
-    return Result.Ok(__byte_unchecked(value)) if __byte_valid(value)
+    return Result.Ok(Byte.unchecked(value)) if Byte.valid(value)
     Result.Error(ByteError { value, message: "Byte must be between 0 and 255" })
 }
 

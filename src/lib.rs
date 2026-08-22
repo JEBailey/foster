@@ -2,6 +2,7 @@ pub mod ast;
 pub mod diagnostic;
 pub mod documentation;
 pub mod error;
+pub mod formatter;
 pub mod hir;
 pub mod lexer;
 pub mod lsp;

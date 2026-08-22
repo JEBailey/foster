@@ -1,0 +1,39 @@
+import core.result
+import core.bytes
+import std.io
+
+type FsHost = {}
+
+/// Reads UTF-8 text from the host filesystem.
+func FsHost.read_text(path: String) -> Result<String, IoError> = intrinsic("io.read_text")
+/// Writes UTF-8 text to the host filesystem.
+func FsHost.write_text(path: String, text: String) -> Result<Unit, IoError> = intrinsic("io.write_text")
+/// Reads binary data from the host filesystem.
+func FsHost.read_bytes(path: String) -> Result<Bytes, IoError> = intrinsic("io.read_bytes")
+/// Writes binary data to the host filesystem.
+func FsHost.write_bytes(path: String, contents: Bytes) -> Result<Unit, IoError> = intrinsic("io.write_bytes")
+/// Lists direct children of a host directory.
+func FsHost.list_directory(path: String) -> Result<List<String>, IoError> = intrinsic("io.list_directory")
+/// Tests whether a host path exists.
+func FsHost.exists(path: String) -> Bool = intrinsic("io.exists")
+/// Tests whether a host path is a file.
+func FsHost.is_file(path: String) -> Bool = intrinsic("io.is_file")
+/// Tests whether a host path is a directory.
+func FsHost.is_directory(path: String) -> Bool = intrinsic("io.is_directory")
+
+/// Reads an entire UTF-8 text file.
+pub func read_text(path: String) -> Result<String, IoError> { FsHost.read_text(path) }
+/// Replaces a file with UTF-8 text, creating it when necessary.
+pub func write_text(path: String, text: String) -> Result<Unit, IoError> { FsHost.write_text(path, text) }
+/// Reads an entire file without applying text decoding.
+pub func read_bytes(path: String) -> Result<Bytes, IoError> { FsHost.read_bytes(path) }
+/// Replaces a file with raw bytes, creating it when necessary.
+pub func write_bytes(path: String, contents: Bytes) -> Result<Unit, IoError> { FsHost.write_bytes(path, contents) }
+/// Returns the names directly inside a directory in deterministic order.
+pub func list_directory(path: String) -> Result<List<String>, IoError> { FsHost.list_directory(path) }
+/// Returns whether a filesystem entry exists at `path`.
+pub func exists?(path: String) -> Bool { FsHost.exists(path) }
+/// Returns whether `path` identifies a regular file.
+pub func file?(path: String) -> Bool { FsHost.is_file(path) }
+/// Returns whether `path` identifies a directory.
+pub func directory?(path: String) -> Bool { FsHost.is_directory(path) }

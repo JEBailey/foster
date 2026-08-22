@@ -1,5 +1,5 @@
-import core.collection
-import core.iteration
+import std.collections
+import std.iter
 
 /// An insertion-ordered collection containing no duplicate values.
 pub type Set<T> = & Collection<T> & {

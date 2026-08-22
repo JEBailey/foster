@@ -1,5 +1,5 @@
 // Transport-independent static-file handling. This corpus keeps files as owned
-// data for deterministic tests; applications can load them through core.io.
+// data for deterministic tests; applications can load them through std.fs.
 
 type File = {
     path: String

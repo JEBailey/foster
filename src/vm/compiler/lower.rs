@@ -1,4 +1,5 @@
 use super::*;
+use crate::hir::Builtin;
 
 impl FunctionCompiler<'_> {
     pub(super) fn expression(&mut self, id: ExprId) -> Result<Register, FosterError> {
@@ -145,7 +146,10 @@ impl FunctionCompiler<'_> {
                     return Ok(destination);
                 }
                 if let hir::Expr::Member { object, name } = &self.hir.expressions[*callee] {
-                    if name == "push" || name == "append" || name == "in?" {
+                    let raw_byte_buffer = self.types.expression_type(*object).is_some_and(|ty| {
+                        matches!(self.types.types[ty], crate::types::Type::RawByteBuffer)
+                    });
+                    if (name == "push" && !raw_byte_buffer) || name == "append" || name == "in?" {
                         let object = self.expression(*object)?;
                         let arguments = arguments
                             .iter()
@@ -189,11 +193,23 @@ impl FunctionCompiler<'_> {
                     }
                     if let Some(function) = self.primitive_method(*object, name) {
                         let receiver = self.expression(*object)?;
-                        let arguments = arguments
+                        let mut arguments = arguments
                             .iter()
                             .map(|argument| self.expression(*argument))
                             .collect::<Result<Vec<_>, _>>()?;
                         let destination = self.allocate();
+                        if let Some(builtin) = self.intrinsic_builtin(function) {
+                            arguments.insert(0, receiver);
+                            self.emit(
+                                Instruction::Builtin {
+                                    destination,
+                                    builtin,
+                                    arguments,
+                                },
+                                span,
+                            );
+                            return Ok(destination);
+                        }
                         self.emit(
                             Instruction::CallMethod {
                                 destination,
@@ -273,6 +289,17 @@ impl FunctionCompiler<'_> {
                 if let hir::Expr::Name(ResolvedName::Function(function)) =
                     self.hir.expressions[*callee]
                 {
+                    if let Some(builtin) = self.intrinsic_builtin(function) {
+                        self.emit(
+                            Instruction::Builtin {
+                                destination,
+                                builtin,
+                                arguments,
+                            },
+                            span,
+                        );
+                        return Ok(destination);
+                    }
                     let captures = self.function_captures(function)?;
                     if captures.is_empty() {
                         self.emit(
@@ -433,8 +460,8 @@ impl FunctionCompiler<'_> {
                     let destination = self.allocate();
                     let module = self
                         .hir
-                        .module_named("core.iteration")
-                        .ok_or_else(|| self.unsupported("core.iteration module"))?;
+                        .module_named("std.iter")
+                        .ok_or_else(|| self.unsupported("std.iter module"))?;
                     let function = self
                         .hir
                         .function_named(module, "Iterator.from_sequence")
@@ -631,16 +658,73 @@ impl FunctionCompiler<'_> {
         let ty = self.types.expression_type(object)?;
         let module = match self.types.types[ty] {
             crate::types::Type::RawBytes => "core.bytes",
-            crate::types::Type::ByteBuffer => "core.byte_buffer",
+            crate::types::Type::RawByteBuffer => "core.bytes.buffer",
             _ => return None,
         };
         let module = self.hir.module_named(module)?;
-        let function = self.hir.function_named(module, name)?;
+        let qualified_name = match self.types.types[ty] {
+            crate::types::Type::RawByteBuffer => format!("RawByteBuffer.{name}"),
+            _ => name.to_owned(),
+        };
+        let function = self.hir.function_named(module, &qualified_name)?;
         self.hir.functions[function]
             .parameters
             .first()
             .is_some_and(|parameter| self.hir.locals[*parameter].name == "self")
             .then_some(function)
+    }
+
+    fn intrinsic_builtin(&self, function: hir::FunctionId) -> Option<Builtin> {
+        let function = &self.hir.functions[function];
+        let key = function.intrinsic.as_deref()?;
+        match key {
+            "byte.valid" => Some(Builtin::ByteValid),
+            "byte.unchecked" => Some(Builtin::ByteUnchecked),
+            "bytes.empty" => Some(Builtin::BytesEmpty),
+            "bytes.from_list" => Some(Builtin::BytesFromList),
+            "bytes.from_hex" => Some(Builtin::BytesFromHex),
+            "bytes.concat" => Some(Builtin::BytesConcat),
+            "bytes.slice" => Some(Builtin::BytesSlice),
+            "bytes.to_list" => Some(Builtin::BytesToList),
+            "bytes.hex" => Some(Builtin::BytesHex),
+            "bytes.encode_utf8" => Some(Builtin::StringUtf8),
+            "bytes.utf8_valid" => Some(Builtin::BytesUtf8Valid),
+            "bytes.decode_utf8" => Some(Builtin::BytesDecodeUtf8),
+            "byte_buffer.empty" => Some(Builtin::ByteBufferEmpty),
+            "byte_buffer.with_capacity" => Some(Builtin::ByteBufferWithCapacity),
+            "byte_buffer.push" => Some(Builtin::ByteBufferPush),
+            "byte_buffer.extend" => Some(Builtin::ByteBufferExtend),
+            "byte_buffer.clear" => Some(Builtin::ByteBufferClear),
+            "byte_buffer.truncate" => Some(Builtin::ByteBufferTruncate),
+            "byte_buffer.reserve" => Some(Builtin::ByteBufferReserve),
+            "byte_buffer.freeze" => Some(Builtin::ByteBufferFreeze),
+            "byte_buffer.snapshot" => Some(Builtin::ByteBufferSnapshot),
+            "io.read_text" => Some(Builtin::IoReadText),
+            "io.write_text" => Some(Builtin::IoWriteText),
+            "io.read_bytes" => Some(Builtin::IoReadBytes),
+            "io.write_bytes" => Some(Builtin::IoWriteBytes),
+            "io.list_directory" => Some(Builtin::IoListDirectory),
+            "io.exists" => Some(Builtin::IoExists),
+            "io.is_file" => Some(Builtin::IoIsFile),
+            "io.is_directory" => Some(Builtin::IoIsDirectory),
+            "io.join" => Some(Builtin::IoJoin),
+            "io.parent" => Some(Builtin::IoParent),
+            "io.file_name" => Some(Builtin::IoFileName),
+            "io.extension" => Some(Builtin::IoExtension),
+            "io.canonicalize" => Some(Builtin::IoCanonicalize),
+            "io.current_directory" => Some(Builtin::IoCurrentDirectory),
+            "tcp.listen" => Some(Builtin::TcpListen),
+            "tcp.connect" => Some(Builtin::TcpConnect),
+            "tcp.accept" => Some(Builtin::TcpAccept),
+            "tcp.read" => Some(Builtin::TcpRead),
+            "tcp.write" => Some(Builtin::TcpWrite),
+            "tcp.read_bytes" => Some(Builtin::TcpReadBytes),
+            "tcp.write_bytes" => Some(Builtin::TcpWriteBytes),
+            "tcp.set_timeout" => Some(Builtin::TcpSetTimeout),
+            "tcp.close_listener" => Some(Builtin::TcpCloseListener),
+            "tcp.close_connection" => Some(Builtin::TcpCloseConnection),
+            _ => None,
+        }
     }
 
     fn contract_property(&self, object: ExprId, name: &str) -> bool {
@@ -651,12 +735,19 @@ impl FunctionCompiler<'_> {
         self.types
             .expression_type(expression)
             .is_some_and(|ty| match self.types.types[ty] {
-                crate::types::Type::List(_)
+                crate::types::Type::RawList(_)
                 | crate::types::Type::Sequence(_)
                 | crate::types::Type::RawBytes => true,
                 crate::types::Type::Record { record, .. } => {
-                    self.hir.records[record].name == "Bytes"
-                        && self.hir.modules[self.hir.records[record].module].name == "core.bytes"
+                    matches!(
+                        (
+                            self.hir.modules[self.hir.records[record].module]
+                                .name
+                                .as_str(),
+                            self.hir.records[record].name.as_str(),
+                        ),
+                        ("core.bytes", "Bytes") | ("core.list", "List")
+                    )
                 }
                 _ => false,
             })

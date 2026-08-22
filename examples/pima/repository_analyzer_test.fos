@@ -1,4 +1,4 @@
-import core.sequence
+import std.sequence
 
 type ExpectedMetrics = {
     lines: Int

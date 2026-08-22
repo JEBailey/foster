@@ -1,6 +1,13 @@
-import core.byte_buffer
+import core.bytes.buffer as byte_buffer
 import core.bytes
 import core.result
+
+/// Describes a failed host I/O operation.
+pub type IoError = {
+    pub operation: String
+    pub path: String
+    pub message: String
+}
 
 /// A stateful source of binary data.
 ///

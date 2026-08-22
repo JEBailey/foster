@@ -50,11 +50,20 @@ impl Checker<'_> {
                     ("RawBytes", []) if self.hir.modules[module].name == "core.bytes" => {
                         Some(Ty::RawBytes)
                     }
-                    ("ByteBuffer", []) => Some(Ty::ByteBuffer),
+                    ("ByteBuffer", []) => Some(self.byte_buffer_type()),
+                    ("RawByteBuffer", [])
+                        if self.hir.modules[module].name == "core.bytes.buffer" =>
+                    {
+                        Some(Ty::RawByteBuffer)
+                    }
                     ("Symbol", []) => Some(self.symbol_type()),
-                    ("List", [element]) => Some(Ty::List(Box::new(
-                        self.annotation_type(module, element, generics)?,
-                    ))),
+                    ("List", [element]) => {
+                        let element = self.annotation_type(module, element, generics)?;
+                        Some(self.list_type(element))
+                    }
+                    ("RawList", [element]) if self.hir.modules[module].name == "core.list" => Some(
+                        Ty::RawList(Box::new(self.annotation_type(module, element, generics)?)),
+                    ),
                     ("Sequence", [element]) => Some(Ty::Sequence(Box::new(
                         self.annotation_type(module, element, generics)?,
                     ))),
@@ -212,7 +221,7 @@ impl Checker<'_> {
             Ty::Variant(variant, arguments) => (!self.hir.variant_types[*variant].public)
                 .then(|| self.hir.variant_types[*variant].name.clone())
                 .or_else(|| arguments.iter().find_map(|ty| self.private_type_in(ty))),
-            Ty::List(element)
+            Ty::RawList(element)
             | Ty::Sequence(element)
             | Ty::Remote(element)
             | Ty::Future(element)

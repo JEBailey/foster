@@ -32,8 +32,8 @@ reports beneath `target/criterion/`; open `target/criterion/report/index.html` f
 report. The compiler suite separates front-end plus checked-HIR work from optimized and
 unoptimized bytecode lowering. The runtime suite executes already compiled bytecode so compiler
 time is not mixed into VM measurements. It includes recursive Fibonacci plus focused workloads
-for Foster-defined `String`, `Symbol`, and `Bytes` values. Each workload reports optimized and
-unoptimized VM execution separately.
+for Foster-defined `String`, `Symbol`, `Bytes`, `ByteBuffer`, and `List` values. Each workload
+reports optimized and unoptimized VM execution separately.
 
 ## Lua comparison harness
 

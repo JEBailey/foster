@@ -102,6 +102,75 @@ func main() -> Symbol { symbol() }
 }
 
 #[test]
+fn lists_and_byte_buffers_use_foster_type_representations() {
+    let compilation = foster::compile(
+        r#"
+import core.bytes.buffer as byte_buffer
+
+func list() -> List<Int> { [1, 2, 3] }
+func buffer() -> ByteBuffer { ByteBuffer.empty() }
+func main() -> List<Int> { list() }
+"#,
+    )
+    .unwrap();
+    let main = compilation.hir.module_named("main").unwrap();
+    for (function_name, module_name, type_name, argument_count) in [
+        ("list", "core.list", "List", 1),
+        ("buffer", "core.bytes.buffer", "ByteBuffer", 0),
+    ] {
+        let function = compilation.hir.function_named(main, function_name).unwrap();
+        let result = compilation.types.function_type(function).unwrap().result;
+        let module = compilation.hir.module_named(module_name).unwrap();
+        let expected = compilation.hir.record_named(module, type_name).unwrap();
+        assert!(matches!(
+            compilation.types.types[result],
+            foster::types::Type::Record { record, ref arguments }
+                if record == expected && arguments.len() == argument_count
+        ));
+    }
+
+    let value = foster::run("func main() { [1, 2, 3] }").unwrap();
+    assert_eq!(
+        value.as_list().unwrap(),
+        &[Value::Integer(1), Value::Integer(2), Value::Integer(3)]
+    );
+    for raw in ["RawList<Int>", "RawByteBuffer"] {
+        let error = foster::compile(&format!("func main(value: {raw}) {{ value }}")).unwrap_err();
+        assert!(
+            error.message.contains(&format!("unknown type `{raw}`"))
+                || error.message.contains("unknown type `RawList`"),
+            "{}",
+            error.message
+        );
+    }
+
+    let error = foster::compile(
+        "func mystery() -> Int = intrinsic(\"unknown.operation\")\nfunc main() { 0 }",
+    )
+    .unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("intrinsic key `unknown.operation` has no registered runtime implementation"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn parses_stable_intrinsic_keys_and_opaque_intrinsic_types() {
+    let program = foster::parse(
+        "intrinsic type HostValue\nfunc HostValue.create() -> HostValue = intrinsic(\"host.create\")",
+    )
+    .unwrap();
+    assert!(program.records[0].intrinsic);
+    assert_eq!(
+        program.functions[0].intrinsic.as_deref(),
+        Some("host.create")
+    );
+}
+
+#[test]
 fn postfix_guards_conditionally_transfer_control() {
     let source = r#"
 func choose(early: Bool) -> Int {
@@ -644,8 +713,8 @@ func main() { 0 }
 fn discovers_implicit_and_companion_modules() {
     let compilation = foster::check_package(Path::new("tests/fixtures/modules")).unwrap();
     let package = &compilation.package;
-    assert_eq!(package.modules.len(), 10);
-    assert_eq!(package.explicit_module_count(), 7);
+    assert_eq!(package.modules.len(), 12);
+    assert_eq!(package.explicit_module_count(), 9);
     assert_eq!(package.implicit_module_count(), 3);
     assert!(!package.module("json").unwrap().is_implicit());
     assert!(package.module("tools").unwrap().is_implicit());
@@ -1981,7 +2050,7 @@ func main() -> Int {
 #[test]
 fn iterator_and_iterable_contracts_dispatch_stateful_iteration() {
     let source = r#"
-import core.iteration
+import std.iter
 import core.option
 
 type Counter = & Iterator<Int> & {
@@ -2036,7 +2105,7 @@ func main() -> Int {
 #[test]
 fn core_iterator_adapts_sequences_and_advances_in_place() {
     let source = r#"
-import core.iteration
+import std.iter
 import core.option
 
 func value_or(candidate: Option<Int>, fallback: Int) -> Int {
@@ -2068,7 +2137,7 @@ func main() -> Int {
 #[test]
 fn builtin_sequences_adapt_to_collection_and_iterable() {
     let source = r#"
-import core.collection
+import std.collections
 import core.option
 
 func size<T>(values: Collection<T>) -> Int {
@@ -2095,7 +2164,7 @@ func main() -> Int {
 #[test]
 fn map_is_an_iterable_collection_of_public_entries() {
     let source = r#"
-import core.map
+import std.collections.map
 import core.option
 
 func first_value(candidate: Option<Entry<String, Int>>) -> Int {
@@ -2119,9 +2188,9 @@ func main() -> Int {
 #[test]
 fn foster_collections_and_range_share_collection_contract() {
     let source = r#"
-import core.collection
+import std.collections
 import core.range
-import core.set
+import std.collections.set
 
 func size<T>(values: Collection<T>) -> Int {
     values.length
@@ -2633,7 +2702,7 @@ func main() -> Int {
 #[test]
 fn strings_and_lists_implement_sequence_without_conversion() {
     let source = r#"
-import core.sequence
+import std.sequence
 
 func main() -> Int {
     letters = sequence.count("banana", (value: CodePoint) -> value == 'a')
@@ -2690,7 +2759,7 @@ fn code_points_do_not_expose_a_value_member() {
 fn bytes_and_byte_buffers_enforce_bounds_and_round_trip_utf8() {
     let source = r#"
 import core.byte
-import core.byte_buffer
+import core.bytes.buffer as byte_buffer
 import core.bytes
 import core.result
 
@@ -2709,7 +2778,7 @@ func text_or(value: Result<String, Utf8Error>) -> String {
 }
 
 func main() -> String {
-    zero = byte_or(Byte.from(0), __byte_unchecked(0))
+    zero = byte_or(Byte.from(0), Byte.unchecked(0))
     capital_a = byte_or(Byte.from(65), zero)
     lower_x = byte_or(Byte.from(120), zero)
 
@@ -2754,12 +2823,14 @@ func main() -> Int {
 #[test]
 fn byte_bitwise_operators_preserve_byte_values() {
     let source = r#"
+import core.byte
+
 func main() -> Int {
-    high = __byte_unchecked(240)
-    low = __byte_unchecked(15)
-    mixed = (high & ~low) | (low ^ __byte_unchecked(3))
+    high = Byte.unchecked(240)
+    low = Byte.unchecked(15)
+    mixed = (high & ~low) | (low ^ Byte.unchecked(3))
     shifted = mixed >> 2
-    shifted.int + (__byte_unchecked(1) << 7).int
+    shifted.int + (Byte.unchecked(1) << 7).int
 }
 
 "#;
@@ -2795,7 +2866,7 @@ func main() -> String {
 fn bytes_are_iterable_collections() {
     let source = r#"
 import core.bytes
-import core.collection
+import std.collections
 import core.option
 import core.result
 
@@ -2828,11 +2899,12 @@ func main() -> Int {
 #[test]
 fn freezing_a_byte_buffer_produces_bytes_and_consumes_the_buffer() {
     let source = r#"
-import core.byte_buffer
+import core.bytes.buffer as byte_buffer
+import core.byte
 
 func main() -> String {
     buffer = ByteBuffer.empty()
-    buffer.push(__byte_unchecked(42))
+    buffer.push(Byte.unchecked(42))
     data = (move buffer).freeze()
     data.hex
 }
@@ -2852,11 +2924,12 @@ func main() -> String {
 #[test]
 fn structural_byte_buffer_mutation_invalidates_element_loans() {
     let source = r#"
-import core.byte_buffer
+import core.bytes.buffer as byte_buffer
+import core.byte
 
 func main() -> Int {
     buffer = ByteBuffer.empty()
-    buffer.push(__byte_unchecked(1))
+    buffer.push(Byte.unchecked(1))
     item = ref buffer[0]
     buffer.extend("more".utf8)
     item.int
@@ -2870,11 +2943,11 @@ func main() -> Int {
 #[test]
 fn generic_stream_contracts_handle_partial_io_and_eof() {
     let source = r#"
-import core.byte_buffer
+import core.bytes.buffer as byte_buffer
 import core.bytes
 import core.int
 import core.result
-import core.stream
+import std.io as stream
 
 type StreamError = {
     message: String

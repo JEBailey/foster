@@ -1,7 +1,7 @@
-import core.byte_buffer
+import core.bytes.buffer as byte_buffer
 import core.bytes
 import core.result
-import core.stream
+import std.io as stream
 
 type StreamError = {
     message: String

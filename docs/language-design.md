@@ -361,11 +361,19 @@ The bootstrap compiler resolves `Unit`, `Bool`, `Int`, `Float`, `CodePoint`,
 representation erasure, records,
 variants, generics, and record intersections. Decimal and scientific-notation literals produce
 `Float`; there are no implicit conversions between `Int` and `Float`.
-`String`, `Symbol`, and `Bytes` are instead always-available opaque Foster types declared in their
-respective core modules. `String` contains private `Bytes`, `Symbol` contains private `String`, and
-`Bytes` contains the private implementation-only `RawBytes` storage type. Their literals and
-trusted constructors lower to these nominal Foster types; `RawBytes` cannot be named by user
-modules.
+`String`, `Symbol`, `Bytes`, `ByteBuffer`, and `List<T>` are instead always-available opaque Foster
+types declared in their respective core modules. `String` contains private `Bytes`, `Symbol`
+contains private `String`, and the collection types contain private implementation-only storage:
+`RawBytes`, `RawByteBuffer`, and `RawList<T>`. Literals and trusted constructors lower to the
+nominal Foster types; the raw storage types cannot be named by user modules.
+`ByteBuffer` construction and mutation are ordinary Foster record operations. Its private core
+implementation declares its host boundary explicitly with signatures such as
+`func RawByteBuffer.empty() -> RawByteBuffer = intrinsic("byte_buffer.empty")`, then calls those
+operations through ordinary associated-function and method syntax. Stable intrinsic keys decouple
+source names from VM dispatch. Intrinsic declarations have registered VM implementations, no
+Foster body, and neither construct nor recognize the public wrapper. Host-backed storage is
+declared explicitly, for example `intrinsic type RawByteBuffer`; it is opaque and cannot be
+constructed with record syntax.
 Representation-level operations such as functional `List.append`, checked `from_code_point(Int)`,
 and `parse_float(String)` form the narrow primitive boundary beneath the Foster-written core
 library. The older `code_point(CodePoint)` intrinsic is also accepted for compatibility; source
@@ -384,12 +392,11 @@ Type parameters use angle brackets and group parameters use a following square-b
 Functions needing both use `func inspect<T>[items: group T](...)`. A function may not declare
 either category twice or reuse one name across both categories.
 
-## Core library — explicit imports
+## Standard library — explicit imports
 
-Foster has no prelude. The compiler embeds Foster-written `core.option`, `core.result`,
-`core.ordering`, `core.sequence`, `core.list`, `core.map`, `core.character`, `core.string`,
-`core.bool`, `core.int`,
-`core.float`, `core.io`, and `core.net.tcp` modules so tools can resolve them consistently, but no
+Foster has no prelude. The compiler embeds Foster-written modules under two roots: `core` contains
+foundational language types, while `std` contains general-purpose collections, I/O, filesystem,
+path, environment, and networking facilities. Tools can resolve both roots consistently, but no
 declaration is injected into user scope. Programs import every module they use. The supported
 surface and runtime boundary are documented in `docs/core-library.md`.
 
@@ -482,7 +489,7 @@ method calls dispatch against the original runtime record.
 
 ## Iteration contracts
 
-Iteration is expressed with two Foster-written callable contracts from `core.iteration`, rather
+Iteration is expressed with two Foster-written callable contracts from `std.iter`, rather
 than a compiler-owned protocol:
 
 ```foster
@@ -726,7 +733,7 @@ func parse(input: String) -> Result<Json, JsonError> {
 }
 ```
 
-The VM host boundary follows the same rule for `core.io` and `core.net.tcp`. The language does not
+The VM host boundary follows the same rule for `std.fs`, `std.path`, `std.env`, and `std.net.tcp`. The language does not
 provide dedicated `throw` or typed error-effect syntax.
 
 ## Module initialization
@@ -740,8 +747,10 @@ one another when name and signature resolution can settle the cycle.
 
 ## Filesystem and network access
 
-`core.io` exposes typed UTF-8 file, directory, and path operations returning `Result<..., IoError>`.
-`core.net.tcp` exposes opaque listeners and connections with typed `NetworkError` results. Their
+`std.fs` exposes typed UTF-8 file and directory operations. `std.path` provides platform path
+operations, and `std.env` provides process environment queries. Fallible operations return
+`Result<..., IoError>`, using the shared error type from `std.io`.
+`std.net.tcp` exposes opaque listeners and connections with typed `NetworkError` results. Their
 public records and wrappers are Foster code; private VM intrinsics perform the host operations.
 
 These modules use process-wide host capabilities.

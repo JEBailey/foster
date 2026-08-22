@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 ariadne = "0.6"
 camino = "1.2"
+clap = "4.6.6"
 la-arena = "0.3"
 lsp-server = "0.10"
 lsp-types = "0.97"

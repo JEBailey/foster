@@ -126,13 +126,13 @@ import tools.text.trim
 Importing a module exposes its public declarations directly and binds its final component as a
 qualifier. Modules are public; declarations and record fields are private unless marked `pub`.
 
-## Core library
+## Standard library
 
 Foster has no prelude. Programs explicitly import embedded Foster-written modules such as
-`core.option`, `core.iteration`, `core.result`, `core.sequence`, `core.list`, `core.map`, `core.io`, and
-`core.net.tcp`. Host-dependent filesystem and socket operations cross a narrow VM boundary; public
+`core.option`, `std.iter`, `core.result`, `std.sequence`, `core.list`, `std.collections.map`, `std.fs`, and
+`std.path`, `std.env`, and `std.net.tcp`. Host-dependent filesystem and socket operations cross a narrow VM boundary; public
 types, typed errors, and policy wrappers remain Foster code. See
-[the core library reference](docs/core-library.md).
+[the standard library reference](docs/core-library.md).
 
 ## Compiler and VM
 

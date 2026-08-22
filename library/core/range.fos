@@ -1,5 +1,5 @@
-import core.collection
-import core.iteration
+import std.collections
+import std.iter
 
 /// A reusable sequence view over a bounded list of values.
 ///

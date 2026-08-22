@@ -26,6 +26,7 @@ impl Parser {
             {
                 constants.push(self.constant(documentation.take())?);
             } else if self.at(&TokenKind::Type)
+                || self.at(&TokenKind::Intrinsic)
                 || (self.at(&TokenKind::Pub)
                     && self
                         .peek_n(1)
@@ -73,6 +74,7 @@ impl Parser {
         documentation: Option<String>,
     ) -> Result<(Option<RecordDecl>, Option<VariantDecl>), FosterError> {
         let start = self.peek().range.start;
+        let intrinsic = self.take(&TokenKind::Intrinsic);
         let public = self.take(&TokenKind::Pub);
         self.expect(&TokenKind::Type, "expected `type`")?;
         let name = self.expect_ident("expected record name")?;
@@ -85,6 +87,22 @@ impl Parser {
                 }
             }
             self.expect(&TokenKind::Greater, "expected `>` after type parameters")?;
+        }
+        if intrinsic {
+            return Ok((
+                Some(RecordDecl {
+                    span: start..self.tokens[self.current.saturating_sub(1)].range.end,
+                    documentation,
+                    name,
+                    public,
+                    intrinsic: true,
+                    parameters,
+                    compositions: Vec::new(),
+                    fields: Vec::new(),
+                    methods: Vec::new(),
+                }),
+                None,
+            ));
         }
         self.expect(&TokenKind::Equal, "expected `=` after type name")?;
         self.newlines();
@@ -189,6 +207,7 @@ impl Parser {
                     documentation,
                     name,
                     public,
+                    intrinsic: false,
                     parameters,
                     compositions,
                     fields: Vec::new(),
@@ -238,6 +257,7 @@ impl Parser {
                 documentation,
                 name,
                 public,
+                intrinsic: false,
                 parameters,
                 compositions,
                 fields,
@@ -368,13 +388,33 @@ impl Parser {
         } = self.effects()?;
         let suspends = suspend_span.is_some();
         self.newlines();
-        let (body, statement_spans) = self.block_spanned()?;
+        let intrinsic = if self.take(&TokenKind::Equal) {
+            self.expect(&TokenKind::Intrinsic, "expected `intrinsic` after `=`")?;
+            self.expect(&TokenKind::LParen, "expected `(` after `intrinsic`")?;
+            let TokenKind::String(key) = self.peek().kind.clone() else {
+                return Err(self.error("expected intrinsic runtime key string"));
+            };
+            self.current += 1;
+            self.expect(
+                &TokenKind::RParen,
+                "expected `)` after intrinsic runtime key",
+            )?;
+            Some(key)
+        } else {
+            None
+        };
+        let (body, statement_spans) = if intrinsic.is_some() {
+            (Vec::new(), Vec::new())
+        } else {
+            self.block_spanned()?
+        };
         let end = self.tokens[self.current.saturating_sub(1)].range.end;
         Ok(Function {
             span: start..end,
             documentation,
             name,
             public,
+            intrinsic,
             type_parameters,
             groups,
             parameters,

@@ -8,10 +8,10 @@ fn assert_string(value: Value, expected: &str) {
 }
 
 #[test]
-fn every_core_library_function_has_attached_documentation() {
+fn every_standard_library_function_has_attached_documentation() {
     let compilation = foster::compile(
         r#"
-import core.sequence
+import std.sequence
 func main() -> Int { 0 }
 "#,
     )
@@ -19,7 +19,9 @@ func main() -> Int { 0 }
     let mut checked = 0;
     for (_, function) in compilation.hir.functions.iter() {
         let module = &compilation.hir.modules[function.module].name;
-        if !module.starts_with("core.") || function.name.contains('$') {
+        if !(module.starts_with("core.") || module.starts_with("std."))
+            || function.name.contains('$')
+        {
             continue;
         }
         checked += 1;
@@ -32,7 +34,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 230);
+    assert_eq!(checked, 276);
 }
 
 #[test]
@@ -52,7 +54,7 @@ func main() -> String {
 #[test]
 fn foster_written_map_constructs_through_its_associated_factory() {
     let source = r#"
-import core.map
+import std.collections.map
 import core.option
 
 func option_value(value: Option<Int>) -> Int {
@@ -83,7 +85,8 @@ fn core_io_reads_writes_and_inspects_host_files() {
     let path_literal = serde_json::to_string(&path.to_string_lossy()).unwrap();
     let source = format!(
         r#"
-import core.io
+import std.fs
+import std.io
 import core.result
 
 func read_after_write(path: String, outcome: Result<Unit, IoError>) -> String {{
@@ -126,7 +129,8 @@ fn core_io_preserves_arbitrary_binary_files() {
     let source = format!(
         r#"
 import core.bytes
-import core.io
+import std.fs
+import std.io
 import core.result
 
 func bytes_or_empty(outcome: Result<Bytes, HexError>) -> Bytes {{
@@ -164,6 +168,34 @@ func main() -> String {{
 }
 
 #[test]
+fn standard_path_and_environment_modules_share_io_errors() {
+    let source = r#"
+import core.result
+import std.io
+import std.path as paths
+import std.env as environment
+
+func text(outcome: Result<String, IoError>) -> String {
+    branch outcome {
+        Result.Error(error) -> error.message
+        Result.Ok(value) -> value
+    }
+}
+
+func main() -> String {
+    cwd = text(environment.current_directory())
+    text(paths.canonicalize(paths.join(cwd, ".")))
+}
+"#;
+
+    let expected = std::env::current_dir().unwrap().canonicalize().unwrap();
+    assert_string(
+        foster::run(source).unwrap(),
+        expected.to_string_lossy().as_ref(),
+    );
+}
+
+#[test]
 fn core_tcp_accepts_reads_and_writes_a_connection() {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -177,7 +209,7 @@ fn core_tcp_accepts_reads_and_writes_a_connection() {
 
     let source = format!(
         r#"
-import core.net.tcp
+import std.net.tcp
 import core.result
 
 func start(outcome: Result<Connection, NetworkError>) -> String {{

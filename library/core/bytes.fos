@@ -1,6 +1,33 @@
 import core.byte
 import core.result
 
+/// Private host-backed compact byte storage.
+intrinsic type RawBytes
+
+/// Private namespace for host-backed byte operations.
+type BytesHost = {}
+
+/// Creates empty compact byte storage.
+func BytesHost.empty() -> Bytes = intrinsic("bytes.empty")
+/// Packs a Foster byte list into compact storage.
+func BytesHost.from_list(values: List<Byte>) -> Bytes [consume values] = intrinsic("bytes.from_list")
+/// Decodes hexadecimal text at the host boundary.
+func BytesHost.from_hex(value: String) -> Result<Bytes, HexError> = intrinsic("bytes.from_hex")
+/// Concatenates compact byte sequences.
+func BytesHost.concat(left: Bytes, right: Bytes) -> Bytes = intrinsic("bytes.concat")
+/// Extracts a half-open byte range.
+func BytesHost.slice(values: Bytes, start: Int, end: Int) -> Bytes = intrinsic("bytes.slice")
+/// Expands compact storage into a Foster list.
+func BytesHost.to_list(values: Bytes) -> List<Byte> = intrinsic("bytes.to_list")
+/// Encodes compact bytes as hexadecimal text.
+func BytesHost.hex(values: Bytes) -> String = intrinsic("bytes.hex")
+/// Encodes Foster text as UTF-8 bytes.
+func BytesHost.encode_utf8(value: String) -> Bytes = intrinsic("bytes.encode_utf8")
+/// Checks whether bytes contain valid UTF-8.
+func BytesHost.utf8_valid(value: Bytes) -> Bool = intrinsic("bytes.utf8_valid")
+/// Decodes bytes already known to contain valid UTF-8.
+func BytesHost.decode_utf8(value: Bytes) -> String = intrinsic("bytes.decode_utf8")
+
 /// Immutable binary data backed by compact private host storage.
 pub type Bytes = {
     value: RawBytes
@@ -20,37 +47,37 @@ pub type HexError = {
 
 /// Creates an empty immutable byte sequence.
 pub func Bytes.empty() -> Bytes {
-    __bytes_empty()
+    BytesHost.empty()
 }
 
 /// Packs a list of bytes into compact immutable storage.
 pub func Bytes.from(values: List<Byte>) -> Bytes [consume values] {
-    __bytes_from_list(move values)
+    BytesHost.from_list(move values)
 }
 
 /// Decodes an even-length hexadecimal string.
 pub func Bytes.from_hex(value: String) -> Result<Bytes, HexError> {
-    __bytes_from_hex(value)
+    BytesHost.from_hex(value)
 }
 
 /// Concatenates two immutable byte sequences.
 pub func concat(self: Bytes, other: Bytes) -> Bytes {
-    __bytes_concat(self, other)
+    BytesHost.concat(self, other)
 }
 
 /// Returns bytes in the half-open range `start..end`.
 pub func slice(self: Bytes, start: Int, end: Int) -> Bytes {
-    __bytes_slice(self, start, end)
+    BytesHost.slice(self, start, end)
 }
 
 /// Expands compact bytes into a Foster list.
 pub func list(self: Bytes) -> List<Byte> {
-    __bytes_to_list(self)
+    BytesHost.to_list(self)
 }
 
 /// Encodes bytes as lowercase hexadecimal text.
 pub func hex(self: Bytes) -> String {
-    __bytes_hex(self)
+    BytesHost.hex(self)
 }
 
 /// Returns whether two byte sequences contain identical values.
@@ -65,13 +92,13 @@ pub func hash(self: Bytes) -> Int {
 
 /// Encodes a string as UTF-8.
 pub func utf8(value: String) -> Bytes {
-    __string_utf8(value)
+    BytesHost.encode_utf8(value)
 }
 
 /// Decodes valid UTF-8 or returns a typed error.
 pub func String.from_utf8(value: Bytes) -> Result<String, Utf8Error> {
     branch {
-        __bytes_utf8_valid(value) -> Result.Ok(__bytes_decode_utf8(value))
+        BytesHost.utf8_valid(value) -> Result.Ok(BytesHost.decode_utf8(value))
         _ -> Result.Error(Utf8Error { offset: -1, message: "Bytes are not valid UTF-8" })
     }
 }

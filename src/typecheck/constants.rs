@@ -68,7 +68,7 @@ impl Checker<'_> {
                         )));
                     }
                 }
-                Ty::List(Box::new(element))
+                self.list_type(element)
             }
         })
     }

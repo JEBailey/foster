@@ -185,6 +185,12 @@ impl FunctionLowerer<'_> {
                 let ResolvedName::Record(record) = resolved else {
                     return Err(self.error("record constructor must name a record type"));
                 };
+                if self.hir.records[record].intrinsic {
+                    return Err(self.error(format!(
+                        "intrinsic type `{}` cannot be constructed as a record",
+                        self.hir.records[record].name
+                    )));
+                }
                 Expr::Record {
                     record,
                     fields: fields

@@ -2283,7 +2283,7 @@ func main() -> Int { apply(User { value: 40 }) }
                 .unwrap()
                 .join("library/core/list.fos")
         );
-        assert_eq!(location.range.start, Position::new(21, 9));
+        assert_eq!(location.range.start, Position::new(29, 9));
     }
 
     #[test]
@@ -2311,7 +2311,7 @@ func main() -> Int { apply(User { value: 40 }) }
         let location = workspace.definition(&position).unwrap();
         assert_eq!(
             uri_to_path(&location.uri).unwrap(),
-            root.join("library/core/sequence.fos")
+            root.join("library/std/sequence.fos")
         );
         assert_eq!(location.range.start, Position::new(106, 9));
     }

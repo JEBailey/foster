@@ -24,7 +24,7 @@ impl Checker<'_> {
                 self.substitutions.insert(variable, ty);
                 Ok(())
             }
-            (Ty::List(a), Ty::List(b)) | (Ty::Sequence(a), Ty::Sequence(b)) => {
+            (Ty::RawList(a), Ty::RawList(b)) | (Ty::Sequence(a), Ty::Sequence(b)) => {
                 self.unify(*a, *b, function)
             }
             (Ty::Remote(a), Ty::Remote(b)) | (Ty::Future(a), Ty::Future(b)) => {
@@ -171,7 +171,7 @@ impl Checker<'_> {
                     Some(replacement) => ty = replacement.clone(),
                     None => return Ty::Variable(variable),
                 },
-                Ty::List(element) => return Ty::List(Box::new(self.resolved(*element))),
+                Ty::RawList(element) => return Ty::RawList(Box::new(self.resolved(*element))),
                 Ty::Sequence(element) => {
                     return Ty::Sequence(Box::new(self.resolved(*element)));
                 }
@@ -237,7 +237,7 @@ impl Checker<'_> {
     pub(super) fn occurs(&self, variable: u32, ty: &Ty) -> bool {
         match self.resolved(ty.clone()) {
             Ty::Variable(found) => found == variable,
-            Ty::List(element)
+            Ty::RawList(element)
             | Ty::Sequence(element)
             | Ty::Remote(element)
             | Ty::Future(element) => self.occurs(variable, &element),

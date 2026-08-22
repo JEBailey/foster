@@ -97,7 +97,7 @@ impl Checker<'_> {
                     let item = self.infer_expression(function, item)?;
                     self.unify(element.clone(), item, function)?;
                 }
-                Ty::List(Box::new(element))
+                self.list_type(element)
             }
             hir::Expr::Name(name) => self.type_of_name(name)?,
             hir::Expr::Call { callee, arguments } => {
@@ -111,15 +111,17 @@ impl Checker<'_> {
                 let object = self.infer_expression(function, object)?;
                 let index = self.infer_expression(function, index)?;
                 self.unify(Ty::Int, index, function)?;
-                if self.is_bytes_type(&object) {
+                if self.is_bytes_type(&object) || self.is_byte_buffer_type(&object) {
                     Ty::Byte
+                } else if let Some(element) = self.list_element(&object) {
+                    element
                 } else {
                     match self.resolved(object.clone()) {
-                        Ty::RawBytes | Ty::ByteBuffer => Ty::Byte,
-                        Ty::List(element) => *element,
+                        Ty::RawBytes | Ty::RawByteBuffer => Ty::Byte,
+                        Ty::RawList(element) => *element,
                         Ty::Variable(_) => {
                             let element = self.fresh();
-                            self.unify(object, Ty::List(Box::new(element.clone())), function)?;
+                            self.unify(object, self.list_type(element.clone()), function)?;
                             element
                         }
                         other => {
@@ -486,7 +488,7 @@ impl Checker<'_> {
     pub(super) fn instantiate(&mut self, ty: Ty, generics: &mut HashMap<String, Ty>) -> Ty {
         match ty {
             Ty::Generic(name) => generics.entry(name).or_insert_with(|| self.fresh()).clone(),
-            Ty::List(element) => Ty::List(Box::new(self.instantiate(*element, generics))),
+            Ty::RawList(element) => Ty::RawList(Box::new(self.instantiate(*element, generics))),
             Ty::Sequence(element) => Ty::Sequence(Box::new(self.instantiate(*element, generics))),
             Ty::Remote(value) => Ty::Remote(Box::new(self.instantiate(*value, generics))),
             Ty::Future(value) => Ty::Future(Box::new(self.instantiate(*value, generics))),

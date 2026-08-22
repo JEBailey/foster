@@ -1,5 +1,5 @@
-import core.collection
-import core.iteration
+import std.collections
+import std.iter
 import core.option
 
 /// A first-in, first-out collection.

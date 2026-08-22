@@ -4,9 +4,10 @@ pub(super) fn contains_variable(ty: &Ty) -> bool {
     match ty {
         Ty::Variable(_) => true,
         Ty::Generic(_) => false,
-        Ty::List(element) | Ty::Sequence(element) | Ty::Remote(element) | Ty::Future(element) => {
-            contains_variable(element)
-        }
+        Ty::RawList(element)
+        | Ty::Sequence(element)
+        | Ty::Remote(element)
+        | Ty::Future(element) => contains_variable(element),
         Ty::Function(parameters, result) => {
             parameters.iter().any(contains_variable) || contains_variable(result)
         }
@@ -28,7 +29,7 @@ pub(super) fn remote_transferable(ty: &Ty) -> bool {
         | Ty::Callable { .. }
         | Ty::Future(_)
         | Ty::Module(_) => false,
-        Ty::List(value) | Ty::Sequence(value) => remote_transferable(value),
+        Ty::RawList(value) | Ty::Sequence(value) => remote_transferable(value),
         Ty::Remote(_) => true,
         Ty::Record(_, arguments) | Ty::Variant(_, arguments) => {
             arguments.iter().all(remote_transferable)

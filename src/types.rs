@@ -17,12 +17,12 @@ pub enum Type {
     CodePoint,
     Byte,
     RawBytes,
-    ByteBuffer,
+    RawByteBuffer,
     Reference {
         group: String,
         value: TypeId,
     },
-    List(TypeId),
+    RawList(TypeId),
     Sequence(TypeId),
     Remote(TypeId),
     Future(TypeId),
@@ -97,11 +97,11 @@ impl TypeInformation {
             Type::CodePoint => "CodePoint".into(),
             Type::Byte => "Byte".into(),
             Type::RawBytes => "RawBytes".into(),
-            Type::ByteBuffer => "ByteBuffer".into(),
+            Type::RawByteBuffer => "RawByteBuffer".into(),
             Type::Reference { group, value } => {
                 format!("ref[{group}] {}", self.display(*value))
             }
-            Type::List(element) => format!("List<{}>", self.display(*element)),
+            Type::RawList(element) => format!("RawList<{}>", self.display(*element)),
             Type::Sequence(element) => format!("Sequence<{}>", self.display(*element)),
             Type::Remote(value) => format!("Remote<{}>", self.display(*value)),
             Type::Future(value) => format!("Future<{}>", self.display(*value)),

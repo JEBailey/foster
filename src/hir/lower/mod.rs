@@ -138,6 +138,7 @@ impl PackageHir {
                     module,
                     name: source_record.name.clone(),
                     public: source_record.public,
+                    intrinsic: source_record.intrinsic,
                     parameters: source_record.parameters.clone(),
                     compositions: source_record.compositions.clone(),
                     fields: source_record
@@ -174,6 +175,7 @@ impl PackageHir {
                     module,
                     name: source_function.name.clone(),
                     public: source_function.public,
+                    intrinsic: source_function.intrinsic.clone(),
                     type_parameters: source_function.type_parameters.clone(),
                     groups: source_function.groups.clone(),
                     parameters: Vec::new(),

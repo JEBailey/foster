@@ -1,6 +1,6 @@
 import core.option
-import core.collection
-import core.iteration
+import std.collections
+import std.iter
 
 /// A key-value pair yielded while iterating a map.
 pub type Entry<K, V> = {

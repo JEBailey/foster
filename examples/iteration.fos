@@ -1,4 +1,4 @@
-import core.iteration
+import std.iter
 import core.option
 
 type RangeIterator = & Iterator<Int> & {

@@ -1,5 +1,5 @@
 // The request parser and response serializer remain transport-independent.
-// Applications can feed text from core.net.tcp into these pure functions.
+// Applications can feed text from std.net.tcp into these pure functions.
 
 type Request =
     | Get(String)

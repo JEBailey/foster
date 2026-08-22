@@ -1,0 +1,53 @@
+import core.option
+import core.result
+import std.io
+
+type PathHost = {}
+
+/// Joins two host path components.
+func PathHost.join(left: String, right: String) -> String = intrinsic("io.join")
+/// Returns a host path's parent sentinel.
+func PathHost.parent(path: String) -> String = intrinsic("io.parent")
+/// Returns a host path's file-name sentinel.
+func PathHost.file_name(path: String) -> String = intrinsic("io.file_name")
+/// Returns a host path's extension sentinel.
+func PathHost.extension(path: String) -> String = intrinsic("io.extension")
+/// Canonicalizes a host path.
+func PathHost.canonicalize(path: String) -> Result<String, IoError> = intrinsic("io.canonicalize")
+
+/// Joins two platform path components.
+pub func join(left: String, right: String) -> String { PathHost.join(left, right) }
+
+/// Joins a list of platform path components, returning an empty string for an empty list.
+pub func join_all(parts: List<String>) -> String {
+    branch {
+        parts.empty? -> ""
+        _ -> join_remaining(parts.rest, parts.head)
+    }
+}
+
+/// Joins remaining path components onto the accumulated path.
+func join_remaining(parts: List<String>, path: String) -> String {
+    branch {
+        parts.empty? -> path
+        _ -> join_remaining(parts.rest, join(path, parts.head))
+    }
+}
+
+/// Returns the parent path, or `None` when no parent component exists.
+pub func parent(path: String) -> Option<String> { optional_component(PathHost.parent(path)) }
+/// Returns the final path component, or `None` when it is absent.
+pub func file_name(path: String) -> Option<String> { optional_component(PathHost.file_name(path)) }
+/// Returns the final extension without its separator, or `None` when it is absent.
+pub func extension(path: String) -> Option<String> { optional_component(PathHost.extension(path)) }
+
+/// Converts the host boundary's empty sentinel into an option.
+func optional_component(value: String) -> Option<String> {
+    branch {
+        value.empty? -> Option.None
+        _ -> Option.Some(value)
+    }
+}
+
+/// Resolves `path` to an absolute canonical path.
+pub func canonicalize(path: String) -> Result<String, IoError> { PathHost.canonicalize(path) }

@@ -327,7 +327,14 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
 
     fn walk_call(&mut self, callee: ExprId, arguments: &[ExprId]) {
         match &self.checker.hir.expressions[callee] {
-            hir::Expr::Member { object, name } if name == "push" => {
+            hir::Expr::Member { object, name }
+                if name == "push"
+                    && !matches!(
+                        self.checker
+                            .resolved(self.checker.expressions[object].clone()),
+                        Ty::RawByteBuffer
+                    ) =>
+            {
                 self.add(
                     crate::ast::EffectKind::Reshape,
                     self.place_group(*object).child("items"),
@@ -414,12 +421,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
         }
         match self.checker.hir.expressions[callee] {
             hir::Expr::Name(ResolvedName::Builtin(
-                Builtin::ByteBufferPush
-                | Builtin::ByteBufferExtend
-                | Builtin::ByteBufferClear
-                | Builtin::ByteBufferTruncate
-                | Builtin::ByteBufferReserve
-                | Builtin::TcpRead
+                Builtin::TcpRead
                 | Builtin::TcpWrite
                 | Builtin::TcpReadBytes
                 | Builtin::TcpWriteBytes,
@@ -505,7 +507,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
         let module = match receiver {
             Ty::Record(record, _) => self.checker.hir.records[record].module,
             Ty::RawBytes => self.checker.hir.module_named("core.bytes")?,
-            Ty::ByteBuffer => self.checker.hir.module_named("core.byte_buffer")?,
+            Ty::RawByteBuffer => self.checker.hir.module_named("core.bytes.buffer")?,
             _ => return None,
         };
         let method = self.checker.hir.function_named(module, name)?;

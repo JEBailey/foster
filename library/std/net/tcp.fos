@@ -1,6 +1,30 @@
 import core.result
 import core.bytes
-import core.stream
+import std.io
+
+/// Private namespace for TCP host operations.
+type TcpHost = {}
+
+/// Binds a host TCP listener.
+func TcpHost.listen(address: String, port: Int) -> Result<Int, NetworkError> = intrinsic("tcp.listen")
+/// Connects a host TCP stream.
+func TcpHost.connect(address: String, port: Int) -> Result<Int, NetworkError> = intrinsic("tcp.connect")
+/// Accepts a host TCP connection.
+func TcpHost.accept(listener: Int) -> Result<Int, NetworkError> = intrinsic("tcp.accept")
+/// Reads UTF-8 text from a host TCP connection.
+func TcpHost.read(connection: Int, maximum: Int) -> Result<String, NetworkError> = intrinsic("tcp.read")
+/// Writes UTF-8 text to a host TCP connection.
+func TcpHost.write(connection: Int, contents: String) -> Result<Unit, NetworkError> = intrinsic("tcp.write")
+/// Reads bytes from a host TCP connection.
+func TcpHost.read_bytes(connection: Int, maximum: Int) -> Result<Bytes, NetworkError> = intrinsic("tcp.read_bytes")
+/// Writes bytes to a host TCP connection.
+func TcpHost.write_bytes(connection: Int, contents: Bytes) -> Result<Unit, NetworkError> = intrinsic("tcp.write_bytes")
+/// Sets host TCP read and write timeouts.
+func TcpHost.set_timeout(connection: Int, milliseconds: Int) -> Result<Unit, NetworkError> = intrinsic("tcp.set_timeout")
+/// Closes a host TCP listener.
+func TcpHost.close_listener(listener: Int) -> Result<Unit, NetworkError> = intrinsic("tcp.close_listener")
+/// Closes a host TCP connection.
+func TcpHost.close_connection(connection: Int) -> Result<Unit, NetworkError> = intrinsic("tcp.close_connection")
 
 /// Describes a failed TCP operation at the host boundary.
 pub type NetworkError = {
@@ -20,12 +44,12 @@ pub type Connection = & Duplex<NetworkError> & {
 
 /// Binds a TCP listener to an address and port.
 pub func listen(address: String, port: Int) -> Result<Listener, NetworkError> {
-    wrap_listener(__tcp_listen(address, port))
+    wrap_listener(TcpHost.listen(address, port))
 }
 
 /// Connects to a TCP server.
 pub func connect(address: String, port: Int) -> Result<Connection, NetworkError> {
-    wrap_connection(__tcp_connect(address, port))
+    wrap_connection(TcpHost.connect(address, port))
 }
 
 /// Converts a successful listener handle into an opaque `Listener`.
@@ -38,7 +62,7 @@ func wrap_listener(outcome: Result<Int, NetworkError>) -> Result<Listener, Netwo
 
 /// Waits for and accepts one incoming connection.
 pub func accept(listener: Listener) -> Result<Connection, NetworkError> {
-    wrap_connection(__tcp_accept(listener.handle))
+    wrap_connection(TcpHost.accept(listener.handle))
 }
 
 /// Converts a successful connection handle into an opaque `Connection`.
@@ -51,27 +75,27 @@ func wrap_connection(outcome: Result<Int, NetworkError>) -> Result<Connection, N
 
 /// Reads at most `maximum` bytes, returning empty bytes after an orderly peer shutdown.
 pub func read(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [mut self.handle] {
-    __tcp_read_bytes(self.handle, maximum)
+    TcpHost.read_bytes(self.handle, maximum)
 }
 
 /// Writes the complete byte sequence and reports its length.
 pub func write(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [mut self.handle] {
-    written_bytes(__tcp_write_bytes(self.handle, contents), contents.length)
+    written_bytes(TcpHost.write_bytes(self.handle, contents), contents.length)
 }
 
 /// Flushes the TCP stream's host writer.
 pub func flush(self: Connection) -> Result<Unit, NetworkError> [mut self.handle] {
-    __tcp_write_bytes(self.handle, Bytes.empty())
+    TcpHost.write_bytes(self.handle, Bytes.empty())
 }
 
 /// Reads at most `maximum` bytes of UTF-8 text from a connection.
 pub func read_text(self: Connection, maximum: Int) -> Result<String, NetworkError> [mut self.handle] {
-    __tcp_read(self.handle, maximum)
+    TcpHost.read(self.handle, maximum)
 }
 
 /// Writes the complete UTF-8 string to a connection.
 pub func write_text(self: Connection, text: String) -> Result<Unit, NetworkError> [mut self.handle] {
-    __tcp_write(self.handle, text)
+    TcpHost.write(self.handle, text)
 }
 
 /// Compatibility spelling for binary `read`.
@@ -86,17 +110,17 @@ pub func write_bytes(self: Connection, contents: Bytes) -> Result<Int, NetworkEr
 
 /// Sets the connection's read and write timeout in milliseconds.
 pub func set_timeout(connection: Connection, milliseconds: Int) -> Result<Unit, NetworkError> {
-    __tcp_set_timeout(connection.handle, milliseconds)
+    TcpHost.set_timeout(connection.handle, milliseconds)
 }
 
 /// Closes a listening socket.
 pub func close_listener(listener: Listener) -> Result<Unit, NetworkError> {
-    __tcp_close_listener(listener.handle)
+    TcpHost.close_listener(listener.handle)
 }
 
 /// Closes a connected TCP stream.
 pub func close_connection(connection: Connection) -> Result<Unit, NetworkError> {
-    __tcp_close_connection(connection.handle)
+    TcpHost.close_connection(connection.handle)
 }
 
 /// Converts a completed host write into the stream writer's byte count.

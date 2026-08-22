@@ -18,8 +18,8 @@ pub enum Value {
     CodePoint(char),
     Byte(u8),
     RawBytes(Arc<Vec<u8>>),
-    ByteBuffer(Vec<u8>),
-    List(Vec<Value>),
+    RawByteBuffer(Vec<u8>),
+    RawList(Vec<Value>),
     VmClosure {
         function: crate::hir::FunctionId,
         captures: Vec<Capture>,
@@ -306,11 +306,18 @@ impl PlaceHandle {
     pub(crate) fn indexed(origin: Rc<Slot>, index: usize) -> Result<Self, FosterError> {
         let value = origin.read()?;
         let exists = match value {
-            Value::List(values) => index < values.len(),
-            Value::ByteBuffer(values) => index < values.len(),
-            value => value
-                .bytes_value()
-                .is_some_and(|values| index < values.len()),
+            Value::RawByteBuffer(values) => index < values.len(),
+            value => {
+                value
+                    .list_value()
+                    .is_some_and(|values| index < values.len())
+                    || value
+                        .byte_buffer_value()
+                        .is_some_and(|values| index < values.len())
+                    || value
+                        .bytes_value()
+                        .is_some_and(|values| index < values.len())
+            }
         };
         if !exists {
             return Err(FosterError::runtime("reference index is out of bounds"));
@@ -336,8 +343,16 @@ impl PlaceHandle {
                 ensure_generation(&origin, generation)?;
                 let value = origin.read()?;
                 match value {
-                    Value::List(values) => values.get(index).cloned(),
-                    Value::ByteBuffer(values) => values.get(index).copied().map(Value::Byte),
+                    Value::RawByteBuffer(values) => values.get(index).copied().map(Value::Byte),
+                    value if value.list_value().is_some() => {
+                        value.list_value().unwrap().get(index).cloned()
+                    }
+                    value if value.byte_buffer_value().is_some() => value
+                        .byte_buffer_value()
+                        .unwrap()
+                        .get(index)
+                        .copied()
+                        .map(Value::Byte),
                     value => value
                         .bytes_value()
                         .and_then(|values| values.get(index).copied())
@@ -356,12 +371,14 @@ impl PlaceHandle {
                 ensure_generation(&origin, generation)?;
                 let mut current = origin.read()?;
                 match &mut current {
-                    Value::List(values) => {
+                    receiver if receiver.list_value().is_some() => {
+                        let values = receiver.list_value_mut().unwrap();
                         *values.get_mut(index).ok_or_else(|| {
                             FosterError::runtime("referenced list element no longer exists")
                         })? = value;
                     }
-                    Value::ByteBuffer(values) => {
+                    receiver if receiver.byte_buffer_value().is_some() => {
+                        let values = receiver.byte_buffer_value_mut().unwrap();
                         let Value::Byte(value) = value else {
                             return Err(FosterError::runtime(
                                 "byte-buffer elements require Byte values",
@@ -393,13 +410,15 @@ impl PlaceHandle {
                 ensure_generation(&origin, generation)?;
                 let mut current = origin.read()?;
                 match &mut current {
-                    Value::List(values) => {
+                    value if value.list_value().is_some() => {
+                        let values = value.list_value_mut().unwrap();
                         let value = values.get_mut(index).ok_or_else(|| {
                             FosterError::runtime("referenced list element no longer exists")
                         })?;
                         update(value)?;
                     }
-                    Value::ByteBuffer(values) => {
+                    value if value.byte_buffer_value().is_some() => {
+                        let values = value.byte_buffer_value_mut().unwrap();
                         let byte = values.get_mut(index).ok_or_else(|| {
                             FosterError::runtime("referenced byte no longer exists")
                         })?;
@@ -443,8 +462,8 @@ pub(crate) enum WireValue {
     CodePoint(char),
     Byte(u8),
     RawBytes(Arc<Vec<u8>>),
-    ByteBuffer(Vec<u8>),
-    List(Vec<WireValue>),
+    RawByteBuffer(Vec<u8>),
+    RawList(Vec<WireValue>),
     Record {
         record: Option<crate::hir::RecordId>,
         name: String,
@@ -528,6 +547,16 @@ impl Value {
         self.bytes_value()
     }
 
+    /// Returns the elements when this value is a Foster `List` type.
+    pub fn as_list(&self) -> Option<&[Value]> {
+        self.list_value().map(Vec::as_slice)
+    }
+
+    /// Returns the buffered bytes when this value is a Foster `ByteBuffer` type.
+    pub fn as_byte_buffer(&self) -> Option<&[u8]> {
+        self.byte_buffer_value().map(Vec::as_slice)
+    }
+
     pub(crate) fn string(record: Option<crate::hir::RecordId>, value: impl Into<Vec<u8>>) -> Self {
         Self::Record {
             record,
@@ -553,6 +582,66 @@ impl Value {
         }
         match fields.get("value") {
             Some(Self::RawBytes(value)) => Some(value.as_slice()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn byte_buffer_value(&self) -> Option<&Vec<u8>> {
+        let Self::Record { name, fields, .. } = self else {
+            return None;
+        };
+        if name != "ByteBuffer" {
+            return None;
+        }
+        match fields.get("value") {
+            Some(Self::RawByteBuffer(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn byte_buffer_value_mut(&mut self) -> Option<&mut Vec<u8>> {
+        let Self::Record { name, fields, .. } = self else {
+            return None;
+        };
+        if name != "ByteBuffer" {
+            return None;
+        }
+        match fields.get_mut("value") {
+            Some(Self::RawByteBuffer(value)) => Some(value),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn list(values: Vec<Value>) -> Self {
+        Self::Record {
+            record: None,
+            name: "List".into(),
+            fields: BTreeMap::from([("value".into(), Self::RawList(values))]),
+        }
+    }
+
+    pub(crate) fn list_value(&self) -> Option<&Vec<Value>> {
+        let Self::Record { name, fields, .. } = self else {
+            return None;
+        };
+        if name != "List" {
+            return None;
+        }
+        match fields.get("value") {
+            Some(Self::RawList(values)) => Some(values),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn list_value_mut(&mut self) -> Option<&mut Vec<Value>> {
+        let Self::Record { name, fields, .. } = self else {
+            return None;
+        };
+        if name != "List" {
+            return None;
+        }
+        match fields.get_mut("value") {
+            Some(Self::RawList(values)) => Some(values),
             _ => None,
         }
     }
@@ -602,8 +691,8 @@ impl Value {
             Self::CodePoint(value) => WireValue::CodePoint(value),
             Self::Byte(value) => WireValue::Byte(value),
             Self::RawBytes(value) => WireValue::RawBytes(value),
-            Self::ByteBuffer(value) => WireValue::ByteBuffer(value),
-            Self::List(values) => WireValue::List(
+            Self::RawByteBuffer(value) => WireValue::RawByteBuffer(value),
+            Self::RawList(values) => WireValue::RawList(
                 values
                     .into_iter()
                     .map(Self::into_wire)
@@ -653,8 +742,8 @@ impl Value {
             WireValue::CodePoint(value) => Self::CodePoint(value),
             WireValue::Byte(value) => Self::Byte(value),
             WireValue::RawBytes(value) => Self::RawBytes(value),
-            WireValue::ByteBuffer(value) => Self::ByteBuffer(value),
-            WireValue::List(values) => Self::List(
+            WireValue::RawByteBuffer(value) => Self::RawByteBuffer(value),
+            WireValue::RawList(values) => Self::RawList(
                 values
                     .into_iter()
                     .map(Self::from_wire)
@@ -707,13 +796,20 @@ impl fmt::Display for Value {
                 }
                 Ok(())
             }
-            Self::ByteBuffer(value) => write!(formatter, "ByteBuffer(len={})", value.len()),
+            value if value.byte_buffer_value().is_some() => {
+                write!(
+                    formatter,
+                    "ByteBuffer(len={})",
+                    value.byte_buffer_value().unwrap().len()
+                )
+            }
+            Self::RawByteBuffer(value) => write!(formatter, "RawByteBuffer(len={})", value.len()),
             value if value.symbol_bytes().is_some() => write!(
                 formatter,
                 ":{}",
                 String::from_utf8_lossy(value.symbol_bytes().unwrap())
             ),
-            Self::List(values) => {
+            Self::RawList(values) => {
                 write!(formatter, "[")?;
                 for (index, value) in values.iter().enumerate() {
                     if index > 0 {
@@ -739,6 +835,16 @@ impl fmt::Display for Value {
             Self::Record { name, fields, .. } => {
                 if let Ok(value) = self.string_text() {
                     return write!(formatter, "{value}");
+                }
+                if let Some(values) = self.list_value() {
+                    write!(formatter, "[")?;
+                    for (index, value) in values.iter().enumerate() {
+                        if index > 0 {
+                            write!(formatter, ", ")?;
+                        }
+                        write!(formatter, "{value}")?;
+                    }
+                    return write!(formatter, "]");
                 }
                 write!(formatter, "{name} {{")?;
                 for (index, (field, value)) in fields.iter().enumerate() {
@@ -815,7 +921,7 @@ mod tests {
 
     #[test]
     fn capturing_a_reference_flattens_its_wrapper_slot() {
-        let origin = Slot::new(Value::List(vec![Value::Integer(42)]));
+        let origin = Slot::new(Value::list(vec![Value::Integer(42)]));
         let projected = PlaceHandle::indexed(origin.clone(), 0).unwrap();
         let wrapper = Slot::new(Value::Reference(projected.clone()));
 

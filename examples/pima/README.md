@@ -13,7 +13,7 @@ Foster rather than emulating Pima syntax:
 - recursive functions replace `while` until Foster gains loop syntax;
 - the map example builds a small typed persistent map from records and lists;
 - file and HTTP examples currently keep their pure routing/parsing layers and in-memory fixtures;
-  the VM now exposes the `core.io` and `core.net.tcp` capabilities needed to wire them to the host;
+  the VM now exposes the `std.fs` and `std.net.tcp` capabilities needed to wire them to the host;
 - the repository analyzer retains recursive source analysis and concurrent remote workers, using
   supplied source strings instead of unrestricted filesystem traversal.
 

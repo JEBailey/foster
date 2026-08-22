@@ -1,4 +1,4 @@
-import core.byte_buffer
+import core.bytes.buffer as byte_buffer
 import core.bytes
 import core.result
 

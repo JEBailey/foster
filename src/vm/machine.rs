@@ -128,7 +128,7 @@ impl Machine {
                         .into_iter()
                         .map(|register| read(frame, register))
                         .collect::<Result<_, _>>()?;
-                    write(frame, destination, Value::List(values))?;
+                    write(frame, destination, Value::list(values))?;
                 }
                 Instruction::Index {
                     destination,
@@ -142,8 +142,15 @@ impl Machine {
                         .map_err(|_| FosterError::runtime("index is out of bounds"))?;
                     let object = read(frame, object)?;
                     let value = match object {
-                        Value::List(values) => values.get(index).cloned(),
-                        Value::ByteBuffer(values) => values.get(index).copied().map(Value::Byte),
+                        value if value.list_value().is_some() => {
+                            value.list_value().unwrap().get(index).cloned()
+                        }
+                        value if value.byte_buffer_value().is_some() => value
+                            .byte_buffer_value()
+                            .unwrap()
+                            .get(index)
+                            .copied()
+                            .map(Value::Byte),
                         value if value.bytes_value().is_some() => value
                             .bytes_value()
                             .unwrap()
@@ -230,13 +237,15 @@ impl Machine {
                         .map_err(|_| FosterError::runtime("index is out of bounds"))?;
                     let source = read(frame, source)?;
                     match &mut value {
-                        Value::List(values) => {
+                        value if value.list_value().is_some() => {
+                            let values = value.list_value_mut().unwrap();
                             *values
                                 .get_mut(index)
                                 .ok_or_else(|| FosterError::runtime("index is out of bounds"))? =
                                 source;
                         }
-                        Value::ByteBuffer(values) => {
+                        receiver if receiver.byte_buffer_value().is_some() => {
+                            let values = receiver.byte_buffer_value_mut().unwrap();
                             let Value::Byte(source) = source else {
                                 return Err(FosterError::runtime(
                                     "byte-buffer elements require Byte values",
@@ -283,11 +292,13 @@ impl Machine {
                 } => {
                     let value = read(frame, value)?;
                     frame.registers[object.0 as usize].reshape(|receiver| match receiver {
-                        Value::List(values) => {
+                        receiver if receiver.list_value().is_some() => {
+                            let values = receiver.list_value_mut().unwrap();
                             values.push(value);
                             Ok(())
                         }
-                        Value::ByteBuffer(values) => {
+                        receiver if receiver.byte_buffer_value().is_some() => {
+                            let values = receiver.byte_buffer_value_mut().unwrap();
                             let Value::Byte(value) = value else {
                                 return Err(FosterError::runtime(
                                     "ByteBuffer.push requires a Byte",
@@ -305,11 +316,12 @@ impl Machine {
                     object,
                     value,
                 } => {
-                    let Value::List(mut values) = read(frame, object)? else {
+                    let mut list = read(frame, object)?;
+                    let Some(values) = list.list_value_mut() else {
                         return Err(FosterError::runtime("`append` requires a List"));
                     };
                     values.push(read(frame, value)?);
-                    write(frame, destination, Value::List(values))?;
+                    write(frame, destination, list)?;
                 }
                 Instruction::Contains {
                     destination,
@@ -336,7 +348,7 @@ impl Machine {
                             ));
                         };
                         let value = frame.registers[buffer.0 as usize].replace(Value::Unit);
-                        let Value::ByteBuffer(values) = value else {
+                        let Value::RawByteBuffer(values) = value else {
                             return Err(FosterError::runtime(
                                 "ByteBuffer.freeze requires a ByteBuffer",
                             ));
@@ -344,8 +356,8 @@ impl Machine {
                         write(frame, destination, Value::bytes(values))?;
                         continue;
                     }
-                    if mutate_byte_buffer(frame, builtin, &arguments)? {
-                        write(frame, destination, Value::Unit)?;
+                    if let Some(value) = transform_raw_byte_buffer(frame, builtin, &arguments)? {
+                        write(frame, destination, value)?;
                         continue;
                     }
                     let arguments = arguments
@@ -472,6 +484,19 @@ impl Machine {
                         continue;
                     }
                     if value.bytes_value().is_some() {
+                        if !arguments.is_empty() {
+                            return Err(FosterError::runtime(format!(
+                                "contract member `{name}` does not accept arguments"
+                            )));
+                        }
+                        write(
+                            frame,
+                            destination,
+                            member(value, &name, self.program.string_record)?,
+                        )?;
+                        continue;
+                    }
+                    if value.list_value().is_some() {
                         if !arguments.is_empty() {
                             return Err(FosterError::runtime(format!(
                                 "contract member `{name}` does not accept arguments"
@@ -956,28 +981,41 @@ fn member(
             ))),
         };
     }
+    if let Some(values) = value.byte_buffer_value() {
+        return match field {
+            "empty?" => Ok(Value::Bool(values.is_empty())),
+            "length" => Ok(Value::Integer(values.len() as i64)),
+            "capacity" => Ok(Value::Integer(values.capacity() as i64)),
+            "value" => Ok(Value::RawByteBuffer(values.clone())),
+            _ => Err(FosterError::runtime(format!(
+                "value has no field `{field}`"
+            ))),
+        };
+    }
+    if let Some(values) = value.list_value() {
+        return match field {
+            "empty?" => Ok(Value::Bool(values.is_empty())),
+            "length" => Ok(Value::Integer(values.len() as i64)),
+            "head" => values
+                .first()
+                .cloned()
+                .ok_or_else(|| FosterError::runtime("cannot take `head` of an empty list")),
+            "rest" => Ok(Value::list(values.get(1..).unwrap_or_default().to_vec())),
+            _ => Err(FosterError::runtime(format!(
+                "value has no field `{field}`"
+            ))),
+        };
+    }
     match (value, field) {
         (Value::Record { fields, .. }, field) => fields
             .get(field)
             .cloned()
             .ok_or_else(|| FosterError::runtime(format!("record has no field `{field}`"))),
-        (Value::List(values), "empty?") => Ok(Value::Bool(values.is_empty())),
-        (Value::List(values), "length") => Ok(Value::Integer(values.len() as i64)),
-        (Value::List(values), "head") => values
-            .first()
-            .cloned()
-            .ok_or_else(|| FosterError::runtime("cannot take `head` of an empty list")),
-        (Value::List(values), "rest") => {
-            Ok(Value::List(values.get(1..).unwrap_or_default().to_vec()))
-        }
         (Value::CodePoint(value), "whitespace?") => Ok(Value::Bool(value.is_whitespace())),
         (Value::CodePoint(value), "string") => {
             Ok(Value::string(string_record, value.to_string().into_bytes()))
         }
         (Value::Byte(value), "int") => Ok(Value::Integer(i64::from(value))),
-        (Value::ByteBuffer(values), "empty?") => Ok(Value::Bool(values.is_empty())),
-        (Value::ByteBuffer(values), "length") => Ok(Value::Integer(values.len() as i64)),
-        (Value::ByteBuffer(values), "capacity") => Ok(Value::Integer(values.capacity() as i64)),
         (_, field) => Err(FosterError::runtime(format!(
             "value has no field `{field}`"
         ))),
@@ -1021,7 +1059,8 @@ fn call_builtin(
             .map(Value::Byte)
             .map_err(|_| FosterError::runtime("Byte is outside 0..255")),
         (Builtin::BytesEmpty, []) => Ok(Value::bytes(Vec::new())),
-        (Builtin::BytesFromList, [Value::List(values)]) => {
+        (Builtin::BytesFromList, [value]) if value.list_value().is_some() => {
+            let values = value.list_value().unwrap();
             let bytes = values
                 .iter()
                 .map(|value| match value {
@@ -1054,7 +1093,7 @@ fn call_builtin(
                 .ok_or_else(|| FosterError::runtime("byte slice is out of bounds"))?;
             Ok(Value::bytes(slice.to_vec()))
         }
-        (Builtin::BytesToList, [values]) if values.bytes_value().is_some() => Ok(Value::List(
+        (Builtin::BytesToList, [values]) if values.bytes_value().is_some() => Ok(Value::list(
             values
                 .bytes_value()
                 .unwrap()
@@ -1100,15 +1139,50 @@ fn call_builtin(
                 .map(|value| Value::string(string_record, value.as_bytes().to_vec()))
                 .map_err(|_| FosterError::runtime("Bytes are not valid UTF-8"))
         }
-        (Builtin::ByteBufferEmpty, []) => Ok(Value::ByteBuffer(Vec::new())),
+        (Builtin::ByteBufferEmpty, []) => Ok(Value::RawByteBuffer(Vec::new())),
         (Builtin::ByteBufferWithCapacity, [Value::Integer(capacity)]) => {
             let capacity = usize::try_from(*capacity)
                 .map_err(|_| FosterError::runtime("ByteBuffer capacity cannot be negative"))?;
-            Ok(Value::ByteBuffer(Vec::with_capacity(capacity)))
+            Ok(Value::RawByteBuffer(Vec::with_capacity(capacity)))
         }
-        (Builtin::ByteBufferFreeze | Builtin::ByteBufferSnapshot, [Value::ByteBuffer(values)]) => {
-            Ok(Value::bytes(values.clone()))
+        (Builtin::ByteBufferPush, [Value::RawByteBuffer(buffer), Value::Byte(value)]) => {
+            let mut buffer = buffer.clone();
+            buffer.push(*value);
+            Ok(Value::RawByteBuffer(buffer))
         }
+        (Builtin::ByteBufferExtend, [Value::RawByteBuffer(buffer), values])
+            if values.bytes_value().is_some() =>
+        {
+            let mut buffer = buffer.clone();
+            buffer.extend_from_slice(values.bytes_value().unwrap());
+            Ok(Value::RawByteBuffer(buffer))
+        }
+        (Builtin::ByteBufferClear, [Value::RawByteBuffer(buffer)]) => {
+            let mut buffer = buffer.clone();
+            buffer.clear();
+            Ok(Value::RawByteBuffer(buffer))
+        }
+        (Builtin::ByteBufferTruncate, [Value::RawByteBuffer(buffer), Value::Integer(length)]) => {
+            let length = usize::try_from(*length)
+                .map_err(|_| FosterError::runtime("truncate length cannot be negative"))?;
+            let mut buffer = buffer.clone();
+            buffer.truncate(length);
+            Ok(Value::RawByteBuffer(buffer))
+        }
+        (
+            Builtin::ByteBufferReserve,
+            [Value::RawByteBuffer(buffer), Value::Integer(additional)],
+        ) => {
+            let additional = usize::try_from(*additional)
+                .map_err(|_| FosterError::runtime("reserve amount cannot be negative"))?;
+            let mut buffer = buffer.clone();
+            buffer.reserve(additional);
+            Ok(Value::RawByteBuffer(buffer))
+        }
+        (
+            Builtin::ByteBufferFreeze | Builtin::ByteBufferSnapshot,
+            [Value::RawByteBuffer(value)],
+        ) => Ok(Value::bytes(value.clone())),
         (Builtin::IoReadText, [path]) if path.string_bytes().is_some() => {
             let path = path.string_text()?;
             Ok(io_result(
@@ -1163,7 +1237,7 @@ fn call_builtin(
                     names.push(Value::string(string_record, name.into_bytes()));
                 }
                 names.sort_by_key(|name| name.to_string());
-                Ok(Value::List(names))
+                Ok(Value::list(names))
             });
             Ok(io_result("list_directory", path, entries, string_record))
         }
@@ -1291,74 +1365,68 @@ fn call_builtin(
     }
 }
 
-fn mutate_byte_buffer(
+fn transform_raw_byte_buffer(
     frame: &Frame,
     builtin: Builtin,
     arguments: &[Register],
-) -> Result<bool, FosterError> {
-    let mutation = match (builtin, arguments) {
-        (Builtin::ByteBufferPush, [buffer, value]) => {
+) -> Result<Option<Value>, FosterError> {
+    if !matches!(
+        builtin,
+        Builtin::ByteBufferPush
+            | Builtin::ByteBufferExtend
+            | Builtin::ByteBufferClear
+            | Builtin::ByteBufferTruncate
+            | Builtin::ByteBufferReserve
+    ) {
+        return Ok(None);
+    }
+    let Some(buffer) = arguments.first() else {
+        return Err(FosterError::runtime(
+            "raw byte-buffer transform requires storage",
+        ));
+    };
+    let Value::RawByteBuffer(mut values) = frame.registers[buffer.0 as usize].replace(Value::Unit)
+    else {
+        return Err(FosterError::runtime(
+            "raw byte-buffer transform requires RawByteBuffer",
+        ));
+    };
+    match (builtin, &arguments[1..]) {
+        (Builtin::ByteBufferPush, [value]) => {
             let Value::Byte(value) = read(frame, *value)? else {
                 return Err(FosterError::runtime("ByteBuffer.push requires a Byte"));
             };
-            Some((*buffer, ByteBufferMutation::Push(value)))
+            values.push(value);
         }
-        (Builtin::ByteBufferExtend, [buffer, values]) => {
-            let values = read(frame, *values)?;
-            let Some(values) = values.bytes_value() else {
+        (Builtin::ByteBufferExtend, [value]) => {
+            let value = read(frame, *value)?;
+            let Some(value) = value.bytes_value() else {
                 return Err(FosterError::runtime("ByteBuffer.extend requires Bytes"));
             };
-            Some((
-                *buffer,
-                ByteBufferMutation::Extend(Arc::new(values.to_vec())),
-            ))
+            values.extend_from_slice(value);
         }
-        (Builtin::ByteBufferClear, [buffer]) => Some((*buffer, ByteBufferMutation::Clear)),
-        (Builtin::ByteBufferTruncate, [buffer, length]) => {
+        (Builtin::ByteBufferClear, []) => values.clear(),
+        (Builtin::ByteBufferTruncate, [length]) => {
             let Value::Integer(length) = read(frame, *length)? else {
                 return Err(FosterError::runtime("ByteBuffer.truncate requires Int"));
             };
-            let length = usize::try_from(length)
-                .map_err(|_| FosterError::runtime("truncate length cannot be negative"))?;
-            Some((*buffer, ByteBufferMutation::Truncate(length)))
+            values.truncate(
+                usize::try_from(length)
+                    .map_err(|_| FosterError::runtime("truncate length cannot be negative"))?,
+            );
         }
-        (Builtin::ByteBufferReserve, [buffer, additional]) => {
+        (Builtin::ByteBufferReserve, [additional]) => {
             let Value::Integer(additional) = read(frame, *additional)? else {
                 return Err(FosterError::runtime("ByteBuffer.reserve requires Int"));
             };
-            let additional = usize::try_from(additional)
-                .map_err(|_| FosterError::runtime("reserve amount cannot be negative"))?;
-            Some((*buffer, ByteBufferMutation::Reserve(additional)))
+            values.reserve(
+                usize::try_from(additional)
+                    .map_err(|_| FosterError::runtime("reserve amount cannot be negative"))?,
+            );
         }
-        _ => None,
-    };
-    let Some((buffer, mutation)) = mutation else {
-        return Ok(false);
-    };
-    frame.registers[buffer.0 as usize].reshape(|value| {
-        let Value::ByteBuffer(values) = value else {
-            return Err(FosterError::runtime(
-                "byte-buffer mutation requires ByteBuffer",
-            ));
-        };
-        match mutation {
-            ByteBufferMutation::Push(value) => values.push(value),
-            ByteBufferMutation::Extend(value) => values.extend_from_slice(&value),
-            ByteBufferMutation::Clear => values.clear(),
-            ByteBufferMutation::Truncate(length) => values.truncate(length),
-            ByteBufferMutation::Reserve(additional) => values.reserve(additional),
-        }
-        Ok(())
-    })?;
-    Ok(true)
-}
-
-enum ByteBufferMutation {
-    Push(u8),
-    Extend(Arc<Vec<u8>>),
-    Clear,
-    Truncate(usize),
-    Reserve(usize),
+        _ => return Err(FosterError::runtime("invalid raw byte-buffer arguments")),
+    }
+    Ok(Some(Value::RawByteBuffer(values)))
 }
 
 fn decode_hex(value: &str) -> Result<Vec<u8>, (usize, String)> {

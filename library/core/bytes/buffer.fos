@@ -1,0 +1,89 @@
+import core.bytes
+
+/// Private host-backed mutable byte storage.
+intrinsic type RawByteBuffer
+
+/// Creates empty raw byte storage.
+func RawByteBuffer.empty() -> RawByteBuffer = intrinsic("byte_buffer.empty")
+
+/// Creates raw byte storage with reserved capacity.
+func RawByteBuffer.with_capacity(capacity: Int) -> RawByteBuffer = intrinsic("byte_buffer.with_capacity")
+
+/// Returns the storage after appending one byte.
+func RawByteBuffer.push(self: RawByteBuffer, value: Byte) -> RawByteBuffer = intrinsic("byte_buffer.push")
+
+/// Returns the storage after appending immutable bytes.
+func RawByteBuffer.extend(self: RawByteBuffer, values: Bytes) -> RawByteBuffer = intrinsic("byte_buffer.extend")
+
+/// Returns the storage after removing its contents.
+func RawByteBuffer.clear(self: RawByteBuffer) -> RawByteBuffer = intrinsic("byte_buffer.clear")
+
+/// Returns the storage truncated to at most `length` bytes.
+func RawByteBuffer.truncate(self: RawByteBuffer, length: Int) -> RawByteBuffer = intrinsic("byte_buffer.truncate")
+
+/// Returns the storage after reserving additional capacity.
+func RawByteBuffer.reserve(self: RawByteBuffer, additional: Int) -> RawByteBuffer = intrinsic("byte_buffer.reserve")
+
+/// Transfers raw mutable storage into immutable bytes.
+func RawByteBuffer.freeze(self: RawByteBuffer) -> Bytes [consume self] = intrinsic("byte_buffer.freeze")
+
+/// Copies raw mutable storage into immutable bytes.
+func RawByteBuffer.snapshot(self: RawByteBuffer) -> Bytes = intrinsic("byte_buffer.snapshot")
+
+/// Mutable byte construction storage backed by a private host buffer.
+pub type ByteBuffer = {
+    value: RawByteBuffer
+}
+
+/// Converts an internal assignment result to `Unit`.
+func discard<T>(value: T) -> Unit {}
+
+/// Creates an empty mutable byte buffer.
+pub func ByteBuffer.empty() -> ByteBuffer {
+    ByteBuffer { value: RawByteBuffer.empty() }
+}
+
+/// Creates an empty buffer with space reserved for at least `capacity` bytes.
+pub func ByteBuffer.with_capacity(capacity: Int) -> ByteBuffer {
+    ByteBuffer { value: RawByteBuffer.with_capacity(capacity) }
+}
+
+/// Appends one byte.
+pub func push(self: ByteBuffer, value: Byte) -> Unit [mut self] {
+    self.value = self.value.push(value)
+    discard(self.value)
+}
+
+/// Appends an immutable byte sequence.
+pub func extend(self: ByteBuffer, values: Bytes) -> Unit [mut self] {
+    self.value = self.value.extend(values)
+    discard(self.value)
+}
+
+/// Removes every buffered byte while retaining allocated capacity.
+pub func clear(self: ByteBuffer) -> Unit [mut self] {
+    self.value = self.value.clear()
+    discard(self.value)
+}
+
+/// Keeps at most the first `length` buffered bytes.
+pub func truncate(self: ByteBuffer, length: Int) -> Unit [mut self] {
+    self.value = self.value.truncate(length)
+    discard(self.value)
+}
+
+/// Reserves space for at least `additional` more bytes.
+pub func reserve(self: ByteBuffer, additional: Int) -> Unit [mut self] {
+    self.value = self.value.reserve(additional)
+    discard(self.value)
+}
+
+/// Consumes the buffer and transfers its contents into immutable bytes.
+pub func freeze(self: ByteBuffer) -> Bytes [consume self] {
+    (move self.value).freeze()
+}
+
+/// Copies the current buffer contents into immutable bytes.
+pub func snapshot(self: ByteBuffer) -> Bytes {
+    self.value.snapshot()
+}
