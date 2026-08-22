@@ -109,6 +109,10 @@ observations such as `count`, `contains?`, `any?`, and `all?` borrow it.
 `std.iter` defines the stateful `Iterator<T>` and repeatable `Iterable<T>` contracts.
 `Iterator.from_sequence` consumes any `Sequence<T>` into a private Foster-written cursor. Calling
 `next()` mutates that cursor and returns `Option<T>`; it does not mutate the original collection.
+Iterator consumers are ordinary Foster-written receiver methods. `for_each`, `fold`, `find`,
+`any?`, `all?`, and `count` process the cursor's remaining elements and leave it exhausted unless a
+short-circuiting query returns early. Consumer callbacks are currently pure callable contracts;
+general callback effect polymorphism remains future language work.
 
 `std.collections` defines `Collection<T> & Iterable<T>` with `length` and `empty?`. The collection
 family has this shape:

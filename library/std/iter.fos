@@ -37,3 +37,69 @@ func advance<T>(self: SequenceIterator<T>) -> Option<T> {
 pub func Iterator.from_sequence<T>(values: Sequence<T>) -> Iterator<T> [consume values] {
     SequenceIterator { remaining: move values }
 }
+
+/// Calls `action` once for every remaining element in this iterator.
+pub func for_each<T>(self: Iterator<T>, action: func(consume T) -> Unit) -> Unit [mut self] {
+    branch self.next() {
+        Option.Some(value) -> apply_and_continue(self, action, move value)
+        Option.None -> finish_iteration()
+    }
+}
+
+/// Produces the unit result when iteration finishes.
+func finish_iteration() -> Unit {}
+
+/// Applies one action and continues consuming the iterator.
+func apply_and_continue<T>(self: Iterator<T>, action: func(consume T) -> Unit, value: T) -> Unit [mut self, consume value] {
+    action(move value)
+    self.for_each(action)
+}
+
+/// Reduces every remaining element into `initial` from left to right.
+pub func fold<T, U>(self: Iterator<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [mut self, consume initial] {
+    branch self.next() {
+        Option.Some(value) -> self.fold(combine(move initial, move value), combine)
+        Option.None -> initial
+    }
+}
+
+/// Returns the first remaining element satisfying `predicate`.
+pub func find<T>(self: Iterator<T>, predicate: func(T) -> Bool) -> Option<T> [mut self] {
+    branch self.next() {
+        Option.Some(value) -> branch {
+            predicate(value) -> Option.Some(value)
+            _ -> self.find(predicate)
+        }
+        Option.None -> Option.None
+    }
+}
+
+/// Returns whether any remaining element satisfies `predicate`.
+pub func any?<T>(self: Iterator<T>, predicate: func(T) -> Bool) -> Bool [mut self] {
+    branch self.next() {
+        Option.Some(value) -> branch {
+            predicate(value) -> true
+            _ -> self.any?(predicate)
+        }
+        Option.None -> false
+    }
+}
+
+/// Returns whether every remaining element satisfies `predicate`.
+pub func all?<T>(self: Iterator<T>, predicate: func(T) -> Bool) -> Bool [mut self] {
+    branch self.next() {
+        Option.Some(value) -> branch {
+            predicate(value) -> self.all?(predicate)
+            _ -> false
+        }
+        Option.None -> true
+    }
+}
+
+/// Counts every remaining element and leaves the iterator exhausted.
+pub func count<T>(self: Iterator<T>) -> Int [mut self] {
+    branch self.next() {
+        Option.Some(_) -> 1 + self.count()
+        Option.None -> 0
+    }
+}

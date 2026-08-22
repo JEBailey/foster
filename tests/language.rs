@@ -2135,6 +2135,42 @@ func main() -> Int {
 }
 
 #[test]
+fn foster_written_iterator_consumers_process_remaining_elements() {
+    let source = r#"
+import std.iter
+import core.option
+
+func add(total: Int, value: Int) -> Int [consume total, consume value] {
+    total + value
+}
+
+func two?(value: Int) -> Bool { value == 2 }
+func positive?(value: Int) -> Bool { value > 0 }
+
+func option_or(value: Option<Int>, fallback: Int) -> Int {
+    branch value {
+        Option.Some(item) -> item
+        Option.None -> fallback
+    }
+}
+
+func main() -> Int {
+    total = [1, 2, 3, 4].iterator.fold(0, add)
+    found = option_or([1, 2, 3, 4].iterator.find(two?), 0)
+    queried = [1, 2, 3, 4].iterator
+    any = branch { queried.any?(two?) -> 10 _ -> 0 }
+    remaining = option_or(queried.next(), 0)
+    all = branch { [1, 2, 3].iterator.all?(positive?) -> 100 _ -> 0 }
+    count = [1, 2, 3, 4].iterator.count()
+    [1, 2].iterator.for_each((value: Int) -> {})
+    total + found + any + all + count + remaining
+}
+"#;
+
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(129));
+}
+
+#[test]
 fn builtin_sequences_adapt_to_collection_and_iterable() {
     let source = r#"
 import std.collections

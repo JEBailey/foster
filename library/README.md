@@ -33,7 +33,8 @@ paths, while its library algorithms are ordinary Foster functions.
 Current modules:
 
 - `core.option`: `Option`, `map`, `and_then`, `unwrap_or`, and `present?`
-- `std.iter`: stateful `Iterator<T>` and repeatable `Iterable<T>` contracts
+- `std.iter`: stateful iteration contracts plus Foster-written `for_each`, `fold`, `find`, query,
+  and counting consumers
 - `core.result`: `Result`, `map`, `map_error`, `and_then`, and `success?`
 - `core.ordering`: `Ordering`, `Equality<T>`, `Ordered<T>`, `Hashing`, and `reverse`
 - `std.sequence`: map, filter, fold, search, slicing, and query algorithms shared by strings and lists
