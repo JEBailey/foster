@@ -964,6 +964,29 @@ func main() -> Int {
 }
 
 #[test]
+fn binding_a_projected_reference_preserves_its_live_place() {
+    let source = r#"
+func set[state: group Int](value: ref[state] Int, next: Int) -> Int [mut state] {
+    value = next
+}
+
+func main() -> Int {
+    values = [10, 20]
+    selected = ref values[0]
+    set(ref selected, 42)
+    selected
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    assert_eq!(
+        foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize: false })
+            .unwrap(),
+        Value::Integer(42)
+    );
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+}
+
+#[test]
 fn rejects_direct_reference_use_after_structural_invalidation() {
     let source = r#"
 func main() -> Int {

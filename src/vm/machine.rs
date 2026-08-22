@@ -38,6 +38,14 @@ impl RegisterCell {
         }
     }
 
+    /// Copies the value held by a register without reading through a reference handle.
+    fn bind(&self) -> Value {
+        match self {
+            Self::Inline(value) => value.clone(),
+            Self::Place(slot) | Self::Borrowed(slot) => slot.argument(),
+        }
+    }
+
     fn reference(&self) -> Option<PlaceHandle> {
         match self {
             Self::Inline(Value::Reference(reference)) => Some(reference.clone()),
@@ -224,7 +232,7 @@ impl Machine {
                 Instruction::Move {
                     destination,
                     source,
-                } => write(frame, destination, read(frame, source)?)?,
+                } => write(frame, destination, bind(frame, source))?,
                 Instruction::Unary {
                     destination,
                     operator,
@@ -1074,6 +1082,10 @@ fn capture(
 
 fn read(frame: &Frame, register: Register) -> Result<Value, RuntimeError> {
     frame.registers[register.0 as usize].read()
+}
+
+fn bind(frame: &Frame, register: Register) -> Value {
+    frame.registers[register.0 as usize].bind()
 }
 
 fn write(frame: &mut Frame, register: Register, value: Value) -> Result<(), RuntimeError> {
