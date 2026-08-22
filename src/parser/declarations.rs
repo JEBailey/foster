@@ -7,6 +7,7 @@ impl Parser {
         let mut records = Vec::new();
         let mut variants = Vec::new();
         let mut functions = Vec::new();
+        let mut tests = Vec::new();
         self.newlines();
         let mut documentation = self.documentation();
         while self.at(&TokenKind::Import) {
@@ -35,6 +36,13 @@ impl Parser {
                 let (record, variant) = self.type_decl(documentation.take())?;
                 records.extend(record);
                 variants.extend(variant);
+            } else if self.at(&TokenKind::Test) {
+                if documentation.is_some() {
+                    return Err(
+                        self.error("test declarations do not accept documentation comments")
+                    );
+                }
+                tests.push(self.test()?);
             } else {
                 functions.push(self.function(documentation.take())?);
             }
@@ -50,6 +58,26 @@ impl Parser {
             records,
             variants,
             functions,
+            tests,
+        })
+    }
+
+    fn test(&mut self) -> Result<TestDecl, FosterError> {
+        let start = self.peek().range.start;
+        self.expect(&TokenKind::Test, "expected `test`")?;
+        let TokenKind::String(description) = self.peek().kind.clone() else {
+            return Err(self.error("expected test description string after `test`"));
+        };
+        self.current += 1;
+        if description.trim().is_empty() {
+            return Err(self.error("test description cannot be empty"));
+        }
+        let (body, statement_spans) = self.block_spanned()?;
+        Ok(TestDecl {
+            span: start..self.tokens[self.current.saturating_sub(1)].range.end,
+            description,
+            body,
+            statement_spans,
         })
     }
 

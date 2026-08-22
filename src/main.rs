@@ -41,6 +41,7 @@ fn execute() -> Result<(), Box<dyn Error>> {
             required_path(arguments, "path"),
             arguments.get_flag("check"),
         )?,
+        Some(("test", arguments)) => test(arguments)?,
         Some(("docs", arguments)) => docs(arguments)?,
         Some(("serve-docs", arguments)) => serve_docs(arguments)?,
         _ => unreachable!("clap requires a recognized subcommand"),
@@ -91,6 +92,7 @@ fn cli() -> Command {
             ),
         )
         .subcommand(Command::new("check").arg(path()))
+        .subcommand(Command::new("test").arg(path()).args(optimizer()))
         .subcommand(
             Command::new("fmt")
                 .about("Format Foster source files")
@@ -206,6 +208,70 @@ fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
         println!("{value}");
     }
     Ok(())
+}
+
+fn test(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
+    let path = required_path(arguments, "path");
+    if path.extension().is_some_and(|extension| extension == "fbc") {
+        return Err("compiled bytecode does not retain test discovery metadata".into());
+    }
+    let compilation = compile_path(path)?;
+    report_warnings(&compilation, None, None)?;
+    let program = foster::vm::compile_with_options(
+        &compilation,
+        foster::vm::CompileOptions {
+            optimize: !arguments.get_flag("no-optimize"),
+        },
+    )?;
+    let machine = foster::vm::Machine::new(&program);
+    let mut tests = compilation
+        .hir
+        .tests
+        .iter()
+        .map(|function| {
+            let definition = &compilation.hir.functions[*function];
+            (
+                compilation.hir.modules[definition.module].name.clone(),
+                definition
+                    .test_description
+                    .clone()
+                    .expect("test functions carry descriptions"),
+                *function,
+            )
+        })
+        .collect::<Vec<_>>();
+    tests.sort_by(|left, right| (&left.0, &left.1).cmp(&(&right.0, &right.1)));
+
+    println!("running {} test(s)", tests.len());
+    let mut failed = Vec::new();
+    for (module, description, function) in tests {
+        let display = if module == "main" {
+            description.clone()
+        } else {
+            format!("{module}: {description}")
+        };
+        match machine.run_function(function) {
+            Ok(foster::vm::Value::Unit) => println!("test {display} ... ok"),
+            Ok(value) => {
+                println!("test {display} ... FAILED");
+                failed.push((display, format!("returned {value:?} instead of Unit")));
+            }
+            Err(error) => {
+                println!("test {display} ... FAILED");
+                failed.push((display, error.to_string()));
+            }
+        }
+    }
+    if failed.is_empty() {
+        println!("test result: ok");
+        return Ok(());
+    }
+    eprintln!("\nfailures:");
+    for (name, error) in &failed {
+        eprintln!("    {name}: {error}");
+    }
+    eprintln!("\ntest result: FAILED. {} failed", failed.len());
+    Err(Box::new(Reported))
 }
 
 fn format_path(path: &Path, check: bool) -> Result<(), Box<dyn Error>> {

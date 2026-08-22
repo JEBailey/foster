@@ -6,6 +6,49 @@ fn assert_string(value: Value, expected: &str) {
 }
 
 #[test]
+fn test_declarations_compile_as_isolated_unit_functions() {
+    let source = r#"
+test "empty list has zero length" {
+    values = [1]
+    values.length
+    println()
+}
+
+test "another case" {}
+"#;
+    let parsed = foster::parse(source).unwrap();
+    assert_eq!(parsed.tests.len(), 2);
+    assert_eq!(parsed.tests[0].description, "empty list has zero length");
+
+    let compilation = foster::compile(source).unwrap();
+    assert_eq!(compilation.hir.tests.len(), 2);
+    assert!(
+        compilation.hir.modules[compilation.hir.module_named("main").unwrap()]
+            .functions
+            .values()
+            .all(|function| !compilation.hir.tests.contains(function))
+    );
+    let program = foster::vm::compile(&compilation).unwrap();
+    let machine = foster::vm::Machine::new(&program);
+    for test in &compilation.hir.tests {
+        assert_eq!(machine.run_function(*test).unwrap(), Value::Unit);
+    }
+}
+
+#[test]
+fn test_declarations_require_descriptions_and_unit_results() {
+    let empty = foster::parse("test \"\" {}").unwrap_err();
+    assert!(empty.message.contains("description cannot be empty"));
+
+    let non_unit = foster::compile("test \"returns a value\" { 42 }").unwrap_err();
+    assert!(
+        non_unit.message.contains("expected `Unit`"),
+        "{}",
+        non_unit.message
+    );
+}
+
+#[test]
 fn guard_return_and_implicit_result() {
     let source = r#"
 func first(characters: List<String>) -> String {

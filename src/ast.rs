@@ -5,6 +5,15 @@ pub struct Program {
     pub records: Vec<RecordDecl>,
     pub variants: Vec<VariantDecl>,
     pub functions: Vec<Function>,
+    pub tests: Vec<TestDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct TestDecl {
+    pub span: std::ops::Range<usize>,
+    pub description: String,
+    pub body: Vec<Stmt>,
+    pub statement_spans: Vec<std::ops::Range<usize>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

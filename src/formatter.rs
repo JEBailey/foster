@@ -68,7 +68,7 @@ pub fn format(source: &str) -> Result<String, FosterError> {
 
 fn begins_declaration(line: &str) -> bool {
     let line = line.strip_prefix("pub ").unwrap_or(line);
-    ["import ", "const ", "type ", "func "]
+    ["import ", "const ", "type ", "func ", "test "]
         .iter()
         .any(|prefix| line.starts_with(prefix))
 }
@@ -177,5 +177,13 @@ mod tests {
     #[test]
     fn rejects_invalid_source() {
         assert!(format("func main( {\n").is_err());
+    }
+
+    #[test]
+    fn formats_test_declarations() {
+        assert_eq!(
+            format("test \"works\" {\nprintln()\n}\n").unwrap(),
+            "test \"works\" {\n    println()\n}\n"
+        );
     }
 }

@@ -7,6 +7,7 @@ mod resolution;
 impl PackageHir {
     pub fn lower(package: &Package) -> Result<Self, FosterError> {
         let mut hir = Self::default();
+        let mut test_functions = HashMap::<(ModuleId, usize), FunctionId>::new();
 
         for name in package.modules.keys() {
             let id = hir.modules.alloc(Module {
@@ -174,6 +175,7 @@ impl PackageHir {
                     documentation: source_function.documentation.clone(),
                     module,
                     name: source_function.name.clone(),
+                    test_description: None,
                     public: source_function.public,
                     intrinsic: source_function.intrinsic.clone(),
                     type_parameters: source_function.type_parameters.clone(),
@@ -196,6 +198,38 @@ impl PackageHir {
                 hir.modules[module]
                     .functions
                     .insert(source_function.name.clone(), function);
+            }
+            let mut descriptions = std::collections::HashSet::new();
+            for (index, test) in program.tests.iter().enumerate() {
+                if !descriptions.insert(test.description.as_str()) {
+                    return Err(FosterError::runtime(format!(
+                        "module `{module_name}` defines test `{}` more than once",
+                        test.description
+                    )));
+                }
+                let function = hir.functions.alloc(Function {
+                    span: test.span.clone(),
+                    documentation: None,
+                    module,
+                    name: format!("test {}", test.description),
+                    test_description: Some(test.description.clone()),
+                    public: false,
+                    intrinsic: None,
+                    type_parameters: Vec::new(),
+                    groups: Vec::new(),
+                    parameters: Vec::new(),
+                    parameter_types: Vec::new(),
+                    return_type: Some(ast::TypeExpr::Named("Unit".into(), Vec::new())),
+                    effects_explicit: false,
+                    effects: Vec::new(),
+                    effect_spans: Vec::new(),
+                    suspends: false,
+                    suspend_span: None,
+                    body: Vec::new(),
+                    statement_spans: Vec::new(),
+                });
+                hir.tests.push(function);
+                test_functions.insert((module, index), function);
             }
         }
 
@@ -240,6 +274,37 @@ impl PackageHir {
                     self_name: None,
                 };
                 lowerer.lower_function(source_function)?;
+            }
+            for (index, test) in program.tests.iter().enumerate() {
+                let function = test_functions[&(module, index)];
+                let source = ast::Function {
+                    span: test.span.clone(),
+                    documentation: None,
+                    name: hir.functions[function].name.clone(),
+                    public: false,
+                    intrinsic: None,
+                    type_parameters: Vec::new(),
+                    groups: Vec::new(),
+                    parameters: Vec::new(),
+                    return_type: Some(ast::TypeExpr::Named("Unit".into(), Vec::new())),
+                    effects_explicit: false,
+                    effects: Vec::new(),
+                    effect_spans: Vec::new(),
+                    suspends: false,
+                    suspend_span: None,
+                    body: test.body.clone(),
+                    statement_spans: test.statement_spans.clone(),
+                };
+                let mut lowerer = FunctionLowerer {
+                    hir: &mut hir,
+                    module,
+                    function,
+                    imports: &imports,
+                    locals: HashMap::new(),
+                    captures: Vec::new(),
+                    self_name: None,
+                };
+                lowerer.lower_function(&source)?;
             }
         }
 

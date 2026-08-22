@@ -141,6 +141,23 @@ impl Machine {
             .map(|result| result.0)
     }
 
+    /// Executes a compiled zero-argument function in a fresh VM frame.
+    pub fn run_function(&self, function: FunctionId) -> Result<Value, FosterError> {
+        let definition = self
+            .program
+            .functions
+            .get(&function)
+            .ok_or_else(|| FosterError::runtime("bytecode references an unknown function"))?;
+        if definition.parameters != 0 || definition.captures != 0 {
+            return Err(FosterError::runtime(format!(
+                "VM entry function `{}` must have no parameters or captures",
+                definition.name
+            )));
+        }
+        self.execute(function, Vec::new(), Vec::new(), None)
+            .map(|result| result.0)
+    }
+
     fn execute(
         &self,
         entry: FunctionId,

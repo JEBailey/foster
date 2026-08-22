@@ -70,6 +70,19 @@ private declaration in its public signature.
 `func` introduces a function. Type annotations may state parameter and result types; otherwise the
 compiler infers them. Local values use inference. The last expression in a function is its result.
 
+`test` introduces a private, zero-argument `Unit` test declaration identified by a non-empty string:
+
+```foster
+test "decoding preserves text" {
+    decoded = decode("Foster".utf8)
+    println(decoded)
+}
+```
+
+Tests use the ordinary function type, effect, ownership, bytecode, and runtime semantics, but do not
+enter the module namespace and cannot be called or imported. `foster test` discovers them across a
+source package. See [Testing Foster programs](testing.md).
+
 ```foster
 func double(value: Int) -> Int {
     value * 2

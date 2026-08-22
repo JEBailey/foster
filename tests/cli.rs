@@ -170,3 +170,71 @@ fn fmt_formats_files_and_supports_check_mode() {
     assert!(check.status.success());
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn test_discovers_and_runs_foster_test_declarations() {
+    let directory = std::env::temp_dir().join(format!(
+        "foster-test-{}-{}",
+        std::process::id(),
+        time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let source_path = directory.join("main.fos");
+    fs::write(
+        &source_path,
+        "test \"second\" { println() }\ntest \"first\" {}\n",
+    )
+    .unwrap();
+
+    let output = foster()
+        .arg("test")
+        .arg(&source_path)
+        .arg("--no-optimize")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    assert!(stdout.contains("running 2 test(s)"), "{stdout}");
+    assert!(stdout.contains("test first ... ok"), "{stdout}");
+    assert!(stdout.contains("test second ... ok"), "{stdout}");
+    assert!(stdout.contains("test result: ok"), "{stdout}");
+
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn test_reports_runtime_failures_and_continues() {
+    let directory = std::env::temp_dir().join(format!(
+        "foster-test-failure-{}-{}",
+        std::process::id(),
+        time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(&directory).unwrap();
+    let source_path = directory.join("main.fos");
+    fs::write(
+        &source_path,
+        "test \"fails\" {\n    value = [1][4]\n    println(value)\n}\ntest \"still runs\" {}\n",
+    )
+    .unwrap();
+
+    let output = foster().arg("test").arg(&source_path).output().unwrap();
+    assert!(!output.status.success());
+    let stdout = String::from_utf8(output.stdout).unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stdout.contains("test fails ... FAILED"), "{stdout}");
+    assert!(stdout.contains("test still runs ... ok"), "{stdout}");
+    assert!(stderr.contains("index is out of bounds"), "{stderr}");
+    assert!(stderr.contains("test result: FAILED"), "{stderr}");
+
+    fs::remove_dir_all(directory).unwrap();
+}

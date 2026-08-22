@@ -19,6 +19,7 @@ pub enum TokenKind {
     Symbol(String),
     DocComment(String),
     Func,
+    Test,
     Const,
     Pub,
     Type,
@@ -524,6 +525,7 @@ impl<'a> Lexer<'a> {
         let name = self.take_identifier();
         let kind = match name.as_str() {
             "func" | "function" => TokenKind::Func,
+            "test" => TokenKind::Test,
             "const" => TokenKind::Const,
             "pub" => TokenKind::Pub,
             "type" => TokenKind::Type,

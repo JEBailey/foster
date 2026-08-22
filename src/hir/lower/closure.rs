@@ -21,6 +21,7 @@ impl FunctionLowerer<'_> {
             documentation: None,
             module: self.module,
             name: closure_name,
+            test_description: None,
             public: false,
             intrinsic: None,
             type_parameters: self.hir.functions[self.function].type_parameters.clone(),

@@ -14,6 +14,7 @@ cargo run --bin foster -- check examples/pima/json_parser
 cargo run --bin foster -- check tests/fixtures/modules
 cargo run --bin foster -- fmt examples
 cargo run --bin foster -- fmt examples --check
+cargo run --bin foster -- test tests/fixtures/modules
 cargo run --bin foster -- run tests/fixtures/modules --no-optimize
 cargo run --bin foster -- docs tests/fixtures/modules
 cargo run --bin foster -- docs tests/fixtures/modules --serve
@@ -68,6 +69,7 @@ The current implementation includes:
 - explicit core-library imports, typed filesystem APIs, and typed TCP connections;
 - line, nested block, and Markdown documentation comments;
 - a package-aware LSP and VS Code extension; and
+- first-class `test "description" { ... }` declarations with a package-aware test runner; and
 - an optional optimizing register-bytecode pipeline with a verifier and iterative VM call frames.
 
 Conditional `branch` expressions use `_` for their required fallback arm:
@@ -197,6 +199,7 @@ scope-aware completion. The development VS Code extension lives in
 - [Closures and group borrowing](docs/closures.md)
 - [Effect derivation](docs/effect-derivation.md)
 - [Compiler diagnostics](docs/diagnostics.md)
+- [Testing Foster programs](docs/testing.md)
 - [Register VM](docs/vm.md)
 - [Compiled bytecode format](docs/binary-format.md)
 - [Core library](docs/core-library.md)
