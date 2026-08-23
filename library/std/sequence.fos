@@ -17,7 +17,7 @@ func map_into<T, U>(values: Sequence<T>, transform: func(T) -> U, result: List<U
 
 /// Transforms the next sequence element and appends it to the accumulator.
 func map_next<T, U>(values: Sequence<T>, transform: func(T) -> U, result: List<U>) -> List<U> {
-    mapped = transform(values.head)
+    let mapped = transform(values.head)
     map_into(values.rest, transform, result.append(mapped))
 }
 
@@ -120,7 +120,7 @@ pub func take<T>(values: Sequence<T>, count: Int) -> List<T> {
 }
 
 test "sequence algorithms operate on lists without conversion" {
-    values = map([1, 2, 3], (value: Int) -> value + 10)
+    let values = map([1, 2, 3], (value: Int) -> value + 10)
     return [()][1] if values.length != 3
     return [()][1] if values[0] != 11
     return [()][1] if count(values, (value: Int) -> value > 11) != 2

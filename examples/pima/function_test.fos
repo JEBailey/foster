@@ -13,7 +13,7 @@ func gcd(left: Int, right: Int) -> Int {
 }
 
 func main() -> Int {
-    hello = (name: String) -> println("hello world my name is", name)
+    let hello = (name: String) -> println("hello world my name is", name)
     say_something(hello, "jason")
     println("GCD of 40902 and 24140 is", gcd(40902, 24140))
     println("GCD of 12 and 8 is", gcd(12, 8))

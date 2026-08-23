@@ -19,12 +19,12 @@ func handle(self: StaticServer, method: String, target: String) -> FileResponse 
 }
 
 func main() -> Int {
-    server = StaticServer { home: "<h1>Foster</h1>", stylesheet: "body {}" }
-    home = server.handle("GET", "/")
-    stylesheet = server.handle("GET", "/assets/site.css")
-    missing = server.handle("GET", "/missing.txt")
-    traversal = server.handle("GET", "/../json_parser.pima")
-    rejected = server.handle("POST", "/")
+    let server = StaticServer { home: "<h1>Foster</h1>", stylesheet: "body {}" }
+    let home = server.handle("GET", "/")
+    let stylesheet = server.handle("GET", "/assets/site.css")
+    let missing = server.handle("GET", "/missing.txt")
+    let traversal = server.handle("GET", "/../json_parser.pima")
+    let rejected = server.handle("POST", "/")
     println("GET /:", home.status, home.reason)
     println("HEAD statuses:", stylesheet.status, missing.status, traversal.status, rejected.status)
     home.status + stylesheet.status + missing.status + traversal.status + rejected.status

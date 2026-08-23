@@ -8,7 +8,7 @@ fn assert_string(value: Value, expected: &str) {
 fn test_declarations_compile_as_isolated_unit_functions() {
     let source = r#"
 test "empty list has zero length" {
-    values = [1]
+    let values = [1]
     values.length
     println()
 }
@@ -330,8 +330,8 @@ pub type Person = {
 }
 
 func main() -> Int {
-    name = "Ada"
-    person = Person {
+    let name = "Ada"
+    let person = Person {
         name
         age: 37
         internal_id: 104
@@ -462,8 +462,8 @@ fn mutable_ref_capture_can_update_record_fields() {
 type Counter = { value: Int }
 
 func main() -> Int {
-    counter = Counter { value: 0 }
-    increment = [ref counter] () -> {
+    let counter = Counter { value: 0 }
+    let increment = [ref counter] () -> {
         counter.value = counter.value + 1
     }
     increment()
@@ -483,11 +483,11 @@ type Counter = {
 }
 
 func main() -> Int {
-    counter = Counter {
+    let counter = Counter {
         value: 1,
         callback: () -> 0
     }
-    callback = [ref counter] () -> counter.value
+    let callback = [ref counter] () -> counter.value
     counter.callback = callback
     counter.value
 }
@@ -507,8 +507,8 @@ fn permits_storing_a_value_derived_from_a_borrower() {
 type Counter = { value: Int }
 
 func main() -> Int {
-    counter = Counter { value: 1 }
-    observe = [ref counter] () -> counter.value
+    let counter = Counter { value: 1 }
+    let observe = [ref counter] () -> counter.value
     counter.value = observe()
     counter.value
 }
@@ -563,7 +563,7 @@ type Choice =
     | Left(Int)
     | Right(Int)
 func main() -> Int {
-    value = Choice.Left(1)
+    let value = Choice.Left(1)
     branch value { Choice.Left(number) -> number }
 }
 "#,
@@ -581,7 +581,7 @@ type Option =
     | None
 
 func main() -> Int {
-    value = Some(1)
+    let value = Some(1)
     branch value {
         Some(0) -> 0
         Option.None -> -1
@@ -678,7 +678,7 @@ fn generic_functions_are_rigid_and_instantiate_per_call() {
 func identity<T>(value: T) -> T [consume value] { value }
 
 func main() -> String {
-    number = identity(42)
+    let number = identity(42)
     identity("Foster")
 }
 "#;
@@ -777,7 +777,7 @@ fn borrows_arguments_by_default_and_requires_explicit_moves_for_consuming_calls(
         r#"
 func take(value: String) -> Unit { println() }
 func main() -> String {
-    value = "owned"
+    let value = "owned"
     take(value)
     value
 }
@@ -789,7 +789,7 @@ func main() -> String {
         r#"
 func take(value: String) -> Unit [consume value] { println() }
 func main() -> Unit {
-    value = "owned"
+    let value = "owned"
     take(value)
 }
 "#,
@@ -805,7 +805,7 @@ func main() -> Unit {
         r#"
 func take(value: String) -> Unit [consume value] { println() }
 func main() -> String {
-    value = "owned"
+    let value = "owned"
     take(move value)
     value
 }
@@ -832,7 +832,7 @@ func main() -> String {
         r#"
 func take(value: Int) -> Unit [consume value] { println() }
 func main() -> Int {
-    value = 42
+    let value = 42
     take(value)
     value
 }
@@ -845,8 +845,8 @@ func main() -> Int {
 fn preserves_consuming_parameters_through_callable_values() {
     let missing_move = r#"
 func main() -> Unit {
-    action = (message: String) -> [consume message] { println(message) }
-    message = "owned"
+    let action = (message: String) -> [consume message] { println(message) }
+    let message = "owned"
     action(message)
 }
 "#;
@@ -864,8 +864,8 @@ func submit(message: String) -> Unit [consume message] {
 }
 
 func main() -> Unit {
-    action = submit(_)
-    message = "owned"
+    let action = submit(_)
+    let message = "owned"
     action(message)
 }
 "#;
@@ -875,8 +875,8 @@ func main() -> Unit {
     foster::compile(&missing_move.replace("action(message)", "action(move message)")).unwrap();
 
     let indirect = missing_move.replace(
-        "action = submit(_)",
-        "consumer = submit\n    action = consumer(_)",
+        "let action = submit(_)",
+        "let consumer = submit\n    let action = consumer(_)",
     );
     let error = foster::compile(&indirect).unwrap_err();
     assert!(error.message.contains("pass this argument with `move`"));
@@ -919,7 +919,7 @@ func main() -> Unit {
 fn any_is_an_ordinary_identifier_not_a_language_keyword() {
     let source = r#"
 func main() -> Int {
-    any = 42
+    let any = 42
     any
 }
 "#;
@@ -945,7 +945,7 @@ func first(values: Sequence<CodePoint>) -> CodePoint {
 }
 
 func main() -> CodePoint {
-    value = TextSlice { text: "OK" }
+    let value = TextSlice { text: "OK" }
     first(value)
     value.head
 }
@@ -1025,7 +1025,7 @@ type Counter = & Iterator<Int> & {
 }
 
 func next(self: Counter) -> Option<Int> {
-    value = self.current
+    let value = self.current
     self.current = self.current + 1
     branch {
         value >= self.end -> Option.None
@@ -1050,10 +1050,10 @@ func value_or(candidate: Option<Int>, fallback: Int) -> Int {
 }
 
 func main() -> Int {
-    values = Range { start: 3, end: 5 }.iterator
-    first = value_or(values.next(), -1)
-    second = value_or(values.next(), -1)
-    exhausted = value_or(values.next(), -1)
+    let values = Range { start: 3, end: 5 }.iterator
+    let first = value_or(values.next(), -1)
+    let second = value_or(values.next(), -1)
+    let exhausted = value_or(values.next(), -1)
     first + second + exhausted
 }
 "#;
@@ -1082,10 +1082,10 @@ func value_or(candidate: Option<Int>, fallback: Int) -> Int {
 }
 
 func main() -> Int {
-    values = Iterator.from_sequence([7, 8])
-    first = value_or(values.next(), -1)
-    second = value_or(values.next(), -1)
-    exhausted = value_or(values.next(), -1)
+    let values = Iterator.from_sequence([7, 8])
+    let first = value_or(values.next(), -1)
+    let second = value_or(values.next(), -1)
+    let exhausted = value_or(values.next(), -1)
     first + second + exhausted
 }
 "#;
@@ -1121,13 +1121,13 @@ func option_or(value: Option<Int>, fallback: Int) -> Int {
 }
 
 func main() -> Int {
-    total = [1, 2, 3, 4].iterator.fold(0, add)
-    found = option_or([1, 2, 3, 4].iterator.find(two?), 0)
-    queried = [1, 2, 3, 4].iterator
-    any = branch { queried.any?(two?) -> 10 _ -> 0 }
-    remaining = option_or(queried.next(), 0)
-    all = branch { [1, 2, 3].iterator.all?(positive?) -> 100 _ -> 0 }
-    count = [1, 2, 3, 4].iterator.count()
+    let total = [1, 2, 3, 4].iterator.fold(0, add)
+    let found = option_or([1, 2, 3, 4].iterator.find(two?), 0)
+    let queried = [1, 2, 3, 4].iterator
+    let any = branch { queried.any?(two?) -> 10 _ -> 0 }
+    let remaining = option_or(queried.next(), 0)
+    let all = branch { [1, 2, 3].iterator.all?(positive?) -> 100 _ -> 0 }
+    let count = [1, 2, 3, 4].iterator.count()
     [1, 2].iterator.for_each((value: Int) -> {})
     total + found + any + all + count + remaining
 }
@@ -1149,7 +1149,7 @@ func double(value: Int) -> Int [consume value] { value * 2 }
 func greater_than_four?(value: Int) -> Bool { value > 4 }
 
 func main() -> Int {
-    result = [1, 2, 3, 4, 5].iterator.map(double).filter(greater_than_four?).skip(1).take(2).collect()
+    let result = [1, 2, 3, 4, 5].iterator.map(double).filter(greater_than_four?).skip(1).take(2).collect()
     result.head + result.rest.head + result.length
 }
 "#;
@@ -1182,8 +1182,8 @@ func value_or(candidate: Option<Int>, fallback: Int) -> Int {
 }
 
 func main() -> Int {
-    values = [4, 5]
-    cursor = values.iterator
+    let values = [4, 5]
+    let cursor = values.iterator
     size(values) + size("abc") + value_or(cursor.next(), -10) + value_or(cursor.next(), -10)
 }
 "#;
@@ -1205,9 +1205,9 @@ func first_value(candidate: Option<Entry<String, Int>>) -> Int {
 }
 
 func main() -> Int {
-    state = Map.empty()
-    values = put(move state, "answer", 42)
-    cursor = values.iterator
+    let state = Map.empty()
+    let values = put(move state, "answer", 42)
+    let cursor = values.iterator
     values.length + first_value(cursor.next())
 }
 "#;
@@ -1227,8 +1227,8 @@ func size<T>(values: Collection<T>) -> Int {
 }
 
 func main() -> Int {
-    distinct = Set.from([1, 1, 2])
-    span = Range.from([3, 4, 5])
+    let distinct = Set.from([1, 1, 2])
+    let span = Range.from([3, 4, 5])
     size(distinct) * 10 + size(span)
 }
 "#;
@@ -1297,7 +1297,7 @@ func hash_score(value: Hashing) -> Int {
 }
 
 func main() -> Int {
-    key = Key { value: 7 }
+    let key = Key { value: 7 }
     equality_score(key, Key { value: 7 }) + ordering_score(key, Key { value: 8 }) + hash_score(key)
 }
 "#;
@@ -1512,7 +1512,7 @@ fn assignment_reinitializes_a_moved_local() {
         r#"
 func take(value: String) -> Unit [consume value] { println() }
 func main() -> String {
-    value = "first"
+    let value = "first"
     take(move value)
     value = "second"
     value
@@ -1523,12 +1523,41 @@ func main() -> String {
 }
 
 #[test]
+fn local_creation_uses_let_and_assignment_requires_an_existing_local() {
+    let value = foster::run(
+        r#"
+func main() -> Int {
+    let value = 1
+    value = 42
+    value
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(value, Value::Integer(42));
+
+    let undeclared = foster::compile("func main() { value = 1 }").unwrap_err();
+    assert!(
+        undeclared
+            .message
+            .contains("cannot assign to undeclared local `value`")
+    );
+
+    let duplicate = foster::compile("func main() { let value = 1\nlet value = 2 }").unwrap_err();
+    assert!(
+        duplicate
+            .message
+            .contains("local `value` is already declared")
+    );
+}
+
+#[test]
 fn joins_move_state_across_branch_arms() {
     let error = foster::compile(
         r#"
 func take(value: String) -> Unit [consume value] { println() }
 func choose(flag: Bool) -> String {
-    value = "owned"
+    let value = "owned"
     branch {
         flag -> take(move value)
         _ -> println()
@@ -1651,7 +1680,7 @@ func name_size(value: Named) -> Int {
 }
 
 func main() -> Int {
-    user = User {
+    let user = User {
         name: "Jason"
         location: "Boston"
         email: "jason@example.com"
@@ -1712,7 +1741,7 @@ type User = {
 }
 func take(value: Named) -> String [consume value] { value.name }
 func main() -> String {
-    user = User { name: "Jason", email: "jason@example.com" }
+    let user = User { name: "Jason", email: "jason@example.com" }
     take(move user)
 }
 "#;
@@ -1739,8 +1768,8 @@ type User = {
 }
 func as_named(user: User) -> Named [consume user] { user }
 func main() -> Int {
-    user = User { name: "Jason", email: "jason@example.com" }
-    named = as_named(move user)
+    let user = User { name: "Jason", email: "jason@example.com" }
+    let named = as_named(move user)
     named.name.length
 }
 "#;
@@ -1770,8 +1799,8 @@ fn strings_and_lists_implement_sequence_without_conversion() {
 import std.sequence
 
 func main() -> Int {
-    letters = sequence.count("banana", (value: CodePoint) -> value == 'a')
-    evens = sequence.count([1, 2, 3, 4], (value: Int) -> value / 2 * 2 == value)
+    let letters = sequence.count("banana", (value: CodePoint) -> value == 'a')
+    let evens = sequence.count([1, 2, 3, 4], (value: Int) -> value / 2 * 2 == value)
     letters * 10 + evens
 }
 "#;
@@ -1782,8 +1811,8 @@ func main() -> Int {
 fn code_point_literals_are_distinct_copy_values() {
     let source = r#"
 func main() -> String {
-    value = 'λ'
-    render = [copy value] () -> value.string
+    let value = 'λ'
+    let render = [copy value] () -> value.string
     branch {
         value.whitespace? -> "space"
         _ -> render()
@@ -1797,7 +1826,7 @@ func main() -> String {
 fn code_points_promote_through_integer_operators() {
     let source = r#"
 func main() -> Int {
-    digit = '9' - '0'
+    let digit = '9' - '0'
     branch {
         'A' == 65 -> digit * 10 + ('C' - 'A')
         _ -> 0
@@ -1843,16 +1872,16 @@ func text_or(value: Result<String, Utf8Error>) -> String {
 }
 
 func main() -> String {
-    zero = byte_or(Byte.from(0), Byte.unchecked(0))
-    capital_a = byte_or(Byte.from(65), zero)
-    lower_x = byte_or(Byte.from(120), zero)
+    let zero = byte_or(Byte.from(0), Byte.unchecked(0))
+    let capital_a = byte_or(Byte.from(65), zero)
+    let lower_x = byte_or(Byte.from(120), zero)
 
-    buffer = ByteBuffer.with_capacity(4)
+    let buffer = ByteBuffer.with_capacity(4)
     buffer.push(capital_a)
     buffer.extend("BC".utf8)
     buffer[1] = lower_x
 
-    data = buffer.snapshot
+    let data = buffer.snapshot
     text_or(String.from_utf8(data)) + ":" + data.hex
 }
 "#;
@@ -1891,10 +1920,10 @@ fn byte_bitwise_operators_preserve_byte_values() {
 import core.byte
 
 func main() -> Int {
-    high = Byte.unchecked(240)
-    low = Byte.unchecked(15)
-    mixed = (high & ~low) | (low ^ Byte.unchecked(3))
-    shifted = mixed >> 2
+    let high = Byte.unchecked(240)
+    let low = Byte.unchecked(15)
+    let mixed = (high & ~low) | (low ^ Byte.unchecked(3))
+    let shifted = mixed >> 2
     shifted.int + (Byte.unchecked(1) << 7).int
 }
 
@@ -1968,9 +1997,9 @@ import core.bytes.buffer as byte_buffer
 import core.byte
 
 func main() -> String {
-    buffer = ByteBuffer.empty()
+    let buffer = ByteBuffer.empty()
     buffer.push(Byte.unchecked(42))
-    data = (move buffer).freeze()
+    let data = (move buffer).freeze()
     data.hex
 }
 "#;
@@ -1993,9 +2022,9 @@ import core.bytes.buffer as byte_buffer
 import core.byte
 
 func main() -> Int {
-    buffer = ByteBuffer.empty()
+    let buffer = ByteBuffer.empty()
     buffer.push(Byte.unchecked(1))
-    item = ref buffer[0]
+    let item = ref buffer[0]
     buffer.extend("more".utf8)
     item.int
 }
@@ -2029,21 +2058,21 @@ type CollectWriter = & Writer<StreamError> & {
 }
 
 func read(self: ChunkReader, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining, read self.chunk_size] {
-    limit = smaller(maximum, self.chunk_size)
-    amount = smaller(limit, self.remaining.length)
-    chunk = self.remaining.slice(0, amount)
+    let limit = smaller(maximum, self.chunk_size)
+    let amount = smaller(limit, self.remaining.length)
+    let chunk = self.remaining.slice(0, amount)
     self.remaining = self.remaining.slice(amount, self.remaining.length)
     Result.Ok(chunk)
 }
 
 func write(self: CollectWriter, contents: Bytes) -> Result<Int, StreamError> [mut self.contents, read self.chunk_size] {
-    amount = smaller(self.chunk_size, contents.length)
+    let amount = smaller(self.chunk_size, contents.length)
     self.contents = self.contents.concat(contents.slice(0, amount))
     Result.Ok(amount)
 }
 
 func flush(self: CollectWriter) -> Result<Unit, StreamError> {
-    scratch = ByteBuffer.empty()
+    let scratch = ByteBuffer.empty()
     Result.Ok(scratch.reserve(0))
 }
 
@@ -2076,14 +2105,14 @@ func copied(outcome: Result<Int, StreamError>) -> String {
 }
 
 func main() -> String {
-    all_contents = decoded(Bytes.from_hex("00010203040506"))
-    all_reader = ChunkReader { remaining: all_contents, chunk_size: 2 }
-    all = rendered(read_all(all_reader))
+    let all_contents = decoded(Bytes.from_hex("00010203040506"))
+    let all_reader = ChunkReader { remaining: all_contents, chunk_size: 2 }
+    let all = rendered(read_all(all_reader))
 
-    copy_contents = decoded(Bytes.from_hex("00010203040506"))
-    copy_reader = ChunkReader { remaining: copy_contents, chunk_size: 2 }
-    writer = CollectWriter { contents: Bytes.empty(), chunk_size: 3 }
-    count = copied(stream.copy(copy_reader, writer))
+    let copy_contents = decoded(Bytes.from_hex("00010203040506"))
+    let copy_reader = ChunkReader { remaining: copy_contents, chunk_size: 2 }
+    let writer = CollectWriter { contents: Bytes.empty(), chunk_size: 3 }
+    let count = copied(stream.copy(copy_reader, writer))
     all + ":" + writer.contents.hex + ":" + count
 }
 "#;

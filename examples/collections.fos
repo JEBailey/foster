@@ -15,9 +15,9 @@ func value_or(candidate: Option<Int>, fallback: Int) -> Int {
 }
 
 func main() -> Int {
-    distinct = Set.from([2, 2, 4, 6])
-    values = Range.from([10, 20, 30])
-    cursor = values.iterator
+    let distinct = Set.from([2, 2, 4, 6])
+    let values = Range.from([10, 20, 30])
+    let cursor = values.iterator
 
     size(distinct) + size(values) + value_or(cursor.next(), 0)
 }

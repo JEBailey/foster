@@ -56,7 +56,8 @@ machines. Generated `documentation/` directories are ignored during Foster modul
 
 The current implementation includes:
 
-- functions, recursion, local inference, explicit generics, closures, and partial application;
+- functions, recursion, explicit `let` local declarations, local inference, explicit generics,
+  closures, and partial application;
 - `Bool`, `Int`, binary64 `Float`, `String`, `CodePoint`, `Symbol`, `Unit`, homogeneous `List<T>`,
   and zero-conversion `Sequence<T>` views;
 - generic records, associated factories, instance methods, private-by-default declarations, and

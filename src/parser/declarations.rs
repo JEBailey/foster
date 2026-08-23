@@ -20,7 +20,11 @@ impl Parser {
             documentation = self.documentation();
         }
         while !self.at(&TokenKind::Eof) {
-            if self.at(&TokenKind::Const)
+            if self.at(&TokenKind::Let) {
+                return Err(self.error(
+                    "local declarations are only allowed inside function, closure, or test bodies",
+                ));
+            } else if self.at(&TokenKind::Const)
                 || (self.at(&TokenKind::Pub)
                     && self
                         .peek_n(1)
@@ -677,6 +681,13 @@ impl Parser {
             let guard = self.control_guard()?;
             return Ok(Stmt::Return { value, guard });
         }
+        if self.take(&TokenKind::Let) {
+            let name = self.expect_ident("expected local name after `let`")?;
+            self.expect(&TokenKind::Equal, "expected `=` after local name")?;
+            let value = self.expression()?;
+            self.reject_value_guard()?;
+            return Ok(Stmt::Bind { name, value });
+        }
         if let TokenKind::Ident(name) = self.peek().kind.clone()
             && self.peek_n(1).is_some_and(|t| t.kind == TokenKind::Equal)
         {
@@ -684,7 +695,7 @@ impl Parser {
             self.advance();
             let value = self.expression()?;
             self.reject_value_guard()?;
-            return Ok(Stmt::Bind { name, value });
+            return Ok(Stmt::Assign { name, value });
         }
         let place = self.expression()?;
         if self.take(&TokenKind::Equal) {

@@ -83,7 +83,7 @@ func successful_test_value() -> Result<Int, String> {
 }
 
 test "result mapping transforms successful values" {
-    mapped = map(successful_test_value(), (value: Int) -> value + 2)
+    let mapped = map(successful_test_value(), (value: Int) -> value + 2)
     branch mapped {
         Result.Ok(value) -> branch {
             value == 22 -> ()

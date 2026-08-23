@@ -233,6 +233,7 @@ pub enum EffectKind {
 pub enum Stmt {
     Return { value: Expr, guard: Option<Expr> },
     Bind { name: String, value: Expr },
+    Assign { name: String, value: Expr },
     Function(Box<Function>),
     Set { place: Expr, value: Expr },
     Expr(Expr),

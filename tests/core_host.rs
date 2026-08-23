@@ -126,7 +126,7 @@ import core.int
 import core.string
 
 func main() -> String {
-    parts = string.split("one,two,three", ",")
+    let parts = string.split("one,two,three", ",")
     string.upper(string.join(parts, "-") + ":" + int.to_string(-42))
 }
 "#;
@@ -147,7 +147,7 @@ func option_value(value: Option<Int>) -> Int {
 }
 
 func main() -> Int {
-    values = Map.empty()
+    let values = Map.empty()
     values = put(move values, "answer", 42)
     option_value(get(move values, "answer"))
 }
@@ -171,14 +171,14 @@ func failed_int(message: String) -> Result<Int, String> { Result.Error(message) 
 func nested_result() -> Result<Result<Int, String>, String> { Result.Ok(Result.Ok(5)) }
 
 func main() -> Int {
-    a = option.unwrap_or_else(no_int(), option_fallback)
-    b = option.unwrap_or(option.flatten(nested_option()), 0)
-    c = option.unwrap_or(option.or_else(no_int(), option_recovery), 0)
-    d = result.unwrap_or_else(failed_int("four"), result_fallback)
-    e = result.unwrap_or(result.flatten(nested_result()), 0)
-    f = result.unwrap_or(result.or_else(failed_int("six"), result_recovery), 0)
-    absent = option.absent?(no_int())
-    failed = result.error?(failed_int("failure"))
+    let a = option.unwrap_or_else(no_int(), option_fallback)
+    let b = option.unwrap_or(option.flatten(nested_option()), 0)
+    let c = option.unwrap_or(option.or_else(no_int(), option_recovery), 0)
+    let d = result.unwrap_or_else(failed_int("four"), result_fallback)
+    let e = result.unwrap_or(result.flatten(nested_result()), 0)
+    let f = result.unwrap_or(result.or_else(failed_int("six"), result_recovery), 0)
+    let absent = option.absent?(no_int())
+    let failed = result.error?(failed_int("failure"))
     branch {
         absent -> branch {
             failed -> a + b + c + d + e + f
@@ -208,7 +208,8 @@ fn filesystem_mutation_operations_create_copy_move_and_remove_entries() {
     let source_literal = serde_json::to_string(&source_path.to_string_lossy()).unwrap();
     let copied_literal = serde_json::to_string(&copied_path.to_string_lossy()).unwrap();
     let moved_literal = serde_json::to_string(&moved_path.to_string_lossy()).unwrap();
-    let source = format!(r#"
+    let source = format!(
+        r#"
 import core.result
 import std.fs
 import std.io
@@ -228,7 +229,7 @@ func count(outcome: Result<Int, IoError>) -> Int {{
 func main() -> Int {{
     unit(create_directory_all({nested_literal}))
     unit(write_text({source_literal}, "hello"))
-    copied = count(copy_file({source_literal}, {copied_literal}))
+    let copied = count(copy_file({source_literal}, {copied_literal}))
     unit(rename({copied_literal}, {moved_literal}))
     unit(remove_file({source_literal}))
     unit(remove_file({moved_literal}))
@@ -237,7 +238,8 @@ func main() -> Int {{
     unit(remove_directory({root_literal}))
     copied
 }}
-"#);
+"#
+    );
 
     assert_eq!(foster::run(&source).unwrap(), Value::Integer(5));
     assert!(!root.exists());
@@ -274,7 +276,7 @@ func read_result(outcome: Result<String, IoError>) -> String {{
 }}
 
 func main() -> String {{
-    path = {path_literal}
+    let path = {path_literal}
     read_after_write(path, write_text(path, "hello from Foster"))
 }}
 "#
@@ -325,8 +327,8 @@ func render(outcome: Result<Bytes, IoError>) -> String {{
 }}
 
 func main() -> String {{
-    path = {path_literal}
-    contents = bytes_or_empty(Bytes.from_hex("00ff8041"))
+    let path = {path_literal}
+    let contents = bytes_or_empty(Bytes.from_hex("00ff8041"))
     read_after_write(path, write_bytes(path, contents))
 }}
 "#
@@ -353,7 +355,7 @@ func text(outcome: Result<String, IoError>) -> String {
 }
 
 func main() -> String {
-    cwd = text(environment.current_directory())
+    let cwd = text(environment.current_directory())
     text(paths.canonicalize(paths.join(cwd, ".")))
 }
 "#;

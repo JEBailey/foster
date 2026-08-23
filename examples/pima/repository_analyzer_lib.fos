@@ -47,7 +47,7 @@ func run(self: Analyzer) -> Metrics {
 }
 
 func main() -> Int {
-    worker = remote Analyzer { source: "import core\nfunction work()\n// TODO\n" }
-    result = await worker.run()
+    let worker = remote Analyzer { source: "import core\nfunction work()\n// TODO\n" }
+    let result = await worker.run()
     result.lines * 1000 + result.todos * 100 + result.functions * 10 + result.imports
 }

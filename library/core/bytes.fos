@@ -106,7 +106,7 @@ pub func String.from_utf8(value: Bytes) -> Result<String, Utf8Error> {
 }
 
 test "bytes round-trip UTF-8 and hexadecimal text" {
-    encoded = utf8("Foster λ")
+    let encoded = utf8("Foster λ")
     branch String.from_utf8(encoded) {
         Result.Ok(value) -> branch {
             value != "Foster λ" -> [()][1]

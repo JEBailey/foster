@@ -8,15 +8,15 @@ func add(left: Int, right: Int) -> Int {
 }
 
 func main() -> Int {
-    values = [1, 2]
+    let values = [1, 2]
     set(ref values[0], 7)
 
-    count = 0
-    increment = [ref count] () -> {
+    let count = 0
+    let increment = [ref count] () -> {
         count = count + 1
     }
     increment()
 
-    add_seven = add(7, _)
+    let add_seven = add(7, _)
     add_seven(count)
 }

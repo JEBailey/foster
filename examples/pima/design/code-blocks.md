@@ -17,7 +17,7 @@ func render_report(
     name: String,
     score: Int,
 ) -> Unit {
-    passing = score >= 70
+    let passing = score >= 70
     do report
 }
 ```

@@ -74,7 +74,7 @@ compiler infers them. Local values use inference. The last expression in a funct
 
 ```foster
 test "decoding preserves text" {
-    decoded = decode("Foster".utf8)
+    let decoded = decode("Foster".utf8)
     println(decoded)
 }
 ```
@@ -119,7 +119,8 @@ The implemented initializer forms are primitive literals, other module constants
 numeric literals, and recursively constant homogeneous lists. Their types are inferred, and their
 values are embedded directly into VM bytecode rather than allocated in mutable module storage.
 Constants may be referenced before their declarations, but cycles are rejected. Function-local
-immutable values continue to use ordinary assignment; `const` is deliberately module-level only.
+values are introduced with `let name = value`; later `name = value` statements reassign an existing
+local. `const` is deliberately module-level only.
 
 ```foster
 const RETRY_LIMIT = 3
@@ -204,7 +205,7 @@ pub type Person = {
     internal_id: Int
 }
 
-person = Person { name age internal_id }
+let person = Person { name age internal_id }
 ```
 
 Construction initializes every field exactly once. A record with any private field can only be
@@ -224,7 +225,7 @@ pub func Map.empty<K, V>() -> Map<K, V> {
     Map { entries: [] }
 }
 
-scores = Map.empty()
+let scores = Map.empty()
 ```
 
 Associated functions are declared in the record's defining module, so they may construct records
@@ -323,8 +324,8 @@ func increment(self: Counter, amount: Int) -> Int {
     self.value
 }
 
-counter = remote Counter { value: 0 }
-updated = await counter.increment(1)
+let counter = remote Counter { value: 0 }
+let updated = await counter.increment(1)
 ```
 
 The remote object retains mutations to `self` between calls. Values crossing the mailbox boundary
@@ -338,10 +339,10 @@ Multiple reads may coexist; owner mutation takes exclusive group access for the 
 method call, preventing a remote reader from observing a partially updated record.
 
 ```foster
-catalog = Catalog { entries: [] }
-reader = remote ref catalog
+let catalog = Catalog { entries: [] }
+let reader = remote ref catalog
 catalog.add("Foster")
-found = await reader.contains("Foster")
+let found = await reader.contains("Foster")
 ```
 
 The resulting type retains the borrowed group as `Remote<ref[group] Catalog>`. Read-only describes
@@ -555,13 +556,13 @@ read-only value view. Advancing the cursor mutates only cursor state, while expl
 Foster separates one bounded octet, immutable binary data, and mutable construction storage:
 
 ```foster
-byte = Byte.from(255)
-data = Bytes.from_hex("89504e47")
+let byte = Byte.from(255)
+let data = Bytes.from_hex("89504e47")
 
-buffer = ByteBuffer.with_capacity(4096)
+let buffer = ByteBuffer.with_capacity(4096)
 buffer.extend("Foster".utf8)
-snapshot = buffer.snapshot
-finished = (move buffer).freeze()
+let snapshot = buffer.snapshot
+let finished = (move buffer).freeze()
 ```
 
 `Byte` is a copy type in the inclusive range `0..255`. Ordinary arithmetic widens it to `Int`;

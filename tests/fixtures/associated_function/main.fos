@@ -1,7 +1,7 @@
 import collection
 
 func main() -> Int {
-    direct = Box.create(41)
-    qualified = collection.Box.create(1)
+    let direct = Box.create(41)
+    let qualified = collection.Box.create(1)
     direct.unwrap() + qualified.unwrap()
 }

@@ -366,7 +366,7 @@ impl Workspace {
                 );
             }
             for keyword in [
-                "await", "branch", "copy", "false", "func", "import", "move", "pub", "ref",
+                "await", "branch", "copy", "false", "func", "import", "let", "move", "pub", "ref",
                 "remote", "return", "true", "type",
             ] {
                 insert_completion(&mut items, keyword, CompletionItemKind::KEYWORD, None);

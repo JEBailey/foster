@@ -62,7 +62,7 @@ pub type Duplex<E> = {
 
 /// Reads a stream through EOF into compact immutable bytes.
 pub func read_all<E>(reader: Reader<E>) -> Result<Bytes, E> [mut reader] {
-    buffer = ByteBuffer.empty()
+    let buffer = ByteBuffer.empty()
     read_remaining(reader, move buffer)
 }
 

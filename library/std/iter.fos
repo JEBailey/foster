@@ -30,7 +30,7 @@ func next<T>(self: SequenceIterator<T>) -> Option<T> {
 
 /// Removes and returns the current head of a non-empty sequence cursor.
 func advance<T>(self: SequenceIterator<T>) -> Option<T> {
-    value = self.remaining.head
+    let value = self.remaining.head
     self.remaining = self.remaining.rest
     Option.Some(value)
 }
@@ -112,8 +112,8 @@ pub func collect<T>(self: Iterator<T>) -> List<T> [mut self] {
 }
 
 test "iterator consumers process every remaining value" {
-    iterator = [1, 2, 3].iterator
-    total = iterator.fold(0, (sum: Int, value: Int) -> sum + value)
+    let iterator = [1, 2, 3].iterator
+    let total = iterator.fold(0, (sum: Int, value: Int) -> sum + value)
     branch {
         total == 6 -> ()
         _ -> [()][1]

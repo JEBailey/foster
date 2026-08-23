@@ -10,10 +10,10 @@ func render(value: Result<Bytes, HexError>) -> String {
 }
 
 func buffer_and_decode(data: Bytes) -> String {
-    buffer = ByteBuffer.with_capacity(data.length + 1)
+    let buffer = ByteBuffer.with_capacity(data.length + 1)
     buffer.extend(data)
     buffer.extend("!".utf8)
-    encoded = (move buffer).freeze()
+    let encoded = (move buffer).freeze()
 
     branch String.from_utf8(encoded) {
         Result.Ok(text) -> text

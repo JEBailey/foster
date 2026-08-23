@@ -13,8 +13,8 @@ func parsed_int(value: Int, remaining: String) -> Parsed<Int> {
 }
 
 func main() -> Int {
-    result = parsed_int(42, " trailing")
-    error = JsonError {
+    let result = parsed_int(42, " trailing")
+    let error = JsonError {
         message: "trailing content"
         offset: result.remaining.length
     }

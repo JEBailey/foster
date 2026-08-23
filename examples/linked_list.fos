@@ -120,11 +120,11 @@ func numbers() -> LinkedList<Int> {
 }
 
 func main() -> Int {
-    doubled = map(numbers(), (value: Int) -> value * 2)
-    first_score = render(pop_front(move doubled))
+    let doubled = map(numbers(), (value: Int) -> value * 2)
+    let first_score = render(pop_front(move doubled))
 
-    total = fold(numbers(), 0, (result: Int, value: Int) -> result + value)
-    reversed = to_list(reverse(numbers()))
+    let total = fold(numbers(), 0, (result: Int, value: Int) -> result + value)
+    let reversed = to_list(reverse(numbers()))
 
     first_score + total + reversed[0]
 }

@@ -46,13 +46,13 @@ Closures should:
 An expression body is concise:
 
 ```foster
-triple = (value: Int) -> value * 3
+let triple = (value: Int) -> value * 3
 ```
 
 A block body supports statements:
 
 ```foster
-describe = (name: String, score: Int) -> {
+let describe = (name: String, score: Int) -> {
     println(name, ":", score)
     score
 }
@@ -61,7 +61,7 @@ describe = (name: String, score: Int) -> {
 Parameter and result types participate in ordinary inference:
 
 ```foster
-increment = (value) -> value + 1
+let increment = (value) -> value + 1
 ```
 
 ### Nested named functions
@@ -86,10 +86,10 @@ Capture sets are inferred by default. A capture clause documents or overrides in
 modes:
 
 ```foster
-counter = [ref count] () -> count
-consumer = [move resource] () -> use(resource)
-snapshot = [copy scale] (value) -> scale * value
-mixed = [move name, ref person] () -> rename(person, name)
+let counter = [ref count] () -> count
+let consumer = [move resource] () -> use(resource)
+let snapshot = [copy scale] (value) -> scale * value
+let mixed = [move name, ref person] () -> rename(person, name)
 ```
 
 Capture modes are:
@@ -113,8 +113,8 @@ ref () -> count
 A closure has a unique anonymous record type. This closure:
 
 ```foster
-factor = 3
-triple = [copy factor] (value: Int) -> factor * value
+let factor = 3
+let triple = [copy factor] (value: Int) -> factor * value
 ```
 
 lowers conceptually to:
@@ -152,7 +152,7 @@ Capture inference begins with the closure's free local identities. It does not c
 scope, but projected field capture is currently rooted at its local:
 
 ```foster
-show_name = () -> println(person.name)
+let show_name = () -> println(person.name)
 ```
 
 The current capture is the local `person`; the field access remains in the closure body. Capturing
@@ -217,11 +217,11 @@ group parameters and an upper bound on effects.
 Multiple closures may capture references into the same mutable group:
 
 ```foster
-rename = [ref person] (name: String) -> {
+let rename = [ref person] (name: String) -> {
     person.name = name
 }
 
-birthday = [ref person] () -> {
+let birthday = [ref person] () -> {
     person.age = person.age + 1
 }
 ```
@@ -241,7 +241,7 @@ captures. Safety follows from group effects, place initialization, and invalidat
 An owned capture belongs to the closure environment:
 
 ```foster
-next = [move count] () -> {
+let next = [move count] () -> {
     count = count + 1
     count
 }
@@ -281,7 +281,7 @@ Returning a closure that borrows an unexposed local group is rejected:
 
 ```foster
 func invalid() {
-    person = Person { name: "Grace" age: 37 }
+    let person = Person { name: "Grace" age: 37 }
     [ref person] () -> person.name
 }
 ```
@@ -290,7 +290,7 @@ Moving the value into the environment is valid:
 
 ```foster
 func valid() {
-    person = Person { name: "Grace" age: 37 }
+    let person = Person { name: "Grace" age: 37 }
     [move person] () -> person.name
 }
 ```
@@ -300,8 +300,8 @@ func valid() {
 A closure may contain a reference into a dynamic child group:
 
 ```foster
-selected = ref people[0]
-show = [ref selected] () -> println(selected.name)
+let selected = ref people[0]
+let show = [ref selected] () -> println(selected.name)
 ```
 
 Value mutation preserves callability:
@@ -345,7 +345,7 @@ These distinctions remain present in HIR and MIR even though they do not use thr
 Closure values follow ordinary single ownership:
 
 ```foster
-other = closure // moves the closure
+let other = closure // moves the closure
 ```
 
 Closure values are currently ownership-bearing even when every capture is a copy type. Foster does
@@ -378,13 +378,13 @@ erased environment is an internal compiler and VM decision.
 Placeholder partial application is closure syntax sugar:
 
 ```foster
-add_five = add(5, _)
+let add_five = add(5, _)
 ```
 
 lowers before capture analysis to:
 
 ```foster
-add_five = (value) -> add(5, value)
+let add_five = (value) -> add(5, value)
 ```
 
 Multiple placeholders become parameters in left-to-right order. Captured supplied arguments obey

@@ -6,7 +6,7 @@ use crate::vm::{Machine, compile};
 fn round_trips_and_executes_compiled_program() {
     let source = "type Choice = | Left(Int) | Right(Int)\n\
             func unwrap(value: Choice) -> Int { branch value { Choice.Left(number) -> number _ -> 0 } }\n\
-            func main() -> Int {\n values = [20, 22]\n unwrap(Choice.Left(values[0] + values[1]))\n }";
+            func main() -> Int {\n let values = [20, 22]\n unwrap(Choice.Left(values[0] + values[1]))\n }";
     let compilation = crate::compile(source).unwrap();
     let program = compile(&compilation).unwrap();
     let bytes = encode_program(&program).unwrap();

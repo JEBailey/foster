@@ -10,7 +10,7 @@ type RangeIterator = & Iterator<Int> & {
 }
 
 func next(self: RangeIterator) -> Option<Int> {
-    value = self.current
+    let value = self.current
     self.current = self.current + 1
     branch {
         value >= self.end -> Option.None
@@ -41,10 +41,10 @@ func greater_than_six?(value: Int) -> Bool { value > 6 }
 func add(total: Int, value: Int) -> Int { total + value }
 
 func main() -> Int {
-    values = Range { start: 3, end: 5 }.iterator
-    first = value_or(values.next(), -1)
-    second = value_or(values.next(), -1)
-    exhausted = value_or(values.next(), -1)
-    pipeline_total = Range { start: 1, end: 10 }.iterator.map(double).filter(greater_than_six?).take(2).fold(0, add)
+    let values = Range { start: 3, end: 5 }.iterator
+    let first = value_or(values.next(), -1)
+    let second = value_or(values.next(), -1)
+    let exhausted = value_or(values.next(), -1)
+    let pipeline_total = Range { start: 1, end: 10 }.iterator.map(double).filter(greater_than_six?).take(2).fold(0, add)
     first + second + exhausted + pipeline_total
 }

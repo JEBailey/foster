@@ -70,7 +70,7 @@ pub func flatten<T>(option: Option<Option<T>>) -> Option<T> {
 }
 
 test "option transformations preserve presence and absence" {
-    mapped = map(Option.Some(20), (value: Int) -> value + 1)
+    let mapped = map(Option.Some(20), (value: Int) -> value + 1)
     branch mapped {
         Option.Some(value) -> branch {
             value == 21 -> ()

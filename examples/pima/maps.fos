@@ -47,10 +47,10 @@ func value_or_zero(value: Lookup) -> Int {
 }
 
 func main() -> Int {
-    user = Map.empty()
+    let user = Map.empty()
     user = user.put(:name, 1)
     user = user.put(:score, 95)
-    updated = user.put(:score, 96)
+    let updated = user.put(:score, 96)
     println("original:", value_or_zero(user.get(:score)))
     println("updated:", value_or_zero(updated.get(:score)))
     value_or_zero(updated.get(:score))

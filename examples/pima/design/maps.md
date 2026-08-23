@@ -5,13 +5,13 @@
 Pima's `maps.pima` becomes:
 
 ```foster
-user = Map {
+let user = Map {
     :name: "Ada"
     :score: 95
     :total: 90 + 5
 }
 
-updated = user.put(:score, 96)
+let updated = user.put(:score, 96)
 
 println("original:", user.get(:score))
 println("updated:", updated.get(:score))

@@ -42,18 +42,17 @@ impl FunctionLowerer<'_> {
                     .transpose()?,
             }),
             ast::Stmt::Bind { name, value } => {
-                let value = self.lower_expression(value)?;
-                if let Some(local) = self.locals.get(name).copied() {
-                    if self.hir.locals[local].function != self.function
-                        && !self.captures.contains(&local)
-                    {
-                        self.captures.push(local);
-                    }
-                    return Ok(Stmt::Assign { local, value });
+                if self.locals.contains_key(name) {
+                    return Err(self.error(format!(
+                        "local `{name}` is already declared; omit `let` to assign to it"
+                    )));
                 }
                 if self.hir.constant_named(self.module, name).is_some() {
-                    return Err(self.error(format!("cannot assign to constant `{name}`")));
+                    return Err(self.error(format!(
+                        "local `{name}` conflicts with a module constant of the same name"
+                    )));
                 }
+                let value = self.lower_expression(value)?;
                 let local = self.hir.locals.alloc(Local {
                     span: self.hir.functions[self.function].span.clone(),
                     function: self.function,
@@ -62,6 +61,23 @@ impl FunctionLowerer<'_> {
                 });
                 self.locals.insert(name.clone(), local);
                 Ok(Stmt::Bind { local, value })
+            }
+            ast::Stmt::Assign { name, value } => {
+                let Some(local) = self.locals.get(name).copied() else {
+                    if self.hir.constant_named(self.module, name).is_some() {
+                        return Err(self.error(format!("cannot assign to constant `{name}`")));
+                    }
+                    return Err(self.error(format!(
+                        "cannot assign to undeclared local `{name}`; declare it with `let {name} = ...`"
+                    )));
+                };
+                let value = self.lower_expression(value)?;
+                if self.hir.locals[local].function != self.function
+                    && !self.captures.contains(&local)
+                {
+                    self.captures.push(local);
+                }
+                Ok(Stmt::Assign { local, value })
             }
             ast::Stmt::Function(source) => {
                 if source.name.contains('.') {

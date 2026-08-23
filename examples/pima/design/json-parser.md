@@ -20,7 +20,7 @@ type JsonError = {
 }
 
 func parse(source: String) -> Json throws JsonError {
-    characters = source.characters
+    let characters = source.characters
     (value, remaining) = parse_value(skip_whitespace(characters))
     throw JsonError { message: "trailing content" offset: source.length - remaining.length }
         if !remaining.empty?

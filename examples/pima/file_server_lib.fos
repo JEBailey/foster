@@ -40,6 +40,6 @@ func handle(self: FileServer, method: String, target: String) -> Response {
 }
 
 func main() -> Int {
-    server = FileServer { files: [File { path: "/index.html", media_type: "text/html", body: "<h1>Foster</h1>" }, File { path: "/assets/site.css", media_type: "text/css", body: "body {}" }] }
+    let server = FileServer { files: [File { path: "/index.html", media_type: "text/html", body: "<h1>Foster</h1>" }, File { path: "/assets/site.css", media_type: "text/css", body: "body {}" }] }
     server.handle("GET", "/").status + server.handle("GET", "/missing.txt").status
 }

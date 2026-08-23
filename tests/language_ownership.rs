@@ -14,9 +14,9 @@ func increment(self: Counter, amount: Int) -> Int [mut self] {
 }
 
 func main() -> Int {
-    counter = remote Counter { value: 0 }
-    first = counter.increment(2)
-    second = counter.increment(3)
+    let counter = remote Counter { value: 0 }
+    let first = counter.increment(2)
+    let second = counter.increment(3)
     await first + await second
 }
 "#;
@@ -40,11 +40,11 @@ func assign(self: Counter, value: Int) -> Int [mut self] {
 }
 
 func main() -> Int {
-    counter = Counter { value: 0 }
-    reader = remote ref counter
-    before = await reader.snapshot()
+    let counter = Counter { value: 0 }
+    let reader = remote ref counter
+    let before = await reader.snapshot()
     counter.assign(42)
-    after = await reader.snapshot()
+    let after = await reader.snapshot()
     before + after
 }
 "#;
@@ -70,12 +70,12 @@ func replace(self: Pair, value: Int) -> Int [mut self] {
 }
 
 func main() -> Int {
-    pair = Pair { left: 0, right: 0 }
-    reader = remote ref pair
-    pending = reader.total()
+    let pair = Pair { left: 0, right: 0 }
+    let reader = remote ref pair
+    let pending = reader.total()
     pair.replace(21)
-    observed = await pending
-    after = await reader.total()
+    let observed = await pending
+    let after = await reader.total()
     branch observed {
         0 -> after
         42 -> after
@@ -97,8 +97,8 @@ func increment(self: Counter) -> Int [mut self] {
 }
 
 func main() {
-    counter = Counter { value: 0 }
-    reader = remote ref counter
+    let counter = Counter { value: 0 }
+    let reader = remote ref counter
     reader.increment()
 }
 "#;
@@ -126,11 +126,11 @@ func assign(self: Document, value: Int) -> Int [mut self] {
 }
 
 func main() -> Int {
-    document = Document { value: 0 }
-    inspector = remote Inspector {}
-    before = await inspector.inspect(document)
+    let document = Document { value: 0 }
+    let inspector = remote Inspector {}
+    let before = await inspector.inspect(document)
     document.assign(42)
-    after = await inspector.inspect(document)
+    let after = await inspector.inspect(document)
     before + after
 }
 "#;
@@ -154,11 +154,11 @@ func replace(self: Pair, value: Int) -> Int [mut self] {
 }
 
 func main() -> Int {
-    pair = Pair { left: 0, right: 0 }
-    inspector = remote Inspector {}
-    pending = inspector.total(pair)
+    let pair = Pair { left: 0, right: 0 }
+    let inspector = remote Inspector {}
+    let pending = inspector.total(pair)
     pair.replace(21)
-    observed = await pending
+    let observed = await pending
     branch observed {
         0 -> 42
         42 -> 42
@@ -181,8 +181,8 @@ func rewrite(self: Worker, document: Document) -> Int [mut document] {
 }
 
 func main() {
-    document = Document { value: 0 }
-    worker = remote Worker {}
+    let document = Document { value: 0 }
+    let worker = remote Worker {}
     worker.rewrite(document)
 }
 "#;
@@ -204,8 +204,8 @@ func read[g: group Int](self: Box, value: ref[g] Int) -> Int {
 }
 
 func main() {
-    box = remote Box { value: 0 }
-    values = [1]
+    let box = remote Box { value: 0 }
+    let values = [1]
     box.read(ref values[0])
 }
 "#;
@@ -227,8 +227,8 @@ func submit(self: Worker, message: String) -> Unit [consume message] {
 }
 
 func main() {
-    worker = remote Worker {}
-    message = "owned"
+    let worker = remote Worker {}
+    let message = "owned"
     worker.submit(message)
 }
 "#;
@@ -381,8 +381,8 @@ func incrementer[g: group Int](value: ref[g] Int) -> func() -> Int [mut g] {
 }
 
 func main() -> Int {
-    values = [40]
-    increment = incrementer(ref values[0])
+    let values = [40]
+    let increment = incrementer(ref values[0])
     increment()
     increment()
     values.head
@@ -421,7 +421,7 @@ func main() { 0 }
 
     let reused = r#"
 func take[g: group Int](value: ref[g] Int) -> Int [read g, consume g] {
-    result = move value
+    let result = move value
     value
 }
 func main() { 0 }
@@ -769,7 +769,7 @@ func scale(value: Float, factor: Float) -> Float {
 }
 
 func main() -> Float {
-    halve = (value: Float) -> value / 2.0
+    let halve = (value: Float) -> value / 2.0
     halve(scale(1.25e1, 2.0))
 }
 "#;
@@ -798,7 +798,7 @@ func make(scale: Int, prefix: String) [consume prefix] {
 }
 
 func main() -> Int {
-    apply = make(3, "triple")
+    let apply = make(3, "triple")
     apply(14)
 }
 "#;
@@ -845,7 +845,7 @@ func combine(a: Int, b: Int, c: Int) -> Int {
 }
 
 func main() -> Int {
-    with_middle = combine(_, 2, _)
+    let with_middle = combine(_, 2, _)
     with_middle(4, 7)
 }
 "#;
@@ -859,8 +859,8 @@ fn mutable_ref_capture_updates_the_original_place() {
 
     let source = r#"
 func main() -> Int {
-    count = 0
-    increment = [ref count] () -> {
+    let count = 0
+    let increment = [ref count] () -> {
         count = count + 1
     }
     increment()
@@ -880,8 +880,8 @@ func main() -> Int {
 fn mutable_ref_capture_can_reshape_a_list() {
     let source = r#"
 func main() -> Int {
-    values = [1]
-    append = [ref values] (value: Int) -> values.push(value)
+    let values = [1]
+    let append = [ref values] (value: Int) -> values.push(value)
     append(2)
     append(3)
     values.length
@@ -928,9 +928,9 @@ func make[people: group Int](person: ref[people] Int)
 fn rejects_call_after_structural_capture_invalidation() {
     let source = r#"
 func main() -> Int {
-    values = [10, 20]
-    selected = ref values[0]
-    show = [ref selected] () -> selected
+    let values = [10, 20]
+    let selected = ref values[0]
+    let show = [ref selected] () -> selected
     values.push(30)
     show()
 }
@@ -949,9 +949,9 @@ func main() -> Int {
 fn projected_reference_capture_works_before_invalidation() {
     let source = r#"
 func main() -> Int {
-    values = [10, 20]
-    selected = ref values[1]
-    show = [ref selected] () -> selected
+    let values = [10, 20]
+    let selected = ref values[1]
+    let show = [ref selected] () -> selected
     show()
 }
 "#;
@@ -971,8 +971,8 @@ func set[state: group Int](value: ref[state] Int, next: Int) -> Int [mut state] 
 }
 
 func main() -> Int {
-    values = [10, 20]
-    selected = ref values[0]
+    let values = [10, 20]
+    let selected = ref values[0]
     set(ref selected, 42)
     selected
 }
@@ -990,8 +990,8 @@ func main() -> Int {
 fn rejects_direct_reference_use_after_structural_invalidation() {
     let source = r#"
 func main() -> Int {
-    values = [10, 20]
-    selected = ref values[0]
+    let values = [10, 20]
+    let selected = ref values[0]
     values.push(30)
     selected
 }
@@ -1021,8 +1021,8 @@ func main() -> Int {
 fn permits_structural_mutation_after_a_borrows_last_use() {
     let source = r#"
 func main() -> Int {
-    values = [10, 20]
-    selected = ref values[0]
+    let values = [10, 20]
+    let selected = ref values[0]
     selected
     values.push(30)
     values.length
@@ -1039,11 +1039,11 @@ type Selection = {
 }
 
 func main() -> Int {
-    values = [10, 20]
-    first = ref values[0]
-    selected = Selection { item: first }
+    let values = [10, 20]
+    let first = ref values[0]
+    let selected = Selection { item: first }
     values.push(30)
-    second = ref values[1]
+    let second = ref values[1]
     selected = Selection { item: second }
     selected.item
 }
@@ -1055,8 +1055,8 @@ func main() -> Int {
 fn conservatively_joins_branch_invalidation() {
     let source = r#"
 func main() -> Int {
-    values = [10, 20]
-    selected = ref values[0]
+    let values = [10, 20]
+    let selected = ref values[0]
     branch {
         true -> values.push(30)
         _ -> values.push(40)
@@ -1076,9 +1076,9 @@ type Selection = {
 }
 
 func main() -> Int {
-    values = [10, 20]
-    selected = ref values[0]
-    saved = Selection { item: selected }
+    let values = [10, 20]
+    let selected = ref values[0]
+    let saved = Selection { item: selected }
     values.push(30)
     saved.item
 }
@@ -1104,9 +1104,9 @@ func describe(value: Int) -> String {
 }
 
 func main() -> Int {
-    values = [10, 20]
-    selected = ref values[0]
-    description = describe(selected)
+    let values = [10, 20]
+    let selected = ref values[0]
+    let description = describe(selected)
     values.push(30)
     description.length
 }
@@ -1155,9 +1155,9 @@ fn ownership_mir_records_loan_identity_and_forward_provenance() {
 func describe(value: Int) -> String { "number" }
 
 func main() -> Int {
-    values = [10, 20]
-    selected = ref values[0]
-    description = describe(selected)
+    let values = [10, 20]
+    let selected = ref values[0]
+    let description = describe(selected)
     selected
 }
 "#;
@@ -1241,7 +1241,7 @@ func main() { 0 }
 fn nested_reborrow_of_parameter_is_not_a_local_escape() {
     let source = r#"
 func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
-    first = ref value
+    let first = ref value
     ref first
 }
 
@@ -1262,10 +1262,10 @@ func main() { 0 }
 fn live_reborrow_restricts_consuming_its_source() {
     let source = r#"
 func main() -> Int {
-    values = [10, 20]
-    parent = ref values[0]
-    child = ref parent
-    moved = move parent
+    let values = [10, 20]
+    let parent = ref values[0]
+    let child = ref parent
+    let moved = move parent
     child
 }
 "#;
@@ -1278,12 +1278,12 @@ func main() -> Int {
 fn reborrow_allows_parent_reads_and_releases_parent_after_last_use() {
     let source = r#"
 func main() -> Int {
-    values = [10, 20]
-    parent = ref values[0]
-    child = ref parent
+    let values = [10, 20]
+    let parent = ref values[0]
+    let child = ref parent
     parent
     child
-    moved = move parent
+    let moved = move parent
     moved
 }
 "#;
@@ -1294,8 +1294,8 @@ func main() -> Int {
 fn ownership_mir_emits_typed_reshape_invalidations() {
     let source = r#"
 func main() -> Int {
-    values = [10, 20]
-    selected = ref values[0]
+    let values = [10, 20]
+    let selected = ref values[0]
     selected
     values.push(30)
     values.length
@@ -1334,7 +1334,7 @@ func grow[g: group Pair](pair: ref[g] Pair) -> Unit [reshape g.left.items] {
 }
 
 func main() -> Int {
-    pair = Pair { left: [10], right: [20] }
+    let pair = Pair { left: [10], right: [20] }
     grow(ref pair)
     pair.left.length
 }
@@ -1370,12 +1370,12 @@ type Saved = {
 }
 
 func main() -> Int {
-    values = [10, 20]
-    left = ref values[0]
-    right = ref values[1]
-    saved = Saved { left: left, right: right }
+    let values = [10, 20]
+    let left = ref values[0]
+    let right = ref values[1]
+    let saved = Saved { left: left, right: right }
     saved.left = 0
-    moved = move saved
+    let moved = move saved
     moved.right
 }
 "#;
@@ -1435,9 +1435,9 @@ func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
 }
 
 func main() -> Int {
-    values = [10, 20]
-    selected = preserve(ref values[0])
-    show = [ref selected] () -> {
+    let values = [10, 20]
+    let selected = preserve(ref values[0])
+    let show = [ref selected] () -> {
         println(selected)
         0
     }
@@ -1469,8 +1469,8 @@ type Pair = {
 }
 
 func main() -> Int {
-    pair = Pair { left: [10], right: [20] }
-    selected = ref pair.left[0]
+    let pair = Pair { left: [10], right: [20] }
+    let selected = ref pair.left[0]
     pair.right.push(30)
     selected
 }
@@ -1487,8 +1487,8 @@ func reshape_and_return(values: List<Int>) -> Int [reshape values.items] {
 }
 
 func main() -> Int {
-    values = [10, 20]
-    selected = ref values[0]
+    let values = [10, 20]
+    let selected = ref values[0]
     return reshape_and_return(values) if false
     selected
 }
@@ -1500,7 +1500,7 @@ func main() -> Int {
 fn rejects_returning_a_reference_into_a_frame_local() {
     let source = r#"
 func invalid() {
-    values = [10]
+    let values = [10]
     ref values[0]
 }
 "#;
@@ -1516,8 +1516,8 @@ func invalid() {
 fn rejects_use_after_move_capture() {
     let source = r#"
 func main() -> String {
-    text = "owned"
-    get = [move text] () -> text
+    let text = "owned"
+    let get = [move text] () -> text
     text
 }
 "#;
@@ -1529,7 +1529,7 @@ func main() -> String {
 fn rejects_escaping_borrow_of_a_local() {
     let source = r#"
 func invalid() {
-    value = 1
+    let value = 1
     [ref value] () -> value
 }
 "#;
@@ -1566,7 +1566,7 @@ func set[state: group Int](value: ref[state] Int, next: Int) -> Int [mut state] 
 }
 
 func main() -> Int {
-    values = [1, 2]
+    let values = [1, 2]
     set(ref values[0], 7)
     values.head
 }
@@ -1604,9 +1604,9 @@ type Worker = {}
 func value(self: Worker) -> Int { 1 }
 
 func wait(worker: Remote<Worker>) -> Int {
-    values = [10, 20]
-    selected = ref values[0]
-    waited = await worker.value()
+    let values = [10, 20]
+    let selected = ref values[0]
+    let waited = await worker.value()
     selected + waited
 }
 

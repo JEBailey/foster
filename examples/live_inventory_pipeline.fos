@@ -39,7 +39,7 @@ func shortage(current: Int, minimum: Int) -> Int {
 }
 
 func evaluate(self: Auditor, inventory: Inventory, policy: Policy) -> Assessment {
-    missing = shortage(inventory.apples, policy.minimum_apples) + shortage(inventory.bolts, policy.minimum_bolts)
+    let missing = shortage(inventory.apples, policy.minimum_apples) + shortage(inventory.bolts, policy.minimum_bolts)
     Assessment {
         version: inventory.version
         missing: missing
@@ -76,35 +76,35 @@ func result(self: Report) -> Int {
 }
 
 func main() -> Int {
-    inventory = Inventory { apples: 2, bolts: 1, version: 1 }
-    policy = Policy { minimum_apples: 5, minimum_bolts: 4 }
+    let inventory = Inventory { apples: 2, bolts: 1, version: 1 }
+    let policy = Policy { minimum_apples: 5, minimum_bolts: 4 }
 
     // `dashboard` holds a persistent read loan to the live inventory. The owner
     // may still mutate it; readers and the owner are coordinated by the VM.
-    dashboard = remote ref inventory
+    let dashboard = remote ref inventory
 
-    auditor_a = remote Auditor { weight: 2 }
-    auditor_b = remote Auditor { weight: 3 }
-    report = remote Report { alerts: 0, healthy: 0, score: 0 }
+    let auditor_a = remote Auditor { weight: 2 }
+    let auditor_b = remote Auditor { weight: 3 }
+    let report = remote Report { alerts: 0, healthy: 0, score: 0 }
 
     // Ordinary remote parameters borrow by default. Both calls can inspect the
     // same local values without copying or transferring ownership.
-    first_future = auditor_a.evaluate(inventory, policy)
-    second_future = auditor_b.evaluate(inventory, policy)
+    let first_future = auditor_a.evaluate(inventory, policy)
+    let second_future = auditor_b.evaluate(inventory, policy)
 
-    first = await first_future
-    second = await second_future
+    let first = await first_future
+    let second = await second_future
     await report.submit(first)
     await report.submit(second)
 
     // This owner mutation is atomic relative to remote readers.
     inventory.restock(5, 4)
 
-    final_assessment = await auditor_a.evaluate(inventory, policy)
+    let final_assessment = await auditor_a.evaluate(inventory, policy)
     await report.submit(final_assessment)
 
-    live_total = await dashboard.total()
-    summary = await report.result()
+    let live_total = await dashboard.total()
+    let summary = await report.result()
 
     // 1 healthy audit, 2 alerts, weighted shortage 30, live inventory total 12.
     summary + live_total

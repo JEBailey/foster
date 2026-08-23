@@ -7,12 +7,12 @@ fn ownership_rules_have_indexed_compile_pass_and_compile_fail_witnesses() {
             "rule-2-parent-read-and-last-use",
             r#"
 func main() -> Int {
-    values = [10, 20]
-    parent = ref values[0]
-    child = ref parent
+    let values = [10, 20]
+    let parent = ref values[0]
+    let child = ref parent
     parent
     child
-    moved = move parent
+    let moved = move parent
     moved
 }
 "#,
@@ -22,8 +22,8 @@ func main() -> Int {
             r#"
 func observe(value: Int) { }
 func main() -> Int {
-    values = [10, 20]
-    selected = ref values[0]
+    let values = [10, 20]
+    let selected = ref values[0]
     branch {
         true -> values.push(30)
         _ -> observe(selected)
@@ -38,9 +38,9 @@ func main() -> Int {
 type Worker = {}
 func value(self: Worker) -> Int { 1 }
 func wait(worker: Remote<Worker>) -> Int {
-    values = [10]
-    selected = ref values[0]
-    waited = await worker.value()
+    let values = [10]
+    let selected = ref values[0]
+    let waited = await worker.value()
     selected + waited
 }
 func main() { 0 }
@@ -54,8 +54,8 @@ type Pair = {
     right: List<Int>
 }
 func main() -> Int {
-    pair = Pair { left: [10], right: [20] }
-    selected = ref pair.left[0]
+    let pair = Pair { left: [10], right: [20] }
+    let selected = ref pair.left[0]
     pair.right.push(30)
     selected
 }
@@ -65,9 +65,9 @@ func main() -> Int {
             "rule-9-constant-indices",
             r#"
 func main() -> Int {
-    values = [10, 20]
-    first = ref values[0]
-    second = move values[1]
+    let values = [10, 20]
+    let first = ref values[0]
+    let second = move values[1]
     first + second
 }
 "#,
@@ -81,7 +81,7 @@ func rename[people: group Person](person: ref[people] Person, name: Int) -> Unit
     ()
 }
 func main() -> Int {
-    person = Person { name: 0 }
+    let person = Person { name: 0 }
     rename(ref person, 42)
     person.name
 }
@@ -97,8 +97,8 @@ func main() -> Int {
             "rule-1-owner-invalidation",
             r#"
 func main() -> Int {
-    values = [10]
-    selected = ref values[0]
+    let values = [10]
+    let selected = ref values[0]
     values.push(20)
     selected
 }
@@ -108,10 +108,10 @@ func main() -> Int {
             "rule-2-child-outlives-source",
             r#"
 func main() -> Int {
-    values = [10]
-    parent = ref values[0]
-    child = ref parent
-    moved = move parent
+    let values = [10]
+    let parent = ref values[0]
+    let child = ref parent
+    let moved = move parent
     child
 }
 "#,
@@ -120,7 +120,7 @@ func main() -> Int {
             "rule-3-local-return-escape",
             r#"
 func invalid() -> Int {
-    values = [10]
+    let values = [10]
     ref values[0]
 }
 func main() { 0 }
@@ -130,8 +130,8 @@ func main() { 0 }
             "rule-4-invalid-on-one-incoming-path",
             r#"
 func main() -> Int {
-    values = [10]
-    selected = ref values[0]
+    let values = [10]
+    let selected = ref values[0]
     branch {
         true -> values.push(20)
         _ -> ()
@@ -144,8 +144,8 @@ func main() -> Int {
             "replace-invalidates-parentless-loan",
             r#"
 func main() -> Int {
-    values = [1]
-    selected = ref values[0]
+    let values = [1]
+    let selected = ref values[0]
     values = [9]
     selected
 }
@@ -158,8 +158,8 @@ func make[state: group Int](value: ref[state] Int) -> func() -> Int [read state]
     [ref value] () -> [read state] { value }
 }
 func main() -> Int {
-    values = [1]
-    probe = make(ref values[0])
+    let values = [1]
+    let probe = make(ref values[0])
     values = [9]
     probe()
 }
@@ -169,12 +169,12 @@ func main() -> Int {
             "replace-through-parameter-invalidates-derived-loan",
             r#"
 func replace[g: group Int](value: ref[g] Int) -> Int [mut g] {
-    first = ref value
+    let first = ref value
     value = 42
     first
 }
 func main() -> Int {
-    values = [1]
+    let values = [1]
     replace(ref values[0])
 }
 "#,
@@ -219,7 +219,7 @@ func rename[people: group Person](person: ref[people] Person, name: Int) -> Unit
     ()
 }
 func main() -> Int {
-    person = Person { name: 0 }
+    let person = Person { name: 0 }
     rename(ref person, 42)
     person.name
 }
@@ -243,7 +243,7 @@ func set[g: group Vals](box: ref[g] Vals) -> Int [mut g] {
     box.value
 }
 func main() -> Int {
-    box = Vals { value: 1 }
+    let box = Vals { value: 1 }
     set(ref box)
     box.value
 }
@@ -274,16 +274,16 @@ func main() -> Int {
 fn equivalent_cfg_rewrites_keep_the_same_ownership_decision() {
     let linear = r#"
 func main() -> Int {
-    values = [10]
-    selected = ref values[0]
+    let values = [10]
+    let selected = ref values[0]
     values.push(20)
     selected
 }
 "#;
     let split = r#"
 func main() -> Int {
-    values = [10]
-    selected = ref values[0]
+    let values = [10]
+    let selected = ref values[0]
     branch {
         true -> values.push(20)
         _ -> values.push(20)
@@ -337,8 +337,8 @@ func main() { 0 }
 
     let invalid = r#"
 func main() -> Int {
-    values = [10]
-    selected = ref values[0]
+    let values = [10]
+    let selected = ref values[0]
     values.push(20)
     selected
 }

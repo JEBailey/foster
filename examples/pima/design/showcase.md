@@ -30,9 +30,9 @@ extend Account {
     }
 }
 
-triple = (value: Int) -> value * 3
-selected = range(1, 6).map(triple).filter((value) -> value > 10)
-total = selected.fold(0, (left, right) -> left + right)
+let triple = (value: Int) -> value * 3
+let selected = range(1, 6).map(triple).filter((value) -> value > 10)
+let total = selected.fold(0, (left, right) -> left + right)
 ```
 
 This is a target example, not currently executable. It gives us a useful acceptance test for

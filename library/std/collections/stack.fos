@@ -49,7 +49,7 @@ pub type StackItem<T> = {
 }
 
 test "stacks retain pushed values" {
-    stack = Stack { values: [1, 2] }
+    let stack = Stack { values: [1, 2] }
     return [()][1] if stack.length != 2
     ()
 }

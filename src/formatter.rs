@@ -158,10 +158,10 @@ mod tests {
 
     #[test]
     fn formats_indentation_and_preserves_comments_and_literals() {
-        let source = "// { retained\r\nfunc main() -> String {  \r\nvalue = \"}\"\r\nbranch {\r\ntrue -> value\r\n_ -> \"no\"\r\n}\r\n}\r\n";
+        let source = "// { retained\r\nfunc main() -> String {  \r\nlet value = \"}\"\r\nbranch {\r\ntrue -> value\r\n_ -> \"no\"\r\n}\r\n}\r\n";
         assert_eq!(
             format(source).unwrap(),
-            "// { retained\nfunc main() -> String {\n    value = \"}\"\n    branch {\n        true -> value\n        _ -> \"no\"\n    }\n}\n"
+            "// { retained\nfunc main() -> String {\n    let value = \"}\"\n    branch {\n        true -> value\n        _ -> \"no\"\n    }\n}\n"
         );
     }
 

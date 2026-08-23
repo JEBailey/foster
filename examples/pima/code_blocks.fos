@@ -35,10 +35,10 @@ func render_then_continue(reports: List<func(String, Int) -> Unit>, name: String
 }
 
 func main() -> Int {
-    selected = choose_report(true)
+    let selected = choose_report(true)
     render_report(selected, "Ada", 96)
     render_report(selected, "Grace", 68)
-    reports = [compact_report, detailed_report]
+    let reports = [compact_report, detailed_report]
     for_each_report(reports, "Linus", 88)
     2
 }

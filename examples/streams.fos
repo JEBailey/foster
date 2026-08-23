@@ -16,18 +16,18 @@ type MemoryWriter = & Writer<StreamError> & {
 }
 
 func read(self: MemoryReader, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining] {
-    amount = branch {
+    let amount = branch {
         self.remaining.length < maximum -> self.remaining.length
         _ -> maximum
     }
-    chunk = self.remaining.slice(0, amount)
+    let chunk = self.remaining.slice(0, amount)
     self.remaining = self.remaining.slice(amount, self.remaining.length)
     Result.Ok(chunk)
 }
 
 func write(self: MemoryWriter, contents: Bytes) -> Result<Int, StreamError> [mut self.contents] {
     // Deliberately accept at most two bytes to exercise partial-write retrying.
-    amount = branch {
+    let amount = branch {
         contents.length < 2 -> contents.length
         _ -> 2
     }
@@ -36,7 +36,7 @@ func write(self: MemoryWriter, contents: Bytes) -> Result<Int, StreamError> [mut
 }
 
 func flush(self: MemoryWriter) -> Result<Unit, StreamError> {
-    scratch = ByteBuffer.empty()
+    let scratch = ByteBuffer.empty()
     Result.Ok(scratch.reserve(0))
 }
 
@@ -51,7 +51,7 @@ func render(outcome: Result<Int, StreamError>, writer: MemoryWriter) -> String {
 }
 
 func main() -> String {
-    reader = MemoryReader { remaining: "Foster!".utf8 }
-    writer = MemoryWriter { contents: Bytes.empty() }
+    let reader = MemoryReader { remaining: "Foster!".utf8 }
+    let writer = MemoryWriter { contents: Bytes.empty() }
     render(stream.copy(reader, writer), writer)
 }

@@ -9,8 +9,8 @@ func prefixer(prefix: String) {
 }
 
 func main() -> Int {
-    triple = multiplier(3)
-    greet = prefixer("Hello, ")
+    let triple = multiplier(3)
+    let greet = prefixer("Hello, ")
     println(greet("Foster"))
     triple(12)
 }

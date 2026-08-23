@@ -67,7 +67,7 @@ func send(message: String) -> Unit [consume message] {
     deliver(move message)
 }
 
-message = "hello"
+let message = "hello"
 inspect(message)     // borrowed; message remains usable
 send(move message)   // transferred; message is now uninitialized
 ```
@@ -187,7 +187,7 @@ Replacing an element and changing the shape of its owner are different operation
 reshape of their root:
 
 ```foster
-first = ref people[0]
+let first = ref people[0]
 people.push(other)
 first.name // error: the projected reference was invalidated
 ```
@@ -213,7 +213,7 @@ function frame:
 
 ```foster
 func invalid() {
-    value = Person { name: "Ada" }
+    let value = Person { name: "Ada" }
     [ref value] () -> value.name // cannot escape
 }
 ```
@@ -257,7 +257,7 @@ The compiler rejects non-read effects on borrowed remote parameters; ownership a
 borrowed parameter from being moved into actor state or returned as an owned result.
 
 ```foster
-pending = analyzer.inspect(document)  // temporary read-only loan
+let pending = analyzer.inspect(document)  // temporary read-only loan
 analyzer.submit(move document)        // ownership transfer
 ```
 

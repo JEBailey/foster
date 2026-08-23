@@ -94,7 +94,7 @@ fn associated_function_navigation_uses_the_type_namespace() {
                 lsp_types::TextDocumentIdentifier::new(
                     path_to_uri(&root.join("main.fos")).unwrap(),
                 ),
-                Position::new(3, 17),
+                Position::new(3, 21),
             ),
             work_done_progress_params: Default::default(),
             partial_result_params: Default::default(),
@@ -363,7 +363,7 @@ fn inlay_hints_report_inferred_types_and_argument_names() {
 func add(left: Int, right: Int) -> Int { left + right }
 
 func main() -> Int {
-    value = add(1, 2)
+    let value = add(1, 2)
     value
 }
 "#;

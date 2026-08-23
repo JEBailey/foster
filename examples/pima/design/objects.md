@@ -21,8 +21,8 @@ extend Square {
     }
 }
 
-square1 = Square { length: 5 width: 80 }
-square2 = Square { length: 5 width: 80 }
+let square1 = Square { length: 5 width: 80 }
+let square2 = Square { length: 5 width: 80 }
 square1.set_width(40)
 ```
 

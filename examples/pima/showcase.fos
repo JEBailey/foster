@@ -54,9 +54,9 @@ func operate(account: Account) -> Int {
 }
 
 func main() -> Int {
-    triple = multiplier(3)
-    generated = [triple(1), triple(2), triple(3), triple(4), triple(5), triple(6)]
-    total = generated.iterator.filter(over_ten?).fold(0, add)
+    let triple = multiplier(3)
+    let generated = [triple(1), triple(2), triple(3), triple(4), triple(5), triple(6)]
+    let total = generated.iterator.filter(over_ten?).fold(0, add)
     println("Selected total:", total)
     use_account(create_account("Ada", total)) + use_account(create_account("Grace", -1))
 }

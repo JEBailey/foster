@@ -314,7 +314,7 @@ fn test_reports_runtime_failures_and_continues() {
     let source_path = directory.join("main.fos");
     fs::write(
         &source_path,
-        "test \"fails\" {\n    value = [1][4]\n    println(value)\n}\ntest \"still runs\" {}\n",
+        "test \"fails\" {\n    let value = [1][4]\n    println(value)\n}\ntest \"still runs\" {}\n",
     )
     .unwrap();
 

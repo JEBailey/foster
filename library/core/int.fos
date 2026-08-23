@@ -111,8 +111,8 @@ test "integer helpers cover signs ranges and powers" {
 
 /// Formats a known nonnegative integer as decimal text.
 func unsigned_string(value: Int) -> String {
-    quotient = value / 10
-    digit = value - quotient * 10
+    let quotient = value / 10
+    let digit = value - quotient * 10
     branch {
         quotient == 0 -> from_code_point(48 + digit).string
         _ -> unsigned_string(quotient) + from_code_point(48 + digit).string

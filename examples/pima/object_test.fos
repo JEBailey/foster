@@ -15,8 +15,8 @@ func set_width(self: Square, width: Int) -> Unit {
 }
 
 func main() -> Int {
-    square1 = Square { length: 5, width: 80, total_area: 400 }
-    square2 = Square { length: 5, width: 80, total_area: 400 }
+    let square1 = Square { length: 5, width: 80, total_area: 400 }
+    let square2 = Square { length: 5, width: 80, total_area: 400 }
     println("square1 area:", square1.area())
     println("square2 area:", square2.area())
     square1.set_width(40)

@@ -157,7 +157,7 @@ their external group; owned environment mutation remains frame-internal.
 Anonymous closures may state a latent contract after the arrow:
 
 ```foster
-update = [ref value] (next: Int) -> [mut state] {
+let update = [ref value] (next: Int) -> [mut state] {
     value = next
 }
 ```

@@ -86,7 +86,7 @@
     "keywords": {
       "patterns": [
         { "name": "keyword.control.foster", "match": "\\b(?:branch|if|return|await)\\b" },
-        { "name": "keyword.declaration.foster", "match": "\\b(?:func|type|pub|import|as)\\b" },
+        { "name": "keyword.declaration.foster", "match": "\\b(?:func|type|pub|import|as|let)\\b" },
         { "name": "keyword.other.foster", "match": "\\b(?:copy|move|ref|remote|group|read|mut|reshape|consume|suspend)\\b" }
       ]
     },

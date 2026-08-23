@@ -68,8 +68,8 @@ mod tests {
         let sources = [
             "func main() -> Int { branch { true -> 20 + 22 _ -> 0 } }",
             "func count(value: Int) -> Int { branch { value == 0 -> 42 _ -> count(value - 1) } }\nfunc main() -> Int { count(100) }",
-            "type Pair = { left: Int, right: Int }\nfunc main() -> Int {\n pair = Pair { left: 20, right: 22 }\n pair.left + pair.right\n}",
-            "func main() -> Int {\n offset = 2\n multiply = [copy offset] (value: Int) -> { value * offset }\n multiply(21)\n}",
+            "type Pair = { left: Int, right: Int }\nfunc main() -> Int {\n let pair = Pair { left: 20, right: 22 }\n pair.left + pair.right\n}",
+            "func main() -> Int {\n let offset = 2\n let multiply = [copy offset] (value: Int) -> { value * offset }\n multiply(21)\n}",
         ];
 
         for source in sources {
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn emits_register_drops_with_and_without_optimization() {
         let compilation =
-            crate::compile("func main() -> Int {\n values = [1, 2, 3]\n 42\n}").unwrap();
+            crate::compile("func main() -> Int {\n let values = [1, 2, 3]\n 42\n}").unwrap();
         for optimize in [false, true] {
             let program = compile_with_options(&compilation, CompileOptions { optimize }).unwrap();
             verify(&program).unwrap();
@@ -113,8 +113,8 @@ mod tests {
         let compilation = crate::compile(
             "func increment(value: Int) -> Int { value + 1 }
              func main() -> Int {
-                 unused = 100 + 200
-                 result = increment(20 + 21)
+                 let unused = 100 + 200
+                 let result = increment(20 + 21)
                  branch { true -> result _ -> unused }
              }",
         )
@@ -176,9 +176,9 @@ mod tests {
     fn propagates_binding_copies_and_reuses_dead_registers() {
         let compilation = crate::compile(
             "func advance(value: Int) -> Int {
-                first = value + 1
-                second = first + 2
-                third = second + 3
+                let first = value + 1
+                let second = first + 2
+                let third = second + 3
                 third
             }
             func main() -> Int { advance(36) }",
@@ -233,8 +233,8 @@ mod tests {
                 value
              }
              func main() -> Int {
-                original = 1
-                changed = replace(original)
+                let original = 1
+                let changed = replace(original)
                 original + changed
              }",
         )
@@ -246,7 +246,7 @@ mod tests {
     fn specializes_non_escaping_closure_calls_without_losing_captures() {
         let compilation = crate::compile(
             "func main() -> Int {
-                offset = 2
+                let offset = 2
                 ([copy offset] (value: Int) -> { value * offset })(21)
             }",
         )
@@ -271,8 +271,8 @@ mod tests {
 
         let named = crate::compile(
             "func main() -> Int {
-                offset = 2
-                multiply = [copy offset] (value: Int) -> { value * offset }
+                let offset = 2
+                let multiply = [copy offset] (value: Int) -> { value * offset }
                 multiply(21)
             }",
         )
@@ -288,7 +288,7 @@ mod tests {
 
         let borrowed = crate::compile(
             "func main() -> Int {
-                count = 41
+                let count = 41
                 ([ref count] () -> { count = count + 1 })()
                 count
             }",
@@ -321,7 +321,7 @@ mod tests {
         let record = crate::compile(
             "type Pair = { left: Int, right: Int }\n\
              func main() -> Int {\n\
-                 pair = Pair { left: 20, right: 22 }\n\
+                 let pair = Pair { left: 20, right: 22 }\n\
                  pair.left + pair.right\n\
              }",
         )
@@ -361,7 +361,7 @@ mod tests {
                  func apply(value: Int) -> Int { factor * value }\n\
              }\n\
              func main() -> Int {\n\
-                 twice = multiplier(2)\n\
+                 let twice = multiplier(2)\n\
                  twice(21)\n\
              }",
         )
@@ -380,8 +380,8 @@ mod tests {
     fn executes_copy_move_and_reference_capture_modes() {
         let mutable = crate::compile(
             "func main() -> Int {\n\
-                 count = 40\n\
-                 increment = [ref count] () -> { count = count + 1 }\n\
+                 let count = 40\n\
+                 let increment = [ref count] () -> { count = count + 1 }\n\
                  increment()\n\
                  increment()\n\
                  count\n\
@@ -392,8 +392,8 @@ mod tests {
 
         let moved = crate::compile(
             "func main() -> Int {\n\
-                 text = \"forty-two\"\n\
-                 length = [move text] () -> text.length\n\
+                 let text = \"forty-two\"\n\
+                 let length = [move text] () -> text.length\n\
                  length()\n\
              }",
         )
@@ -402,8 +402,8 @@ mod tests {
 
         let copied = crate::compile(
             "func main() -> Int {\n\
-                 value = 42\n\
-                 reader = [copy value] () -> value\n\
+                 let value = 42\n\
+                 let reader = [copy value] () -> value\n\
                  reader()\n\
              }",
         )

@@ -14,10 +14,10 @@ func multiplier(factor: Int) -> func(Int) -> Int {
     apply
 }
 
-triple = multiplier(3)
+let triple = multiplier(3)
 println(triple(12))
 
-add_five = add(5, _)
+let add_five = add(5, _)
 ```
 
 This is not implemented. We need closure environment lowering, function types in the parser, capture

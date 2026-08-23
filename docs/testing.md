@@ -4,7 +4,7 @@ Foster has first-class top-level test declarations:
 
 ```foster
 test "list length can be observed" {
-    values = [1]
+    let values = [1]
     println(values.length)
 }
 ```
