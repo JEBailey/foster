@@ -1,6 +1,8 @@
 # Foster compiled bytecode format
 
-Status: version 5, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 6, implemented by `foster::vm::{encode_program, decode_program}`.
+
+The decoder also accepts version 5 artifacts, treating their `main` function as zero-argument.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after lowering and optimization. It contains everything needed to verify and
@@ -25,11 +27,12 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `5` |
+| version | `u16` | `6` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
 | main | optional `FunctionId` | entry point |
+| main arguments | `bool` | whether `main` receives `std.process.Arguments` |
 | string record | optional `RecordId` | String wrapper |
 | symbol record | optional `RecordId` | Symbol wrapper |
 | records | `vector<(RecordId, string, vector<string>)>` | runtime name and indexed field layout |

@@ -1,6 +1,7 @@
 # Foster register VM
 
-Status: typed-HIR lowering, optimizing register IR, verifier, and execution core implemented.
+Status: typed-HIR lowering, optimizing register IR, verifier, and reference execution core
+implemented. A strict subset of this register IR also feeds the Cranelift AOT backend.
 
 Foster uses a custom register VM as its executable semantic reference. The pipeline is:
 
@@ -63,7 +64,7 @@ function ID. Calls execute on an explicit VM frame vector rather than recursivel
 ## Lessons adopted from Pima
 
 - keep lowering, IR, verification, and execution in separate modules;
-- keep the VM as the sole execution engine;
+- keep the VM as the complete semantic reference while native coverage grows;
 - use stable semantic IDs for direct calls instead of resolving names at runtime;
 - retain a readable structured instruction representation until semantics stabilize;
 - keep instruction and source-span tables aligned;
@@ -86,8 +87,10 @@ conditions, not repeat static analysis.
    on the VM.
 7. A portable `.fbc` serialization with canonical map ordering and defensive decoding.
 
-## Next backend work
+## Related native backend
 
-Extend interprocedural optimization with multi-block and profile-guided inlining, scalar
-replacement of aggregate closure environments, and specialization across module boundaries; then
-add serialization and Cranelift after bytecode semantics stabilize.
+The initial [native backend](native.md) finds functions reachable from `main`, validates its
+supported primitive subset, and lowers unoptimized structured bytecode to Cranelift machine code.
+Cranelift performs machine-level optimization independently. Keeping this route downstream of the
+same checked compiler IR lets native execution reuse the language's type, effect, and ownership
+decisions without weakening the VM's role as the complete reference implementation.

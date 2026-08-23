@@ -5,6 +5,56 @@ fn assert_string(value: Value, expected: &str) {
 }
 
 #[test]
+fn command_main_receives_the_typed_arguments_record() {
+    let source = r#"
+import std.process
+
+func main(arguments: Arguments) -> String {
+    return arguments.executable if arguments.values.empty?
+    return "two" if arguments.values.length == 2
+    arguments.values[0]
+}
+"#;
+    let arguments = foster::entry::CommandArguments::new("foster-test", ["left", "right"]);
+    assert_string(
+        foster::run_with_arguments(source, &arguments).unwrap(),
+        "two",
+    );
+    assert_string(
+        foster::run_with_arguments(
+            source,
+            &foster::entry::CommandArguments::new("foster-test", ["only"]),
+        )
+        .unwrap(),
+        "only",
+    );
+}
+
+#[test]
+fn command_main_rejects_non_arguments_parameters() {
+    for source in [
+        "func main(value: Int) { value }",
+        "func main(left: String, right: String) { left + right }",
+        "type Arguments = { values: List<String> }\nfunc main(value: Arguments) { value.values }",
+    ] {
+        let error = foster::compile(source).unwrap_err();
+        assert!(
+            error.message.contains(
+                "`main` must take no parameters or one `std.process.Arguments` parameter"
+            ),
+            "{error:?}"
+        );
+        assert_eq!(error.code.as_deref(), Some("E0901"));
+        assert!(
+            error
+                .help
+                .as_deref()
+                .is_some_and(|help| help.contains("std.process"))
+        );
+    }
+}
+
+#[test]
 fn test_declarations_compile_as_isolated_unit_functions() {
     let source = r#"
 test "empty list has zero length" {

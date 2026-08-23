@@ -13,6 +13,22 @@ pub fn verify(program: &Program) -> Result<(), FosterError> {
             "bytecode record layouts are incomplete",
         ));
     }
+    if let Some(main) = program.main {
+        let main = program
+            .functions
+            .get(&main)
+            .ok_or_else(|| FosterError::runtime("bytecode references a missing `main` function"))?;
+        let expected = u16::from(program.main_arguments);
+        if main.parameters != expected || main.captures != 0 {
+            return Err(FosterError::runtime(format!(
+                "bytecode `main` must have {expected} parameter(s) and no captures"
+            )));
+        }
+    } else if program.main_arguments {
+        return Err(FosterError::runtime(
+            "bytecode without `main` cannot accept command arguments",
+        ));
+    }
     for (id, function) in &program.functions {
         if function.parameter_modes.len() != usize::from(function.parameters)
             || function.mutable_parameters.len() != usize::from(function.parameters)

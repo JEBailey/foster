@@ -782,6 +782,32 @@ impl Value {
         }
     }
 
+    pub(crate) fn command_arguments(
+        string_record: Option<crate::hir::RecordId>,
+        arguments: &crate::entry::CommandArguments,
+    ) -> Self {
+        Self::Record {
+            record: None,
+            name: crate::entry::ARGUMENTS_TYPE.into(),
+            fields: RecordFields::from_pairs([
+                (
+                    "executable".into(),
+                    Self::string(string_record, arguments.executable.as_bytes().to_vec()),
+                ),
+                (
+                    "values".into(),
+                    Self::list(
+                        arguments
+                            .values
+                            .iter()
+                            .map(|value| Self::string(string_record, value.as_bytes().to_vec()))
+                            .collect(),
+                    ),
+                ),
+            ]),
+        }
+    }
+
     pub(crate) fn list_value(&self) -> Option<&Vec<Value>> {
         let Self::Record { name, fields, .. } = self else {
             return None;

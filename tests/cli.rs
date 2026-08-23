@@ -10,6 +10,10 @@ fn benchmark_source() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("benchmarks/fibonacci.fos")
 }
 
+fn arguments_source() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/arguments.fos")
+}
+
 #[test]
 fn run_accepts_explicit_optimizer_settings() {
     let optimized = foster()
@@ -101,6 +105,121 @@ fn build_writes_runnable_compiled_bytecode() {
     );
     assert_eq!(String::from_utf8(run.stdout).unwrap().trim(), "6765");
     fs::remove_file(output_path).unwrap();
+}
+
+#[test]
+fn build_native_writes_runnable_host_executable() {
+    let mut output_path = std::env::temp_dir().join(format!(
+        "foster-native-{}-{}",
+        std::process::id(),
+        time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    if cfg!(windows) {
+        output_path.set_extension("exe");
+    }
+    let build = foster()
+        .arg("build")
+        .arg(benchmark_source())
+        .arg("--native")
+        .arg("--output")
+        .arg(&output_path)
+        .output()
+        .unwrap();
+    assert!(
+        build.status.success(),
+        "{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    let run = Command::new(&output_path).output().unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8(run.stdout).unwrap().trim(), "6765");
+    fs::remove_file(output_path).unwrap();
+}
+
+#[test]
+fn command_arguments_flow_through_source_bytecode_and_native_execution() {
+    let source_run = foster()
+        .arg("run")
+        .arg(arguments_source())
+        .arg("--")
+        .arg("--about")
+        .output()
+        .unwrap();
+    assert!(
+        source_run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&source_run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(source_run.stdout).unwrap().trim(),
+        "Foster command arguments"
+    );
+
+    let unique = format!(
+        "foster-arguments-{}-{}",
+        std::process::id(),
+        time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    );
+    let bytecode = std::env::temp_dir().join(format!("{unique}.fbc"));
+    let mut native = std::env::temp_dir().join(unique);
+    if cfg!(windows) {
+        native.set_extension("exe");
+    }
+
+    let bytecode_build = foster()
+        .args(["build"])
+        .arg(arguments_source())
+        .arg("-o")
+        .arg(&bytecode)
+        .output()
+        .unwrap();
+    assert!(bytecode_build.status.success());
+    let bytecode_run = foster()
+        .arg("run")
+        .arg(&bytecode)
+        .arg("--")
+        .arg("bytecode-value")
+        .output()
+        .unwrap();
+    assert!(bytecode_run.status.success());
+    assert_eq!(
+        String::from_utf8(bytecode_run.stdout).unwrap().trim(),
+        "bytecode-value"
+    );
+
+    let native_build = foster()
+        .arg("build")
+        .arg(arguments_source())
+        .arg("--native")
+        .arg("-o")
+        .arg(&native)
+        .output()
+        .unwrap();
+    assert!(
+        native_build.status.success(),
+        "{}",
+        String::from_utf8_lossy(&native_build.stderr)
+    );
+    let native_run = Command::new(&native).arg("native-value").output().unwrap();
+    assert!(native_run.status.success());
+    assert_eq!(
+        String::from_utf8(native_run.stdout).unwrap().trim(),
+        "native-value"
+    );
+
+    fs::remove_file(bytecode).unwrap();
+    fs::remove_file(native).unwrap();
 }
 
 #[test]

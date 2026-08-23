@@ -83,14 +83,31 @@ fn cli() -> Command {
         .about("The Foster compiler and development tools")
         .subcommand_required(true)
         .arg_required_else_help(true)
-        .subcommand(Command::new("run").arg(path()).args(optimizer()))
         .subcommand(
-            Command::new("build").arg(path()).args(optimizer()).arg(
-                Arg::new("output")
-                    .short('o')
-                    .long("output")
-                    .value_parser(value_parser!(PathBuf)),
+            Command::new("run").arg(path()).args(optimizer()).arg(
+                Arg::new("command-arguments")
+                    .last(true)
+                    .num_args(0..)
+                    .allow_hyphen_values(true)
+                    .help("Arguments passed to Foster `main` after `--`"),
             ),
+        )
+        .subcommand(
+            Command::new("build")
+                .arg(path())
+                .args(optimizer())
+                .arg(
+                    Arg::new("native")
+                        .long("native")
+                        .help("Compile and link a host-native executable with Cranelift")
+                        .action(ArgAction::SetTrue),
+                )
+                .arg(
+                    Arg::new("output")
+                        .short('o')
+                        .long("output")
+                        .value_parser(value_parser!(PathBuf)),
+                ),
         )
         .subcommand(
             Command::new("pack")
@@ -199,12 +216,30 @@ fn check(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
 
 fn build(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let path = required_path(arguments, "path");
+    let native = arguments.get_flag("native");
     let output = arguments
         .get_one::<PathBuf>("output")
         .cloned()
-        .unwrap_or_else(|| default_bytecode_path(path));
+        .unwrap_or_else(|| {
+            if native {
+                default_native_path(path)
+            } else {
+                default_bytecode_path(path)
+            }
+        });
     let compilation = compile_path(path)?;
     report_warnings(&compilation, None, None)?;
+    if native {
+        foster::native::build_executable(
+            &compilation,
+            &output,
+            foster::native::CompileOptions {
+                optimize: !arguments.get_flag("no-optimize"),
+            },
+        )?;
+        println!("built native executable {}", output.display());
+        return Ok(());
+    }
     let program = foster::vm::compile_with_options(
         &compilation,
         foster::vm::CompileOptions {
@@ -243,6 +278,14 @@ fn pack(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
 
 fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let path = required_path(arguments, "path");
+    let command_arguments = foster::entry::CommandArguments::new(
+        path.to_string_lossy(),
+        arguments
+            .get_many::<String>("command-arguments")
+            .into_iter()
+            .flatten()
+            .cloned(),
+    );
     let options = foster::vm::CompileOptions {
         optimize: !arguments.get_flag("no-optimize"),
     };
@@ -250,14 +293,14 @@ fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
         .extension()
         .is_some_and(|extension| extension == foster::archive::EXTENSION)
     {
-        run_archive(path)?
+        run_archive(path, &command_arguments)?
     } else if path.extension().is_some_and(|extension| extension == "fbc") {
         let program = foster::vm::decode_program(&fs::read(path)?)?;
-        foster::vm::Machine::new(&program).run_main()?
+        foster::vm::Machine::new(&program).run_main_with_arguments(&command_arguments)?
     } else if path.is_dir() {
         let compilation = foster::check_package(path)?;
         report_warnings(&compilation, None, None)?;
-        foster::vm::run_with_options(&compilation, options)?
+        foster::vm::run_with_arguments(&compilation, options, &command_arguments)?
     } else {
         let source = fs::read_to_string(path)?;
         let program = parse_file(path, &source)?;
@@ -265,7 +308,7 @@ fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
             foster::package::Package::from_program_with_core("main", program)?,
         )?;
         report_warnings(&compilation, Some(path), Some(&source))?;
-        foster::vm::run_with_options(&compilation, options)?
+        foster::vm::run_with_arguments(&compilation, options, &command_arguments)?
     };
     if value != foster::vm::Value::Unit {
         println!("{value}");
@@ -273,14 +316,17 @@ fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn run_archive(path: &Path) -> Result<foster::vm::Value, Box<dyn Error>> {
+fn run_archive(
+    path: &Path,
+    arguments: &foster::entry::CommandArguments,
+) -> Result<foster::vm::Value, Box<dyn Error>> {
     let package = foster::archive::read_package(path)?;
     let program = foster::vm::decode_program(&package.bytecode)?;
     let working_directory = PackageWorkingDirectory::create()?;
     working_directory.write_resources(&package.resources)?;
     let previous_directory = std::env::current_dir()?;
     std::env::set_current_dir(working_directory.path())?;
-    let result = foster::vm::Machine::new(&program).run_main();
+    let result = foster::vm::Machine::new(&program).run_main_with_arguments(arguments);
     std::env::set_current_dir(previous_directory)?;
     Ok(result?)
 }
@@ -499,6 +545,18 @@ fn default_bytecode_path(source: &Path) -> PathBuf {
     } else {
         source.with_extension("fbc")
     }
+}
+
+fn default_native_path(source: &Path) -> PathBuf {
+    let mut output = if source.is_dir() {
+        source.join("main")
+    } else {
+        source.with_extension("")
+    };
+    if cfg!(windows) {
+        output.set_extension("exe");
+    }
+    output
 }
 
 fn default_package_path(source: &Path) -> PathBuf {

@@ -89,6 +89,26 @@ func double(value: Int) -> Int {
 }
 ```
 
+### Command entry arguments
+
+An executable entry may remain `func main()`, or take exactly one command-argument record from
+`std.process`:
+
+```foster
+import std.process
+
+func main(arguments: Arguments) -> String {
+    return arguments.executable if arguments.values.empty?
+    arguments.values[0]
+}
+```
+
+`Arguments.executable: String` is the path or command used to invoke the program.
+`Arguments.values: List<String>` contains the remaining values and does not repeat the executable.
+`foster run` accepts these after an explicit `--`; a native executable receives its operating
+system command line directly. A `main` with any other parameter list is rejected with `E0901`.
+Command arguments must be valid Unicode because Foster `String` preserves valid UTF-8.
+
 Explicit `return` performs an early return. Control transfers may have a postfix `if` guard:
 
 ```foster
@@ -778,10 +798,13 @@ The implemented pipeline is:
 ```text
 source -> tokens -> AST -> resolved HIR -> type/effect inference
        -> loan/group/capture checks -> ownership MIR validation
-       -> structured register bytecode -> optional optimizer -> verifier -> VM
+       -> structured register bytecode
+            -> optional optimizer -> verifier -> VM
+            -> supported-subset validation -> Cranelift AOT -> host executable
 ```
 
-The register VM is the sole execution engine and the executable semantic reference. Bytecode is
+The register VM is the complete executable semantic reference. The initial native backend compiles
+the reachable primitive-value subset described in [Native compilation](native.md). Bytecode is
 lowered from checked HIR after ownership MIR validation.
 
 Group information is normally erased before bytecode execution, but its consequences—moves,
@@ -795,3 +818,4 @@ concrete VM operations.
 - [Closures and group borrowing](closures.md)
 - [Effect derivation](effect-derivation.md)
 - [Virtual machine](vm.md)
+- [Native compilation](native.md)

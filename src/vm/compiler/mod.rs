@@ -161,6 +161,12 @@ pub fn compile_with_options(
         .hir
         .module_named("main")
         .and_then(|module| compilation.hir.function_named(module, "main"));
+    compiler.program.main_arguments = compiler
+        .program
+        .main
+        .map(|main| crate::entry::accepts_arguments(compilation, main))
+        .transpose()?
+        .unwrap_or(false);
     if options.optimize {
         super::optimizer::optimize(&mut compiler.program);
     }

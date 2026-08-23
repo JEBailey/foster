@@ -27,6 +27,15 @@ The program deterministically returns `1242`:
 
 The smaller programs under `pima/` focus on individual language features.
 
+`arguments.fos` demonstrates the typed `std.process.Arguments` entry structure, executable-name
+access, positional values, and a flag branch. It runs through the VM or as a native executable:
+
+```console
+cargo run --bin foster -- run examples/arguments.fos -- --about
+cargo run --bin foster -- build examples/arguments.fos --native -o arguments
+./arguments first-value
+```
+
 `type_composition.fos` demonstrates declaration-side composition, intersection parameters, and
 static duck typing without a wrapper or runtime conversion:
 

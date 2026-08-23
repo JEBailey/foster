@@ -409,12 +409,20 @@ impl Compilation {
         check_closure_ownership(&hir).map_err(CompileError::ownership)?;
         let ownership =
             crate::ownership::build_and_check(&hir, &types).map_err(CompileError::ownership)?;
-        Ok(Self {
+        let compilation = Self {
             package,
             hir,
             types,
             diagnostics,
             ownership,
-        })
+        };
+        if let Some(main) = compilation
+            .hir
+            .module_named("main")
+            .and_then(|module| compilation.hir.function_named(module, "main"))
+        {
+            crate::entry::accepts_arguments(&compilation, main).map_err(CompileError::types)?;
+        }
+        Ok(compilation)
     }
 }

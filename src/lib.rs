@@ -5,11 +5,13 @@ pub mod archive;
 pub mod ast;
 pub mod diagnostic;
 pub mod documentation;
+pub mod entry;
 pub mod error;
 pub mod formatter;
 pub mod hir;
 pub mod lexer;
 pub mod lsp;
+pub mod native;
 pub mod ownership;
 pub mod package;
 pub mod parser;
@@ -32,6 +34,13 @@ pub fn run(source: &str) -> Result<Value, FosterError> {
 
 pub fn run_with_options(source: &str, options: vm::CompileOptions) -> Result<Value, FosterError> {
     vm::run_with_options(&compile(source)?, options)
+}
+
+pub fn run_with_arguments(
+    source: &str,
+    arguments: &entry::CommandArguments,
+) -> Result<Value, FosterError> {
+    vm::run_with_arguments(&compile(source)?, vm::CompileOptions::default(), arguments)
 }
 
 pub fn compile(source: &str) -> Result<hir::Compilation, FosterError> {

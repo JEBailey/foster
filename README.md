@@ -16,6 +16,8 @@ cargo run --bin foster -- fmt examples
 cargo run --bin foster -- fmt examples --check
 cargo run --bin foster -- test tests/fixtures/modules
 cargo run --bin foster -- run tests/fixtures/modules --no-optimize
+cargo run --bin foster -- run examples/arguments.fos -- --about
+cargo run --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.exe
 cargo run --bin foster -- pack examples/pima/json_parser -o json-parser.fpk
 cargo run --bin foster -- run json-parser.fpk
 cargo run --bin foster -- docs library
@@ -23,9 +25,11 @@ cargo run --bin foster -- docs library --serve
 cargo test
 ```
 
-`run` invokes the zero-argument `main` function. A file is treated as a one-module package; a
-directory is discovered as a filesystem module tree whose entry point is `main.fos`.
-Optimization is enabled by default and can be selected with `--optimize` or `--no-optimize`.
+`run` invokes `main`. It may take no parameters, or one `std.process.Arguments` value containing
+the executable name and following command-line values. Pass program arguments after `--`, for
+example `foster run app.fos -- input.txt --verbose`. A file is treated as a one-module package; a
+directory is discovered as a filesystem module tree whose entry point is `main.fos`. Optimization
+is enabled by default and can be selected with `--optimize` or `--no-optimize`.
 
 `foster fmt [file-or-directory]` formats `.fos` source in place. It preserves comments and literal
 contents while normalizing indentation, line endings, trailing whitespace, blank lines, and the
@@ -74,7 +78,9 @@ The current implementation includes:
 - line, nested block, and Markdown module (`//!`) and declaration (`///`, `/** ... */`) documentation comments;
 - a package-aware LSP and VS Code extension; and
 - first-class `test "description" { ... }` declarations with a package-aware test runner; and
-- an optional optimizing register-bytecode pipeline with a verifier and iterative VM call frames.
+- an optional optimizing register-bytecode pipeline with a verifier and iterative VM call frames;
+  and
+- an initial Cranelift AOT backend for standalone primitive-value executables.
 
 Conditional `branch` expressions use `_` for their required fallback arm:
 
@@ -159,20 +165,32 @@ source
   -> loan, capture, group, and ownership checks
   -> ownership MIR validation
   -> structured register bytecode
-  -> optional optimizer
-  -> liveness-driven drops
-  -> verifier
-  -> register VM
+       -> optional optimizer -> liveness-driven drops -> verifier -> register VM
+       -> reachable primitive lowering -> Cranelift object -> host linker -> executable
 ```
 
-The VM is the sole execution engine; there is no AST interpreter fallback. Optimization can be
-disabled without changing semantics. Programs can be compiled to deterministic `.fbc` artifacts
-and run without their source:
+The VM remains the complete executable semantic reference; there is no AST interpreter fallback.
+Optimization can be disabled without changing semantics. Programs can be compiled to deterministic
+`.fbc` artifacts and run without their source:
 
 ```powershell
 cargo run --bin foster -- build examples/pima/fibonacci.fos -o fibonacci.fbc
 cargo run --bin foster -- run fibonacci.fbc
 ```
+
+The initial AOT backend emits host machine code with Cranelift and asks the installed Rust
+toolchain to link it into a standalone executable:
+
+```powershell
+cargo run --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.exe
+./fibonacci.exe
+```
+
+Native compilation currently supports reachable functions over `Unit`, `Bool`, `Int`, `Float`,
+`CodePoint`, and `Byte`, including direct calls, methods, recursion, arithmetic, comparisons, and
+control flow. A reachable aggregate, closure, intrinsic, remote operation, or other VM-only
+instruction is rejected with an actionable compile error. See [native compilation](docs/native.md)
+for the exact boundary.
 
 ## Executable packages
 
@@ -189,10 +207,6 @@ cargo run --bin foster -- run application.fpk
 The runtime validates the manifest and archive paths, expands resources into an isolated temporary
 working directory for the process, and removes that directory after execution. See the
 [package format](docs/package-format.md) for the versioned layout and limits.
-
-The intended native evolution is to lower a stable
-backend-neutral IR to Cranelift for JIT and object-file output. That native backend is not yet
-implemented.
 
 See [the VM design](docs/vm.md), [binary format](docs/binary-format.md),
 [package format](docs/package-format.md), and
@@ -222,6 +236,7 @@ scope-aware completion. The development VS Code extension lives in
 - [Compiler diagnostics](docs/diagnostics.md)
 - [Testing Foster programs](docs/testing.md)
 - [Register VM](docs/vm.md)
+- [Native compilation](docs/native.md)
 - [Compiled bytecode format](docs/binary-format.md)
 - [Core library](docs/core-library.md)
 - [Optimization and benchmarks](docs/benchmarking.md)

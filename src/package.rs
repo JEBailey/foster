@@ -582,6 +582,7 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
     ("std.fs", include_str!("../library/std/fs.fos")),
     ("std.path", include_str!("../library/std/path.fos")),
     ("std.env", include_str!("../library/std/env.fos")),
+    ("std.process", include_str!("../library/std/process.fos")),
     ("std.net.tcp", include_str!("../library/std/net/tcp.fos")),
 ];
 

@@ -1,0 +1,12 @@
+//! Process entry values supplied by a Foster command host.
+
+import core.list
+
+/// The command line passed to `main`.
+///
+/// `executable` is the path or command used to invoke the program. `values` contains every
+/// following argument in order and does not repeat the executable name.
+pub type Arguments = {
+    pub executable: String
+    pub values: List<String>
+}

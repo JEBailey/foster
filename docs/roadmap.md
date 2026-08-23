@@ -45,8 +45,9 @@ work.
   and in-memory hosts.
 - Add byte buffers, socket readiness, and TLS support to the I/O boundary.
 - Stabilize a backend-neutral lowered IR.
-- Add a Cranelift backend for JIT execution and object-file output while retaining the register VM
-  as the semantic reference.
+- Extend the initial Cranelift AOT backend from primitive values to aggregates, closures, native
+  runtime services, and cross-target object output while retaining the register VM as the semantic
+  reference.
 - Compact the bytecode encoding after its instruction model is stable.
 
 ## Longer-horizon questions
@@ -55,5 +56,4 @@ Inheritance, higher-kinded types, arbitrary type-level programming, macros, oper
 reflection, and a stable ABI are deliberately uncommitted. They should be evaluated only when a
 concrete use case shows how they interact with structural typing, ownership, groups, and effects.
 
-LLVM is also optional rather than planned; the first native-backend investigation targets
-Cranelift.
+LLVM is also optional rather than planned; native backend work currently uses Cranelift.

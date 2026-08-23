@@ -143,15 +143,31 @@ impl Machine {
     }
 
     pub fn run_main(&self) -> Result<Value, FosterError> {
-        self.run_main_runtime().map_err(Into::into)
+        self.run_main_with_arguments(&crate::entry::CommandArguments::default())
     }
 
-    fn run_main_runtime(&self) -> Result<Value, RuntimeError> {
+    pub fn run_main_with_arguments(
+        &self,
+        arguments: &crate::entry::CommandArguments,
+    ) -> Result<Value, FosterError> {
+        self.run_main_runtime(arguments).map_err(Into::into)
+    }
+
+    fn run_main_runtime(
+        &self,
+        arguments: &crate::entry::CommandArguments,
+    ) -> Result<Value, RuntimeError> {
         let main = self
             .program
             .main
             .ok_or_else(|| RuntimeError::runtime("bytecode has no `main` function"))?;
-        self.execute(main, Vec::new(), Vec::new(), None)
+        let arguments = self
+            .program
+            .main_arguments
+            .then(|| Value::command_arguments(self.program.string_record, arguments))
+            .into_iter()
+            .collect();
+        self.execute(main, Vec::new(), arguments, None)
             .map(|result| result.0)
     }
 

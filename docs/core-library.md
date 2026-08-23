@@ -51,6 +51,7 @@ being added accidentally.
 | `std.fs` | Typed whole-file I/O, directory creation/removal, copying, moving, listing, and path-kind queries |
 | `std.path` | Platform path composition, inspection, and canonicalization |
 | `std.env` | Process environment queries such as the current directory |
+| `std.process` | Typed executable name and command arguments supplied to `main` |
 | `std.net.tcp` | Typed TCP listeners and connections |
 
 ## Boundary with the runtime
@@ -63,7 +64,8 @@ runtime supplies representation-level primitives and capabilities that must cros
 - string concatenation;
 - integer-like `CodePoint` operators, checked `from_code_point`, and `parse_float`;
 - printing and remote-object runtime operations;
-- filesystem, platform path, and environment operations used by `std.fs`, `std.path`, and `std.env`;
+- filesystem, platform path, environment, and entry operations used by `std.fs`, `std.path`,
+  `std.env`, and `std.process`;
 - TCP socket operations used by `std.net.tcp`.
 
 The host-facing intrinsics are private implementation details. Public APIs, opaque resource records,

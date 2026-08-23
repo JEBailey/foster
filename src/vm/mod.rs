@@ -38,6 +38,16 @@ pub fn run_with_options(
     Machine::new(&program).run_main()
 }
 
+pub fn run_with_arguments(
+    compilation: &crate::hir::Compilation,
+    options: CompileOptions,
+    arguments: &crate::entry::CommandArguments,
+) -> Result<Value, crate::error::FosterError> {
+    let program = compile_with_options(compilation, options)?;
+    verify(&program)?;
+    Machine::new(&program).run_main_with_arguments(arguments)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

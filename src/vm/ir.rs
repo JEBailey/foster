@@ -436,6 +436,8 @@ pub struct Program {
     pub constants: Vec<Constant>,
     pub functions: HashMap<FunctionId, BytecodeFunction>,
     pub main: Option<FunctionId>,
+    /// Whether `main` receives one `std.process.Arguments` value.
+    pub main_arguments: bool,
     pub string_record: Option<RecordId>,
     pub symbol_record: Option<RecordId>,
     pub records: HashMap<RecordId, String>,

@@ -11,7 +11,7 @@ use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::hir::{Builtin, CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 5;
+pub const FORMAT_VERSION: u16 = 6;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -56,6 +56,7 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
         w.function(function)?;
     }
     w.option_id(program.main);
+    w.u8(u8::from(program.main_arguments));
     w.option_id(program.string_record);
     w.option_id(program.symbol_record);
 
@@ -112,7 +113,7 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         return Err(BinaryError::new("not a Foster bytecode file"));
     }
     let version = r.u16()?;
-    if version != FORMAT_VERSION {
+    if !matches!(version, 5 | FORMAT_VERSION) {
         return Err(BinaryError::new(format!(
             "unsupported Foster bytecode version {version}"
         )));
@@ -126,6 +127,7 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
     let constants = r.vec(|r| r.constant())?;
     let functions = r.map(|r| Ok((r.id::<Function>()?, r.function()?)))?;
     let main = r.option_id::<Function>()?;
+    let main_arguments = if version >= 6 { r.bool()? } else { false };
     let string_record = r.option_id::<Record>()?;
     let symbol_record = r.option_id::<Record>()?;
     let record_entries = r.vec(|r| {
@@ -165,6 +167,7 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         constants,
         functions,
         main,
+        main_arguments,
         string_record,
         symbol_record,
         records,
