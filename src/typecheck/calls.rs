@@ -207,6 +207,12 @@ impl Checker<'_> {
             Builtin::IoExists | Builtin::IoIsFile | Builtin::IoIsDirectory => {
                 (vec![string.clone()], Ty::Bool)
             }
+            Builtin::IoCreateDirectory
+            | Builtin::IoCreateDirectoryAll
+            | Builtin::IoRemoveFile
+            | Builtin::IoRemoveDirectory => (vec![string.clone()], io_result(Ty::Unit)?),
+            Builtin::IoRename => (vec![string.clone(), string.clone()], io_result(Ty::Unit)?),
+            Builtin::IoCopyFile => (vec![string.clone(), string.clone()], io_result(Ty::Int)?),
             Builtin::IoJoin => (vec![string.clone(), string.clone()], string.clone()),
             Builtin::IoParent | Builtin::IoFileName | Builtin::IoExtension => {
                 (vec![string.clone()], string.clone())

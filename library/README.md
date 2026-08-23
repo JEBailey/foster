@@ -32,12 +32,12 @@ paths, while its library algorithms are ordinary Foster functions.
 
 Current modules:
 
-- `core.option`: `Option`, `map`, `and_then`, `unwrap_or`, and `present?`
+- `core.option`: `Option`, mapping, chaining, eager and lazy fallbacks, flattening, and presence queries
 - `std.iter`: stateful iteration contracts plus Foster-written `for_each`, `fold`, `find`, query,
   and counting consumers
 - `std.iter.map`, `std.iter.filter`, `std.iter.take`, and `std.iter.skip`: lazy Foster-written
   iterator adaptors used to build fluent pipelines
-- `core.result`: `Result`, `map`, `map_error`, `and_then`, and `success?`
+- `core.result`: `Result`, mapping, error mapping, chaining, recovery, fallbacks, flattening, and queries
 - `core.ordering`: `Ordering`, `Equality<T>`, `Ordered<T>`, `Hashing`, and `reverse`
 - `std.sequence`: map, filter, fold, search, slicing, and query algorithms shared by strings and lists
 - `core.list`: safe access, map, filter, fold, find, predicates, reverse, and concatenation
@@ -49,7 +49,7 @@ Current modules:
 - `core.bytes.buffer`: mutable binary construction with consuming `freeze` and borrowing `snapshot`
 - `std.io`: generic binary/text stream contracts plus `read_all`, `write_all`, and `copy`
 - `std.collections.map`: a generic Foster-written map with opaque list-backed storage
-- `std.fs`: typed text and binary file and directory operations
+- `std.fs`: typed text and binary files, directory creation/removal, copying, moving, and inspection
 - `std.path`: platform path composition, inspection, and canonicalization
 - `std.env`: process environment queries
 - `std.net.tcp`: typed TCP listeners and `Duplex<NetworkError>` connections

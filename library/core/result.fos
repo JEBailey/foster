@@ -37,6 +37,46 @@ pub func success?<T, E>(result: Result<T, E>) -> Bool {
     }
 }
 
+/// Returns whether the result contains an error.
+pub func error?<T, E>(result: Result<T, E>) -> Bool {
+    branch result {
+        Result.Ok(_) -> false
+        Result.Error(_) -> true
+    }
+}
+
+/// Returns the successful value, or a fallback when the result contains an error.
+pub func unwrap_or<T, E>(result: Result<T, E>, fallback: T) -> T {
+    branch result {
+        Result.Ok(value) -> value
+        Result.Error(_) -> fallback
+    }
+}
+
+/// Returns the successful value, or computes a fallback from the error.
+pub func unwrap_or_else<T, E>(result: Result<T, E>, fallback: func(E) -> T) -> T {
+    branch result {
+        Result.Ok(value) -> value
+        Result.Error(error) -> fallback(error)
+    }
+}
+
+/// Preserves a successful value, or recovers by transforming the error into another result.
+pub func or_else<T, E, F>(result: Result<T, E>, recover: func(E) -> Result<T, F>) -> Result<T, F> {
+    branch result {
+        Result.Ok(value) -> Result.Ok(value)
+        Result.Error(error) -> recover(error)
+    }
+}
+
+/// Removes one layer from a nested successful result.
+pub func flatten<T, E>(result: Result<Result<T, E>, E>) -> Result<T, E> {
+    branch result {
+        Result.Ok(value) -> value
+        Result.Error(error) -> Result.Error(error)
+    }
+}
+
 /// Supplies a concrete error type for the successful-result test case.
 func successful_test_value() -> Result<Int, String> {
     Result.Ok(20)

@@ -11,7 +11,7 @@ use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::hir::{Builtin, CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 4;
+pub const FORMAT_VERSION: u16 = 5;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -220,6 +220,12 @@ const BUILTINS: &[Builtin] = &[
     Builtin::IoExists,
     Builtin::IoIsFile,
     Builtin::IoIsDirectory,
+    Builtin::IoCreateDirectory,
+    Builtin::IoCreateDirectoryAll,
+    Builtin::IoRemoveFile,
+    Builtin::IoRemoveDirectory,
+    Builtin::IoRename,
+    Builtin::IoCopyFile,
     Builtin::IoJoin,
     Builtin::IoParent,
     Builtin::IoFileName,

@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 4, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 5, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after lowering and optimization. It contains everything needed to verify and
@@ -25,7 +25,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `4` |
+| version | `u16` | `5` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -55,7 +55,7 @@ Capture modes: `0 Copy`, `1 Move`, `2 Ref`. Parameter modes: `0 Borrow`, `1 Cons
 operators: `0 Negate`, `1 Not`, `2 BitNot`. Binary tags in order are Add, Subtract, Multiply,
 Divide, BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight, Equal, NotEqual, Less, LessEqual, Greater,
 GreaterEqual. Builtin tags use `hir::Builtin` declaration order, `Print = 0` through
-`TcpCloseConnection = 50`.
+`TcpCloseConnection = 56`.
 
 ## Instructions
 
@@ -99,7 +99,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 4 readers accept only version 4 with zero flags. Changing any existing tag, opcode, field,
+Version 5 readers accept only version 5 with zero flags. Changing any existing tag, opcode, field,
 or meaning requires a new version. A canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of
 `HashMap` iteration order.

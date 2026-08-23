@@ -104,6 +104,71 @@ fn build_writes_runnable_compiled_bytecode() {
 }
 
 #[test]
+fn pack_writes_deterministic_runnable_archive_with_resources() {
+    let directory = std::env::temp_dir().join(format!(
+        "foster-pack-{}-{}",
+        std::process::id(),
+        time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    fs::create_dir_all(directory.join("resources/config")).unwrap();
+    fs::write(
+        directory.join("main.fos"),
+        r#"import core.result
+import std.fs
+
+func main() -> String {
+    branch read_text("resources/config/message.txt") {
+        Result.Ok(text) -> text
+        Result.Error(_) -> "missing resource"
+    }
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        directory.join("resources/config/message.txt"),
+        "hello from package",
+    )
+    .unwrap();
+    let first = directory.with_extension("first.fpk");
+    let second = directory.with_extension("second.fpk");
+
+    for output in [&first, &second] {
+        let pack = foster()
+            .arg("pack")
+            .arg(&directory)
+            .arg("--output")
+            .arg(output)
+            .output()
+            .unwrap();
+        assert!(
+            pack.status.success(),
+            "{}",
+            String::from_utf8_lossy(&pack.stderr)
+        );
+    }
+    assert_eq!(fs::read(&first).unwrap(), fs::read(&second).unwrap());
+
+    let run = foster().arg("run").arg(&first).output().unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(run.stdout).unwrap().trim(),
+        "hello from package"
+    );
+
+    fs::remove_dir_all(directory).unwrap();
+    fs::remove_file(first).unwrap();
+    fs::remove_file(second).unwrap();
+}
+
+#[test]
 fn docs_generates_a_static_site_from_resolved_declarations() {
     let unique = format!(
         "foster-docs-{}-{}",

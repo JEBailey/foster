@@ -35,7 +35,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 298);
+    assert_eq!(checked, 319);
 
     let mut modules = 0;
     let mut types = 0;
@@ -153,6 +153,94 @@ func main() -> Int {
 }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+}
+
+#[test]
+fn option_and_result_support_queries_fallbacks_recovery_and_flattening() {
+    let source = r#"
+import core.option as option
+import core.result as result
+
+func option_fallback() -> Int { 20 }
+func option_recovery() -> Option<Int> { Option.Some(3) }
+func no_int() -> Option<Int> { Option.None }
+func nested_option() -> Option<Option<Int>> { Option.Some(Option.Some(2)) }
+func result_fallback(error: String) -> Int { error.length }
+func result_recovery(error: String) -> Result<Int, Int> { Result.Ok(error.length) }
+func failed_int(message: String) -> Result<Int, String> { Result.Error(message) }
+func nested_result() -> Result<Result<Int, String>, String> { Result.Ok(Result.Ok(5)) }
+
+func main() -> Int {
+    a = option.unwrap_or_else(no_int(), option_fallback)
+    b = option.unwrap_or(option.flatten(nested_option()), 0)
+    c = option.unwrap_or(option.or_else(no_int(), option_recovery), 0)
+    d = result.unwrap_or_else(failed_int("four"), result_fallback)
+    e = result.unwrap_or(result.flatten(nested_result()), 0)
+    f = result.unwrap_or(result.or_else(failed_int("six"), result_recovery), 0)
+    absent = option.absent?(no_int())
+    failed = result.error?(failed_int("failure"))
+    branch {
+        absent -> branch {
+            failed -> a + b + c + d + e + f
+            _ -> 0
+        }
+        _ -> 0
+    }
+}
+"#;
+
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(37));
+}
+
+#[test]
+fn filesystem_mutation_operations_create_copy_move_and_remove_entries() {
+    let root = std::env::temp_dir().join(format!(
+        "foster-core-fs-mutation-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    let nested = root.join("parent").join("child");
+    let source_path = nested.join("source.txt");
+    let copied_path = nested.join("copied.txt");
+    let moved_path = nested.join("moved.txt");
+    let root_literal = serde_json::to_string(&root.to_string_lossy()).unwrap();
+    let nested_literal = serde_json::to_string(&nested.to_string_lossy()).unwrap();
+    let source_literal = serde_json::to_string(&source_path.to_string_lossy()).unwrap();
+    let copied_literal = serde_json::to_string(&copied_path.to_string_lossy()).unwrap();
+    let moved_literal = serde_json::to_string(&moved_path.to_string_lossy()).unwrap();
+    let source = format!(r#"
+import core.result
+import std.fs
+import std.io
+
+func unit(outcome: Result<Unit, IoError>) -> Unit {{
+    branch outcome {{
+        Result.Ok(value) -> value
+        Result.Error(_) -> [()][1]
+    }}
+}}
+func count(outcome: Result<Int, IoError>) -> Int {{
+    branch outcome {{
+        Result.Ok(value) -> value
+        Result.Error(_) -> 0
+    }}
+}}
+func main() -> Int {{
+    unit(create_directory_all({nested_literal}))
+    unit(write_text({source_literal}, "hello"))
+    copied = count(copy_file({source_literal}, {copied_literal}))
+    unit(rename({copied_literal}, {moved_literal}))
+    unit(remove_file({source_literal}))
+    unit(remove_file({moved_literal}))
+    unit(remove_directory({nested_literal}))
+    unit(remove_directory({root_literal} + "/parent"))
+    unit(remove_directory({root_literal}))
+    copied
+}}
+"#);
+
+    assert_eq!(foster::run(&source).unwrap(), Value::Integer(5));
+    assert!(!root.exists());
 }
 
 #[test]

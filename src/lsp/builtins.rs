@@ -220,6 +220,42 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
             &["path"],
             "Reports whether a host filesystem path is a directory.",
         ),
+        Builtin::IoCreateDirectory => builtin(
+            "IoHost.create_directory",
+            "IoHost.create_directory(path: String) -> Result<Unit, IoError>",
+            &["path"],
+            "Creates one directory through the host filesystem boundary.",
+        ),
+        Builtin::IoCreateDirectoryAll => builtin(
+            "IoHost.create_directory_all",
+            "IoHost.create_directory_all(path: String) -> Result<Unit, IoError>",
+            &["path"],
+            "Creates a directory and missing parents through the host filesystem boundary.",
+        ),
+        Builtin::IoRemoveFile => builtin(
+            "IoHost.remove_file",
+            "IoHost.remove_file(path: String) -> Result<Unit, IoError>",
+            &["path"],
+            "Removes one file through the host filesystem boundary.",
+        ),
+        Builtin::IoRemoveDirectory => builtin(
+            "IoHost.remove_directory",
+            "IoHost.remove_directory(path: String) -> Result<Unit, IoError>",
+            &["path"],
+            "Removes one empty directory through the host filesystem boundary.",
+        ),
+        Builtin::IoRename => builtin(
+            "IoHost.rename",
+            "IoHost.rename(from: String, to: String) -> Result<Unit, IoError>",
+            &["from", "to"],
+            "Renames or moves a filesystem entry through the host boundary.",
+        ),
+        Builtin::IoCopyFile => builtin(
+            "IoHost.copy_file",
+            "IoHost.copy_file(from: String, to: String) -> Result<Int, IoError>",
+            &["from", "to"],
+            "Copies one file through the host boundary.",
+        ),
         Builtin::IoJoin => builtin(
             "IoHost.join",
             "IoHost.join(left: String, right: String) -> String",

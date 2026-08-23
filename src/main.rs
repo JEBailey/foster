@@ -36,6 +36,7 @@ fn execute() -> Result<(), Box<dyn Error>> {
         Some(("lsp", _)) => return foster::lsp::run(),
         Some(("check", arguments)) => check(arguments)?,
         Some(("build", arguments)) => build(arguments)?,
+        Some(("pack", arguments)) => pack(arguments)?,
         Some(("run", arguments)) => run(arguments)?,
         Some(("fmt", arguments)) => format_path(
             required_path(arguments, "path"),
@@ -90,6 +91,24 @@ fn cli() -> Command {
                     .long("output")
                     .value_parser(value_parser!(PathBuf)),
             ),
+        )
+        .subcommand(
+            Command::new("pack")
+                .about("Build a runnable .fpk archive with optional resources")
+                .arg(path())
+                .args(optimizer())
+                .arg(
+                    Arg::new("output")
+                        .short('o')
+                        .long("output")
+                        .value_parser(value_parser!(PathBuf)),
+                )
+                .arg(
+                    Arg::new("resources")
+                        .long("resources")
+                        .value_parser(value_parser!(PathBuf))
+                        .help("Resource directory (defaults to <package>/resources when present)"),
+                ),
         )
         .subcommand(
             Command::new("check").arg(path()).arg(
@@ -197,12 +216,42 @@ fn build(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn pack(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
+    let path = required_path(arguments, "path");
+    let output = arguments
+        .get_one::<PathBuf>("output")
+        .cloned()
+        .unwrap_or_else(|| default_package_path(path));
+    let default_resources = path.is_dir().then(|| path.join("resources"));
+    let resources = arguments
+        .get_one::<PathBuf>("resources")
+        .cloned()
+        .or_else(|| default_resources.filter(|path| path.is_dir()));
+    let compilation = compile_path(path)?;
+    report_warnings(&compilation, None, None)?;
+    let program = foster::vm::compile_with_options(
+        &compilation,
+        foster::vm::CompileOptions {
+            optimize: !arguments.get_flag("no-optimize"),
+        },
+    )?;
+    let bytecode = foster::vm::encode_program(&program)?;
+    foster::archive::write_package(&output, &bytecode, resources.as_deref())?;
+    println!("packed {}", output.display());
+    Ok(())
+}
+
 fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let path = required_path(arguments, "path");
     let options = foster::vm::CompileOptions {
         optimize: !arguments.get_flag("no-optimize"),
     };
-    let value = if path.extension().is_some_and(|extension| extension == "fbc") {
+    let value = if path
+        .extension()
+        .is_some_and(|extension| extension == foster::archive::EXTENSION)
+    {
+        run_archive(path)?
+    } else if path.extension().is_some_and(|extension| extension == "fbc") {
         let program = foster::vm::decode_program(&fs::read(path)?)?;
         foster::vm::Machine::new(&program).run_main()?
     } else if path.is_dir() {
@@ -222,6 +271,60 @@ fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
         println!("{value}");
     }
     Ok(())
+}
+
+fn run_archive(path: &Path) -> Result<foster::vm::Value, Box<dyn Error>> {
+    let package = foster::archive::read_package(path)?;
+    let program = foster::vm::decode_program(&package.bytecode)?;
+    let working_directory = PackageWorkingDirectory::create()?;
+    working_directory.write_resources(&package.resources)?;
+    let previous_directory = std::env::current_dir()?;
+    std::env::set_current_dir(working_directory.path())?;
+    let result = foster::vm::Machine::new(&program).run_main();
+    std::env::set_current_dir(previous_directory)?;
+    Ok(result?)
+}
+
+struct PackageWorkingDirectory {
+    path: PathBuf,
+}
+
+impl PackageWorkingDirectory {
+    fn create() -> Result<Self, Box<dyn Error>> {
+        let unique = format!(
+            "foster-package-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_nanos()
+        );
+        let path = std::env::temp_dir().join(unique);
+        fs::create_dir(&path)?;
+        Ok(Self { path })
+    }
+
+    fn path(&self) -> &Path {
+        &self.path
+    }
+
+    fn write_resources(&self, resources: &[(PathBuf, Vec<u8>)]) -> Result<(), Box<dyn Error>> {
+        let root = self.path.join("resources");
+        fs::create_dir(&root)?;
+        for (relative, contents) in resources {
+            let destination = root.join(relative);
+            if let Some(parent) = destination.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(destination, contents)?;
+        }
+        Ok(())
+    }
+}
+
+impl Drop for PackageWorkingDirectory {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.path);
+    }
 }
 
 fn test(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
@@ -396,6 +499,10 @@ fn default_bytecode_path(source: &Path) -> PathBuf {
     } else {
         source.with_extension("fbc")
     }
+}
+
+fn default_package_path(source: &Path) -> PathBuf {
+    source.with_extension(foster::archive::EXTENSION)
 }
 
 fn default_documentation_directory(source: &Path) -> PathBuf {

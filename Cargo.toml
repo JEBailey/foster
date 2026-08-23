@@ -23,6 +23,7 @@ may = "0.3.51"
 pulldown-cmark = "0.13.4"
 serde_json = "1"
 walkdir = "2.5"
+zip = { version = "4", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 criterion = { version = "0.8.2", features = ["html_reports"] }

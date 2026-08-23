@@ -16,6 +16,8 @@ cargo run --bin foster -- fmt examples
 cargo run --bin foster -- fmt examples --check
 cargo run --bin foster -- test tests/fixtures/modules
 cargo run --bin foster -- run tests/fixtures/modules --no-optimize
+cargo run --bin foster -- pack examples/pima/json_parser -o json-parser.fpk
+cargo run --bin foster -- run json-parser.fpk
 cargo run --bin foster -- docs library
 cargo run --bin foster -- docs library --serve
 cargo test
@@ -171,11 +173,28 @@ cargo run --bin foster -- build examples/pima/fibonacci.fos -o fibonacci.fbc
 cargo run --bin foster -- run fibonacci.fbc
 ```
 
+## Executable packages
+
+`foster pack` creates a deterministic ZIP-compatible `.fpk` containing compiled bytecode and
+application resources. For a directory package, a `resources/` child is included automatically;
+use `--resources <directory>` to select a different resource root. Packaged programs run without
+their Foster source and can read included files through `std.fs` beneath `resources/`:
+
+```powershell
+cargo run --bin foster -- pack path/to/application -o application.fpk
+cargo run --bin foster -- run application.fpk
+```
+
+The runtime validates the manifest and archive paths, expands resources into an isolated temporary
+working directory for the process, and removes that directory after execution. See the
+[package format](docs/package-format.md) for the versioned layout and limits.
+
 The intended native evolution is to lower a stable
 backend-neutral IR to Cranelift for JIT and object-file output. That native backend is not yet
 implemented.
 
-See [the VM design](docs/vm.md), [binary format](docs/binary-format.md), and
+See [the VM design](docs/vm.md), [binary format](docs/binary-format.md),
+[package format](docs/package-format.md), and
 [benchmarking guide](docs/benchmarking.md).
 
 ## Language server

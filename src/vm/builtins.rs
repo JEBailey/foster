@@ -262,6 +262,70 @@ impl HostServices for NativeHost {
             (Builtin::IoIsDirectory, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
                 std::path::Path::new(path.string_text()?).is_dir(),
             )),
+            (Builtin::IoCreateDirectory, [path]) if path.string_bytes().is_some() => {
+                let path = path.string_text()?;
+                Ok(io_result(
+                    "create_directory",
+                    path,
+                    std::fs::create_dir(path).map(|()| Value::Unit),
+                    string_record,
+                ))
+            }
+            (Builtin::IoCreateDirectoryAll, [path]) if path.string_bytes().is_some() => {
+                let path = path.string_text()?;
+                Ok(io_result(
+                    "create_directory_all",
+                    path,
+                    std::fs::create_dir_all(path).map(|()| Value::Unit),
+                    string_record,
+                ))
+            }
+            (Builtin::IoRemoveFile, [path]) if path.string_bytes().is_some() => {
+                let path = path.string_text()?;
+                Ok(io_result(
+                    "remove_file",
+                    path,
+                    std::fs::remove_file(path).map(|()| Value::Unit),
+                    string_record,
+                ))
+            }
+            (Builtin::IoRemoveDirectory, [path]) if path.string_bytes().is_some() => {
+                let path = path.string_text()?;
+                Ok(io_result(
+                    "remove_directory",
+                    path,
+                    std::fs::remove_dir(path).map(|()| Value::Unit),
+                    string_record,
+                ))
+            }
+            (Builtin::IoRename, [from, to])
+                if from.string_bytes().is_some() && to.string_bytes().is_some() =>
+            {
+                let from = from.string_text()?;
+                let to = to.string_text()?;
+                Ok(io_result(
+                    "rename",
+                    from,
+                    std::fs::rename(from, to).map(|()| Value::Unit),
+                    string_record,
+                ))
+            }
+            (Builtin::IoCopyFile, [from, to])
+                if from.string_bytes().is_some() && to.string_bytes().is_some() =>
+            {
+                let from = from.string_text()?;
+                let to = to.string_text()?;
+                Ok(io_result(
+                    "copy_file",
+                    from,
+                    std::fs::copy(from, to).and_then(|bytes| {
+                        i64::try_from(bytes)
+                            .map(Value::Integer)
+                            .map_err(|_| std::io::Error::other("copied byte count exceeds Int"))
+                    }),
+                    string_record,
+                ))
+            }
             (Builtin::IoJoin, [left, right])
                 if left.string_bytes().is_some() && right.string_bytes().is_some() =>
             {

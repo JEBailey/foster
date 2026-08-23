@@ -1,4 +1,4 @@
-//! Typed filesystem operations, errors, and file metadata.
+//! Typed whole-file and directory operations.
 
 import core.result
 import core.bytes
@@ -22,6 +22,18 @@ func FsHost.exists(path: String) -> Bool = intrinsic("io.exists")
 func FsHost.is_file(path: String) -> Bool = intrinsic("io.is_file")
 /// Tests whether a host path is a directory.
 func FsHost.is_directory(path: String) -> Bool = intrinsic("io.is_directory")
+/// Creates one directory in an existing parent directory.
+func FsHost.create_directory(path: String) -> Result<Unit, IoError> = intrinsic("io.create_directory")
+/// Creates a directory and every missing parent directory.
+func FsHost.create_directory_all(path: String) -> Result<Unit, IoError> = intrinsic("io.create_directory_all")
+/// Removes one file.
+func FsHost.remove_file(path: String) -> Result<Unit, IoError> = intrinsic("io.remove_file")
+/// Removes one empty directory.
+func FsHost.remove_directory(path: String) -> Result<Unit, IoError> = intrinsic("io.remove_directory")
+/// Renames or moves a filesystem entry.
+func FsHost.rename(from: String, to: String) -> Result<Unit, IoError> = intrinsic("io.rename")
+/// Copies one file and returns the number of bytes copied.
+func FsHost.copy_file(from: String, to: String) -> Result<Int, IoError> = intrinsic("io.copy_file")
 
 /// Reads an entire UTF-8 text file.
 pub func read_text(path: String) -> Result<String, IoError> { FsHost.read_text(path) }
@@ -39,3 +51,15 @@ pub func exists?(path: String) -> Bool { FsHost.exists(path) }
 pub func file?(path: String) -> Bool { FsHost.is_file(path) }
 /// Returns whether `path` identifies a directory.
 pub func directory?(path: String) -> Bool { FsHost.is_directory(path) }
+/// Creates one directory; its parent must already exist.
+pub func create_directory(path: String) -> Result<Unit, IoError> { FsHost.create_directory(path) }
+/// Creates a directory and all missing parent directories.
+pub func create_directory_all(path: String) -> Result<Unit, IoError> { FsHost.create_directory_all(path) }
+/// Removes a file without removing directories.
+pub func remove_file(path: String) -> Result<Unit, IoError> { FsHost.remove_file(path) }
+/// Removes an empty directory without recursively deleting its contents.
+pub func remove_directory(path: String) -> Result<Unit, IoError> { FsHost.remove_directory(path) }
+/// Renames or moves `from` to `to` according to host filesystem rules.
+pub func rename(from: String, to: String) -> Result<Unit, IoError> { FsHost.rename(from, to) }
+/// Copies a file from `from` to `to` and returns the number of bytes copied.
+pub func copy_file(from: String, to: String) -> Result<Int, IoError> { FsHost.copy_file(from, to) }

@@ -26,7 +26,7 @@ being added accidentally.
 
 | Module | Purpose |
 | --- | --- |
-| `core.option` | Optional values, mapping, chaining, fallbacks, flattening, and queries |
+| `core.option` | Optional values, mapping, chaining, eager and lazy fallbacks, flattening, and presence queries |
 | `std.iter` | Stateful `Iterator<T>` and repeatable `Iterable<T>` callable contracts |
 | `std.collections` | The sized, repeatable `Collection<T>` contract |
 | `core.byte` | Bounded byte construction and `ByteError` |
@@ -38,7 +38,7 @@ being added accidentally.
 | `std.collections.deque` | Double-ended `Deque<T>` |
 | `std.collections.stack` | Last-in, first-out `Stack<T>` |
 | `core.range` | Generic reusable `Range<T>` sequence view |
-| `core.result` | Success/error values, transformations, recovery, flattening, and queries |
+| `core.result` | Success/error values, transformations, recovery, eager and lazy fallbacks, flattening, and queries |
 | `core.ordering` | Equality, total-ordering, and hashing contracts plus `Less`, `Equal`, and `Greater` |
 | `std.sequence` | Shared map, filter, fold, search, slicing, and query algorithms for strings and lists |
 | `core.list` | Search, map, filter, folds, slicing, flattening, joining, and predicates |
@@ -48,7 +48,7 @@ being added accidentally.
 | `core.bool` | Boolean composition and conditional singleton-list construction |
 | `core.int` | Bounds, comparison, sign, parity, ranges, formatting, and integer powers |
 | `core.float` | Bounds, comparison, sign, and clamping |
-| `std.fs` | Typed text-file and directory operations |
+| `std.fs` | Typed whole-file I/O, directory creation/removal, copying, moving, listing, and path-kind queries |
 | `std.path` | Platform path composition, inspection, and canonicalization |
 | `std.env` | Process environment queries such as the current directory |
 | `std.net.tcp` | Typed TCP listeners and connections |
@@ -84,6 +84,9 @@ this table for an intrinsic because it has no Foster implementation body.
 | `FsHost.read_text`, `FsHost.write_text`, `FsHost.read_bytes`, `FsHost.write_bytes` | Perform whole-file text and binary operations |
 | `FsHost.list_directory` | List directory entries |
 | `FsHost.exists`, `FsHost.is_file`, `FsHost.is_directory` | Query host filesystem paths |
+| `FsHost.create_directory`, `FsHost.create_directory_all` | Create one directory or a directory tree |
+| `FsHost.remove_file`, `FsHost.remove_directory` | Remove one file or one empty directory |
+| `FsHost.rename`, `FsHost.copy_file` | Move or copy filesystem entries |
 | `PathHost.join`, `PathHost.parent`, `PathHost.file_name`, `PathHost.extension` | Apply host path rules |
 | `PathHost.canonicalize` | Resolve a host filesystem location |
 | `EnvHost.current_directory` | Read the process working directory |

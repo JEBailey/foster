@@ -37,6 +37,38 @@ pub func present?<T>(option: Option<T>) -> Bool {
     }
 }
 
+/// Returns whether the option contains no value.
+pub func absent?<T>(option: Option<T>) -> Bool {
+    branch option {
+        Option.Some(_) -> false
+        Option.None -> true
+    }
+}
+
+/// Returns the contained value, or computes a fallback when the option is `None`.
+pub func unwrap_or_else<T>(option: Option<T>, fallback: func() -> T) -> T {
+    branch option {
+        Option.Some(value) -> value
+        Option.None -> fallback()
+    }
+}
+
+/// Preserves a present value, or computes another option when this option is `None`.
+pub func or_else<T>(option: Option<T>, fallback: func() -> Option<T>) -> Option<T> {
+    branch option {
+        Option.Some(value) -> Option.Some(value)
+        Option.None -> fallback()
+    }
+}
+
+/// Removes one layer from a nested option.
+pub func flatten<T>(option: Option<Option<T>>) -> Option<T> {
+    branch option {
+        Option.Some(value) -> value
+        Option.None -> Option.None
+    }
+}
+
 test "option transformations preserve presence and absence" {
     mapped = map(Option.Some(20), (value: Int) -> value + 1)
     branch mapped {
