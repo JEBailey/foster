@@ -23,6 +23,9 @@ pub(super) fn inline_small_leaf_functions(program: &mut Program) {
 
 fn eligible(function: &BytecodeFunction) -> bool {
     function.captures == 0
+        // Mutable borrows are caller-backed places at runtime. A Move into an
+        // inlined parameter register would turn that binding into a value copy.
+        && function.mutable_parameters.iter().all(|mutable| !mutable)
         && function.instructions.len() <= INLINE_INSTRUCTION_LIMIT
         && matches!(
             function.instructions.last(),

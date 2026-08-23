@@ -165,12 +165,48 @@ func main() -> Int {
 }
 "#,
         ),
+        (
+            "replace-through-parameter-invalidates-derived-loan",
+            r#"
+func replace[g: group Int](value: ref[g] Int) -> Int [mut g] {
+    first = ref value
+    value = 42
+    first
+}
+func main() -> Int {
+    values = [1]
+    replace(ref values[0])
+}
+"#,
+        ),
     ];
     for (rule, source) in fail {
-        assert!(
-            foster::compile(source).is_err(),
-            "{rule} should be rejected"
-        );
+        let error = match foster::compile(source) {
+            Err(error) => error,
+            Ok(_) => panic!("{rule} should be rejected"),
+        };
+        if rule.starts_with("replace-") {
+            assert_eq!(
+                error.code.as_deref(),
+                Some("E0401"),
+                "{rule} should be rejected as an invalidated loan: {error:?}"
+            );
+            assert!(
+                error
+                    .labels
+                    .iter()
+                    .any(|label| label.message.contains("replaces")),
+                "{rule} should identify the replacing operation: {error:?}"
+            );
+        }
+        if rule == "replace-invalidates-captured-call-effect" {
+            assert!(
+                error
+                    .message
+                    .contains("closure `probe` is no longer callable"),
+                "closure replacement should report the invalid call: {error:?}"
+            );
+        }
     }
 }
 
@@ -194,6 +230,42 @@ func main() -> Int {
             foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
                 .unwrap(),
             foster::vm::Value::Integer(42)
+        );
+    }
+}
+
+#[test]
+fn whole_place_mutable_ref_parameter_survives_optimization() {
+    let source = r#"
+type Vals = { value: Int }
+func set[g: group Vals](box: ref[g] Vals) -> Int [mut g] {
+    box = Vals { value: 7 }
+    box.value
+}
+func main() -> Int {
+    box = Vals { value: 1 }
+    set(ref box)
+    box.value
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let unoptimized = foster::vm::compile_with_options(
+        &compilation,
+        foster::vm::CompileOptions { optimize: false },
+    )
+    .unwrap();
+    let set = unoptimized
+        .functions
+        .values()
+        .find(|function| function.name == "set")
+        .unwrap();
+    assert_eq!(set.mutable_parameters, [true]);
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap(),
+            foster::vm::Value::Integer(7),
+            "mutable borrow lost its caller-backed place with optimize={optimize}"
         );
     }
 }

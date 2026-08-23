@@ -630,6 +630,9 @@ fn find_conflict(
 }
 
 fn is_parameter_reborrow(function: &Function, loan: &super::LoanDefinition) -> bool {
+    // Reference parameters begin with a synthetic `parameter = ref parameter` loan for the
+    // caller's place. Writes through that parameter must preserve its own loan; reborrows derived
+    // from the parameter remain subject to ordinary replacement invalidation.
     matches!(
         &function.blocks[loan.issued_at.block].operations[loan.issued_at.operation],
         Operation::StoreBorrower {

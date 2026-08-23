@@ -16,26 +16,27 @@ pub fn optimize(program: &mut Program) {
     // Ownership, mutation, and concurrency instructions are optimization barriers
     // until the data-flow passes model their aliasing and suspension semantics.
     if program.functions.values().any(|function| {
-        function.instructions.iter().any(|instruction| {
-            matches!(
-                instruction,
-                Instruction::StoreField { .. }
-                    | Instruction::StoreIndex { .. }
-                    | Instruction::MakeReference { .. }
-                    | Instruction::MakeFieldReference { .. }
-                    | Instruction::MoveOut { .. }
-                    | Instruction::Push { .. }
-                    | Instruction::Append { .. }
-                    | Instruction::Contains { .. }
-                    | Instruction::Builtin { .. }
-                    | Instruction::SpawnRemote { .. }
-                    | Instruction::SpawnRemoteBorrow { .. }
-                    | Instruction::RemoteCall { .. }
-                    | Instruction::Await { .. }
-                    | Instruction::CallMethod { .. }
-                    | Instruction::CallContractMethod { .. }
-            )
-        })
+        function.mutable_parameters.iter().any(|mutable| *mutable)
+            || function.instructions.iter().any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::StoreField { .. }
+                        | Instruction::StoreIndex { .. }
+                        | Instruction::MakeReference { .. }
+                        | Instruction::MakeFieldReference { .. }
+                        | Instruction::MoveOut { .. }
+                        | Instruction::Push { .. }
+                        | Instruction::Append { .. }
+                        | Instruction::Contains { .. }
+                        | Instruction::Builtin { .. }
+                        | Instruction::SpawnRemote { .. }
+                        | Instruction::SpawnRemoteBorrow { .. }
+                        | Instruction::RemoteCall { .. }
+                        | Instruction::Await { .. }
+                        | Instruction::CallMethod { .. }
+                        | Instruction::CallContractMethod { .. }
+                )
+            })
     }) {
         return;
     }
