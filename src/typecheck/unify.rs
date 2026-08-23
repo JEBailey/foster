@@ -38,12 +38,19 @@ impl Checker<'_> {
                 }
                 Ok(())
             }
-            (Ty::Intersection(a), Ty::Intersection(b)) if a.len() == b.len() => {
-                for (a, b) in a.into_iter().zip(b) {
-                    self.unify(a, b, function)?;
-                }
-                Ok(())
-            }
+            (Ty::Intersection(a), Ty::Intersection(b)) if a.len() == b.len() => self
+                .unify_intersection_members(&a, &b, function)
+                .then_some(())
+                .ok_or_else(|| {
+                    self.error(
+                        function,
+                        format!(
+                            "type mismatch: expected `{}`, found `{}`",
+                            self.describe(&Ty::Intersection(a)),
+                            self.describe(&Ty::Intersection(b))
+                        ),
+                    )
+                }),
             (Ty::Variant(a, aa), Ty::Variant(b, ba)) if a == b => {
                 for (x, y) in aa.into_iter().zip(ba) {
                     self.unify(x, y, function)?;
@@ -162,6 +169,35 @@ impl Checker<'_> {
                 ),
             )),
         }
+    }
+
+    /// Intersections are unordered structural contracts. Matching uses backtracking because a
+    /// successful candidate can bind inference variables and a later member may require a
+    /// different pairing.
+    fn unify_intersection_members(
+        &mut self,
+        left: &[Ty],
+        right: &[Ty],
+        function: FunctionId,
+    ) -> bool {
+        let Some((member, remaining_left)) = left.split_first() else {
+            return right.is_empty();
+        };
+        for index in 0..right.len() {
+            let substitutions = self.substitutions.clone();
+            if self
+                .unify(member.clone(), right[index].clone(), function)
+                .is_ok()
+            {
+                let mut remaining_right = right.to_vec();
+                remaining_right.remove(index);
+                if self.unify_intersection_members(remaining_left, &remaining_right, function) {
+                    return true;
+                }
+            }
+            self.substitutions = substitutions;
+        }
+        false
     }
 
     pub(super) fn resolved(&self, mut ty: Ty) -> Ty {

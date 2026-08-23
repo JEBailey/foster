@@ -44,7 +44,13 @@ pub(super) fn specialize_non_escaping(program: &mut Program) {
                 continue;
             };
             if call <= creation
-                || !safe_to_delay_capture(&function.instructions, creation, call, &captures)
+                || !safe_to_delay_capture(
+                    &function.instructions,
+                    creation,
+                    call,
+                    closure,
+                    &captures,
+                )
             {
                 continue;
             }
@@ -74,6 +80,7 @@ fn safe_to_delay_capture(
     instructions: &[Instruction],
     creation: usize,
     call: usize,
+    closure: Register,
     captures: &[(CaptureMode, Register)],
 ) -> bool {
     if captures.iter().any(|(mode, _)| *mode == CaptureMode::Move) {
@@ -92,6 +99,9 @@ fn safe_to_delay_capture(
             return false;
         }
         let definitions = definitions(instruction);
+        if definitions.contains(&closure) {
+            return false;
+        }
         if captures.iter().any(|(mode, register)| {
             matches!(mode, CaptureMode::Copy | CaptureMode::Pending)
                 && definitions.contains(register)
@@ -100,4 +110,31 @@ fn safe_to_delay_capture(
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn refuses_to_specialize_a_redefined_closure_register() {
+        let closure = Register(0);
+        let instructions = vec![
+            Instruction::Move {
+                destination: closure,
+                source: closure,
+            },
+            Instruction::LoadConstant {
+                destination: closure,
+                constant: 0,
+            },
+            Instruction::CallValue {
+                destination: Register(1),
+                callee: closure,
+                arguments: Vec::new(),
+            },
+        ];
+
+        assert!(!safe_to_delay_capture(&instructions, 0, 2, closure, &[]));
+    }
 }

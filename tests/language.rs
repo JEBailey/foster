@@ -1377,6 +1377,27 @@ func main() -> String {
 }
 
 #[test]
+fn bare_intersection_parameters_unify_independent_of_member_order() {
+    let source = r#"
+type A = {
+    pub first: Int
+}
+
+type B = {
+    pub second: Int
+}
+
+func takes_ab(value: A & B) -> Int { value.first }
+func takes_ba(value: B & A) -> Int { takes_ab(value) }
+func returns_ab(value: A & B) -> B & A { value }
+
+func main() -> Int { 0 }
+"#;
+
+    foster::compile(source).unwrap();
+}
+
+#[test]
 fn declared_composition_requires_callable_members() {
     let error = foster::compile(
         r#"

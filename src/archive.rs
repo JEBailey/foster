@@ -145,16 +145,8 @@ pub fn read_package(path: impl AsRef<Path>) -> Result<ExecutablePackage, FosterE
                         "package contains an empty resource path",
                     ));
                 }
-                total_resource_bytes = total_resource_bytes
-                    .checked_add(entry.size())
-                    .ok_or_else(|| FosterError::runtime("package resources are too large"))?;
-                if total_resource_bytes > MAX_TOTAL_RESOURCE_BYTES {
-                    return Err(FosterError::runtime(format!(
-                        "package resources exceed {} bytes",
-                        MAX_TOTAL_RESOURCE_BYTES
-                    )));
-                }
                 let bytes = read_entry(&mut entry, MAX_RESOURCE_BYTES)?;
+                total_resource_bytes = charge_resource_bytes(total_resource_bytes, bytes.len())?;
                 resources.push((PathBuf::from(relative), bytes));
             }
             _ => {}
@@ -173,6 +165,21 @@ pub fn read_package(path: impl AsRef<Path>) -> Result<ExecutablePackage, FosterE
         bytecode,
         resources,
     })
+}
+
+fn charge_resource_bytes(current: u64, expanded_bytes: usize) -> Result<u64, FosterError> {
+    let expanded_bytes = u64::try_from(expanded_bytes)
+        .map_err(|_| FosterError::runtime("package resources are too large for this platform"))?;
+    let total = current
+        .checked_add(expanded_bytes)
+        .ok_or_else(|| FosterError::runtime("package resources are too large"))?;
+    if total > MAX_TOTAL_RESOURCE_BYTES {
+        return Err(FosterError::runtime(format!(
+            "package resources exceed {} bytes",
+            MAX_TOTAL_RESOURCE_BYTES
+        )));
+    }
+    Ok(total)
 }
 
 fn read_entry<R: Read>(
@@ -272,4 +279,20 @@ fn io_error(error: std::io::Error) -> FosterError {
 
 fn zip_error(error: zip::result::ZipError) -> FosterError {
     FosterError::runtime(format!("invalid Foster package: {error}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn total_resource_limit_counts_expanded_bytes() {
+        let almost_full = MAX_TOTAL_RESOURCE_BYTES - 7;
+        assert_eq!(
+            charge_resource_bytes(almost_full, 7).unwrap(),
+            MAX_TOTAL_RESOURCE_BYTES
+        );
+        let error = charge_resource_bytes(almost_full, 8).unwrap_err();
+        assert!(error.message.contains("package resources exceed"));
+    }
 }

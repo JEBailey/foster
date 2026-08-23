@@ -35,6 +35,9 @@ impl Checker<'_> {
             (Ty::Sequence(expected), Ty::Sequence(actual)) => {
                 self.unify(*expected, *actual, function)
             }
+            (expected @ Ty::Intersection(_), actual @ Ty::Intersection(_)) => {
+                self.unify(expected, actual, function)
+            }
             (Ty::Intersection(requirements), actual) => {
                 for requirement in requirements {
                     self.coerce(requirement, actual.clone(), function)?;
