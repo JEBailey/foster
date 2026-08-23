@@ -74,6 +74,22 @@ The `vscode:prepublish` hook bundles the TypeScript extension, copies the releas
 the Foster core sources for navigation, and includes both project licenses. Cross-compiled or CI
 builds can set `FOSTER_SERVER_PATH` to the exact compiler binary before invoking `vsce`.
 
+## Local installation
+
+After packaging, install the generated VSIX from the command line:
+
+```powershell
+code --install-extension .\foster-language-support-win32-x64-0.1.0.vsix
+```
+
+Alternatively, open the Extensions view in VS Code, select the **...** menu, choose
+**Install from VSIX...**, and select the generated file. Reload VS Code if prompted. To install a
+newly rebuilt VSIX over the existing version, add `--force` to the command above.
+
+Confirm the installation by opening a `.fos` file and checking that its language mode is
+**Foster**. The installed extension uses its bundled release compiler unless `foster.server.path`
+is configured.
+
 Publish each platform-specific VSIX with the same extension version:
 
 ```powershell
