@@ -2,18 +2,28 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import {
+  CloseAction,
+  ErrorAction,
   LanguageClient,
   LanguageClientOptions,
+  RevealOutputChannelOn,
   ServerOptions,
   State,
   Trace,
 } from "vscode-languageclient/node";
 
 let client: LanguageClient | undefined;
+let serverRestartTimes: number[] = [];
+
+const maxServerRestarts = 4;
+const restartWindowMilliseconds = 3 * 60 * 1000;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   context.subscriptions.push(
     vscode.commands.registerCommand("foster.restartLanguageServer", () => restart(context)),
+    vscode.commands.registerCommand("foster.showLanguageServerOutput", () =>
+      client?.outputChannel.show(true),
+    ),
     vscode.commands.registerCommand("foster.runCurrentFile", () => runCurrentFile(context)),
     vscode.commands.registerCommand("foster.runCurrentPackage", () => runCurrentPackage(context)),
     vscode.workspace.onDidChangeConfiguration(async (event) => {
@@ -43,7 +53,7 @@ async function runCurrentPackage(context: vscode.ExtensionContext): Promise<void
   const packageRoot = findPackageRoot(document.uri.fsPath, workspaceFolder?.uri.fsPath);
   if (packageRoot === undefined) {
     await vscode.window.showErrorMessage(
-      "Foster could not find a package root containing main.fos for the active file.",
+      "Foster could not find a foster.toml project or legacy main.fos package for the active file.",
     );
     return;
   }
@@ -75,6 +85,9 @@ function findPackageRoot(file: string, workspaceRoot: string | undefined): strin
   }
 
   while (true) {
+    if (fs.existsSync(path.join(directory, "foster.toml"))) {
+      return directory;
+    }
     if (fs.existsSync(path.join(directory, "main.fos"))) {
       return directory;
     }
@@ -150,8 +163,22 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
   };
   const clientOptions: LanguageClientOptions = {
     documentSelector: [{ language: "foster", scheme: "file" }],
+    diagnosticCollectionName: "foster",
+    outputChannelName: "Foster Language Server",
+    revealOutputChannelOn: RevealOutputChannelOn.Error,
     synchronize: {
       fileEvents: vscode.workspace.createFileSystemWatcher("**/*.fos"),
+    },
+    initializationFailedHandler: (error) => {
+      void showServerError("Foster language server failed to start", error);
+      return false;
+    },
+    errorHandler: {
+      error: (error, _message, count) => ({
+        action: count !== undefined && count > 3 ? ErrorAction.Shutdown : ErrorAction.Continue,
+        message: serverErrorMessage("Foster language server communication error", error),
+      }),
+      closed: unexpectedServerClose,
     },
   };
 
@@ -163,6 +190,41 @@ async function start(context: vscode.ExtensionContext): Promise<void> {
   );
   client.setTrace(configuredTrace());
   await client.start();
+}
+
+function unexpectedServerClose(): { action: CloseAction; message: string } {
+  const now = Date.now();
+  serverRestartTimes = serverRestartTimes.filter(
+    (restart) => now - restart <= restartWindowMilliseconds,
+  );
+  if (serverRestartTimes.length < maxServerRestarts) {
+    serverRestartTimes.push(now);
+    return {
+      action: CloseAction.Restart,
+      message: "The Foster language server stopped unexpectedly and will be restarted. " +
+        "Run 'Foster: Show Language Server Output' for details.",
+    };
+  }
+  return {
+    action: CloseAction.DoNotRestart,
+    message: `The Foster language server stopped more than ${maxServerRestarts} times in three ` +
+      "minutes and will not be restarted. Run 'Foster: Show Language Server Output' for details.",
+  };
+}
+
+async function showServerError(summary: string, error: unknown): Promise<void> {
+  const selection = await vscode.window.showErrorMessage(
+    serverErrorMessage(summary, error),
+    "Show Language Server Output",
+  );
+  if (selection === "Show Language Server Output") {
+    client?.outputChannel.show(true);
+  }
+}
+
+function serverErrorMessage(summary: string, error: unknown): string {
+  const detail = error instanceof Error ? error.message : String(error);
+  return `${summary}: ${detail}. Run 'Foster: Show Language Server Output' for details.`;
 }
 
 async function stop(): Promise<void> {

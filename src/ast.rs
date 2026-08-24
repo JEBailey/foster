@@ -113,12 +113,15 @@ pub struct GroupParameter {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parameter {
+    pub span: std::ops::Range<usize>,
     pub name: String,
     pub ty: Option<TypeExpr>,
+    pub type_span: Option<std::ops::Range<usize>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TypeExpr {
+    Unit,
     Named(String, Vec<TypeExpr>),
     Intersection(Vec<TypeExpr>),
     Reference {

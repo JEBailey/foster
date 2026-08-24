@@ -64,6 +64,111 @@ impl BootstrapModule {
 }
 
 impl Package {
+    pub(crate) fn locate_compiler_error(&self, mut error: FosterError) -> FosterError {
+        if error.has_source_location() {
+            return error;
+        }
+
+        let module = error
+            .source_module
+            .as_deref()
+            .and_then(|name| self.modules.get(name))
+            .filter(|module| module.program.is_some())
+            .or_else(|| {
+                self.modules
+                    .values()
+                    .filter(|module| module.program.is_some())
+                    .find(|module| {
+                        error.message.contains(&format!("`{}.", module.name))
+                            || error.message.contains(&format!("module `{}`", module.name))
+                            || error.message.contains(&format!("module '{}'", module.name))
+                    })
+            })
+            .or_else(|| {
+                self.modules
+                    .get("main")
+                    .filter(|module| module.program.is_some())
+            })
+            .or_else(|| {
+                self.modules
+                    .values()
+                    .find(|module| module.program.is_some())
+            });
+        let Some(module) = module else {
+            return error;
+        };
+        let Some(program) = module.program.as_ref() else {
+            return error;
+        };
+
+        let qualified_function = |name: &str| {
+            error.message.contains(&format!("`{}.{name}`", module.name))
+                || error.message.contains(&format!("function `{name}`"))
+                || error.message.contains(&format!("of `{name}`"))
+        };
+        let named_declaration = |name: &str| {
+            error.message.contains(&format!("`{name}`"))
+                || error.message.contains(&format!("`{}.{name}`", module.name))
+        };
+        let range = program
+            .functions
+            .iter()
+            .find(|function| qualified_function(&function.name))
+            .map(|function| function.span.clone())
+            .or_else(|| {
+                program
+                    .records
+                    .iter()
+                    .find(|record| named_declaration(&record.name))
+                    .map(|record| record.span.clone())
+            })
+            .or_else(|| {
+                program
+                    .variants
+                    .iter()
+                    .find(|variant| named_declaration(&variant.name))
+                    .map(|variant| variant.span.clone())
+            })
+            .or_else(|| {
+                program
+                    .constants
+                    .iter()
+                    .find(|constant| named_declaration(&constant.name))
+                    .map(|constant| constant.span.clone())
+            })
+            .or_else(|| {
+                program
+                    .imports
+                    .iter()
+                    .find(|import| error.message.contains(&import.path.join(".")))
+                    .map(|import| import.span.clone())
+            })
+            .or_else(|| program.functions.first().map(|item| item.span.clone()))
+            .or_else(|| program.records.first().map(|item| item.span.clone()))
+            .or_else(|| program.variants.first().map(|item| item.span.clone()))
+            .or_else(|| program.constants.first().map(|item| item.span.clone()))
+            .or_else(|| program.imports.first().map(|item| item.span.clone()))
+            .unwrap_or_else(|| {
+                let source = module.source.as_deref().unwrap_or_default();
+                let start = source
+                    .char_indices()
+                    .find_map(|(offset, character)| (!character.is_whitespace()).then_some(offset))
+                    .unwrap_or(0);
+                let end = source[start..]
+                    .chars()
+                    .next()
+                    .map_or(start, |character| start + character.len_utf8());
+                start..end
+            });
+
+        error = error.with_fallback_location(
+            module.name.clone(),
+            range,
+            "the compiler detected this error in this declaration",
+        );
+        error
+    }
+
     pub fn from_program(name: impl Into<String>, program: Program) -> Self {
         let name = name.into();
         let module = Module {
@@ -89,7 +194,9 @@ impl Package {
         package.install_list_bootstrap()?;
         package.install_string_bootstrap()?;
         package.install_symbol_bootstrap()?;
-        package.validate()?;
+        package
+            .validate()
+            .map_err(|error| package.locate_compiler_error(error))?;
         Ok(package)
     }
 
@@ -125,7 +232,9 @@ impl Package {
         package.install_list_bootstrap()?;
         package.install_string_bootstrap()?;
         package.install_symbol_bootstrap()?;
-        package.validate()?;
+        package
+            .validate()
+            .map_err(|error| package.locate_compiler_error(error))?;
         Ok(package)
     }
 
@@ -348,8 +457,13 @@ impl Package {
             },
             Ok,
         )?;
-        let program = crate::parse(&source)
-            .map_err(|error| FosterError::runtime(format!("{source_path}: {error}")))?;
+        let program = crate::parse(&source).map_err(|mut error| {
+            error.message = format!("{source_path}: {}", error.message);
+            if error.source_module.is_none() {
+                error.source_module = Some(name.clone());
+            }
+            error
+        })?;
         let module = self.modules.entry(name.clone()).or_insert(Module {
             name,
             source_path: None,
@@ -411,6 +525,7 @@ impl Package {
                         "core.byte" => matches!(key.as_str(), "byte.valid" | "byte.unchecked"),
                         "core.bytes" => key.starts_with("bytes."),
                         "core.bytes.buffer" => key.starts_with("byte_buffer."),
+                        "core.float" => key.starts_with("float."),
                         "std.fs" | "std.path" | "std.env" => key.starts_with("io."),
                         "std.net.tcp" => key.starts_with("tcp."),
                         _ => false,
@@ -583,6 +698,7 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
     ("std.path", include_str!("../library/std/path.fos")),
     ("std.env", include_str!("../library/std/env.fos")),
     ("std.process", include_str!("../library/std/process.fos")),
+    ("std.toml", include_str!("../library/std/toml.fos")),
     ("std.net.tcp", include_str!("../library/std/net/tcp.fos")),
 ];
 
@@ -640,6 +756,7 @@ fn intrinsic_key_registered(key: &str) -> bool {
             | "tcp.set_timeout"
             | "tcp.close_listener"
             | "tcp.close_connection"
+            | "float.format"
     )
 }
 

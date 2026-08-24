@@ -317,13 +317,7 @@ impl Parser {
         let mut parameters = Vec::new();
         if !self.at(&TokenKind::RParen) {
             loop {
-                let name = self.expect_ident("expected parameter name")?;
-                let ty = if self.take(&TokenKind::Colon) {
-                    Some(self.type_expr()?)
-                } else {
-                    None
-                };
-                parameters.push(Parameter { name, ty });
+                parameters.push(self.parameter("expected parameter name")?);
                 if !self.take(&TokenKind::Comma) {
                     break;
                 }
@@ -395,13 +389,7 @@ impl Parser {
         let mut parameters = Vec::new();
         if !self.at(&TokenKind::RParen) {
             loop {
-                let name = self.expect_ident("expected parameter name")?;
-                let ty = if self.take(&TokenKind::Colon) {
-                    Some(self.type_expr()?)
-                } else {
-                    None
-                };
-                parameters.push(Parameter { name, ty });
+                parameters.push(self.parameter("expected parameter name")?);
                 if !self.take(&TokenKind::Comma) {
                     break;
                 }
@@ -493,6 +481,26 @@ impl Parser {
         Ok((type_parameters, groups))
     }
 
+    pub(super) fn parameter(&mut self, expected_name: &str) -> Result<Parameter, FosterError> {
+        let start = self.peek().range.start;
+        let name = self.expect_ident(expected_name)?;
+        let span = start..self.tokens[self.current.saturating_sub(1)].range.end;
+        let (ty, type_span) = if self.take(&TokenKind::Colon) {
+            let type_start = self.peek().range.start;
+            let ty = self.type_expr()?;
+            let type_end = self.tokens[self.current.saturating_sub(1)].range.end;
+            (Some(ty), Some(type_start..type_end))
+        } else {
+            (None, None)
+        };
+        Ok(Parameter {
+            span,
+            name,
+            ty,
+            type_span,
+        })
+    }
+
     pub(super) fn type_expr(&mut self) -> Result<TypeExpr, FosterError> {
         let first = self.primary_type_expr()?;
         if !self.take(&TokenKind::Ampersand) {
@@ -506,6 +514,13 @@ impl Parser {
     }
 
     fn primary_type_expr(&mut self) -> Result<TypeExpr, FosterError> {
+        if self.take(&TokenKind::LParen) {
+            self.expect(
+                &TokenKind::RParen,
+                "expected `)` to complete the unit type `()`",
+            )?;
+            return Ok(TypeExpr::Unit);
+        }
         if self.take(&TokenKind::Func) {
             self.expect(&TokenKind::LParen, "expected `(` in function type")?;
             let mut parameters = Vec::new();

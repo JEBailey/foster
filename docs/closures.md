@@ -187,8 +187,8 @@ types therefore include a latent effect row:
 ```foster
 func(Int) -> Int
 func() -> String [read people]
-func(String) -> Unit [mut people]
-func() -> Unit [reshape entities.items]
+func(String) -> () [mut people]
+func() -> () [reshape entities.items]
 func() -> Resource [consume self]
 ```
 
@@ -229,8 +229,8 @@ let birthday = [ref person] () -> {
 Their inferred callable types are approximately:
 
 ```foster
-rename: func(String) -> Unit [mut people]
-birthday: func() -> Unit [mut people]
+rename: func(String) -> () [mut people]
+birthday: func() -> () [mut people]
 ```
 
 Both may remain live and both may be called. Foster does not require unique mutable closure
@@ -258,7 +258,7 @@ If the environment contains a reference and the closure mutates through that ref
 names the referenced group instead:
 
 ```foster
-func() -> Unit [mut people]
+func() -> () [mut people]
 ```
 
 A call may have both kinds of effect.
@@ -269,7 +269,7 @@ A borrowed closure can escape only if its group relationship appears in the resu
 
 ```foster
 func make_renamer[people: group Person](person: ref[people] Person)
-    -> func(String) -> Unit [mut people]
+    -> func(String) -> () [mut people]
 {
     [ref person] (name: String) -> {
         person.name = name
@@ -359,7 +359,7 @@ Every closure expression has a different concrete type. A callable type states t
 needed for heterogeneous storage:
 
 ```foster
-handlers: List<func(Event) -> Unit [mut app]>
+handlers: List<func(Event) -> () [mut app]>
 ```
 
 When necessary, the compiler erases the concrete closure representation while retaining its VM call

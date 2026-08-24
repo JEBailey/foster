@@ -25,6 +25,10 @@ Filesystem structure determines module structure.
 - Module components must be portable identifiers and may not differ only by case.
 - The package source root is implicit and is not itself a named module.
 
+A project may select that source root with `package.source` in a `foster.toml` manifest. The path
+is relative to the project directory and defaults to `src`. Without a manifest, a directory passed
+directly to a Foster command remains the source root.
+
 ```text
 json.fos          json, with declarations
 json/
@@ -70,7 +74,8 @@ private declaration in its public signature.
 `func` introduces a function. Type annotations may state parameter and result types; otherwise the
 compiler infers them. Local values use inference. The last expression in a function is its result.
 
-`test` introduces a private, zero-argument `Unit` test declaration identified by a non-empty string:
+`test` introduces a private test declaration identified by a non-empty string. Tests take no
+arguments and return `()`:
 
 ```foster
 test "decoding preserves text" {
@@ -390,7 +395,7 @@ numeric or nullable conversions.
 Types, traits, and functions may be qualified by modules. The HIR resolves every source-level name
 to a local binding, function, module, builtin, or later a type-level definition before type checking.
 
-The bootstrap compiler resolves `Unit`, `Bool`, `Int`, `Float`, `CodePoint`,
+The unit type is written `()`. The bootstrap compiler also resolves `Bool`, `Int`, `Float`, `CodePoint`,
 `List<T>`, `Sequence<T>`, `Remote<T>`, `Future<T>`, callable types with internally inferred
 representation erasure, records,
 variants, generics, and record intersections. Decimal and scientific-notation literals produce
@@ -610,7 +615,7 @@ pub type Reader<E> = {
 
 pub type Writer<E> = {
     pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
-    pub func flush(self) -> Result<Unit, E> [mut self]
+    pub func flush(self) -> Result<(), E> [mut self]
 }
 ```
 
@@ -675,7 +680,7 @@ Reference types do not contain mutability. Mutation is an effect performed by a 
 func rename[people: group Person](
     person: ref[people] Person,
     name: String,
-) -> Unit [mut people] {
+) -> () [mut people] {
     person.name = name
 }
 ```
@@ -701,7 +706,7 @@ Ordinary call arguments borrow by default. Ownership-taking parameters are expli
 function contract, and an existing source place must be transferred explicitly:
 
 ```foster
-func enqueue(job: Job) -> Unit [consume job] { /* ... */ }
+func enqueue(job: Job) -> () [consume job] { /* ... */ }
 
 enqueue(move pending_job)
 ```
@@ -713,8 +718,8 @@ effects rather than routine parameter passing.
 Function types carry the same contract by parameter position:
 
 ```foster
-func(Job) -> Unit         // borrows its argument
-func(consume Job) -> Unit // takes ownership of its argument
+func(Job) -> ()         // borrows its argument
+func(consume Job) -> () // takes ownership of its argument
 ```
 
 ## Inferred and explicit effects

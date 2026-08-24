@@ -17,7 +17,7 @@ func set[state: group Int](value: ref[state] Int, next: Int) -> Int [mut state] 
 A callable type fragment can publish the same contract without a body:
 
 ```foster
-func(Event) -> Unit [mut application, suspend]
+func(Event) -> () [mut application, suspend]
 ```
 
 Effect clauses follow the result type or, for an anonymous closure, the arrow. They are bracketed
@@ -166,7 +166,7 @@ The compiler combines capture-derived requirements with this explicit row and ch
 against the result. Function types preserve effects, suspension, and positional consuming modes:
 
 ```foster
-func(consume Job) -> Unit [mut queue, suspend]
+func(consume Job) -> () [mut queue, suspend]
 ```
 
 Erasure and indirect calls therefore do not discard ownership behavior.

@@ -31,6 +31,10 @@ impl FunctionLowerer<'_> {
                 .iter()
                 .map(|parameter| parameter.ty.clone())
                 .collect(),
+            parameter_type_spans: parameters
+                .iter()
+                .map(|parameter| parameter.type_span.clone())
+                .collect(),
             return_type,
             effects_explicit: !effects.is_empty() || suspends,
             effects: effects.to_vec(),

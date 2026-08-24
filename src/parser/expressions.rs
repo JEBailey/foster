@@ -388,13 +388,7 @@ impl Parser {
         let mut parameters = Vec::new();
         if !self.at(&TokenKind::RParen) {
             loop {
-                let name = self.expect_ident("expected closure parameter name")?;
-                let ty = if self.take(&TokenKind::Colon) {
-                    Some(self.type_expr()?)
-                } else {
-                    None
-                };
-                parameters.push(Parameter { name, ty });
+                parameters.push(self.parameter("expected closure parameter name")?);
                 if !self.take(&TokenKind::Comma) {
                     break;
                 }
@@ -476,8 +470,10 @@ impl Parser {
                 if matches!(argument.unspanned(), Expr::Placeholder) {
                     let name = format!("$partial{}", parameters.len());
                     parameters.push(Parameter {
+                        span: argument.span().unwrap_or(0..0),
                         name: name.clone(),
                         ty: None,
+                        type_span: None,
                     });
                     Expr::Name(name)
                 } else {

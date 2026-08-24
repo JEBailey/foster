@@ -91,7 +91,7 @@ impl TypeInformation {
     pub fn display(&self, ty: TypeId) -> String {
         match &self.types[ty] {
             Type::Generic(name) => name.clone(),
-            Type::Unit => "Unit".into(),
+            Type::Unit => "()".into(),
             Type::Bool => "Bool".into(),
             Type::Int => "Int".into(),
             Type::Float => "Float".into(),

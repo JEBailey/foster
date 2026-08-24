@@ -11,9 +11,11 @@ and launches the Foster language server. Language features include:
 - rich Foster signatures and Markdown documentation on hover;
 - call signature help with active-parameter tracking;
 - inferred local-type and argument-name inlay hints, with clickable parameter hints;
-- scope-aware completion for locals, declarations, imports, qualified modules, and keywords;
+- scope-aware completion for locals, declarations, imports, qualified modules, and keywords,
+  including automatic `std.process` import when completing `Arguments`;
 - automatic diagnostic refresh when Foster files change on disk.
-- commands to run the active file or its nearest `main.fos` package in a shared task terminal.
+- commands to run the active file or its nearest `foster.toml` project (with legacy `main.fos`
+  package fallback) in a shared task terminal.
 
 The bundled grammar highlights line comments, nested block-comment delimiters, documentation
 comments, code-point literals, effect clauses, sequence types, and structural intersection types.
@@ -30,7 +32,8 @@ Open a saved `.fos` file and use one of these commands from the Command Palette:
 
 - **Foster: Run Current File** executes the active file as a standalone program.
 - **Foster: Run Current Package** searches upward, within the current workspace folder, for the
-  nearest directory containing `main.fos` and executes that package.
+  nearest directory containing `foster.toml` and executes that project. Packages without a
+  manifest continue to fall back to the nearest directory containing `main.fos`.
 
 The ▶ button in the editor title runs the current file. Foster saves a modified file before
 starting it and shows compiler output in the shared Foster task terminal. Use the package command
@@ -53,6 +56,9 @@ development session without a staged server automatically finds `target/debug/fo
 
 Use **Foster: Restart Language Server** after rebuilding the compiler. Set
 `foster.server.trace` to `messages` or `verbose` when diagnosing protocol traffic.
+Use **Foster: Show Language Server Output** to inspect compiler output and protocol failures. The
+extension also reports language-server startup, communication, and unexpected-exit errors as VS
+Code notifications instead of leaving them only in the extension-host log.
 
 Hover over a declaration or use **Go to Definition** (`F12`, or Ctrl+click on Windows/Linux) to
 inspect and navigate the resolved symbol. Signature help appears after `(` and `,`. VS Code shows

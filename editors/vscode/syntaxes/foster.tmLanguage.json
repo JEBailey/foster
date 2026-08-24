@@ -92,7 +92,7 @@
     },
     "types": {
       "patterns": [
-        { "name": "support.type.foster", "match": "\\b(?:Unit|Bool|Int|Float|String|CodePoint|Symbol|List|Sequence|Remote|Future)\\b" },
+        { "name": "support.type.foster", "match": "\\b(?:Bool|Int|Float|String|CodePoint|Symbol|List|Sequence|Remote|Future)\\b" },
         { "name": "entity.name.type.foster", "match": "\\b[A-Z][A-Za-z0-9_]*\\b" }
       ]
     },

@@ -52,8 +52,9 @@ Current modules:
 - `std.fs`: typed text and binary files, directory creation/removal, copying, moving, and inspection
 - `std.path`: platform path composition, inspection, and canonicalization
 - `std.env`: process environment queries
+- `std.toml`: a Foster-written TOML 1.1 parser, typed documents, table lookup, rendering, and positioned errors
 - `std.net.tcp`: typed TCP listeners and `Duplex<NetworkError>` connections
 
 The register VM executes imported core code and calls across modules after the normal checked-HIR
-pipeline. Filesystem and TCP operations necessarily cross into the host runtime; their public
-records, result types, and policy wrappers remain Foster source.
+pipeline. Filesystem and TCP operations cross into the Rust runtime. TOML grammar, validation,
+document construction, and rendering remain Foster source and use only general scalar primitives.

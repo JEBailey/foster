@@ -4,7 +4,12 @@ use super::*;
 pub(super) fn check_closure_ownership(hir: &PackageHir) -> Result<(), FosterError> {
     for (_, function) in hir.functions.iter() {
         let mut moved = std::collections::HashSet::<LocalId>::new();
-        for statement in &function.body {
+        for (index, statement) in function.body.iter().enumerate() {
+            let statement_span = function
+                .statement_spans
+                .get(index)
+                .cloned()
+                .unwrap_or_else(|| function.span.clone());
             let expression = match statement {
                 Stmt::Return { value, .. }
                 | Stmt::Bind { value, .. }
@@ -19,7 +24,12 @@ pub(super) fn check_closure_ownership(hir: &PackageHir) -> Result<(), FosterErro
                 return Err(FosterError::runtime(format!(
                     "in `{}.{}`: captured value `{}` was already moved into a closure",
                     hir.modules[function.module].name, function.name, hir.locals[*local].name
-                )));
+                ))
+                .with_fallback_location(
+                    hir.modules[function.module].name.clone(),
+                    statement_span.clone(),
+                    "this statement uses a value that was already moved",
+                ));
             }
             if let Stmt::Assign { local, .. } = statement
                 && moved.contains(local)
@@ -27,7 +37,12 @@ pub(super) fn check_closure_ownership(hir: &PackageHir) -> Result<(), FosterErro
                 return Err(FosterError::runtime(format!(
                     "in `{}.{}`: cannot assign moved value `{}`",
                     hir.modules[function.module].name, function.name, hir.locals[*local].name
-                )));
+                ))
+                .with_fallback_location(
+                    hir.modules[function.module].name.clone(),
+                    statement_span.clone(),
+                    "this assignment targets a moved value",
+                ));
             }
             if let Expr::Closure { captures, .. } = &hir.expressions[expression] {
                 moved.extend(
@@ -59,7 +74,12 @@ pub(super) fn validate_groups_and_effects(hir: &PackageHir) -> Result<(), Foster
                 return Err(FosterError::runtime(format!(
                     "function `{}` declares type parameter `{parameter}` more than once",
                     function.name
-                )));
+                ))
+                .with_fallback_location(
+                    hir.modules[function.module].name.clone(),
+                    function.span.clone(),
+                    "this function has duplicate type parameters",
+                ));
             }
         }
         let mut declared = std::collections::HashSet::new();
@@ -68,24 +88,50 @@ pub(super) fn validate_groups_and_effects(hir: &PackageHir) -> Result<(), Foster
                 return Err(FosterError::runtime(format!(
                     "function `{}` uses `{}` as both a type parameter and a group parameter",
                     function.name, group.name
-                )));
+                ))
+                .with_fallback_location(
+                    hir.modules[function.module].name.clone(),
+                    function.span.clone(),
+                    "this function reuses a type parameter as a group parameter",
+                ));
             }
             if !declared.insert(group.name.as_str()) {
                 return Err(FosterError::runtime(format!(
                     "function `{}` declares group `{}` more than once",
                     function.name, group.name
-                )));
+                ))
+                .with_fallback_location(
+                    hir.modules[function.module].name.clone(),
+                    function.span.clone(),
+                    "this function has duplicate group parameters",
+                ));
             }
         }
-        for annotation in function
+        for (annotation, span) in function
             .parameter_types
             .iter()
-            .filter_map(Option::as_ref)
-            .chain(function.return_type.iter())
+            .zip(&function.parameter_type_spans)
         {
-            validate_type_groups(annotation, &declared, &function.name)?;
+            if let Some(annotation) = annotation {
+                validate_type_groups(annotation, &declared, &function.name).map_err(|error| {
+                    error.with_fallback_location(
+                        hir.modules[function.module].name.clone(),
+                        span.clone().unwrap_or_else(|| function.span.clone()),
+                        "this type annotation uses an invalid group",
+                    )
+                })?;
+            }
         }
-        for effect in &function.effects {
+        if let Some(annotation) = &function.return_type {
+            validate_type_groups(annotation, &declared, &function.name).map_err(|error| {
+                error.with_fallback_location(
+                    hir.modules[function.module].name.clone(),
+                    function.span.clone(),
+                    "this result type uses an invalid group",
+                )
+            })?;
+        }
+        for (index, effect) in function.effects.iter().enumerate() {
             let root = effect.target.root.as_str();
             if !function.name.contains('$')
                 && ((root == "self" && !is_method)
@@ -96,7 +142,16 @@ pub(super) fn validate_groups_and_effects(hir: &PackageHir) -> Result<(), Foster
                 return Err(FosterError::runtime(format!(
                     "function `{}` uses undeclared effect group `{root}`",
                     function.name
-                )));
+                ))
+                .with_fallback_location(
+                    hir.modules[function.module].name.clone(),
+                    function
+                        .effect_spans
+                        .get(index)
+                        .cloned()
+                        .unwrap_or_else(|| function.span.clone()),
+                    "this effect refers to an undeclared group",
+                ));
             }
         }
     }
@@ -109,6 +164,7 @@ fn validate_type_groups(
     function: &str,
 ) -> Result<(), FosterError> {
     match ty {
+        ast::TypeExpr::Unit => {}
         ast::TypeExpr::Named(_, arguments) => {
             for argument in arguments {
                 validate_type_groups(argument, declared, function)?;
@@ -289,10 +345,17 @@ pub(super) fn infer_capture_modes(
                     CaptureMode::Move
                 };
             } else if capture.mode == CaptureMode::Copy && !is_copy_type(types, ty) {
+                let local = &hir.locals[capture.local];
+                let function = &hir.functions[local.function];
                 return Err(FosterError::runtime(format!(
                     "captured value `{}` is not Copy",
-                    hir.locals[capture.local].name
-                )));
+                    local.name
+                ))
+                .with_fallback_location(
+                    hir.modules[function.module].name.clone(),
+                    local.span.clone(),
+                    "this captured value cannot be copied",
+                ));
             }
         }
     }

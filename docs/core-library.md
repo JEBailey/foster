@@ -47,11 +47,12 @@ being added accidentally.
 | `core.string` | Boundary queries, slicing, splitting, joining, case conversion, trimming, and characters |
 | `core.bool` | Boolean composition and conditional singleton-list construction |
 | `core.int` | Bounds, comparison, sign, parity, ranges, formatting, and integer powers |
-| `core.float` | Bounds, comparison, sign, and clamping |
+| `core.float` | Bounds, comparison, sign, clamping, and round-trippable formatting |
 | `std.fs` | Typed whole-file I/O, directory creation/removal, copying, moving, listing, and path-kind queries |
 | `std.path` | Platform path composition, inspection, and canonicalization |
 | `std.env` | Process environment queries such as the current directory |
 | `std.process` | Typed executable name and command arguments supplied to `main` |
+| `std.toml` | Typed TOML parsing, table lookup, rendering, and source-positioned errors |
 | `std.net.tcp` | Typed TCP listeners and connections |
 
 ## Boundary with the runtime
@@ -62,7 +63,7 @@ runtime supplies representation-level primitives and capabilities that must cros
 - sequence, list, and string `empty?`, `length`, `head`, and `rest`;
 - functional list `append` and mutable list `push`;
 - string concatenation;
-- integer-like `CodePoint` operators, checked `from_code_point`, and `parse_float`;
+- integer-like `CodePoint` operators, checked `from_code_point`, `parse_float`, and binary64 formatting;
 - printing and remote-object runtime operations;
 - filesystem, platform path, environment, and entry operations used by `std.fs`, `std.path`,
   `std.env`, and `std.process`;
@@ -83,6 +84,7 @@ this table for an intrinsic because it has no Foster implementation body.
 | `print`, `println` | Write values to standard output, without or with a trailing newline |
 | `code_point`, `from_code_point` | Legacy explicit widening and checked construction of `CodePoint`; ordinary widening uses integer operators |
 | `parse_float` | Parse a binary64 floating-point value from text |
+| `FloatHost.format` | Format a binary64 value as round-trippable scalar text |
 | `FsHost.read_text`, `FsHost.write_text`, `FsHost.read_bytes`, `FsHost.write_bytes` | Perform whole-file text and binary operations |
 | `FsHost.list_directory` | List directory entries |
 | `FsHost.exists`, `FsHost.is_file`, `FsHost.is_directory` | Query host filesystem paths |
@@ -96,6 +98,42 @@ this table for an intrinsic because it has no Foster implementation body.
 | `TcpHost.read`, `TcpHost.write`, `TcpHost.read_bytes`, `TcpHost.write_bytes` | Operate on TCP connections |
 | `TcpHost.set_timeout` | Configure TCP connection timeouts |
 | `TcpHost.close_listener`, `TcpHost.close_connection` | Close TCP resources |
+
+## TOML documents
+
+`std.toml` represents a document as a `TomlDocument` containing top-level `TomlEntry` values.
+Nested values use the closed `TomlValue` variant: `String`, `Integer`, `Float`, `Boolean`,
+`DateTime`, `Array`, or `Table`. TOML date, time, and date-time forms retain their TOML text in the
+`DateTime` alternative. `get` looks up a top-level key, while `get_table` looks inside a table
+value. Both return `Option<TomlValue>` and consume the selected aggregate because they return an
+owned value.
+
+```foster
+import core.option
+import core.result
+import std.toml
+
+func package_name(source: String) -> Option<String> {
+    branch toml.parse(move source) {
+        Result.Error(_) -> Option.None
+        Result.Ok(document) -> branch toml.get(move document, "package") {
+            Option.None -> Option.None
+            Option.Some(package) -> branch toml.get_table(move package, "name") {
+                Option.Some(TomlValue.String(name)) -> Option.Some(name)
+                _ -> Option.None
+            }
+        }
+    }
+}
+```
+
+`parse` returns `Result<TomlDocument, TomlError>`. Parse errors contain a message and one-based
+line and column. `render` validates a constructed document and returns deterministic TOML text;
+render-time errors use zero for line and column because they do not refer to source text.
+
+The parser and renderer implement the TOML 1.1 grammar in `std.toml` itself. Project discovery
+bootstraps the same embedded Foster module before package source loading, so `foster.toml` and user
+code share one parser and one set of validation rules.
 
 `String` implements `Sequence<CodePoint>`, and `List<T>` implements `Sequence<T>`. This is a
 zero-conversion view: generic sequence functions operate on the original string or list value.

@@ -558,6 +558,7 @@ fn variant_signature(compilation: &Compilation, id: crate::hir::VariantTypeId) -
 
 fn type_expr(ty: &TypeExpr) -> String {
     match ty {
+        TypeExpr::Unit => "()".into(),
         TypeExpr::Named(name, arguments) => format!(
             "{name}{}",
             angled(&arguments.iter().map(type_expr).collect::<Vec<_>>())

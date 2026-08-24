@@ -2,6 +2,18 @@ use super::*;
 
 impl Checker<'_> {
     pub(super) fn check_function(&mut self, function_id: FunctionId) -> Result<(), FosterError> {
+        let result = self.check_function_unlocated(function_id);
+        result.map_err(|error| {
+            let definition = &self.hir.functions[function_id];
+            error.with_fallback_location(
+                self.hir.modules[definition.module].name.clone(),
+                definition.span.clone(),
+                "type checking failed in this function",
+            )
+        })
+    }
+
+    fn check_function_unlocated(&mut self, function_id: FunctionId) -> Result<(), FosterError> {
         let function = &self.hir.functions[function_id];
         let signature = self.functions[&function_id].clone();
         for (local, ty) in function.parameters.iter().zip(&signature.parameters) {
@@ -22,11 +34,29 @@ impl Checker<'_> {
 
         let body = function.body.clone();
         let mut final_value = None;
+        let mut final_expression = None;
         for statement in &body {
             final_value = self.check_statement(function_id, statement)?;
+            final_expression = match statement {
+                hir::Stmt::Return { value, .. }
+                | hir::Stmt::Bind { value, .. }
+                | hir::Stmt::Assign { value, .. }
+                | hir::Stmt::Set { value, .. }
+                | hir::Stmt::Expr(value) => Some(*value),
+            };
         }
         if let Some(final_value) = final_value {
-            self.coerce(signature.result, final_value, function_id)?;
+            self.coerce(signature.result, final_value, function_id)
+                .map_err(|error| {
+                    final_expression.map_or(error.clone(), |expression| {
+                        self.error_at_expression(
+                            error,
+                            function_id,
+                            expression,
+                            "function result has an incompatible type",
+                        )
+                    })
+                })?;
         }
         Ok(())
     }
@@ -37,14 +67,31 @@ impl Checker<'_> {
         statement: &hir::Stmt,
     ) -> Result<Option<Ty>, FosterError> {
         match statement {
-            hir::Stmt::Return { value, guard } => {
-                if let Some(guard) = guard {
-                    let guard = self.infer_expression(function, *guard)?;
-                    self.unify(Ty::Bool, guard, function)?;
+            hir::Stmt::Return {
+                value: value_expression,
+                guard,
+            } => {
+                if let Some(guard_expression) = guard {
+                    let guard = self.infer_expression(function, *guard_expression)?;
+                    self.unify(Ty::Bool, guard, function).map_err(|error| {
+                        self.error_at_expression(
+                            error,
+                            function,
+                            *guard_expression,
+                            "return guard must be Bool",
+                        )
+                    })?;
                 }
-                let value = self.infer_expression(function, *value)?;
+                let value = self.infer_expression(function, *value_expression)?;
                 let result = self.functions[&function].result.clone();
-                self.coerce(result, value, function)?;
+                self.coerce(result, value, function).map_err(|error| {
+                    self.error_at_expression(
+                        error,
+                        function,
+                        *value_expression,
+                        "returned value has an incompatible type",
+                    )
+                })?;
                 Ok(None)
             }
             hir::Stmt::Bind { local, value } => {
@@ -55,19 +102,41 @@ impl Checker<'_> {
                 self.locals.insert(*local, value.clone());
                 Ok(Some(value))
             }
-            hir::Stmt::Assign { local, value } => {
-                let value = self.infer_expression(function, *value)?;
+            hir::Stmt::Assign {
+                local,
+                value: value_expression,
+            } => {
+                let value = self.infer_expression(function, *value_expression)?;
                 let local_type = match &self.locals[local] {
                     Ty::Reference(_, value) => (**value).clone(),
                     ty => ty.clone(),
                 };
-                self.coerce(local_type, value.clone(), function)?;
+                self.coerce(local_type, value.clone(), function)
+                    .map_err(|error| {
+                        self.error_at_expression(
+                            error,
+                            function,
+                            *value_expression,
+                            "assigned value has an incompatible type",
+                        )
+                    })?;
                 Ok(Some(value))
             }
-            hir::Stmt::Set { place, value } => {
+            hir::Stmt::Set {
+                place,
+                value: value_expression,
+            } => {
                 let place = self.infer_expression(function, *place)?;
-                let value = self.infer_expression(function, *value)?;
-                self.coerce(place, value.clone(), function)?;
+                let value = self.infer_expression(function, *value_expression)?;
+                self.coerce(place, value.clone(), function)
+                    .map_err(|error| {
+                        self.error_at_expression(
+                            error,
+                            function,
+                            *value_expression,
+                            "stored value has an incompatible type",
+                        )
+                    })?;
                 Ok(Some(value))
             }
             hir::Stmt::Expr(expression) => Ok(Some(self.infer_expression(function, *expression)?)),
@@ -75,6 +144,18 @@ impl Checker<'_> {
     }
 
     pub(super) fn infer_expression(
+        &mut self,
+        function: FunctionId,
+        expression_id: ExprId,
+    ) -> Result<Ty, FosterError> {
+        let result = self.infer_expression_unlocated(function, expression_id);
+        result.map_err(|error| {
+            let label = error.message.clone();
+            self.error_at_expression(error, function, expression_id, label)
+        })
+    }
+
+    fn infer_expression_unlocated(
         &mut self,
         function: FunctionId,
         expression_id: ExprId,
@@ -101,7 +182,7 @@ impl Checker<'_> {
             }
             hir::Expr::Name(name) => self.type_of_name(name)?,
             hir::Expr::Call { callee, arguments } => {
-                self.infer_call(function, callee, &arguments)?
+                self.infer_call(function, expression_id, callee, &arguments)?
             }
             hir::Expr::Member { object, name } => {
                 let object = self.infer_expression(function, object)?;

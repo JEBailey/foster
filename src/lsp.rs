@@ -310,6 +310,82 @@ mod tests {
     }
 
     #[test]
+    fn call_argument_type_errors_point_to_the_argument() {
+        let source = "func takes(value: Float) -> Float { value }\nfunc main() -> Float {\n    takes(12)\n}\n";
+        let diagnostics = diagnostics(source);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].severity, Some(DiagnosticSeverity::ERROR));
+        assert_eq!(diagnostics[0].range.start, Position::new(2, 10));
+        assert_eq!(diagnostics[0].range.end, Position::new(2, 12));
+    }
+
+    #[test]
+    fn consuming_call_errors_point_to_the_argument() {
+        let source = "type Box = { value: String }\nfunc take(value: Box) -> () [consume value] {}\nfunc main() {\n    let value = Box { value: \"kept\" }\n    take(value)\n}\n";
+        let diagnostics = diagnostics(source);
+        assert_eq!(diagnostics.len(), 1);
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("pass this argument with `move`")
+        );
+        assert_eq!(diagnostics[0].range.start, Position::new(4, 9));
+        assert_eq!(diagnostics[0].range.end, Position::new(4, 14));
+    }
+
+    #[test]
+    fn unknown_parameter_types_point_to_the_annotation() {
+        let source = "func main(arguments: Argument) -> () {}\n";
+        let diagnostics = diagnostics(source);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].severity, Some(DiagnosticSeverity::ERROR));
+        assert_eq!(diagnostics[0].range.start, Position::new(0, 21));
+        assert_eq!(diagnostics[0].range.end, Position::new(0, 29));
+    }
+
+    #[test]
+    fn missing_module_members_point_to_the_member_expression() {
+        let source = "import core.float\nfunc main() -> String { float.missing(1.0) }\n";
+        let diagnostics = diagnostics(source);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].severity, Some(DiagnosticSeverity::ERROR));
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("module `core.float` has no member `missing`")
+        );
+        assert_eq!(diagnostics[0].range.start, Position::new(1, 24));
+        assert_eq!(diagnostics[0].range.end, Position::new(1, 37));
+    }
+
+    #[test]
+    fn every_compile_error_has_a_source_location() {
+        let sources = [
+            "func main() { missing() }",
+            "func main(value: Missing) {}",
+            "func main() -> Float { 12 }",
+            "func main(value: Int) {}",
+            "func broken<T, T>(value: T) { value }",
+            "type Pair = { left: Int, left: Int }",
+            "func main[g: group Int](value: ref[missing] Int) { value }",
+        ];
+
+        for source in sources {
+            let error = crate::compile(source).expect_err(source);
+            assert!(
+                error.has_source_location(),
+                "unlocated error for `{source}`: {}",
+                error.message
+            );
+            assert!(
+                error.labels.iter().any(|label| label.primary) || error.line > 0,
+                "error has no primary location for `{source}`: {}",
+                error.message
+            );
+        }
+    }
+
+    #[test]
     fn publishes_compiler_warnings() {
         let diagnostics = diagnostics(
             "type Box = { value: Int }\nfunc inspect(self: Box) -> Int [mut self] { self.value }",

@@ -41,7 +41,7 @@ pub func Iterator.from_sequence<T>(values: Sequence<T>) -> Iterator<T> [consume 
 }
 
 /// Calls `action` once for every remaining element in this iterator.
-pub func for_each<T>(self: Iterator<T>, action: func(consume T) -> Unit) -> Unit [mut self] {
+pub func for_each<T>(self: Iterator<T>, action: func(consume T) -> ()) -> () [mut self] {
     branch self.next() {
         Option.Some(value) -> apply_and_continue(self, action, move value)
         Option.None -> finish_iteration()
@@ -49,10 +49,10 @@ pub func for_each<T>(self: Iterator<T>, action: func(consume T) -> Unit) -> Unit
 }
 
 /// Produces the unit result when iteration finishes.
-func finish_iteration() -> Unit {}
+func finish_iteration() -> () {}
 
 /// Applies one action and continues consuming the iterator.
-func apply_and_continue<T>(self: Iterator<T>, action: func(consume T) -> Unit, value: T) -> Unit [mut self, consume value] {
+func apply_and_continue<T>(self: Iterator<T>, action: func(consume T) -> (), value: T) -> () [mut self, consume value] {
     action(move value)
     self.for_each(action)
 }

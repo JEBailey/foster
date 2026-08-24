@@ -42,7 +42,7 @@ storage owned by `people`.
 
 The built-in copy types are currently:
 
-- `Unit`
+- `()`
 - `Bool`
 - `Int`
 - `Float`
@@ -63,7 +63,7 @@ func inspect(message: String) -> Int {
     message.length
 }
 
-func send(message: String) -> Unit [consume message] {
+func send(message: String) -> () [consume message] {
     deliver(move message)
 }
 
@@ -72,7 +72,7 @@ inspect(message)     // borrowed; message remains usable
 send(move message)   // transferred; message is now uninitialized
 ```
 
-Copy arguments (`Unit`, `Bool`, `Int`, `Float`, `CodePoint`, `Byte`, and `Symbol`) need no `move`, even
+Copy arguments (`()`, `Bool`, `Int`, `Float`, `CodePoint`, `Byte`, and `Symbol`) need no `move`, even
 when the parameter has a `consume` contract. Fresh temporaries also transfer directly because there
 is no source place to invalidate. Explicit `ref[group] T` remains available when a borrow must be
 named, stored, returned, captured, or related to group effects; it is not required for an ordinary
@@ -93,8 +93,8 @@ Callable types preserve this behavior positionally. Parameters borrow unless pre
 `consume`:
 
 ```foster
-func(String) -> Unit
-func(consume String) -> Unit
+func(String) -> ()
+func(consume String) -> ()
 ```
 
 When `func send(message: String) [consume message]` becomes a function value, the compiler converts
@@ -125,7 +125,7 @@ A reference type names the group from which it borrows:
 
 ```foster
 func rename[people: group Person](person: ref[people] Person, name: String)
-    -> Unit
+    -> ()
 {
     person.name = name
     ()
@@ -223,7 +223,7 @@ exposes the same group:
 
 ```foster
 func make_renamer[people: group Person](person: ref[people] Person)
-    -> func(String) -> Unit [mut people]
+    -> func(String) -> () [mut people]
 {
     [ref person] (name: String) -> person.name = name
 }

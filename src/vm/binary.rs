@@ -245,6 +245,7 @@ const BUILTINS: &[Builtin] = &[
     Builtin::TcpSetTimeout,
     Builtin::TcpCloseListener,
     Builtin::TcpCloseConnection,
+    Builtin::FormatFloat,
 ];
 fn builtin_tag(value: Builtin) -> u8 {
     BUILTINS.iter().position(|item| *item == value).unwrap() as u8

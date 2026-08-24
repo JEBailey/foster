@@ -1,4 +1,4 @@
-func say_something(block: func(String) -> Unit, name: String) -> Unit {
+func say_something(block: func(String) -> (), name: String) -> () {
     block(name)
 }
 

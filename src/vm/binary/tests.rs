@@ -33,3 +33,28 @@ fn rejects_invalid_envelopes() {
             .contains("version")
     );
 }
+
+#[test]
+fn foster_toml_parser_survives_bytecode_round_trips() {
+    let source = r#"
+import core.result
+import std.toml
+
+func main() -> Int {
+    branch parse("answer = 42\n") {
+        Result.Error(_) -> 0
+        Result.Ok(document) -> branch document.entries.head.value {
+            TomlValue.Integer(value) -> value
+            _ -> 0
+        }
+    }
+}
+"#;
+    let compilation = crate::compile(source).unwrap();
+    let program = compile(&compilation).unwrap();
+    let decoded = decode_program(&encode_program(&program).unwrap()).unwrap();
+    assert_eq!(
+        Machine::new(&decoded).run_main().unwrap(),
+        crate::vm::Value::Integer(42)
+    );
+}

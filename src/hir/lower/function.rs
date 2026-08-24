@@ -7,13 +7,18 @@ impl FunctionLowerer<'_> {
         let mut parameter_names = std::collections::HashSet::new();
         for parameter in &source.parameters {
             if !parameter_names.insert(parameter.name.as_str()) {
-                return Err(self.error(format!(
+                let error = self.error(format!(
                     "function `{}` has more than one parameter named `{}`",
                     source.name, parameter.name
-                )));
+                ));
+                return Err(error.with_fallback_location(
+                    self.hir.modules[self.module].name.clone(),
+                    parameter.span.clone(),
+                    "this parameter name is declared more than once",
+                ));
             }
             let local = self.hir.locals.alloc(Local {
-                span: source.span.clone(),
+                span: parameter.span.clone(),
                 function: self.function,
                 name: parameter.name.clone(),
                 kind: LocalKind::Parameter,
@@ -23,8 +28,20 @@ impl FunctionLowerer<'_> {
         }
 
         let mut body = Vec::new();
-        for statement in &source.body {
-            body.push(self.lower_statement(statement)?);
+        for (index, statement) in source.body.iter().enumerate() {
+            let span = source
+                .statement_spans
+                .get(index)
+                .cloned()
+                .unwrap_or_else(|| source.span.clone());
+            let lowered = self.lower_statement(statement).map_err(|error| {
+                error.with_fallback_location(
+                    self.hir.modules[self.module].name.clone(),
+                    span,
+                    "this statement could not be lowered",
+                )
+            })?;
+            body.push(lowered);
         }
         self.hir.functions[self.function].parameters = parameters;
         self.hir.functions[self.function].body = body;
@@ -122,7 +139,16 @@ impl FunctionLowerer<'_> {
 
     fn lower_expression(&mut self, expression: &ast::Expr) -> Result<ExprId, FosterError> {
         if let ast::Expr::Spanned { expression, span } = expression {
-            let lowered = self.lower_expression(expression)?;
+            let lowered = self.lower_expression(expression).map_err(|mut error| {
+                if error.source_module.is_none() {
+                    error.source_module = Some(self.hir.modules[self.module].name.clone());
+                }
+                if error.labels.is_empty() {
+                    let label = error.message.clone();
+                    error = error.with_primary_label(span.clone(), label);
+                }
+                error
+            })?;
             self.hir.expression_spans.insert(lowered, span.clone());
             return Ok(lowered);
         }

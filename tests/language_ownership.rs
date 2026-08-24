@@ -222,7 +222,7 @@ fn remote_calls_require_moves_for_consumed_messages() {
     let source = r#"
 type Worker = {}
 
-func submit(self: Worker, message: String) -> Unit [consume message] {
+func submit(self: Worker, message: String) -> () [consume message] {
     println(message)
 }
 
@@ -324,7 +324,7 @@ func main() { 0 }
     )
     .unwrap();
 
-    let non_method = foster::compile("func f() -> Unit [mut self] { }").unwrap_err();
+    let non_method = foster::compile("func f() -> () [mut self] { }").unwrap_err();
     assert!(
         non_method
             .message
@@ -457,6 +457,41 @@ func main() { 0 }
         &source[compilation.diagnostics[1].labels[0].range.clone()],
         "suspend"
     );
+    assert!(compilation.diagnostics[0].message.contains(
+        "declared `mut self` is overly broad; the function body requires only `read self.value`"
+    ));
+}
+
+#[test]
+fn overbroad_parent_effect_warnings_name_required_field_effects() {
+    let source = r#"
+type Cursor = {
+    remaining: String
+    column: Int
+}
+
+func advance(self: Cursor) -> () [mut self] {
+    self.remaining = self.remaining.rest
+    self.column = self.column + 1
+    ()
+}
+
+func main() { 0 }
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let warning = compilation
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.code.as_deref() == Some("unused-effect"))
+        .expect("an overly broad parent effect should produce a warning");
+    assert!(
+        warning
+            .message
+            .contains("declared `mut self` is overly broad")
+    );
+    assert!(warning.message.contains("`mut self.remaining`"));
+    assert!(warning.message.contains("`mut self.column`"));
+    assert!(warning.labels[0].message.contains("grants broader access"));
 }
 
 #[test]
@@ -1329,7 +1364,7 @@ type Pair = {
     right: List<Int>
 }
 
-func grow[g: group Pair](pair: ref[g] Pair) -> Unit [reshape g.left.items] {
+func grow[g: group Pair](pair: ref[g] Pair) -> () [reshape g.left.items] {
     pair.left.push(30)
 }
 

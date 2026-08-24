@@ -16,7 +16,7 @@ func render_report(
     report: block(name: String, score: Int, passing: Bool),
     name: String,
     score: Int,
-) -> Unit {
+) -> () {
     let passing = score >= 70
     do report
 }

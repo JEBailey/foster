@@ -35,7 +35,7 @@ func write(self: MemoryWriter, contents: Bytes) -> Result<Int, StreamError> [mut
     Result.Ok(amount)
 }
 
-func flush(self: MemoryWriter) -> Result<Unit, StreamError> {
+func flush(self: MemoryWriter) -> Result<(), StreamError> {
     let scratch = ByteBuffer.empty()
     Result.Ok(scratch.reserve(0))
 }

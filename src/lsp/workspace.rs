@@ -71,6 +71,9 @@ impl Workspace {
                         let Some(path) = module.source_path.as_deref() else {
                             continue;
                         };
+                        if !self.should_publish_diagnostics_for(path.as_std_path()) {
+                            continue;
+                        }
                         let Some(uri) = path_to_uri(path.as_std_path()) else {
                             continue;
                         };
@@ -123,6 +126,17 @@ impl Workspace {
         }
         self.published = next.into_iter().map(|(uri, _, _)| uri).collect();
         Ok(())
+    }
+
+    fn should_publish_diagnostics_for(&self, path: &Path) -> bool {
+        self.root
+            .as_deref()
+            .is_some_and(|root| path.starts_with(root))
+            || self
+                .documents
+                .keys()
+                .filter_map(uri_to_path)
+                .any(|document| document == path)
     }
 
     pub(super) fn document_symbols(&self, uri: &Uri) -> Option<DocumentSymbolResponse> {
@@ -314,7 +328,19 @@ impl Workspace {
 
     pub(super) fn completion(&self, params: &CompletionParams) -> Option<CompletionResponse> {
         let position = &params.text_document_position;
-        let compilation = self.compile_for(&position.text_document.uri).ok()?;
+        let mut items = std::collections::BTreeMap::<String, CompletionItem>::new();
+        if let Some(document) = self.documents.get(&position.text_document.uri)
+            && let Some(offset) = position_to_offset(&document.text, position.position)
+        {
+            add_arguments_auto_import_completion(&document.text, offset, &mut items);
+        }
+        let compilation = match self.compile_for(&position.text_document.uri) {
+            Ok(compilation) => compilation,
+            Err(_) => {
+                return (!items.is_empty())
+                    .then(|| CompletionResponse::Array(items.into_values().collect()));
+            }
+        };
         let module_id = module_for_uri(&compilation, &position.text_document.uri)?;
         let module = &compilation.hir.modules[module_id];
         let source = compilation
@@ -325,7 +351,6 @@ impl Workspace {
         let offset = position_to_offset(source, position.position)?;
         let start = identifier_at(source, offset).map_or(offset, |(_, start)| start);
         let qualifier = qualifier_before(source, start);
-        let mut items = std::collections::BTreeMap::<String, CompletionItem>::new();
 
         if let Some(qualifier) = qualifier {
             if !add_associated_completions(&compilation, module_id, &qualifier, &mut items)
@@ -442,6 +467,79 @@ impl Workspace {
     fn version(&self, uri: &Uri) -> Option<i32> {
         self.documents.get(uri).map(|document| document.version)
     }
+}
+
+fn add_arguments_auto_import_completion(
+    source: &str,
+    offset: usize,
+    items: &mut std::collections::BTreeMap<String, CompletionItem>,
+) {
+    let Some((prefix, _)) = identifier_at(source, offset) else {
+        return;
+    };
+    if !"Arguments".starts_with(prefix) {
+        return;
+    }
+    let Ok(program) = crate::parse(source) else {
+        return;
+    };
+    let in_parameter_type = program.functions.iter().any(|function| {
+        function.parameters.iter().any(|parameter| {
+            parameter
+                .type_span
+                .as_ref()
+                .is_some_and(|span| span.start <= offset && offset <= span.end)
+        })
+    });
+    if !in_parameter_type {
+        return;
+    }
+    let imported = program
+        .imports
+        .iter()
+        .any(|import| import.path == ["std", "process"]);
+    let additional_text_edits = (!imported)
+        .then(|| arguments_import_edit(source, &program))
+        .flatten()
+        .map(|edit| vec![edit]);
+    items.insert(
+        "Arguments".into(),
+        CompletionItem {
+            label: "Arguments".into(),
+            kind: Some(CompletionItemKind::STRUCT),
+            detail: Some("std.process.Arguments".into()),
+            documentation: Some(Documentation::MarkupContent(MarkupContent {
+                kind: MarkupKind::Markdown,
+                value: "The executable name and command-line values supplied to `main`.".into(),
+            })),
+            sort_text: Some("0_Arguments".into()),
+            insert_text: Some("Arguments".into()),
+            additional_text_edits,
+            ..CompletionItem::default()
+        },
+    );
+}
+
+fn arguments_import_edit(source: &str, program: &crate::ast::Program) -> Option<TextEdit> {
+    let (offset, new_text) = if let Some(import) = program.imports.last() {
+        (import.span.end, "\nimport std.process")
+    } else {
+        let mut offset = 0;
+        for token in crate::lexer::lex(source).ok()? {
+            match token.kind {
+                crate::lexer::TokenKind::Newline | crate::lexer::TokenKind::ModuleDocComment(_) => {
+                    offset = token.range.end
+                }
+                _ => break,
+            }
+        }
+        (offset, "import std.process\n")
+    };
+    let position = byte_range_to_lsp(source, offset..offset).start;
+    Some(TextEdit {
+        range: lsp_types::Range::new(position, position),
+        new_text: new_text.into(),
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1211,7 +1309,7 @@ pub(super) fn function_signature(
         .join(", ");
     let result = signature
         .map(|signature| compilation.types.display(signature.result))
-        .unwrap_or_else(|| "Unit".into());
+        .unwrap_or_else(|| "()".into());
     let effects = signature.map_or_else(String::new, |signature| {
         display_effects(&signature.effects, signature.suspends)
     });
@@ -1301,7 +1399,7 @@ fn method_requirement_signature(method: &crate::ast::MethodRequirement) -> Strin
         .return_type
         .as_ref()
         .map(display_type_expr)
-        .unwrap_or_else(|| "Unit".into());
+        .unwrap_or_else(|| "()".into());
     format!(
         "{}func {}{}({parameters}) -> {result}{}",
         if method.public { "pub " } else { "" },
@@ -1390,6 +1488,7 @@ fn square_parameters(parameters: &[String]) -> String {
 
 fn display_type_expr(ty: &crate::ast::TypeExpr) -> String {
     match ty {
+        crate::ast::TypeExpr::Unit => "()".into(),
         crate::ast::TypeExpr::Named(name, arguments) => {
             let arguments = arguments.iter().map(display_type_expr).collect::<Vec<_>>();
             format!("{name}{}", angle_parameters(&arguments))

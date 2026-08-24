@@ -19,6 +19,18 @@ fn fixture_workspace() -> (Workspace, Uri, PathBuf) {
 }
 
 #[test]
+fn diagnostics_are_limited_to_workspace_and_explicitly_opened_sources() {
+    let (mut workspace, _, root) = fixture_workspace();
+    assert!(workspace.should_publish_diagnostics_for(&root.join("main.fos")));
+
+    let external = root.parent().unwrap().join("external-library.fos");
+    assert!(!workspace.should_publish_diagnostics_for(&external));
+
+    workspace.open(path_to_uri(&external).unwrap(), String::new(), 1);
+    assert!(workspace.should_publish_diagnostics_for(&external));
+}
+
+#[test]
 fn document_symbols_use_open_buffer_overlays() {
     let (mut workspace, uri, root) = fixture_workspace();
     let mut source = std::fs::read_to_string(root.join("main.fos")).unwrap();
@@ -276,6 +288,40 @@ fn completion_uses_scope_and_import_visibility() {
     };
     assert!(items.iter().any(|item| item.label == "source"));
     assert!(items.iter().any(|item| item.label == "branch"));
+}
+
+#[test]
+fn arguments_completion_adds_the_required_import_when_compilation_fails() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = "func main(arguments: Argument) -> () {}\n";
+    workspace.open(uri.clone(), source.into(), 7);
+
+    let response = workspace
+        .completion(&CompletionParams {
+            text_document_position: TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri),
+                Position::new(0, 29),
+            ),
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: None,
+        })
+        .unwrap();
+    let CompletionResponse::Array(items) = response else {
+        panic!("expected completion items")
+    };
+    let arguments = items
+        .iter()
+        .find(|item| item.label == "Arguments")
+        .expect("expected Arguments completion");
+    assert_eq!(arguments.insert_text.as_deref(), Some("Arguments"));
+    let edits = arguments
+        .additional_text_edits
+        .as_ref()
+        .expect("expected an import edit");
+    assert_eq!(edits.len(), 1);
+    assert_eq!(edits[0].range.start, Position::new(0, 0));
+    assert_eq!(edits[0].new_text, "import std.process\n");
 }
 
 #[test]
@@ -656,4 +702,43 @@ fn compilation_cache_reuses_snapshots_and_invalidates_on_change() {
     workspace.change(uri.clone(), source, 2);
     let changed = workspace.compile_for(&uri).unwrap();
     assert!(!std::rc::Rc::ptr_eq(&first, &changed));
+}
+
+#[test]
+fn compilation_uses_the_manifest_source_root() {
+    let root = std::env::temp_dir().join(format!(
+        "foster-lsp-project-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let source_root = root.join("source");
+    std::fs::create_dir_all(&source_root).unwrap();
+    std::fs::write(
+        root.join("foster.toml"),
+        "[package]\nname = \"lsp-project\"\nsource = \"source\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        source_root.join("helper.fos"),
+        "pub func answer() -> Int { 42 }\n",
+    )
+    .unwrap();
+    let main = source_root.join("main.fos");
+    std::fs::write(&main, "import helper\nfunc main() -> Int { answer() }\n").unwrap();
+    let uri = path_to_uri(&main).unwrap();
+    let workspace = Workspace {
+        root: Some(root.clone()),
+        documents: HashMap::new(),
+        published: HashSet::new(),
+        compilations: Default::default(),
+    };
+
+    let compilation = workspace.compile_for(&uri).unwrap();
+    assert_eq!(compilation.package.root.as_std_path(), source_root);
+    assert!(compilation.package.module("helper").is_some());
+
+    std::fs::remove_dir_all(root).unwrap();
 }

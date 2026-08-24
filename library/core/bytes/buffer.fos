@@ -37,8 +37,8 @@ pub type ByteBuffer = {
     value: RawByteBuffer
 }
 
-/// Converts an internal assignment result to `Unit`.
-func discard<T>(value: T) -> Unit {}
+/// Converts an internal assignment result to `()`.
+func discard<T>(value: T) -> () {}
 
 /// Creates an empty mutable byte buffer.
 pub func ByteBuffer.empty() -> ByteBuffer {
@@ -51,31 +51,31 @@ pub func ByteBuffer.with_capacity(capacity: Int) -> ByteBuffer {
 }
 
 /// Appends one byte.
-pub func push(self: ByteBuffer, value: Byte) -> Unit [reshape self] {
+pub func push(self: ByteBuffer, value: Byte) -> () [reshape self] {
     self.value = self.value.push(value)
     discard(self.value)
 }
 
 /// Appends an immutable byte sequence.
-pub func extend(self: ByteBuffer, values: Bytes) -> Unit [reshape self] {
+pub func extend(self: ByteBuffer, values: Bytes) -> () [reshape self] {
     self.value = self.value.extend(values)
     discard(self.value)
 }
 
 /// Removes every buffered byte while retaining allocated capacity.
-pub func clear(self: ByteBuffer) -> Unit [reshape self] {
+pub func clear(self: ByteBuffer) -> () [reshape self] {
     self.value = self.value.clear()
     discard(self.value)
 }
 
 /// Keeps at most the first `length` buffered bytes.
-pub func truncate(self: ByteBuffer, length: Int) -> Unit [mut self] {
+pub func truncate(self: ByteBuffer, length: Int) -> () [mut self] {
     self.value = self.value.truncate(length)
     discard(self.value)
 }
 
 /// Reserves space for at least `additional` more bytes.
-pub func reserve(self: ByteBuffer, additional: Int) -> Unit [mut self] {
+pub func reserve(self: ByteBuffer, additional: Int) -> () [mut self] {
     self.value = self.value.reserve(additional)
     discard(self.value)
 }

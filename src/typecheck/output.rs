@@ -127,7 +127,7 @@ impl Checker<'_> {
         match self.resolved(ty.clone()) {
             Ty::Variable(_) => "unknown".into(),
             Ty::Generic(name) => name,
-            Ty::Unit => "Unit".into(),
+            Ty::Unit => "()".into(),
             Ty::Bool => "Bool".into(),
             Ty::Int => "Int".into(),
             Ty::Float => "Float".into(),
@@ -232,6 +232,26 @@ impl Checker<'_> {
             function.name,
             message.into()
         ))
+        .with_source_module(self.hir.modules[function.module].name.clone())
+    }
+
+    pub(super) fn error_at_expression(
+        &self,
+        mut error: FosterError,
+        function: FunctionId,
+        expression: ExprId,
+        label: impl Into<String>,
+    ) -> FosterError {
+        if error.labels.is_empty()
+            && let Some(span) = self.hir.expression_spans.get(&expression)
+        {
+            error = error.with_primary_label(span.clone(), label);
+        }
+        if error.source_module.is_none() {
+            let module = self.hir.functions[function].module;
+            error = error.with_source_module(self.hir.modules[module].name.clone());
+        }
+        error
     }
 }
 

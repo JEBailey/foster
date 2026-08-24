@@ -76,7 +76,7 @@ func main() -> Int {
             "mutable-ref-parameter-writes-through-to-caller",
             r#"
 type Person = { name: Int }
-func rename[people: group Person](person: ref[people] Person, name: Int) -> Unit [mut people.name] {
+func rename[people: group Person](person: ref[people] Person, name: Int) -> () [mut people.name] {
     person.name = name
     ()
 }
@@ -214,7 +214,7 @@ func main() -> Int {
 fn mutable_ref_parameter_runtime_witness_updates_the_caller() {
     let source = r#"
 type Person = { name: Int }
-func rename[people: group Person](person: ref[people] Person, name: Int) -> Unit [mut people.name] {
+func rename[people: group Person](person: ref[people] Person, name: Int) -> () [mut people.name] {
     person.name = name
     ()
 }

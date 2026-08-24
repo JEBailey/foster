@@ -96,7 +96,7 @@ func range_into(value: Int, end: Int, result: List<Int>) -> List<Int> [consume r
 /// Formats an integer as decimal text.
 pub func to_string(value: Int) -> String {
     branch {
-        value < 0 -> "-" + unsigned_string(-value)
+        value < 0 -> "-" + negative_string(value)
         _ -> unsigned_string(value)
     }
 }
@@ -116,5 +116,16 @@ func unsigned_string(value: Int) -> String {
     branch {
         quotient == 0 -> from_code_point(48 + digit).string
         _ -> unsigned_string(quotient) + from_code_point(48 + digit).string
+    }
+}
+
+/// Formats a known negative integer without negating the signed minimum.
+func negative_string(value: Int) -> String {
+    let quotient = value / 10
+    let remainder = value - quotient * 10
+    let digit = -remainder
+    branch {
+        quotient == 0 -> from_code_point(48 + digit).string
+        _ -> negative_string(quotient) + from_code_point(48 + digit).string
     }
 }

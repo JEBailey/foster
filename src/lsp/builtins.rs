@@ -18,13 +18,13 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
     match intrinsic {
         Builtin::Print => builtin(
             "print",
-            "print(values...) -> Unit",
+            "print(values...) -> ()",
             &["value"],
             "Prints values without a trailing newline.",
         ),
         Builtin::Println => builtin(
             "println",
-            "println(values...) -> Unit",
+            "println(values...) -> ()",
             &["value"],
             "Prints values followed by a newline.",
         ),
@@ -45,6 +45,12 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
             "parse_float(source: String) -> Float",
             &["source"],
             "Parses a binary64 floating-point value from text.",
+        ),
+        Builtin::FormatFloat => builtin(
+            "FloatHost.format",
+            "FloatHost.format(value: Float) -> String",
+            &["value"],
+            "Formats a binary64 floating-point value as round-trippable text.",
         ),
         Builtin::ByteValid => builtin(
             "Byte.valid",
@@ -180,7 +186,7 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
         ),
         Builtin::IoWriteText => builtin(
             "IoHost.write_text",
-            "IoHost.write_text(path: String, contents: String) -> Result<Unit, IoError>",
+            "IoHost.write_text(path: String, contents: String) -> Result<(), IoError>",
             &["path", "contents"],
             "Writes a UTF-8 text file through the host filesystem boundary.",
         ),
@@ -192,7 +198,7 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
         ),
         Builtin::IoWriteBytes => builtin(
             "IoHost.write_bytes",
-            "IoHost.write_bytes(path: String, contents: Bytes) -> Result<Unit, IoError>",
+            "IoHost.write_bytes(path: String, contents: Bytes) -> Result<(), IoError>",
             &["path", "contents"],
             "Writes raw bytes through the host filesystem boundary.",
         ),
@@ -222,31 +228,31 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
         ),
         Builtin::IoCreateDirectory => builtin(
             "IoHost.create_directory",
-            "IoHost.create_directory(path: String) -> Result<Unit, IoError>",
+            "IoHost.create_directory(path: String) -> Result<(), IoError>",
             &["path"],
             "Creates one directory through the host filesystem boundary.",
         ),
         Builtin::IoCreateDirectoryAll => builtin(
             "IoHost.create_directory_all",
-            "IoHost.create_directory_all(path: String) -> Result<Unit, IoError>",
+            "IoHost.create_directory_all(path: String) -> Result<(), IoError>",
             &["path"],
             "Creates a directory and missing parents through the host filesystem boundary.",
         ),
         Builtin::IoRemoveFile => builtin(
             "IoHost.remove_file",
-            "IoHost.remove_file(path: String) -> Result<Unit, IoError>",
+            "IoHost.remove_file(path: String) -> Result<(), IoError>",
             &["path"],
             "Removes one file through the host filesystem boundary.",
         ),
         Builtin::IoRemoveDirectory => builtin(
             "IoHost.remove_directory",
-            "IoHost.remove_directory(path: String) -> Result<Unit, IoError>",
+            "IoHost.remove_directory(path: String) -> Result<(), IoError>",
             &["path"],
             "Removes one empty directory through the host filesystem boundary.",
         ),
         Builtin::IoRename => builtin(
             "IoHost.rename",
-            "IoHost.rename(from: String, to: String) -> Result<Unit, IoError>",
+            "IoHost.rename(from: String, to: String) -> Result<(), IoError>",
             &["from", "to"],
             "Renames or moves a filesystem entry through the host boundary.",
         ),
@@ -318,7 +324,7 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
         ),
         Builtin::TcpWrite => builtin(
             "TcpHost.write",
-            "TcpHost.write(connection: Int, contents: String) -> Result<Unit, NetworkError>",
+            "TcpHost.write(connection: Int, contents: String) -> Result<(), NetworkError>",
             &["connection", "contents"],
             "Writes UTF-8 text to a TCP connection.",
         ),
@@ -330,25 +336,25 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
         ),
         Builtin::TcpWriteBytes => builtin(
             "TcpHost.write_bytes",
-            "TcpHost.write_bytes(connection: Int, contents: Bytes) -> Result<Unit, NetworkError>",
+            "TcpHost.write_bytes(connection: Int, contents: Bytes) -> Result<(), NetworkError>",
             &["connection", "contents"],
             "Writes raw bytes to a TCP connection.",
         ),
         Builtin::TcpSetTimeout => builtin(
             "TcpHost.set_timeout",
-            "TcpHost.set_timeout(connection: Int, milliseconds: Int) -> Result<Unit, NetworkError>",
+            "TcpHost.set_timeout(connection: Int, milliseconds: Int) -> Result<(), NetworkError>",
             &["connection", "milliseconds"],
             "Sets a TCP connection timeout.",
         ),
         Builtin::TcpCloseListener => builtin(
             "TcpHost.close_listener",
-            "TcpHost.close_listener(listener: Int) -> Result<Unit, NetworkError>",
+            "TcpHost.close_listener(listener: Int) -> Result<(), NetworkError>",
             &["listener"],
             "Closes a host TCP listener.",
         ),
         Builtin::TcpCloseConnection => builtin(
             "TcpHost.close_connection",
-            "TcpHost.close_connection(connection: Int) -> Result<Unit, NetworkError>",
+            "TcpHost.close_connection(connection: Int) -> Result<(), NetworkError>",
             &["connection"],
             "Closes a host TCP connection.",
         ),

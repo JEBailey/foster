@@ -8,7 +8,7 @@ func area(self: Square) -> Int {
     self.length * self.width
 }
 
-func set_width(self: Square, width: Int) -> Unit {
+func set_width(self: Square, width: Int) -> () {
     self.width = width
     self.total_area = self.length * width
     println()

@@ -235,22 +235,48 @@ impl<'a> Checker<'a> {
                     if declared.kind != crate::ast::EffectKind::Consume
                         && !effects_are_subset(std::slice::from_ref(declared), &actual)
                     {
-                        let mut diagnostic = crate::diagnostic::Diagnostic::warning(
-                            "unused-effect",
+                        let narrower = actual
+                            .iter()
+                            .filter(|required| {
+                                effects_are_subset(
+                                    std::slice::from_ref(*required),
+                                    std::slice::from_ref(declared),
+                                )
+                            })
+                            .map(|required| {
+                                format!("`{} {}`", effect_kind_name(required.kind), required.target)
+                            })
+                            .collect::<Vec<_>>();
+                        let message = if narrower.is_empty() {
                             format!(
                                 "in `{}.{}`: declared `{} {}` is not required by the function body",
                                 self.hir.modules[definition.module].name,
                                 definition.name,
                                 effect_kind_name(declared.kind),
                                 declared.target
-                            ),
-                        )
-                        .with_source_module(self.hir.modules[definition.module].name.clone());
+                            )
+                        } else {
+                            format!(
+                                "in `{}.{}`: declared `{} {}` is overly broad; the function body requires only {}",
+                                self.hir.modules[definition.module].name,
+                                definition.name,
+                                effect_kind_name(declared.kind),
+                                declared.target,
+                                narrower.join(", ")
+                            )
+                        };
+                        let mut diagnostic =
+                            crate::diagnostic::Diagnostic::warning("unused-effect", message)
+                                .with_source_module(
+                                    self.hir.modules[definition.module].name.clone(),
+                                );
                         if let Some(span) = definition.effect_spans.get(index) {
-                            diagnostic = diagnostic.with_label(
-                                span.clone(),
-                                "this declared effect is stronger than the body requires",
-                            );
+                            let label = if narrower.is_empty() {
+                                "this declared effect is not used by the function body"
+                            } else {
+                                "this declared effect grants broader access than the function body requires"
+                            };
+                            diagnostic = diagnostic.with_label(span.clone(), label);
                         }
                         self.diagnostics.push(diagnostic);
                     }
@@ -331,6 +357,7 @@ impl<'a> Checker<'a> {
     fn declare_signatures(&mut self) -> Result<(), FosterError> {
         for (function_id, function) in self.hir.functions.iter() {
             let module = function.module;
+            let source_module = self.hir.modules[module].name.clone();
             let generics = function
                 .type_parameters
                 .iter()
@@ -339,8 +366,13 @@ impl<'a> Checker<'a> {
             let parameters = function
                 .parameter_types
                 .iter()
-                .map(|annotation| match annotation {
-                    Some(annotation) => self.annotation_type(module, annotation, &generics),
+                .zip(&function.parameter_type_spans)
+                .map(|(annotation, span)| match annotation {
+                    Some(annotation) => self
+                        .annotation_type(module, annotation, &generics)
+                        .map_err(|error| {
+                            located_annotation_error(error, span.as_ref(), &source_module)
+                        }),
                     None => Ok(self.fresh()),
                 })
                 .collect::<Result<Vec<_>, _>>()?;
@@ -370,4 +402,20 @@ impl<'a> Checker<'a> {
         }
         Ok(())
     }
+}
+
+fn located_annotation_error(
+    mut error: FosterError,
+    span: Option<&std::ops::Range<usize>>,
+    source_module: &str,
+) -> FosterError {
+    if error.labels.is_empty()
+        && let Some(span) = span
+    {
+        error = error.with_primary_label(span.clone(), "invalid type annotation");
+    }
+    if error.source_module.is_none() {
+        error = error.with_source_module(source_module);
+    }
+    error
 }

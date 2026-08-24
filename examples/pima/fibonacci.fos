@@ -8,7 +8,7 @@ func fibonacci(position: Int) -> Int {
     fibonacci_from(position, 0, 1)
 }
 
-func main() -> Unit {
+func main() -> () {
     println("The Fibonacci value at position 12 is", fibonacci(12))
 }
 

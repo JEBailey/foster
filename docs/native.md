@@ -19,14 +19,15 @@ is the default; `--no-optimize` disables both Cranelift and linker optimization.
 
 The native ABI stores each currently supported Foster value in one 64-bit word. It supports:
 
-- `Unit`, `Bool`, `Int`, binary64 `Float`, `CodePoint`, and `Byte` parameters and results;
+- `()`, `Bool`, `Int`, binary64 `Float`, `CodePoint`, and `Byte` parameters and results;
 - String constants, equality, command-argument strings, and String results;
 - `Arguments.executable`, `Arguments.values`, and read-only `List<String>` indexing, `empty?`,
   `length`, and `head` operations;
 - primitive constants, moves, unary operations, arithmetic, bit operations, shifts, and comparisons;
 - direct function and statically resolved method calls;
 - guarded returns, jumps, conditional control flow, and recursion; and
-- printing a non-`Unit` result from `main`, matching `foster run` for these primitive values.
+- printing a result from `main` whose type is not `()`, matching `foster run` for these primitive
+  values.
 
 Only functions statically reachable from `main` are compiled. An unused function may therefore use
 the complete VM language without preventing native compilation.

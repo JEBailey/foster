@@ -14,6 +14,89 @@ fn arguments_source() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/arguments.fos")
 }
 
+fn temporary_directory(label: &str) -> PathBuf {
+    std::env::temp_dir().join(format!(
+        "foster-cli-{label}-{}-{}",
+        std::process::id(),
+        time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ))
+}
+
+#[test]
+fn init_creates_a_project_that_commands_discover_from_nested_directories() {
+    let root = temporary_directory("init");
+    let init = foster()
+        .arg("init")
+        .arg(&root)
+        .arg("--name")
+        .arg("sample-app")
+        .output()
+        .unwrap();
+    assert!(
+        init.status.success(),
+        "{}",
+        String::from_utf8_lossy(&init.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(root.join("foster.toml")).unwrap(),
+        "[package]\nname = \"sample-app\"\nsource = \"src\"\n"
+    );
+    fs::write(root.join("src/main.fos"), "func main() -> Int { 42 }\n").unwrap();
+    let nested = root.join("src/nested");
+    fs::create_dir(&nested).unwrap();
+
+    let run = foster().arg("run").current_dir(&nested).output().unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8(run.stdout).unwrap().trim(), "42");
+
+    let check = foster().arg("check").arg(&root).output().unwrap();
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn project_manifest_errors_are_actionable() {
+    let malformed = temporary_directory("malformed-manifest");
+    fs::create_dir_all(malformed.join("src")).unwrap();
+    fs::write(
+        malformed.join("foster.toml"),
+        "[package\nname = \"broken\"\n",
+    )
+    .unwrap();
+    let output = foster().arg("check").arg(&malformed).output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("invalid project manifest"), "{stderr}");
+    assert!(stderr.contains("foster.toml"), "{stderr}");
+    fs::remove_dir_all(malformed).unwrap();
+
+    let missing_source = temporary_directory("missing-source");
+    fs::create_dir_all(&missing_source).unwrap();
+    fs::write(
+        missing_source.join("foster.toml"),
+        "[package]\nname = \"broken\"\nsource = \"missing\"\n",
+    )
+    .unwrap();
+    let output = foster().arg("check").arg(&missing_source).output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("project source root"), "{stderr}");
+    assert!(stderr.contains("is not a directory"), "{stderr}");
+    fs::remove_dir_all(missing_source).unwrap();
+}
+
 #[test]
 fn run_accepts_explicit_optimizer_settings() {
     let optimized = foster()

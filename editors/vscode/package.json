@@ -25,6 +25,7 @@
   "activationEvents": [
     "onLanguage:foster",
     "onCommand:foster.restartLanguageServer",
+    "onCommand:foster.showLanguageServerOutput",
     "onCommand:foster.runCurrentFile",
     "onCommand:foster.runCurrentPackage"
   ],
@@ -54,6 +55,10 @@
       {
         "command": "foster.restartLanguageServer",
         "title": "Foster: Restart Language Server"
+      },
+      {
+        "command": "foster.showLanguageServerOutput",
+        "title": "Foster: Show Language Server Output"
       },
       {
         "command": "foster.runCurrentFile",

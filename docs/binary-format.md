@@ -47,7 +47,7 @@ start, u32 end` in source byte offsets. Instruction and span counts must match.
 
 ## Tagged values
 
-Constant tags: `0 Unit`, `1 Bool(bool)`, `2 Integer(u64 bits)`, `3 Float(u64 bits)`, `4
+Constant tags: `0 empty tuple (())`, `1 Bool(bool)`, `2 Integer(u64 bits)`, `3 Float(u64 bits)`, `4
 String(string)`, `5 CodePoint(u32 scalar)`, `6 Symbol(string)`.
 
 Pattern tags: `0 Spanned(Pattern, Span)`, `1 Wildcard`, `2 Binding(LocalId)`, `3 Bool(bool)`, `4

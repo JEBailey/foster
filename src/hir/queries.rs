@@ -93,6 +93,7 @@ fn projections_equal(left: &Projection, right: &Projection) -> bool {
 
 pub(crate) fn type_exposes_group(ty: Option<&ast::TypeExpr>, group: &str) -> bool {
     match ty {
+        Some(ast::TypeExpr::Unit) => false,
         Some(ast::TypeExpr::Reference {
             group: found,
             value,

@@ -91,7 +91,7 @@ fn test_declarations_require_descriptions_and_unit_results() {
 
     let non_unit = foster::compile("test \"returns a value\" { 42 }").unwrap_err();
     assert!(
-        non_unit.message.contains("expected `Unit`"),
+        non_unit.message.contains("expected `()`"),
         "{}",
         non_unit.message
     );
@@ -825,7 +825,7 @@ fn requires_qualification_for_ambiguous_imported_names() {
 fn borrows_arguments_by_default_and_requires_explicit_moves_for_consuming_calls() {
     foster::compile(
         r#"
-func take(value: String) -> Unit { println() }
+func take(value: String) -> () { println() }
 func main() -> String {
     let value = "owned"
     take(value)
@@ -837,8 +837,8 @@ func main() -> String {
 
     let missing_move = foster::compile(
         r#"
-func take(value: String) -> Unit [consume value] { println() }
-func main() -> Unit {
+func take(value: String) -> () [consume value] { println() }
+func main() -> () {
     let value = "owned"
     take(value)
 }
@@ -853,7 +853,7 @@ func main() -> Unit {
 
     let moved = foster::compile(
         r#"
-func take(value: String) -> Unit [consume value] { println() }
+func take(value: String) -> () [consume value] { println() }
 func main() -> String {
     let value = "owned"
     take(move value)
@@ -880,7 +880,7 @@ func main() -> String {
 
     foster::compile(
         r#"
-func take(value: Int) -> Unit [consume value] { println() }
+func take(value: Int) -> () [consume value] { println() }
 func main() -> Int {
     let value = 42
     take(value)
@@ -894,7 +894,7 @@ func main() -> Int {
 #[test]
 fn preserves_consuming_parameters_through_callable_values() {
     let missing_move = r#"
-func main() -> Unit {
+func main() -> () {
     let action = (message: String) -> [consume message] { println(message) }
     let message = "owned"
     action(message)
@@ -909,11 +909,11 @@ func main() -> Unit {
 #[test]
 fn preserves_consuming_parameters_through_partial_application() {
     let missing_move = r#"
-func submit(message: String) -> Unit [consume message] {
+func submit(message: String) -> () [consume message] {
     println(message)
 }
 
-func main() -> Unit {
+func main() -> () {
     let action = submit(_)
     let message = "owned"
     action(message)
@@ -936,15 +936,15 @@ func main() -> Unit {
 #[test]
 fn expresses_consuming_parameters_in_callable_types() {
     let source = r#"
-func sink(message: String) -> Unit [consume message] {
+func sink(message: String) -> () [consume message] {
     println(message)
 }
 
-func invoke(action: func(consume String) -> Unit, message: String) -> Unit [consume message] {
+func invoke(action: func(consume String) -> (), message: String) -> () [consume message] {
     action(move message)
 }
 
-func main() -> Unit {
+func main() -> () {
     invoke(sink, "owned")
 }
 "#;
@@ -960,7 +960,7 @@ func main() -> Unit {
         vec![foster::ast::ParameterMode::Consume]
     );
 
-    let incompatible = source.replace("func(consume String) -> Unit", "func(String) -> Unit");
+    let incompatible = source.replace("func(consume String) -> ()", "func(String) -> ()");
     let error = foster::compile(&incompatible).unwrap_err();
     assert!(error.message.contains("callable contract is incompatible"));
 }
@@ -1560,7 +1560,7 @@ func main() { 0 }
 fn assignment_reinitializes_a_moved_local() {
     foster::compile(
         r#"
-func take(value: String) -> Unit [consume value] { println() }
+func take(value: String) -> () [consume value] { println() }
 func main() -> String {
     let value = "first"
     take(move value)
@@ -1605,7 +1605,7 @@ func main() -> Int {
 fn joins_move_state_across_branch_arms() {
     let error = foster::compile(
         r#"
-func take(value: String) -> Unit [consume value] { println() }
+func take(value: String) -> () [consume value] { println() }
 func choose(flag: Bool) -> String {
     let value = "owned"
     branch {
@@ -1614,7 +1614,7 @@ func choose(flag: Bool) -> String {
     }
     value
 }
-func main() -> Unit { println() }
+func main() -> () { println() }
 "#,
     )
     .unwrap_err();
@@ -1633,12 +1633,12 @@ type Pair = {
     left: String
     right: String
 }
-func take(value: String) -> Unit [consume value] { println() }
+func take(value: String) -> () [consume value] { println() }
 func remaining(pair: Pair) -> String [consume pair] {
     take(move pair.left)
     pair.right
 }
-func main() -> Unit { println() }
+func main() -> () { println() }
 "#,
     )
     .unwrap();
@@ -1697,10 +1697,17 @@ func main() -> Int { value(Named { value: 7 }) }
 }
 
 #[test]
-fn supports_the_unit_literal() {
+fn uses_empty_parentheses_as_the_only_unit_type_and_value_syntax() {
     assert_eq!(
-        foster::run("func main() -> Unit { () }").unwrap(),
+        foster::run("func main() -> () { () }").unwrap(),
         Value::Unit
+    );
+
+    let removed_name = foster::compile("func main() -> Unit { () }").unwrap_err();
+    assert!(
+        removed_name.message.contains("unknown type `Unit`"),
+        "{}",
+        removed_name.message
     );
 }
 
@@ -2121,7 +2128,7 @@ func write(self: CollectWriter, contents: Bytes) -> Result<Int, StreamError> [mu
     Result.Ok(amount)
 }
 
-func flush(self: CollectWriter) -> Result<Unit, StreamError> {
+func flush(self: CollectWriter) -> Result<(), StreamError> {
     let scratch = ByteBuffer.empty()
     Result.Ok(scratch.reserve(0))
 }

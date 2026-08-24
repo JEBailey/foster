@@ -41,6 +41,9 @@ pub(super) fn dispatch(
             .parse::<f64>()
             .map(Value::Float)
             .map_err(|_| RuntimeError::runtime("invalid Float text")),
+        (Builtin::FormatFloat, [Value::Float(value)]) => {
+            Ok(Value::string(string_record, value.to_string()))
+        }
         (Builtin::ByteValid, [Value::Integer(value)]) => {
             Ok(Value::Bool(u8::try_from(*value).is_ok()))
         }

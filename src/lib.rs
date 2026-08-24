@@ -15,6 +15,7 @@ pub mod native;
 pub mod ownership;
 pub mod package;
 pub mod parser;
+pub mod project;
 pub mod typecheck;
 pub mod types;
 pub mod vm;

@@ -2,6 +2,14 @@
 
 import core.ordering
 
+type FloatHost = {}
+
+/// Host primitive used by the Foster-written floating-point formatter API.
+func FloatHost.format(value: Float) -> String = intrinsic("float.format")
+
+/// Formats a binary64 value as round-trippable decimal text.
+pub func to_string(value: Float) -> String { FloatHost.format(value) }
+
 /// Returns the absolute value of `value`.
 pub func absolute(value: Float) -> Float {
     branch {

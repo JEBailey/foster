@@ -808,6 +808,7 @@ impl FunctionCompiler<'_> {
             "tcp.set_timeout" => Some(Builtin::TcpSetTimeout),
             "tcp.close_listener" => Some(Builtin::TcpCloseListener),
             "tcp.close_connection" => Some(Builtin::TcpCloseConnection),
+            "float.format" => Some(Builtin::FormatFloat),
             _ => None,
         }
     }

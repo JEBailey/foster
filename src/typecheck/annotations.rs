@@ -9,6 +9,7 @@ impl Checker<'_> {
     ) -> Result<Ty, FosterError> {
         use crate::ast::TypeExpr;
         match annotation {
+            TypeExpr::Unit => Ok(Ty::Unit),
             TypeExpr::Intersection(members) => {
                 if members.len() < 2 {
                     return Err(FosterError::runtime(
@@ -39,7 +40,6 @@ impl Checker<'_> {
                     return Ok(generic.clone());
                 }
                 let builtin = match (name.as_str(), arguments.as_slice()) {
-                    ("Unit", []) => Some(Ty::Unit),
                     ("Bool", []) => Some(Ty::Bool),
                     ("Int", []) => Some(Ty::Int),
                     ("Float", []) => Some(Ty::Float),
@@ -76,8 +76,7 @@ impl Checker<'_> {
                     (builtin, _)
                         if matches!(
                             builtin,
-                            "Unit"
-                                | "Bool"
+                            "Bool"
                                 | "Int"
                                 | "Float"
                                 | "String"

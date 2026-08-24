@@ -1,5 +1,5 @@
 // The Pima source only imports the standard library. Keep a runnable Foster
 // counterpart so the conversion corpus remains one-to-one.
-func main() -> Unit {
+func main() -> () {
     println()
 }

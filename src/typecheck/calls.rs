@@ -4,6 +4,7 @@ impl Checker<'_> {
     pub(super) fn infer_call(
         &mut self,
         function: FunctionId,
+        call: ExprId,
         callee: ExprId,
         arguments: &[ExprId],
     ) -> Result<Ty, FosterError> {
@@ -149,12 +150,83 @@ impl Checker<'_> {
             ));
         }
         let result = self.fresh();
-        self.unify(
-            callee_type,
-            Ty::Function(argument_types, Box::new(result.clone())),
+        self.unify_call(
             function,
+            call,
+            callee_type,
+            arguments,
+            argument_types,
+            result.clone(),
         )?;
         Ok(result)
+    }
+
+    fn unify_call(
+        &mut self,
+        function: FunctionId,
+        call: ExprId,
+        callee: Ty,
+        arguments: &[ExprId],
+        argument_types: Vec<Ty>,
+        result: Ty,
+    ) -> Result<(), FosterError> {
+        let (parameters, expected_result) = match self.resolved(callee.clone()) {
+            Ty::Function(parameters, result)
+            | Ty::Callable {
+                parameters, result, ..
+            } => (parameters, result),
+            _ => {
+                return self
+                    .unify(
+                        callee,
+                        Ty::Function(argument_types, Box::new(result)),
+                        function,
+                    )
+                    .map_err(|error| {
+                        self.error_at_expression(
+                            error,
+                            function,
+                            call,
+                            "this value is not callable",
+                        )
+                    });
+            }
+        };
+        if parameters.len() != argument_types.len() {
+            let error = self.error(
+                function,
+                format!(
+                    "function expects {} argument(s), received {}",
+                    parameters.len(),
+                    argument_types.len()
+                ),
+            );
+            return Err(self.error_at_expression(
+                error,
+                function,
+                call,
+                "argument count does not match this call",
+            ));
+        }
+        for ((argument, expected), actual) in arguments.iter().zip(parameters).zip(argument_types) {
+            self.coerce(expected, actual, function).map_err(|error| {
+                self.error_at_expression(
+                    error,
+                    function,
+                    *argument,
+                    "argument has an incompatible type",
+                )
+            })?;
+        }
+        self.unify(*expected_result, result, function)
+            .map_err(|error| {
+                self.error_at_expression(
+                    error,
+                    function,
+                    call,
+                    "call result has an incompatible type",
+                )
+            })
     }
 
     pub(super) fn builtin_signature(&self, builtin: Builtin) -> Result<(Vec<Ty>, Ty), FosterError> {
@@ -166,6 +238,7 @@ impl Checker<'_> {
             Builtin::CodePoint => (vec![Ty::CodePoint], Ty::Int),
             Builtin::FromCodePoint => (vec![Ty::Int], Ty::CodePoint),
             Builtin::ParseFloat => (vec![string.clone()], Ty::Float),
+            Builtin::FormatFloat => (vec![Ty::Float], string.clone()),
             Builtin::ByteValid => (vec![Ty::Int], Ty::Bool),
             Builtin::ByteUnchecked => (vec![Ty::Int], Ty::Byte),
             Builtin::BytesEmpty => (Vec::new(), bytes.clone()),
@@ -283,12 +356,18 @@ impl Checker<'_> {
                 && self.argument_is_owned_place(*argument)
                 && !matches!(self.hir.expressions[*argument], hir::Expr::MoveOut(_))
             {
-                return Err(self.error(
+                let error = self.error(
                     function,
                     format!(
                         "call consumes argument {}; pass this argument with `move`",
                         index + 1
                     ),
+                );
+                return Err(self.error_at_expression(
+                    error,
+                    function,
+                    *argument,
+                    "this argument must be passed with `move`",
                 ));
             }
         }

@@ -63,6 +63,21 @@ impl Workspace {
             })
             .collect::<HashMap<_, _>>();
 
+        if let Some(project) = crate::project::Project::discover(&path, self.root.as_deref())?
+            && path.starts_with(&project.source_root)
+        {
+            let package =
+                crate::package::Package::load_with_overlays(&project.source_root, &overlays)?;
+            if package.modules.values().any(|module| {
+                module
+                    .source_path
+                    .as_ref()
+                    .is_some_and(|source| source.as_std_path() == path)
+            }) {
+                return Compilation::new(package);
+            }
+        }
+
         let standalone = self.compile_standalone(&path, &overlays);
         if standalone.is_ok() {
             return standalone;

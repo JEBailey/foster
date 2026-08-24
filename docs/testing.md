@@ -14,9 +14,9 @@ A test description must be a non-empty string and must be unique within its modu
 the module's callable namespace.
 
 Internally, each test is compiled through the ordinary function pipeline as an isolated,
-zero-argument function returning `Unit`. Its body receives normal name resolution, type and effect
+zero-argument function returning `()`. Its body receives normal name resolution, type and effect
 inference, ownership checking, optimization, bytecode verification, and VM execution. A final
-non-`Unit` expression is a type error.
+expression whose type is not `()` is a type error.
 
 Run every test in a file or package with:
 
@@ -24,6 +24,7 @@ Run every test in a file or package with:
 foster test path/to/file.fos
 foster test path/to/package
 foster test path/to/package --no-optimize
+foster test # discovers foster.toml from the current directory
 ```
 
 Discovery is deterministic: tests are ordered by module and then description. Each invocation uses

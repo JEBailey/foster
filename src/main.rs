@@ -33,13 +33,14 @@ fn main() -> ExitCode {
 fn execute() -> Result<(), Box<dyn Error>> {
     let matches = cli().get_matches();
     match matches.subcommand() {
+        Some(("init", arguments)) => init(arguments)?,
         Some(("lsp", _)) => return foster::lsp::run(),
         Some(("check", arguments)) => check(arguments)?,
         Some(("build", arguments)) => build(arguments)?,
         Some(("pack", arguments)) => pack(arguments)?,
         Some(("run", arguments)) => run(arguments)?,
         Some(("fmt", arguments)) => format_path(
-            required_path(arguments, "path"),
+            &source_target_or_current(arguments)?.source,
             arguments.get_flag("check"),
         )?,
         Some(("test", arguments)) => test(arguments)?,
@@ -52,9 +53,9 @@ fn execute() -> Result<(), Box<dyn Error>> {
 
 fn cli() -> Command {
     let path = || {
-        Arg::new("path")
-            .value_parser(value_parser!(PathBuf))
-            .required(true)
+        Arg::new("path").value_parser(value_parser!(PathBuf)).help(
+            "Source file, project directory, or foster.toml (defaults to the current project)",
+        )
     };
     let optimizer = || {
         [
@@ -83,6 +84,21 @@ fn cli() -> Command {
         .about("The Foster compiler and development tools")
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .subcommand(
+            Command::new("init")
+                .about("Create a Foster project with foster.toml and src/main.fos")
+                .arg(
+                    Arg::new("path")
+                        .value_parser(value_parser!(PathBuf))
+                        .default_value("."),
+                )
+                .arg(
+                    Arg::new("name")
+                        .long("name")
+                        .value_name("NAME")
+                        .help("Package name (defaults to the project directory name)"),
+                ),
+        )
         .subcommand(
             Command::new("run").arg(path()).args(optimizer()).arg(
                 Arg::new("command-arguments")
@@ -139,11 +155,7 @@ fn cli() -> Command {
         .subcommand(
             Command::new("fmt")
                 .about("Format Foster source files")
-                .arg(
-                    Arg::new("path")
-                        .value_parser(value_parser!(PathBuf))
-                        .default_value("."),
-                )
+                .arg(path())
                 .arg(
                     Arg::new("check")
                         .long("check")
@@ -153,11 +165,7 @@ fn cli() -> Command {
         )
         .subcommand(
             Command::new("docs")
-                .arg(
-                    Arg::new("path")
-                        .value_parser(value_parser!(PathBuf))
-                        .default_value("."),
-                )
+                .arg(path())
                 .arg(
                     Arg::new("output")
                         .long("output")
@@ -187,8 +195,134 @@ fn required_path<'a>(arguments: &'a ArgMatches, name: &str) -> &'a Path {
         .as_path()
 }
 
+#[derive(Debug)]
+struct SourceTarget {
+    source: PathBuf,
+    project_root: Option<PathBuf>,
+}
+
+impl SourceTarget {
+    fn explicit(path: &Path) -> Result<Self, Box<dyn Error>> {
+        if path
+            .file_name()
+            .is_some_and(|name| name == foster::project::MANIFEST_NAME)
+        {
+            return Self::from_project(foster::project::Project::load_manifest(path)?);
+        }
+        if path.is_dir() && path.join(foster::project::MANIFEST_NAME).is_file() {
+            return Self::from_project(foster::project::Project::load(path)?);
+        }
+        Ok(Self {
+            source: path.to_path_buf(),
+            project_root: None,
+        })
+    }
+
+    fn current_project() -> Result<Self, Box<dyn Error>> {
+        let current = std::env::current_dir()?;
+        let project = foster::project::Project::discover(&current, None)?.ok_or_else(|| {
+            format!(
+                "could not find `{}` in `{}` or any parent directory; pass a Foster source path or run `foster init`",
+                foster::project::MANIFEST_NAME,
+                current.display()
+            )
+        })?;
+        Self::from_project(project)
+    }
+
+    fn from_project(project: foster::project::Project) -> Result<Self, Box<dyn Error>> {
+        Ok(Self {
+            source: project.source_root,
+            project_root: Some(project.root),
+        })
+    }
+
+    fn artifact_base(&self) -> &Path {
+        self.project_root.as_deref().unwrap_or(&self.source)
+    }
+}
+
+fn source_target(arguments: &ArgMatches) -> Result<SourceTarget, Box<dyn Error>> {
+    arguments
+        .get_one::<PathBuf>("path")
+        .map_or_else(SourceTarget::current_project, |path| {
+            SourceTarget::explicit(path)
+        })
+}
+
+fn source_target_or_current(arguments: &ArgMatches) -> Result<SourceTarget, Box<dyn Error>> {
+    if let Some(path) = arguments.get_one::<PathBuf>("path") {
+        return SourceTarget::explicit(path);
+    }
+    let current = std::env::current_dir()?;
+    foster::project::Project::discover(&current, None)?.map_or_else(
+        || SourceTarget::explicit(&current),
+        SourceTarget::from_project,
+    )
+}
+
+fn init(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
+    let requested_root = required_path(arguments, "path");
+    if requested_root.exists() && !requested_root.is_dir() {
+        return Err(format!(
+            "project path `{}` exists and is not a directory",
+            requested_root.display()
+        )
+        .into());
+    }
+    fs::create_dir_all(requested_root)?;
+    let root = fs::canonicalize(requested_root)?;
+    let manifest = root.join(foster::project::MANIFEST_NAME);
+    if manifest.exists() {
+        return Err(format!("project manifest `{}` already exists", manifest.display()).into());
+    }
+
+    let name = arguments
+        .get_one::<String>("name")
+        .cloned()
+        .or_else(|| {
+            root.file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_owned)
+        })
+        .ok_or("cannot infer a package name; pass `--name <name>`")?;
+    if name.is_empty()
+        || !name
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err(
+            "package names may contain only ASCII letters, digits, hyphens, and underscores".into(),
+        );
+    }
+
+    let source_root = root.join(foster::project::DEFAULT_SOURCE_DIRECTORY);
+    if source_root.exists() && !source_root.is_dir() {
+        return Err(format!(
+            "default source path `{}` exists and is not a directory",
+            source_root.display()
+        )
+        .into());
+    }
+    fs::create_dir_all(&source_root)?;
+    let main = source_root.join("main.fos");
+    if !main.exists() {
+        fs::write(&main, "func main() {\n}\n")?;
+    }
+    fs::write(
+        &manifest,
+        format!("[package]\nname = \"{name}\"\nsource = \"src\"\n"),
+    )?;
+
+    println!("created Foster project `{name}` at {}", root.display());
+    println!("  {}", manifest.display());
+    println!("  {}", main.display());
+    Ok(())
+}
+
 fn check(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let path = required_path(arguments, "path");
+    let target = source_target(arguments)?;
+    let path = &target.source;
     if path.is_dir() {
         let compilation = foster::check_package(path)?;
         report_warnings(&compilation, None, None)?;
@@ -215,16 +349,17 @@ fn check(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
 }
 
 fn build(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let path = required_path(arguments, "path");
+    let target = source_target(arguments)?;
+    let path = &target.source;
     let native = arguments.get_flag("native");
     let output = arguments
         .get_one::<PathBuf>("output")
         .cloned()
         .unwrap_or_else(|| {
             if native {
-                default_native_path(path)
+                default_native_path(target.artifact_base())
             } else {
-                default_bytecode_path(path)
+                default_bytecode_path(target.artifact_base())
             }
         });
     let compilation = compile_path(path)?;
@@ -252,12 +387,16 @@ fn build(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
 }
 
 fn pack(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let path = required_path(arguments, "path");
+    let target = source_target(arguments)?;
+    let path = &target.source;
     let output = arguments
         .get_one::<PathBuf>("output")
         .cloned()
-        .unwrap_or_else(|| default_package_path(path));
-    let default_resources = path.is_dir().then(|| path.join("resources"));
+        .unwrap_or_else(|| default_package_path(target.artifact_base()));
+    let default_resources = target
+        .artifact_base()
+        .is_dir()
+        .then(|| target.artifact_base().join("resources"));
     let resources = arguments
         .get_one::<PathBuf>("resources")
         .cloned()
@@ -277,9 +416,10 @@ fn pack(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
 }
 
 fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let path = required_path(arguments, "path");
+    let target = source_target(arguments)?;
+    let path = &target.source;
     let command_arguments = foster::entry::CommandArguments::new(
-        path.to_string_lossy(),
+        target.artifact_base().to_string_lossy(),
         arguments
             .get_many::<String>("command-arguments")
             .into_iter()
@@ -374,7 +514,8 @@ impl Drop for PackageWorkingDirectory {
 }
 
 fn test(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let path = required_path(arguments, "path");
+    let target = source_target(arguments)?;
+    let path = &target.source;
     if path.extension().is_some_and(|extension| extension == "fbc") {
         return Err("compiled bytecode does not retain test discovery metadata".into());
     }
@@ -433,7 +574,7 @@ fn test(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
             Ok(foster::vm::Value::Unit) => println!("test {display} ... ok"),
             Ok(value) => {
                 println!("test {display} ... FAILED");
-                failed.push((display, format!("returned {value:?} instead of Unit")));
+                failed.push((display, format!("returned {value:?} instead of ()")));
             }
             Err(error) => {
                 println!("test {display} ... FAILED");
@@ -502,11 +643,12 @@ fn format_path(path: &Path, check: bool) -> Result<(), Box<dyn Error>> {
 }
 
 fn docs(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let source = required_path(arguments, "path");
+    let target = source_target_or_current(arguments)?;
+    let source = &target.source;
     let output = arguments
         .get_one::<PathBuf>("output")
         .cloned()
-        .unwrap_or_else(|| default_documentation_directory(source));
+        .unwrap_or_else(|| default_documentation_directory(target.artifact_base()));
     let compilation = compile_path(source)?;
     report_warnings(&compilation, None, None)?;
     let report = foster::documentation::generate(&compilation, &output)?;

@@ -145,6 +145,7 @@ pub struct Function {
     pub groups: Vec<ast::GroupParameter>,
     pub parameters: Vec<LocalId>,
     pub parameter_types: Vec<Option<ast::TypeExpr>>,
+    pub parameter_type_spans: Vec<Option<std::ops::Range<usize>>>,
     pub return_type: Option<ast::TypeExpr>,
     pub effects_explicit: bool,
     pub effects: Vec<ast::Effect>,
@@ -288,6 +289,7 @@ pub enum Builtin {
     CodePoint,
     FromCodePoint,
     ParseFloat,
+    FormatFloat,
     ByteValid,
     ByteUnchecked,
     BytesEmpty,
@@ -392,7 +394,9 @@ impl Pattern {
 
 impl Compilation {
     pub fn new(package: Package) -> Result<Self, FosterError> {
-        Self::build(package).map_err(Into::into)
+        let diagnostic_package = package.clone();
+        Self::build(package)
+            .map_err(|error| diagnostic_package.locate_compiler_error(FosterError::from(error)))
     }
 
     fn build(package: Package) -> Result<Self, crate::error::CompileError> {

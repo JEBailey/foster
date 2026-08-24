@@ -25,6 +25,40 @@ cargo run --bin foster -- docs library --serve
 cargo test
 ```
 
+## Projects and `foster.toml`
+
+Create a conventional Foster project with:
+
+```powershell
+foster init hello-foster
+cd hello-foster
+foster run
+```
+
+`foster init` creates this layout without overwriting an existing manifest or source file:
+
+```text
+hello-foster/
+  foster.toml
+  src/
+    main.fos
+```
+
+The manifest identifies the directory where filesystem module discovery starts:
+
+```toml
+[package]
+name = "hello-foster"
+source = "src"
+```
+
+`package.name` is required. `package.source` defaults to `src` when omitted and must be a relative
+path contained by the project. `run`, `check`, `build`, `pack`, `test`, `fmt`, and `docs` accept a
+project directory or its `foster.toml` file. When their path is omitted, Foster searches the
+current directory and its parents for the nearest manifest; `fmt` and `docs` fall back to their
+existing current-directory behavior when no manifest exists. Explicit `.fos` files and legacy
+directories whose `main.fos` sits directly at the source root remain supported.
+
 `run` invokes `main`. It may take no parameters, or one `std.process.Arguments` value containing
 the executable name and following command-line values. Pass program arguments after `--`, for
 example `foster run app.fos -- input.txt --verbose`. A file is treated as a one-module package; a
@@ -62,7 +96,7 @@ The current implementation includes:
 
 - functions, recursion, explicit `let` local declarations, local inference, explicit generics,
   closures, and partial application;
-- `Bool`, `Int`, binary64 `Float`, `String`, `CodePoint`, `Symbol`, `Unit`, homogeneous `List<T>`,
+- `Bool`, `Int`, binary64 `Float`, `String`, `CodePoint`, `Symbol`, `()`, homogeneous `List<T>`,
   and zero-conversion `Sequence<T>` views;
 - generic records, associated factories, instance methods, private-by-default declarations, and
   closed variants with exhaustive pattern branches;
@@ -149,8 +183,9 @@ qualifier. Modules are public; declarations and record fields are private unless
 
 Foster has no prelude. Programs explicitly import embedded Foster-written modules such as
 `core.option`, `std.iter`, `core.result`, `std.sequence`, `core.list`, `std.collections.map`, `std.fs`, and
-`std.path`, `std.env`, and `std.net.tcp`. Host-dependent filesystem and socket operations cross a narrow VM boundary; public
-types, typed errors, and policy wrappers remain Foster code. See
+`std.path`, `std.env`, `std.toml`, and `std.net.tcp`. The TOML 1.1 parser, validator, table builder,
+and renderer are Foster code; only general scalar conversion and host-dependent filesystem and
+socket operations cross the VM boundary. See
 [the standard library reference](docs/core-library.md).
 
 ## Compiler and VM
@@ -186,7 +221,7 @@ cargo run --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.e
 ./fibonacci.exe
 ```
 
-Native compilation currently supports reachable functions over `Unit`, `Bool`, `Int`, `Float`,
+Native compilation currently supports reachable functions over `()`, `Bool`, `Int`, `Float`,
 `CodePoint`, and `Byte`, including direct calls, methods, recursion, arithmetic, comparisons, and
 control flow. A reachable aggregate, closure, intrinsic, remote operation, or other VM-only
 instruction is rejected with an actionable compile error. See [native compilation](docs/native.md)

@@ -4,10 +4,10 @@ type Imitation = {
     pub value: String
 }
 
-func accept(value: Secret) -> Unit {
+func accept(value: Secret) -> () {
     println()
 }
 
-func main() -> Unit {
+func main() -> () {
     accept(Imitation { value: "not a Secret" })
 }

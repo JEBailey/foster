@@ -57,27 +57,26 @@ func main() -> Int {
 "#;
 
 const BYTE_BUFFER_SOURCE: &str = r#"
+import core.byte
 import core.bytes.buffer as byte_buffer
 
 func fill(buffer: ByteBuffer, count: Int) -> ByteBuffer [consume buffer] {
-    branch {
-        count <= 0 -> buffer
-        _ -> {
-            buffer.push(65)
-            fill(move buffer, count - 1)
-        }
-    }
+    return buffer if count <= 0
+    buffer.push(Byte.unchecked(65))
+    fill(move buffer, count - 1)
 }
 
-func main() -> Int { (move fill(ByteBuffer.with_capacity(512), 512)).freeze().length }
+func main() -> Int {
+    let buffer = fill(ByteBuffer.with_capacity(512), 512)
+    (move buffer).freeze().length
+}
 "#;
 
 const LIST_SOURCE: &str = r#"
 func grow(values: List<Int>, count: Int) -> List<Int> [consume values] {
-    branch {
-        count <= 0 -> values
-        _ -> grow(move values.append(count), count - 1)
-    }
+    return values if count <= 0
+    let next = values.append(count)
+    grow(move next, count - 1)
 }
 
 func main() -> Int { grow([], 512).length }

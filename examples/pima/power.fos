@@ -3,7 +3,7 @@ func power(value: Int, exponent: Int) -> Int {
     value * power(value, exponent - 1)
 }
 
-func main() -> Unit {
+func main() -> () {
     println(power(5, 2))
 }
 

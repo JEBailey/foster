@@ -75,6 +75,27 @@ impl FosterError {
         self.help = Some(help.into());
         self
     }
+
+    /// Whether this diagnostic identifies a location in source text.
+    pub fn has_source_location(&self) -> bool {
+        self.line > 0 || !self.labels.is_empty()
+    }
+
+    /// Attach a source location without replacing a more precise one supplied by an inner phase.
+    pub fn with_fallback_location(
+        mut self,
+        module: impl Into<String>,
+        range: Range<usize>,
+        label: impl Into<String>,
+    ) -> Self {
+        if self.source_module.is_none() {
+            self.source_module = Some(module.into());
+        }
+        if !self.has_source_location() {
+            self = self.with_primary_label(range, label);
+        }
+        self
+    }
 }
 
 impl fmt::Display for FosterError {

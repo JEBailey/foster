@@ -35,7 +35,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 319);
+    assert_eq!(checked, 521);
 
     let mut modules = 0;
     let mut types = 0;
@@ -117,6 +117,248 @@ func main() -> Int { 0 }
     assert!(modules >= 30);
     assert!(types >= 30);
     assert!(required_methods >= 10);
+}
+
+#[test]
+fn toml_parses_nested_values_and_reports_source_positions() {
+    let value = foster::run(
+        r#"
+import core.option
+import core.result
+import std.toml
+
+func enabled(document: TomlDocument) -> Bool {
+    branch get(move document, "package") {
+        Option.None -> false
+        Option.Some(value) -> branch get_table(move value, "enabled") {
+            Option.Some(TomlValue.Boolean(enabled)) -> enabled
+            _ -> false
+        }
+    }
+}
+
+func error_line() -> Int {
+    branch parse("title = \"ok\"\nbroken = [\n") {
+        Result.Ok(_) -> 0
+        Result.Error(error) -> error.line
+    }
+}
+
+func main() -> Int {
+    branch parse("title = \"Foster\"\n[package]\nenabled = true\n") {
+        Result.Error(_) -> 0
+        Result.Ok(document) -> branch {
+            enabled(move document) -> error_line()
+            _ -> 0
+        }
+    }
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(value, Value::Integer(2));
+}
+
+#[test]
+fn toml_renders_typed_documents() {
+    let value = foster::run(
+        r#"
+import core.result
+import std.toml
+
+func main() -> String {
+    let document = TomlDocument {
+        entries: [TomlEntry { key: "count", value: TomlValue.Integer(3) }, TomlEntry { key: "title", value: TomlValue.String("Foster") }]
+    }
+    branch render(move document) {
+        Result.Ok(source) -> source
+        Result.Error(error) -> error.message
+    }
+}
+"#,
+    )
+    .unwrap();
+    assert_string(value, "count = 3\ntitle = \"Foster\"\n");
+}
+
+#[test]
+fn toml_preserves_every_value_category() {
+    let value = foster::run(
+        r#"
+import core.result
+import std.toml
+
+func score_value(value: TomlValue) -> Int {
+    branch value {
+        TomlValue.String(_) -> 1
+        TomlValue.Integer(_) -> 2
+        TomlValue.Float(_) -> 4
+        TomlValue.Boolean(_) -> 8
+        TomlValue.DateTime(_) -> 16
+        TomlValue.Array(values) -> 32 + values.length
+        TomlValue.Table(entries) -> 64 + score_entries(move entries)
+    }
+}
+
+func score_entries(entries: List<TomlEntry>) -> Int {
+    return 0 if entries.empty?
+    score_value(entries.head.value) + score_entries(entries.rest)
+}
+
+func main() -> Int {
+    let source = "array = [1, 2]\nboolean = true\ndatetime = 1979-05-27T07:32:00Z\nfloat = 1.5\ninteger = 3\nstring = \"x\"\n[table]\nnested = false\n"
+    branch parse(move source) {
+        Result.Error(_) -> 0
+        Result.Ok(document) -> branch render(move document) {
+            Result.Error(_) -> 0
+            Result.Ok(rendered) -> branch parse(move rendered) {
+                Result.Error(_) -> 0
+                Result.Ok(round_trip) -> score_entries(move round_trip.entries)
+            }
+        }
+    }
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(value, Value::Integer(137));
+}
+
+#[test]
+fn toml_render_rejects_invalid_date_time_values() {
+    let value = foster::run(
+        r#"
+import core.result
+import std.toml
+
+func main() -> Int {
+    let document = TomlDocument { entries: [TomlEntry { key: "when", value: TomlValue.DateTime("not-a-date") }] }
+    branch render(move document) {
+        Result.Ok(_) -> -1
+        Result.Error(error) -> error.line + error.column
+    }
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(value, Value::Integer(0));
+}
+
+#[test]
+fn foster_toml_parser_handles_toml_1_1_structures() {
+    let document = r#"
+title = "TOML \x31\e"
+multiline = """
+one
+two"""
+hex = 0xDEAD_BEEF
+octal = 0o755
+binary = 0b1101
+scientific = 6.626e-34
+minimum = -9223372036854775808
+positive_inf = +inf
+negative_nan = -nan
+partial_time = 07:32
+local_date = 1979-05-27
+inline = { first.name = "Tom", values = [1, true, { x = 2 }], }
+
+[[products]]
+name = "Hammer"
+
+[[products]]
+name = "Nail"
+
+[products.details]
+weight = 1.0
+"#;
+    let source = format!(
+        r#"
+import core.option
+import core.result
+import std.toml
+
+func second_product_has_details(document: TomlDocument) -> Bool {{
+    branch get(move document, "products") {{
+        Option.Some(TomlValue.Array(products)) -> branch {{
+            products.length != 2 -> false
+            _ -> branch products[1] {{
+                TomlValue.Table(entries) -> branch find_details(move entries) {{
+                    Option.Some(TomlValue.Table(details)) -> details.length == 1
+                    _ -> false
+                }}
+                _ -> false
+            }}
+        }}
+        _ -> false
+    }}
+}}
+
+func find_details(entries: List<TomlEntry>) -> Option<TomlValue> {{
+    return Option.None if entries.empty?
+    return Option.Some(entries.head.value) if entries.head.key == "details"
+    find_details(entries.rest)
+}}
+
+func main() -> Int {{
+    branch parse({document:?}) {{
+        Result.Error(_) -> 0
+        Result.Ok(parsed) -> branch render(move parsed) {{
+            Result.Error(_) -> 1
+            Result.Ok(rendered) -> branch parse(move rendered) {{
+                Result.Error(_) -> 2
+                Result.Ok(round_trip) -> branch {{
+                    second_product_has_details(move round_trip) -> 42
+                    _ -> 3
+                }}
+            }}
+        }}
+    }}
+}}
+"#
+    );
+    assert_eq!(foster::run(&source).unwrap(), Value::Integer(42));
+}
+
+#[test]
+fn foster_toml_parser_reports_common_error_conditions() {
+    let cases = [
+        "value = 1\nvalue = 2\n",
+        "value = 1__0\n",
+        "value = +0x10\n",
+        "value = 01.2\n",
+        "value = 2025-02-30\n",
+        "value = \"\\q\"\n",
+        "[table]\n[table]\n",
+        "value = 1\n[value.child]\n",
+        "value = { key = 1, key = 2 }\n",
+        "value = [1, 2\n",
+    ];
+    let checks = cases
+        .iter()
+        .map(|input| format!("score(parse({input:?}))"))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let source = format!(
+        r#"
+import core.result
+import std.toml
+
+func score(outcome: Result<TomlDocument, TomlError>) -> Int {{
+    branch outcome {{
+        Result.Ok(_) -> 0
+        Result.Error(error) -> branch {{
+            error.message.empty? -> 0
+            error.line <= 0 -> 0
+            error.column <= 0 -> 0
+            _ -> 1
+        }}
+    }}
+}}
+
+func main() -> Int {{ {checks} }}
+"#
+    );
+    assert_eq!(foster::run(&source).unwrap(), Value::Integer(10));
 }
 
 #[test]
@@ -214,7 +456,7 @@ import core.result
 import std.fs
 import std.io
 
-func unit(outcome: Result<Unit, IoError>) -> Unit {{
+func unit(outcome: Result<(), IoError>) -> () {{
     branch outcome {{
         Result.Ok(value) -> value
         Result.Error(_) -> [()][1]
@@ -261,7 +503,7 @@ import std.fs
 import std.io
 import core.result
 
-func read_after_write(path: String, outcome: Result<Unit, IoError>) -> String {{
+func read_after_write(path: String, outcome: Result<(), IoError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
         Result.Ok(_) -> read_result(read_text(path))
@@ -312,7 +554,7 @@ func bytes_or_empty(outcome: Result<Bytes, HexError>) -> Bytes {{
     }}
 }}
 
-func read_after_write(path: String, outcome: Result<Unit, IoError>) -> String {{
+func read_after_write(path: String, outcome: Result<(), IoError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
         Result.Ok(_) -> render(read_bytes(path))
@@ -391,7 +633,7 @@ func start(outcome: Result<Connection, NetworkError>) -> String {{
     }}
 }}
 
-func send(connection: Connection, outcome: Result<Unit, NetworkError>) -> String {{
+func send(connection: Connection, outcome: Result<(), NetworkError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
         Result.Ok(_) -> receive(connection, tcp.read_text(connection, 64))
