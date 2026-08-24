@@ -1,6 +1,61 @@
 use super::*;
 
 impl Checker<'_> {
+    pub(super) fn coerce_expression(
+        &mut self,
+        expected: Ty,
+        actual: Ty,
+        function: FunctionId,
+        expression: ExprId,
+    ) -> Result<(), FosterError> {
+        let expected = self.resolved(expected);
+        let actual = self.resolved(actual);
+        let Ty::Variant(union, arguments) = expected.clone() else {
+            return self.coerce(expected, actual, function);
+        };
+        if matches!(actual, Ty::Variant(found, _) if found == union) {
+            return self.coerce(expected, actual, function);
+        }
+
+        let definition = self.hir.variant_types[union].clone();
+        let generics = definition
+            .parameters
+            .iter()
+            .cloned()
+            .zip(arguments)
+            .collect::<HashMap<_, _>>();
+        let initial = self.substitutions.clone();
+        let mut matches = Vec::new();
+        for member in definition.alternatives {
+            self.substitutions = initial.clone();
+            let member_type = self.annotation_type(
+                definition.module,
+                &self.hir.variants[member].member,
+                &generics,
+            )?;
+            if self.unify(member_type, actual.clone(), function).is_ok() {
+                matches.push((member, self.substitutions.clone()));
+            }
+        }
+        self.substitutions = initial;
+        match matches.as_slice() {
+            [(member, substitutions)] => {
+                self.substitutions.clone_from(substitutions);
+                self.variant_injections.insert(expression, *member);
+                Ok(())
+            }
+            [] => self.coerce(expected, actual, function),
+            _ => Err(self.error(
+                function,
+                format!(
+                    "type `{}` matches more than one member of `{}`",
+                    self.describe(&actual),
+                    definition.name
+                ),
+            )),
+        }
+    }
+
     pub(super) fn coerce(
         &mut self,
         expected: Ty,
@@ -407,8 +462,7 @@ impl Checker<'_> {
                     format!("field `{}.{name}` is private", definition.name),
                 ));
             }
-            let actual = self.infer_expression(function, *expression)?;
-            self.coerce(field.ty.clone(), actual, function)?;
+            self.check_expression(function, *expression, field.ty.clone())?;
         }
         let missing = fields
             .iter()

@@ -288,7 +288,7 @@ impl Checker<'_> {
                     || self.occurs(variable, &result)
             }
             Ty::Reference(_, value) => self.occurs(variable, &value),
-            Ty::Record(_, arguments) => arguments
+            Ty::Record(_, arguments) | Ty::Variant(_, arguments) => arguments
                 .iter()
                 .any(|argument| self.occurs(variable, argument)),
             Ty::Intersection(members) => members.iter().any(|member| self.occurs(variable, member)),

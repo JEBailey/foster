@@ -227,9 +227,6 @@ impl FunctionLowerer<'_> {
         if let Some(function) = self.hir.function_named(self.module, name) {
             return Ok(ResolvedName::Function(function));
         }
-        if let Some(record) = self.hir.record_named(self.module, name) {
-            return Ok(ResolvedName::Record(record));
-        }
         let variants = self.hir.modules[self.module]
             .variant_types
             .values()
@@ -240,10 +237,13 @@ impl FunctionLowerer<'_> {
             [variant] => return Ok(ResolvedName::Variant(*variant)),
             [_, _, ..] => {
                 return Err(self.error(format!(
-                    "variant alternative `{name}` is ambiguous; qualify it with its type"
+                    "variant member type `{name}` is ambiguous; qualify it with its union type"
                 )));
             }
             [] => {}
+        }
+        if let Some(record) = self.hir.record_named(self.module, name) {
+            return Ok(ResolvedName::Record(record));
         }
         if let Some(module) = self.imports.get(name) {
             return Ok(ResolvedName::Module(*module));
@@ -262,24 +262,29 @@ impl FunctionLowerer<'_> {
             {
                 imported.push(ResolvedName::Function(function));
             }
+            let matching_variants = self.hir.modules[*module]
+                .variant_types
+                .values()
+                .filter(|parent| self.hir.variant_types[**parent].public)
+                .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter().copied())
+                .filter(|variant| self.hir.variants[*variant].name == name)
+                .collect::<Vec<_>>();
+            for variant in matching_variants {
+                let resolved = ResolvedName::Variant(variant);
+                if !imported.contains(&resolved) {
+                    imported.push(resolved);
+                }
+            }
             if let Some(record) = self.hir.record_named(*module, name)
                 && self.hir.records[record].public
+                && !self.hir.modules[*module]
+                    .variant_types
+                    .values()
+                    .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter())
+                    .any(|variant| self.hir.variants[*variant].name == name)
                 && !imported.contains(&ResolvedName::Record(record))
             {
                 imported.push(ResolvedName::Record(record));
-            }
-            for parent in self.hir.modules[*module].variant_types.values() {
-                if !self.hir.variant_types[*parent].public {
-                    continue;
-                }
-                for variant in &self.hir.variant_types[*parent].alternatives {
-                    if self.hir.variants[*variant].name == name {
-                        let resolved = ResolvedName::Variant(*variant);
-                        if !imported.contains(&resolved) {
-                            imported.push(resolved);
-                        }
-                    }
-                }
             }
         }
         match imported.as_slice() {

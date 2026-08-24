@@ -1,9 +1,15 @@
 //! Explicit success and failure values with composable transformations.
 
-/// The successful value `Ok<T>` or the failure value `Error<E>`.
+/// The successful member of `Result<T, E>`.
+pub type Ok<T> = { pub value: T }
+
+/// The failure member of `Result<T, E>`.
+pub type Error<E> = { pub value: E }
+
+/// A value that is either a successful `Ok<T>` or a failed `Error<E>`.
 pub type Result<T, E> =
-| Ok(T)
-| Error(E)
+| Ok<T>
+| Error<E>
 
 /// Applies `transform` to a successful value and preserves an error.
 pub func map<T, E, U>(result: Result<T, E>, transform: func(T) -> U) -> Result<U, E> {

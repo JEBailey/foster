@@ -28,8 +28,8 @@ func record_failure(self: Statistics) -> Int {
 
 func record_result(self: Statistics, result: ParseResult<Json>) -> Int {
     branch result {
-        Ok(_) -> self.record_success()
-        Error(_) -> self.record_failure()
+        ParseOk(_) -> self.record_success()
+        ParseError(_) -> self.record_failure()
     }
 }
 

@@ -1,5 +1,14 @@
 //! Three-way ordering results and ordering transformations.
 
+/// The less-than member of `Ordering`.
+pub type Less = {}
+
+/// The equality member of `Ordering`.
+pub type Equal = {}
+
+/// The greater-than member of `Ordering`.
+pub type Greater = {}
+
 /// The relative order of two comparable values.
 pub type Ordering =
 | Less

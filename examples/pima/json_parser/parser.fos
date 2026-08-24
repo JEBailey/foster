@@ -1,10 +1,16 @@
+pub type Null = {}
+pub type Boolean = { pub value: Bool }
+pub type Number = { pub value: Float }
+pub type JsonString = { pub value: String }
+pub type Array = { pub values: List<Json> }
+pub type Object = { pub members: List<JsonMember> }
 pub type Json =
     | Null
-    | Boolean(Bool)
-    | Number(Float)
-    | String(String)
-    | Array(List<Json>)
-    | Object(List<JsonMember>)
+    | Boolean
+    | Number
+    | JsonString
+    | Array
+    | Object
 
 pub type JsonMember = {
     pub key: String
@@ -15,9 +21,11 @@ pub type JsonError = {
     pub message: String
 }
 
+pub type ParseOk<T> = { pub value: T }
+pub type ParseError = { pub error: JsonError }
 pub type ParseResult<T> =
-    | Ok(T)
-    | Error(JsonError)
+    | ParseOk<T>
+    | ParseError
 
 type Parsed<T> = {
     value: T
@@ -31,7 +39,7 @@ type ScannedNumber = {
 }
 
 func fail<T>(message: String) -> ParseResult<T> {
-    Error(JsonError { message })
+    ParseError(JsonError { message })
 }
 
 func skip_whitespace(characters: String) -> String {
@@ -64,7 +72,7 @@ func hex_value(character: CodePoint) -> Int {
 }
 
 func consume_hex(characters: String, value: Int, remaining: Int) -> ParseResult<Parsed<Int>> {
-    return Ok(Parsed { value, rest: characters }) if remaining == 0
+    return ParseOk(Parsed { value, rest: characters }) if remaining == 0
     return fail("incomplete Unicode escape") if characters.empty?
 
     let digit = hex_value(characters.head)
@@ -81,16 +89,16 @@ func scan_digits(characters: String, token: String, count: Int) -> ScannedNumber
 }
 
 func scan_fraction(characters: String, token: String) -> ParseResult<ScannedNumber> {
-    return Ok(ScannedNumber { token, rest: characters, digits: 0 }) if characters.empty?
-    return Ok(ScannedNumber { token, rest: characters, digits: 0 }) if characters.head != '.'
+    return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if characters.empty?
+    return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if characters.head != '.'
     let scanned = scan_digits(characters.rest, token + ".", 0)
     return fail("expected digits after decimal point") if scanned.digits == 0
-    Ok(scanned)
+    ParseOk(scanned)
 }
 
 func scan_exponent(characters: String, token: String) -> ParseResult<ScannedNumber> {
-    return Ok(ScannedNumber { token, rest: characters, digits: 0 }) if characters.empty?
-    return Ok(ScannedNumber { token, rest: characters, digits: 0 }) if !characters.head.in?('e', 'E')
+    return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if characters.empty?
+    return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if !characters.head.in?('e', 'E')
     let rest = characters.rest
     let exponent = token + characters.head.string
     return fail("expected exponent digits") if rest.empty?
@@ -100,7 +108,7 @@ func scan_exponent(characters: String, token: String) -> ParseResult<ScannedNumb
         _ -> scan_digits(move rest, move exponent, 0)
     }
     return fail("expected exponent digits") if scanned.digits == 0
-    Ok(scanned)
+    ParseOk(scanned)
 }
 
 func parse_number(characters: String) -> ParseResult<Parsed<Json>> {
@@ -126,28 +134,28 @@ func parse_unsigned_number(characters: String, prefix: String) -> ParseResult<Pa
 
 func parse_number_fraction(whole: ScannedNumber) -> ParseResult<Parsed<Json>> {
     branch scan_fraction(move whole.rest, move whole.token) {
-        Error(error) -> Error(error)
-        Ok(fraction) -> parse_number_exponent(move fraction)
+        ParseError(error) -> ParseError(error)
+        ParseOk(fraction) -> parse_number_exponent(move fraction)
     }
 }
 
 func parse_number_exponent(number: ScannedNumber) -> ParseResult<Parsed<Json>> {
     branch scan_exponent(move number.rest, move number.token) {
-        Error(error) -> Error(error)
-        Ok(exponent) -> Ok(Parsed { value: Json.Number(parse_float(exponent.token)), rest: exponent.rest })
+        ParseError(error) -> ParseError(error)
+        ParseOk(exponent) -> ParseOk(Parsed { value: Json.Number(parse_float(exponent.token)), rest: exponent.rest })
     }
 }
 
 func escaped_character(character: CodePoint) -> ParseResult<String> {
     branch character {
-        '\"' -> Ok("\"")
-        '\\' -> Ok("\\")
-        '/' -> Ok("/")
-        'b' -> Ok(from_code_point(8).string)
-        'f' -> Ok(from_code_point(12).string)
-        'n' -> Ok("\n")
-        'r' -> Ok("\r")
-        't' -> Ok("\t")
+        '\"' -> ParseOk("\"")
+        '\\' -> ParseOk("\\")
+        '/' -> ParseOk("/")
+        'b' -> ParseOk(from_code_point(8).string)
+        'f' -> ParseOk(from_code_point(12).string)
+        'n' -> ParseOk("\n")
+        'r' -> ParseOk("\r")
+        't' -> ParseOk("\t")
         _ -> fail("invalid JSON string escape")
     }
 }
@@ -156,15 +164,15 @@ func parse_escape(characters: String) -> ParseResult<Parsed<String>> {
     return fail("unterminated JSON string escape") if characters.empty?
     return parse_unicode_escape(characters.rest) if characters.head == 'u'
     branch escaped_character(characters.head) {
-        Error(error) -> Error(error)
-        Ok(value) -> Ok(Parsed { value, rest: characters.rest })
+        ParseError(error) -> ParseError(error)
+        ParseOk(value) -> ParseOk(Parsed { value, rest: characters.rest })
     }
 }
 
 func parse_unicode_escape(characters: String) -> ParseResult<Parsed<String>> {
     branch consume_hex(move characters, 0, 4) {
-        Error(error) -> Error(error)
-        Ok(parsed) -> unicode_scalar(move parsed)
+        ParseError(error) -> ParseError(error)
+        ParseOk(parsed) -> unicode_scalar(move parsed)
     }
 }
 
@@ -173,9 +181,9 @@ func unicode_scalar(parsed: Parsed<Int>) -> ParseResult<Parsed<String>> {
         parsed.value >= 55296 -> branch {
             parsed.value <= 56319 -> parse_low_surrogate(move parsed)
             parsed.value <= 57343 -> fail("isolated low surrogate")
-            _ -> Ok(Parsed { value: from_code_point(parsed.value).string, rest: parsed.rest })
+            _ -> ParseOk(Parsed { value: from_code_point(parsed.value).string, rest: parsed.rest })
         }
-        _ -> Ok(Parsed { value: from_code_point(parsed.value).string, rest: parsed.rest })
+        _ -> ParseOk(Parsed { value: from_code_point(parsed.value).string, rest: parsed.rest })
     }
 }
 
@@ -194,11 +202,11 @@ func parse_low_surrogate(high: Parsed<Int>) -> ParseResult<Parsed<String>> {
 
 func combine_surrogates(high: Int, low_result: ParseResult<Parsed<Int>>) -> ParseResult<Parsed<String>> {
     branch low_result {
-        Error(error) -> Error(error)
-        Ok(low) -> branch {
+        ParseError(error) -> ParseError(error)
+        ParseOk(low) -> branch {
             low.value < 56320 -> fail("invalid low surrogate")
             low.value > 57343 -> fail("invalid low surrogate")
-            _ -> Ok(Parsed { value: from_code_point(65536 + (high - 55296) * 1024 + low.value - 56320).string, rest: low.rest })
+            _ -> ParseOk(Parsed { value: from_code_point(65536 + (high - 55296) * 1024 + low.value - 56320).string, rest: low.rest })
         }
     }
 }
@@ -206,7 +214,7 @@ func combine_surrogates(high: Int, low_result: ParseResult<Parsed<Int>>) -> Pars
 func parse_string_characters(characters: String, result: String) -> ParseResult<Parsed<String>> {
     branch {
         characters.empty? -> fail("unterminated JSON string")
-        characters.head == '\"' -> Ok(Parsed { value: result, rest: characters.rest })
+        characters.head == '\"' -> ParseOk(Parsed { value: result, rest: characters.rest })
         characters.head == '\\' -> append_escape(characters.rest, move result)
         characters.head < 32 -> fail("unescaped control character in JSON string")
         _ -> parse_string_characters(characters.rest, result + characters.head.string)
@@ -215,8 +223,8 @@ func parse_string_characters(characters: String, result: String) -> ParseResult<
 
 func append_escape(characters: String, result: String) -> ParseResult<Parsed<String>> {
     branch parse_escape(move characters) {
-        Error(error) -> Error(error)
-        Ok(parsed) -> parse_string_characters(move parsed.rest, result + parsed.value)
+        ParseError(error) -> ParseError(error)
+        ParseOk(parsed) -> parse_string_characters(move parsed.rest, result + parsed.value)
     }
 }
 
@@ -228,7 +236,7 @@ func parse_string(characters: String) -> ParseResult<Parsed<String>> {
 
 func consume_literal(characters: String, expected: String) -> ParseResult<String> {
     branch {
-        expected.empty? -> Ok(characters)
+        expected.empty? -> ParseOk(characters)
         characters.empty? -> fail("incomplete JSON literal")
         characters.head == expected.head -> consume_literal(characters.rest, expected.rest)
         _ -> fail("invalid JSON literal")
@@ -237,22 +245,22 @@ func consume_literal(characters: String, expected: String) -> ParseResult<String
 
 func literal_value(characters: String, expected: String, value: Json) -> ParseResult<Parsed<Json>> {
     branch consume_literal(move characters, move expected) {
-        Error(error) -> Error(error)
-        Ok(rest) -> Ok(Parsed { value, rest })
+        ParseError(error) -> ParseError(error)
+        ParseOk(rest) -> ParseOk(Parsed { value, rest })
     }
 }
 
 func parse_array_items(characters: String, items: List<Json>) -> ParseResult<Parsed<Json>> {
     let rest = skip_whitespace(move characters)
     return fail("unterminated JSON array") if rest.empty?
-    return Ok(Parsed { value: Json.Array(items), rest: rest.rest }) if rest.head == ']'
+    return ParseOk(Parsed { value: Json.Array(items), rest: rest.rest }) if rest.head == ']'
     append_array_value(parse_value(move rest), move items)
 }
 
 func append_array_value(parsed: ParseResult<Parsed<Json>>, items: List<Json>) -> ParseResult<Parsed<Json>> {
     branch parsed {
-        Error(error) -> Error(error)
-        Ok(value) -> array_separator(move value.rest, items.append(value.value))
+        ParseError(error) -> ParseError(error)
+        ParseOk(value) -> array_separator(move value.rest, items.append(value.value))
     }
 }
 
@@ -260,7 +268,7 @@ func array_separator(characters: String, items: List<Json>) -> ParseResult<Parse
     let rest = skip_whitespace(move characters)
     return fail("unterminated JSON array") if rest.empty?
     return parse_required_array_item(rest.rest, move items) if rest.head == ','
-    return Ok(Parsed { value: Json.Array(items), rest: rest.rest }) if rest.head == ']'
+    return ParseOk(Parsed { value: Json.Array(items), rest: rest.rest }) if rest.head == ']'
     fail("expected `,` or `]` in JSON array")
 }
 
@@ -274,15 +282,15 @@ func parse_required_array_item(characters: String, items: List<Json>) -> ParseRe
 func parse_object_members(characters: String, members: List<JsonMember>) -> ParseResult<Parsed<Json>> {
     let rest = skip_whitespace(move characters)
     return fail("unterminated JSON object") if rest.empty?
-    return Ok(Parsed { value: Json.Object(members), rest: rest.rest }) if rest.head == '}'
+    return ParseOk(Parsed { value: Json.Object(members), rest: rest.rest }) if rest.head == '}'
     return fail("expected a string key in JSON object") if rest.head != '\"'
     parse_object_key(parse_string(move rest), move members)
 }
 
 func parse_object_key(parsed: ParseResult<Parsed<String>>, members: List<JsonMember>) -> ParseResult<Parsed<Json>> {
     branch parsed {
-        Error(error) -> Error(error)
-        Ok(key) -> require_object_colon(move key, move members)
+        ParseError(error) -> ParseError(error)
+        ParseOk(key) -> require_object_colon(move key, move members)
     }
 }
 
@@ -295,8 +303,8 @@ func require_object_colon(key: Parsed<String>, members: List<JsonMember>) -> Par
 
 func parse_object_value(parsed: ParseResult<Parsed<Json>>, key: String, members: List<JsonMember>) -> ParseResult<Parsed<Json>> {
     branch parsed {
-        Error(error) -> Error(error)
-        Ok(value) -> object_separator(move value.rest, members.append(JsonMember { key, value: value.value }))
+        ParseError(error) -> ParseError(error)
+        ParseOk(value) -> object_separator(move value.rest, members.append(JsonMember { key, value: value.value }))
     }
 }
 
@@ -304,7 +312,7 @@ func object_separator(characters: String, members: List<JsonMember>) -> ParseRes
     let rest = skip_whitespace(move characters)
     return fail("unterminated JSON object") if rest.empty?
     return parse_required_object_member(rest.rest, move members) if rest.head == ','
-    return Ok(Parsed { value: Json.Object(members), rest: rest.rest }) if rest.head == '}'
+    return ParseOk(Parsed { value: Json.Object(members), rest: rest.rest }) if rest.head == '}'
     fail("expected `,` or `}` in JSON object")
 }
 
@@ -331,19 +339,19 @@ func parse_value(characters: String) -> ParseResult<Parsed<Json>> {
 
 func string_json(parsed: ParseResult<Parsed<String>>) -> ParseResult<Parsed<Json>> {
     branch parsed {
-        Error(error) -> Error(error)
-        Ok(value) -> Ok(Parsed { value: Json.String(value.value), rest: value.rest })
+        ParseError(error) -> ParseError(error)
+        ParseOk(value) -> ParseOk(Parsed { value: Json.JsonString(value.value), rest: value.rest })
     }
 }
 
 pub func parse_json(source: String) -> ParseResult<Json> {
     branch parse_value(move source) {
-        Error(error) -> Error(error)
-        Ok(parsed) -> finish_json(move parsed)
+        ParseError(error) -> ParseError(error)
+        ParseOk(parsed) -> finish_json(move parsed)
     }
 }
 
 func finish_json(parsed: Parsed<Json>) -> ParseResult<Json> {
     return fail("unexpected content after JSON value") if !skip_whitespace(move parsed.rest).empty?
-    Ok(parsed.value)
+    ParseOk(parsed.value)
 }

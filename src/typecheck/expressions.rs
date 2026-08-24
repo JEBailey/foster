@@ -35,8 +35,14 @@ impl Checker<'_> {
         let body = function.body.clone();
         let mut final_value = None;
         let mut final_expression = None;
-        for statement in &body {
-            final_value = self.check_statement(function_id, statement)?;
+        for (index, statement) in body.iter().enumerate() {
+            final_value = if index + 1 == body.len()
+                && let hir::Stmt::Expr(expression) = statement
+            {
+                Some(self.check_expression(function_id, *expression, signature.result.clone())?)
+            } else {
+                self.check_statement(function_id, statement)?
+            };
             final_expression = match statement {
                 hir::Stmt::Return { value, .. }
                 | hir::Stmt::Bind { value, .. }
@@ -46,17 +52,22 @@ impl Checker<'_> {
             };
         }
         if let Some(final_value) = final_value {
-            self.coerce(signature.result, final_value, function_id)
-                .map_err(|error| {
-                    final_expression.map_or(error.clone(), |expression| {
-                        self.error_at_expression(
-                            error,
-                            function_id,
-                            expression,
-                            "function result has an incompatible type",
-                        )
-                    })
-                })?;
+            self.coerce_expression(
+                signature.result,
+                final_value,
+                function_id,
+                final_expression.expect("a final value has a source expression"),
+            )
+            .map_err(|error| {
+                final_expression.map_or(error.clone(), |expression| {
+                    self.error_at_expression(
+                        error,
+                        function_id,
+                        expression,
+                        "function result has an incompatible type",
+                    )
+                })
+            })?;
         }
         Ok(())
     }
@@ -82,16 +93,16 @@ impl Checker<'_> {
                         )
                     })?;
                 }
-                let value = self.infer_expression(function, *value_expression)?;
                 let result = self.functions[&function].result.clone();
-                self.coerce(result, value, function).map_err(|error| {
-                    self.error_at_expression(
-                        error,
-                        function,
-                        *value_expression,
-                        "returned value has an incompatible type",
-                    )
-                })?;
+                self.check_expression(function, *value_expression, result)
+                    .map_err(|error| {
+                        self.error_at_expression(
+                            error,
+                            function,
+                            *value_expression,
+                            "returned value has an incompatible type",
+                        )
+                    })?;
                 Ok(None)
             }
             hir::Stmt::Bind { local, value } => {
@@ -106,12 +117,12 @@ impl Checker<'_> {
                 local,
                 value: value_expression,
             } => {
-                let value = self.infer_expression(function, *value_expression)?;
                 let local_type = match &self.locals[local] {
                     Ty::Reference(_, value) => (**value).clone(),
                     ty => ty.clone(),
                 };
-                self.coerce(local_type, value.clone(), function)
+                let value = self
+                    .check_expression(function, *value_expression, local_type)
                     .map_err(|error| {
                         self.error_at_expression(
                             error,
@@ -127,8 +138,8 @@ impl Checker<'_> {
                 value: value_expression,
             } => {
                 let place = self.infer_expression(function, *place)?;
-                let value = self.infer_expression(function, *value_expression)?;
-                self.coerce(place, value.clone(), function)
+                let value = self
+                    .check_expression(function, *value_expression, place)
                     .map_err(|error| {
                         self.error_at_expression(
                             error,
@@ -141,6 +152,82 @@ impl Checker<'_> {
             }
             hir::Stmt::Expr(expression) => Ok(Some(self.infer_expression(function, *expression)?)),
         }
+    }
+
+    pub(super) fn check_expression(
+        &mut self,
+        function: FunctionId,
+        expression_id: ExprId,
+        expected: Ty,
+    ) -> Result<Ty, FosterError> {
+        let expected = self.resolved(expected);
+        let expression = self.hir.expressions[expression_id].clone();
+
+        if let hir::Expr::List(items) = expression.clone()
+            && let Some(element) = self.list_element(&expected)
+        {
+            for item in items {
+                self.check_expression(function, item, element.clone())?;
+            }
+            self.expressions.insert(expression_id, expected.clone());
+            return Ok(expected);
+        }
+
+        if let hir::Expr::Branch { subject, arms } = expression
+            && matches!(expected, Ty::Variant(_, _))
+        {
+            if arms.is_empty() {
+                return Err(self.error(function, "branch expression has no arms"));
+            }
+            if subject.is_none()
+                && !arms
+                    .iter()
+                    .any(|arm| matches!(arm.test, hir::BranchTest::Wildcard))
+            {
+                return Err(self.error(function, "branch expression requires a `_` arm"));
+            }
+            let subject_ty = subject
+                .map(|subject| self.infer_expression(function, subject))
+                .transpose()?;
+            let mut covered = std::collections::HashSet::new();
+            let mut catch_all = false;
+            for arm in arms {
+                if let hir::BranchTest::Condition(condition) = arm.test {
+                    let condition = self.infer_expression(function, condition)?;
+                    self.unify(Ty::Bool, condition, function)?;
+                } else if let hir::BranchTest::Pattern(pattern) = &arm.test {
+                    self.check_pattern(
+                        function,
+                        pattern,
+                        subject_ty.clone().expect("pattern branch has subject"),
+                        &mut covered,
+                        &mut catch_all,
+                        true,
+                    )?;
+                }
+                self.check_expression(function, arm.value, expected.clone())?;
+            }
+            if let Some(Ty::Variant(parent, _)) = subject_ty.map(|ty| self.resolved(ty)) {
+                let required = self.hir.variant_types[parent].alternatives.len();
+                if !catch_all && covered.len() != required {
+                    return Err(self.error(
+                        function,
+                        format!(
+                            "non-exhaustive branch on `{}`",
+                            self.hir.variant_types[parent].name
+                        ),
+                    ));
+                }
+            } else if subject.is_some() && !catch_all {
+                return Err(self.error(function, "pattern branch requires `_` for exhaustiveness"));
+            }
+            self.expressions.insert(expression_id, expected.clone());
+            return Ok(expected);
+        }
+
+        let actual = self.infer_expression(function, expression_id)?;
+        self.coerce_expression(expected.clone(), actual, function, expression_id)?;
+        Ok(self.resolved(expected))
     }
 
     pub(super) fn infer_expression(

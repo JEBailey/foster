@@ -131,7 +131,7 @@ func enabled(document: TomlDocument) -> Bool {
     branch get(move document, "package") {
         Option.None -> false
         Option.Some(value) -> branch get_table(move value, "enabled") {
-            Option.Some(TomlValue.Boolean(enabled)) -> enabled
+            Option.Some(TomlValue.Bool(enabled)) -> enabled
             _ -> false
         }
     }
@@ -168,7 +168,7 @@ import std.toml
 
 func main() -> String {
     let document = TomlDocument {
-        entries: [TomlEntry { key: "count", value: TomlValue.Integer(3) }, TomlEntry { key: "title", value: TomlValue.String("Foster") }]
+        entries: [TomlEntry { key: "count", value: TomlValue.Int(3) }, TomlEntry { key: "title", value: TomlValue.String("Foster") }]
     }
     branch render(move document) {
         Result.Ok(source) -> source
@@ -191,11 +191,11 @@ import std.toml
 func score_value(value: TomlValue) -> Int {
     branch value {
         TomlValue.String(_) -> 1
-        TomlValue.Integer(_) -> 2
+        TomlValue.Int(_) -> 2
         TomlValue.Float(_) -> 4
-        TomlValue.Boolean(_) -> 8
+        TomlValue.Bool(_) -> 8
         TomlValue.DateTime(_) -> 16
-        TomlValue.Array(values) -> 32 + values.length
+        TomlValue.List(values) -> 32 + values.length
         TomlValue.Table(entries) -> 64 + score_entries(move entries)
     }
 }
@@ -279,7 +279,7 @@ import std.toml
 
 func second_product_has_details(document: TomlDocument) -> Bool {{
     branch get(move document, "products") {{
-        Option.Some(TomlValue.Array(products)) -> branch {{
+        Option.Some(TomlValue.List(products)) -> branch {{
             products.length != 2 -> false
             _ -> branch products[1] {{
                 TomlValue.Table(entries) -> branch find_details(move entries) {{

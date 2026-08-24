@@ -76,18 +76,34 @@ impl PackageHir {
                     compositions: source.compositions.clone(),
                     methods: source.methods.clone(),
                 });
-                let mut names = std::collections::HashSet::new();
+                let mut members = Vec::new();
                 for alternative in &source.alternatives {
-                    if !names.insert(alternative.name.as_str()) {
+                    if members.contains(&alternative.ty) {
                         return Err(FosterError::runtime(format!(
-                            "variant `{}` defines alternative `{}` more than once",
-                            source.name, alternative.name
+                            "variant `{}` includes the same member type more than once",
+                            source.name
                         )));
                     }
+                    members.push(alternative.ty.clone());
+                    let name = variant_member_name(&alternative.ty);
+                    if hir.variant_types[parent]
+                        .alternatives
+                        .iter()
+                        .any(|existing| hir.variants[*existing].name == name)
+                    {
+                        return Err(FosterError::runtime(format!(
+                            "variant `{}` has more than one member type named `{name}`",
+                            source.name
+                        )));
+                    }
+                    let (payload, destructures_record) =
+                        variant_member_payload(program, &alternative.ty);
                     let id = hir.variants.alloc(Variant {
                         parent,
-                        name: alternative.name.clone(),
-                        payload: alternative.payload.clone(),
+                        member: alternative.ty.clone(),
+                        name,
+                        payload,
+                        destructures_record,
                     });
                     hir.variant_types[parent].alternatives.push(id);
                 }
@@ -338,6 +354,109 @@ impl PackageHir {
     }
     pub fn variant_type_named(&self, module: ModuleId, name: &str) -> Option<VariantTypeId> {
         self.modules[module].variant_types.get(name).copied()
+    }
+}
+
+fn variant_member_name(member: &ast::TypeExpr) -> String {
+    match member {
+        ast::TypeExpr::Unit => "()".into(),
+        ast::TypeExpr::Named(name, _) => name.rsplit('.').next().unwrap_or(name).to_owned(),
+        ast::TypeExpr::Intersection(members) => members
+            .iter()
+            .map(variant_member_name)
+            .collect::<Vec<_>>()
+            .join(" & "),
+        ast::TypeExpr::Reference { group, value } => {
+            format!("ref[{group}] {}", variant_member_name(value))
+        }
+        ast::TypeExpr::Function { .. } => "func".into(),
+    }
+}
+
+fn variant_member_payload(
+    program: &ast::Program,
+    member: &ast::TypeExpr,
+) -> (Vec<ast::TypeExpr>, bool) {
+    let ast::TypeExpr::Named(name, arguments) = member else {
+        return (
+            (!matches!(member, ast::TypeExpr::Unit))
+                .then(|| member.clone())
+                .into_iter()
+                .collect(),
+            false,
+        );
+    };
+    if name.contains('.') {
+        return (vec![member.clone()], false);
+    }
+    let local_name = name.rsplit('.').next().unwrap_or(name);
+    let Some(record) = program
+        .records
+        .iter()
+        .find(|record| record.name == local_name)
+    else {
+        return (vec![member.clone()], false);
+    };
+    let substitutions = record
+        .parameters
+        .iter()
+        .cloned()
+        .zip(arguments.iter().cloned())
+        .collect::<HashMap<_, _>>();
+    (
+        record
+            .fields
+            .iter()
+            .map(|field| substitute_type_expr(&field.ty, &substitutions))
+            .collect(),
+        true,
+    )
+}
+
+fn substitute_type_expr(
+    ty: &ast::TypeExpr,
+    substitutions: &HashMap<String, ast::TypeExpr>,
+) -> ast::TypeExpr {
+    match ty {
+        ast::TypeExpr::Named(name, arguments)
+            if arguments.is_empty() && substitutions.contains_key(name) =>
+        {
+            substitutions[name].clone()
+        }
+        ast::TypeExpr::Named(name, arguments) => ast::TypeExpr::Named(
+            name.clone(),
+            arguments
+                .iter()
+                .map(|argument| substitute_type_expr(argument, substitutions))
+                .collect(),
+        ),
+        ast::TypeExpr::Intersection(members) => ast::TypeExpr::Intersection(
+            members
+                .iter()
+                .map(|member| substitute_type_expr(member, substitutions))
+                .collect(),
+        ),
+        ast::TypeExpr::Reference { group, value } => ast::TypeExpr::Reference {
+            group: group.clone(),
+            value: Box::new(substitute_type_expr(value, substitutions)),
+        },
+        ast::TypeExpr::Function {
+            parameters,
+            parameter_modes,
+            result,
+            effects,
+            suspends,
+        } => ast::TypeExpr::Function {
+            parameters: parameters
+                .iter()
+                .map(|parameter| substitute_type_expr(parameter, substitutions))
+                .collect(),
+            parameter_modes: parameter_modes.clone(),
+            result: Box::new(substitute_type_expr(result, substitutions)),
+            effects: effects.clone(),
+            suspends: *suspends,
+        },
+        ast::TypeExpr::Unit => ast::TypeExpr::Unit,
     }
 }
 

@@ -143,23 +143,13 @@ impl Parser {
         if self.at(&TokenKind::Pipe) {
             let mut alternatives = Vec::new();
             while self.take(&TokenKind::Pipe) {
-                let alternative = self.expect_ident("expected variant name after `|`")?;
-                let mut payload = Vec::new();
-                if self.take(&TokenKind::LParen) {
-                    if !self.at(&TokenKind::RParen) {
-                        loop {
-                            payload.push(self.type_expr()?);
-                            if !self.take(&TokenKind::Comma) {
-                                break;
-                            }
-                        }
-                    }
-                    self.expect(&TokenKind::RParen, "expected `)` after variant payload")?;
+                let ty = self.type_expr()?;
+                if self.at(&TokenKind::LParen) {
+                    return Err(self.error(
+                        "union members are complete types; declare a record type for structured data, then name that type after `|`",
+                    ));
                 }
-                alternatives.push(VariantAlternative {
-                    name: alternative,
-                    payload,
-                });
+                alternatives.push(VariantAlternative { ty });
                 self.newlines();
             }
             if alternatives.is_empty() {

@@ -1,9 +1,11 @@
 // The request parser and response serializer remain transport-independent.
 // Applications can feed text from std.net.tcp into these pure functions.
 
+type Get = { path: String }
+type BadRequest = { message: String }
 type Request =
-    | Get(String)
-    | BadRequest(String)
+    | Get
+    | BadRequest
 
 type HttpResponse = {
     status: Int

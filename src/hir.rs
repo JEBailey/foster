@@ -107,8 +107,10 @@ pub struct VariantType {
 #[derive(Debug, Clone)]
 pub struct Variant {
     pub parent: VariantTypeId,
+    pub member: ast::TypeExpr,
     pub name: String,
     pub payload: Vec<ast::TypeExpr>,
+    pub destructures_record: bool,
 }
 
 #[derive(Debug, Clone)]

@@ -6,13 +6,20 @@ The 281-line Pima JSON parser is a valuable future conformance test. Its public 
 be:
 
 ```foster
+type Null = {}
+type Boolean = { value: Bool }
+type Number = { value: Float }
+type JsonString = { value: String }
+type Array = { values: List<Json> }
+type Object = { entries: Map<String, Json> }
+
 type Json =
     | Null
-    | Boolean(Bool)
-    | Number(Float)
-    | String(String)
-    | Array(List<Json>)
-    | Object(Map<String, Json>)
+    | Boolean
+    | Number
+    | JsonString
+    | Array
+    | Object
 
 type JsonError = {
     message: String

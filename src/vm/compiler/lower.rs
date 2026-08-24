@@ -3,6 +3,69 @@ use crate::hir::Builtin;
 
 impl FunctionCompiler<'_> {
     pub(super) fn expression(&mut self, id: ExprId) -> Result<Register, FosterError> {
+        if let Some(variant) = self.types.variant_injections.get(&id).copied() {
+            let span = self
+                .hir
+                .expression_spans
+                .get(&id)
+                .cloned()
+                .unwrap_or_else(|| self.hir.functions[self.function].span.clone());
+            let value = self.expression_unwrapped(id)?;
+            let payload = if self.hir.variants[variant].destructures_record {
+                match self
+                    .types
+                    .expression_type(id)
+                    .map(|ty| &self.types.types[ty])
+                {
+                    Some(crate::types::Type::Record { record, .. }) => {
+                        let fields = self.hir.records[*record]
+                            .fields
+                            .iter()
+                            .map(|field| field.name.clone())
+                            .collect::<Vec<_>>();
+                        let mut payload = Vec::with_capacity(fields.len());
+                        for field in fields {
+                            let destination = self.allocate();
+                            self.emit(
+                                Instruction::LoadField {
+                                    destination,
+                                    object: value,
+                                    field,
+                                    by_reference: false,
+                                },
+                                span.clone(),
+                            );
+                            payload.push(destination);
+                        }
+                        payload
+                    }
+                    _ => return Err(self.unsupported("union record-member injection")),
+                }
+            } else if matches!(
+                self.types
+                    .expression_type(id)
+                    .map(|ty| &self.types.types[ty]),
+                Some(crate::types::Type::Unit)
+            ) {
+                Vec::new()
+            } else {
+                vec![value]
+            };
+            let destination = self.allocate();
+            self.emit(
+                Instruction::MakeVariant {
+                    destination,
+                    variant,
+                    payload,
+                },
+                span,
+            );
+            return Ok(destination);
+        }
+        self.expression_unwrapped(id)
+    }
+
+    fn expression_unwrapped(&mut self, id: ExprId) -> Result<Register, FosterError> {
         let span = self
             .hir
             .expression_spans

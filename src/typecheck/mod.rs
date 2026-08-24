@@ -68,6 +68,7 @@ impl<'a> Checker<'a> {
             locals: HashMap::new(),
             local_groups: HashMap::new(),
             expressions: HashMap::new(),
+            variant_injections: HashMap::new(),
             extension_methods: HashMap::new(),
             member_constraints: Vec::new(),
             diagnostics: Vec::new(),
@@ -309,16 +310,15 @@ impl<'a> Checker<'a> {
                 .map(|p| (p.clone(), self.fresh()))
                 .collect::<HashMap<_, _>>();
             for alternative in &variant.alternatives {
-                for payload in &self.hir.variants[*alternative].payload {
-                    let ty = self.annotation_type(variant.module, payload, &generics)?;
-                    if variant.public
-                        && let Some(private) = self.private_type_in(&ty)
-                    {
-                        return Err(FosterError::runtime(format!(
-                            "public variant `{}.{}` exposes private type `{private}`",
-                            variant.name, self.hir.variants[*alternative].name
-                        )));
-                    }
+                let member = &self.hir.variants[*alternative].member;
+                let ty = self.annotation_type(variant.module, member, &generics)?;
+                if variant.public
+                    && let Some(private) = self.private_type_in(&ty)
+                {
+                    return Err(FosterError::runtime(format!(
+                        "public union `{}` includes private type `{private}`",
+                        variant.name
+                    )));
                 }
             }
         }

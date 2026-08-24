@@ -47,6 +47,7 @@ impl Checker<'_> {
             );
         }
         let mut information = TypeInformation {
+            variant_injections: self.variant_injections.clone(),
             extension_methods: self.extension_methods.clone(),
             record_names: self
                 .hir

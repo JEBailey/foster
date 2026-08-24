@@ -93,8 +93,7 @@ impl Checker<'_> {
                 return Err(self.error(function, "builtin argument count mismatch"));
             }
             for (argument, expected) in arguments.iter().zip(parameters.iter()) {
-                let actual = self.infer_expression(function, *argument)?;
-                self.unify(expected.clone(), actual, function)?;
+                self.check_expression(function, *argument, expected.clone())?;
             }
             self.expressions
                 .insert(callee, Ty::Function(parameters, Box::new(result.clone())));
@@ -123,9 +122,41 @@ impl Checker<'_> {
         }
 
         let callee_type = self.infer_expression(function, callee)?;
+        let expected_arguments = match self.resolved(callee_type.clone()) {
+            Ty::Function(parameters, _) | Ty::Callable { parameters, .. }
+                if parameters.len() == arguments.len() =>
+            {
+                Some(parameters)
+            }
+            _ => None,
+        };
         let argument_types = arguments
             .iter()
-            .map(|argument| self.infer_expression(function, *argument))
+            .enumerate()
+            .map(|(index, argument)| match &expected_arguments {
+                Some(parameters)
+                    if matches!(
+                        (
+                            &self.hir.expressions[*argument],
+                            self.resolved(parameters[index].clone())
+                        ),
+                        (hir::Expr::Branch { .. }, Ty::Variant(_, _))
+                    ) || matches!(&self.hir.expressions[*argument], hir::Expr::List(_))
+                        && self.list_element(&parameters[index]).is_some() =>
+                {
+                    self.check_expression(function, *argument, parameters[index].clone())
+                        .map_err(|error| {
+                            self.error_at_expression(
+                                error,
+                                function,
+                                *argument,
+                                "argument has an incompatible type",
+                            )
+                        })
+                }
+                None => self.infer_expression(function, *argument),
+                Some(_) => self.infer_expression(function, *argument),
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let callee_type = instantiate_call_groups(callee_type, &argument_types);
         self.check_argument_modes(function, &callee_type, arguments, &argument_types)?;
@@ -209,14 +240,15 @@ impl Checker<'_> {
             ));
         }
         for ((argument, expected), actual) in arguments.iter().zip(parameters).zip(argument_types) {
-            self.coerce(expected, actual, function).map_err(|error| {
-                self.error_at_expression(
-                    error,
-                    function,
-                    *argument,
-                    "argument has an incompatible type",
-                )
-            })?;
+            self.coerce_expression(expected, actual, function, *argument)
+                .map_err(|error| {
+                    self.error_at_expression(
+                        error,
+                        function,
+                        *argument,
+                        "argument has an incompatible type",
+                    )
+                })?;
         }
         self.unify(*expected_result, result, function)
             .map_err(|error| {

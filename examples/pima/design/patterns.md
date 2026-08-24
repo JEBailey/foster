@@ -5,9 +5,12 @@
 Pima's `patterns.pima` maps naturally to closed Foster variants and exhaustive `branch`:
 
 ```foster
+type Ok = { name: String score: Int }
+type Error = { message: String }
+
 type ScoreResult =
-    | Ok(String, Int)
-    | Error(String)
+    | Ok
+    | Error
 
 func describe(result: ScoreResult) -> Int {
     branch result {
@@ -26,6 +29,6 @@ func describe(result: ScoreResult) -> Int {
 describe(Ok(name, score))
 ```
 
-This awaits tuple syntax, record/variant declarations, block expressions, pattern HIR, and
-exhaustiveness checking.
+The executable counterpart uses these distinct member record types, block expressions, pattern
+HIR, and exhaustiveness checking.
 

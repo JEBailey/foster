@@ -7,6 +7,7 @@ const grammar = JSON.parse(fs.readFileSync(grammarPath, "utf8"));
 const literals = grammar.repository.strings.patterns;
 const codePoint = new RegExp(`^(?:${literals[0].match})$`);
 const stringEscape = new RegExp(`^(?:${literals[1].patterns[0].match})$`);
+const operators = grammar.repository.operators.patterns;
 
 for (const literal of [String.raw`'\\'`, String.raw`'\"'`, String.raw`'\''`, String.raw`'\n'`, `'x'`]) {
   assert.match(literal, codePoint, `code-point grammar must recognize ${literal}`);
@@ -23,3 +24,5 @@ for (const unsupported of [String.raw`\b`, String.raw`\/`, String.raw`\u1234`]) 
     `grammar must not advertise unsupported Foster escape ${unsupported}`,
   );
 }
+
+assert.equal(operators.some((operator) => operator.name === "keyword.operator.type.union.foster"), true);

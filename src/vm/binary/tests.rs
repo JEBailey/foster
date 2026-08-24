@@ -4,7 +4,7 @@ use crate::vm::{Machine, compile};
 
 #[test]
 fn round_trips_and_executes_compiled_program() {
-    let source = "type Choice = | Left(Int) | Right(Int)\n\
+    let source = "type Left = { value: Int }\ntype Right = { value: Int }\ntype Choice = | Left | Right\n\
             func unwrap(value: Choice) -> Int { branch value { Choice.Left(number) -> number _ -> 0 } }\n\
             func main() -> Int {\n let values = [20, 22]\n unwrap(Choice.Left(values[0] + values[1]))\n }";
     let compilation = crate::compile(source).unwrap();
@@ -44,7 +44,7 @@ func main() -> Int {
     branch parse("answer = 42\n") {
         Result.Error(_) -> 0
         Result.Ok(document) -> branch document.entries.head.value {
-            TomlValue.Integer(value) -> value
+            TomlValue.Int(value) -> value
             _ -> 0
         }
     }

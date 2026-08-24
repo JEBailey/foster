@@ -2,9 +2,11 @@ import core.option
 
 // The recursive storage node is private to this example. `LinkedList<T>` owns the first link, and
 // every `Node` owns both its value and the remainder of the chain.
+type End = {}
+type Node<T> = { value: T, next: Link<T> }
 type Link<T> =
     | End
-    | Node(T, Link<T>)
+    | Node<T>
 
 type LinkedList<T> = {
     head: Link<T>

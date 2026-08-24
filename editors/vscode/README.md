@@ -18,7 +18,8 @@ and launches the Foster language server. Language features include:
   package fallback) in a shared task terminal.
 
 The bundled grammar highlights line comments, nested block-comment delimiters, documentation
-comments, code-point literals, effect clauses, sequence types, and structural intersection types.
+comments, code-point literals, effect clauses, sequence types, structural intersections, and
+union/variant type members.
 
 ## Installation
 

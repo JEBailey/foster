@@ -569,8 +569,10 @@ fn carries_source_spans_into_package_hir() {
 #[test]
 fn carries_exact_nested_pattern_binding_spans_into_hir() {
     let source = r#"type Choice =
-    | Some(String)
+    | Some
     | None
+type Some = { value: String }
+type None = {}
 
 func select(value: Choice) -> String {
     branch value {

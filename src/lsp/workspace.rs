@@ -1420,20 +1420,7 @@ fn variant_signature(
         .iter()
         .map(|alternative| {
             let alternative = &compilation.hir.variants[*alternative];
-            if alternative.payload.is_empty() {
-                alternative.name.clone()
-            } else {
-                format!(
-                    "{}({})",
-                    alternative.name,
-                    alternative
-                        .payload
-                        .iter()
-                        .map(display_type_expr)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            }
+            display_type_expr(&alternative.member)
         })
         .collect::<Vec<_>>()
         .into_iter()

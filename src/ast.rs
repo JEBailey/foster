@@ -40,8 +40,7 @@ pub struct VariantDecl {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VariantAlternative {
-    pub name: String,
-    pub payload: Vec<TypeExpr>,
+    pub ty: TypeExpr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

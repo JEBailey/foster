@@ -8,7 +8,7 @@ The translations preserve each example's useful language or algorithmic idea. Th
 Foster rather than emulating Pima syntax:
 
 - lexical closures replace Pima's caller-environment `do` blocks;
-- records and closed variants replace anonymous objects, tuples, and tagged lists;
+- records and union/variant types replace anonymous objects, tuples, and tagged lists;
 - typed result variants replace `throw`/`attempt` where errors are part of the example;
 - recursive functions replace `while` until Foster gains loop syntax, using postfix guards for
   simple exit conditions;

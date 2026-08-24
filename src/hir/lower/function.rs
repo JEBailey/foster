@@ -220,7 +220,28 @@ impl FunctionLowerer<'_> {
                 let path = qualified_path(constructor)
                     .ok_or_else(|| self.error("record constructor must be a type name"))?;
                 let resolved = if path.len() == 1 {
-                    self.resolve_name(path[0])?
+                    if let Some(record) = self.hir.record_named(self.module, path[0]) {
+                        ResolvedName::Record(record)
+                    } else {
+                        let mut imported = self
+                            .imports
+                            .values()
+                            .filter_map(|module| self.hir.record_named(*module, path[0]))
+                            .filter(|record| self.hir.records[*record].public)
+                            .collect::<Vec<_>>();
+                        imported.sort();
+                        imported.dedup();
+                        match imported.as_slice() {
+                            [record] => ResolvedName::Record(*record),
+                            [_, _, ..] => {
+                                return Err(self.error(format!(
+                                    "imported record type `{}` is ambiguous; qualify it with its module",
+                                    path[0]
+                                )));
+                            }
+                            [] => self.resolve_name(path[0])?,
+                        }
+                    }
                 } else {
                     self.resolve_qualified(&path)?
                 };

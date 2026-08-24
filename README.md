@@ -99,7 +99,7 @@ The current implementation includes:
 - `Bool`, `Int`, binary64 `Float`, `String`, `CodePoint`, `Symbol`, `()`, homogeneous `List<T>`,
   and zero-conversion `Sequence<T>` views;
 - generic records, associated factories, instance methods, private-by-default declarations, and
-  closed variants with exhaustive pattern branches;
+  union/variant types with exhaustive pattern branches;
 - statically checked structural record adaptation, declaration-side composition such as
   `type Text = & Sequence<CodePoint> & { ... }`, and intersection contracts such as
   `Named & Located`;
@@ -140,7 +140,7 @@ func clamp_positive(value: Int) -> Int {
 It is not a prefix conditional or a guard for ordinary calls and assignments; use `branch` for
 value-producing conditional logic.
 
-Subject branches destructure closed variants:
+Subject branches destructure union members:
 
 ```foster
 import core.result

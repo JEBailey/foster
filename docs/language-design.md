@@ -167,15 +167,18 @@ Implemented built-in and runtime types include:
 - homogeneous lists, enforced by the type checker
 - `Sequence<T>`, implemented without conversion by `List<T>` and by `String` as
   `Sequence<CodePoint>`
-- unit
+- unit, written `()`
 
 There is no universally nullable reference type. The core library represents absence with
 `Option<T>`:
 
 ```foster
 type Option<T> =
-    | Some(T)
+    | Some<T>
     | None
+
+type Some<T> = { value: T }
+type None = {}
 ```
 
 `Sequence<T>` is a read-oriented structural view, not a storage representation. Passing a list or
@@ -259,19 +262,28 @@ An associated declaration cannot have a `self` parameter; instance methods retai
 `func get(self: Map<K, V>, key: K)` form. Both directly imported `Map.empty()` and explicitly
 module-qualified `map.Map.empty()` calls resolve to the same function.
 
-## Closed variants
+## Union and variant types
 
-Closed variants use alternatives and are consumed with exhaustive pattern branching:
+`|` combines complete types into a closed union. This is the variant-type counterpart to `&`,
+which combines type requirements:
 
 ```foster
+type Ok<T> = { value: T }
+type Error<E> = { value: E }
+
 type Result<T, E> =
-    | Ok(T)
-    | Error(E)
+    | Ok<T>
+    | Error<E>
 ```
 
-Alternatives may have zero or more positional payload values. Constructors are qualified by their
-type, such as `Result.Ok(42)` and `Option.None`. Generic arguments are inferred from constructors,
-function calls, and branch patterns.
+Every entry after `|` is an ordinary type expression. Primitive types and instantiated generics
+are valid members, so `| Int` and `| List<TomlValue>` mean exactly those types. Syntax such as
+`| Error(E)` is not a declaration form; structured members are declared as records and then named
+by the union. A value whose type uniquely matches one member is injected into the union when the
+surrounding function result, parameter, assignment, or field supplies the union type.
+
+Qualified forms such as `Result.Ok(value)` are explicit construction and pattern shorthand for a
+named record member. Generic arguments are inferred from construction, calls, and branch patterns.
 
 A variant may place shared contract clauses after its alternatives:
 
@@ -301,13 +313,13 @@ different behavior. A variant can be structurally adapted to the method-only con
 satisfies, and calls through such a contract dispatch to the original variant value.
 
 The shared `{ ... }` body declares callable requirements only. Stored fields are rejected because
-variant alternatives carry their own positional payloads; there is no additional record storage
-shared by every alternative.
+the members remain their own complete types; there is no additional record storage shared by every
+member.
 
-An alternative may be written without its type qualifier when its name uniquely identifies an
-alternative in the current module. This applies to both constructors and patterns, allowing
+A member may be written without its union qualifier when its base type name uniquely identifies a
+member in the current module. This applies to both explicit construction and patterns, allowing
 `Ok(value)` and `Error(error)` in code centered on one result type. If two variant types declare the
-same alternative name, Foster requires the qualified spelling.
+same member name, Foster requires the qualified spelling.
 
 ## Branch expressions
 
@@ -330,11 +342,11 @@ branch result {
 }
 ```
 
-The implemented patterns are variant patterns, recursive positional payload patterns, bindings,
-`_`, and Bool, Int, Float, String, and Symbol literals. Branches over closed variants are checked
-for exhaustiveness. A variant alternative is covered only when all of its payload patterns are
-irrefutable bindings or `_`; for example, `Some(value)` covers `Some`, while `Some(0)` does not. A
-top-level binding or `_` is a catch-all.
+The implemented patterns include union-member patterns, recursive record-field destructuring,
+bindings, `_`, and Bool, Int, Float, String, and Symbol literals. Branches over union types are
+checked for exhaustiveness. A member is covered only when all of its nested patterns are
+irrefutable bindings or `_`; for example, `Some(value)` covers `Some<T>`, while `Some(0)` does not.
+A top-level binding or `_` is a catch-all.
 
 ## Remote objects and virtual threads
 
@@ -388,7 +400,7 @@ member lookup implied by “duck typing.” Records retain nominal construction 
 representation, while their accessible contract participates in structural conformance.
 
 The implemented type system includes nominally constructed records with structural adaptation and
-declared contract composition, closed variants, explicit parametric generics using
+declared contract composition, union/variant types, explicit parametric generics using
 `Type<Argument>`, function and intersection types, callable-member contracts, and no implicit
 numeric or nullable conversions.
 
@@ -761,7 +773,7 @@ and implementation limits.
 ## Errors as values
 
 Recoverable errors are ordinary typed values, conventionally represented with the
-Foster-written `Result<T, E>` closed variant:
+Foster-written `Result<T, E>` union type:
 
 ```foster
 import core.result

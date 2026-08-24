@@ -278,6 +278,113 @@ func main() -> Int {
 }
 
 #[test]
+fn variant_declarations_combine_types_and_inject_members() {
+    let source = r#"
+type Value =
+| Int
+| String
+| List<Value>
+
+func wrap(value: Int) -> Value { value }
+
+func main() -> Int {
+    branch wrap(42) {
+        Int(value) -> value
+        String(_) -> 0
+        List(_) -> 0
+    }
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+}
+
+#[test]
+fn union_injection_preserves_record_member_destructuring() {
+    let source = r#"
+type Boxed = { value: Int }
+
+type Value =
+| Boxed
+| String
+
+func wrap(value: Boxed) -> Value { value }
+
+func main() -> Int {
+    let boxed = Boxed { value: 42 }
+    branch wrap(move boxed) {
+        Boxed(value) -> value
+        String(_) -> 0
+    }
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+}
+
+#[test]
+fn union_injection_preserves_builtin_record_values() {
+    let source = r#"
+type Value =
+| String
+| Int
+
+func wrap(value: String) -> Value { value }
+
+func main() -> Int {
+    branch wrap("Foster") {
+        String(value) -> value.length
+        Int(value) -> value
+    }
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(6));
+}
+
+#[test]
+fn expected_union_types_flow_into_branches_and_lists() {
+    let source = r#"
+type Value =
+| Int
+| String
+
+func choose(number: Bool) -> Value {
+    branch {
+        number -> 7
+        _ -> "Foster"
+    }
+}
+
+func first(values: List<Value>) -> Int {
+    branch values[0] {
+        Int(value) -> value
+        String(value) -> value.length
+    }
+}
+
+func main() -> Int {
+    first([choose(true), "language"])
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(7));
+}
+
+#[test]
+fn rejects_positional_payload_syntax_in_union_declarations() {
+    let error = foster::compile(
+        r#"
+type Value =
+| List<Value>
+| Table(List<Value>)
+"#,
+    )
+    .unwrap_err();
+    assert!(
+        error.message.contains("union members are complete types"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn postfix_guard_falls_through_to_a_parameter_result() {
     let source = r#"
 func either(left: Bool, right: Bool) -> Bool {
@@ -571,8 +678,10 @@ func main() -> Int {
 fn constructs_and_exhaustively_matches_closed_variants() {
     let source = r#"
 type Result<T> =
-    | Ok(T)
-    | Error(String)
+    | Ok<T>
+    | Error
+type Ok<T> = { value: T }
+type Error = { message: String }
 
 func unwrap(result: Result<Int>) -> Int {
     branch result {
@@ -590,8 +699,10 @@ func main() -> Int { unwrap(Result.Ok(42)) }
 fn matches_payloadless_variants_and_wildcards() {
     let source = r#"
 type Option<T> =
-    | Some(T)
+    | Some<T>
     | None
+type Some<T> = { value: T }
+type None = {}
 
 func present(value: Option<Int>) -> Bool {
     branch value {
@@ -610,8 +721,10 @@ fn rejects_non_exhaustive_variant_branches() {
     let error = foster::compile(
         r#"
 type Choice =
-    | Left(Int)
-    | Right(Int)
+    | Left
+    | Right
+type Left = { value: Int }
+type Right = { value: Int }
 func main() -> Int {
     let value = Choice.Left(1)
     branch value { Choice.Left(number) -> number }
@@ -627,8 +740,10 @@ fn refutable_payload_patterns_do_not_cover_an_entire_alternative() {
     let error = foster::compile(
         r#"
 type Option =
-    | Some(Int)
+    | Some
     | None
+type Some = { value: Int }
+type None = {}
 
 func main() -> Int {
     let value = Some(1)
@@ -647,7 +762,8 @@ func main() -> Int {
 fn rejects_private_variants_in_public_apis() {
     let signature = foster::compile(
         r#"
-type Secret = | Hidden(Int)
+type Hidden = { value: Int }
+type Secret = | Hidden
 pub func expose() -> Secret { Hidden(1) }
 "#,
     )
@@ -660,8 +776,8 @@ pub func expose() -> Secret { Hidden(1) }
 
     let payload = foster::compile(
         r#"
-type Secret = | Hidden(Int)
-pub type Message = | Reveal(Secret)
+type Secret = { value: Int }
+pub type Message = | Secret
 func main() { 0 }
 "#,
     )
@@ -669,7 +785,7 @@ func main() { 0 }
     assert!(
         payload
             .message
-            .contains("public variant `Message.Reveal` exposes private type `Secret`"),
+            .contains("public union `Message` includes private type `Secret`"),
         "{}",
         payload.message
     );
@@ -687,9 +803,9 @@ fn runs_the_foster_json_parser() {
     ))
     .unwrap();
     assert!(
-        matches!(value, Value::Variant { ref type_name, ref alternative, .. } if type_name.as_ref() == "ParseResult" && alternative.as_ref() == "Ok")
+        matches!(value, Value::Variant { ref type_name, ref alternative, .. } if type_name.as_ref() == "ParseResult" && alternative.as_ref() == "ParseOk")
     );
-    assert!(value.to_string().contains("Json.String("));
+    assert!(value.to_string().contains("Json.JsonString("));
     assert!(value.to_string().contains("Json.Number(25)"));
 }
 
@@ -716,7 +832,7 @@ fn json_parser_returns_typed_errors_for_malformed_input() {
         let expression = format!("parse_json({document:?})");
         let value = foster::run(&json_parser_with_main(&expression)).unwrap();
         assert!(
-            matches!(value, Value::Variant { ref type_name, ref alternative, .. } if type_name.as_ref() == "ParseResult" && alternative.as_ref() == "Error"),
+            matches!(value, Value::Variant { ref type_name, ref alternative, .. } if type_name.as_ref() == "ParseResult" && alternative.as_ref() == "ParseError"),
             "expected typed error for {document}, got {value}"
         );
     }
@@ -1489,11 +1605,13 @@ func main() { 0 }
 fn variants_support_shared_contract_bodies_and_instance_methods() {
     let source = r#"
 type Choice =
-    | Number(Int)
+    | Number
     | Empty
     & {
         pub func score(self) -> Int
     }
+type Number = { value: Int }
+type Empty = {}
 
 func score(self: Choice) -> Int {
     branch self {
@@ -1523,9 +1641,11 @@ type Scored = {
 }
 
 type Choice =
-    | Number(Int)
+    | Number
     | Empty
     & Scored
+type Number = { value: Int }
+type Empty = {}
 
 func score(self: Choice) -> Int { 42 }
 func score_of(value: Scored) -> Int { value.score }

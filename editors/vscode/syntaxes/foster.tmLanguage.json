@@ -98,7 +98,8 @@
     },
     "operators": {
       "patterns": [
-        { "name": "keyword.operator.type.intersection.foster", "match": "&" }
+        { "name": "keyword.operator.type.intersection.foster", "match": "&" },
+        { "name": "keyword.operator.type.union.foster", "match": "\\|" }
       ]
     },
     "constants": {

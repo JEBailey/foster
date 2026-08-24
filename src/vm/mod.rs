@@ -338,8 +338,10 @@ mod tests {
         .unwrap();
         assert_eq!(run(&record).unwrap(), Value::Integer(42));
 
-        let variant =
-            crate::compile("type Answer = | Value(Int)\nfunc main() { Answer.Value(42) }").unwrap();
+        let variant = crate::compile(
+            "type Value = { value: Int }\ntype Answer = | Value\nfunc main() { Answer.Value(42) }",
+        )
+        .unwrap();
         assert!(matches!(
             run(&variant).unwrap(),
             Value::Variant { type_name, alternative, payload, .. }
@@ -350,7 +352,7 @@ mod tests {
     #[test]
     fn executes_subject_branches_with_atomic_pattern_bindings() {
         let compilation = crate::compile(
-            "type Choice = | Left(Int) | Right(Int)\n\
+            "type Left = { value: Int }\ntype Right = { value: Int }\ntype Choice = | Left | Right\n\
              func unwrap(value: Choice) -> Int {\n\
                  branch value {\n\
                      Choice.Left(number) -> number\n\

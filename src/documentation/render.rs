@@ -531,20 +531,7 @@ fn variant_signature(compilation: &Compilation, id: crate::hir::VariantTypeId) -
         .iter()
         .map(|id| {
             let alternative = &compilation.hir.variants[*id];
-            if alternative.payload.is_empty() {
-                alternative.name.clone()
-            } else {
-                format!(
-                    "{}({})",
-                    alternative.name,
-                    alternative
-                        .payload
-                        .iter()
-                        .map(type_expr)
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
-            }
+            type_expr(&alternative.member)
         })
         .collect::<Vec<_>>()
         .join(" | ");

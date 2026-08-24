@@ -377,8 +377,10 @@ fn rename_returns_edits_for_a_local_identity_only() {
 #[test]
 fn definition_uses_the_exact_nested_pattern_binding_range() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let source = r#"type Choice =
-    | Some(String)
+    let source = r#"type Some = { value: String }
+type None = {}
+type Choice =
+    | Some
     | None
 
 func select(value: Choice) -> String {
@@ -393,13 +395,45 @@ func select(value: Choice) -> String {
     let location = workspace
         .definition(&TextDocumentPositionParams::new(
             lsp_types::TextDocumentIdentifier::new(uri.clone()),
-            Position::new(6, 32),
+            Position::new(8, 32),
         ))
         .unwrap();
 
     assert_eq!(location.uri, uri);
-    assert_eq!(location.range.start, Position::new(6, 20));
-    assert_eq!(location.range.end, Position::new(6, 27));
+    assert_eq!(location.range.start, Position::new(8, 20));
+    assert_eq!(location.range.end, Position::new(8, 27));
+}
+
+#[test]
+fn union_hover_renders_complete_member_types() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = r#"type Value =
+    | String
+    | List<Value>
+
+func identity(value: Value) -> Value { value }
+"#;
+    workspace.open(uri.clone(), source.into(), 2);
+
+    let hover = workspace
+        .hover(&TextDocumentPositionParams::new(
+            lsp_types::TextDocumentIdentifier::new(uri),
+            Position::new(0, 6),
+        ))
+        .unwrap();
+    let HoverContents::Markup(contents) = hover.contents else {
+        panic!("expected markdown hover")
+    };
+    assert!(
+        contents.value.contains("| List<Value>"),
+        "{}",
+        contents.value
+    );
+    assert!(
+        !contents.value.contains("List(Value)"),
+        "{}",
+        contents.value
+    );
 }
 
 #[test]
