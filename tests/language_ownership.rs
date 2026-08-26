@@ -482,6 +482,51 @@ func main() { 0 }
 }
 
 #[test]
+fn function_contracts_accept_multiple_parameter_and_path_effects() {
+    let source = r#"
+type Nested = {
+    x: List<Int>
+}
+
+func change(x: List<Int>, y: String, z: Nested) -> () [reshape x, consume y, reshape z.x] {}
+func main() -> () {}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let change = compilation.hir.function_named(module, "change").unwrap();
+
+    assert_eq!(
+        compilation.hir.functions[change].effects,
+        vec![
+            foster::ast::Effect {
+                kind: foster::ast::EffectKind::Reshape,
+                target: foster::ast::GroupPath::root("x"),
+            },
+            foster::ast::Effect {
+                kind: foster::ast::EffectKind::Consume,
+                target: foster::ast::GroupPath::root("y"),
+            },
+            foster::ast::Effect {
+                kind: foster::ast::EffectKind::Reshape,
+                target: foster::ast::GroupPath::root("z").child("x"),
+            },
+        ]
+    );
+    assert_eq!(
+        compilation
+            .types
+            .function_type(change)
+            .unwrap()
+            .parameter_modes,
+        vec![
+            foster::ast::ParameterMode::Borrow,
+            foster::ast::ParameterMode::Consume,
+            foster::ast::ParameterMode::Borrow,
+        ]
+    );
+}
+
+#[test]
 fn overbroad_parent_effect_warnings_name_required_field_effects() {
     let source = r#"
 type Cursor = {

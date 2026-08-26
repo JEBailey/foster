@@ -828,7 +828,8 @@ When a contract must be written because there is no concrete body, it follows th
 bracketed, comma-separated clause:
 
 ```foster
-func(Inventory) -> Int [mut inventory, suspend]
+func transform(x: List<Int>, y: Job, z: Inventory) -> Int
+    [reshape x, consume y, reshape z.items, suspend]
 ```
 
 Explicit function contracts use the same form and act as checked upper bounds. Loose tokens after
