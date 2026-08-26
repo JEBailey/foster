@@ -5,7 +5,7 @@ Foster has first-class top-level test declarations:
 ```foster
 test "list length can be observed" {
     let values = [1]
-    println(values.length)
+    assert(values.length == 1)
 }
 ```
 
@@ -28,10 +28,18 @@ foster test # discovers foster.toml from the current directory
 ```
 
 Discovery is deterministic: tests are ordered by module and then description. Each invocation uses
-a fresh VM call stack. A runtime failure marks that test failed, does not prevent remaining tests
-from running, and makes the command exit unsuccessfully.
+a fresh VM call stack. A failed assertion or other runtime failure marks that test failed, does not
+prevent remaining tests from running, and makes the command exit unsuccessfully. Assertions stop
+their current test immediately and may include a message:
+
+```foster
+test "parsed values retain their name" {
+    let name = "Foster"
+    assert(name.length == 6)
+    assert(name == "Foster", "name changed during parsing")
+}
+```
 
 Compiled `.fbc` files currently omit discovery metadata, so `foster test` operates on Foster source
-files and packages. Assertion functions, equality-aware failure rendering, filtering, and captured
-test output are the next testing-layer features; the declaration and runner do not introduce a
-special assertion or execution model.
+files and packages. Equality-aware assertion rendering, filtering, and captured test output are the
+next testing-layer features.

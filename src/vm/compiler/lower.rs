@@ -3,65 +3,6 @@ use crate::hir::Builtin;
 
 impl FunctionCompiler<'_> {
     pub(super) fn expression(&mut self, id: ExprId) -> Result<Register, FosterError> {
-        if let Some(variant) = self.types.variant_injections.get(&id).copied() {
-            let span = self
-                .hir
-                .expression_spans
-                .get(&id)
-                .cloned()
-                .unwrap_or_else(|| self.hir.functions[self.function].span.clone());
-            let value = self.expression_unwrapped(id)?;
-            let payload = if self.hir.variants[variant].destructures_record {
-                match self
-                    .types
-                    .expression_type(id)
-                    .map(|ty| &self.types.types[ty])
-                {
-                    Some(crate::types::Type::Record { record, .. }) => {
-                        let fields = self.hir.records[*record]
-                            .fields
-                            .iter()
-                            .map(|field| field.name.clone())
-                            .collect::<Vec<_>>();
-                        let mut payload = Vec::with_capacity(fields.len());
-                        for field in fields {
-                            let destination = self.allocate();
-                            self.emit(
-                                Instruction::LoadField {
-                                    destination,
-                                    object: value,
-                                    field,
-                                    by_reference: false,
-                                },
-                                span.clone(),
-                            );
-                            payload.push(destination);
-                        }
-                        payload
-                    }
-                    _ => return Err(self.unsupported("union record-member injection")),
-                }
-            } else if matches!(
-                self.types
-                    .expression_type(id)
-                    .map(|ty| &self.types.types[ty]),
-                Some(crate::types::Type::Unit)
-            ) {
-                Vec::new()
-            } else {
-                vec![value]
-            };
-            let destination = self.allocate();
-            self.emit(
-                Instruction::MakeVariant {
-                    destination,
-                    variant,
-                    payload,
-                },
-                span,
-            );
-            return Ok(destination);
-        }
         self.expression_unwrapped(id)
     }
 
@@ -125,8 +66,8 @@ impl FunctionCompiler<'_> {
                 Ok(destination)
             }
             hir::Expr::Name(ResolvedName::Variant(variant)) => {
-                if !self.hir.variants[*variant].payload.is_empty() {
-                    return Err(self.unsupported("unapplied variant constructor"));
+                if self.hir.variants[*variant].payload.is_some() {
+                    return Err(self.unsupported("unapplied enum case constructor"));
                 }
                 let destination = self.allocate();
                 self.emit(
@@ -653,14 +594,7 @@ impl FunctionCompiler<'_> {
                 );
                 Ok(destination)
             }
-            hir::Expr::Branch {
-                subject: None,
-                arms,
-            } => self.conditional_branch(arms, span),
-            hir::Expr::Branch {
-                subject: Some(subject),
-                arms,
-            } => self.pattern_branch(*subject, arms, span),
+            hir::Expr::Branch { subject, arms } => self.branch(*subject, arms, span),
             _ => Err(self.unsupported("expression")),
         }
     }
@@ -778,6 +712,13 @@ impl FunctionCompiler<'_> {
                     let function = self
                         .hir
                         .function_named(self.hir.variant_types[*variant].module, name)?;
+                    if self.hir.functions[function]
+                        .parameters
+                        .first()
+                        .is_none_or(|parameter| self.hir.locals[*parameter].name != "self")
+                    {
+                        return None;
+                    }
                     let receiver_matches = self
                         .types
                         .function_type(function)
@@ -1054,103 +995,153 @@ impl FunctionCompiler<'_> {
         }
     }
 
-    fn conditional_branch(
+    fn branch(
         &mut self,
+        subject: Option<ExprId>,
         arms: &[hir::BranchArm],
         span: std::ops::Range<usize>,
     ) -> Result<Register, FosterError> {
+        let subject = subject
+            .map(|subject| self.expression(subject))
+            .transpose()?;
         let destination = self.allocate();
-        let mut exits = Vec::new();
-        for arm in arms {
-            let skip = match arm.test {
-                hir::BranchTest::Condition(condition) => {
-                    let condition = self.expression(condition)?;
-                    Some(self.emit(
-                        Instruction::JumpIfFalse {
+        let cfg = crate::control_flow::BranchCfg::new(arms);
+        let mut labels = vec![None; cfg.node_count()];
+        let mut pending = vec![Vec::new(); cfg.node_count()];
+
+        for (node_id, node) in cfg.nodes() {
+            self.begin_branch_node(node_id, &mut labels, &mut pending)?;
+            match node {
+                crate::control_flow::BranchNode::Test {
+                    arm,
+                    matched,
+                    unmatched,
+                } => match (&arms[arm].test, unmatched, subject) {
+                    (hir::BranchTest::Condition(condition), Some(unmatched), None) => {
+                        let condition = self.expression(*condition)?;
+                        self.emit_branch_jump_if_false(
                             condition,
-                            target: 0,
-                        },
-                        span.clone(),
-                    ))
-                }
-                hir::BranchTest::Wildcard => None,
-                hir::BranchTest::Pattern(_) => return Err(self.unsupported("pattern branch")),
-            };
-            let value = self.expression(arm.value)?;
-            self.emit(
-                Instruction::Move {
-                    destination,
-                    source: value,
+                            unmatched,
+                            &labels,
+                            &mut pending,
+                            span.clone(),
+                        );
+                        self.emit_branch_jump(matched, &labels, &mut pending, span.clone());
+                    }
+                    (hir::BranchTest::Pattern(pattern), Some(unmatched), Some(subject)) => {
+                        let mut bindings = Vec::new();
+                        self.allocate_pattern_bindings(pattern, &mut bindings);
+                        let condition = self.allocate();
+                        self.emit(
+                            Instruction::MatchPattern {
+                                destination: condition,
+                                subject,
+                                pattern: pattern.clone(),
+                                bindings,
+                            },
+                            span.clone(),
+                        );
+                        self.emit_branch_jump_if_false(
+                            condition,
+                            unmatched,
+                            &labels,
+                            &mut pending,
+                            span.clone(),
+                        );
+                        self.emit_branch_jump(matched, &labels, &mut pending, span.clone());
+                    }
+                    (hir::BranchTest::Wildcard, None, _) => {
+                        self.emit_branch_jump(matched, &labels, &mut pending, span.clone());
+                    }
+                    (hir::BranchTest::Condition(_), _, Some(_)) => {
+                        return Err(self.unsupported("condition arm in subject branch"));
+                    }
+                    (hir::BranchTest::Pattern(_), _, None) => {
+                        return Err(self.unsupported("pattern branch without a subject"));
+                    }
+                    _ => unreachable!("semantic branch CFG matches HIR tests"),
                 },
-                span.clone(),
-            );
-            exits.push(self.emit(Instruction::Jump { target: 0 }, span.clone()));
-            if let Some(skip) = skip {
-                self.patch_target(skip, self.instructions.len())?;
+                crate::control_flow::BranchNode::Body { arm, completed } => {
+                    let value = self.compile_branch_body(&arms[arm], &span)?;
+                    if let Some(completed) = completed {
+                        self.emit(
+                            Instruction::Move {
+                                destination,
+                                source: value,
+                            },
+                            span.clone(),
+                        );
+                        self.emit_branch_jump(completed, &labels, &mut pending, span.clone());
+                    }
+                }
+                crate::control_flow::BranchNode::Exit => {}
             }
         }
-        let end = self.instructions.len();
-        for exit in exits {
-            self.patch_target(exit, end)?;
-        }
+        self.finish_branch_cfg(&pending)?;
         Ok(destination)
     }
 
-    fn pattern_branch(
+    fn begin_branch_node(
         &mut self,
-        subject: ExprId,
-        arms: &[hir::BranchArm],
+        node: crate::control_flow::NodeId,
+        labels: &mut [Option<usize>],
+        pending: &mut [Vec<usize>],
+    ) -> Result<(), FosterError> {
+        let offset = self.instructions.len();
+        if labels[node.0].replace(offset).is_some() {
+            return Err(FosterError::runtime(
+                "VM compiler emitted a semantic branch node twice",
+            ));
+        }
+        for instruction in pending[node.0].drain(..) {
+            self.patch_target(instruction, offset)?;
+        }
+        Ok(())
+    }
+
+    fn emit_branch_jump(
+        &mut self,
+        target: crate::control_flow::NodeId,
+        labels: &[Option<usize>],
+        pending: &mut [Vec<usize>],
         span: std::ops::Range<usize>,
-    ) -> Result<Register, FosterError> {
-        let subject = self.expression(subject)?;
-        let destination = self.allocate();
-        let mut exits = Vec::new();
-        for arm in arms {
-            let skip = match &arm.test {
-                hir::BranchTest::Pattern(pattern) => {
-                    let mut bindings = Vec::new();
-                    self.allocate_pattern_bindings(pattern, &mut bindings);
-                    let matched = self.allocate();
-                    self.emit(
-                        Instruction::MatchPattern {
-                            destination: matched,
-                            subject,
-                            pattern: pattern.clone(),
-                            bindings,
-                        },
-                        span.clone(),
-                    );
-                    Some(self.emit(
-                        Instruction::JumpIfFalse {
-                            condition: matched,
-                            target: 0,
-                        },
-                        span.clone(),
-                    ))
-                }
-                hir::BranchTest::Wildcard => None,
-                hir::BranchTest::Condition(_) => {
-                    return Err(self.unsupported("condition arm in subject branch"));
-                }
-            };
-            let value = self.expression(arm.value)?;
-            self.emit(
-                Instruction::Move {
-                    destination,
-                    source: value,
-                },
-                span.clone(),
-            );
-            exits.push(self.emit(Instruction::Jump { target: 0 }, span.clone()));
-            if let Some(skip) = skip {
-                self.patch_target(skip, self.instructions.len())?;
-            }
+    ) {
+        let resolved = labels[target.0].unwrap_or_default();
+        let instruction = self.emit(Instruction::Jump { target: resolved }, span);
+        if labels[target.0].is_none() {
+            pending[target.0].push(instruction);
         }
-        let end = self.instructions.len();
-        for exit in exits {
-            self.patch_target(exit, end)?;
+    }
+
+    fn emit_branch_jump_if_false(
+        &mut self,
+        condition: Register,
+        target: crate::control_flow::NodeId,
+        labels: &[Option<usize>],
+        pending: &mut [Vec<usize>],
+        span: std::ops::Range<usize>,
+    ) {
+        let resolved = labels[target.0].unwrap_or_default();
+        let instruction = self.emit(
+            Instruction::JumpIfFalse {
+                condition,
+                target: resolved,
+            },
+            span,
+        );
+        if labels[target.0].is_none() {
+            pending[target.0].push(instruction);
         }
-        Ok(destination)
+    }
+
+    fn finish_branch_cfg(&self, pending: &[Vec<usize>]) -> Result<(), FosterError> {
+        if pending.iter().all(Vec::is_empty) {
+            Ok(())
+        } else {
+            Err(FosterError::runtime(
+                "semantic branch CFG contains an unresolved edge",
+            ))
+        }
     }
 
     fn allocate_pattern_bindings(&mut self, pattern: &hir::Pattern, bindings: &mut Vec<Register>) {

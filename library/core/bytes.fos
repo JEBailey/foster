@@ -107,14 +107,12 @@ pub func String.from_utf8(value: Bytes) -> Result<String, Utf8Error> {
 
 test "bytes round-trip UTF-8 and hexadecimal text" {
     let encoded = utf8("Foster λ")
-    branch String.from_utf8(encoded) {
-        Result.Ok(value) -> branch {
-            value != "Foster λ" -> [()][1]
-            encoded.hex != "466f7374657220cebb" -> [()][1]
-            _ -> ()
-        }
-        Result.Error(_) -> [()][1]
+    let valid = branch String.from_utf8(encoded) {
+        Result.Ok(value) -> value == "Foster λ"
+        Result.Error(_) -> false
     }
+    assert(valid)
+    assert(encoded.hex == "466f7374657220cebb")
 }
 
 /// Accumulates a stable byte hash.

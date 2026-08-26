@@ -377,10 +377,7 @@ fn rename_returns_edits_for_a_local_identity_only() {
 #[test]
 fn definition_uses_the_exact_nested_pattern_binding_range() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let source = r#"type Some = { value: String }
-type None = {}
-type Choice =
-    | Some
+    let source = r#"enum Choice = Some(String)
     | None
 
 func select(value: Choice) -> String {
@@ -395,20 +392,20 @@ func select(value: Choice) -> String {
     let location = workspace
         .definition(&TextDocumentPositionParams::new(
             lsp_types::TextDocumentIdentifier::new(uri.clone()),
-            Position::new(8, 32),
+            Position::new(5, 32),
         ))
         .unwrap();
 
     assert_eq!(location.uri, uri);
-    assert_eq!(location.range.start, Position::new(8, 20));
-    assert_eq!(location.range.end, Position::new(8, 27));
+    assert_eq!(location.range.start, Position::new(5, 20));
+    assert_eq!(location.range.end, Position::new(5, 27));
 }
 
 #[test]
 fn union_hover_renders_complete_member_types() {
     let (mut workspace, uri, _) = fixture_workspace();
     let source = r#"type Value =
-    | String
+    String
     | List<Value>
 
 func identity(value: Value) -> Value { value }
@@ -424,6 +421,7 @@ func identity(value: Value) -> Value { value }
     let HoverContents::Markup(contents) = hover.contents else {
         panic!("expected markdown hover")
     };
+    assert!(contents.value.contains("    String"), "{}", contents.value);
     assert!(
         contents.value.contains("| List<Value>"),
         "{}",
@@ -434,6 +432,32 @@ func identity(value: Value) -> Value { value }
         "{}",
         contents.value
     );
+}
+
+#[test]
+fn enum_hover_renders_case_labels_and_payload_types() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = r#"enum Option<T> = Some(T)
+    | None
+"#;
+    workspace.open(uri.clone(), source.into(), 2);
+
+    let hover = workspace
+        .hover(&TextDocumentPositionParams::new(
+            lsp_types::TextDocumentIdentifier::new(uri),
+            Position::new(0, 7),
+        ))
+        .unwrap();
+    let HoverContents::Markup(contents) = hover.contents else {
+        panic!("expected markdown hover")
+    };
+    assert!(
+        contents.value.contains("enum Option<T>"),
+        "{}",
+        contents.value
+    );
+    assert!(contents.value.contains("Some(T)"), "{}", contents.value);
+    assert!(contents.value.contains("| None"), "{}", contents.value);
 }
 
 #[test]
@@ -611,7 +635,7 @@ fn definition_opens_embedded_core_source_when_available() {
             .unwrap()
             .join("library/core/list.fos")
     );
-    assert_eq!(location.range.start, Position::new(31, 9));
+    assert_eq!(location.range.start, Position::new(32, 9));
 }
 
 #[test]
@@ -642,7 +666,7 @@ fn examples_compile_in_their_own_document_context() {
         uri_to_path(&location.uri).unwrap(),
         root.join("library/std/sequence.fos")
     );
-    assert_eq!(location.range.start, Position::new(108, 9));
+    assert_eq!(location.range.start, Position::new(109, 9));
 }
 
 #[test]

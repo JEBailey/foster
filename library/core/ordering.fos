@@ -1,19 +1,9 @@
 //! Three-way ordering results and ordering transformations.
 
-/// The less-than member of `Ordering`.
-pub type Less = {}
-
-/// The equality member of `Ordering`.
-pub type Equal = {}
-
-/// The greater-than member of `Ordering`.
-pub type Greater = {}
-
 /// The relative order of two comparable values.
-pub type Ordering =
-| Less
-| Equal
-| Greater
+pub enum Ordering = Less
+    | Equal
+    | Greater
 
 /// A type whose values can be compared for semantic equality with `T`.
 ///
@@ -50,8 +40,9 @@ pub func reverse(ordering: Ordering) -> Ordering {
 }
 
 test "reversing an ordering exchanges less and greater" {
-    branch reverse(Ordering.Less) {
-        Ordering.Greater -> ()
-        _ -> [()][1]
+    let valid = branch reverse(Ordering.Less) {
+        Ordering.Greater -> true
+        _ -> false
     }
+    assert(valid)
 }

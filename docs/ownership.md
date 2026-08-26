@@ -1,6 +1,7 @@
 # Foster Ownership and Borrowing
 
-**Status:** implemented foundation with provisional rules and known conservative checks.
+**Status:** language version 4, ownership-model version 1; implemented foundation with provisional
+rules and known conservative checks.
 
 This document describes Foster's ownership model, its source-level behavior, and how the compiler
 implements it today. It is intentionally separate from
@@ -261,7 +262,7 @@ let pending = analyzer.inspect(document)  // temporary read-only loan
 analyzer.submit(move document)        // ownership transfer
 ```
 
-Owned records, variants, lists, primitives, and other recursively transferable values may be sent.
+Owned records, enums, lists, primitives, and other recursively transferable values may be sent.
 The worker owns its object, so its cleanup is tied to the lifetime of the remote worker/handle rather
 than to an untracked global task.
 
@@ -305,7 +306,7 @@ model must preserve these rules:
 6. Loan validity and access permission remain distinct. A reference may still be live even when a
    read, mutation, reshape, move, or consume operation is not permitted at that point.
 7. Provenance survives storage, projection, structural adaptation, callable erasure, partial
-   application, variants, and collection insertion; none of these operations may silently turn a
+   application, enums, and collection insertion; none of these operations may silently turn a
    borrower into an owner-independent value.
 8. Temporary values have specified destruction points, including temporaries borrowed for calls,
    guards, returned expressions, and chained method invocations.
@@ -314,6 +315,7 @@ model must preserve these rules:
 10. Assignment cannot create an owned self-borrowing cycle or otherwise make a borrower responsible
     for keeping its own origin alive.
 11. Every control transfer ends or carries loans consistently, including normal and guarded return,
+    loop `break` and `continue`, and loop back-edges,
     future `break` and `continue`, error propagation, cancellation, and runtime unwinding.
 12. Temporal validity alone does not permit concurrent mutation. Loans crossing task or remote
     boundaries remain subject to task ownership, overlapping-group, transfer, and synchronization
@@ -386,6 +388,13 @@ AST
 
 The implementation is divided by responsibility:
 
+- `src/block.rs` couples statements to source spans so AST and HIR passes cannot desynchronize
+  parallel body and location vectors.
+- `src/hir/visit.rs` is the policy-free recursive HIR traversal used by queries and capture-effect
+  analysis; path-sensitive passes layer their own state on top of the same node coverage.
+- `src/control_flow.rs` owns reachability-aware branch-arm summaries and the semantic branch/loop
+  CFG consumed by both ownership-MIR and bytecode lowering. Branch tests retain source order, and
+  matched arms complete the branch without falling through to later tests.
 - `src/hir/lower/` resolves names and converts source references, moves, captures, and places into
   stable HIR IDs.
 - `src/typecheck/effects.rs` derives group access, consume, and suspension requirements.
@@ -464,7 +473,7 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
 - Copy behavior is currently a built-in type classification. User-defined copy types have not been
   designed.
 - Runtime values still use managed host representations in the VM. Records now use shared layouts
-  with dense indexed fields, and variants share their runtime names. Ordinary registers are inline
+  with dense indexed fields, and enums share their runtime names. Ordinary registers are inline
   and promote to stable slots only when their identity becomes observable. The bytecode compiler
   emits deterministic `Drop` instructions after register last use, while observable shared slots
   remain alive through frame teardown. Borrow edges are weak and therefore do not create reference

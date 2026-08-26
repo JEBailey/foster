@@ -29,7 +29,7 @@ pub func take<T>(self: Iterator<T>, amount: Int) -> Iterator<T> [consume self] {
 
 test "taking limits iterator output" {
     let values = take([1, 2, 3].iterator, 2).collect()
-    return [()][1] if values.length != 2
-    return [()][1] if values[1] != 2
+    assert(values.length == 2)
+    assert(values[1] == 2)
     ()
 }

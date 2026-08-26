@@ -80,6 +80,9 @@ pub(super) fn site(compilation: &Compilation) -> Site {
     let mut pages = Vec::new();
     let mut declaration_count = 0;
     for (module_id, module) in compilation.hir.modules.iter() {
+        if !compilation.package.is_input_module(&module.name) {
+            continue;
+        }
         let file_name = module_file_name(&module.name);
         let count = module
             .functions
@@ -108,7 +111,9 @@ pub(super) fn site(compilation: &Compilation) -> Site {
             "Foster documentation",
             "<h1>Foster documentation</h1><p>Resolved package API reference</p>",
             &format!(
-                "<div class=\"summary\"><span>{module_count} modules</span><span>{declaration_count} declarations</span></div><h2>Modules</h2><input class=\"filter\" type=\"search\" placeholder=\"Filter modules…\" aria-label=\"Filter modules\" data-module-filter><ul class=\"module-list\">{index_items}</ul><p class=\"no-results\" data-no-results>No modules match your filter.</p>{SCRIPT}"
+                "<div class=\"summary\"><span>{module_count} module{module_suffix}</span><span>{declaration_count} declaration{declaration_suffix}</span></div><h2>Modules</h2><input class=\"filter\" type=\"search\" placeholder=\"Filter modules…\" aria-label=\"Filter modules\" data-module-filter><ul class=\"module-list\">{index_items}</ul><p class=\"no-results\" data-no-results>No modules match your filter.</p>{SCRIPT}",
+                module_suffix = if module_count == 1 { "" } else { "s" },
+                declaration_suffix = if declaration_count == 1 { "" } else { "s" },
             ),
             "style.css",
         ),
@@ -231,6 +236,7 @@ fn provided_types(compilation: &Compilation, module_id: ModuleId) -> String {
                 .iter()
                 .map(|method| (method.name.as_str(), method.documentation.as_deref()))
                 .collect(),
+            "Cases",
         );
     }
     for variant_id in module.variant_types.values().copied() {
@@ -249,13 +255,18 @@ fn provided_types(compilation: &Compilation, module_id: ModuleId) -> String {
             variant
                 .alternatives
                 .iter()
-                .map(|id| compilation.hir.variants[*id].name.clone())
+                .map(|id| variant_alternative_signature(&compilation.hir.variants[*id]))
                 .collect(),
             variant
                 .methods
                 .iter()
                 .map(|method| (method.name.as_str(), method.documentation.as_deref()))
                 .collect(),
+            if variant.kind == crate::ast::VariantKind::Enum {
+                "Cases"
+            } else {
+                "Union members"
+            },
         );
     }
     if cards.is_empty() {
@@ -278,6 +289,7 @@ fn type_card(
     fields: Vec<String>,
     variants: Vec<String>,
     requirements: Vec<(&str, Option<&str>)>,
+    alternatives_title: &str,
 ) {
     let _ = write!(
         cards,
@@ -295,7 +307,7 @@ fn type_card(
     );
     type_members(
         cards,
-        "Variants",
+        alternatives_title,
         variants.iter().map(|value| (value.as_str(), None)),
     );
     type_members(cards, "Required methods", requirements.into_iter());
@@ -529,18 +541,43 @@ fn variant_signature(compilation: &Compilation, id: crate::hir::VariantTypeId) -
     let alternatives = variant
         .alternatives
         .iter()
-        .map(|id| {
-            let alternative = &compilation.hir.variants[*id];
-            type_expr(&alternative.member)
-        })
-        .collect::<Vec<_>>()
-        .join(" | ");
+        .map(|id| variant_alternative_signature(&compilation.hir.variants[*id]))
+        .collect::<Vec<_>>();
+    let alternatives = if variant.kind == crate::ast::VariantKind::Enum {
+        alternatives.join("\n    | ")
+    } else {
+        alternatives.join(" | ")
+    };
     format!(
-        "{}type {}{} = {alternatives}",
+        "{}{} {}{} = {alternatives}",
         if variant.public { "pub " } else { "" },
+        if variant.kind == crate::ast::VariantKind::Enum {
+            "enum"
+        } else {
+            "type"
+        },
         variant.name,
         angled(&variant.parameters)
     )
+}
+
+fn variant_alternative_signature(alternative: &crate::hir::Variant) -> String {
+    if let Some(member) = &alternative.member {
+        type_expr(member)
+    } else if alternative.payload.is_none() {
+        alternative.name.clone()
+    } else {
+        format!(
+            "{}({})",
+            alternative.name,
+            alternative
+                .payload
+                .iter()
+                .map(type_expr)
+                .next()
+                .expect("a payload-bearing enum case has a payload type")
+        )
+    }
 }
 
 fn type_expr(ty: &TypeExpr) -> String {
@@ -679,5 +716,20 @@ mod tests {
         let rendered = markdown("- first\n- second\n\n**important**");
         assert!(rendered.contains("<ul>"));
         assert!(rendered.contains("<strong>important</strong>"));
+    }
+
+    #[test]
+    fn site_omits_embedded_modules() {
+        let compilation = crate::compile(
+            "import core.option\n\nfunc main() -> Option<Int> { Option.Some(42) }\n",
+        )
+        .unwrap();
+        let site = site(&compilation);
+
+        assert_eq!(site.module_count, 1);
+        assert!(site.index.contains("data-module=\"main\""));
+        assert!(!site.index.contains("data-module=\"core"));
+        assert_eq!(site.modules.len(), 1);
+        assert_eq!(site.modules[0].file_name, "main.html");
     }
 }

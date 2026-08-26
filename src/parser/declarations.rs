@@ -32,11 +32,12 @@ impl Parser {
             {
                 constants.push(self.constant(documentation.take())?);
             } else if self.at(&TokenKind::Type)
+                || self.at(&TokenKind::Enum)
                 || self.at(&TokenKind::Intrinsic)
                 || (self.at(&TokenKind::Pub)
-                    && self
-                        .peek_n(1)
-                        .is_some_and(|token| token.kind == TokenKind::Type))
+                    && self.peek_n(1).is_some_and(|token| {
+                        matches!(token.kind, TokenKind::Type | TokenKind::Enum)
+                    }))
             {
                 let (record, variant) = self.type_decl(documentation.take())?;
                 records.extend(record);
@@ -78,12 +79,11 @@ impl Parser {
         if description.trim().is_empty() {
             return Err(self.error("test description cannot be empty"));
         }
-        let (body, statement_spans) = self.block_spanned()?;
+        let body = self.block()?;
         Ok(TestDecl {
             span: start..self.tokens[self.current.saturating_sub(1)].range.end,
             description,
             body,
-            statement_spans,
         })
     }
 
@@ -110,7 +110,15 @@ impl Parser {
         let start = self.peek().range.start;
         let intrinsic = self.take(&TokenKind::Intrinsic);
         let public = self.take(&TokenKind::Pub);
-        self.expect(&TokenKind::Type, "expected `type`")?;
+        let kind = if self.take(&TokenKind::Enum) {
+            VariantKind::Enum
+        } else {
+            self.expect(&TokenKind::Type, "expected `type` or `enum`")?;
+            VariantKind::Union
+        };
+        if intrinsic && kind == VariantKind::Enum {
+            return Err(self.error("an intrinsic declaration must use `type`"));
+        }
         let name = self.expect_ident("expected record name")?;
         let mut parameters = Vec::new();
         if self.take(&TokenKind::Less) {
@@ -141,19 +149,70 @@ impl Parser {
         self.expect(&TokenKind::Equal, "expected `=` after type name")?;
         self.newlines();
         if self.at(&TokenKind::Pipe) {
-            let mut alternatives = Vec::new();
-            while self.take(&TokenKind::Pipe) {
-                let ty = self.type_expr()?;
-                if self.at(&TokenKind::LParen) {
-                    return Err(self.error(
-                        "union members are complete types; declare a record type for structured data, then name that type after `|`",
-                    ));
+            return Err(self.error(&format!(
+                "an {} declaration starts with its first {}; remove the leading `|`",
+                if kind == VariantKind::Enum {
+                    "enum"
+                } else {
+                    "union"
+                },
+                if kind == VariantKind::Enum {
+                    "case"
+                } else {
+                    "member type"
                 }
-                alternatives.push(VariantAlternative { ty });
+            )));
+        }
+        if kind == VariantKind::Enum
+            || (!self.at(&TokenKind::LBrace) && !self.at(&TokenKind::Ampersand))
+        {
+            let mut alternatives = Vec::new();
+            loop {
+                let member_start = self.peek().range.start;
+                let alternative = if kind == VariantKind::Enum {
+                    let name = self.expect_ident("expected enum case name")?;
+                    let payload = if self.take(&TokenKind::LParen) {
+                        if self.at(&TokenKind::RParen) {
+                            return Err(self.error("a payloadless enum case omits parentheses"));
+                        }
+                        let payload = self.type_expr()?;
+                        if self.at(&TokenKind::Comma) {
+                            return Err(self.error(
+                                "an enum case carries one payload type; use a record type to carry multiple fields",
+                            ));
+                        }
+                        self.expect(
+                            &TokenKind::RParen,
+                            "expected `)` after enum case payload type",
+                        )?;
+                        Some(payload)
+                    } else {
+                        None
+                    };
+                    VariantAlternative::EnumCase {
+                        span: member_start..self.tokens[self.current.saturating_sub(1)].range.end,
+                        name,
+                        payload,
+                    }
+                } else {
+                    let ty = self.type_expr()?;
+                    let member_end = self.tokens[self.current.saturating_sub(1)].range.end;
+                    if self.at(&TokenKind::LParen) {
+                        return Err(self.error(
+                            "union members are complete types; declare an `enum` for labelled cases",
+                        ));
+                    }
+                    VariantAlternative::UnionMember {
+                        span: member_start..member_end,
+                        ty,
+                    }
+                };
+                alternatives.push(alternative);
                 self.newlines();
-            }
-            if alternatives.is_empty() {
-                return Err(self.error("variant type requires at least one `|` alternative"));
+                if !self.take(&TokenKind::Pipe) {
+                    break;
+                }
+                self.newlines();
             }
             let mut compositions = Vec::new();
             let mut has_body = false;
@@ -179,9 +238,9 @@ impl Parser {
                                 .peek_n(1)
                                 .is_some_and(|token| token.kind == TokenKind::Func));
                     if !method_follows {
-                        return Err(
-                            self.error("variant shared bodies may only declare required methods")
-                        );
+                        return Err(self.error(
+                            "enum and union shared bodies may only declare required methods",
+                        ));
                     }
                     methods.push(self.method_requirement(documentation)?);
                     if !self.at(&TokenKind::RBrace) {
@@ -192,7 +251,7 @@ impl Parser {
                     }
                     self.newlines();
                 }
-                self.expect(&TokenKind::RBrace, "expected `}` after variant shared body")?;
+                self.expect(&TokenKind::RBrace, "expected `}` after shared type body")?;
             }
             return Ok((
                 None,
@@ -201,6 +260,7 @@ impl Parser {
                     documentation,
                     name,
                     public,
+                    kind,
                     parameters,
                     alternatives,
                     compositions,
@@ -415,10 +475,10 @@ impl Parser {
         } else {
             None
         };
-        let (body, statement_spans) = if intrinsic.is_some() {
-            (Vec::new(), Vec::new())
+        let body = if intrinsic.is_some() {
+            crate::block::Block::new()
         } else {
-            self.block_spanned()?
+            self.block()?
         };
         let end = self.tokens[self.current.saturating_sub(1)].range.end;
         Ok(Function {
@@ -437,7 +497,6 @@ impl Parser {
             suspends,
             suspend_span,
             body,
-            statement_spans,
         })
     }
 
@@ -649,28 +708,24 @@ impl Parser {
             })
     }
 
-    pub(super) fn block(&mut self) -> Result<Vec<Stmt>, FosterError> {
-        self.block_spanned().map(|(statements, _)| statements)
-    }
-
-    pub(super) fn block_spanned(
-        &mut self,
-    ) -> Result<(Vec<Stmt>, Vec<std::ops::Range<usize>>), FosterError> {
+    pub(super) fn block(&mut self) -> Result<crate::block::Block<Stmt>, FosterError> {
         self.expect(&TokenKind::LBrace, "expected `{`")?;
         self.newlines();
-        let mut statements = Vec::new();
-        let mut spans = Vec::new();
+        let mut statements = crate::block::Block::new();
         while !self.at(&TokenKind::RBrace) && !self.at(&TokenKind::Eof) {
             let start = self.peek().range.start;
-            statements.push(self.statement()?);
-            spans.push(start..self.tokens[self.current.saturating_sub(1)].range.end);
+            let statement = self.statement()?;
+            statements.push(
+                statement,
+                start..self.tokens[self.current.saturating_sub(1)].range.end,
+            );
             if !self.at(&TokenKind::RBrace) {
                 self.expect(&TokenKind::Newline, "expected a newline between statements")?;
                 self.newlines();
             }
         }
         self.expect(&TokenKind::RBrace, "expected `}`")?;
-        Ok((statements, spans))
+        Ok(statements)
     }
 
     pub(super) fn statement(&mut self) -> Result<Stmt, FosterError> {
@@ -685,6 +740,32 @@ impl Parser {
             let value = self.expression()?;
             let guard = self.control_guard()?;
             return Ok(Stmt::Return { value, guard });
+        }
+        if self.take(&TokenKind::Assert) {
+            self.expect(&TokenKind::LParen, "expected `(` after `assert`")?;
+            let condition = self.expression()?;
+            let message = self
+                .take(&TokenKind::Comma)
+                .then(|| self.expression())
+                .transpose()?;
+            self.expect(&TokenKind::RParen, "expected `)` after assertion")?;
+            self.reject_value_guard()?;
+            return Ok(Stmt::Assert { condition, message });
+        }
+        if self.take(&TokenKind::Loop) {
+            return Ok(Stmt::Loop {
+                body: self.block()?,
+            });
+        }
+        if self.take(&TokenKind::Break) {
+            return Ok(Stmt::Break {
+                guard: self.control_guard()?,
+            });
+        }
+        if self.take(&TokenKind::Continue) {
+            return Ok(Stmt::Continue {
+                guard: self.control_guard()?,
+            });
         }
         if self.take(&TokenKind::Let) {
             let name = self.expect_ident("expected local name after `let`")?;

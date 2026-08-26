@@ -35,7 +35,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 521);
+    assert_eq!(checked, 524);
 
     let mut modules = 0;
     let mut types = 0;
@@ -195,7 +195,7 @@ func score_value(value: TomlValue) -> Int {
         TomlValue.Float(_) -> 4
         TomlValue.Bool(_) -> 8
         TomlValue.DateTime(_) -> 16
-        TomlValue.List(values) -> 32 + values.length
+        TomlValue.Array(values) -> 32 + values.length
         TomlValue.Table(entries) -> 64 + score_entries(move entries)
     }
 }
@@ -279,7 +279,7 @@ import std.toml
 
 func second_product_has_details(document: TomlDocument) -> Bool {{
     branch get(move document, "products") {{
-        Option.Some(TomlValue.List(products)) -> branch {{
+        Option.Some(TomlValue.Array(products)) -> branch {{
             products.length != 2 -> false
             _ -> branch products[1] {{
                 TomlValue.Table(entries) -> branch find_details(move entries) {{
@@ -376,6 +376,27 @@ func main() -> String {
 }
 
 #[test]
+fn string_take_while_accepts_predicates_and_preserves_unicode_boundaries() {
+    let source = r#"
+import core.functions
+import core.string
+
+func ascii_digit?(value: CodePoint) -> Bool {
+    branch {
+        value < '0' -> false
+        value > '9' -> false
+        _ -> true
+    }
+}
+
+func main() -> String {
+    "123λ45".take_while(ascii_digit?)
+}
+"#;
+    assert_string(foster::run(source).unwrap(), "123");
+}
+
+#[test]
 fn foster_written_map_constructs_through_its_associated_factory() {
     let source = r#"
 import std.collections.map
@@ -457,10 +478,11 @@ import std.fs
 import std.io
 
 func unit(outcome: Result<(), IoError>) -> () {{
-    branch outcome {{
-        Result.Ok(value) -> value
-        Result.Error(_) -> [()][1]
+    let succeeded = branch outcome {{
+        Result.Ok(_) -> true
+        Result.Error(_) -> false
     }}
+    assert(succeeded)
 }}
 func count(outcome: Result<Int, IoError>) -> Int {{
     branch outcome {{

@@ -1,5 +1,6 @@
 //! Generic algorithms over immutable indexed sequences.
 
+import core.functions
 import core.option
 
 /// Applies `transform` to every element of a string or list and returns the results as a list.
@@ -22,12 +23,12 @@ func map_next<T, U>(values: Sequence<T>, transform: func(T) -> U, result: List<U
 }
 
 /// Returns sequence elements for which `include` evaluates to true.
-pub func filter<T>(values: Sequence<T>, include: func(T) -> Bool) -> List<T> {
+pub func filter<T>(values: Sequence<T>, include: Predicate<T>) -> List<T> {
     filter_into(values, include, [])
 }
 
 /// Filters the remaining sequence elements into the result accumulator.
-func filter_into<T>(values: Sequence<T>, include: func(T) -> Bool, result: List<T>) -> List<T> [consume result] {
+func filter_into<T>(values: Sequence<T>, include: Predicate<T>, result: List<T>) -> List<T> [consume result] {
     branch {
         values.empty? -> result
         include(values.head) -> filter_into(values.rest, include, result.append(values.head))
@@ -65,7 +66,7 @@ pub func fold<T, U>(values: Sequence<T>, initial: U, combine: func(consume U, co
 }
 
 /// Returns the first element satisfying `predicate`, consuming the sequence to return an owned value.
-pub func find<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Option<T> [consume values] {
+pub func find<T>(values: Sequence<T>, predicate: Predicate<T>) -> Option<T> [consume values] {
     branch {
         values.empty? -> Option.None
         predicate(values.head) -> Option.Some(values.head)
@@ -74,7 +75,7 @@ pub func find<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Option<T> [
 }
 
 /// Returns whether at least one sequence element satisfies `predicate`.
-pub func any?<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Bool {
+pub func any?<T>(values: Sequence<T>, predicate: Predicate<T>) -> Bool {
     branch {
         values.empty? -> false
         predicate(values.head) -> true
@@ -83,7 +84,7 @@ pub func any?<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Bool {
 }
 
 /// Returns whether every sequence element satisfies `predicate`.
-pub func all?<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Bool {
+pub func all?<T>(values: Sequence<T>, predicate: Predicate<T>) -> Bool {
     branch {
         values.empty? -> true
         predicate(values.head) -> all?(values.rest, predicate)
@@ -92,7 +93,7 @@ pub func all?<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Bool {
 }
 
 /// Returns whether no sequence element satisfies `predicate`.
-pub func none?<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Bool {
+pub func none?<T>(values: Sequence<T>, predicate: Predicate<T>) -> Bool {
     !any?(values, predicate)
 }
 
@@ -106,7 +107,7 @@ pub func contains?<T>(values: Sequence<T>, expected: T) -> Bool {
 }
 
 /// Counts the sequence elements satisfying `predicate`.
-pub func count<T>(values: Sequence<T>, predicate: func(T) -> Bool) -> Int {
+pub func count<T>(values: Sequence<T>, predicate: Predicate<T>) -> Int {
     branch {
         values.empty? -> 0
         predicate(values.head) -> 1 + count(values.rest, predicate)
@@ -121,9 +122,9 @@ pub func take<T>(values: Sequence<T>, count: Int) -> List<T> {
 
 test "sequence algorithms operate on lists without conversion" {
     let values = map([1, 2, 3], (value: Int) -> value + 10)
-    return [()][1] if values.length != 3
-    return [()][1] if values[0] != 11
-    return [()][1] if count(values, (value: Int) -> value > 11) != 2
+    assert(values.length == 3)
+    assert(values[0] == 11)
+    assert(count(values, (value: Int) -> value > 11) == 2)
     ()
 }
 

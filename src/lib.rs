@@ -3,6 +3,8 @@
 
 pub mod archive;
 pub mod ast;
+pub mod block;
+mod control_flow;
 pub mod diagnostic;
 pub mod documentation;
 pub mod entry;

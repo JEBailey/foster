@@ -1,8 +1,8 @@
-func count_to(current: Int, limit: Int) -> Int {
-    return current if current == limit
-    count_to(current + 1, limit)
-}
-
 func main() -> Int {
-    count_to(0, 12000)
+    let current = 0
+    loop {
+        break if current == 12000
+        current = current + 1
+    }
+    current
 }

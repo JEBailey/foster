@@ -53,9 +53,9 @@ pub func remove<T>(self: Set<T>, value: T) -> Set<T> [consume self] {
 
 test "sets preserve insertion order while removing duplicates" {
     let values = Set.from([1, 2, 1])
-    return [()][1] if values.length != 2
-    return [()][1] if values.contains?(1) == false
-    return [()][1] if values.contains?(2) == false
+    assert(values.length == 2)
+    assert(values.contains?(1))
+    assert(values.contains?(2))
     ()
 }
 

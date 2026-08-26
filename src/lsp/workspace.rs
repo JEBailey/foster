@@ -183,7 +183,11 @@ impl Workspace {
         {
             symbols.push(symbol(
                 &variant.name,
-                SymbolKind::ENUM,
+                if variant.kind == crate::ast::VariantKind::Enum {
+                    SymbolKind::ENUM
+                } else {
+                    SymbolKind::INTERFACE
+                },
                 source,
                 variant.span.clone(),
             ));
@@ -391,8 +395,9 @@ impl Workspace {
                 );
             }
             for keyword in [
-                "await", "branch", "copy", "false", "func", "import", "let", "move", "pub", "ref",
-                "remote", "return", "true", "type",
+                "assert", "await", "branch", "break", "continue", "copy", "false", "func",
+                "import", "let", "loop", "move", "pub", "ref", "remote", "return", "true", "type",
+                "enum",
             ] {
                 insert_completion(&mut items, keyword, CompletionItemKind::KEYWORD, None);
             }
@@ -1058,8 +1063,23 @@ fn add_module_completions(
             insert_documented_completion(
                 items,
                 name,
-                CompletionItemKind::ENUM,
-                Some("type".into()),
+                if compilation.hir.variant_types[*variant].kind
+                    == crate::ast::VariantKind::Enum
+                {
+                    CompletionItemKind::ENUM
+                } else {
+                    CompletionItemKind::INTERFACE
+                },
+                Some(
+                    if compilation.hir.variant_types[*variant].kind
+                        == crate::ast::VariantKind::Enum
+                    {
+                        "enum"
+                    } else {
+                        "type"
+                    }
+                    .into(),
+                ),
                 compilation.hir.variant_types[*variant]
                     .documentation
                     .as_deref(),
@@ -1415,16 +1435,52 @@ fn variant_signature(
 ) -> String {
     let variant = &compilation.hir.variant_types[variant_id];
     let parameters = angle_parameters(&variant.parameters);
+    if variant.kind == crate::ast::VariantKind::Union
+        && variant.alternatives.len() == 1
+        && variant.compositions.is_empty()
+        && variant.methods.is_empty()
+    {
+        let member = compilation.hir.variants[variant.alternatives[0]]
+            .member
+            .as_ref()
+            .expect("a union alternative has a member type");
+        return format!(
+            "{}type {}{parameters} = {}",
+            if variant.public { "pub " } else { "" },
+            variant.name,
+            display_type_expr(member)
+        );
+    }
     let alternatives = variant
         .alternatives
         .iter()
-        .map(|alternative| {
+        .enumerate()
+        .map(|(index, alternative)| {
             let alternative = &compilation.hir.variants[*alternative];
-            display_type_expr(&alternative.member)
+            let member = if let Some(member) = &alternative.member {
+                display_type_expr(member)
+            } else if alternative.payload.is_none() {
+                alternative.name.clone()
+            } else {
+                format!(
+                    "{}({})",
+                    alternative.name,
+                    alternative
+                        .payload
+                        .iter()
+                        .map(display_type_expr)
+                        .next()
+                        .expect("a payload-bearing enum case has a payload type")
+                )
+            };
+            if index == 0 && variant.kind == crate::ast::VariantKind::Enum {
+                member
+            } else if index == 0 {
+                format!("    {member}")
+            } else {
+                format!("    | {member}")
+            }
         })
-        .collect::<Vec<_>>()
-        .into_iter()
-        .map(|alternative| format!("    | {alternative}"))
         .collect::<Vec<_>>()
         .join("\n");
     let compositions = variant
@@ -1450,9 +1506,19 @@ fn variant_signature(
     } else {
         format!("\n{}", compositions.join("\n"))
     };
+    let first_case_separator = if variant.kind == crate::ast::VariantKind::Enum {
+        " "
+    } else {
+        "\n"
+    };
     format!(
-        "{}type {}{parameters} =\n{alternatives}{contracts}{body}",
+        "{}{} {}{parameters} ={first_case_separator}{alternatives}{contracts}{body}",
         if variant.public { "pub " } else { "" },
+        if variant.kind == crate::ast::VariantKind::Enum {
+            "enum"
+        } else {
+            "type"
+        },
         variant.name
     )
 }

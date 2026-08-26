@@ -102,10 +102,10 @@ pub func to_string(value: Int) -> String {
 }
 
 test "integer helpers cover signs ranges and powers" {
-    return [()][1] if absolute(-4) != 4
-    return [()][1] if clamp(12, 0, 10) != 10
-    return [()][1] if power(2, 5) != 32
-    return [()][1] if range(2, 5).length != 3
+    assert(absolute(-4) == 4)
+    assert(clamp(12, 0, 10) == 10)
+    assert(power(2, 5) == 32)
+    assert(range(2, 5).length == 3)
     ()
 }
 

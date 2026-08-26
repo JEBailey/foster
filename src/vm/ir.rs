@@ -147,6 +147,10 @@ pub enum Instruction {
         condition: Register,
         target: usize,
     },
+    Assert {
+        condition: Register,
+        message: Option<Register>,
+    },
     Call {
         destination: Register,
         function: FunctionId,
@@ -363,6 +367,10 @@ impl Instruction {
             }
             Self::Jump { .. } => {}
             Self::JumpIfFalse { condition, .. } => visit(*condition),
+            Self::Assert { condition, message } => {
+                visit(*condition);
+                message.iter().copied().for_each(&mut visit);
+            }
             Self::Call {
                 destination,
                 arguments,

@@ -26,11 +26,9 @@ pub func to_int(value: Byte) -> Int {
 }
 
 test "byte conversion preserves values in range" {
-    branch Byte.from(255) {
-        Result.Ok(value) -> branch {
-            to_int(value) == 255 -> ()
-            _ -> [()][1]
-        }
-        Result.Error(_) -> [()][1]
+    let valid = branch Byte.from(255) {
+        Result.Ok(value) -> to_int(value) == 255
+        Result.Error(_) -> false
     }
+    assert(valid)
 }

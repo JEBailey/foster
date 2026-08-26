@@ -285,6 +285,18 @@ impl<'a> Reader<'a> {
                 object: r!(),
                 field: self.string()?,
             },
+            33 => Instruction::Assert {
+                condition: r!(),
+                message: match self.u8()? {
+                    0 => None,
+                    1 => Some(r!()),
+                    tag => {
+                        return Err(BinaryError::new(format!(
+                            "invalid assertion-message option tag {tag}"
+                        )));
+                    }
+                },
+            },
             tag => {
                 return Err(BinaryError::new(format!(
                     "unknown instruction opcode {tag}"

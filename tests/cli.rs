@@ -26,6 +26,45 @@ fn temporary_directory(label: &str) -> PathBuf {
 }
 
 #[test]
+fn help_describes_commands_and_important_options() {
+    let top_level = foster().arg("--help").output().unwrap();
+    assert!(top_level.status.success());
+    let top_level = String::from_utf8(top_level.stdout).unwrap();
+    for description in [
+        "Compile and run a Foster program, bytecode file, or package",
+        "Compile Foster source to bytecode or a native executable",
+        "Type-check and validate Foster source without running it",
+        "Compile and run Foster test declarations",
+        "Generate static API documentation for Foster source",
+        "Serve an existing generated documentation directory",
+        "Start the Foster language server over standard input/output",
+    ] {
+        assert!(top_level.contains(description), "{top_level}");
+    }
+
+    let run = foster().args(["run", "--help"]).output().unwrap();
+    assert!(run.status.success());
+    let run = String::from_utf8(run.stdout).unwrap();
+    assert!(
+        run.contains("Enable bytecode optimization (the default)"),
+        "{run}"
+    );
+    assert!(run.contains("Disable bytecode optimization"), "{run}");
+
+    let docs = foster().args(["docs", "--help"]).output().unwrap();
+    assert!(docs.status.success());
+    let docs = String::from_utf8(docs.stdout).unwrap();
+    assert!(
+        docs.contains("Write generated documentation to this directory"),
+        "{docs}"
+    );
+    assert!(
+        docs.contains("Serve the generated documentation after building it"),
+        "{docs}"
+    );
+}
+
+#[test]
 fn init_creates_a_project_that_commands_discover_from_nested_directories() {
     let root = temporary_directory("init");
     let init = foster()
@@ -44,7 +83,10 @@ fn init_creates_a_project_that_commands_discover_from_nested_directories() {
         fs::read_to_string(root.join("foster.toml")).unwrap(),
         "[package]\nname = \"sample-app\"\nsource = \"src\"\n"
     );
-    fs::write(root.join("src/main.fos"), "func main() -> Int { 42 }\n").unwrap();
+    assert_eq!(
+        fs::read_to_string(root.join("src/main.fos")).unwrap(),
+        "func main() -> () {\n    println(\"Hello, Foster!\")\n}\n"
+    );
     let nested = root.join("src/nested");
     fs::create_dir(&nested).unwrap();
 
@@ -54,7 +96,10 @@ fn init_creates_a_project_that_commands_discover_from_nested_directories() {
         "{}",
         String::from_utf8_lossy(&run.stderr)
     );
-    assert_eq!(String::from_utf8(run.stdout).unwrap().trim(), "42");
+    assert_eq!(
+        String::from_utf8(run.stdout).unwrap().trim(),
+        "Hello, Foster!"
+    );
 
     let check = foster().arg("check").arg(&root).output().unwrap();
     assert!(
@@ -62,8 +107,32 @@ fn init_creates_a_project_that_commands_discover_from_nested_directories() {
         "{}",
         String::from_utf8_lossy(&check.stderr)
     );
+    assert_eq!(
+        String::from_utf8(check.stdout).unwrap().trim(),
+        "ok: checked 2 modules (1 implicit)"
+    );
 
     fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn project_errors_render_their_source_locations() {
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/unknown_type");
+    let output = foster().arg("check").arg(fixture).output().unwrap();
+
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("main.fos:1:21"), "{stderr}");
+    assert!(stderr.contains("invalid type annotation"), "{stderr}");
+
+    let malformed = temporary_directory("project-parse-error");
+    fs::create_dir_all(&malformed).unwrap();
+    fs::write(malformed.join("main.fos"), "func main() {\n    @\n}\n").unwrap();
+    let output = foster().arg("check").arg(&malformed).output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains("main.fos:2:5"), "{stderr}");
+    fs::remove_dir_all(malformed).unwrap();
 }
 
 #[test]
@@ -152,7 +221,7 @@ fn check_can_dump_deterministic_ownership_state() {
     assert!(first.status.success());
     assert_eq!(first.stdout, second.stdout);
     let output = String::from_utf8(first.stdout).unwrap();
-    assert!(output.contains("foster-language=1 ownership-model=1"));
+    assert!(output.contains("foster-language=4 ownership-model=1"));
     assert!(output.contains("function main.main"));
 }
 
@@ -225,6 +294,42 @@ fn build_native_writes_runnable_host_executable() {
     );
     assert_eq!(String::from_utf8(run.stdout).unwrap().trim(), "6765");
     fs::remove_file(output_path).unwrap();
+}
+
+#[test]
+fn native_assertions_exit_with_their_message() {
+    let directory = temporary_directory("native-assertion");
+    fs::create_dir_all(&directory).unwrap();
+    let source = directory.join("main.fos");
+    fs::write(
+        &source,
+        "func main() -> () { assert(false, \"native assertion message\") }\n",
+    )
+    .unwrap();
+    let mut executable = directory.join("assertion");
+    if cfg!(windows) {
+        executable.set_extension("exe");
+    }
+
+    let build = foster()
+        .args(["build", "--native"])
+        .arg(&source)
+        .arg("--output")
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert!(
+        build.status.success(),
+        "{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+
+    let run = Command::new(&executable).output().unwrap();
+    assert!(!run.status.success());
+    assert!(
+        String::from_utf8_lossy(&run.stderr).contains("assertion failed: native assertion message")
+    );
+    fs::remove_dir_all(directory).unwrap();
 }
 
 #[test]
@@ -397,13 +502,16 @@ fn docs_generates_a_static_site_from_resolved_declarations() {
     let index = fs::read_to_string(output_directory.join("index.html")).unwrap();
     let module = fs::read_to_string(output_directory.join("modules/main.html")).unwrap();
     assert!(index.contains("Foster documentation"));
+    assert!(index.contains("<span>1 module</span>"));
     assert!(index.contains("data-module-filter"));
     assert!(index.contains("declarations</span>"));
+    assert!(!index.contains("data-module=\"core"));
     assert!(module.contains("func fibonacci"));
     assert!(module.contains("aria-label=\"On this page\""));
     assert!(module.contains("class=\"badge kind\">function"));
     assert!(module.contains("class=\"anchor\" href=\"#fibonacci\""));
     assert!(output_directory.join("style.css").is_file());
+    assert!(!output_directory.join("modules/core.html").exists());
 
     fs::remove_dir_all(output_directory).unwrap();
 }
@@ -516,7 +624,7 @@ fn test_reports_runtime_failures_and_continues() {
     let source_path = directory.join("main.fos");
     fs::write(
         &source_path,
-        "test \"fails\" {\n    let value = [1][4]\n    println(value)\n}\ntest \"still runs\" {}\n",
+        "test \"fails\" {\n    assert(false, \"the value was not ready\")\n}\ntest \"still runs\" { assert(true) }\n",
     )
     .unwrap();
 
@@ -526,7 +634,10 @@ fn test_reports_runtime_failures_and_continues() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(stdout.contains("test fails ... FAILED"), "{stdout}");
     assert!(stdout.contains("test still runs ... ok"), "{stdout}");
-    assert!(stderr.contains("index is out of bounds"), "{stderr}");
+    assert!(
+        stderr.contains("assertion failed: the value was not ready"),
+        "{stderr}"
+    );
     assert!(stderr.contains("test result: FAILED"), "{stderr}");
 
     fs::remove_dir_all(directory).unwrap();

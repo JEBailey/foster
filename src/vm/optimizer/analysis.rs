@@ -68,6 +68,7 @@ pub(super) fn definitions(instruction: &Instruction) -> Vec<Register> {
         | Instruction::StoreIndex { .. }
         | Instruction::Jump { .. }
         | Instruction::JumpIfFalse { .. }
+        | Instruction::Assert { .. }
         | Instruction::Return { .. } => Vec::new(),
     }
 }
@@ -133,6 +134,10 @@ pub(super) fn uses(instruction: &Instruction) -> Vec<Register> {
         Instruction::Await { future, .. } => uses.push(*future),
         Instruction::MatchPattern { subject, .. } => uses.push(*subject),
         Instruction::JumpIfFalse { condition, .. } => uses.push(*condition),
+        Instruction::Assert { condition, message } => {
+            uses.push(*condition);
+            uses.extend(message);
+        }
         Instruction::Call { arguments, .. } => uses.extend(arguments),
         Instruction::CallMethod {
             receiver,

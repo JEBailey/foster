@@ -1,11 +1,12 @@
 //! Lazy iterator filtering.
 
+import core.functions
 import core.option
 import std.iter
 
 type FilterIterator<T> = & Iterator<T> & {
     source: Iterator<T>
-    predicate: func(T) -> Bool
+    predicate: Predicate<T>
 }
 
 /// Pulls until a filtered iterator finds a matching value or reaches exhaustion.
@@ -20,13 +21,13 @@ func next<T>(self: FilterIterator<T>) -> Option<T> {
 }
 
 /// Lazily retains this iterator's remaining elements that satisfy `predicate`.
-pub func filter<T>(self: Iterator<T>, predicate: func(T) -> Bool) -> Iterator<T> [consume self, consume predicate] {
+pub func filter<T>(self: Iterator<T>, predicate: Predicate<T>) -> Iterator<T> [consume self, consume predicate] {
     FilterIterator { source: move self, predicate: move predicate }
 }
 
 test "filtered iterators retain matching values" {
     let values = filter([1, 2, 3, 4].iterator, (value: Int) -> value > 2).collect()
-    return [()][1] if values.length != 2
-    return [()][1] if values[0] != 3
+    assert(values.length == 2)
+    assert(values[0] == 3)
     ()
 }

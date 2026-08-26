@@ -9,6 +9,7 @@ use crate::package::Package;
 mod lower;
 mod ownership;
 pub(crate) mod queries;
+pub(crate) mod visit;
 use ownership::{
     check_closure_ownership, infer_capture_modes, infer_ref_capture_effects,
     validate_groups_and_effects,
@@ -98,6 +99,7 @@ pub struct VariantType {
     pub module: ModuleId,
     pub name: String,
     pub public: bool,
+    pub kind: ast::VariantKind,
     pub parameters: Vec<String>,
     pub alternatives: Vec<VariantId>,
     pub compositions: Vec<ast::TypeExpr>,
@@ -106,11 +108,11 @@ pub struct VariantType {
 
 #[derive(Debug, Clone)]
 pub struct Variant {
+    pub span: std::ops::Range<usize>,
     pub parent: VariantTypeId,
-    pub member: ast::TypeExpr,
+    pub member: Option<ast::TypeExpr>,
     pub name: String,
-    pub payload: Vec<ast::TypeExpr>,
-    pub destructures_record: bool,
+    pub payload: Option<ast::TypeExpr>,
 }
 
 #[derive(Debug, Clone)]
@@ -154,8 +156,7 @@ pub struct Function {
     pub effect_spans: Vec<std::ops::Range<usize>>,
     pub suspends: bool,
     pub suspend_span: Option<std::ops::Range<usize>>,
-    pub body: Vec<Stmt>,
-    pub statement_spans: Vec<std::ops::Range<usize>>,
+    pub body: crate::block::Block<Stmt>,
 }
 
 #[derive(Debug)]
@@ -176,6 +177,19 @@ pub enum LocalKind {
 pub enum Stmt {
     Return {
         value: ExprId,
+        guard: Option<ExprId>,
+    },
+    Assert {
+        condition: ExprId,
+        message: Option<ExprId>,
+    },
+    Loop {
+        body: crate::block::Block<Stmt>,
+    },
+    Break {
+        guard: Option<ExprId>,
+    },
+    Continue {
         guard: Option<ExprId>,
     },
     Bind {
@@ -348,7 +362,7 @@ pub enum Builtin {
 #[derive(Debug, Clone)]
 pub struct BranchArm {
     pub test: BranchTest,
-    pub value: ExprId,
+    pub body: crate::block::Block<Stmt>,
 }
 
 #[derive(Debug, Clone)]

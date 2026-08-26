@@ -112,6 +112,9 @@ pub fn compile_with_options(
         }
     }
     for (variant, definition) in compilation.hir.variant_types.iter() {
+        if definition.kind != crate::ast::VariantKind::Enum {
+            continue;
+        }
         for (name, function) in &compilation.hir.modules[definition.module].functions {
             let receiver_matches = compilation
                 .types
@@ -146,6 +149,9 @@ pub fn compile_with_options(
         .hir
         .variants
         .iter()
+        .filter(|(_, value)| {
+            compilation.hir.variant_types[value.parent].kind == crate::ast::VariantKind::Enum
+        })
         .map(|(id, value)| {
             (
                 id,
@@ -191,6 +197,12 @@ struct FunctionCompiler<'a> {
     instructions: Vec<Instruction>,
     spans: Vec<std::ops::Range<usize>>,
     next_register: u16,
+    loops: Vec<LoopContext>,
+}
+
+struct LoopContext {
+    start: usize,
+    breaks: Vec<usize>,
 }
 
 impl Compiler<'_> {
@@ -206,6 +218,7 @@ impl Compiler<'_> {
             instructions: Vec::new(),
             spans: Vec::new(),
             next_register: 0,
+            loops: Vec::new(),
         };
         let captures = self
             .closure_captures
@@ -221,65 +234,7 @@ impl Compiler<'_> {
             lower.locals.insert(*parameter, register);
         }
         let mut result = lower.load_constant(Constant::Unit, function.span.clone())?;
-        for (index, statement) in function.body.iter().enumerate() {
-            let span = function
-                .statement_spans
-                .get(index)
-                .cloned()
-                .unwrap_or_else(|| function.span.clone());
-            match statement {
-                hir::Stmt::Return { value, guard } => {
-                    if let Some(guard) = guard {
-                        let condition = lower.expression(*guard)?;
-                        let jump = lower.emit(
-                            Instruction::JumpIfFalse {
-                                condition,
-                                target: 0,
-                            },
-                            span.clone(),
-                        );
-                        result = lower.expression(*value)?;
-                        lower.emit(Instruction::Return { source: result }, span);
-                        let target = lower.instructions.len();
-                        lower.patch_target(jump, target)?;
-                    } else {
-                        result = lower.expression(*value)?;
-                        lower.emit(Instruction::Return { source: result }, span);
-                    }
-                }
-                hir::Stmt::Bind { local, value } => {
-                    let destination = lower.allocate();
-                    lower.locals.insert(*local, destination);
-                    let value = lower.expression(*value)?;
-                    lower.emit(
-                        Instruction::Move {
-                            destination,
-                            source: value,
-                        },
-                        span,
-                    );
-                    result = destination;
-                }
-                hir::Stmt::Assign { local, value } => {
-                    let value = lower.expression(*value)?;
-                    let destination = lower.locals[local];
-                    lower.emit(
-                        Instruction::Move {
-                            destination,
-                            source: value,
-                        },
-                        span,
-                    );
-                    result = destination;
-                }
-                hir::Stmt::Expr(value) => result = lower.expression(*value)?,
-                hir::Stmt::Set { place, value } => {
-                    let value = lower.expression(*value)?;
-                    lower.store_place(*place, value, span.clone())?;
-                    result = value;
-                }
-            }
-        }
+        lower.compile_statements(&function.body, &function.span, &mut result)?;
         let ends_with_unconditional_return = matches!(
             function.body.last(),
             Some(hir::Stmt::Return { guard: None, .. })
@@ -333,5 +288,183 @@ impl Compiler<'_> {
             },
         );
         Ok(())
+    }
+}
+
+impl FunctionCompiler<'_> {
+    pub(super) fn compile_statements(
+        &mut self,
+        statements: &crate::block::Block<hir::Stmt>,
+        fallback_span: &std::ops::Range<usize>,
+        result: &mut Register,
+    ) -> Result<(), FosterError> {
+        for (statement, statement_span) in statements.iter_spanned() {
+            let span = if statement_span.is_empty() {
+                fallback_span.clone()
+            } else {
+                statement_span.clone()
+            };
+            match statement {
+                hir::Stmt::Return { value, guard } => {
+                    if let Some(guard) = guard {
+                        let condition = self.expression(*guard)?;
+                        let jump = self.emit(
+                            Instruction::JumpIfFalse {
+                                condition,
+                                target: 0,
+                            },
+                            span.clone(),
+                        );
+                        *result = self.expression(*value)?;
+                        self.emit(Instruction::Return { source: *result }, span);
+                        let target = self.instructions.len();
+                        self.patch_target(jump, target)?;
+                    } else {
+                        *result = self.expression(*value)?;
+                        self.emit(Instruction::Return { source: *result }, span);
+                    }
+                }
+                hir::Stmt::Assert { condition, message } => {
+                    let condition = self.expression(*condition)?;
+                    let message = message
+                        .map(|message| self.expression(message))
+                        .transpose()?;
+                    self.emit(Instruction::Assert { condition, message }, span.clone());
+                    *result = self.load_constant(Constant::Unit, span)?;
+                }
+                hir::Stmt::Loop { body } => {
+                    let cfg = crate::control_flow::LoopCfg::new();
+                    let mut offsets = [0; 3];
+                    offsets[cfg.header.0] = self.instructions.len();
+                    offsets[cfg.body.0] = self.instructions.len();
+                    self.loops.push(LoopContext {
+                        start: offsets[cfg.header.0],
+                        breaks: Vec::new(),
+                    });
+                    self.compile_statements(body, &span, result)?;
+                    self.emit(
+                        Instruction::Jump {
+                            target: offsets[cfg.header.0],
+                        },
+                        span.clone(),
+                    );
+                    offsets[cfg.exit.0] = self.instructions.len();
+                    *result = self.load_constant(Constant::Unit, span)?;
+                    let context = self.loops.pop().expect("a loop context was pushed");
+                    for jump in context.breaks {
+                        self.patch_target(jump, offsets[cfg.exit.0])?;
+                    }
+                }
+                hir::Stmt::Break { guard } => {
+                    self.compile_break(*guard, span)?;
+                }
+                hir::Stmt::Continue { guard } => {
+                    self.compile_continue(*guard, span)?;
+                }
+                hir::Stmt::Bind { local, value } => {
+                    let destination = self.allocate();
+                    self.locals.insert(*local, destination);
+                    let value = self.expression(*value)?;
+                    self.emit(
+                        Instruction::Move {
+                            destination,
+                            source: value,
+                        },
+                        span,
+                    );
+                    *result = destination;
+                }
+                hir::Stmt::Assign { local, value } => {
+                    let value = self.expression(*value)?;
+                    let destination = self.locals[local];
+                    self.emit(
+                        Instruction::Move {
+                            destination,
+                            source: value,
+                        },
+                        span,
+                    );
+                    *result = destination;
+                }
+                hir::Stmt::Expr(value) => *result = self.expression(*value)?,
+                hir::Stmt::Set { place, value } => {
+                    let value = self.expression(*value)?;
+                    self.store_place(*place, value, span.clone())?;
+                    *result = value;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn compile_break(
+        &mut self,
+        guard: Option<ExprId>,
+        span: std::ops::Range<usize>,
+    ) -> Result<(), FosterError> {
+        let skip = if let Some(guard) = guard {
+            let condition = self.expression(guard)?;
+            Some(self.emit(
+                Instruction::JumpIfFalse {
+                    condition,
+                    target: 0,
+                },
+                span.clone(),
+            ))
+        } else {
+            None
+        };
+        self.loops
+            .last()
+            .ok_or_else(|| FosterError::runtime("loop transfer has no enclosing loop"))?;
+        let jump = self.emit(Instruction::Jump { target: 0 }, span);
+        self.loops
+            .last_mut()
+            .expect("loop context exists")
+            .breaks
+            .push(jump);
+        if let Some(skip) = skip {
+            self.patch_target(skip, self.instructions.len())?;
+        }
+        Ok(())
+    }
+
+    fn compile_continue(
+        &mut self,
+        guard: Option<ExprId>,
+        span: std::ops::Range<usize>,
+    ) -> Result<(), FosterError> {
+        let skip = if let Some(guard) = guard {
+            let condition = self.expression(guard)?;
+            Some(self.emit(
+                Instruction::JumpIfFalse {
+                    condition,
+                    target: 0,
+                },
+                span.clone(),
+            ))
+        } else {
+            None
+        };
+        let target = self
+            .loops
+            .last()
+            .ok_or_else(|| FosterError::runtime("continue has no enclosing loop"))?
+            .start;
+        self.emit(Instruction::Jump { target }, span);
+        if let Some(skip) = skip {
+            self.patch_target(skip, self.instructions.len())?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn compile_branch_body(
+        &mut self,
+        arm: &hir::BranchArm,
+        fallback_span: &std::ops::Range<usize>,
+    ) -> Result<Register, FosterError> {
+        let mut result = self.load_constant(Constant::Unit, fallback_span.clone())?;
+        self.compile_statements(&arm.body, fallback_span, &mut result)?;
+        Ok(result)
     }
 }

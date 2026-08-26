@@ -121,7 +121,7 @@ The effect walker covers every implemented HIR expression and statement. The imp
 | `move place` | `consume` on the place path |
 | `await expression` | `suspend` plus effects needed to produce the future |
 | Direct, method, or callable invocation | instantiated callee effects |
-| Record/list/variant construction | effects of each supplied expression |
+| Record/list/enum-case construction | effects of each supplied expression |
 | `remote value` | effects needed to construct the transferred value; actor `self` effects are cut |
 
 Functional `List.append` does not derive `reshape`; it returns a new list. The intrinsic policy is
@@ -190,7 +190,7 @@ then performs a final checked type/effect pass before loan and ownership validat
 
 The effect contract is implemented, but provenance can still become conservative:
 
-- aggregate provenance for loans stored inside arbitrary records and variants is incomplete;
+- aggregate provenance for loans stored inside arbitrary records and enums is incomplete;
 - structural invalidation metadata currently covers the implemented list-storage model rather
   than a general user-defined collection protocol;
 - path-disjoint reasoning beyond named fields and the initial `items` model is limited; and

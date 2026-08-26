@@ -1,22 +1,20 @@
-# Variants, destructuring, and patterns
+# Enums, destructuring, and patterns
 
-> Historical design note. `../patterns.fos` is the authoritative variant-pattern port.
+> Historical design note. `../patterns.fos` is the authoritative enum-pattern port.
 
-Pima's `patterns.pima` maps naturally to closed Foster variants and exhaustive `branch`:
+Pima's `patterns.pima` maps naturally to Foster enums and exhaustive `branch`:
 
 ```foster
-type Ok = { name: String score: Int }
-type Error = { message: String }
+type Score = { name: String, value: Int }
 
-type ScoreResult =
-    | Ok
-    | Error
+enum ScoreResult = Ok(Score)
+    | Error(String)
 
 func describe(result: ScoreResult) -> Int {
     branch result {
-        Ok(name, score) -> {
-            println(name, "scored", score)
-            score
+        Ok(score) -> {
+            println(score.name, "scored", score.value)
+            score.value
         }
         Error(message) -> {
             println("Error:", message)
@@ -25,10 +23,9 @@ func describe(result: ScoreResult) -> Int {
     }
 }
 
-(name, score) = ("Ada", 42)
-describe(Ok(name, score))
+describe(Ok(Score { name: "Ada", value: 42 }))
 ```
 
-The executable counterpart uses these distinct member record types, block expressions, pattern
-HIR, and exhaustiveness checking.
+The executable counterpart uses labelled cases with explicit payload types, block expressions,
+pattern HIR, and exhaustiveness checking.
 

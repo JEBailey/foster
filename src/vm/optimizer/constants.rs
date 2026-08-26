@@ -175,9 +175,10 @@ fn destination(instruction: &Instruction) -> Option<Register> {
         | Instruction::MakeClosure { destination, .. }
         | Instruction::CallValue { destination, .. }
         | Instruction::CallClosure { destination, .. } => Some(*destination),
-        Instruction::Jump { .. } | Instruction::JumpIfFalse { .. } | Instruction::Return { .. } => {
-            None
-        }
+        Instruction::Jump { .. }
+        | Instruction::JumpIfFalse { .. }
+        | Instruction::Assert { .. }
+        | Instruction::Return { .. } => None,
         _ => None,
     }
 }

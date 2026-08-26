@@ -552,7 +552,21 @@ impl Checker<'_> {
                 }
             }
             (Ty::Variant(variant, arguments), member) => {
-                self.variant_method_type(function, variant, arguments, member)
+                let definition = &self.hir.variant_types[variant];
+                let has_union_method = self
+                    .hir
+                    .function_named(definition.module, member)
+                    .is_some_and(|function| {
+                        self.hir.functions[function]
+                            .parameters
+                            .first()
+                            .is_some_and(|parameter| self.hir.locals[*parameter].name == "self")
+                    });
+                if definition.kind == crate::ast::VariantKind::Enum || has_union_method {
+                    self.variant_method_type(function, variant, arguments, member)
+                } else {
+                    self.union_member_type(function, variant, arguments, member)
+                }
             }
             (Ty::Intersection(members), member) => {
                 let mut found: Option<Ty> = None;
@@ -967,6 +981,62 @@ impl Checker<'_> {
             erased: false,
             effects: callable_effects(self.hir, method),
             suspends: function.suspends,
+        })
+    }
+
+    fn union_member_type(
+        &mut self,
+        function: FunctionId,
+        union: VariantTypeId,
+        arguments: Vec<Ty>,
+        name: &str,
+    ) -> Result<Ty, FosterError> {
+        let definition = self.hir.variant_types[union].clone();
+        let generics = definition
+            .parameters
+            .iter()
+            .cloned()
+            .zip(arguments)
+            .collect::<HashMap<_, _>>();
+        let mut common: Option<Ty> = None;
+        for alternative in definition.alternatives {
+            let member = self.annotation_type(
+                definition.module,
+                self.hir.variants[alternative]
+                    .member
+                    .as_ref()
+                    .expect("a union alternative has a member type"),
+                &generics,
+            )?;
+            let candidate = self.infer_member(function, member, name).map_err(|_| {
+                self.error(
+                    function,
+                    format!(
+                        "union contract `{}` does not provide member `{name}` on every alternative",
+                        definition.name
+                    ),
+                )
+            })?;
+            if let Some(previous) = &common {
+                self.unify(previous.clone(), candidate, function)
+                    .map_err(|_| {
+                        self.error(
+                            function,
+                            format!(
+                                "union contract `{}` has incompatible definitions of member `{name}`",
+                                definition.name
+                            ),
+                        )
+                    })?;
+            } else {
+                common = Some(candidate);
+            }
+        }
+        common.ok_or_else(|| {
+            self.error(
+                function,
+                format!("union contract `{}` has no alternatives", definition.name),
+            )
         })
     }
 }

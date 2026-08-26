@@ -352,6 +352,7 @@ fn validate_program(
                     | Instruction::Binary { .. }
                     | Instruction::Jump { .. }
                     | Instruction::JumpIfFalse { .. }
+                    | Instruction::Assert { .. }
                     | Instruction::Call { .. }
                     | Instruction::CallMethod { .. }
                     | Instruction::LoadField { .. }
@@ -873,6 +874,14 @@ fn lower_instruction(
                 .brif(truthy, *fallthrough, &[], blocks[target], &[]);
             return Ok(true);
         }
+        Instruction::Assert { condition, message } => {
+            let condition = load(builder, *condition)?;
+            let message = match message {
+                Some(message) => load(builder, *message)?,
+                None => builder.ins().iconst(types::I64, 0),
+            };
+            runtime_call(builder, module, "foster_assert", &[condition, message])?;
+        }
         Instruction::Call {
             destination,
             function: callee,
@@ -1110,6 +1119,7 @@ fn instruction_name(instruction: &Instruction) -> &'static str {
         Instruction::RemoteCall { .. } => "RemoteCall",
         Instruction::Await { .. } => "Await",
         Instruction::MatchPattern { .. } => "MatchPattern",
+        Instruction::Assert { .. } => "Assert",
         Instruction::CallContractMethod { .. } => "CallContractMethod",
         Instruction::MakeClosure { .. } => "MakeClosure",
         Instruction::CallValue { .. } => "CallValue",
@@ -1186,6 +1196,19 @@ fn unicode_argument(value: OsString) -> String {{
 fn bounds_error(kind: &str, index: i64, length: usize) -> ! {{
     eprintln!("error: {{kind}} index {{index}} is outside 0..{{length}}");
     std::process::exit(2);
+}}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_assert(condition: i64, message: i64) -> i64 {{
+    if condition == 0 {{
+        if message == 0 {{
+            eprintln!("error: assertion failed");
+        }} else {{
+            eprintln!("error: assertion failed: {{}}", unsafe {{ string_value(message) }});
+        }}
+        std::process::exit(2);
+    }}
+    0
 }}
 
 unsafe fn command_arguments<'a>(value: i64) -> &'a FosterArguments {{

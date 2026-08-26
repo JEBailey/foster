@@ -71,7 +71,7 @@ impl FunctionLowerer<'_> {
     pub(super) fn resolve_variant_constructor(
         &self,
         type_name: &str,
-        alternative: &str,
+        case: &str,
     ) -> Result<Option<VariantId>, FosterError> {
         let parent = if let Some(parent) = self.hir.variant_type_named(self.module, type_name) {
             Some(parent)
@@ -98,17 +98,16 @@ impl FunctionLowerer<'_> {
         let Some(parent) = parent else {
             return Ok(None);
         };
+        if self.hir.variant_types[parent].kind != ast::VariantKind::Enum {
+            return Ok(None);
+        }
         self.hir.variant_types[parent]
             .alternatives
             .iter()
             .copied()
-            .find(|variant| self.hir.variants[*variant].name == alternative)
+            .find(|variant| self.hir.variants[*variant].name == case)
             .map(Some)
-            .ok_or_else(|| {
-                self.error(format!(
-                    "variant `{type_name}` has no alternative `{alternative}`"
-                ))
-            })
+            .ok_or_else(|| self.error(format!("enum `{type_name}` has no case `{case}`")))
     }
 
     pub(super) fn resolve_variant(&self, path: &[String]) -> Result<VariantId, FosterError> {
@@ -116,20 +115,23 @@ impl FunctionLowerer<'_> {
             let local = self.hir.modules[self.module]
                 .variant_types
                 .values()
+                .filter(|parent| self.hir.variant_types[**parent].kind == ast::VariantKind::Enum)
                 .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter().copied())
                 .filter(|variant| self.hir.variants[*variant].name == path[0])
                 .collect::<Vec<_>>();
             return match local.as_slice() {
                 [variant] => Ok(*variant),
                 [_, _, ..] => Err(self.error(format!(
-                    "variant alternative `{}` is ambiguous; qualify it with its type",
+                    "enum case `{}` is ambiguous; qualify it with its enum type",
                     path[0]
                 ))),
                 [] => {
                     let mut imported = Vec::new();
                     for module in self.imports.values() {
                         for parent in self.hir.modules[*module].variant_types.values() {
-                            if !self.hir.variant_types[*parent].public {
+                            if !self.hir.variant_types[*parent].public
+                                || self.hir.variant_types[*parent].kind != ast::VariantKind::Enum
+                            {
                                 continue;
                             }
                             for variant in &self.hir.variant_types[*parent].alternatives {
@@ -143,8 +145,8 @@ impl FunctionLowerer<'_> {
                     }
                     match imported.as_slice() {
                         [variant] => Ok(*variant),
-                        [] => Err(self.error(format!("unknown variant alternative `{}`", path[0]))),
-                        _ => Err(self.error(format!("imported variant alternative `{}` is ambiguous; qualify it with its module or type", path[0]))),
+                        [] => Err(self.error(format!("unknown enum case `{}`", path[0]))),
+                        _ => Err(self.error(format!("imported enum case `{}` is ambiguous; qualify it with its module or enum type", path[0]))),
                     }
                 }
             };
@@ -157,6 +159,12 @@ impl FunctionLowerer<'_> {
                 if !self.hir.variant_types[parent].public {
                     return Err(self.error(format!("type `{}.{}` is private", path[0], path[1])));
                 }
+                if self.hir.variant_types[parent].kind != ast::VariantKind::Enum {
+                    return Err(self.error(format!(
+                        "type union `{}.{}` has no enum cases to pattern match",
+                        path[0], path[1]
+                    )));
+                }
                 return self.hir.variant_types[parent]
                     .alternatives
                     .iter()
@@ -164,12 +172,12 @@ impl FunctionLowerer<'_> {
                     .find(|id| self.hir.variants[*id].name == path[2])
                     .ok_or_else(|| {
                         self.error(format!(
-                            "variant `{}.{}` has no alternative `{}`",
+                            "enum `{}.{}` has no case `{}`",
                             path[0], path[1], path[2]
                         ))
                     });
             }
-            return Err(self.error("variant pattern must name an alternative"));
+            return Err(self.error("enum pattern must name a case"));
         }
         if let Some(variant) = self.resolve_variant_constructor(&path[0], &path[1])? {
             return Ok(variant);
@@ -178,18 +186,21 @@ impl FunctionLowerer<'_> {
             let matches = self.hir.modules[module]
                 .variant_types
                 .values()
-                .filter(|parent| self.hir.variant_types[**parent].public)
+                .filter(|parent| {
+                    self.hir.variant_types[**parent].public
+                        && self.hir.variant_types[**parent].kind == ast::VariantKind::Enum
+                })
                 .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter().copied())
                 .filter(|variant| self.hir.variants[*variant].name == path[1])
                 .collect::<Vec<_>>();
             return match matches.as_slice() {
                 [variant] => Ok(*variant),
                 [] => Err(self.error(format!(
-                    "module `{}` has no public variant alternative `{}`",
+                    "module `{}` has no public enum case `{}`",
                     path[0], path[1]
                 ))),
                 _ => Err(self.error(format!(
-                    "variant alternative `{}.{}` is ambiguous; include its type name",
+                    "enum case `{}.{}` is ambiguous; include its enum type name",
                     path[0], path[1]
                 ))),
             };
@@ -197,18 +208,19 @@ impl FunctionLowerer<'_> {
         let parent = self
             .hir
             .variant_type_named(self.module, &path[0])
-            .ok_or_else(|| self.error(format!("unknown variant type `{}`", path[0])))?;
+            .ok_or_else(|| self.error(format!("unknown enum type `{}`", path[0])))?;
+        if self.hir.variant_types[parent].kind != ast::VariantKind::Enum {
+            return Err(self.error(format!(
+                "type union `{}` has no enum cases to pattern match",
+                path[0]
+            )));
+        }
         self.hir.variant_types[parent]
             .alternatives
             .iter()
             .copied()
             .find(|id| self.hir.variants[*id].name == path[1])
-            .ok_or_else(|| {
-                self.error(format!(
-                    "variant `{}` has no alternative `{}`",
-                    path[0], path[1]
-                ))
-            })
+            .ok_or_else(|| self.error(format!("enum `{}` has no case `{}`", path[0], path[1])))
     }
 
     pub(super) fn resolve_name(&mut self, name: &str) -> Result<ResolvedName, FosterError> {
@@ -230,6 +242,7 @@ impl FunctionLowerer<'_> {
         let variants = self.hir.modules[self.module]
             .variant_types
             .values()
+            .filter(|parent| self.hir.variant_types[**parent].kind == ast::VariantKind::Enum)
             .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter().copied())
             .filter(|variant| self.hir.variants[*variant].name == name)
             .collect::<Vec<_>>();
@@ -237,7 +250,7 @@ impl FunctionLowerer<'_> {
             [variant] => return Ok(ResolvedName::Variant(*variant)),
             [_, _, ..] => {
                 return Err(self.error(format!(
-                    "variant member type `{name}` is ambiguous; qualify it with its union type"
+                    "enum case `{name}` is ambiguous; qualify it with its enum type"
                 )));
             }
             [] => {}
@@ -265,7 +278,10 @@ impl FunctionLowerer<'_> {
             let matching_variants = self.hir.modules[*module]
                 .variant_types
                 .values()
-                .filter(|parent| self.hir.variant_types[**parent].public)
+                .filter(|parent| {
+                    self.hir.variant_types[**parent].public
+                        && self.hir.variant_types[**parent].kind == ast::VariantKind::Enum
+                })
                 .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter().copied())
                 .filter(|variant| self.hir.variants[*variant].name == name)
                 .collect::<Vec<_>>();
@@ -280,6 +296,9 @@ impl FunctionLowerer<'_> {
                 && !self.hir.modules[*module]
                     .variant_types
                     .values()
+                    .filter(|parent| {
+                        self.hir.variant_types[**parent].kind == ast::VariantKind::Enum
+                    })
                     .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter())
                     .any(|variant| self.hir.variants[*variant].name == name)
                 && !imported.contains(&ResolvedName::Record(record))
@@ -307,6 +326,7 @@ impl FunctionLowerer<'_> {
         let mut module = self.imports[path[0]];
         if path.len() == 3
             && let Some(parent) = self.hir.variant_type_named(module, path[1])
+            && self.hir.variant_types[parent].kind == ast::VariantKind::Enum
         {
             if !self.hir.variant_types[parent].public {
                 return Err(self.error(format!("type `{}.{}` is private", path[0], path[1])));
@@ -318,7 +338,7 @@ impl FunctionLowerer<'_> {
                 .find(|id| self.hir.variants[*id].name == path[2])
                 .ok_or_else(|| {
                     self.error(format!(
-                        "variant `{}.{}` has no alternative `{}`",
+                        "enum `{}.{}` has no case `{}`",
                         path[0], path[1], path[2]
                     ))
                 })?;
@@ -357,7 +377,10 @@ impl FunctionLowerer<'_> {
                 let matches = self.hir.modules[module]
                     .variant_types
                     .values()
-                    .filter(|parent| self.hir.variant_types[**parent].public)
+                    .filter(|parent| {
+                        self.hir.variant_types[**parent].public
+                            && self.hir.variant_types[**parent].kind == ast::VariantKind::Enum
+                    })
                     .flat_map(|parent| self.hir.variant_types[*parent].alternatives.iter().copied())
                     .filter(|variant| self.hir.variants[*variant].name == *component)
                     .collect::<Vec<_>>();
@@ -365,7 +388,7 @@ impl FunctionLowerer<'_> {
                     [variant] => return Ok(ResolvedName::Variant(*variant)),
                     [_, _, ..] => {
                         return Err(self.error(format!(
-                            "variant alternative `{}` is ambiguous; include its type name",
+                            "enum case `{}` is ambiguous; include its enum type name",
                             component
                         )));
                     }

@@ -27,13 +27,9 @@ impl FunctionLowerer<'_> {
             parameters.push(local);
         }
 
-        let mut body = Vec::new();
-        for (index, statement) in source.body.iter().enumerate() {
-            let span = source
-                .statement_spans
-                .get(index)
-                .cloned()
-                .unwrap_or_else(|| source.span.clone());
+        let mut body = crate::block::Block::new();
+        for (statement, statement_span) in source.body.iter_spanned() {
+            let span = statement_span.clone();
             let lowered = self.lower_statement(statement).map_err(|error| {
                 error.with_fallback_location(
                     self.hir.modules[self.module].name.clone(),
@@ -41,11 +37,10 @@ impl FunctionLowerer<'_> {
                     "this statement could not be lowered",
                 )
             })?;
-            body.push(lowered);
+            body.push(lowered, statement_span.clone());
         }
         self.hir.functions[self.function].parameters = parameters;
         self.hir.functions[self.function].body = body;
-        self.hir.functions[self.function].statement_spans = source.statement_spans.clone();
         Ok(())
     }
 
@@ -58,6 +53,51 @@ impl FunctionLowerer<'_> {
                     .map(|guard| self.lower_expression(guard))
                     .transpose()?,
             }),
+            ast::Stmt::Assert { condition, message } => Ok(Stmt::Assert {
+                condition: self.lower_expression(condition)?,
+                message: message
+                    .as_ref()
+                    .map(|message| self.lower_expression(message))
+                    .transpose()?,
+            }),
+            ast::Stmt::Loop { body } => {
+                self.loop_depth += 1;
+                let mut lowered = crate::block::Block::new();
+                for (statement, statement_span) in body.iter_spanned() {
+                    let result = self.lower_statement(statement).map_err(|error| {
+                        error.with_fallback_location(
+                            self.hir.modules[self.module].name.clone(),
+                            statement_span.clone(),
+                            "this loop statement could not be lowered",
+                        )
+                    })?;
+                    lowered.push(result, statement_span.clone());
+                }
+                self.loop_depth -= 1;
+                Ok(Stmt::Loop { body: lowered })
+            }
+            ast::Stmt::Break { guard } => {
+                if self.loop_depth == 0 {
+                    return Err(self.error("`break` may only appear inside `loop`"));
+                }
+                Ok(Stmt::Break {
+                    guard: guard
+                        .as_ref()
+                        .map(|guard| self.lower_expression(guard))
+                        .transpose()?,
+                })
+            }
+            ast::Stmt::Continue { guard } => {
+                if self.loop_depth == 0 {
+                    return Err(self.error("`continue` may only appear inside `loop`"));
+                }
+                Ok(Stmt::Continue {
+                    guard: guard
+                        .as_ref()
+                        .map(|guard| self.lower_expression(guard))
+                        .transpose()?,
+                })
+            }
             ast::Stmt::Bind { name, value } => {
                 if self.locals.contains_key(name) {
                     return Err(self.error(format!(
@@ -151,6 +191,24 @@ impl FunctionLowerer<'_> {
             })?;
             self.hir.expression_spans.insert(lowered, span.clone());
             return Ok(lowered);
+        }
+        if let Some(path) = qualified_path(expression)
+            && path.len() == 2
+        {
+            let mut unions = std::iter::once(self.module)
+                .chain(self.imports.values().copied())
+                .filter_map(|module| self.hir.variant_type_named(module, path[0]))
+                .filter(|union| {
+                    self.hir.variant_types[*union].kind == ast::VariantKind::Union
+                        && (self.hir.variant_types[*union].module == self.module
+                            || self.hir.variant_types[*union].public)
+                });
+            if unions.next().is_some() {
+                return Err(self.error(format!(
+                    "type union `{}` has no constructors; declare an `enum` for labelled cases",
+                    path[0]
+                )));
+            }
         }
         if let Some(path) = qualified_path(expression)
             && path.len() == 2
@@ -290,10 +348,19 @@ impl FunctionLowerer<'_> {
                         ast::BranchTest::Wildcard => BranchTest::Wildcard,
                         ast::BranchTest::Pattern(p) => BranchTest::Pattern(self.lower_pattern(p)?),
                     };
-                    lowered.push(BranchArm {
-                        test,
-                        value: self.lower_expression(&arm.value)?,
-                    });
+                    let mut body = crate::block::Block::new();
+                    for (statement, statement_span) in arm.body.iter_spanned() {
+                        let lowered_statement =
+                            self.lower_statement(statement).map_err(|error| {
+                                error.with_fallback_location(
+                                    self.hir.modules[self.module].name.clone(),
+                                    statement_span.clone(),
+                                    "this branch-arm statement could not be lowered",
+                                )
+                            })?;
+                        body.push(lowered_statement, statement_span.clone());
+                    }
+                    lowered.push(BranchArm { test, body });
                     self.locals = locals;
                 }
                 Expr::Branch {

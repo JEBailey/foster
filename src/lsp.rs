@@ -359,6 +359,34 @@ mod tests {
     }
 
     #[test]
+    fn duplicate_enum_case_names_point_to_the_conflicting_case() {
+        let source = "enum Value =\nItem(Int)\n| Item(String)\n";
+        let diagnostics = diagnostics(source);
+        assert_eq!(diagnostics.len(), 1);
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("enum `Value` declares `Item` more than once")
+        );
+        assert_eq!(diagnostics[0].range.start, Position::new(2, 2));
+        assert_eq!(diagnostics[0].range.end, Position::new(2, 14));
+    }
+
+    #[test]
+    fn duplicate_payloadless_enum_cases_point_to_the_second_case() {
+        let source = "enum Value =\nReady\n| Ready\n";
+        let diagnostics = diagnostics(source);
+        assert_eq!(diagnostics.len(), 1);
+        assert!(
+            diagnostics[0]
+                .message
+                .contains("enum `Value` declares `Ready` more than once")
+        );
+        assert_eq!(diagnostics[0].range.start, Position::new(2, 2));
+        assert_eq!(diagnostics[0].range.end, Position::new(2, 7));
+    }
+
+    #[test]
     fn every_compile_error_has_a_source_location() {
         let sources = [
             "func main() { missing() }",

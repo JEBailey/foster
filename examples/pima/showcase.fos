@@ -7,11 +7,8 @@ type Account = {
     transactions: List<Int>
 }
 
-type Created = { account: Account }
-type InvalidOpeningBalance = { message: String }
-type AccountResult =
-    | Created
-    | InvalidOpeningBalance
+enum AccountResult = Created(Account)
+    | InvalidOpeningBalance(String)
 
 func create_account(owner: String, opening_balance: Int) -> AccountResult {
     return InvalidOpeningBalance("opening balance must not be negative") if opening_balance < 0

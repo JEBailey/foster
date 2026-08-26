@@ -53,6 +53,13 @@ struct Builder<'a> {
     current: BlockId,
     captures: &'a [hir::LocalId],
     loans: Vec<LoanDefinition>,
+    loops: Vec<LoopTargets>,
+}
+
+#[derive(Clone, Copy)]
+struct LoopTargets {
+    continue_to: BlockId,
+    break_to: BlockId,
 }
 
 impl<'a> Builder<'a> {
@@ -70,6 +77,7 @@ impl<'a> Builder<'a> {
             current: 0,
             captures,
             loans: Vec::new(),
+            loops: Vec::new(),
         }
     }
 
@@ -133,6 +141,51 @@ impl<'a> Builder<'a> {
                     self.current = self.block();
                 }
             }
+            hir::Stmt::Assert { condition, message } => {
+                self.expression(*condition, Context::Read);
+                if let Some(message) = message {
+                    self.expression(*message, Context::Read);
+                }
+            }
+            hir::Stmt::Loop { body, .. } => {
+                let cfg = crate::control_flow::LoopCfg::new();
+                let blocks = [self.block(), self.block(), self.block()];
+                self.terminate(Terminator::Goto(blocks[cfg.header.0]));
+                self.current = blocks[cfg.header.0];
+                self.terminate(Terminator::Goto(blocks[cfg.body.0]));
+                self.current = blocks[cfg.body.0];
+                self.loops.push(LoopTargets {
+                    continue_to: blocks[cfg.header.0],
+                    break_to: blocks[cfg.exit.0],
+                });
+                for statement in body {
+                    self.statement(statement, false);
+                }
+                if matches!(
+                    self.blocks[self.current].terminator,
+                    Terminator::Unreachable
+                ) {
+                    self.terminate(Terminator::Goto(blocks[cfg.header.0]));
+                }
+                self.loops.pop();
+                self.current = blocks[cfg.exit.0];
+            }
+            hir::Stmt::Break { guard } => {
+                let target = self
+                    .loops
+                    .last()
+                    .expect("HIR validates loop transfers")
+                    .break_to;
+                self.loop_transfer(*guard, target);
+            }
+            hir::Stmt::Continue { guard } => {
+                let target = self
+                    .loops
+                    .last()
+                    .expect("HIR validates loop transfers")
+                    .continue_to;
+                self.loop_transfer(*guard, target);
+            }
             hir::Stmt::Bind { local, value } => {
                 self.expression_into(*value, Context::Consume, Some(Self::local_place(*local)));
                 self.initialize(*local, self.span(*value));
@@ -169,6 +222,21 @@ impl<'a> Builder<'a> {
         }
     }
 
+    fn loop_transfer(&mut self, guard: Option<ExprId>, target: BlockId) {
+        if let Some(guard) = guard {
+            self.expression(guard, Context::Read);
+            let transferred = self.block();
+            let continued = self.block();
+            self.terminate(Terminator::Branch(vec![transferred, continued]));
+            self.current = transferred;
+            self.terminate(Terminator::Goto(target));
+            self.current = continued;
+        } else {
+            self.terminate(Terminator::Goto(target));
+            self.current = self.block();
+        }
+    }
+
     fn expression_into(
         &mut self,
         expression: ExprId,
@@ -178,28 +246,9 @@ impl<'a> Builder<'a> {
         if let hir::Expr::Branch { subject, arms } = &self.hir.expressions[expression]
             && let Some(destination) = destination
         {
-            if let Some(subject) = subject {
-                self.expression(*subject, Context::Read);
-            }
-            for arm in arms {
-                if let BranchTest::Condition(condition) = arm.test {
-                    self.expression(condition, Context::Read);
-                }
-            }
-            let origin = self.current;
-            let targets = (0..arms.len()).map(|_| self.block()).collect::<Vec<_>>();
-            let join = self.block();
-            self.current = origin;
-            self.terminate(Terminator::Branch(targets.clone()));
-            for (target, arm) in targets.into_iter().zip(arms) {
-                self.current = target;
-                if let BranchTest::Pattern(pattern) = &arm.test {
-                    self.initialize_pattern(pattern, self.span(arm.value));
-                }
-                self.expression_into(arm.value, context, Some(destination.clone()));
-                self.terminate(Terminator::Goto(join));
-            }
-            self.current = join;
+            let subject = *subject;
+            let arms = arms.clone();
+            self.lower_branch_expression(subject, &arms, context, Some(destination));
             return;
         }
 
@@ -322,28 +371,9 @@ impl<'a> Builder<'a> {
                 self.expression(*right, Context::Read);
             }
             hir::Expr::Branch { subject, arms } => {
-                if let Some(subject) = subject {
-                    self.expression(*subject, Context::Read);
-                }
-                for arm in arms {
-                    if let BranchTest::Condition(condition) = arm.test {
-                        self.expression(condition, Context::Read);
-                    }
-                }
-                let origin = self.current;
-                let targets = (0..arms.len()).map(|_| self.block()).collect::<Vec<_>>();
-                let join = self.block();
-                self.current = origin;
-                self.terminate(Terminator::Branch(targets.clone()));
-                for (target, arm) in targets.into_iter().zip(arms) {
-                    self.current = target;
-                    if let BranchTest::Pattern(pattern) = &arm.test {
-                        self.initialize_pattern(pattern, self.span(arm.value));
-                    }
-                    self.expression(arm.value, context);
-                    self.terminate(Terminator::Goto(join));
-                }
-                self.current = join;
+                let subject = *subject;
+                let arms = arms.clone();
+                self.lower_branch_expression(subject, &arms, context, None);
             }
             hir::Expr::Closure { captures, .. } => {
                 for capture in captures {
@@ -371,6 +401,101 @@ impl<'a> Builder<'a> {
             | hir::Expr::Symbol(_)
             | hir::Expr::Name(_) => {}
         }
+    }
+
+    fn lower_branch_arm(
+        &mut self,
+        arm: &hir::BranchArm,
+        context: Context,
+        destination: Option<hir::Place>,
+    ) {
+        let Some(last) = arm.body.last() else {
+            return;
+        };
+        for statement in arm.body.iter().take(arm.body.len() - 1) {
+            self.statement(statement, false);
+        }
+        if let hir::Stmt::Expr(value) = last {
+            if let Some(destination) = destination {
+                self.expression_into(*value, context, Some(destination));
+            } else {
+                self.expression(*value, context);
+            }
+        } else {
+            self.statement(last, false);
+        }
+    }
+
+    fn lower_branch_expression(
+        &mut self,
+        subject: Option<ExprId>,
+        arms: &[hir::BranchArm],
+        context: Context,
+        destination: Option<hir::Place>,
+    ) {
+        if let Some(subject) = subject {
+            self.expression(subject, Context::Read);
+        }
+
+        let cfg = crate::control_flow::BranchCfg::new(arms);
+        let blocks = cfg.nodes().map(|_| self.block()).collect::<Vec<_>>();
+        self.terminate(Terminator::Goto(blocks[cfg.entry().0]));
+
+        for (node_id, node) in cfg.nodes() {
+            match node {
+                crate::control_flow::BranchNode::Test {
+                    arm,
+                    matched,
+                    unmatched,
+                } => {
+                    self.current = blocks[node_id.0];
+                    match (&arms[arm].test, unmatched) {
+                        (BranchTest::Condition(condition), Some(unmatched)) => {
+                            self.expression(*condition, Context::Read);
+                            self.terminate(Terminator::Branch(vec![
+                                blocks[matched.0],
+                                blocks[unmatched.0],
+                            ]));
+                        }
+                        (BranchTest::Pattern(_), Some(unmatched)) => {
+                            self.terminate(Terminator::Branch(vec![
+                                blocks[matched.0],
+                                blocks[unmatched.0],
+                            ]))
+                        }
+                        (BranchTest::Wildcard, None) => {
+                            self.terminate(Terminator::Goto(blocks[matched.0]));
+                        }
+                        _ => unreachable!("semantic branch CFG matches HIR tests"),
+                    }
+                }
+                crate::control_flow::BranchNode::Body { arm, completed } => {
+                    self.current = blocks[node_id.0];
+                    let arm = &arms[arm];
+                    if let BranchTest::Pattern(pattern) = &arm.test {
+                        self.initialize_pattern(pattern, self.branch_arm_span(arm));
+                    }
+                    self.lower_branch_arm(arm, context, destination.clone());
+                    if let Some(completed) = completed
+                        && matches!(
+                            self.blocks[self.current].terminator,
+                            Terminator::Unreachable
+                        )
+                    {
+                        self.terminate(Terminator::Goto(blocks[completed.0]));
+                    }
+                }
+                crate::control_flow::BranchNode::Exit => {}
+            }
+        }
+        self.current = blocks[cfg.exit().0];
+    }
+
+    fn branch_arm_span(&self, arm: &hir::BranchArm) -> std::ops::Range<usize> {
+        arm.body
+            .first_span()
+            .cloned()
+            .unwrap_or_else(|| self.hir.functions[self.function].span.clone())
     }
 
     fn place_use(&mut self, expression: ExprId, mode: UseMode) {

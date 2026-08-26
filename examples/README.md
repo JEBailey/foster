@@ -25,7 +25,9 @@ The program deterministically returns `1242`:
 - `30` weighted shortage points
 - `12` items observed through the live remote inventory view
 
-The smaller programs under `pima/` focus on individual language features.
+The smaller programs under `pima/` focus on individual language features. In particular,
+`pima/while.fos` demonstrates `loop` and a guarded `break` without requiring a distinct `while`
+form.
 
 `arguments.fos` demonstrates the typed `std.process.Arguments` entry structure, executable-name
 access, positional values, and a flag branch. It runs through the VM or as a native executable:

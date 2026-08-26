@@ -7,7 +7,7 @@ and attempted error capture. In intended Foster syntax, its central API becomes:
 
 ```foster
 type AccountError =
-    | InvalidOpeningBalance
+    InvalidOpeningBalance
 
 type Account = {
     owner: String

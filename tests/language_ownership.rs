@@ -24,6 +24,25 @@ func main() -> Int {
 }
 
 #[test]
+fn remote_assertion_failures_are_delivered_through_futures() {
+    let source = r#"
+type Worker = {}
+
+func check(self: Worker) -> Int {
+    assert(false, "remote assertion message")
+    42
+}
+
+func main() -> Int {
+    let worker = remote Worker {}
+    await worker.check()
+}
+"#;
+    let error = foster::run(source).unwrap_err();
+    assert_eq!(error.message, "assertion failed: remote assertion message");
+}
+
+#[test]
 fn remote_read_loans_observe_owner_mutation() {
     let source = r#"
 type Counter = {
@@ -501,7 +520,12 @@ fn discovers_implicit_and_companion_modules() {
     assert_eq!(package.modules.len(), 12);
     assert_eq!(package.explicit_module_count(), 9);
     assert_eq!(package.implicit_module_count(), 3);
+    assert_eq!(package.input_module_count(), 6);
+    assert_eq!(package.input_explicit_module_count(), 4);
+    assert_eq!(package.input_implicit_module_count(), 2);
     assert!(!package.module("json").unwrap().is_implicit());
+    assert!(package.module("json").unwrap().is_input());
+    assert!(!package.module("core.bytes").unwrap().is_input());
     assert!(package.module("tools").unwrap().is_implicit());
     assert!(package.module("tools.text").unwrap().is_implicit());
     assert!(package.module("tools.text.trim").is_some());
@@ -515,12 +539,12 @@ fn carries_source_spans_into_package_hir() {
     assert!(
         compilation.hir.functions[decode].span.start < compilation.hir.functions[decode].span.end
     );
-    assert_eq!(
-        compilation.hir.functions[decode].body.len(),
-        compilation.hir.functions[decode].statement_spans.len()
-    );
     assert!(
-        compilation.hir.functions[decode].statement_spans[0].start
+        compilation.hir.functions[decode]
+            .body
+            .span(0)
+            .expect("the function has a first statement")
+            .start
             > compilation.hir.functions[decode].span.start
     );
     assert_eq!(
@@ -568,11 +592,8 @@ fn carries_source_spans_into_package_hir() {
 
 #[test]
 fn carries_exact_nested_pattern_binding_spans_into_hir() {
-    let source = r#"type Choice =
-    | Some
+    let source = r#"enum Choice = Some(String)
     | None
-type Some = { value: String }
-type None = {}
 
 func select(value: Choice) -> String {
     branch value {
@@ -1680,4 +1701,24 @@ func main() { 0 }
             .flat_map(|block| &block.operations)
             .any(|operation| matches!(operation, foster::ownership::Operation::Destroy { .. }))
     );
+}
+
+#[test]
+fn branch_arm_blocks_preserve_mutable_capture_effects() {
+    let source = r#"
+func main() -> Int {
+    let value = 1
+    let update = [ref value] () -> {
+        branch {
+            _ -> {
+                value = 42
+                ()
+            }
+        }
+    }
+    update()
+    value
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
 }

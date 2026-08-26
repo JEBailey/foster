@@ -2,11 +2,10 @@ import core.option
 
 // The recursive storage node is private to this example. `LinkedList<T>` owns the first link, and
 // every `Node` owns both its value and the remainder of the chain.
-type End = {}
 type Node<T> = { value: T, next: Link<T> }
-type Link<T> =
-    | End
-    | Node<T>
+
+enum Link<T> = End
+    | Node(Node<T>)
 
 type LinkedList<T> = {
     head: Link<T>
@@ -36,7 +35,7 @@ func empty?<T>(self: LinkedList<T>) -> Bool {
 // Consumes the list and adds `value` at its front in constant time.
 func prepend<T>(self: LinkedList<T>, value: T) -> LinkedList<T> [consume self, consume value] {
     LinkedList {
-        head: Link.Node(value, self.head)
+        head: Link.Node(Node { value, next: self.head })
         size: self.size + 1
     }
 }
@@ -45,9 +44,9 @@ func prepend<T>(self: LinkedList<T>, value: T) -> LinkedList<T> [consume self, c
 func pop_front<T>(self: LinkedList<T>) -> Option<LinkedListItem<T>> [consume self] {
     branch self.head {
         Link.End -> Option.None
-        Link.Node(value, next) -> Option.Some(LinkedListItem {
-            value
-            remaining: LinkedList { head: next, size: self.size - 1 }
+        Link.Node(node) -> Option.Some(LinkedListItem {
+            value: move node.value
+            remaining: LinkedList { head: move node.next, size: self.size - 1 }
         })
     }
 }
@@ -82,7 +81,7 @@ func to_list<T>(self: LinkedList<T>) -> List<T> [consume self] {
 func reverse_links<T>(remaining: Link<T>, result: Link<T>) -> Link<T> [consume remaining, consume result] {
     branch remaining {
         Link.End -> result
-        Link.Node(value, next) -> reverse_links(move next, Link.Node(value, move result))
+        Link.Node(node) -> reverse_links(move node.next, Link.Node(Node { value: move node.value, next: move result }))
     }
 }
 
@@ -90,7 +89,7 @@ func reverse_links<T>(remaining: Link<T>, result: Link<T>) -> Link<T> [consume r
 func map_links<T, U>(remaining: Link<T>, transform: func(consume T) -> U) -> Link<U> [consume remaining] {
     branch remaining {
         Link.End -> Link.End
-        Link.Node(value, next) -> Link.Node(transform(move value), map_links(move next, transform))
+        Link.Node(node) -> Link.Node(Node { value: transform(move node.value), next: map_links(move node.next, transform) })
     }
 }
 
@@ -98,7 +97,7 @@ func map_links<T, U>(remaining: Link<T>, transform: func(consume T) -> U) -> Lin
 func fold_links<T, U>(remaining: Link<T>, result: U, combine: func(consume U, consume T) -> U) -> U [consume remaining, consume result] {
     branch remaining {
         Link.End -> result
-        Link.Node(value, next) -> fold_links(move next, combine(move result, move value), combine)
+        Link.Node(node) -> fold_links(move node.next, combine(move result, move node.value), combine)
     }
 }
 
@@ -106,7 +105,7 @@ func fold_links<T, U>(remaining: Link<T>, result: U, combine: func(consume U, co
 func collect_links<T>(remaining: Link<T>, result: List<T>) -> List<T> [consume remaining, consume result] {
     branch remaining {
         Link.End -> result
-        Link.Node(value, next) -> collect_links(move next, result.append(value))
+        Link.Node(node) -> collect_links(move node.next, result.append(move node.value))
     }
 }
 

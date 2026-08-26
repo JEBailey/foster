@@ -53,8 +53,6 @@ pub struct FunctionType {
 pub struct TypeInformation {
     pub types: Arena<Type>,
     pub expressions: HashMap<ExprId, TypeId>,
-    /// Expressions implicitly injected into a declared union member.
-    pub variant_injections: HashMap<ExprId, crate::hir::VariantId>,
     pub extension_methods: HashMap<ExprId, FunctionId>,
     pub locals: HashMap<LocalId, TypeId>,
     pub functions: HashMap<FunctionId, FunctionType>,

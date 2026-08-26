@@ -68,11 +68,11 @@ impl<'a> Checker<'a> {
             locals: HashMap::new(),
             local_groups: HashMap::new(),
             expressions: HashMap::new(),
-            variant_injections: HashMap::new(),
             extension_methods: HashMap::new(),
             member_constraints: Vec::new(),
             diagnostics: Vec::new(),
             inferred_effects: HashMap::new(),
+            resolving_aliases: Vec::new(),
         }
     }
 
@@ -310,15 +310,33 @@ impl<'a> Checker<'a> {
                 .map(|p| (p.clone(), self.fresh()))
                 .collect::<HashMap<_, _>>();
             for alternative in &variant.alternatives {
-                let member = &self.hir.variants[*alternative].member;
-                let ty = self.annotation_type(variant.module, member, &generics)?;
-                if variant.public
-                    && let Some(private) = self.private_type_in(&ty)
-                {
-                    return Err(FosterError::runtime(format!(
-                        "public union `{}` includes private type `{private}`",
-                        variant.name
-                    )));
+                let alternative = &self.hir.variants[*alternative];
+                let annotations = alternative.member.iter().chain(alternative.payload.iter());
+                for annotation in annotations {
+                    let ty = self.annotation_type(variant.module, annotation, &generics)?;
+                    if variant.public
+                        && let Some(private) = self.private_type_in(&ty)
+                    {
+                        if variant.kind == crate::ast::VariantKind::Union
+                            && variant.alternatives.len() == 1
+                            && variant.compositions.is_empty()
+                            && variant.methods.is_empty()
+                        {
+                            return Err(FosterError::runtime(format!(
+                                "public type alias `{}` exposes private type `{private}`",
+                                variant.name
+                            )));
+                        }
+                        return Err(FosterError::runtime(format!(
+                            "public {} `{}` includes private type `{private}`",
+                            if variant.kind == crate::ast::VariantKind::Enum {
+                                "enum"
+                            } else {
+                                "union"
+                            },
+                            variant.name
+                        )));
+                    }
                 }
             }
         }

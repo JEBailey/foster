@@ -97,14 +97,12 @@ pub func values<K, V>(self: Map<K, V>) -> List<V> {
 
 test "maps replace values without duplicating keys" {
     let values = Map.empty().put("a", 1).put("a", 2)
-    branch values.get("a") {
-        Option.Some(value) -> branch {
-            value != 2 -> [()][1]
-            values.length != 1 -> [()][1]
-            _ -> ()
-        }
-        Option.None -> [()][1]
+    let found = branch values.get("a") {
+        Option.Some(value) -> value == 2
+        Option.None -> false
     }
+    assert(found)
+    assert(values.length == 1)
 }
 
 /// Extracts values from owned entries into the result accumulator.

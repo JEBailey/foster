@@ -1,0 +1,10 @@
+//! Reusable callable type aliases with explicit ownership behavior.
+
+/// A callable that borrows a value and decides whether it satisfies a condition.
+pub type Predicate<T> = func(T) -> Bool
+
+/// A callable that takes ownership of a value and produces no result.
+pub type Consumer<T> = func(consume T) -> ()
+
+/// A callable that produces an owned value without receiving an argument.
+pub type Supplier<T> = func() -> T

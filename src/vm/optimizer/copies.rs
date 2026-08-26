@@ -151,6 +151,10 @@ fn rewrite_uses(instruction: &mut Instruction, copies: &Copies) {
             arguments.iter_mut().for_each(rewrite);
         }
         Instruction::Return { source } => rewrite(source),
+        Instruction::Assert { condition, message } => {
+            rewrite(condition);
+            message.iter_mut().for_each(rewrite);
+        }
         Instruction::LoadConstant { .. } | Instruction::Jump { .. } => {}
         _ => {}
     }

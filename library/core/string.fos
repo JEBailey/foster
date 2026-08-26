@@ -1,6 +1,7 @@
 //! Immutable UTF-8 text and Unicode-aware sequence operations.
 
 import core.code_point
+import core.functions
 import core.list
 import core.option
 
@@ -108,6 +109,31 @@ pub func from_code_points(characters: Sequence<CodePoint>) -> String {
     }
 }
 
+/// Returns the longest leading substring whose code points satisfy `predicate`.
+///
+/// The predicate is evaluated from left to right and is not called after the first rejection.
+pub func take_while(self: String, predicate: Predicate<CodePoint>) -> String {
+    take_while_into(self, predicate, "")
+}
+
+/// Appends matching leading code points to the result accumulator.
+func take_while_into(value: String, predicate: Predicate<CodePoint>, result: String) -> String [consume result] {
+    branch {
+        value.empty? -> result
+        predicate(value.head) -> take_while_into(value.rest, predicate, result + value.head.string)
+        _ -> result
+    }
+}
+
+/// Returns whether a code point is an ASCII decimal digit.
+func ascii_digit?(value: CodePoint) -> Bool {
+    branch {
+        value < '0' -> false
+        value > '9' -> false
+        _ -> true
+    }
+}
+
 /// Returns the number of Unicode code points in the string.
 pub func length(value: String) -> Int {
     value.length
@@ -210,8 +236,12 @@ pub func join(values: List<String>, separator: String) -> String {
 
 test "string algorithms preserve Unicode text" {
     let value = "  Foster λ  "
-    return [()][1] if trim(move value) != "Foster λ"
-    return [()][1] if reverse("abλ") != "λba"
-    return [()][1] if starts_with?("Foster", "Fos") == false
+    assert(trim(move value) == "Foster λ")
+    assert(reverse("abλ") == "λba")
+    assert(starts_with?("Foster", "Fos"))
+    assert(take_while("123abc", ascii_digit?) == "123")
+    assert(take_while("abc", (_: CodePoint) -> false) == "")
+    assert(take_while("λδ1", (value: CodePoint) -> value > 127) == "λδ")
+    assert(take_while("", (_: CodePoint) -> true) == "")
     ()
 }

@@ -11,7 +11,16 @@ func choose(early: Bool, left: Float, right: Float) -> Float {
     right
 }
 
-func main() -> Float { choose(2 < 3, 40.0 + 2.5, 0.0) }
+func main() -> Float {
+    let count = 0
+    loop {
+        count = count + 1
+        continue if count < 2
+        break
+    }
+    assert(2 < 3, "native assertion should pass")
+    choose(true, 40.0 + 2.5, 0.0)
+}
 "#,
     )
     .unwrap();

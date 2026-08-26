@@ -1,5 +1,6 @@
 //! Stateful iterators, consumers, and lazy pipeline construction.
 
+import core.functions
 import core.option
 
 /// A stateful source that yields one value at a time.
@@ -41,7 +42,7 @@ pub func Iterator.from_sequence<T>(values: Sequence<T>) -> Iterator<T> [consume 
 }
 
 /// Calls `action` once for every remaining element in this iterator.
-pub func for_each<T>(self: Iterator<T>, action: func(consume T) -> ()) -> () [mut self] {
+pub func for_each<T>(self: Iterator<T>, action: Consumer<T>) -> () [mut self] {
     branch self.next() {
         Option.Some(value) -> apply_and_continue(self, action, move value)
         Option.None -> finish_iteration()
@@ -52,7 +53,7 @@ pub func for_each<T>(self: Iterator<T>, action: func(consume T) -> ()) -> () [mu
 func finish_iteration() -> () {}
 
 /// Applies one action and continues consuming the iterator.
-func apply_and_continue<T>(self: Iterator<T>, action: func(consume T) -> (), value: T) -> () [mut self, consume value] {
+func apply_and_continue<T>(self: Iterator<T>, action: Consumer<T>, value: T) -> () [mut self, consume value] {
     action(move value)
     self.for_each(action)
 }
@@ -66,7 +67,7 @@ pub func fold<T, U>(self: Iterator<T>, initial: U, combine: func(consume U, cons
 }
 
 /// Returns the first remaining element satisfying `predicate`.
-pub func find<T>(self: Iterator<T>, predicate: func(T) -> Bool) -> Option<T> [mut self] {
+pub func find<T>(self: Iterator<T>, predicate: Predicate<T>) -> Option<T> [mut self] {
     branch self.next() {
         Option.Some(value) -> branch {
             predicate(value) -> Option.Some(value)
@@ -77,7 +78,7 @@ pub func find<T>(self: Iterator<T>, predicate: func(T) -> Bool) -> Option<T> [mu
 }
 
 /// Returns whether any remaining element satisfies `predicate`.
-pub func any?<T>(self: Iterator<T>, predicate: func(T) -> Bool) -> Bool [mut self] {
+pub func any?<T>(self: Iterator<T>, predicate: Predicate<T>) -> Bool [mut self] {
     branch self.next() {
         Option.Some(value) -> branch {
             predicate(value) -> true
@@ -88,7 +89,7 @@ pub func any?<T>(self: Iterator<T>, predicate: func(T) -> Bool) -> Bool [mut sel
 }
 
 /// Returns whether every remaining element satisfies `predicate`.
-pub func all?<T>(self: Iterator<T>, predicate: func(T) -> Bool) -> Bool [mut self] {
+pub func all?<T>(self: Iterator<T>, predicate: Predicate<T>) -> Bool [mut self] {
     branch self.next() {
         Option.Some(value) -> branch {
             predicate(value) -> self.all?(predicate)
@@ -114,10 +115,7 @@ pub func collect<T>(self: Iterator<T>) -> List<T> [mut self] {
 test "iterator consumers process every remaining value" {
     let iterator = [1, 2, 3].iterator
     let total = iterator.fold(0, (sum: Int, value: Int) -> sum + value)
-    branch {
-        total == 6 -> ()
-        _ -> [()][1]
-    }
+    assert(total == 6)
 }
 
 /// Pulls remaining elements into the owned list accumulator.

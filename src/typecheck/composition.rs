@@ -81,8 +81,14 @@ impl Checker<'_> {
             Ty::Record(record, arguments) => {
                 if !self.effective_record_fields(record, &arguments)?.is_empty() {
                     return Err(FosterError::runtime(format!(
-                        "variant type `{}` cannot compose contract `{}` because it requires stored fields",
-                        owner.name, self.hir.records[record].name
+                        "{} `{}` cannot compose contract `{}` because it requires stored fields",
+                        if owner.kind == crate::ast::VariantKind::Enum {
+                            "enum"
+                        } else {
+                            "union contract"
+                        },
+                        owner.name,
+                        self.hir.records[record].name
                     )));
                 }
                 for mut method in self.effective_record_methods(record, &arguments)? {
@@ -100,7 +106,12 @@ impl Checker<'_> {
                 Ok(())
             }
             other => Err(FosterError::runtime(format!(
-                "variant type `{}` cannot compose non-contract type `{}`",
+                "{} `{}` cannot compose non-contract type `{}`",
+                if owner.kind == crate::ast::VariantKind::Enum {
+                    "enum"
+                } else {
+                    "union contract"
+                },
                 owner.name,
                 self.describe(&other)
             ))),

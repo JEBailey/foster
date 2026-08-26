@@ -7,10 +7,7 @@ pub type Map = {
     entries: List<Entry>
 }
 
-type Found = { value: Int }
-type Missing = {}
-type Lookup =
-    | Found
+enum Lookup = Found(Int)
     | Missing
 
 pub func Map.empty() -> Map {

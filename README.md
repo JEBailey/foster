@@ -67,7 +67,8 @@ is enabled by default and can be selected with `--optimize` or `--no-optimize`.
 
 `foster fmt [file-or-directory]` formats `.fos` source in place. It preserves comments and literal
 contents while normalizing indentation, line endings, trailing whitespace, blank lines, and the
-final newline. `foster fmt --check` reports files that differ without writing them, making it
+final newline. Enum declarations keep their first case after `=` and align later `|` cases on
+indented lines. `foster fmt --check` reports files that differ without writing them, making it
 suitable for CI. The current directory is used when no path is supplied.
 
 ## Generated documentation
@@ -76,7 +77,7 @@ suitable for CI. The current directory is used when no path is supplied.
 `documentation/` directory within the selected package. The site is built from resolved HIR, so signatures include
 inferred types and effects. It includes public and private declarations, their visibility, and all
 attached Markdown documentation comments. Module pages summarize the public types they provide,
-including fields, variants, required methods, and linked functions or methods.
+including fields, enum cases, required methods, and linked functions or methods.
 
 Use `--output <directory>` to choose another destination. Add `--serve` to start a local server and
 open the site in the system browser:
@@ -95,11 +96,12 @@ machines. Generated `documentation/` directories are ignored during Foster modul
 The current implementation includes:
 
 - functions, recursion, explicit `let` local declarations, local inference, explicit generics,
-  closures, and partial application;
+  closures, partial application, immediate-failure assertions, and statement loops with guarded
+  `break` and `continue` transfers;
 - `Bool`, `Int`, binary64 `Float`, `String`, `CodePoint`, `Symbol`, `()`, homogeneous `List<T>`,
   and zero-conversion `Sequence<T>` views;
-- generic records, associated factories, instance methods, private-by-default declarations, and
-  union/variant types with exhaustive pattern branches;
+- generic records, associated factories, instance methods, private-by-default declarations,
+  untagged union contracts, and tagged enums with exhaustive pattern branches;
 - statically checked structural record adaptation, declaration-side composition such as
   `type Text = & Sequence<CodePoint> & { ... }`, and intersection contracts such as
   `Named & Located`;
@@ -128,6 +130,18 @@ func skip_whitespace(characters: String) -> String {
 }
 ```
 
+Arms may contain statement blocks. Their final expression is the arm value:
+
+```foster
+branch {
+    available? -> {
+        let value = load()
+        normalize(value)
+    }
+    _ -> fallback
+}
+```
+
 `if` is reserved for postfix control guards. The implemented form conditionally returns early:
 
 ```foster
@@ -137,10 +151,21 @@ func clamp_positive(value: Int) -> Int {
 }
 ```
 
+Loops use the same guarded-transfer form and do not produce values:
+
+```foster
+loop {
+    value = next()
+    continue if value < 0
+    break if value == 0
+    consume(value)
+}
+```
+
 It is not a prefix conditional or a guard for ordinary calls and assignments; use `branch` for
 value-producing conditional logic.
 
-Subject branches destructure union members:
+Subject branches destructure enum case payloads:
 
 ```foster
 import core.result
@@ -182,7 +207,7 @@ qualifier. Modules are public; declarations and record fields are private unless
 ## Standard library
 
 Foster has no prelude. Programs explicitly import embedded Foster-written modules such as
-`core.option`, `std.iter`, `core.result`, `std.sequence`, `core.list`, `std.collections.map`, `std.fs`, and
+`core.functions`, `core.option`, `std.iter`, `core.result`, `std.sequence`, `core.list`, `std.collections.map`, `std.fs`, and
 `std.path`, `std.env`, `std.toml`, and `std.net.tcp`. The TOML 1.1 parser, validator, table builder,
 and renderer are Foster code; only general scalar conversion and host-dependent filesystem and
 socket operations cross the VM boundary. See
@@ -207,6 +232,11 @@ source
 The VM remains the complete executable semantic reference; there is no AST interpreter fallback.
 Optimization can be disabled without changing semantics. Programs can be compiled to deterministic
 `.fbc` artifacts and run without their source:
+
+Statement blocks couple each statement to its source span. HIR analyses share one recursive
+visitor and one reachability-aware arm-flow summary, while ownership MIR and bytecode lowering
+consume the same authoritative semantic branch/loop CFG. This keeps branch-test order and control
+edges consistent between static checking and execution.
 
 ```powershell
 cargo run --bin foster -- build examples/pima/fibonacci.fos -o fibonacci.fbc

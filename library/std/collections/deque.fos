@@ -63,7 +63,7 @@ pub type DequeItem<T> = {
 
 test "deques accept values at both ends" {
     let deque = Deque { values: [1, 2] }
-    return [()][1] if deque.length != 2
+    assert(deque.length == 2)
     ()
 }
 

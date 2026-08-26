@@ -567,6 +567,26 @@ impl Machine {
                         frame.instruction = target;
                     }
                 }
+                Instruction::Assert { condition, message } => {
+                    let Value::Bool(condition) = read(frame, condition)? else {
+                        return Err(RuntimeError::runtime("VM assertion condition is not Bool"));
+                    };
+                    if !condition {
+                        let message = message
+                            .map(|message| {
+                                read(frame, message).and_then(|value| {
+                                    value.as_string().map(str::to_owned).ok_or_else(|| {
+                                        RuntimeError::runtime("VM assertion message is not String")
+                                    })
+                                })
+                            })
+                            .transpose()?;
+                        return Err(RuntimeError::runtime(match message {
+                            Some(message) => format!("assertion failed: {message}"),
+                            None => "assertion failed".to_owned(),
+                        }));
+                    }
+                }
                 Instruction::MakeClosure {
                     destination,
                     function,

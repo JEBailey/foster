@@ -1,15 +1,10 @@
 //! Optional values and transformations that preserve absence.
 
-/// The present member of `Option<T>`.
-pub type Some<T> = { pub value: T }
+import core.functions
 
-/// The absent member of `Option<T>`.
-pub type None = {}
-
-/// A value that is either present as `Some<T>` or absent as `None`.
-pub type Option<T> =
-| Some<T>
-| None
+/// A value that is either present as `Some(T)` or absent as `None`.
+pub enum Option<T> = Some(T)
+    | None
 
 /// Applies `transform` to a present value and preserves `None`.
 pub func map<T, U>(option: Option<T>, transform: func(T) -> U) -> Option<U> {
@@ -52,7 +47,7 @@ pub func absent?<T>(option: Option<T>) -> Bool {
 }
 
 /// Returns the contained value, or computes a fallback when the option is `None`.
-pub func unwrap_or_else<T>(option: Option<T>, fallback: func() -> T) -> T {
+pub func unwrap_or_else<T>(option: Option<T>, fallback: Supplier<T>) -> T {
     branch option {
         Option.Some(value) -> value
         Option.None -> fallback()
@@ -60,7 +55,7 @@ pub func unwrap_or_else<T>(option: Option<T>, fallback: func() -> T) -> T {
 }
 
 /// Preserves a present value, or computes another option when this option is `None`.
-pub func or_else<T>(option: Option<T>, fallback: func() -> Option<T>) -> Option<T> {
+pub func or_else<T>(option: Option<T>, fallback: Supplier<Option<T>>) -> Option<T> {
     branch option {
         Option.Some(value) -> Option.Some(value)
         Option.None -> fallback()
@@ -77,11 +72,9 @@ pub func flatten<T>(option: Option<Option<T>>) -> Option<T> {
 
 test "option transformations preserve presence and absence" {
     let mapped = map(Option.Some(20), (value: Int) -> value + 1)
-    branch mapped {
-        Option.Some(value) -> branch {
-            value == 21 -> ()
-            _ -> [()][1]
-        }
-        Option.None -> [()][1]
+    let valid = branch mapped {
+        Option.Some(value) -> value == 21
+        Option.None -> false
     }
+    assert(valid)
 }

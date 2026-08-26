@@ -26,6 +26,7 @@ being added accidentally.
 
 | Module | Purpose |
 | --- | --- |
+| `core.functions` | Reusable predicate, consuming consumer, and supplier callable type aliases |
 | `core.option` | Optional values, mapping, chaining, eager and lazy fallbacks, flattening, and presence queries |
 | `std.iter` | Stateful `Iterator<T>` and repeatable `Iterable<T>` callable contracts |
 | `std.collections` | The sized, repeatable `Collection<T>` contract |
@@ -44,7 +45,7 @@ being added accidentally.
 | `core.list` | Search, map, filter, folds, slicing, flattening, joining, and predicates |
 | `std.collections.map` | Generic maps with associated construction, lookup, insertion, keys, and values |
 | `core.code_point` | Unicode scalar validation and ASCII/whitespace classification |
-| `core.string` | Boundary queries, slicing, splitting, joining, case conversion, trimming, and characters |
+| `core.string` | Boundary queries, slicing, splitting, joining, prefix predicates, case conversion, trimming, and characters |
 | `core.bool` | Boolean composition and conditional singleton-list construction |
 | `core.int` | Bounds, comparison, sign, parity, ranges, formatting, and integer powers |
 | `core.float` | Bounds, comparison, sign, clamping, and round-trippable formatting |
@@ -102,9 +103,9 @@ this table for an intrinsic because it has no Foster implementation body.
 ## TOML documents
 
 `std.toml` represents a document as a `TomlDocument` containing top-level `TomlEntry` values.
-Nested values use the closed `TomlValue` variant: `String`, `Integer`, `Float`, `Boolean`,
+Nested values use the closed `TomlValue` enum: `String`, `Integer`, `Float`, `Boolean`,
 `DateTime`, `Array`, or `Table`. TOML date, time, and date-time forms retain their TOML text in the
-`DateTime` alternative. `get` looks up a top-level key, while `get_table` looks inside a table
+`DateTime` case. `get` looks up a top-level key, while `get_table` looks inside a table
 value. Both return `Option<TomlValue>` and consume the selected aggregate because they return an
 owned value.
 
@@ -228,7 +229,7 @@ convenience spellings. Filesystem path functions remain whole-file operations ra
 to be stateful streams.
 
 `core.ordering` also defines the structural contracts `Equality<T>`, `Ordered<T>`, and `Hashing`.
-`Ordered<T>` composes equality and returns the existing `Ordering` variant from `compare`.
+`Ordered<T>` composes equality and returns the existing `Ordering` enum from `compare`.
 `Hashing.hash` returns a stable `Int`; equal values must hash identically, although unequal values
 may collide.
 

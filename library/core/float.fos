@@ -66,8 +66,8 @@ pub func between?(value: Float, lower: Float, upper: Float) -> Bool {
 }
 
 test "floating-point helpers clamp and compare values" {
-    return [()][1] if absolute(-2.5) != 2.5
-    return [()][1] if clamp(4.0, 0.0, 3.0) != 3.0
-    return [()][1] if between?(2.0, 1.0, 3.0) == false
+    assert(absolute(-2.5) == 2.5)
+    assert(clamp(4.0, 0.0, 3.0) == 3.0)
+    assert(between?(2.0, 1.0, 3.0))
     ()
 }

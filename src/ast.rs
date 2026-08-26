@@ -13,8 +13,7 @@ pub struct Program {
 pub struct TestDecl {
     pub span: std::ops::Range<usize>,
     pub description: String,
-    pub body: Vec<Stmt>,
-    pub statement_spans: Vec<std::ops::Range<usize>>,
+    pub body: crate::block::Block<Stmt>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -32,15 +31,38 @@ pub struct VariantDecl {
     pub documentation: Option<String>,
     pub name: String,
     pub public: bool,
+    pub kind: VariantKind,
     pub parameters: Vec<String>,
     pub alternatives: Vec<VariantAlternative>,
     pub compositions: Vec<TypeExpr>,
     pub methods: Vec<MethodRequirement>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VariantKind {
+    Union,
+    Enum,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VariantAlternative {
-    pub ty: TypeExpr,
+pub enum VariantAlternative {
+    UnionMember {
+        span: std::ops::Range<usize>,
+        ty: TypeExpr,
+    },
+    EnumCase {
+        span: std::ops::Range<usize>,
+        name: String,
+        payload: Option<TypeExpr>,
+    },
+}
+
+impl VariantAlternative {
+    pub fn span(&self) -> &std::ops::Range<usize> {
+        match self {
+            Self::UnionMember { span, .. } | Self::EnumCase { span, .. } => span,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -100,8 +122,7 @@ pub struct Function {
     pub effect_spans: Vec<std::ops::Range<usize>>,
     pub suspends: bool,
     pub suspend_span: Option<std::ops::Range<usize>>,
-    pub body: Vec<Stmt>,
-    pub statement_spans: Vec<std::ops::Range<usize>>,
+    pub body: crate::block::Block<Stmt>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -233,11 +254,36 @@ pub enum EffectKind {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
-    Return { value: Expr, guard: Option<Expr> },
-    Bind { name: String, value: Expr },
-    Assign { name: String, value: Expr },
+    Return {
+        value: Expr,
+        guard: Option<Expr>,
+    },
+    Assert {
+        condition: Expr,
+        message: Option<Expr>,
+    },
+    Loop {
+        body: crate::block::Block<Stmt>,
+    },
+    Break {
+        guard: Option<Expr>,
+    },
+    Continue {
+        guard: Option<Expr>,
+    },
+    Bind {
+        name: String,
+        value: Expr,
+    },
+    Assign {
+        name: String,
+        value: Expr,
+    },
     Function(Box<Function>),
-    Set { place: Expr, value: Expr },
+    Set {
+        place: Expr,
+        value: Expr,
+    },
     Expr(Expr),
 }
 
@@ -337,13 +383,13 @@ pub enum CaptureMode {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ClosureBody {
     Expression(Box<Expr>),
-    Block(Vec<Stmt>),
+    Block(crate::block::Block<Stmt>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct BranchArm {
     pub test: BranchTest,
-    pub value: Expr,
+    pub body: crate::block::Block<Stmt>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

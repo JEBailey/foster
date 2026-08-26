@@ -11,6 +11,12 @@ source -> AST -> resolved HIR -> type/effect/loan/ownership checks
        -> optional optimizer -> liveness-driven drops -> verifier -> machine
 ```
 
+Ownership-MIR and bytecode lowering consume the authoritative semantic branch/loop CFG in
+`src/control_flow.rs`.
+Conditional arm tests are evaluated in sequence, matched arms complete the branch, and `continue`
+is exclusively a loop transfer. Branch result decisions use the same reachability-aware arm-flow
+summary.
+
 The structured instruction enum is both the optimizer-facing IR and executable form while the
 language evolves. The explicit optimizer pipeline performs typed constant and branch folding,
 control-flow cleanup, CFG-aware copy propagation, liveness-based dead-write elimination and
@@ -27,7 +33,7 @@ borrowed parameters observe a promoted caller slot but detach if the parameter l
 
 Record instances use dense indexed value arrays. Field names and their index table live once in a
 shared record layout, including fields contributed by composed contracts. Variants similarly share
-their type and alternative names through program metadata rather than allocating those strings per
+their enum and case names through program metadata rather than allocating those strings per
 value. Wire conversion restores names only at the remote serialization boundary.
 
 After all optional representational rewrites, the compiler inserts explicit `Drop` instructions
@@ -49,8 +55,9 @@ an intermediate reference wrapper flattens onto that root, so nested method rece
 strong keep-alive edge or form an `Rc` cycle.
 
 The current instruction set covers constants, moves, typed unary and binary operations, direct and
-method calls, guarded returns, conditional and subject-based pattern branches, jumps, lists and
-indexing, records and field mutation, variant construction, atomic pattern bindings, closure
+method calls, assertions, guarded returns, loops, guarded `break`/`continue`, conditional and
+subject-based pattern branches, jumps, lists and indexing, records and field mutation, enum-case
+construction, atomic pattern bindings, closure
 environments, dynamic and specialized non-escaping closure calls, partial application, projected
 references, structural mutation, remote objects, futures, await, and returns.
 Lowering rejects unsupported HIR explicitly; it never interprets an unsupported node as a fallback.
@@ -79,7 +86,7 @@ conditions, not repeat static analysis.
 ## Implemented evolution
 
 1. Explicit basic blocks, conditional branches, and an iterative call-frame stack.
-2. Lists, records, variants, field/index places, and pattern decisions.
+2. Lists, records, enums, field/index places, and pattern decisions.
 3. Closure environment layouts with explicit copy, move, and reference capture instructions.
 4. Move operations and liveness-driven deterministic register destruction points.
 5. Remote construction, remote calls, futures, and suspension.

@@ -124,15 +124,37 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
         self.derived.push(effect);
     }
 
-    pub(super) fn walk_statements(&mut self, statements: &[hir::Stmt]) {
+    pub(super) fn walk_statements(&mut self, statements: &crate::block::Block<hir::Stmt>) {
+        self.walk_statement_block(statements, true);
+    }
+
+    fn walk_statement_block(
+        &mut self,
+        statements: &crate::block::Block<hir::Stmt>,
+        consumes_result: bool,
+    ) {
         for (index, statement) in statements.iter().enumerate() {
-            let is_last = index + 1 == statements.len();
+            let is_last = consumes_result && index + 1 == statements.len();
             match statement {
                 hir::Stmt::Return { value, guard } => {
                     if let Some(guard) = guard {
                         self.walk_expr(*guard);
                     }
                     self.walk_consumed_expr(*value);
+                }
+                hir::Stmt::Assert { condition, message } => {
+                    self.walk_expr(*condition);
+                    if let Some(message) = message {
+                        self.walk_expr(*message);
+                    }
+                }
+                hir::Stmt::Loop { body, .. } => {
+                    self.walk_statement_block(body, false);
+                }
+                hir::Stmt::Break { guard } | hir::Stmt::Continue { guard } => {
+                    if let Some(guard) = guard {
+                        self.walk_expr(*guard);
+                    }
                 }
                 hir::Stmt::Bind { local, value } => {
                     self.walk_consumed_expr(*value);
@@ -203,7 +225,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                     if let hir::BranchTest::Condition(test) = arm.test {
                         self.walk_expr(test);
                     }
-                    self.walk_consumed_expr(arm.value);
+                    self.walk_statement_block(&arm.body, true);
                 }
             }
             hir::Expr::Closure { captures, .. } => {
@@ -310,7 +332,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                     if let hir::BranchTest::Condition(test) = arm.test {
                         self.walk_expr(test);
                     }
-                    self.walk_expr(arm.value);
+                    self.walk_statement_block(&arm.body, false);
                 }
             }
             hir::Expr::Closure { .. }

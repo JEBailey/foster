@@ -28,3 +28,31 @@ changes receive review.
 
 Foster is currently pre-1.0, so compatibility may change deliberately. It must nevertheless change
 through these gates rather than silently.
+
+## Language version 2
+
+Language version 2 reserves `assert` and introduces immediate assertion failures. Source that
+previously declared an `assert` function must rename that declaration; no automated migration is
+needed for other programs. The ownership-model version remains 1 because assertions add a failure
+edge without changing ownership, group, or lifetime guarantees. Serialized bytecode containing the
+new instruction uses format version 7.
+
+## Language version 3
+
+Language version 3 reserves `loop`, `break`, and `continue` and introduces statement loops with
+nearest-enclosing-loop control transfers. Source that previously used one of those words as an
+identifier must rename it; no other automated migration is necessary. The ownership-model version
+remains 1 because loop back-edges and exits use the existing ownership control-flow model without
+changing ownership, group, or lifetime guarantees. The bytecode format remains version 7 because
+the compiler lowers all three statements to existing jumps.
+
+Multiline branch-arm blocks were added without another language-version increase because they
+accept syntax that version 3 rejected and reserve no additional identifiers.
+
+## Language version 4
+
+Language version 4 reserves `continue` exclusively for loops. A `continue` inside a branch arm now
+targets an enclosing loop, if one exists; otherwise it is a compile error. Branch arms no longer
+fall through to later pattern or condition tests. Migrate branch-local continuation by expressing
+the selection as guarded conditions or by moving the repeated decision into a loop. The ownership
+model and bytecode format remain unchanged.

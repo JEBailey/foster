@@ -28,12 +28,12 @@ pub func to_string(character: CodePoint) -> String {
 }
 
 test "code points round-trip Unicode scalar values" {
-    branch from_int(955) {
+    let valid = branch from_int(955) {
         Option.Some(character) -> branch {
-            to_int(character) != 955 -> [()][1]
-            to_string(character) != "λ" -> [()][1]
-            _ -> ()
+            to_int(character) != 955 -> false
+            _ -> to_string(character) == "λ"
         }
-        Option.None -> [()][1]
+        Option.None -> false
     }
+    assert(valid)
 }

@@ -341,6 +341,12 @@ pub(super) fn rewrite_registers(
                 .for_each(|register| rewrite(register, mapping));
         }
         Instruction::Return { source } => rewrite(source, mapping),
+        Instruction::Assert { condition, message } => {
+            rewrite(condition, mapping);
+            message
+                .iter_mut()
+                .for_each(|message| rewrite(message, mapping));
+        }
         Instruction::Jump { .. } => {}
         _ => {}
     }

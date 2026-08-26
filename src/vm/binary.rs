@@ -11,7 +11,7 @@ use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::hir::{Builtin, CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 6;
+pub const FORMAT_VERSION: u16 = 7;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -113,7 +113,7 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         return Err(BinaryError::new("not a Foster bytecode file"));
     }
     let version = r.u16()?;
-    if !matches!(version, 5 | FORMAT_VERSION) {
+    if !matches!(version, 5 | 6 | FORMAT_VERSION) {
         return Err(BinaryError::new(format!(
             "unsupported Foster bytecode version {version}"
         )));

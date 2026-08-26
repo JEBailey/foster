@@ -19,24 +19,17 @@ pub type TomlEntry = {
     pub value: TomlValue
 }
 
-/// A value represented by the TOML data model.
-///
-/// Date, time, and date-time values retain their normalized TOML text in
-/// `DateTime` so parsing does not depend on a platform clock library.
-pub type DateTime = { pub text: String }
-
-/// A TOML table represented as an ordered list of entries.
-pub type Table = { pub entries: List<TomlEntry> }
-
 /// A scalar, date-time, list, or table value in the TOML data model.
-pub type TomlValue =
-| String
-| Int
-| Float
-| Bool
-| DateTime
-| List<TomlValue>
-| Table
+///
+/// Date, time, and date-time values retain their normalized TOML text in the
+/// `DateTime` case so parsing does not depend on a platform clock library.
+pub enum TomlValue = String(String)
+    | Int(Int)
+    | Float(Float)
+    | Bool(Bool)
+    | DateTime(String)
+    | Array(List<TomlValue>)
+    | Table(List<TomlEntry>)
 
 /// A TOML parsing or rendering failure.
 ///
@@ -47,19 +40,14 @@ pub type TomlError = {
     pub column: Int
 }
 
-type Key = { value: String }
-type Item = { key: String, index: Int }
-type PathPart =
-| Key
-| Item
+type PathItem = { key: String, index: Int }
 
-type Flat = { value: TomlValue }
-type TableMarker = {}
-type ArrayTableMarker = {}
-type FlatValue =
-| Flat
-| TableMarker
-| ArrayTableMarker
+enum PathPart = Key(String)
+    | ArrayItem(PathItem)
+
+enum FlatValue = Value(TomlValue)
+    | TableMarker
+    | ArrayTableMarker
 
 type FlatEntry = {
     path: List<PathPart>
@@ -212,9 +200,8 @@ func skip_document_space(self: Parser) -> () [mut self] {
 
 /// Internal helper for the Foster TOML implementation.
 func skip_horizontal_space(self: Parser) -> () [mut self] {
-    return () if both?(self.peek?(' ') == false, self.peek?('\t') == false)
-    self.take()
-    self.skip_horizontal_space()
+    let prefix = self.remaining.take_while((character: CodePoint) -> either?(character == ' ', character == '\t'))
+    self.consume_text(prefix)
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -324,16 +311,15 @@ func parse_key(self: Parser) -> String [mut self] {
     branch {
         string.starts_with?(self.remaining, "\"") -> self.parse_basic_string(false)
         string.starts_with?(self.remaining, "'") -> self.parse_literal_string(false)
-        _ -> self.parse_bare_key("")
+        _ -> self.parse_bare_key()
     }
 }
 
 /// Internal helper for the Foster TOML implementation.
-func parse_bare_key(self: Parser, output: String) -> String [mut self, consume output] {
-    return self.finish_bare_key(move output) if self.remaining.empty?
-    return self.finish_bare_key(move output) if bare_key_character?(self.remaining.head) == false
-    let character = self.take()
-    self.parse_bare_key(output + character.string)
+func parse_bare_key(self: Parser) -> String [mut self] {
+    let output = self.remaining.take_while(bare_key_character?)
+    self.consume_text(output)
+    self.finish_bare_key(move output)
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -715,14 +701,14 @@ func parse_array(self: Parser) -> TomlValue [mut self] {
 /// Internal helper for the Foster TOML implementation.
 func empty_array(self: Parser) -> TomlValue [mut self] {
     self.take()
-    TomlValue.List([])
+    TomlValue.Array([])
 }
 
 /// Internal helper for the Foster TOML implementation.
 func parse_array_values(self: Parser, values: List<TomlValue>, start_line: Int, start_column: Int) -> TomlValue [mut self, consume values] {
     return self.unterminated_array(move values, start_line, start_column) if self.remaining.empty?
     let value = self.parse_value()
-    return TomlValue.List(move values) if self.failed?()
+    return TomlValue.Array(move values) if self.failed?()
     let next = values.append(move value)
     self.skip_value_space()
     return self.close_array(move next) if self.peek?(']')
@@ -737,19 +723,19 @@ func parse_array_values(self: Parser, values: List<TomlValue>, start_line: Int, 
 /// Internal helper for the Foster TOML implementation.
 func unterminated_array(self: Parser, values: List<TomlValue>, line: Int, column: Int) -> TomlValue [mut self, consume values] {
     self.fail_at("unterminated array", line, column)
-    TomlValue.List(move values)
+    TomlValue.Array(move values)
 }
 
 /// Internal helper for the Foster TOML implementation.
 func close_array(self: Parser, values: List<TomlValue>) -> TomlValue [mut self, consume values] {
     self.take()
-    TomlValue.List(move values)
+    TomlValue.Array(move values)
 }
 
 /// Internal helper for the Foster TOML implementation.
 func invalid_array(self: Parser, values: List<TomlValue>) -> TomlValue [mut self, consume values] {
     self.fail("expected `,` or `]` in array")
-    TomlValue.List(move values)
+    TomlValue.Array(move values)
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1010,7 +996,7 @@ func float_text?(value: String) -> Bool {
 
 /// Internal helper for the Foster TOML implementation.
 func decimal_float?(value: String) -> Bool {
-    let whole = take_decimal_prefix(value, "")
+    let whole = take_decimal_prefix(value)
     let normalized = remove_underscores(string.slice(whole, 0, whole.length))
     branch {
         whole.empty? -> false
@@ -1022,12 +1008,8 @@ func decimal_float?(value: String) -> Bool {
 }
 
 /// Internal helper for the Foster TOML implementation.
-func take_decimal_prefix(value: String, output: String) -> String [consume output] {
-    branch {
-        value.empty? -> output
-        either?(decimal_digit?(value.head), value.head == '_') -> take_decimal_prefix(value.rest, output + value.head.string)
-        _ -> output
-    }
+func take_decimal_prefix(value: String) -> String {
+    value.take_while((character: CodePoint) -> either?(decimal_digit?(character), character == '_'))
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1041,7 +1023,7 @@ func decimal_float_suffix?(suffix: String) -> Bool {
 
 /// Internal helper for the Foster TOML implementation.
 func fraction_and_exponent?(value: String) -> Bool {
-    let fraction = take_decimal_prefix(value, "")
+    let fraction = take_decimal_prefix(value)
     branch {
         decimal_component?(fraction) == false -> false
         fraction.length == value.length -> true
@@ -1084,7 +1066,7 @@ func either?(left: Bool, right: Bool) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func insert_value(self: Parser, path: List<PathPart>, value: TomlValue) -> () [mut self, consume path, consume value] {
     return self.fail("duplicate key or table/value conflict") if path_conflict?(self.entries, path)
-    self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.Flat(move value) })
+    self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.Value(move value) })
     ()
 }
 
@@ -1107,7 +1089,7 @@ func declare_array_table(self: Parser, keys: List<String>) -> () [mut self, cons
     let parent = resolve_header_path(self.entries, [], move parents)
     return self.fail("array of tables conflicts with an existing value") if child_key_conflict?(self.entries, parent, name)
     let index = next_array_index(self.entries, parent, name)
-    let path = parent.append(PathPart.Item(move name, index))
+    let path = parent.append(PathPart.ArrayItem(PathItem { key: move name, index }))
     let context = list.concat([], path)
     self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.ArrayTableMarker })
     self.context = move context
@@ -1120,7 +1102,7 @@ func resolve_header_path(entries: List<FlatEntry>, prefix: List<PathPart>, keys:
     let name = keys.head
     let index = latest_array_index(entries, prefix, name, -1)
     let next = branch {
-        index >= 0 -> prefix.append(PathPart.Item(move name, index))
+        index >= 0 -> prefix.append(PathPart.ArrayItem(PathItem { key: move name, index }))
         _ -> prefix.append(PathPart.Key(move name))
     }
     resolve_header_path(entries, move next, keys.rest)
@@ -1147,8 +1129,8 @@ func direct_item_index(path: List<PathPart>, prefix: List<PathPart>, name: Strin
     return -1 if path_starts_with?(path, prefix) == false
     branch list.get(path, prefix.length) {
         Option.Some(part) -> branch part {
-            PathPart.Item(candidate, index) -> branch {
-                candidate == name -> index
+            PathPart.ArrayItem(item) -> branch {
+                item.key == name -> item.index
                 _ -> -1
             }
             _ -> -1
@@ -1184,7 +1166,7 @@ func scalar_prefix_conflict?(entries: List<FlatEntry>, path: List<PathPart>) -> 
 /// Internal helper for the Foster TOML implementation.
 func flat_scalar_prefix_conflict?(entry: FlatEntry, path: List<PathPart>) -> Bool {
     branch entry.value {
-        FlatValue.Flat(_) -> branch {
+        FlatValue.Value(_) -> branch {
             path_starts_with?(path, entry.path) -> true
             path_starts_with?(entry.path, path) -> true
             _ -> false
@@ -1222,11 +1204,8 @@ func path_starts_with?(path: List<PathPart>, prefix: List<PathPart>) -> Bool {
     }
 }
 
-type ChildTable = { name: String }
-type ChildArray = { name: String }
-type Child =
-| ChildTable
-| ChildArray
+enum Child = Table(String)
+    | Array(String)
 
 /// Internal helper for the Foster TOML implementation.
 func materialize(entries: List<FlatEntry>, prefix: List<PathPart>) -> List<TomlEntry> {
@@ -1250,8 +1229,8 @@ func direct_child(path: List<PathPart>, prefix: List<PathPart>) -> Option<Child>
     return Option.None if path_starts_with?(path, prefix) == false
     branch list.get(path, prefix.length) {
         Option.Some(part) -> branch part {
-            PathPart.Key(name) -> Option.Some(Child.ChildTable(move name))
-            PathPart.Item(name, _) -> Option.Some(Child.ChildArray(move name))
+            PathPart.Key(name) -> Option.Some(Child.Table(move name))
+            PathPart.ArrayItem(item) -> Option.Some(Child.Array(move item.key))
         }
         Option.None -> Option.None
     }
@@ -1275,8 +1254,8 @@ func contains_child?(children: List<Child>, expected: Child) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func child_name(child: Child) -> String {
     branch child {
-        Child.ChildTable(name) -> name
-        Child.ChildArray(name) -> name
+        Child.Table(name) -> name
+        Child.Array(name) -> name
     }
 }
 
@@ -1291,8 +1270,8 @@ func materialize_children(children: List<Child>, entries: List<FlatEntry>, prefi
 /// Internal helper for the Foster TOML implementation.
 func materialize_child(child: Child, entries: List<FlatEntry>, prefix: List<PathPart>) -> TomlEntry {
     branch child {
-        Child.ChildTable(name) -> materialize_table_child(move name, entries, move prefix)
-        Child.ChildArray(name) -> materialize_array_child(move name, entries, move prefix)
+        Child.Table(name) -> materialize_table_child(move name, entries, move prefix)
+        Child.Array(name) -> materialize_array_child(move name, entries, move prefix)
     }
 }
 
@@ -1301,7 +1280,7 @@ func materialize_array_child(name: String, entries: List<FlatEntry>, prefix: Lis
     let key = string.slice(name, 0, name.length)
     TomlEntry {
         key: move key,
-        value: TomlValue.List(materialize_array_items(entries, move prefix, move name, 0, []))
+        value: TomlValue.Array(materialize_array_items(entries, move prefix, move name, 0, []))
     }
 }
 
@@ -1324,14 +1303,14 @@ func exact_scalar(entries: List<FlatEntry>, path: List<PathPart>) -> Option<Toml
 /// Internal helper for the Foster TOML implementation.
 func flat_scalar(entry: FlatEntry) -> Option<TomlValue> {
     branch entry.value {
-        FlatValue.Flat(value) -> Option.Some(move value)
+        FlatValue.Value(value) -> Option.Some(move value)
         _ -> Option.None
     }
 }
 
 /// Internal helper for the Foster TOML implementation.
 func materialize_array_items(entries: List<FlatEntry>, prefix: List<PathPart>, name: String, index: Int, output: List<TomlValue>) -> List<TomlValue> [consume output] {
-    let path = prefix.append(PathPart.Item(name, index))
+    let path = prefix.append(PathPart.ArrayItem(PathItem { key: string.slice(name, 0, name.length), index }))
     return output if exact_path?(entries, path) == false
     let table = TomlValue.Table(materialize(entries, path))
     materialize_array_items(entries, prefix, name, index + 1, output.append(move table))
@@ -1565,7 +1544,7 @@ func render_value(value: TomlValue) -> Result<String, TomlError> {
         TomlValue.Float(number) -> Result.Ok(render_float(number))
         TomlValue.Bool(flag) -> Result.Ok(render_bool(flag))
         TomlValue.DateTime(text) -> render_date_time(move text)
-        TomlValue.List(values) -> render_array(move values, "[")
+        TomlValue.Array(values) -> render_array(move values, "[")
         TomlValue.Table(entries) -> render_inline_table(move entries)
     }
 }

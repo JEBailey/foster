@@ -31,14 +31,15 @@ impl Checker<'_> {
             hir::Pattern::Variant { variant, fields } => {
                 let definition = self.hir.variants[*variant].clone();
                 let parent = self.hir.variant_types[definition.parent].clone();
-                if fields.len() != definition.payload.len() {
+                let payload_count = usize::from(definition.payload.is_some());
+                if fields.len() != payload_count {
                     return Err(self.error(
                         function,
                         format!(
                             "pattern `{}.{}` expects {} payload value(s), received {}",
                             parent.name,
                             definition.name,
-                            definition.payload.len(),
+                            payload_count,
                             fields.len()
                         ),
                     ));

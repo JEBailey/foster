@@ -126,12 +126,39 @@ func first(values: List<String>) -> String {
 The value is evaluated and returned only when the guard is `true`; execution continues with the
 next statement when it is `false`. The guard must have type `Bool`.
 
+`assert` requires a `Bool` condition and may include a `String` message:
+
+```foster
+assert(index < values.length)
+assert(response.success?, "request should succeed")
+```
+
+When the condition is `true`, execution continues and the assertion contributes `()`. When it is
+`false`, the current invocation stops immediately with a runtime assertion error. The error
+propagates through ordinary calls; a remote invocation delivers it through its future, and a test
+runner marks only the current test as failed before continuing with the remaining tests. Assertions
+are statements rather than recoverable `Result` values and cannot be guarded with postfix `if`.
+
 `if` is deliberately not a general conditional statement or expression. It may only follow a
 control-transfer statement, so `write(value) if ready` and `value = next() if ready` are invalid.
 Use `branch` when choosing whether to evaluate a value-producing operation.
 
-`return` is currently Foster's only control-transfer statement. Future transfers such as `break`
-and `continue` will use the same postfix form if they are added. Foster has no `throw` statement;
+`loop` repeats a statement block until control leaves it. `break` exits the nearest enclosing loop,
+and `continue` starts its next iteration. Both transfers
+may use the same postfix `if` guard as `return`:
+
+```foster
+loop {
+    item = next()
+    continue if item.ignored?
+    process(item)
+    break if item.last?
+}
+```
+
+`break` and `continue` do not carry values. A loop that exits contributes `()`, keeping
+value-producing selection in `branch`. Their guards must be `Bool`, and using either transfer
+outside an enclosing loop is a compile error. Foster has no `throw` statement;
 recoverable errors remain ordinary typed `Result` values.
 
 Identifiers may end in `?`, conventionally marking Boolean observations such as `empty?` and
@@ -173,12 +200,8 @@ There is no universally nullable reference type. The core library represents abs
 `Option<T>`:
 
 ```foster
-type Option<T> =
-    | Some<T>
+enum Option<T> = Some(T)
     | None
-
-type Some<T> = { value: T }
-type None = {}
 ```
 
 `Sequence<T>` is a read-oriented structural view, not a storage representation. Passing a list or
@@ -262,34 +285,46 @@ An associated declaration cannot have a `self` parameter; instance methods retai
 `func get(self: Map<K, V>, key: K)` form. Both directly imported `Map.empty()` and explicitly
 module-qualified `map.Map.empty()` calls resolve to the same function.
 
-## Union and variant types
+## Union contracts and enums
 
-`|` combines complete types into a closed union. This is the variant-type counterpart to `&`,
-which combines type requirements:
+In a `type` declaration, `|` combines complete types into an untagged union contract. A value
+satisfies the union when it satisfies at least one member:
 
 ```foster
-type Ok<T> = { value: T }
-type Error<E> = { value: E }
+type TextOrBytes = String | Bytes
 
-type Result<T, E> =
-    | Ok<T>
-    | Error<E>
+func length(value: TextOrBytes) -> Int {
+    value.length
+}
 ```
 
-Every entry after `|` is an ordinary type expression. Primitive types and instantiated generics
-are valid members, so `| Int` and `| List<TomlValue>` mean exactly those types. Syntax such as
-`| Error(E)` is not a declaration form; structured members are declared as records and then named
-by the union. A value whose type uniquely matches one member is injected into the union when the
-surrounding function result, parameter, assignment, or field supplies the union type.
+The first member follows `=` directly; each additional member follows `|`. Every member is an
+ordinary type expression. A declaration with one member, such as `type Text = String`, is a
+transparent alias: `Text` has the same operations and runtime representation as `String`.
+Primitive types and instantiated generics are valid members, so `Int` and `List<TomlValue>` mean
+exactly those types. Union conformance does not change runtime representation and does not create
+constructors or tags. A member named `foo` in `type X = foo | bar` therefore does not create
+`X.foo(...)`. Code receiving a union may use only members provided compatibly by every alternative.
 
-Qualified forms such as `Result.Ok(value)` are explicit construction and pattern shorthand for a
-named record member. Generic arguments are inferred from construction, calls, and branch patterns.
-
-A variant may place shared contract clauses after its alternatives:
+Tagged cases use a distinct `enum` declaration. Each case has a label and optionally carries one
+explicit payload type:
 
 ```foster
-type Foo =
-    | Bar
+enum Result<T, E> = Ok(T)
+    | Error(E)
+```
+
+The labels are scoped enum cases, not names of other types. `Ok(T)` declares a case named `Ok`
+whose payload is a `T`; `None` declares a payloadless case. Multiple related fields are grouped in
+a record and carried as that one record value. Enums synthesize explicit
+constructors such as `Result.Ok(value)` and `Result.Error(error)`. Constructors insert a runtime
+tag, and subject branches may match those tags exhaustively. Enum values are nominal, and generic
+arguments are inferred from construction, calls, and branch patterns.
+
+An enum may place shared contract clauses after its cases:
+
+```foster
+enum Foo = Bar(String)
     | What
     & SomeContract
     & {
@@ -297,29 +332,22 @@ type Foo =
     }
 ```
 
-The trailing intersection applies to every alternative. The declaration is equivalent, as a
-contract, to:
-
-```text
-(Bar & SomeContract & { describe })
-    | (What & SomeContract & { describe })
-```
-
-Consequently, every `Foo` value satisfies `SomeContract` and provides `describe`, regardless of
-which alternative constructed it. The defining module implements a shared requirement with an
-ordinary instance function whose receiver is the variant type, such as
-`func describe(self: Foo) -> String`. Its body may branch on `self` when alternatives need
-different behavior. A variant can be structurally adapted to the method-only contracts it
-satisfies, and calls through such a contract dispatch to the original variant value.
+The trailing intersection applies to the enum value itself, independent of which case constructed
+it. Consequently, every `Foo` value satisfies `SomeContract` and provides `describe`. The defining
+module implements a shared requirement with an
+ordinary instance function whose receiver is the enum type, such as
+`func describe(self: Foo) -> String`. Its body may branch on `self` when cases need
+different behavior. An enum can be structurally adapted to the method-only contracts it satisfies,
+and calls through such a contract dispatch to the original enum value.
 
 The shared `{ ... }` body declares callable requirements only. Stored fields are rejected because
-the members remain their own complete types; there is no additional record storage shared by every
-member.
+each case owns only its declared payload; there is no additional record storage shared by every
+case.
 
-A member may be written without its union qualifier when its base type name uniquely identifies a
-member in the current module. This applies to both explicit construction and patterns, allowing
-`Ok(value)` and `Error(error)` in code centered on one result type. If two variant types declare the
-same member name, Foster requires the qualified spelling.
+An enum case may be written without its enum qualifier when its label uniquely identifies a case
+in the current module. This applies to both explicit construction and
+patterns, allowing `Ok(value)` and `Error(error)` in code centered on one result type. If two enums
+declare the same case label, Foster requires the qualified spelling.
 
 ## Branch expressions
 
@@ -342,11 +370,45 @@ branch result {
 }
 ```
 
-The implemented patterns include union-member patterns, recursive record-field destructuring,
-bindings, `_`, and Bool, Int, Float, String, and Symbol literals. Branches over union types are
-checked for exhaustiveness. A member is covered only when all of its nested patterns are
-irrefutable bindings or `_`; for example, `Some(value)` covers `Some<T>`, while `Some(0)` does not.
+The implemented patterns include enum-case patterns, nested payload patterns,
+bindings, `_`, and Bool, Int, Float, String, and Symbol literals. Branches over enum types are
+checked for exhaustiveness. An enum case is covered only when all of its nested patterns are
+irrefutable bindings or `_`; for example, `Some(value)` covers `Some(T)`, while `Some(0)` does not.
 A top-level binding or `_` is a catch-all.
+
+An arm may use a statement block after `->`. The block's final expression supplies the arm value:
+
+```foster
+branch result {
+    Result.Ok(value) -> {
+        log("received a value")
+        normalize(value)
+    }
+    Result.Error(message) -> {
+        log(message)
+        fallback
+    }
+}
+```
+
+The final statement may instead be an unconditional control transfer such as `return`, or `break`
+and `continue` when the branch is inside a loop:
+
+```foster
+loop {
+    branch next() {
+        Item(value) -> {
+            continue if !acceptable?(value)
+            return value
+        }
+        End -> { break }
+    }
+}
+```
+
+`continue` always targets the nearest enclosing loop; branch arms never fall through to later arms.
+An arm block that falls through must end in a value expression; it does not acquire an implicit
+value from a preceding binding, assignment, or assertion.
 
 ## Remote objects and virtual threads
 
@@ -400,7 +462,7 @@ member lookup implied by “duck typing.” Records retain nominal construction 
 representation, while their accessible contract participates in structural conformance.
 
 The implemented type system includes nominally constructed records with structural adaptation and
-declared contract composition, union/variant types, explicit parametric generics using
+declared contract composition, untagged union contracts, tagged enums, explicit parametric generics using
 `Type<Argument>`, function and intersection types, callable-member contracts, and no implicit
 numeric or nullable conversions.
 
@@ -410,7 +472,7 @@ to a local binding, function, module, builtin, or later a type-level definition 
 The unit type is written `()`. The bootstrap compiler also resolves `Bool`, `Int`, `Float`, `CodePoint`,
 `List<T>`, `Sequence<T>`, `Remote<T>`, `Future<T>`, callable types with internally inferred
 representation erasure, records,
-variants, generics, and record intersections. Decimal and scientific-notation literals produce
+enums, union contracts, generics, and record intersections. Decimal and scientific-notation literals produce
 `Float`; there are no implicit conversions between `Int` and `Float`.
 `String`, `Symbol`, `Bytes`, `ByteBuffer`, and `List<T>` are instead always-available opaque Foster
 types declared in their respective core modules. `String` contains private `Bytes`, `Symbol`
@@ -459,7 +521,7 @@ comments do not enter the AST and have no effect on compilation.
 `//!` is a module documentation comment and must appear before the module's declarations. Consecutive
 module documentation comments are joined with newlines. `///` and `/** ... */` are declaration
 documentation comments. Consecutive declaration documentation comments are joined
-with newlines and attach to the function, record, or variant type that immediately follows them:
+with newlines and attach to the function, record, union-contract, or enum declaration that immediately follows them:
 
 ```foster
 /// A TCP connection owned by the runtime.
@@ -734,6 +796,20 @@ func(Job) -> ()         // borrows its argument
 func(consume Job) -> () // takes ownership of its argument
 ```
 
+`core.functions` provides names for the three common one-operation callable shapes:
+
+```foster
+import core.functions
+
+Predicate<Job> // func(Job) -> Bool
+Consumer<Job>  // func(consume Job) -> ()
+Supplier<Job>  // func() -> Job
+```
+
+These are transparent aliases, so they preserve callable parameter ownership and runtime
+representation rather than introducing wrapper values. They currently describe pure callbacks;
+effect-polymorphic aliases remain future work.
+
 ## Inferred and explicit effects
 
 Ordinary functions infer `read`, `mut`, `reshape`, `consume`, and `suspend` from their bodies and
@@ -773,7 +849,7 @@ and implementation limits.
 ## Errors as values
 
 Recoverable errors are ordinary typed values, conventionally represented with the
-Foster-written `Result<T, E>` union type:
+Foster-written `Result<T, E>` enum:
 
 ```foster
 import core.result

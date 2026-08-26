@@ -41,8 +41,7 @@ impl FunctionLowerer<'_> {
             effect_spans: Vec::new(),
             suspends,
             suspend_span: None,
-            body: Vec::new(),
-            statement_spans: Vec::new(),
+            body: crate::block::Block::new(),
         });
         let source = ast::Function {
             span: 0..0,
@@ -60,10 +59,12 @@ impl FunctionLowerer<'_> {
             suspends,
             suspend_span: None,
             body: match body {
-                ast::ClosureBody::Expression(expression) => vec![ast::Stmt::Expr(*expression)],
+                ast::ClosureBody::Expression(expression) => {
+                    let span = expression.span().unwrap_or(0..0);
+                    crate::block::Block::single(ast::Stmt::Expr(*expression), span)
+                }
                 ast::ClosureBody::Block(body) => body,
             },
-            statement_spans: Vec::new(),
         };
         let mut lowerer = FunctionLowerer {
             hir: self.hir,
@@ -73,6 +74,7 @@ impl FunctionLowerer<'_> {
             locals: self.locals.clone(),
             captures: Vec::new(),
             self_name: named.then(|| source_name.to_owned()),
+            loop_depth: 0,
         };
         lowerer.lower_function(&source)?;
         let mut captures = lowerer

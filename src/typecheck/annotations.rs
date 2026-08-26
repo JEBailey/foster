@@ -117,7 +117,37 @@ impl Checker<'_> {
                 let arguments = arguments
                     .iter()
                     .map(|argument| self.annotation_type(module, argument, generics))
-                    .collect::<Result<_, _>>()?;
+                    .collect::<Result<Vec<_>, _>>()?;
+                if let NominalType::Variant(variant) = nominal {
+                    let definition = self.hir.variant_types[variant].clone();
+                    if definition.kind == crate::ast::VariantKind::Union
+                        && definition.alternatives.len() == 1
+                        && definition.compositions.is_empty()
+                        && definition.methods.is_empty()
+                    {
+                        if self.resolving_aliases.contains(&variant) {
+                            return Err(FosterError::runtime(format!(
+                                "type alias `{}` recursively refers to itself",
+                                definition.name
+                            )));
+                        }
+                        let member = self.hir.variants[definition.alternatives[0]]
+                            .member
+                            .clone()
+                            .expect("a union alternative has a member type");
+                        let alias_generics = definition
+                            .parameters
+                            .iter()
+                            .cloned()
+                            .zip(arguments.iter().cloned())
+                            .collect::<HashMap<_, _>>();
+                        self.resolving_aliases.push(variant);
+                        let resolved =
+                            self.annotation_type(definition.module, &member, &alias_generics);
+                        self.resolving_aliases.pop();
+                        return resolved;
+                    }
+                }
                 Ok(match nominal {
                     NominalType::Record(record) => Ty::Record(record, arguments),
                     NominalType::Variant(variant) => Ty::Variant(variant, arguments),

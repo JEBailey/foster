@@ -49,25 +49,31 @@ impl Checker<'_> {
                 | hir::Stmt::Assign { value, .. }
                 | hir::Stmt::Set { value, .. }
                 | hir::Stmt::Expr(value) => Some(*value),
+                hir::Stmt::Assert { condition, .. } => Some(*condition),
+                hir::Stmt::Loop { .. } | hir::Stmt::Break { .. } | hir::Stmt::Continue { .. } => {
+                    None
+                }
             };
         }
         if let Some(final_value) = final_value {
-            self.coerce_expression(
-                signature.result,
-                final_value,
-                function_id,
-                final_expression.expect("a final value has a source expression"),
-            )
-            .map_err(|error| {
-                final_expression.map_or(error.clone(), |expression| {
+            if let Some(final_expression) = final_expression {
+                self.coerce_expression(
+                    signature.result,
+                    final_value,
+                    function_id,
+                    final_expression,
+                )
+                .map_err(|error| {
                     self.error_at_expression(
                         error,
                         function_id,
-                        expression,
+                        final_expression,
                         "function result has an incompatible type",
                     )
-                })
-            })?;
+                })?;
+            } else {
+                self.unify(signature.result, final_value, function_id)?;
+            }
         }
         Ok(())
     }
@@ -103,6 +109,49 @@ impl Checker<'_> {
                             "returned value has an incompatible type",
                         )
                     })?;
+                Ok(None)
+            }
+            hir::Stmt::Assert { condition, message } => {
+                self.check_expression(function, *condition, Ty::Bool)
+                    .map_err(|error| {
+                        self.error_at_expression(
+                            error,
+                            function,
+                            *condition,
+                            "assertion condition must be Bool",
+                        )
+                    })?;
+                if let Some(message) = message {
+                    self.check_expression(function, *message, self.string_type())
+                        .map_err(|error| {
+                            self.error_at_expression(
+                                error,
+                                function,
+                                *message,
+                                "assertion message must be String",
+                            )
+                        })?;
+                }
+                Ok(Some(Ty::Unit))
+            }
+            hir::Stmt::Loop { body, .. } => {
+                for statement in body {
+                    self.check_statement(function, statement)?;
+                }
+                Ok(Some(Ty::Unit))
+            }
+            hir::Stmt::Break { guard } | hir::Stmt::Continue { guard } => {
+                if let Some(guard) = guard {
+                    self.check_expression(function, *guard, Ty::Bool)
+                        .map_err(|error| {
+                            self.error_at_expression(
+                                error,
+                                function,
+                                *guard,
+                                "control guard must be Bool",
+                            )
+                        })?;
+                }
                 Ok(None)
             }
             hir::Stmt::Bind { local, value } => {
@@ -151,6 +200,45 @@ impl Checker<'_> {
                 Ok(Some(value))
             }
             hir::Stmt::Expr(expression) => Ok(Some(self.infer_expression(function, *expression)?)),
+        }
+    }
+
+    fn check_branch_body(
+        &mut self,
+        function: FunctionId,
+        body: &crate::block::Block<hir::Stmt>,
+        expected: Option<Ty>,
+    ) -> Result<Option<Ty>, FosterError> {
+        let flow = crate::control_flow::summarize_arm(body);
+        let Some(last) = body.last() else {
+            if let Some(expected) = expected {
+                self.unify(expected, Ty::Unit, function)?;
+            }
+            return Ok(Some(Ty::Unit));
+        };
+        for statement in body.iter().take(body.len() - 1) {
+            self.check_statement(function, statement)?;
+        }
+        match last {
+            hir::Stmt::Expr(expression) if flow.yields_value => {
+                let value = if let Some(expected) = expected {
+                    self.check_expression(function, *expression, expected)?
+                } else {
+                    self.infer_expression(function, *expression)?
+                };
+                Ok(Some(value))
+            }
+            _ if !flow.falls_through => {
+                self.check_statement(function, last)?;
+                Ok(None)
+            }
+            _ => {
+                self.check_statement(function, last)?;
+                Err(self.error(
+                    function,
+                    "branch-arm block must end with a value or an unconditional control transfer",
+                ))
+            }
         }
     }
 
@@ -205,7 +293,11 @@ impl Checker<'_> {
                         true,
                     )?;
                 }
-                self.check_expression(function, arm.value, expected.clone())?;
+                if let Some(value) =
+                    self.check_branch_body(function, &arm.body, Some(expected.clone()))?
+                {
+                    self.unify(expected.clone(), value, function)?;
+                }
             }
             if let Some(Ty::Variant(parent, _)) = subject_ty.map(|ty| self.resolved(ty)) {
                 let required = self.hir.variant_types[parent].alternatives.len();
@@ -392,8 +484,9 @@ impl Checker<'_> {
                             true,
                         )?;
                     }
-                    let value = self.infer_expression(function, arm.value)?;
-                    self.unify(result.clone(), value, function)?;
+                    if let Some(value) = self.check_branch_body(function, &arm.body, None)? {
+                        self.unify(result.clone(), value, function)?;
+                    }
                 }
                 if let Some(Ty::Variant(parent, _)) = subject_ty.map(|t| self.resolved(t)) {
                     let expected = self.hir.variant_types[parent].alternatives.len();
@@ -452,6 +545,10 @@ impl Checker<'_> {
                     | hir::Stmt::Assign { value, .. }
                     | hir::Stmt::Set { value, .. }
                     | hir::Stmt::Expr(value) => *value,
+                    hir::Stmt::Assert { .. }
+                    | hir::Stmt::Loop { .. }
+                    | hir::Stmt::Break { .. }
+                    | hir::Stmt::Continue { .. } => return None,
                 };
                 match &self.hir.expressions[expression] {
                     hir::Expr::Call { callee, arguments } => Some((*callee, arguments.clone())),
@@ -637,7 +734,7 @@ impl Checker<'_> {
                         .map(|p| generics[p].clone())
                         .collect(),
                 );
-                if definition.payload.is_empty() {
+                if definition.payload.is_none() {
                     result
                 } else {
                     Ty::Function(

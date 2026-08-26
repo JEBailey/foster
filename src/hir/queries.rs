@@ -1,6 +1,6 @@
 use crate::ast;
 
-use super::{BranchTest, Expr, ExprId, LocalId, PackageHir, Place, Projection, ResolvedName};
+use super::{Expr, ExprId, LocalId, PackageHir, Place, Projection, ResolvedName};
 
 pub(crate) fn expression_place(hir: &PackageHir, expression: ExprId) -> Option<Place> {
     match &hir.expressions[expression] {
@@ -121,52 +121,21 @@ pub(crate) fn type_exposes_group(ty: Option<&ast::TypeExpr>, group: &str) -> boo
 }
 
 pub(super) fn expression_uses_local(hir: &PackageHir, expression: ExprId, local: LocalId) -> bool {
-    match &hir.expressions[expression] {
-        Expr::Name(ResolvedName::Local(found)) => *found == local,
-        Expr::List(values) => values
-            .iter()
-            .any(|value| expression_uses_local(hir, *value, local)),
-        Expr::Call { callee, arguments } => {
-            expression_uses_local(hir, *callee, local)
-                || arguments
-                    .iter()
-                    .any(|argument| expression_uses_local(hir, *argument, local))
-        }
-        Expr::Member { object, .. }
-        | Expr::Reference(object)
-        | Expr::MoveOut(object)
-        | Expr::Remote(object)
-        | Expr::Await(object)
-        | Expr::Unary {
-            operand: object, ..
-        } => expression_uses_local(hir, *object, local),
-        Expr::Index { object, index }
-        | Expr::Binary {
-            left: object,
-            right: index,
-            ..
-        } => {
-            expression_uses_local(hir, *object, local)
-                || expression_uses_local(hir, *index, local)
-        }
-        Expr::Record { fields, .. } => fields
-            .iter()
-            .any(|(_, value)| expression_uses_local(hir, *value, local)),
-        Expr::Branch { subject, arms } => {
-            subject.is_some_and(|subject| expression_uses_local(hir, subject, local))
-                || arms.iter().any(|arm| {
-                    matches!(arm.test, BranchTest::Condition(condition) if expression_uses_local(hir, condition, local))
-                        || expression_uses_local(hir, arm.value, local)
-                })
-        }
-        Expr::Closure { .. }
-        | Expr::Unit
-        | Expr::Bool(_)
-        | Expr::Integer(_)
-        | Expr::Float(_)
-        | Expr::String(_)
-        | Expr::CodePoint(_)
-        | Expr::Symbol(_)
-        | Expr::Name(_) => false,
+    struct LocalUse {
+        target: LocalId,
+        found: bool,
     }
+
+    impl super::visit::Visitor for LocalUse {
+        fn visit_local_use(&mut self, local: LocalId) {
+            self.found |= local == self.target;
+        }
+    }
+
+    let mut visitor = LocalUse {
+        target: local,
+        found: false,
+    };
+    super::visit::Visitor::visit_expression(&mut visitor, hir, expression);
+    visitor.found
 }

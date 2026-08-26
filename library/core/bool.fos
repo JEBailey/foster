@@ -31,9 +31,9 @@ pub func then<T>(condition: Bool, value: T) -> List<T> [consume value] {
 }
 
 test "boolean helpers implement their truth tables" {
-    return [()][1] if not(true) != false
-    return [()][1] if and(true, true) == false
-    return [()][1] if or(false, true) == false
-    return [()][1] if xor(true, false) == false
+    assert(not(true) == false)
+    assert(and(true, true))
+    assert(or(false, true))
+    assert(xor(true, false))
     ()
 }

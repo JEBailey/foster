@@ -23,7 +23,7 @@ pub func map<T, U>(self: Iterator<T>, transform: func(consume T) -> U) -> Iterat
 
 test "mapped iterators transform lazily" {
     let values = map([1, 2, 3].iterator, (value: Int) -> value * 3).collect()
-    return [()][1] if values.length != 3
-    return [()][1] if values[2] != 9
+    assert(values.length == 3)
+    assert(values[2] == 9)
     ()
 }

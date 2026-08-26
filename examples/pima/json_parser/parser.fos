@@ -1,16 +1,11 @@
-pub type Null = {}
-pub type Boolean = { pub value: Bool }
-pub type Number = { pub value: Float }
-pub type JsonString = { pub value: String }
-pub type Array = { pub values: List<Json> }
-pub type Object = { pub members: List<JsonMember> }
-pub type Json =
-    | Null
-    | Boolean
-    | Number
-    | JsonString
-    | Array
-    | Object
+import core.string
+
+pub enum Json = Null
+    | Boolean(Bool)
+    | Number(Float)
+    | JsonString(String)
+    | Array(List<Json>)
+    | Object(List<JsonMember>)
 
 pub type JsonMember = {
     pub key: String
@@ -21,11 +16,8 @@ pub type JsonError = {
     pub message: String
 }
 
-pub type ParseOk<T> = { pub value: T }
-pub type ParseError = { pub error: JsonError }
-pub type ParseResult<T> =
-    | ParseOk<T>
-    | ParseError
+pub enum ParseResult<T> = ParseOk(T)
+    | ParseError(JsonError)
 
 type Parsed<T> = {
     value: T
@@ -43,11 +35,8 @@ func fail<T>(message: String) -> ParseResult<T> {
 }
 
 func skip_whitespace(characters: String) -> String {
-    branch {
-        characters.empty? -> characters
-        characters.head.in?(' ', '\n', '\r', '\t') -> skip_whitespace(characters.rest)
-        _ -> characters
-    }
+    let prefix = characters.take_while((character: CodePoint) -> character.in?(' ', '\n', '\r', '\t'))
+    string.slice(characters, prefix.length, characters.length)
 }
 
 func digit_value(character: CodePoint) -> Int {
@@ -81,10 +70,12 @@ func consume_hex(characters: String, value: Int, remaining: Int) -> ParseResult<
 }
 
 func scan_digits(characters: String, token: String, count: Int) -> ScannedNumber {
-    branch {
-        characters.empty? -> ScannedNumber { token, rest: characters, digits: count }
-        digit_value(characters.head) < 0 -> ScannedNumber { token, rest: characters, digits: count }
-        _ -> scan_digits(characters.rest, token + characters.head.string, count + 1)
+    let prefix = characters.take_while((character: CodePoint) -> digit_value(character) >= 0)
+    let matched = prefix.length
+    ScannedNumber {
+        token: token + prefix
+        rest: string.slice(characters, matched, characters.length)
+        digits: count + matched
     }
 }
 

@@ -17,7 +17,8 @@ pub fn format(source: &str) -> Result<String, FosterError> {
     let mut previous_blank = false;
     let mut type_continuation = false;
 
-    for raw_line in source.lines() {
+    let lines = source.lines().collect::<Vec<_>>();
+    for (line_index, raw_line) in lines.iter().enumerate() {
         let content = raw_line.trim();
         if content.is_empty() {
             if !output.is_empty() && !previous_blank {
@@ -29,7 +30,15 @@ pub fn format(source: &str) -> Result<String, FosterError> {
 
         previous_blank = false;
         if begins_declaration(content) && !content.starts_with('|') && !content.starts_with('&') {
-            type_continuation = content.starts_with("type ") && content.ends_with('=');
+            let declaration = content.strip_prefix("pub ").unwrap_or(content);
+            let next_continues_type = lines[line_index + 1..]
+                .iter()
+                .map(|line| line.trim())
+                .find(|line| !line.is_empty())
+                .is_some_and(|next| next.starts_with('|') || next.starts_with('&'));
+            type_continuation = (declaration.starts_with("type ")
+                || declaration.starts_with("enum "))
+                && (content.ends_with('=') || next_continues_type);
         }
 
         let leading_closers = count_leading_closers(content, &state);
@@ -43,18 +52,42 @@ pub fn format(source: &str) -> Result<String, FosterError> {
         } else {
             delimiter_indents.last().copied().unwrap_or(0)
         };
-        if type_continuation && matches!(content.as_bytes().first(), Some(b'|' | b'&')) {
+        if type_continuation
+            && !content.starts_with("type ")
+            && !content.starts_with("pub type ")
+            && !content.starts_with("enum ")
+            && !content.starts_with("pub enum ")
+        {
             indent = indent.max(1);
         }
 
-        output.push(format!("{}{}", INDENT.repeat(indent), content));
+        let joins_enum_header = type_continuation
+            && output.last().is_some_and(|line| {
+                let line = line.trim().strip_prefix("pub ").unwrap_or(line.trim());
+                line.starts_with("enum ") && line.ends_with('=')
+            });
+        if joins_enum_header {
+            let header = output.last_mut().expect("an enum header was found");
+            header.push(' ');
+            header.push_str(content);
+        } else {
+            output.push(format!("{}{}", INDENT.repeat(indent), content));
+        }
         scan_line(content, indent, &mut state, &mut delimiter_indents);
 
+        let declaration_header = content.starts_with("type ")
+            || content.starts_with("pub type ")
+            || content.starts_with("enum ")
+            || content.starts_with("pub enum ");
+        let next_continues_type = lines[line_index + 1..]
+            .iter()
+            .map(|line| line.trim())
+            .find(|line| !line.is_empty())
+            .is_some_and(|next| next.starts_with('|') || next.starts_with('&'));
         if type_continuation
             && delimiter_indents.is_empty()
-            && !content.starts_with("type ")
-            && !content.starts_with('|')
-            && !content.starts_with('&')
+            && !declaration_header
+            && !next_continues_type
         {
             type_continuation = false;
         }
@@ -68,7 +101,7 @@ pub fn format(source: &str) -> Result<String, FosterError> {
 
 fn begins_declaration(line: &str) -> bool {
     let line = line.strip_prefix("pub ").unwrap_or(line);
-    ["import ", "const ", "type ", "func ", "test "]
+    ["import ", "const ", "type ", "enum ", "func ", "test "]
         .iter()
         .any(|prefix| line.starts_with(prefix))
 }
@@ -167,10 +200,29 @@ mod tests {
 
     #[test]
     fn formats_multiline_type_composition() {
-        let source = "type Foo =\n| Bar\n| What\n& SomeContract\n& {\npub func describe(self) -> String\n}\n";
+        let source =
+            "type Foo =\nBar\n| What\n& SomeContract\n& {\npub func describe(self) -> String\n}\n";
         assert_eq!(
             format(source).unwrap(),
-            "type Foo =\n    | Bar\n    | What\n    & SomeContract\n    & {\n        pub func describe(self) -> String\n    }\n"
+            "type Foo =\n    Bar\n    | What\n    & SomeContract\n    & {\n        pub func describe(self) -> String\n    }\n"
+        );
+    }
+
+    #[test]
+    fn formats_multiline_enum_declarations() {
+        let source = "enum Choice =\nLeft(Int)\n| Right(String)\n";
+        assert_eq!(
+            format(source).unwrap(),
+            "enum Choice = Left(Int)\n    | Right(String)\n"
+        );
+    }
+
+    #[test]
+    fn preserves_the_canonical_inline_first_enum_case() {
+        let source = "pub enum Option<T> = Some(T)\n| None\n";
+        assert_eq!(
+            format(source).unwrap(),
+            "pub enum Option<T> = Some(T)\n    | None\n"
         );
     }
 
@@ -184,6 +236,22 @@ mod tests {
         assert_eq!(
             format("test \"works\" {\nprintln()\n}\n").unwrap(),
             "test \"works\" {\n    println()\n}\n"
+        );
+    }
+
+    #[test]
+    fn formats_loops_and_guarded_transfers() {
+        assert_eq!(
+            format("func main() {\nloop {\ncontinue if false\nbreak\n}\n}\n").unwrap(),
+            "func main() {\n    loop {\n        continue if false\n        break\n    }\n}\n"
+        );
+    }
+
+    #[test]
+    fn formats_multiline_branch_arms() {
+        assert_eq!(
+            format("func main() -> Int {\nbranch {\ntrue -> {\nlet value = 42\nvalue\n}\n_ -> 0\n}\n}\n").unwrap(),
+            "func main() -> Int {\n    branch {\n        true -> {\n            let value = 42\n            value\n        }\n        _ -> 0\n    }\n}\n"
         );
     }
 }

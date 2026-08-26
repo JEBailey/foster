@@ -8,17 +8,28 @@ use walkdir::{DirEntry, WalkDir};
 use crate::ast::Program;
 use crate::error::FosterError;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleOrigin {
+    Input,
+    Embedded,
+}
+
 #[derive(Debug, Clone)]
 pub struct Module {
     pub name: String,
     pub source_path: Option<Utf8PathBuf>,
     pub program: Option<Program>,
     pub source: Option<String>,
+    pub origin: ModuleOrigin,
 }
 
 impl Module {
     pub fn is_implicit(&self) -> bool {
         self.program.is_none()
+    }
+
+    pub fn is_input(&self) -> bool {
+        self.origin == ModuleOrigin::Input
     }
 }
 
@@ -176,6 +187,7 @@ impl Package {
             source_path: None,
             program: Some(program),
             source: None,
+            origin: ModuleOrigin::Input,
         };
         Self {
             root: Utf8PathBuf::new(),
@@ -286,6 +298,7 @@ impl Package {
             source_path: None,
             program: None,
             source: None,
+            origin: ModuleOrigin::Embedded,
         });
         let mut program = crate::parse(bootstrap.source).map_err(|error| {
             FosterError::runtime(format!(
@@ -317,6 +330,7 @@ impl Package {
                 source_path: embedded_source_path(bootstrap.name),
                 program: Some(program),
                 source: Some(bootstrap.source.to_owned()),
+                origin: ModuleOrigin::Embedded,
             },
         );
         Ok(())
@@ -353,6 +367,7 @@ impl Package {
             source_path: None,
             program: None,
             source: None,
+            origin: ModuleOrigin::Embedded,
         });
         for namespace in ["core.bytes", "std", "std.net"] {
             self.modules.entry(namespace.into()).or_insert(Module {
@@ -360,6 +375,7 @@ impl Package {
                 source_path: None,
                 program: None,
                 source: None,
+                origin: ModuleOrigin::Embedded,
             });
         }
         for (name, source) in EMBEDDED_MODULES {
@@ -373,6 +389,7 @@ impl Package {
                     source_path: embedded_source_path(name),
                     program: Some(program),
                     source: Some((*source).to_owned()),
+                    origin: ModuleOrigin::Embedded,
                 },
             );
         }
@@ -394,6 +411,31 @@ impl Package {
         self.modules
             .values()
             .filter(|module| module.is_implicit())
+            .count()
+    }
+
+    pub fn is_input_module(&self, name: &str) -> bool {
+        self.module(name).is_some_and(Module::is_input)
+    }
+
+    pub fn input_module_count(&self) -> usize {
+        self.modules
+            .values()
+            .filter(|module| module.is_input())
+            .count()
+    }
+
+    pub fn input_explicit_module_count(&self) -> usize {
+        self.modules
+            .values()
+            .filter(|module| module.is_input() && !module.is_implicit())
+            .count()
+    }
+
+    pub fn input_implicit_module_count(&self) -> usize {
+        self.modules
+            .values()
+            .filter(|module| module.is_input() && module.is_implicit())
             .count()
     }
 
@@ -439,6 +481,7 @@ impl Package {
             source_path: None,
             program: None,
             source: None,
+            origin: ModuleOrigin::Input,
         });
     }
 
@@ -469,6 +512,7 @@ impl Package {
             source_path: None,
             program: None,
             source: None,
+            origin: ModuleOrigin::Input,
         });
         if let Some(existing) = &module.source_path {
             return Err(FosterError::runtime(format!(
@@ -631,6 +675,10 @@ fn embedded_source_path(module: &str) -> Option<Utf8PathBuf> {
 }
 
 const EMBEDDED_MODULES: &[(&str, &str)] = &[
+    (
+        "core.functions",
+        include_str!("../library/core/functions.fos"),
+    ),
     ("core.option", include_str!("../library/core/option.fos")),
     ("core.byte", include_str!("../library/core/byte.fos")),
     ("core.bytes", include_str!("../library/core/bytes.fos")),

@@ -8,8 +8,8 @@ The translations preserve each example's useful language or algorithmic idea. Th
 Foster rather than emulating Pima syntax:
 
 - lexical closures replace Pima's caller-environment `do` blocks;
-- records and union/variant types replace anonymous objects, tuples, and tagged lists;
-- typed result variants replace `throw`/`attempt` where errors are part of the example;
+- records, union contracts, and enums replace anonymous objects, tuples, and tagged lists;
+- typed result enums replace `throw`/`attempt` where errors are part of the example;
 - recursive functions replace `while` until Foster gains loop syntax, using postfix guards for
   simple exit conditions;
 - iterator consumers and lazy adaptors replace hand-written collection traversal where iteration,
@@ -40,11 +40,11 @@ Foster rather than emulating Pima syntax:
 | `maps.pima` | `maps.fos` | Typed persistent map behavior |
 | `newton.pima` | `newton.fos` | Float iteration and nested closures |
 | `object_test.pima` | `object_test.fos` | Records, methods, and mutation |
-| `patterns.pima` | `patterns.fos` | Variant construction and destructuring |
+| `patterns.pima` | `patterns.fos` | Enum construction and destructuring |
 | `repository_analyzer.pima` | `repository_analyzer.fos` | Concurrent remote source workers |
 | `repository_analyzer_lib.pima` | `repository_analyzer_lib.fos` | Recursive source metrics |
 | `repository_analyzer_test.pima` | `repository_analyzer_test.fos` | Metrics conformance fixture |
-| `showcase.pima` | `showcase.fos` | Records, variants, closures, lazy filtering, and methods |
+| `showcase.pima` | `showcase.fos` | Records, enums, closures, lazy filtering, and methods |
 | `test.pima` | `test.fos` | Minimal Fibonacci smoke test |
 | `timing.pima` | `timing.fos` | Empty-program/import smoke test |
 | `while.pima` | `while.fos` | 12,000-step VM-managed recursion |

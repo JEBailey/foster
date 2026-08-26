@@ -50,6 +50,6 @@ pub type QueueItem<T> = {
 
 test "queues retain pushed values" {
     let queue = Queue { values: [1, 2] }
-    return [()][1] if queue.length != 2
+    assert(queue.length == 2)
     ()
 }

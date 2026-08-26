@@ -1,5 +1,6 @@
 //! Owned homogeneous lists and their sequence and iterator operations.
 
+import core.functions
 import core.option
 import std.sequence
 
@@ -34,7 +35,7 @@ pub func map<T, U>(values: List<T>, transform: func(T) -> U) -> List<U> {
 }
 
 /// Returns the elements for which `include` evaluates to true.
-pub func filter<T>(values: List<T>, include: func(T) -> Bool) -> List<T> {
+pub func filter<T>(values: List<T>, include: Predicate<T>) -> List<T> {
     sequence.filter(values, include)
 }
 
@@ -47,7 +48,7 @@ pub func fold<T, U>(values: List<T>, initial: U, combine: func(consume U, consum
 }
 
 /// Returns the first element satisfying `predicate`, or `None` if none does.
-pub func find<T>(values: List<T>, predicate: func(T) -> Bool) -> Option<T> {
+pub func find<T>(values: List<T>, predicate: Predicate<T>) -> Option<T> {
     branch {
         values.empty? -> Option.None
         predicate(values.head) -> Option.Some(values.head)
@@ -56,12 +57,12 @@ pub func find<T>(values: List<T>, predicate: func(T) -> Bool) -> Option<T> {
 }
 
 /// Returns whether at least one element satisfies `predicate`.
-pub func any?<T>(values: List<T>, predicate: func(T) -> Bool) -> Bool {
+pub func any?<T>(values: List<T>, predicate: Predicate<T>) -> Bool {
     sequence.any?(values, predicate)
 }
 
 /// Returns whether every element satisfies `predicate`.
-pub func all?<T>(values: List<T>, predicate: func(T) -> Bool) -> Bool {
+pub func all?<T>(values: List<T>, predicate: Predicate<T>) -> Bool {
     sequence.all?(values, predicate)
 }
 
@@ -146,12 +147,12 @@ pub func flatten<T>(values: List<List<T>>) -> List<T> {
 }
 
 /// Counts the elements satisfying `predicate`.
-pub func count<T>(values: List<T>, predicate: func(T) -> Bool) -> Int {
+pub func count<T>(values: List<T>, predicate: Predicate<T>) -> Int {
     sequence.count(values, predicate)
 }
 
 /// Returns whether no element satisfies `predicate`.
-pub func none?<T>(values: List<T>, predicate: func(T) -> Bool) -> Bool {
+pub func none?<T>(values: List<T>, predicate: Predicate<T>) -> Bool {
     sequence.none?(values, predicate)
 }
 
@@ -173,10 +174,10 @@ pub func join(values: List<String>, separator: String) -> String {
 
 test "list algorithms transform and aggregate values" {
     let values = map([1, 2, 3], (value: Int) -> value * 2)
-    return [()][1] if values.length != 3
-    return [()][1] if values[0] != 2
-    return [()][1] if values[2] != 6
-    return [()][1] if fold(values, 0, (total: Int, value: Int) -> total + value) != 12
+    assert(values.length == 3)
+    assert(values[0] == 2)
+    assert(values[2] == 6)
+    assert(fold(values, 0, (total: Int, value: Int) -> total + value) == 12)
     ()
 }
 

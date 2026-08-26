@@ -1,8 +1,9 @@
 # Foster compiled bytecode format
 
-Status: version 6, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 7, implemented by `foster::vm::{encode_program, decode_program}`.
 
-The decoder also accepts version 5 artifacts, treating their `main` function as zero-argument.
+The decoder also accepts version 5 and 6 artifacts, treating a version 5 `main` function as
+zero-argument.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after lowering and optimization. It contains everything needed to verify and
@@ -27,7 +28,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `6` |
+| version | `u16` | `7` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -37,8 +38,8 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | symbol record | optional `RecordId` | Symbol wrapper |
 | records | `vector<(RecordId, string, vector<string>)>` | runtime name and indexed field layout |
 | methods | `vector<(RecordId, string, FunctionId)>` | record dispatch |
-| variant methods | `vector<(VariantTypeId, string, FunctionId)>` | variant dispatch |
-| variants | `vector<(VariantId, VariantTypeId, string, string)>` | parent, type, alternative |
+| enum methods | `vector<(VariantTypeId, string, FunctionId)>` | enum dispatch |
+| enum cases | `vector<(VariantId, VariantTypeId, string, string)>` | parent enum and case label |
 
 A function is `string name`, `u16 parameter_count`, `vector<ParameterMode> parameter_modes`,
 `vector<bool> mutable_parameters`, `u16 capture_count`, `u16 register_count`,
@@ -99,10 +100,11 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 30 | CallClosure | `R destination, F, vector<(CaptureMode, R)>, regs` |
 | 31 | Return | `R source` |
 | 32 | MakeFieldReference | `R destination, R object, string field` |
+| 33 | Assert | `R condition, optional<R> message` |
 
 ## Compatibility and canonical form
 
-Version 5 readers accept only version 5 with zero flags. Changing any existing tag, opcode, field,
+Version 7 readers accept versions 5 through 7 with zero flags. Changing any existing tag, opcode, field,
 or meaning requires a new version. A canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of
 `HashMap` iteration order.

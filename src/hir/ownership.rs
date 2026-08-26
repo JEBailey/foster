@@ -2,48 +2,63 @@ use super::queries::expression_uses_local;
 use super::*;
 
 pub(super) fn check_closure_ownership(hir: &PackageHir) -> Result<(), FosterError> {
-    for (_, function) in hir.functions.iter() {
+    for (function_id, function) in hir.functions.iter() {
         let mut moved = std::collections::HashSet::<LocalId>::new();
-        for (index, statement) in function.body.iter().enumerate() {
-            let statement_span = function
-                .statement_spans
-                .get(index)
-                .cloned()
-                .unwrap_or_else(|| function.span.clone());
-            let expression = match statement {
-                Stmt::Return { value, .. }
-                | Stmt::Bind { value, .. }
-                | Stmt::Assign { value, .. }
-                | Stmt::Set { value, .. }
-                | Stmt::Expr(value) => *value,
-            };
-            if let Some(local) = moved
+        check_closure_statement_block(
+            hir,
+            function_id,
+            &function.body,
+            &function.span,
+            &mut moved,
+        )?;
+    }
+    Ok(())
+}
+
+fn check_closure_statement_block(
+    hir: &PackageHir,
+    function_id: FunctionId,
+    statements: &crate::block::Block<Stmt>,
+    fallback_span: &std::ops::Range<usize>,
+    moved: &mut std::collections::HashSet<LocalId>,
+) -> Result<(), FosterError> {
+    let function = &hir.functions[function_id];
+    for (statement, span) in statements.iter_spanned() {
+        let statement_span = if span.is_empty() {
+            fallback_span.clone()
+        } else {
+            span.clone()
+        };
+        let expressions = statement_expressions(statement);
+        if let Some(local) = moved.iter().find(|local| {
+            expressions
                 .iter()
-                .find(|local| expression_uses_local(hir, expression, **local))
-            {
-                return Err(FosterError::runtime(format!(
-                    "in `{}.{}`: captured value `{}` was already moved into a closure",
-                    hir.modules[function.module].name, function.name, hir.locals[*local].name
-                ))
-                .with_fallback_location(
-                    hir.modules[function.module].name.clone(),
-                    statement_span.clone(),
-                    "this statement uses a value that was already moved",
-                ));
-            }
-            if let Stmt::Assign { local, .. } = statement
-                && moved.contains(local)
-            {
-                return Err(FosterError::runtime(format!(
-                    "in `{}.{}`: cannot assign moved value `{}`",
-                    hir.modules[function.module].name, function.name, hir.locals[*local].name
-                ))
-                .with_fallback_location(
-                    hir.modules[function.module].name.clone(),
-                    statement_span.clone(),
-                    "this assignment targets a moved value",
-                ));
-            }
+                .any(|expression| expression_uses_local(hir, *expression, **local))
+        }) {
+            return Err(FosterError::runtime(format!(
+                "in `{}.{}`: captured value `{}` was already moved into a closure",
+                hir.modules[function.module].name, function.name, hir.locals[*local].name
+            ))
+            .with_fallback_location(
+                hir.modules[function.module].name.clone(),
+                statement_span.clone(),
+                "this statement uses a value that was already moved",
+            ));
+        }
+        if let Stmt::Assign { local, .. } = statement
+            && moved.contains(local)
+        {
+            return Err(FosterError::runtime(format!(
+                "in `{}.{}`: cannot assign moved value `{}`",
+                hir.modules[function.module].name, function.name, hir.locals[*local].name
+            ))
+            .with_fallback_location(
+                hir.modules[function.module].name.clone(),
+                statement_span.clone(),
+                "this assignment targets a moved value",
+            ));
+        }
+        for expression in expressions {
             if let Expr::Closure { captures, .. } = &hir.expressions[expression] {
                 moved.extend(
                     captures
@@ -52,6 +67,9 @@ pub(super) fn check_closure_ownership(hir: &PackageHir) -> Result<(), FosterErro
                         .map(|capture| capture.local),
                 );
             }
+        }
+        if let Stmt::Loop { body } = statement {
+            check_closure_statement_block(hir, function_id, body, &statement_span, moved)?;
         }
     }
     Ok(())
@@ -252,72 +270,68 @@ fn capture_effect_kind(
     function: FunctionId,
     captured: LocalId,
 ) -> ast::EffectKind {
-    let mut kind = ast::EffectKind::Read;
-    for statement in &hir.functions[function].body {
-        if matches!(statement, Stmt::Assign { local, .. } if *local == captured) {
-            kind = ast::EffectKind::Mut;
+    struct CaptureEffect {
+        captured: LocalId,
+        kind: ast::EffectKind,
+    }
+
+    impl super::visit::Visitor for CaptureEffect {
+        fn visit_statement(&mut self, hir: &PackageHir, statement: &Stmt) {
+            if self.kind == ast::EffectKind::Reshape {
+                return;
+            }
+            if matches!(statement, Stmt::Assign { local, .. } if *local == self.captured)
+                || matches!(statement, Stmt::Set { place, .. } if expression_uses_local(hir, *place, self.captured))
+            {
+                self.kind = ast::EffectKind::Mut;
+            }
+            super::visit::walk_statement(self, hir, statement);
         }
-        if matches!(statement, Stmt::Set { place, .. } if expression_uses_local(hir, *place, captured))
-        {
-            kind = ast::EffectKind::Mut;
-        }
-        let expression = match statement {
-            Stmt::Return { value, .. }
-            | Stmt::Bind { value, .. }
-            | Stmt::Assign { value, .. }
-            | Stmt::Set { value, .. }
-            | Stmt::Expr(value) => *value,
-        };
-        if expression_reshapes_local(hir, expression, captured) {
-            return ast::EffectKind::Reshape;
+
+        fn visit_expression(&mut self, hir: &PackageHir, expression: ExprId) {
+            if self.kind == ast::EffectKind::Reshape {
+                return;
+            }
+            if matches!(
+                &hir.expressions[expression],
+                Expr::Call { callee, .. }
+                    if matches!(
+                        &hir.expressions[*callee],
+                        Expr::Member { object, name }
+                            if name == "push"
+                                && matches!(
+                                    hir.expressions[*object],
+                                    Expr::Name(ResolvedName::Local(found)) if found == self.captured
+                                )
+                    )
+            ) {
+                self.kind = ast::EffectKind::Reshape;
+                return;
+            }
+            super::visit::walk_expression(self, hir, expression);
         }
     }
-    kind
+
+    let mut visitor = CaptureEffect {
+        captured,
+        kind: ast::EffectKind::Read,
+    };
+    super::visit::Visitor::visit_block(&mut visitor, hir, &hir.functions[function].body);
+    visitor.kind
 }
 
-fn expression_reshapes_local(hir: &PackageHir, expression: ExprId, local: LocalId) -> bool {
-    match &hir.expressions[expression] {
-        Expr::Call { callee, arguments } => {
-            let direct = matches!(
-                &hir.expressions[*callee],
-                Expr::Member { object, name }
-                    if name == "push"
-                        && matches!(hir.expressions[*object], Expr::Name(ResolvedName::Local(found)) if found == local)
-            );
-            direct
-                || expression_reshapes_local(hir, *callee, local)
-                || arguments
-                    .iter()
-                    .any(|argument| expression_reshapes_local(hir, *argument, local))
+fn statement_expressions(statement: &Stmt) -> Vec<ExprId> {
+    match statement {
+        Stmt::Return { value, guard } => guard.iter().copied().chain([*value]).collect(),
+        Stmt::Assert { condition, message } => {
+            message.iter().copied().chain([*condition]).collect()
         }
-        Expr::Member { object, .. }
-        | Expr::Reference(object)
-        | Expr::MoveOut(object)
-        | Expr::Remote(object)
-        | Expr::Await(object) => {
-            expression_reshapes_local(hir, *object, local)
-        }
-        Expr::Index { object, index }
-        | Expr::Binary {
-            left: object,
-            right: index,
-            ..
-        } => {
-            expression_reshapes_local(hir, *object, local)
-                || expression_reshapes_local(hir, *index, local)
-        }
-        Expr::Unary { operand, .. } => expression_reshapes_local(hir, *operand, local),
-        Expr::List(items) => items
-            .iter()
-            .any(|item| expression_reshapes_local(hir, *item, local)),
-        Expr::Branch { subject, arms } => subject.is_some_and(|subject| expression_reshapes_local(hir, subject, local)) || arms.iter().any(|arm| {
-            matches!(arm.test, BranchTest::Condition(condition) if expression_reshapes_local(hir, condition, local))
-                || expression_reshapes_local(hir, arm.value, local)
-        }),
-        Expr::Record { fields, .. } => fields
-            .iter()
-            .any(|(_, value)| expression_reshapes_local(hir, *value, local)),
-        _ => false,
+        Stmt::Loop { .. } => Vec::new(),
+        Stmt::Break { guard } | Stmt::Continue { guard } => guard.iter().copied().collect(),
+        Stmt::Bind { value, .. }
+        | Stmt::Assign { value, .. }
+        | Stmt::Set { value, .. }
+        | Stmt::Expr(value) => vec![*value],
     }
 }
 

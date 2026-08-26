@@ -5,6 +5,232 @@ fn assert_string(value: Value, expected: &str) {
 }
 
 #[test]
+fn assertions_stop_the_current_invocation_with_an_optional_message() {
+    let passing = r#"
+func checked(value: Int) -> Int {
+    assert(value > 0)
+    value + 1
+}
+
+func main() -> Int { checked(41) }
+"#;
+    assert_eq!(foster::run(passing).unwrap(), Value::Integer(42));
+
+    let failing = r#"
+func checked() -> Int {
+    assert(false, "expected a positive value")
+    [1][4]
+}
+
+func main() -> Int { checked() }
+"#;
+    let error = foster::run(failing).unwrap_err();
+    assert_eq!(error.message, "assertion failed: expected a positive value");
+
+    let condition = foster::compile("func main() -> () { assert(1) }").unwrap_err();
+    assert!(
+        condition.message.contains("type mismatch"),
+        "{}",
+        condition.message
+    );
+
+    let message = foster::compile("func main() -> () { assert(false, 1) }").unwrap_err();
+    assert!(
+        message.message.contains("type mismatch"),
+        "{}",
+        message.message
+    );
+}
+
+#[test]
+fn loops_support_nearest_break_and_continue_with_postfix_guards() {
+    let source = r#"
+func main() -> Int {
+    let outer = 0
+    let score = 0
+    loop {
+        outer = outer + 1
+        continue if outer < 3
+        let inner = 0
+        loop {
+            inner = inner + 1
+            continue if inner < 2
+            score = score + outer + inner
+            break
+        }
+        break if outer == 4
+    }
+    score
+}
+"#;
+
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),
+            Value::Integer(11)
+        );
+    }
+}
+
+#[test]
+fn loop_transfers_require_an_enclosing_loop_and_boolean_guards() {
+    for (keyword, source) in [
+        ("break", "func main() -> () { break }"),
+        ("continue", "func main() -> () { continue }"),
+    ] {
+        let error = foster::compile(source).unwrap_err();
+        assert!(
+            error.message.contains("may only appear inside"),
+            "{keyword}: {error:?}"
+        );
+    }
+
+    for source in [
+        "func main() -> () { loop { break if 1 } }",
+        "func main() -> () { loop { continue if \"no\" } }",
+    ] {
+        let error = foster::compile(source).unwrap_err();
+        assert!(error.message.contains("type mismatch"), "{error:?}");
+    }
+
+    let error = foster::compile("func main() -> Int { loop { break } }").unwrap_err();
+    assert!(error.message.contains("type mismatch"), "{error:?}");
+}
+
+#[test]
+fn branch_arms_support_statement_blocks() {
+    let source = r#"
+enum Choice = First
+    | Second
+
+func main() -> Int {
+    let conditional = branch {
+        true -> {
+            let increment = 10
+            increment + 11
+        }
+        _ -> 0
+    }
+    let matched = branch Choice.First {
+        Choice.First -> {
+            let increment = 20
+            increment + 1
+        }
+        Choice.Second -> 0
+        _ -> {
+            0
+        }
+    }
+    conditional + matched
+}
+"#;
+
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),
+            Value::Integer(42)
+        );
+    }
+}
+
+#[test]
+fn wildcard_branch_arms_do_not_reach_later_tests() {
+    let source = r#"
+enum Choice = First
+    | Second
+
+func must_not_run() -> Bool {
+    assert(false, "a test after a wildcard arm ran")
+    true
+}
+
+func main() -> Int {
+    let conditional = branch {
+        _ -> 20
+        must_not_run() -> 0
+    }
+    let matched = branch Choice.First {
+        _ -> 22
+        Choice.First -> 0
+    }
+    conditional + matched
+}
+"#;
+
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),
+            Value::Integer(42)
+        );
+    }
+}
+
+#[test]
+fn branch_arm_blocks_require_a_result_and_continue_requires_a_loop() {
+    let missing_result = r#"
+func main() -> Int {
+    branch {
+        true -> {
+            let value = 1
+        }
+        _ -> 0
+    }
+}
+"#;
+    let error = foster::compile(missing_result).unwrap_err();
+    assert!(error.message.contains("must end with a value"), "{error:?}");
+
+    let no_loop = r#"
+func main() -> Int {
+    branch {
+        _ -> {
+            continue
+        }
+    }
+}
+"#;
+    let error = foster::compile(no_loop).unwrap_err();
+    assert!(error.message.contains("inside `loop`"), "{error:?}");
+}
+
+#[test]
+fn continue_inside_a_branch_targets_the_enclosing_loop() {
+    let source = r#"
+func main() -> Int {
+    let rounds = 0
+    loop {
+        rounds = rounds + 1
+        let selected = branch {
+            rounds < 3 -> { continue }
+            _ -> rounds
+        }
+        break
+    }
+
+    let iterations = branch {
+        _ -> {
+            let count = 0
+            loop {
+                count = count + 1
+                continue if count < 2
+                break
+            }
+            count
+        }
+    }
+    rounds + iterations
+}
+"#;
+
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),
+            Value::Integer(5)
+        );
+    }
+}
+
+#[test]
 fn command_main_receives_the_typed_arguments_record() {
     let source = r#"
 import std.process
@@ -278,14 +504,11 @@ func main() -> Int {
 }
 
 #[test]
-fn variant_declarations_combine_types_and_inject_members() {
+fn enum_declarations_construct_and_match_tagged_cases() {
     let source = r#"
-type Value =
-| Int
-| String
-| List<Value>
+enum Value = Int(Int) | String(String) | List(List<Value>)
 
-func wrap(value: Int) -> Value { value }
+func wrap(value: Int) -> Value { Value.Int(value) }
 
 func main() -> Int {
     branch wrap(42) {
@@ -299,20 +522,221 @@ func main() -> Int {
 }
 
 #[test]
-fn union_injection_preserves_record_member_destructuring() {
+fn enum_cases_are_labels_with_explicit_payload_types() {
+    let source = r#"
+type Bar = { value: Int }
+
+enum Foo = Bar
+    | FooBar(String)
+
+func describe(value: Foo) -> Int {
+    branch value {
+        Foo.Bar -> 0
+        Foo.FooBar(text) -> text.length
+    }
+}
+
+func main() -> Int { describe(Foo.FooBar("Foster")) }
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(6));
+}
+
+#[test]
+fn enum_cases_carry_at_most_one_payload_type() {
+    let error = foster::compile("enum Pair = Together(Int, String)\n").unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("an enum case carries one payload type"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn enum_values_require_an_explicit_constructor() {
+    let error = foster::compile(
+        r#"
+enum Choice = Integer(Int) | Text(String)
+
+func invalid() -> Choice { 42 }
+"#,
+    )
+    .unwrap_err();
+    assert!(error.message.contains("type mismatch"), "{}", error.message);
+}
+
+#[test]
+fn single_member_type_declarations_accept_their_member_type() {
+    let source = r#"
+type foo = String
+
+func length(value: foo) -> Int {
+    value.length
+}
+
+func main() -> Int { length("Foster") }
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(6));
+}
+
+#[test]
+fn generic_single_member_type_declarations_are_transparent_aliases() {
+    let source = r#"
+type items<T> = List<T>
+
+func length(values: items<String>) -> Int { values.length }
+
+func main() -> Int { length(["Foster", "language"]) }
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(2));
+}
+
+#[test]
+fn recursive_type_aliases_are_rejected() {
+    let error = foster::compile("type left = right\ntype right = left\n").unwrap_err();
+    assert!(
+        error.message.contains("recursively refers to itself"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn reusable_function_aliases_preserve_callable_ownership() {
+    let source = r#"
+import core.functions
+
+type Payload = { value: Int }
+
+func matches<T>(value: T, predicate: Predicate<T>) -> Bool { predicate(value) }
+
+func accept<T>(value: T, consumer: Consumer<T>) -> () [consume value] {
+    consumer(move value)
+}
+
+func provide<T>(supplier: Supplier<T>) -> T { supplier() }
+
+func discard(value: Payload) -> () [consume value] {}
+
+func main() -> Int {
+    let payload = Payload { value: 42 }
+    accept(move payload, discard)
+    branch {
+        matches(42, (value: Int) -> value > 40) -> provide(() -> 42)
+        _ -> 0
+    }
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+}
+
+#[test]
+fn union_declarations_separate_member_types_with_inline_pipes() {
+    let source = r#"
+type scalar = String | Int
+
+func size(value: scalar) -> Int {
+    1
+}
+
+func main() -> Int { size("Foster") + size(4) }
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(2));
+}
+
+#[test]
+fn union_contracts_accept_any_member_without_runtime_construction() {
+    let source = r#"
+type Bar = { value: Int }
+type Trigger = { value: Int }
+type foo = List<Bar>
+type fod = List<Trigger>
+type X = foo | fod
+type Direct = List<Bar> | List<Trigger>
+
+func bars() -> foo { [] }
+func triggers() -> fod { [] }
+func empty() -> X { [] }
+func direct_empty() -> Direct { [] }
+
+func length(value: X) -> Int {
+    value.length
+}
+
+func main() -> Int {
+    length(bars()) + length(triggers()) + length(empty()) + direct_empty().length
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(0));
+}
+
+#[test]
+fn union_contracts_do_not_synthesize_constructors() {
+    let error = foster::compile(
+        r#"
+type Bar = { value: Int }
+type foo = List<Bar>
+type X = foo | String
+
+func invalid(value: foo) -> X { X.foo(value) }
+"#,
+    )
+    .unwrap_err();
+    assert!(
+        error.message.contains("has no constructors"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn union_contracts_widen_when_each_source_member_satisfies_the_target() {
+    let source = r#"
+type Small = String | Int
+type Wide = String | Int | Float
+
+func choose(flag: Bool) -> Small {
+    branch {
+        flag -> "Foster"
+        _ -> 42
+    }
+}
+
+func widen(value: Small) -> Wide { value }
+
+func main() -> Int {
+    let widened = widen(choose(true))
+    0
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(0));
+}
+
+#[test]
+fn union_declarations_reject_a_leading_pipe() {
+    let error = foster::compile("type Value = | String | Int").unwrap_err();
+    assert!(
+        error.message.contains("remove the leading `|`"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn enum_cases_carry_record_values_without_expanding_their_fields() {
     let source = r#"
 type Boxed = { value: Int }
 
-type Value =
-| Boxed
-| String
+enum Value = Boxed(Boxed)
+    | String(String)
 
-func wrap(value: Boxed) -> Value { value }
+func wrap(value: Boxed) -> Value { Value.Boxed(move value) }
 
 func main() -> Int {
     let boxed = Boxed { value: 42 }
     branch wrap(move boxed) {
-        Boxed(value) -> value
+        Boxed(value) -> value.value
         String(_) -> 0
     }
 }
@@ -321,13 +745,12 @@ func main() -> Int {
 }
 
 #[test]
-fn union_injection_preserves_builtin_record_values() {
+fn enum_construction_preserves_builtin_record_values() {
     let source = r#"
-type Value =
-| String
-| Int
+enum Value = String(String)
+    | Int(Int)
 
-func wrap(value: String) -> Value { value }
+func wrap(value: String) -> Value { Value.String(value) }
 
 func main() -> Int {
     branch wrap("Foster") {
@@ -340,16 +763,15 @@ func main() -> Int {
 }
 
 #[test]
-fn expected_union_types_flow_into_branches_and_lists() {
+fn expected_enum_types_flow_into_branches_and_lists() {
     let source = r#"
-type Value =
-| Int
-| String
+enum Value = Int(Int)
+    | String(String)
 
 func choose(number: Bool) -> Value {
     branch {
-        number -> 7
-        _ -> "Foster"
+        number -> Value.Int(7)
+        _ -> Value.String("Foster")
     }
 }
 
@@ -361,7 +783,7 @@ func first(values: List<Value>) -> Int {
 }
 
 func main() -> Int {
-    first([choose(true), "language"])
+    first([choose(true), Value.String("language")])
 }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::Integer(7));
@@ -372,7 +794,7 @@ fn rejects_positional_payload_syntax_in_union_declarations() {
     let error = foster::compile(
         r#"
 type Value =
-| List<Value>
+List<Value>
 | Table(List<Value>)
 "#,
     )
@@ -677,11 +1099,8 @@ func main() -> Int {
 #[test]
 fn constructs_and_exhaustively_matches_closed_variants() {
     let source = r#"
-type Result<T> =
-    | Ok<T>
-    | Error
-type Ok<T> = { value: T }
-type Error = { message: String }
+enum Result<T> = Ok(T)
+    | Error(String)
 
 func unwrap(result: Result<Int>) -> Int {
     branch result {
@@ -698,11 +1117,8 @@ func main() -> Int { unwrap(Result.Ok(42)) }
 #[test]
 fn matches_payloadless_variants_and_wildcards() {
     let source = r#"
-type Option<T> =
-    | Some<T>
+enum Option<T> = Some(T)
     | None
-type Some<T> = { value: T }
-type None = {}
 
 func present(value: Option<Int>) -> Bool {
     branch value {
@@ -720,11 +1136,8 @@ func main() -> Bool { present(Option.None) }
 fn rejects_non_exhaustive_variant_branches() {
     let error = foster::compile(
         r#"
-type Choice =
-    | Left
-    | Right
-type Left = { value: Int }
-type Right = { value: Int }
+enum Choice = Left(Int)
+    | Right(Int)
 func main() -> Int {
     let value = Choice.Left(1)
     branch value { Choice.Left(number) -> number }
@@ -739,11 +1152,8 @@ func main() -> Int {
 fn refutable_payload_patterns_do_not_cover_an_entire_alternative() {
     let error = foster::compile(
         r#"
-type Option =
-    | Some
+enum Option = Some(Int)
     | None
-type Some = { value: Int }
-type None = {}
 
 func main() -> Int {
     let value = Some(1)
@@ -763,7 +1173,7 @@ fn rejects_private_variants_in_public_apis() {
     let signature = foster::compile(
         r#"
 type Hidden = { value: Int }
-type Secret = | Hidden
+type Secret = Hidden
 pub func expose() -> Secret { Hidden(1) }
 "#,
     )
@@ -771,13 +1181,13 @@ pub func expose() -> Secret { Hidden(1) }
     assert!(
         signature
             .message
-            .contains("public function `expose` exposes private type `Secret`")
+            .contains("public function `expose` exposes private type `Hidden`")
     );
 
     let payload = foster::compile(
         r#"
 type Secret = { value: Int }
-pub type Message = | Secret
+pub type Message = Secret
 func main() { 0 }
 "#,
     )
@@ -785,7 +1195,7 @@ func main() { 0 }
     assert!(
         payload
             .message
-            .contains("public union `Message` includes private type `Secret`"),
+            .contains("public type alias `Message` exposes private type `Secret`"),
         "{}",
         payload.message
     );
@@ -1604,15 +2014,11 @@ func main() { 0 }
 #[test]
 fn variants_support_shared_contract_bodies_and_instance_methods() {
     let source = r#"
-type Choice =
-    | Number
+enum Choice = Number(Int)
     | Empty
     & {
         pub func score(self) -> Int
     }
-type Number = { value: Int }
-type Empty = {}
-
 func score(self: Choice) -> Int {
     branch self {
         Choice.Number(value) -> value
@@ -1640,12 +2046,9 @@ type Scored = {
     pub func score(self) -> Int
 }
 
-type Choice =
-    | Number
+enum Choice = Number(Int)
     | Empty
     & Scored
-type Number = { value: Int }
-type Empty = {}
 
 func score(self: Choice) -> Int { 42 }
 func score_of(value: Scored) -> Int { value.score }
@@ -1659,11 +2062,10 @@ func main() -> Int { score_of(Choice.Empty) }
 }
 
 #[test]
-fn variant_shared_bodies_reject_stored_fields() {
+fn enum_shared_bodies_reject_stored_fields() {
     let error = foster::compile(
         r#"
-type Choice =
-    | Empty
+enum Choice = Empty
     & { value: Int }
 func main() { 0 }
 "#,
@@ -1672,7 +2074,7 @@ func main() { 0 }
     assert!(
         error
             .message
-            .contains("variant shared bodies may only declare required methods")
+            .contains("enum and union shared bodies may only declare required methods")
     );
 }
 

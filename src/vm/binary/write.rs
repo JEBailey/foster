@@ -420,6 +420,17 @@ impl Writer {
                 self.u8(31);
                 self.reg(*source);
             }
+            Instruction::Assert { condition, message } => {
+                self.u8(33);
+                self.reg(*condition);
+                match message {
+                    Some(message) => {
+                        self.u8(1);
+                        self.reg(*message);
+                    }
+                    None => self.u8(0),
+                }
+            }
         }
         Ok(())
     }

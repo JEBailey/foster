@@ -331,7 +331,7 @@ func main() { 0 }
     let first_dump = first.ownership.debug_dump(&first.hir);
     let second_dump = second.ownership.debug_dump(&second.hir);
     assert_eq!(first_dump, second_dump);
-    assert!(first_dump.contains("foster-language=1 ownership-model=1"));
+    assert!(first_dump.contains("foster-language=4 ownership-model=1"));
     assert!(first_dump.contains("loan L"));
     assert!(first_dump.contains("region L"));
 
@@ -351,7 +351,7 @@ func main() -> Int {
 
 #[test]
 fn ownership_compatibility_surface_is_stable() {
-    assert_eq!(foster::ownership::LANGUAGE_VERSION, 1);
+    assert_eq!(foster::ownership::LANGUAGE_VERSION, 4);
     assert_eq!(foster::ownership::MODEL_VERSION, 1);
     assert_eq!(
         foster::ownership::diagnostics::CATALOG
@@ -359,5 +359,96 @@ fn ownership_compatibility_surface_is_stable() {
             .map(|(code, _)| *code)
             .collect::<Vec<_>>(),
         vec!["E0382", "E0401", "E0402", "E0403", "E0507", "E0728"]
+    );
+}
+
+#[test]
+fn language_version_two_reserves_assert_for_immediate_failures() {
+    assert!(foster::compile("func assert(value: Bool) -> Bool { value }").is_err());
+    assert!(foster::compile("func main() -> () { assert(true) }").is_ok());
+}
+
+#[test]
+fn language_version_three_reserves_loop_control_transfers() {
+    for keyword in ["loop", "break", "continue"] {
+        let source = format!("func {keyword}() -> () {{ () }}");
+        assert!(foster::compile(&source).is_err());
+    }
+    assert!(foster::compile("func main() -> () { loop { break } }").is_ok());
+}
+
+#[test]
+fn language_version_four_reserves_continue_for_loops() {
+    let branch_continue = r#"
+func main() -> Int {
+    branch {
+        _ -> { continue }
+    }
+}
+"#;
+    assert!(foster::compile(branch_continue).is_err());
+    assert!(
+        foster::compile("func main() -> () { loop { branch { true -> { continue } _ -> () } } }")
+            .is_ok()
+    );
+}
+
+#[test]
+fn loop_edges_preserve_move_state() {
+    let repeated_move = r#"
+func take(values: List<Int>) -> () [consume values] { () }
+func main() -> () {
+    let values = [1]
+    loop {
+        take(move values)
+        continue
+    }
+}
+"#;
+    let error = foster::compile(repeated_move).unwrap_err();
+    assert!(
+        error.message.contains("used after it was moved"),
+        "{error:?}"
+    );
+
+    let moved_exit = r#"
+func take(values: List<Int>) -> () [consume values] { () }
+func main() -> List<Int> {
+    let values = [1]
+    loop {
+        take(move values)
+        break
+    }
+    values
+}
+"#;
+    let error = foster::compile(moved_exit).unwrap_err();
+    assert!(
+        error.message.contains("used after it was moved"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn loop_continue_inside_a_branch_preserves_move_state() {
+    let source = r#"
+func take(values: List<Int>) -> () [consume values] { () }
+func main() -> () {
+    let values = [1]
+    loop {
+        branch {
+            true -> {
+                take(move values)
+                continue
+            }
+            _ -> ()
+        }
+    }
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert!(
+        error.message.contains("used after it was moved"),
+        "{error:?}"
     );
 }

@@ -1,12 +1,11 @@
-type Ok = { name: String, score: Int }
-type Error = { message: String }
-type ScoreResult =
-    | Ok
-    | Error
+type Score = { name: String, value: Int }
+
+enum ScoreResult = Ok(Score)
+    | Error(String)
 
 func describe(result: ScoreResult) -> Int {
     branch result {
-        Ok(name, score) -> describe_score(name, score)
+        Ok(score) -> describe_score(score.name, score.value)
         Error(message) -> describe_error(message)
     }
 }
@@ -22,5 +21,5 @@ func describe_error(message: String) -> Int {
 }
 
 func main() -> Int {
-    describe(Ok("Ada", 42)) + describe(Error("missing score"))
+    describe(Ok(Score { name: "Ada", value: 42 })) + describe(Error("missing score"))
 }

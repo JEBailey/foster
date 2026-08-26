@@ -66,6 +66,7 @@ impl Parser {
             TokenKind::Suspend => Ok("suspend".into()),
             TokenKind::Pub => Ok("pub".into()),
             TokenKind::Type => Ok("type".into()),
+            TokenKind::Enum => Ok("enum".into()),
             _ => Err(FosterError::new(message, token.line, token.column)),
         }
     }

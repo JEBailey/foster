@@ -24,7 +24,7 @@ Every function carries a Markdown documentation comment. Public comments describ
 ownership, boundary conditions, and errors where relevant; private comments identify the helper's
 role in the implementation. The compiler retains these comments for language-server hover and
 completion information, and the test suite enforces complete function coverage.
-The implementations use fully qualified variant constructors and patterns, explicit public
+The implementations use fully qualified enum constructors and patterns, explicit public
 signatures, and explicit record fields. Operators and primitive members such as `List.head`,
 `List.rest` and `List.append` are current low-level language operations. `String` is an opaque
 Foster record backed by valid UTF-8 `Bytes`; literals and host decoding are its trusted construction
@@ -32,6 +32,7 @@ paths, while its library algorithms are ordinary Foster functions.
 
 Current modules:
 
+- `core.functions`: reusable `Predicate<T>`, consuming `Consumer<T>`, and `Supplier<T>` callable aliases
 - `core.option`: `Option`, mapping, chaining, eager and lazy fallbacks, flattening, and presence queries
 - `std.iter`: stateful iteration contracts plus Foster-written `for_each`, `fold`, `find`, query,
   and counting consumers

@@ -6,13 +6,16 @@ impl Checker<'_> {
         expected: Ty,
         actual: Ty,
         function: FunctionId,
-        expression: ExprId,
+        _expression: ExprId,
     ) -> Result<(), FosterError> {
         let expected = self.resolved(expected);
         let actual = self.resolved(actual);
         let Ty::Variant(union, arguments) = expected.clone() else {
             return self.coerce(expected, actual, function);
         };
+        if self.hir.variant_types[union].kind == crate::ast::VariantKind::Enum {
+            return self.coerce(expected, actual, function);
+        }
         if matches!(actual, Ty::Variant(found, _) if found == union) {
             return self.coerce(expected, actual, function);
         }
@@ -25,34 +28,27 @@ impl Checker<'_> {
             .zip(arguments)
             .collect::<HashMap<_, _>>();
         let initial = self.substitutions.clone();
-        let mut matches = Vec::new();
+        let mut matched_substitutions = None;
         for member in definition.alternatives {
             self.substitutions = initial.clone();
             let member_type = self.annotation_type(
                 definition.module,
-                &self.hir.variants[member].member,
+                self.hir.variants[member]
+                    .member
+                    .as_ref()
+                    .expect("a union alternative has a member type"),
                 &generics,
             )?;
             if self.unify(member_type, actual.clone(), function).is_ok() {
-                matches.push((member, self.substitutions.clone()));
+                matched_substitutions.get_or_insert_with(|| self.substitutions.clone());
             }
         }
         self.substitutions = initial;
-        match matches.as_slice() {
-            [(member, substitutions)] => {
-                self.substitutions.clone_from(substitutions);
-                self.variant_injections.insert(expression, *member);
-                Ok(())
-            }
-            [] => self.coerce(expected, actual, function),
-            _ => Err(self.error(
-                function,
-                format!(
-                    "type `{}` matches more than one member of `{}`",
-                    self.describe(&actual),
-                    definition.name
-                ),
-            )),
+        if let Some(substitutions) = matched_substitutions {
+            self.substitutions = substitutions;
+            Ok(())
+        } else {
+            self.coerce(expected, actual, function)
         }
     }
 
@@ -64,6 +60,31 @@ impl Checker<'_> {
     ) -> Result<(), FosterError> {
         let expected = self.resolved(expected);
         let actual = self.resolved(actual);
+        if let (
+            Ty::Variant(expected_union, expected_arguments),
+            Ty::Variant(actual_union, actual_arguments),
+        ) = (expected.clone(), actual.clone())
+            && self.hir.variant_types[expected_union].kind == crate::ast::VariantKind::Union
+            && self.hir.variant_types[actual_union].kind == crate::ast::VariantKind::Union
+        {
+            return self.coerce_union_to_union(
+                function,
+                expected_union,
+                expected_arguments,
+                actual_union,
+                actual_arguments,
+            );
+        }
+        if let Ty::Variant(union, arguments) = expected.clone()
+            && self.hir.variant_types[union].kind == crate::ast::VariantKind::Union
+        {
+            return self.coerce_to_union(function, union, arguments, actual);
+        }
+        if let Ty::Variant(union, arguments) = actual.clone()
+            && self.hir.variant_types[union].kind == crate::ast::VariantKind::Union
+        {
+            return self.coerce_from_union(function, expected, union, arguments);
+        }
         if let Ty::Sequence(element) = &expected
             && self.is_string_type(&actual)
         {
@@ -127,6 +148,113 @@ impl Checker<'_> {
             ) => self.coerce_record_shape(function, expected, &expected_arguments, actual),
             (expected, actual) => self.unify(expected, actual, function),
         }
+    }
+
+    fn coerce_to_union(
+        &mut self,
+        function: FunctionId,
+        union: VariantTypeId,
+        arguments: Vec<Ty>,
+        actual: Ty,
+    ) -> Result<(), FosterError> {
+        if matches!(&actual, Ty::Variant(found, _) if *found == union) {
+            return self.unify(Ty::Variant(union, arguments), actual, function);
+        }
+        let definition = self.hir.variant_types[union].clone();
+        let generics = definition
+            .parameters
+            .iter()
+            .cloned()
+            .zip(arguments)
+            .collect::<HashMap<_, _>>();
+        let initial = self.substitutions.clone();
+        for alternative in definition.alternatives {
+            self.substitutions = initial.clone();
+            let member = self.annotation_type(
+                definition.module,
+                self.hir.variants[alternative]
+                    .member
+                    .as_ref()
+                    .expect("a union alternative has a member type"),
+                &generics,
+            )?;
+            if self.coerce(member, actual.clone(), function).is_ok() {
+                return Ok(());
+            }
+        }
+        self.substitutions = initial;
+        Err(self.error(
+            function,
+            format!(
+                "type `{}` does not satisfy union contract `{}`",
+                self.describe(&actual),
+                definition.name
+            ),
+        ))
+    }
+
+    fn coerce_from_union(
+        &mut self,
+        function: FunctionId,
+        expected: Ty,
+        union: VariantTypeId,
+        arguments: Vec<Ty>,
+    ) -> Result<(), FosterError> {
+        let definition = self.hir.variant_types[union].clone();
+        let generics = definition
+            .parameters
+            .iter()
+            .cloned()
+            .zip(arguments)
+            .collect::<HashMap<_, _>>();
+        for alternative in definition.alternatives {
+            let member = self.annotation_type(
+                definition.module,
+                self.hir.variants[alternative]
+                    .member
+                    .as_ref()
+                    .expect("a union alternative has a member type"),
+                &generics,
+            )?;
+            self.coerce(expected.clone(), member, function)?;
+        }
+        Ok(())
+    }
+
+    fn coerce_union_to_union(
+        &mut self,
+        function: FunctionId,
+        expected: VariantTypeId,
+        expected_arguments: Vec<Ty>,
+        actual: VariantTypeId,
+        actual_arguments: Vec<Ty>,
+    ) -> Result<(), FosterError> {
+        if expected == actual {
+            return self.unify(
+                Ty::Variant(expected, expected_arguments),
+                Ty::Variant(actual, actual_arguments),
+                function,
+            );
+        }
+        let definition = self.hir.variant_types[actual].clone();
+        let generics = definition
+            .parameters
+            .iter()
+            .cloned()
+            .zip(actual_arguments)
+            .collect::<HashMap<_, _>>();
+        for alternative in definition.alternatives {
+            let member = self.annotation_type(
+                definition.module,
+                self.hir.variants[alternative]
+                    .member
+                    .as_ref()
+                    .expect("a union alternative has a member type"),
+                &generics,
+            )?;
+            self.coerce_to_union(function, expected, expected_arguments.clone(), member)?;
+        }
+        Ok(())
     }
 
     fn coerce_sequence_shape(

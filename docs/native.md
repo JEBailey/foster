@@ -25,14 +25,15 @@ The native ABI stores each currently supported Foster value in one 64-bit word. 
   `length`, and `head` operations;
 - primitive constants, moves, unary operations, arithmetic, bit operations, shifts, and comparisons;
 - direct function and statically resolved method calls;
-- guarded returns, jumps, conditional control flow, and recursion; and
+- assertions, guarded returns, `loop`, guarded `break`/`continue`, jumps, conditional control
+  flow, and recursion; and
 - printing a result from `main` whose type is not `()`, matching `foster run` for these primitive
   values.
 
 Only functions statically reachable from `main` are compiled. An unused function may therefore use
 the complete VM language without preventing native compilation.
 
-General lists, String concatenation and library algorithms, symbols, user records, variants,
+General lists, String concatenation and library algorithms, symbols, user records, enums,
 references, closures, dynamic calls, intrinsics, pattern matching, remote objects, futures, and
 host I/O do not yet have a native runtime representation. If one is reachable, compilation stops
 before object emission and reports the unsupported type or instruction. The diagnostic recommends

@@ -61,22 +61,26 @@ fn cli() -> Command {
         [
             Arg::new("optimize")
                 .long("optimize")
+                .help("Enable bytecode optimization (the default)")
                 .action(ArgAction::SetTrue)
                 .conflicts_with("no-optimize"),
             Arg::new("no-optimize")
                 .long("no-optimize")
+                .help("Disable bytecode optimization")
                 .action(ArgAction::SetTrue),
         ]
     };
     let port = || {
         Arg::new("port")
             .long("port")
+            .help("TCP port for the documentation server")
             .value_parser(value_parser!(u16))
             .default_value("8000")
     };
     let no_open = || {
         Arg::new("no-open")
             .long("no-open")
+            .help("Do not open the documentation site in a browser")
             .action(ArgAction::SetTrue)
     };
 
@@ -90,6 +94,7 @@ fn cli() -> Command {
                 .arg(
                     Arg::new("path")
                         .value_parser(value_parser!(PathBuf))
+                        .help("Directory in which to create the project")
                         .default_value("."),
                 )
                 .arg(
@@ -100,16 +105,21 @@ fn cli() -> Command {
                 ),
         )
         .subcommand(
-            Command::new("run").arg(path()).args(optimizer()).arg(
-                Arg::new("command-arguments")
-                    .last(true)
-                    .num_args(0..)
-                    .allow_hyphen_values(true)
-                    .help("Arguments passed to Foster `main` after `--`"),
-            ),
+            Command::new("run")
+                .about("Compile and run a Foster program, bytecode file, or package")
+                .arg(path())
+                .args(optimizer())
+                .arg(
+                    Arg::new("command-arguments")
+                        .last(true)
+                        .num_args(0..)
+                        .allow_hyphen_values(true)
+                        .help("Arguments passed to Foster `main` after `--`"),
+                ),
         )
         .subcommand(
             Command::new("build")
+                .about("Compile Foster source to bytecode or a native executable")
                 .arg(path())
                 .args(optimizer())
                 .arg(
@@ -122,6 +132,7 @@ fn cli() -> Command {
                     Arg::new("output")
                         .short('o')
                         .long("output")
+                        .help("Write the compiled artifact to this path")
                         .value_parser(value_parser!(PathBuf)),
                 ),
         )
@@ -134,6 +145,7 @@ fn cli() -> Command {
                     Arg::new("output")
                         .short('o')
                         .long("output")
+                        .help("Write the package archive to this path")
                         .value_parser(value_parser!(PathBuf)),
                 )
                 .arg(
@@ -144,14 +156,24 @@ fn cli() -> Command {
                 ),
         )
         .subcommand(
-            Command::new("check").arg(path()).arg(
-                Arg::new("dump-ownership")
-                    .long("dump-ownership")
-                    .help("Print deterministic ownership MIR, loan ancestry, and inferred regions")
-                    .action(ArgAction::SetTrue),
-            ),
+            Command::new("check")
+                .about("Type-check and validate Foster source without running it")
+                .arg(path())
+                .arg(
+                    Arg::new("dump-ownership")
+                        .long("dump-ownership")
+                        .help(
+                            "Print deterministic ownership MIR, loan ancestry, and inferred regions",
+                        )
+                        .action(ArgAction::SetTrue),
+                ),
         )
-        .subcommand(Command::new("test").arg(path()).args(optimizer()))
+        .subcommand(
+            Command::new("test")
+                .about("Compile and run Foster test declarations")
+                .arg(path())
+                .args(optimizer()),
+        )
         .subcommand(
             Command::new("fmt")
                 .about("Format Foster source files")
@@ -165,27 +187,39 @@ fn cli() -> Command {
         )
         .subcommand(
             Command::new("docs")
+                .about("Generate static API documentation for Foster source")
                 .arg(path())
                 .arg(
                     Arg::new("output")
                         .long("output")
+                        .help("Write generated documentation to this directory")
                         .value_parser(value_parser!(PathBuf)),
                 )
-                .arg(Arg::new("serve").long("serve").action(ArgAction::SetTrue))
+                .arg(
+                    Arg::new("serve")
+                        .long("serve")
+                        .help("Serve the generated documentation after building it")
+                        .action(ArgAction::SetTrue),
+                )
                 .arg(no_open().requires("serve"))
                 .arg(port().requires("serve")),
         )
         .subcommand(
             Command::new("serve-docs")
+                .about("Serve an existing generated documentation directory")
                 .arg(
                     Arg::new("directory")
+                        .help("Generated documentation directory to serve")
                         .value_parser(value_parser!(PathBuf))
                         .default_value("documentation"),
                 )
                 .arg(no_open())
                 .arg(port()),
         )
-        .subcommand(Command::new("lsp"))
+        .subcommand(
+            Command::new("lsp")
+                .about("Start the Foster language server over standard input/output"),
+        )
 }
 
 fn required_path<'a>(arguments: &'a ArgMatches, name: &str) -> &'a Path {
@@ -307,7 +341,10 @@ fn init(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     fs::create_dir_all(&source_root)?;
     let main = source_root.join("main.fos");
     if !main.exists() {
-        fs::write(&main, "func main() {\n}\n")?;
+        fs::write(
+            &main,
+            "func main() -> () {\n    println(\"Hello, Foster!\")\n}\n",
+        )?;
     }
     fs::write(
         &manifest,
@@ -324,15 +361,16 @@ fn check(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let target = source_target(arguments)?;
     let path = &target.source;
     if path.is_dir() {
-        let compilation = foster::check_package(path)?;
+        let compilation = compile_package(path)?;
         report_warnings(&compilation, None, None)?;
         if arguments.get_flag("dump-ownership") {
             print!("{}", compilation.ownership.debug_dump(&compilation.hir));
         }
+        let module_count = compilation.package.input_module_count();
         println!(
-            "ok: checked {} module(s) ({} implicit)",
-            compilation.package.modules.len(),
-            compilation.package.implicit_module_count()
+            "ok: checked {module_count} module{} ({} implicit)",
+            if module_count == 1 { "" } else { "s" },
+            compilation.package.input_implicit_module_count()
         );
     } else {
         let source = fs::read_to_string(path)?;
@@ -438,15 +476,13 @@ fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
         let program = foster::vm::decode_program(&fs::read(path)?)?;
         foster::vm::Machine::new(&program).run_main_with_arguments(&command_arguments)?
     } else if path.is_dir() {
-        let compilation = foster::check_package(path)?;
+        let compilation = compile_package(path)?;
         report_warnings(&compilation, None, None)?;
         foster::vm::run_with_arguments(&compilation, options, &command_arguments)?
     } else {
         let source = fs::read_to_string(path)?;
         let program = parse_file(path, &source)?;
-        let compilation = foster::hir::Compilation::new(
-            foster::package::Package::from_program_with_core("main", program)?,
-        )?;
+        let compilation = compile_single_file(path, &source, program)?;
         report_warnings(&compilation, Some(path), Some(&source))?;
         foster::vm::run_with_arguments(&compilation, options, &command_arguments)?
     };
@@ -653,9 +689,11 @@ fn docs(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     report_warnings(&compilation, None, None)?;
     let report = foster::documentation::generate(&compilation, &output)?;
     println!(
-        "generated {} declaration(s) in {} module(s) at {}",
+        "generated {} declaration{} in {} module{} at {}",
         report.declarations,
+        if report.declarations == 1 { "" } else { "s" },
         report.modules,
+        if report.modules == 1 { "" } else { "s" },
         report.output.display()
     );
     if arguments.get_flag("serve") {
@@ -718,11 +756,34 @@ fn default_documentation_directory(source: &Path) -> PathBuf {
 
 fn compile_path(path: &Path) -> Result<foster::hir::Compilation, Box<dyn Error>> {
     if path.is_dir() {
-        return Ok(foster::check_package(path)?);
+        return compile_package(path);
     }
     let source = fs::read_to_string(path)?;
     let program = parse_file(path, &source)?;
     compile_single_file(path, &source, program)
+}
+
+fn compile_package(path: &Path) -> Result<foster::hir::Compilation, Box<dyn Error>> {
+    foster::check_package(path).map_err(|error| report_project_error(path, &error))
+}
+
+fn report_project_error(source_root: &Path, error: &foster::error::FosterError) -> Box<dyn Error> {
+    if let Some(module) = &error.source_module {
+        let mut source_path = source_root.to_path_buf();
+        source_path.extend(module.split('.'));
+        source_path.set_extension("fos");
+        if let Ok(source) = fs::read_to_string(&source_path) {
+            let diagnostic = foster::diagnostic::Diagnostic::from_source_error(&source, error);
+            if let Err(render_error) =
+                foster::diagnostic::eprint(&source_path.to_string_lossy(), &source, &diagnostic)
+            {
+                eprintln!("error: could not render diagnostic: {render_error}");
+            }
+            return Box::new(Reported);
+        }
+    }
+    eprintln!("error: {error}");
+    Box::new(Reported)
 }
 
 fn compile_single_file(

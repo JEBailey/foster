@@ -1,15 +1,8 @@
 //! Explicit success and failure values with composable transformations.
 
-/// The successful member of `Result<T, E>`.
-pub type Ok<T> = { pub value: T }
-
-/// The failure member of `Result<T, E>`.
-pub type Error<E> = { pub value: E }
-
-/// A value that is either a successful `Ok<T>` or a failed `Error<E>`.
-pub type Result<T, E> =
-| Ok<T>
-| Error<E>
+/// A value that is either a successful `Ok(T)` or a failed `Error(E)`.
+pub enum Result<T, E> = Ok(T)
+    | Error(E)
 
 /// Applies `transform` to a successful value and preserves an error.
 pub func map<T, E, U>(result: Result<T, E>, transform: func(T) -> U) -> Result<U, E> {
@@ -90,11 +83,9 @@ func successful_test_value() -> Result<Int, String> {
 
 test "result mapping transforms successful values" {
     let mapped = map(successful_test_value(), (value: Int) -> value + 2)
-    branch mapped {
-        Result.Ok(value) -> branch {
-            value == 22 -> ()
-            _ -> [()][1]
-        }
-        Result.Error(_) -> [()][1]
+    let valid = branch mapped {
+        Result.Ok(value) -> value == 22
+        Result.Error(_) -> false
     }
+    assert(valid)
 }

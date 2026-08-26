@@ -513,8 +513,14 @@ impl Parser {
             };
             self.expect(&TokenKind::Arrow, "expected `->` in branch arm")?;
             self.newlines();
-            let value = self.expression()?;
-            arms.push(BranchArm { test, value });
+            let body = if self.at(&TokenKind::LBrace) {
+                self.block()?
+            } else {
+                let value = self.expression()?;
+                let span = value.span().unwrap_or(0..0);
+                crate::block::Block::single(Stmt::Expr(value), span)
+            };
+            arms.push(BranchArm { test, body });
             self.newlines();
         }
         self.expect(&TokenKind::RBrace, "expected `}` after branch arms")?;
@@ -549,7 +555,7 @@ impl Parser {
                                 }
                             }
                         }
-                        self.expect(&TokenKind::RParen, "expected `)` after variant pattern")?;
+                        self.expect(&TokenKind::RParen, "expected `)` after enum pattern")?;
                     }
                     Pattern::Variant { path, fields }
                 } else {
