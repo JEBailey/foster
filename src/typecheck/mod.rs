@@ -394,6 +394,40 @@ impl<'a> Checker<'a> {
                     None => Ok(self.fresh()),
                 })
                 .collect::<Result<Vec<_>, _>>()?;
+            if function.receiver.is_some() {
+                let owner = function
+                    .owner
+                    .as_deref()
+                    .expect("package validation requires receivers to have an owner");
+                let receiver_annotation = function
+                    .parameter_types
+                    .first()
+                    .and_then(Option::as_ref)
+                    .ok_or_else(|| {
+                        FosterError::runtime(format!(
+                            "method `{}` must give `self` the owner type `{owner}`",
+                            function.name
+                        ))
+                    })?;
+                let receiver_annotation = match receiver_annotation {
+                    crate::ast::TypeExpr::Reference { value, .. } => value.as_ref(),
+                    value => value,
+                };
+                let crate::ast::TypeExpr::Named(receiver_name, _) = receiver_annotation else {
+                    return Err(FosterError::runtime(format!(
+                        "method `{}` must give `self` the owner type `{owner}`",
+                        function.name
+                    )));
+                };
+                let declared_owner = self.resolve_nominal_type(module, owner)?;
+                let receiver_owner = self.resolve_nominal_type(module, receiver_name)?;
+                if declared_owner != receiver_owner {
+                    return Err(FosterError::runtime(format!(
+                        "method `{}` is owned by `{owner}` but receives `{receiver_name}`",
+                        function.name
+                    )));
+                }
+            }
             let result = match function.return_type.as_ref() {
                 Some(annotation) => self.annotation_type(module, annotation, &generics)?,
                 None => self.fresh(),

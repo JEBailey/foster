@@ -9,7 +9,7 @@ type SkipIterator<T> = & Iterator<T> & {
 }
 
 /// Discards the configured prefix before yielding source values.
-func next<T>(self: SkipIterator<T>) -> Option<T> {
+func SkipIterator.next<T>(self: SkipIterator<T>) -> Option<T> {
     branch {
         self.remaining <= 0 -> self.source.next()
         _ -> self.skip_next()
@@ -17,7 +17,7 @@ func next<T>(self: SkipIterator<T>) -> Option<T> {
 }
 
 /// Discards one source value while the skip count remains positive.
-func skip_next<T>(self: SkipIterator<T>) -> Option<T> {
+func SkipIterator.skip_next<T>(self: SkipIterator<T>) -> Option<T> {
     branch self.source.next() {
         Option.Some(_) -> self.decrement_and_continue()
         Option.None -> Option.None
@@ -25,18 +25,18 @@ func skip_next<T>(self: SkipIterator<T>) -> Option<T> {
 }
 
 /// Decrements the skip count and continues looking for the first yielded value.
-func decrement_and_continue<T>(self: SkipIterator<T>) -> Option<T> {
+func SkipIterator.decrement_and_continue<T>(self: SkipIterator<T>) -> Option<T> {
     self.remaining = self.remaining - 1
     self.next()
 }
 
 /// Lazily discards the first `amount` remaining elements.
-pub func skip<T>(self: Iterator<T>, amount: Int) -> Iterator<T> [consume self] {
+pub func Iterator.skip<T>(self: Iterator<T>, amount: Int) -> Iterator<T> [consume self] {
     SkipIterator { source: move self, remaining: amount }
 }
 
 test "skipping removes an iterator prefix" {
-    let values = skip([1, 2, 3].iterator, 2).collect()
+    let values = [1, 2, 3].iterator.skip(2).collect()
     assert(values.length == 1)
     assert(values[0] == 3)
     ()

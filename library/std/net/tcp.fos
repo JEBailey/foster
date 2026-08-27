@@ -76,37 +76,37 @@ func wrap_connection(outcome: Result<Int, NetworkError>) -> Result<Connection, N
 }
 
 /// Reads at most `maximum` bytes, returning empty bytes after an orderly peer shutdown.
-pub func read(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [mut self.handle] {
+pub func Connection.read(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [mut self.handle] {
     TcpHost.read_bytes(self.handle, maximum)
 }
 
 /// Writes the complete byte sequence and reports its length.
-pub func write(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [mut self.handle] {
+pub func Connection.write(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [mut self.handle] {
     written_bytes(TcpHost.write_bytes(self.handle, contents), contents.length)
 }
 
 /// Flushes the TCP stream's host writer.
-pub func flush(self: Connection) -> Result<(), NetworkError> [mut self.handle] {
+pub func Connection.flush(self: Connection) -> Result<(), NetworkError> [mut self.handle] {
     TcpHost.write_bytes(self.handle, Bytes.empty())
 }
 
 /// Reads at most `maximum` bytes of UTF-8 text from a connection.
-pub func read_text(self: Connection, maximum: Int) -> Result<String, NetworkError> [mut self.handle] {
+pub func Connection.read_text(self: Connection, maximum: Int) -> Result<String, NetworkError> [mut self.handle] {
     TcpHost.read(self.handle, maximum)
 }
 
 /// Writes the complete UTF-8 string to a connection.
-pub func write_text(self: Connection, text: String) -> Result<(), NetworkError> [mut self.handle] {
+pub func Connection.write_text(self: Connection, text: String) -> Result<(), NetworkError> [mut self.handle] {
     TcpHost.write(self.handle, text)
 }
 
 /// Compatibility spelling for binary `read`.
-pub func read_bytes(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [mut self.handle] {
+pub func Connection.read_bytes(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [mut self.handle] {
     self.read(maximum)
 }
 
 /// Explicit binary spelling for `write`.
-pub func write_bytes(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [mut self.handle] {
+pub func Connection.write_bytes(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [mut self.handle] {
     self.write(contents)
 }
 

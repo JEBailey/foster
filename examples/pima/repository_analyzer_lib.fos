@@ -42,7 +42,7 @@ func analyze(source: String) -> Metrics {
     }
 }
 
-func run(self: Analyzer) -> Metrics {
+func Analyzer.run(self: Analyzer) -> Metrics {
     analyze(self.source)
 }
 

@@ -9,7 +9,7 @@ type RangeIterator = & Iterator<Int> & {
     end: Int
 }
 
-func next(self: RangeIterator) -> Option<Int> {
+func RangeIterator.next(self: RangeIterator) -> Option<Int> {
     let value = self.current
     self.current = self.current + 1
     branch {
@@ -23,7 +23,7 @@ type Range = & Iterable<Int> & {
     end: Int
 }
 
-func iterator(self: Range) -> Iterator<Int> {
+func Range.iterator(self: Range) -> Iterator<Int> {
     RangeIterator { current: self.start, end: self.end }
 }
 

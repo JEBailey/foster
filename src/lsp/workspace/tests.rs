@@ -534,7 +534,7 @@ fn callable_contract_members_provide_hover_signature_and_definition() {
 }
 
 type User = & Identified & { value: Int }
-func offset(self: User, amount: Int) -> Int { self.value + amount }
+func User.offset(self: User, amount: Int) -> Int { self.value + amount }
 
 func apply(value: Identified) -> Int {
     value.offset(2)
@@ -607,7 +607,7 @@ fn definition_resolves_instance_methods_from_receiver_types() {
         uri_to_path(&location.uri).unwrap(),
         root.join("collection.fos")
     );
-    assert_eq!(location.range.start, Position::new(8, 9));
+    assert_eq!(location.range.start, Position::new(8, 13));
 }
 
 #[test]
@@ -763,6 +763,23 @@ fn compilation_cache_reuses_snapshots_and_invalidates_on_change() {
 }
 
 #[test]
+fn semantic_navigation_survives_a_failed_document_compilation() {
+    let (mut workspace, uri, root) = fixture_workspace();
+    let position = TextDocumentPositionParams::new(
+        lsp_types::TextDocumentIdentifier::new(uri.clone()),
+        Position::new(5, 13),
+    );
+    let expected = workspace.definition(&position).unwrap();
+
+    let mut invalid = std::fs::read_to_string(root.join("main.fos")).unwrap();
+    invalid.push_str("\n@\n");
+    workspace.change(uri.clone(), invalid, 2);
+
+    assert!(workspace.compile_for(&uri).is_err());
+    assert_eq!(workspace.definition(&position), Some(expected));
+}
+
+#[test]
 fn compilation_uses_the_manifest_source_root() {
     let root = std::env::temp_dir().join(format!(
         "foster-lsp-project-{}-{}",
@@ -797,6 +814,63 @@ fn compilation_uses_the_manifest_source_root() {
     let compilation = workspace.compile_for(&uri).unwrap();
     assert_eq!(compilation.package.root.as_std_path(), source_root);
     assert!(compilation.package.module("helper").is_some());
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn compilation_includes_manifest_path_dependencies() {
+    let root = std::env::temp_dir().join(format!(
+        "foster-lsp-dependencies-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let app = root.join("app");
+    let dependency = root.join("dependency");
+    std::fs::create_dir_all(app.join("src")).unwrap();
+    std::fs::create_dir_all(dependency.join("src")).unwrap();
+    std::fs::write(
+        app.join("foster.toml"),
+        "[package]\nname = \"app\"\nsource = \"src\"\n[dependencies]\nmath = { path = \"../dependency\" }\n",
+    )
+    .unwrap();
+    let main = app.join("src/main.fos");
+    std::fs::write(
+        &main,
+        "import math.helper\nfunc main() -> Int { answer() }\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dependency.join("foster.toml"),
+        "[package]\nname = \"math-package\"\nsource = \"src\"\n",
+    )
+    .unwrap();
+    std::fs::write(
+        dependency.join("src/helper.fos"),
+        "pub func answer() -> Int { 42 }\n",
+    )
+    .unwrap();
+    let uri = path_to_uri(&main).unwrap();
+    let workspace = Workspace {
+        root: Some(root.clone()),
+        documents: HashMap::new(),
+        published: HashSet::new(),
+        compilations: Default::default(),
+    };
+
+    let compilation = workspace.compile_for(&uri).unwrap();
+    assert!(compilation.package.module("math").unwrap().is_implicit());
+    assert!(compilation.package.module("math.helper").is_some());
+    assert!(
+        !compilation
+            .package
+            .module("math.helper")
+            .unwrap()
+            .is_input()
+    );
 
     std::fs::remove_dir_all(root).unwrap();
 }

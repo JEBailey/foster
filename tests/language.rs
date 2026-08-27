@@ -970,14 +970,41 @@ func main() -> Int {
     let unknown = foster::compile("func Missing.create() { 1 }\nfunc main() { 0 }").unwrap_err();
     assert!(unknown.message.contains("unknown record type `Missing`"));
 
-    let receiver = foster::compile(
-        "type Box = { value: Int }\nfunc Box.read(self: Box) { self.value }\nfunc main() { 0 }",
+    let methods = r#"
+type Left = { value: Int }
+type Right = { value: Int }
+func Left.read(self: Left) -> Int { self.value }
+func Right.read(self: Right) -> Int { self.value + 1 }
+func main() -> Int { Left { value: 20 }.read() + Right { value: 20 }.read() }
+"#;
+    let compilation = foster::compile(methods).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let left_read = compilation.hir.function_named(module, "Left.read").unwrap();
+    assert_eq!(
+        compilation.hir.functions[left_read].owner.as_deref(),
+        Some("Left")
+    );
+    assert!(compilation.hir.functions[left_read].receiver.is_some());
+    assert_eq!(foster::run(methods).unwrap(), Value::Integer(41));
+
+    let bare = foster::compile(
+        "type Box = { value: Int }\nfunc read(self: Box) { self.value }\nfunc main() { 0 }",
+    )
+    .unwrap_err();
+    assert!(bare.message.contains("must qualify its name"));
+
+    let misplaced =
+        foster::compile("func read(value: Int, self: Int) {}\nfunc main() { 0 }").unwrap_err();
+    assert!(misplaced.message.contains("must be the first parameter"));
+
+    let mismatch = foster::compile(
+        "type Box = {}\ntype Other = {}\nfunc Box.read(self: Other) {}\nfunc main() { 0 }",
     )
     .unwrap_err();
     assert!(
-        receiver
+        mismatch
             .message
-            .contains("associated function `Box.read` cannot declare a `self` parameter")
+            .contains("owned by `Box` but receives `Other`")
     );
 }
 
@@ -1511,10 +1538,10 @@ type TextSlice = & Sequence<CodePoint> & {
     text: String
 }
 
-func empty?(self: TextSlice) -> Bool { self.text.empty? }
-func length(self: TextSlice) -> Int { self.text.length }
-func head(self: TextSlice) -> CodePoint { self.text.head }
-func rest(self: TextSlice) -> String { strings.slice(self.text, 1, self.text.length) }
+func TextSlice.empty?(self: TextSlice) -> Bool { self.text.empty? }
+func TextSlice.length(self: TextSlice) -> Int { self.text.length }
+func TextSlice.head(self: TextSlice) -> CodePoint { self.text.head }
+func TextSlice.rest(self: TextSlice) -> String { strings.slice(self.text, 1, self.text.length) }
 
 func first(values: Sequence<CodePoint>) -> CodePoint {
     values.head
@@ -1541,11 +1568,11 @@ type User = & Identified & {
     value: Int
 }
 
-func id(self: User) -> Int {
+func User.id(self: User) -> Int {
     self.value
 }
 
-func offset(self: User, amount: Int) -> Int {
+func User.offset(self: User, amount: Int) -> Int {
     self.value + amount
 }
 
@@ -1562,7 +1589,7 @@ func main() -> Int {
     let missing = source
         .replace("type User = & Identified &", "type User =")
         .replace(
-            "func id(self: User) -> Int {\n    self.value\n}\n\nfunc offset(self: User, amount: Int) -> Int {\n    self.value + amount\n}\n",
+            "func User.id(self: User) -> Int {\n    self.value\n}\n\nfunc User.offset(self: User, amount: Int) -> Int {\n    self.value + amount\n}\n",
             "",
         );
     let error = foster::compile(&missing).unwrap_err();
@@ -1600,7 +1627,7 @@ type Counter = & Iterator<Int> & {
     end: Int
 }
 
-func next(self: Counter) -> Option<Int> {
+func Counter.next(self: Counter) -> Option<Int> {
     let value = self.current
     self.current = self.current + 1
     branch {
@@ -1614,7 +1641,7 @@ type Range = & Iterable<Int> & {
     end: Int
 }
 
-func iterator(self: Range) -> Iterator<Int> {
+func Range.iterator(self: Range) -> Iterator<Int> {
     Counter { current: self.start, end: self.end }
 }
 
@@ -1782,7 +1809,7 @@ func first_value(candidate: Option<Entry<String, Int>>) -> Int {
 
 func main() -> Int {
     let state = Map.empty()
-    let values = put(move state, "answer", 42)
+    let values = (move state).put("answer", 42)
     let cursor = values.iterator
     values.length + first_value(cursor.next())
 }
@@ -1817,7 +1844,7 @@ fn mutable_effect_allows_extracting_children_but_not_consuming_the_owner() {
     let source = r#"
 type Resource = { value: String }
 
-func invalid(self: Resource) -> Resource [mut self] {
+func Resource.invalid(self: Resource) -> Resource [mut self] {
     move self
 }
 
@@ -1837,11 +1864,11 @@ type Key = & Ordered<Key> & Hashing & {
     value: Int
 }
 
-func equal?(self: Key, other: Key) -> Bool {
+func Key.equal?(self: Key, other: Key) -> Bool {
     self.value == other.value
 }
 
-func compare(self: Key, other: Key) -> Ordering {
+func Key.compare(self: Key, other: Key) -> Ordering {
     branch {
         self.value < other.value -> Ordering.Less
         self.value > other.value -> Ordering.Greater
@@ -1849,7 +1876,7 @@ func compare(self: Key, other: Key) -> Ordering {
     }
 }
 
-func hash(self: Key) -> Int {
+func Key.hash(self: Key) -> Int {
     self.value * 31
 }
 
@@ -1888,7 +1915,7 @@ func main() -> Int {
     }
 
     let missing_equality = source.replace(
-        "func equal?(self: Key, other: Key) -> Bool {\n    self.value == other.value\n}\n\n",
+        "func Key.equal?(self: Key, other: Key) -> Bool {\n    self.value == other.value\n}\n\n",
         "",
     );
     let error = foster::compile(&missing_equality).unwrap_err();
@@ -1933,10 +1960,10 @@ type TextSlice = & Named & Sequence<CodePoint> & {
     text: String
 }
 
-func empty?(self: TextSlice) -> Bool { self.text.empty? }
-func length(self: TextSlice) -> Int { self.text.length }
-func head(self: TextSlice) -> CodePoint { self.text.head }
-func rest(self: TextSlice) -> String { strings.slice(self.text, 1, self.text.length) }
+func TextSlice.empty?(self: TextSlice) -> Bool { self.text.empty? }
+func TextSlice.length(self: TextSlice) -> Int { self.text.length }
+func TextSlice.head(self: TextSlice) -> CodePoint { self.text.head }
+func TextSlice.rest(self: TextSlice) -> String { strings.slice(self.text, 1, self.text.length) }
 
 func describe(value: Named & Sequence<CodePoint>) -> String {
     value.name + value.head.string
@@ -2019,7 +2046,7 @@ enum Choice = Number(Int)
     & {
         pub func score(self) -> Int
     }
-func score(self: Choice) -> Int {
+func Choice.score(self: Choice) -> Int {
     branch self {
         Choice.Number(value) -> value
         Choice.Empty -> 0
@@ -2050,13 +2077,13 @@ enum Choice = Number(Int)
     | Empty
     & Scored
 
-func score(self: Choice) -> Int { 42 }
+func Choice.score(self: Choice) -> Int { 42 }
 func score_of(value: Scored) -> Int { value.score }
 func main() -> Int { score_of(Choice.Empty) }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
 
-    let missing = source.replace("func score(self: Choice) -> Int { 42 }\n", "");
+    let missing = source.replace("func Choice.score(self: Choice) -> Int { 42 }\n", "");
     let error = foster::compile(&missing).unwrap_err();
     assert!(error.message.contains("missing required method `score`"));
 }
@@ -2636,7 +2663,7 @@ type CollectWriter = & Writer<StreamError> & {
     chunk_size: Int
 }
 
-func read(self: ChunkReader, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining, read self.chunk_size] {
+func ChunkReader.read(self: ChunkReader, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining, read self.chunk_size] {
     let limit = smaller(maximum, self.chunk_size)
     let amount = smaller(limit, self.remaining.length)
     let chunk = self.remaining.slice(0, amount)
@@ -2644,13 +2671,13 @@ func read(self: ChunkReader, maximum: Int) -> Result<Bytes, StreamError> [mut se
     Result.Ok(chunk)
 }
 
-func write(self: CollectWriter, contents: Bytes) -> Result<Int, StreamError> [mut self.contents, read self.chunk_size] {
+func CollectWriter.write(self: CollectWriter, contents: Bytes) -> Result<Int, StreamError> [mut self.contents, read self.chunk_size] {
     let amount = smaller(self.chunk_size, contents.length)
     self.contents = self.contents.concat(contents.slice(0, amount))
     Result.Ok(amount)
 }
 
-func flush(self: CollectWriter) -> Result<(), StreamError> {
+func CollectWriter.flush(self: CollectWriter) -> Result<(), StreamError> {
     let scratch = ByteBuffer.empty()
     Result.Ok(scratch.reserve(0))
 }

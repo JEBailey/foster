@@ -124,7 +124,7 @@ type TripleEnvironmentGenerated = {
     factor: Int
 }
 
-func triple_call_generated(self: ref TripleEnvironmentGenerated, value: Int) -> Int {
+func TripleEnvironmentGenerated.triple_call_generated(self: ref TripleEnvironmentGenerated, value: Int) -> Int {
     self.factor * value
 }
 ```

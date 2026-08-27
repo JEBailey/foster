@@ -13,6 +13,7 @@ use crate::hir::Compilation;
 #[derive(Default)]
 pub(super) struct CompilationCache {
     entries: RefCell<HashMap<Uri, Rc<Compilation>>>,
+    last_good: RefCell<HashMap<Uri, Rc<Compilation>>>,
 }
 
 impl CompilationCache {
@@ -24,10 +25,16 @@ impl CompilationCache {
         self.entries.borrow().get(uri).cloned()
     }
 
+    fn last_good(&self, uri: &Uri) -> Option<Rc<Compilation>> {
+        self.last_good.borrow().get(uri).cloned()
+    }
+
     fn insert(&self, uri: Uri, compilation: Compilation) -> Rc<Compilation> {
         let compilation = Rc::new(compilation);
         let mut entries = self.entries.borrow_mut();
-        entries.insert(uri, Rc::clone(&compilation));
+        let mut last_good = self.last_good.borrow_mut();
+        entries.insert(uri.clone(), Rc::clone(&compilation));
+        last_good.insert(uri, Rc::clone(&compilation));
         for (_, module) in compilation.hir.modules.iter() {
             let Some(path) = module.source_path.as_deref() else {
                 continue;
@@ -35,7 +42,8 @@ impl CompilationCache {
             let Some(uri) = path_to_uri(path.as_std_path()) else {
                 continue;
             };
-            entries.insert(uri, Rc::clone(&compilation));
+            entries.insert(uri.clone(), Rc::clone(&compilation));
+            last_good.insert(uri, Rc::clone(&compilation));
         }
         compilation
     }
@@ -48,6 +56,12 @@ impl Workspace {
         }
         let compilation = self.compile_uncached(uri)?;
         Ok(self.compilations.insert(uri.clone(), compilation))
+    }
+
+    pub(super) fn semantic_compilation_for(&self, uri: &Uri) -> Option<Rc<Compilation>> {
+        self.compile_for(uri)
+            .ok()
+            .or_else(|| self.compilations.last_good(uri))
     }
 
     fn compile_uncached(&self, uri: &Uri) -> Result<Compilation, FosterError> {
@@ -66,8 +80,7 @@ impl Workspace {
         if let Some(project) = crate::project::Project::discover(&path, self.root.as_deref())?
             && path.starts_with(&project.source_root)
         {
-            let package =
-                crate::package::Package::load_with_overlays(&project.source_root, &overlays)?;
+            let package = crate::package::Package::load_project_with_overlays(&project, &overlays)?;
             if package.modules.values().any(|module| {
                 module
                     .source_path

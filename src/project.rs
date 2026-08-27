@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::OnceLock;
@@ -24,6 +25,19 @@ pub struct Project {
     pub root: PathBuf,
     pub manifest_path: PathBuf,
     pub source_root: PathBuf,
+    pub dependencies: BTreeMap<String, ProjectDependency>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectDependency {
+    pub name: String,
+    pub root: PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolvedDependency {
+    pub name: String,
+    pub project: Project,
 }
 
 impl Project {
@@ -45,7 +59,7 @@ impl Project {
         })?;
         reject_unknown_keys(
             table,
-            &["package"],
+            &["package", "dependencies"],
             &format!("project manifest `{}`", manifest_path.display()),
         )?;
 
@@ -101,11 +115,17 @@ impl Project {
             )));
         }
 
+        let dependencies = find_entry(table, "dependencies")
+            .map(|value| parse_dependencies(value, &root, manifest_path))
+            .transpose()?
+            .unwrap_or_default();
+
         Ok(Self {
             name: name.to_owned(),
             root,
             manifest_path: manifest_path.to_path_buf(),
             source_root,
+            dependencies,
         })
     }
 
@@ -134,6 +154,176 @@ impl Project {
         }
         Ok(None)
     }
+
+    pub fn resolve_dependencies(&self) -> Result<Vec<ResolvedDependency>, FosterError> {
+        let root_manifest = canonical_manifest(self)?;
+        let mut state = DependencyResolution {
+            visiting: vec![(self.name.clone(), root_manifest)],
+            aliases: HashMap::new(),
+            resolved: HashSet::new(),
+            output: Vec::new(),
+        };
+        state.visit_dependencies(self)?;
+        Ok(state.output)
+    }
+}
+
+struct DependencyResolution {
+    visiting: Vec<(String, PathBuf)>,
+    aliases: HashMap<String, PathBuf>,
+    resolved: HashSet<(String, PathBuf)>,
+    output: Vec<ResolvedDependency>,
+}
+
+impl DependencyResolution {
+    fn visit_dependencies(&mut self, project: &Project) -> Result<(), FosterError> {
+        for dependency in project.dependencies.values() {
+            let dependency_project = Project::load(&dependency.root).map_err(|error| {
+                FosterError::runtime(format!(
+                    "cannot load dependency `{}` of package `{}`: {error}",
+                    dependency.name, project.name
+                ))
+            })?;
+            let manifest = canonical_manifest(&dependency_project)?;
+
+            if let Some((position, _)) = self
+                .visiting
+                .iter()
+                .enumerate()
+                .find(|(_, (_, candidate))| *candidate == manifest)
+            {
+                let mut cycle = self.visiting[position..]
+                    .iter()
+                    .map(|(name, _)| name.as_str())
+                    .collect::<Vec<_>>();
+                cycle.push(dependency.name.as_str());
+                return Err(FosterError::runtime(format!(
+                    "path dependency cycle: {}",
+                    cycle.join(" -> ")
+                )));
+            }
+
+            if let Some(existing) = self.aliases.get(&dependency.name) {
+                if existing != &manifest {
+                    return Err(FosterError::runtime(format!(
+                        "dependency name `{}` refers to both `{}` and `{}`",
+                        dependency.name,
+                        existing.display(),
+                        manifest.display()
+                    )));
+                }
+            } else {
+                self.aliases
+                    .insert(dependency.name.clone(), manifest.clone());
+            }
+
+            let identity = (dependency.name.clone(), manifest.clone());
+            if !self.resolved.insert(identity) {
+                continue;
+            }
+
+            self.output.push(ResolvedDependency {
+                name: dependency.name.clone(),
+                project: dependency_project.clone(),
+            });
+            self.visiting
+                .push((dependency.name.clone(), manifest.clone()));
+            self.visit_dependencies(&dependency_project)?;
+            self.visiting.pop();
+        }
+        Ok(())
+    }
+}
+
+fn canonical_manifest(project: &Project) -> Result<PathBuf, FosterError> {
+    fs::canonicalize(&project.manifest_path).map_err(|error| {
+        FosterError::runtime(format!(
+            "cannot resolve project manifest `{}`: {error}",
+            project.manifest_path.display()
+        ))
+    })
+}
+
+fn parse_dependencies(
+    value: &Value,
+    project_root: &Path,
+    manifest_path: &Path,
+) -> Result<BTreeMap<String, ProjectDependency>, FosterError> {
+    let entries = value_table(value).ok_or_else(|| {
+        FosterError::runtime(format!(
+            "`dependencies` in `{}` must be a TOML table",
+            manifest_path.display()
+        ))
+    })?;
+    let mut dependencies = BTreeMap::new();
+    for entry in entries {
+        let name = entry_key(entry).ok_or_else(|| {
+            FosterError::runtime(format!(
+                "`dependencies` in `{}` contains an invalid entry",
+                manifest_path.display()
+            ))
+        })?;
+        validate_dependency_name(name, manifest_path)?;
+        let value = entry_value(entry).expect("a TOML entry has a value");
+        let table = value_table(value).ok_or_else(|| {
+            FosterError::runtime(format!(
+                "dependency `{name}` in `{}` must be a table containing `path`",
+                manifest_path.display()
+            ))
+        })?;
+        reject_unknown_keys(
+            table,
+            &["path"],
+            &format!("dependency `{name}` in `{}`", manifest_path.display()),
+        )?;
+        let path = find_entry(table, "path")
+            .and_then(value_string)
+            .ok_or_else(|| {
+                FosterError::runtime(format!(
+                    "dependency `{name}` in `{}` requires a string `path`",
+                    manifest_path.display()
+                ))
+            })?;
+        validate_dependency_path(path, name, manifest_path)?;
+        dependencies.insert(
+            name.to_owned(),
+            ProjectDependency {
+                name: name.to_owned(),
+                root: project_root.join(path),
+            },
+        );
+    }
+    Ok(dependencies)
+}
+
+fn validate_dependency_name(name: &str, manifest_path: &Path) -> Result<(), FosterError> {
+    let mut characters = name.chars();
+    let valid = characters
+        .next()
+        .is_some_and(|character| character == '_' || character.is_alphabetic())
+        && characters.all(|character| character == '_' || character.is_alphanumeric());
+    if valid && !matches!(name, "core" | "std") {
+        return Ok(());
+    }
+    Err(FosterError::runtime(format!(
+        "dependency name `{name}` in `{}` must be a portable module name other than `core` or `std`",
+        manifest_path.display()
+    )))
+}
+
+fn validate_dependency_path(
+    source: &str,
+    name: &str,
+    manifest_path: &Path,
+) -> Result<(), FosterError> {
+    let path = Path::new(source);
+    if source.trim().is_empty() || path.is_absolute() {
+        return Err(FosterError::runtime(format!(
+            "dependency `{name}` path in `{}` must be a non-empty relative path",
+            manifest_path.display()
+        )));
+    }
+    Ok(())
 }
 
 fn required_string<'a>(
@@ -366,6 +556,7 @@ mod tests {
         let project = Project::discover(&nested, None).unwrap().unwrap();
         assert_eq!(project.name, "sample");
         assert_eq!(project.source_root, root.join("source"));
+        assert!(project.dependencies.is_empty());
 
         fs::remove_dir_all(root).unwrap();
     }
@@ -392,6 +583,7 @@ mod tests {
     #[test]
     fn rejects_invalid_manifest_shapes_with_specific_messages() {
         let root = temporary_project("invalid-shapes");
+        fs::create_dir(root.join("src")).unwrap();
         let manifest = root.join(MANIFEST_NAME);
         let cases = [
             ("", "missing the required `[package]` table"),
@@ -405,8 +597,20 @@ mod tests {
                 "`package.source`",
             ),
             (
-                "[package]\nname = \"sample\"\n[dependencies]\n",
-                "unknown key `dependencies`",
+                "[package]\nname = \"sample\"\n[dependencies]\nmath = \"../math\"\n",
+                "must be a table containing `path`",
+            ),
+            (
+                "[package]\nname = \"sample\"\n[dependencies]\nmath = { path = 3 }\n",
+                "requires a string `path`",
+            ),
+            (
+                "[package]\nname = \"sample\"\n[dependencies]\nmath = { path = \"../math\", version = \"1\" }\n",
+                "unknown key `version`",
+            ),
+            (
+                "[package]\nname = \"sample\"\n[dependencies]\ncore = { path = \"../core\" }\n",
+                "portable module name",
             ),
         ];
 
@@ -419,6 +623,112 @@ mod tests {
                 error.message
             );
         }
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn resolves_transitive_path_dependencies_in_stable_order() {
+        let root = temporary_project("dependencies");
+        let middle = root.join("middle");
+        let leaf = root.join("leaf");
+        fs::create_dir_all(middle.join("source")).unwrap();
+        fs::create_dir_all(leaf.join("source")).unwrap();
+        fs::write(
+            root.join(MANIFEST_NAME),
+            "[package]\nname = \"app\"\nsource = \"source\"\n[dependencies]\nmiddle = { path = \"middle\" }\n",
+        )
+        .unwrap();
+        fs::write(
+            middle.join(MANIFEST_NAME),
+            "[package]\nname = \"middle-package\"\nsource = \"source\"\n[dependencies]\nleaf = { path = \"../leaf\" }\n",
+        )
+        .unwrap();
+        fs::write(
+            leaf.join(MANIFEST_NAME),
+            "[package]\nname = \"leaf-package\"\nsource = \"source\"\n",
+        )
+        .unwrap();
+
+        let project = Project::load(&root).unwrap();
+        let dependencies = project.resolve_dependencies().unwrap();
+        assert_eq!(
+            dependencies
+                .iter()
+                .map(|dependency| dependency.name.as_str())
+                .collect::<Vec<_>>(),
+            ["middle", "leaf"]
+        );
+        assert_eq!(dependencies[0].project.name, "middle-package");
+        assert_eq!(dependencies[1].project.name, "leaf-package");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_path_dependency_cycles() {
+        let root = temporary_project("dependency-cycle");
+        let child = root.join("child");
+        fs::create_dir_all(child.join("source")).unwrap();
+        fs::write(
+            root.join(MANIFEST_NAME),
+            "[package]\nname = \"app\"\nsource = \"source\"\n[dependencies]\nchild = { path = \"child\" }\n",
+        )
+        .unwrap();
+        fs::write(
+            child.join(MANIFEST_NAME),
+            "[package]\nname = \"child\"\nsource = \"source\"\n[dependencies]\napp = { path = \"..\" }\n",
+        )
+        .unwrap();
+
+        let error = Project::load(&root)
+            .unwrap()
+            .resolve_dependencies()
+            .unwrap_err();
+        assert!(error.message.contains("app -> child -> app"), "{error}");
+
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_conflicting_transitive_dependency_names() {
+        let root = temporary_project("dependency-name-conflict");
+        for directory in ["left", "right", "first-shared", "second-shared"] {
+            fs::create_dir_all(root.join(directory).join("source")).unwrap();
+        }
+        fs::write(
+            root.join(MANIFEST_NAME),
+            "[package]\nname = \"app\"\nsource = \"source\"\n[dependencies]\nleft = { path = \"left\" }\nright = { path = \"right\" }\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("left/foster.toml"),
+            "[package]\nname = \"left\"\nsource = \"source\"\n[dependencies]\nshared = { path = \"../first-shared\" }\n",
+        )
+        .unwrap();
+        fs::write(
+            root.join("right/foster.toml"),
+            "[package]\nname = \"right\"\nsource = \"source\"\n[dependencies]\nshared = { path = \"../second-shared\" }\n",
+        )
+        .unwrap();
+        for directory in ["first-shared", "second-shared"] {
+            fs::write(
+                root.join(directory).join(MANIFEST_NAME),
+                format!("[package]\nname = \"{directory}\"\nsource = \"source\"\n"),
+            )
+            .unwrap();
+        }
+
+        let error = Project::load(&root)
+            .unwrap()
+            .resolve_dependencies()
+            .unwrap_err();
+        assert!(
+            error
+                .message
+                .contains("dependency name `shared` refers to both"),
+            "{error}"
+        );
 
         fs::remove_dir_all(root).unwrap();
     }

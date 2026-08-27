@@ -752,7 +752,7 @@ impl<'a> Builder<'a> {
     }
 }
 
-fn result_provenance(function: &hir::Function, hir: &hir::PackageHir) -> super::ResultProvenance {
+fn result_provenance(function: &hir::Function, _hir: &hir::PackageHir) -> super::ResultProvenance {
     let parameters = function
         .parameter_types
         .iter()
@@ -764,10 +764,7 @@ fn result_provenance(function: &hir::Function, hir: &hir::PackageHir) -> super::
             hir::queries::type_exposes_group(function.return_type.as_ref(), group).then_some(index)
         })
         .collect::<Vec<_>>();
-    let receiver = function
-        .parameters
-        .first()
-        .is_some_and(|parameter| hir.locals[*parameter].name == "self")
+    let receiver = function.receiver.is_some()
         && hir::queries::type_exposes_group(function.return_type.as_ref(), "self");
     super::ResultProvenance {
         fresh_owned: parameters.is_empty() && !receiver,

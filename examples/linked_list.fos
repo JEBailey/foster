@@ -23,17 +23,17 @@ func LinkedList.empty<T>() -> LinkedList<T> {
 }
 
 // Returns the number of elements in constant time.
-func length<T>(self: LinkedList<T>) -> Int {
+func LinkedList.length<T>(self: LinkedList<T>) -> Int {
     self.size
 }
 
 // Returns whether this list contains no elements.
-func empty?<T>(self: LinkedList<T>) -> Bool {
+func LinkedList.empty?<T>(self: LinkedList<T>) -> Bool {
     self.size == 0
 }
 
 // Consumes the list and adds `value` at its front in constant time.
-func prepend<T>(self: LinkedList<T>, value: T) -> LinkedList<T> [consume self, consume value] {
+func LinkedList.prepend<T>(self: LinkedList<T>, value: T) -> LinkedList<T> [consume self, consume value] {
     LinkedList {
         head: Link.Node(Node { value, next: self.head })
         size: self.size + 1
@@ -41,7 +41,7 @@ func prepend<T>(self: LinkedList<T>, value: T) -> LinkedList<T> [consume self, c
 }
 
 // Consumes the list and returns its first value together with the remaining list.
-func pop_front<T>(self: LinkedList<T>) -> Option<LinkedListItem<T>> [consume self] {
+func LinkedList.pop_front<T>(self: LinkedList<T>) -> Option<LinkedListItem<T>> [consume self] {
     branch self.head {
         Link.End -> Option.None
         Link.Node(node) -> Option.Some(LinkedListItem {
@@ -52,7 +52,7 @@ func pop_front<T>(self: LinkedList<T>) -> Option<LinkedListItem<T>> [consume sel
 }
 
 // Consumes this list and returns its elements in reverse order.
-func reverse<T>(self: LinkedList<T>) -> LinkedList<T> [consume self] {
+func LinkedList.reverse<T>(self: LinkedList<T>) -> LinkedList<T> [consume self] {
     LinkedList {
         head: reverse_links(move self.head, Link.End)
         size: self.size
@@ -60,7 +60,7 @@ func reverse<T>(self: LinkedList<T>) -> LinkedList<T> [consume self] {
 }
 
 // Consumes this list and transforms every element without using the built-in `List<T>` type.
-func map<T, U>(self: LinkedList<T>, transform: func(consume T) -> U) -> LinkedList<U> [consume self] {
+func LinkedList.map<T, U>(self: LinkedList<T>, transform: func(consume T) -> U) -> LinkedList<U> [consume self] {
     LinkedList {
         head: map_links(move self.head, transform)
         size: self.size
@@ -68,12 +68,12 @@ func map<T, U>(self: LinkedList<T>, transform: func(consume T) -> U) -> LinkedLi
 }
 
 // Consumes this list and combines its values from front to back.
-func fold<T, U>(self: LinkedList<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [consume self, consume initial] {
+func LinkedList.fold<T, U>(self: LinkedList<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [consume self, consume initial] {
     fold_links(move self.head, move initial, combine)
 }
 
 // Consumes this linked list and materializes a built-in list in the same order.
-func to_list<T>(self: LinkedList<T>) -> List<T> [consume self] {
+func LinkedList.to_list<T>(self: LinkedList<T>) -> List<T> [consume self] {
     collect_links(move self.head, [])
 }
 
@@ -112,7 +112,7 @@ func collect_links<T>(remaining: Link<T>, result: List<T>) -> List<T> [consume r
 func render(item: Option<LinkedListItem<Int>>) -> Int {
     branch item {
         Option.None -> -1
-        Option.Some(found) -> found.value + length(found.remaining)
+        Option.Some(found) -> found.value + LinkedList.length(found.remaining)
     }
 }
 
@@ -121,11 +121,11 @@ func numbers() -> LinkedList<Int> {
 }
 
 func main() -> Int {
-    let doubled = map(numbers(), (value: Int) -> value * 2)
-    let first_score = render(pop_front(move doubled))
+    let doubled = LinkedList.map(numbers(), (value: Int) -> value * 2)
+    let first_score = render(LinkedList.pop_front(move doubled))
 
-    let total = fold(numbers(), 0, (result: Int, value: Int) -> result + value)
-    let reversed = to_list(reverse(numbers()))
+    let total = LinkedList.fold(numbers(), 0, (result: Int, value: Int) -> result + value)
+    let reversed = LinkedList.to_list(LinkedList.reverse(numbers()))
 
     first_score + total + reversed[0]
 }

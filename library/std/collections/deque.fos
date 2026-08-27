@@ -15,32 +15,32 @@ pub func Deque.empty<T>() -> Deque<T> {
 }
 
 /// Returns the number of values in the deque.
-pub func length<T>(self: Deque<T>) -> Int {
+pub func Deque.length<T>(self: Deque<T>) -> Int {
     self.values.length
 }
 
 /// Returns whether the deque contains no values.
-pub func empty?<T>(self: Deque<T>) -> Bool {
+pub func Deque.empty?<T>(self: Deque<T>) -> Bool {
     self.values.empty?
 }
 
 /// Creates an independent iterator from front to back.
-pub func iterator<T>(self: Deque<T>) -> Iterator<T> {
+pub func Deque.iterator<T>(self: Deque<T>) -> Iterator<T> {
     self.values.iterator
 }
 
 /// Returns a deque with `value` added at the front.
-pub func push_front<T>(self: Deque<T>, value: T) -> Deque<T> [consume self, consume value] {
+pub func Deque.push_front<T>(self: Deque<T>, value: T) -> Deque<T> [consume self, consume value] {
     Deque { values: append_all(move self.values, [value]) }
 }
 
 /// Returns a deque with `value` added at the back.
-pub func push_back<T>(self: Deque<T>, value: T) -> Deque<T> [consume self, consume value] {
+pub func Deque.push_back<T>(self: Deque<T>, value: T) -> Deque<T> [consume self, consume value] {
     Deque { values: self.values.append(value) }
 }
 
 /// Removes the front value and returns the remaining deque.
-pub func pop_front<T>(self: Deque<T>) -> Option<DequeItem<T>> [consume self] {
+pub func Deque.pop_front<T>(self: Deque<T>) -> Option<DequeItem<T>> [consume self] {
     branch {
         self.values.empty? -> Option.None
         _ -> Option.Some(DequeItem { value: self.values.head, remaining: Deque { values: self.values.rest } })
@@ -48,7 +48,7 @@ pub func pop_front<T>(self: Deque<T>) -> Option<DequeItem<T>> [consume self] {
 }
 
 /// Removes the back value and returns the remaining deque.
-pub func pop_back<T>(self: Deque<T>) -> Option<DequeItem<T>> [consume self] {
+pub func Deque.pop_back<T>(self: Deque<T>) -> Option<DequeItem<T>> [consume self] {
     branch {
         self.values.empty? -> Option.None
         _ -> pop_back_values(move self.values, [])

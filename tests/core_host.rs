@@ -411,8 +411,8 @@ func option_value(value: Option<Int>) -> Int {
 
 func main() -> Int {
     let values = Map.empty()
-    values = put(move values, "answer", 42)
-    option_value(get(move values, "answer"))
+    values = (move values).put("answer", 42)
+    option_value((move values).get("answer"))
 }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
@@ -651,14 +651,14 @@ import core.result
 func start(outcome: Result<Connection, NetworkError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
-        Result.Ok(connection) -> send(connection, tcp.write_text(connection, "ping"))
+        Result.Ok(connection) -> send(connection, connection.write_text("ping"))
     }}
 }}
 
 func send(connection: Connection, outcome: Result<(), NetworkError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
-        Result.Ok(_) -> receive(connection, tcp.read_text(connection, 64))
+        Result.Ok(_) -> receive(connection, connection.read_text(64))
     }}
 }}
 

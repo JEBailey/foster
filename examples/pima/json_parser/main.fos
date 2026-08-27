@@ -12,28 +12,28 @@ type PipelineReport = {
     failed: Int
 }
 
-func parse_document(self: ParserWorker, source: String) -> ParseResult<Json> {
+func ParserWorker.parse_document(self: ParserWorker, source: String) -> ParseResult<Json> {
     parse_json(move source)
 }
 
-func record_success(self: Statistics) -> Int {
+func Statistics.record_success(self: Statistics) -> Int {
     self.processed = self.processed + 1
     self.processed
 }
 
-func record_failure(self: Statistics) -> Int {
+func Statistics.record_failure(self: Statistics) -> Int {
     self.failed = self.failed + 1
     self.failed
 }
 
-func record_result(self: Statistics, result: ParseResult<Json>) -> Int {
+func Statistics.record_result(self: Statistics, result: ParseResult<Json>) -> Int {
     branch result {
         ParseOk(_) -> self.record_success()
         ParseError(_) -> self.record_failure()
     }
 }
 
-func snapshot(self: Statistics) -> PipelineReport {
+func Statistics.snapshot(self: Statistics) -> PipelineReport {
     PipelineReport {
         processed: self.processed
         failed: self.failed

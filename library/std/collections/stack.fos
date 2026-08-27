@@ -15,27 +15,27 @@ pub func Stack.empty<T>() -> Stack<T> {
 }
 
 /// Returns the number of stacked values.
-pub func length<T>(self: Stack<T>) -> Int {
+pub func Stack.length<T>(self: Stack<T>) -> Int {
     self.values.length
 }
 
 /// Returns whether the stack contains no values.
-pub func empty?<T>(self: Stack<T>) -> Bool {
+pub func Stack.empty?<T>(self: Stack<T>) -> Bool {
     self.values.empty?
 }
 
 /// Creates an independent iterator from top to bottom.
-pub func iterator<T>(self: Stack<T>) -> Iterator<T> {
+pub func Stack.iterator<T>(self: Stack<T>) -> Iterator<T> {
     reverse(self.values, []).iterator
 }
 
 /// Returns a stack with `value` placed on top.
-pub func push<T>(self: Stack<T>, value: T) -> Stack<T> [consume self, consume value] {
+pub func Stack.push<T>(self: Stack<T>, value: T) -> Stack<T> [consume self, consume value] {
     Stack { values: self.values.append(value) }
 }
 
 /// Removes the top value and returns the remaining stack.
-pub func pop<T>(self: Stack<T>) -> Option<StackItem<T>> [consume self] {
+pub func Stack.pop<T>(self: Stack<T>) -> Option<StackItem<T>> [consume self] {
     branch {
         self.values.empty? -> Option.None
         _ -> pop_values(move self.values, [])

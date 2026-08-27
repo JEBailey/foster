@@ -40,6 +40,9 @@ impl FunctionLowerer<'_> {
             body.push(lowered, statement_span.clone());
         }
         self.hir.functions[self.function].parameters = parameters;
+        self.hir.functions[self.function].receiver = source
+            .receiver
+            .then(|| self.hir.functions[self.function].parameters[0]);
         self.hir.functions[self.function].body = body;
         Ok(())
     }
@@ -137,7 +140,7 @@ impl FunctionLowerer<'_> {
                 Ok(Stmt::Assign { local, value })
             }
             ast::Stmt::Function(source) => {
-                if source.name.contains('.') {
+                if source.owner.is_some() {
                     return Err(
                         self.error("associated function declarations must be at module scope")
                     );

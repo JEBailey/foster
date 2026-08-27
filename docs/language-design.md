@@ -238,7 +238,7 @@ type Identified = {
 }
 ```
 
-A composing type implements these requirements with ordinary module-level `self` functions. The
+A composing type implements these requirements with owner-qualified module-level receiver functions. The
 compiler checks parameter ownership modes, result types, effects, suspension, and visibility.
 Naming a contract is not required for conformance: another type with matching accessible fields and
 methods is accepted structurally.
@@ -281,9 +281,11 @@ let scores = Map.empty()
 
 Associated functions are declared in the record's defining module, so they may construct records
 whose representation contains private fields. The qualifier must name a record in that module.
-An associated declaration cannot have a `self` parameter; instance methods retain the existing
-`func get(self: Map<K, V>, key: K)` form. Both directly imported `Map.empty()` and explicitly
-module-qualified `map.Map.empty()` calls resolve to the same function.
+An owner-qualified declaration with no `self` receiver is an associated function; one beginning
+with `self` is an instance method, such as
+`func Map.get(self: Map<K, V>, key: K)`. The qualifier is part of method identity, so different
+types in one module may declare the same member name. Both directly imported `Map.empty()` and
+explicitly module-qualified `map.Map.empty()` calls resolve to the same function.
 
 ## Union contracts and enums
 
@@ -336,7 +338,7 @@ The trailing intersection applies to the enum value itself, independent of which
 it. Consequently, every `Foo` value satisfies `SomeContract` and provides `describe`. The defining
 module implements a shared requirement with an
 ordinary instance function whose receiver is the enum type, such as
-`func describe(self: Foo) -> String`. Its body may branch on `self` when cases need
+`func Foo.describe(self: Foo) -> String`. Its body may branch on `self` when cases need
 different behavior. An enum can be structurally adapted to the method-only contracts it satisfies,
 and calls through such a contract dispatch to the original enum value.
 
@@ -412,13 +414,13 @@ value from a preceding binding, assignment, or assertion.
 
 ## Remote objects and virtual threads
 
-`remote` transfers a record into an isolated virtual thread. A function declared in the record's
-module whose first parameter is named `self` is an instance method. Calling that method through a
+`remote` transfers a record into an isolated virtual thread. An owner-qualified function whose
+first parameter is the semantic `self` receiver is an instance method. Calling that method through a
 `Remote<T>` handle sends a FIFO mailbox message and returns `Future<R>`; `await` parks the current
 virtual thread until the reply arrives.
 
 ```foster
-func increment(self: Counter, amount: Int) -> Int {
+func Counter.increment(self: Counter, amount: Int) -> Int {
     self.value = self.value + amount
     self.value
 }
@@ -818,7 +820,7 @@ is stored in typed HIR and callable bytecode information, so later ownership che
 and VM lowering retain the contract without source-level suffixes:
 
 ```foster
-func restock(self: Inventory, amount: Int) -> Int {
+func Inventory.restock(self: Inventory, amount: Int) -> Int {
     self.count = self.count + amount
     self.count
 }

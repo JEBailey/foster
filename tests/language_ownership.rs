@@ -8,7 +8,7 @@ type Counter = {
     value: Int
 }
 
-func increment(self: Counter, amount: Int) -> Int [mut self] {
+func Counter.increment(self: Counter, amount: Int) -> Int [mut self] {
     self.value = self.value + amount
     self.value
 }
@@ -28,7 +28,7 @@ fn remote_assertion_failures_are_delivered_through_futures() {
     let source = r#"
 type Worker = {}
 
-func check(self: Worker) -> Int {
+func Worker.check(self: Worker) -> Int {
     assert(false, "remote assertion message")
     42
 }
@@ -49,11 +49,11 @@ type Counter = {
     value: Int
 }
 
-func snapshot(self: Counter) -> Int [read self.value] {
+func Counter.snapshot(self: Counter) -> Int [read self.value] {
     self.value
 }
 
-func assign(self: Counter, value: Int) -> Int [mut self] {
+func Counter.assign(self: Counter, value: Int) -> Int [mut self] {
     self.value = value
     self.value
 }
@@ -78,11 +78,11 @@ type Pair = {
     right: Int
 }
 
-func total(self: Pair) -> Int [read self.left, read self.right] {
+func Pair.total(self: Pair) -> Int [read self.left, read self.right] {
     self.left + self.right
 }
 
-func replace(self: Pair, value: Int) -> Int [mut self] {
+func Pair.replace(self: Pair, value: Int) -> Int [mut self] {
     self.left = value
     self.right = value
     self.left + self.right
@@ -110,7 +110,7 @@ fn remote_read_loans_reject_mutating_methods() {
     let source = r#"
 type Counter = { value: Int }
 
-func increment(self: Counter) -> Int [mut self] {
+func Counter.increment(self: Counter) -> Int [mut self] {
     self.value = self.value + 1
     self.value
 }
@@ -135,11 +135,11 @@ fn remote_borrowed_arguments_are_live_read_only_loans() {
 type Document = { value: Int }
 type Inspector = {}
 
-func inspect(self: Inspector, document: Document) -> Int [read document.value] {
+func Inspector.inspect(self: Inspector, document: Document) -> Int [read document.value] {
     document.value
 }
 
-func assign(self: Document, value: Int) -> Int [mut self] {
+func Document.assign(self: Document, value: Int) -> Int [mut self] {
     self.value = value
     self.value
 }
@@ -162,11 +162,11 @@ fn remote_borrowed_arguments_serialize_with_owner_mutation() {
 type Pair = { left: Int, right: Int }
 type Inspector = {}
 
-func total(self: Inspector, pair: Pair) -> Int [read pair.left, read pair.right] {
+func Inspector.total(self: Inspector, pair: Pair) -> Int [read pair.left, read pair.right] {
     pair.left + pair.right
 }
 
-func replace(self: Pair, value: Int) -> Int [mut self] {
+func Pair.replace(self: Pair, value: Int) -> Int [mut self] {
     self.left = value
     self.right = value
     self.left + self.right
@@ -194,7 +194,7 @@ fn remote_borrowed_arguments_reject_mutation() {
 type Document = { value: Int }
 type Worker = {}
 
-func rewrite(self: Worker, document: Document) -> Int [mut document] {
+func Worker.rewrite(self: Worker, document: Document) -> Int [mut document] {
     document.value = 42
     document.value
 }
@@ -218,7 +218,7 @@ fn remote_calls_reject_borrowed_messages() {
     let source = r#"
 type Box = { value: Int }
 
-func read[g: group Int](self: Box, value: ref[g] Int) -> Int {
+func Box.read[g: group Int](self: Box, value: ref[g] Int) -> Int {
     value
 }
 
@@ -241,7 +241,7 @@ fn remote_calls_require_moves_for_consumed_messages() {
     let source = r#"
 type Worker = {}
 
-func submit(self: Worker, message: String) -> () [consume message] {
+func Worker.submit(self: Worker, message: String) -> () [consume message] {
     println(message)
 }
 
@@ -304,7 +304,7 @@ func main() { 0 }
 fn derives_suspend_from_await_and_callee_contracts() {
     let source = r#"
 type Worker = {}
-func value(self: Worker) -> Int { 1 }
+func Worker.value(self: Worker) -> Int { 1 }
 func wait(worker: Remote<Worker>) -> Int {
     await worker.value()
 }
@@ -320,7 +320,7 @@ func main() { 0 }
 fn accepts_declared_suspension() {
     let source = r#"
 type Worker = {}
-func value(self: Worker) -> Int { 1 }
+func Worker.value(self: Worker) -> Int { 1 }
 func wait(worker: Remote<Worker>) -> Int [suspend] {
     await worker.value()
 }
@@ -458,7 +458,7 @@ fn reports_overdeclared_effect_and_suspend_warnings() {
     let source = r#"
 // λ keeps token ranges byte-accurate
 type Box = { value: Int }
-func inspect(self: Box) -> Int [mut self, suspend] { self.value }
+func Box.inspect(self: Box) -> Int [mut self, suspend] { self.value }
 func main() { 0 }
 "#;
     let compilation = foster::compile(source).unwrap();
@@ -534,7 +534,7 @@ type Cursor = {
     column: Int
 }
 
-func advance(self: Cursor) -> () [mut self] {
+func Cursor.advance(self: Cursor) -> () [mut self] {
     self.remaining = self.remaining.rest
     self.column = self.column + 1
     ()
@@ -1704,7 +1704,7 @@ func main() { 0 }
 fn ownership_mir_models_loans_across_suspend_and_scope_destruction() {
     let source = r#"
 type Worker = {}
-func value(self: Worker) -> Int { 1 }
+func Worker.value(self: Worker) -> Int { 1 }
 
 func wait(worker: Remote<Worker>) -> Int {
     let values = [10, 20]

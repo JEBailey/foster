@@ -77,10 +77,7 @@ fn check_closure_statement_block(
 
 pub(super) fn validate_groups_and_effects(hir: &PackageHir) -> Result<(), FosterError> {
     for (_, function) in hir.functions.iter() {
-        let is_method = function
-            .parameters
-            .first()
-            .is_some_and(|parameter| hir.locals[*parameter].name == "self");
+        let is_method = function.receiver.is_some();
         let parameter_names = function
             .parameters
             .iter()

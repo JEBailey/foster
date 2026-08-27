@@ -63,32 +63,32 @@ pub func Bytes.from_hex(value: String) -> Result<Bytes, HexError> {
 }
 
 /// Concatenates two immutable byte sequences.
-pub func concat(self: Bytes, other: Bytes) -> Bytes {
+pub func Bytes.concat(self: Bytes, other: Bytes) -> Bytes {
     BytesHost.concat(self, other)
 }
 
 /// Returns bytes in the half-open range `start..end`.
-pub func slice(self: Bytes, start: Int, end: Int) -> Bytes {
+pub func Bytes.slice(self: Bytes, start: Int, end: Int) -> Bytes {
     BytesHost.slice(self, start, end)
 }
 
 /// Expands compact bytes into a Foster list.
-pub func list(self: Bytes) -> List<Byte> {
+pub func Bytes.list(self: Bytes) -> List<Byte> {
     BytesHost.to_list(self)
 }
 
 /// Encodes bytes as lowercase hexadecimal text.
-pub func hex(self: Bytes) -> String {
+pub func Bytes.hex(self: Bytes) -> String {
     BytesHost.hex(self)
 }
 
 /// Returns whether two byte sequences contain identical values.
-pub func equal?(self: Bytes, other: Bytes) -> Bool {
+pub func Bytes.equal?(self: Bytes, other: Bytes) -> Bool {
     self == other
 }
 
 /// Computes a deterministic hash over the byte sequence.
-pub func hash(self: Bytes) -> Int {
+pub func Bytes.hash(self: Bytes) -> Int {
     hash_remaining(self, 17)
 }
 

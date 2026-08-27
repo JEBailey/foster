@@ -38,7 +38,7 @@ func shortage(current: Int, minimum: Int) -> Int {
     }
 }
 
-func evaluate(self: Auditor, inventory: Inventory, policy: Policy) -> Assessment {
+func Auditor.evaluate(self: Auditor, inventory: Inventory, policy: Policy) -> Assessment {
     let missing = shortage(inventory.apples, policy.minimum_apples) + shortage(inventory.bolts, policy.minimum_bolts)
     Assessment {
         version: inventory.version
@@ -47,18 +47,18 @@ func evaluate(self: Auditor, inventory: Inventory, policy: Policy) -> Assessment
     }
 }
 
-func restock(self: Inventory, apples: Int, bolts: Int) -> Int {
+func Inventory.restock(self: Inventory, apples: Int, bolts: Int) -> Int {
     self.apples = self.apples + apples
     self.bolts = self.bolts + bolts
     self.version = self.version + 1
     self.version
 }
 
-func total(self: Inventory) -> Int {
+func Inventory.total(self: Inventory) -> Int {
     self.apples + self.bolts
 }
 
-func submit(self: Report, assessment: Assessment) -> Int {
+func Report.submit(self: Report, assessment: Assessment) -> Int {
     self.alerts = self.alerts + branch {
         assessment.missing == 0 -> 0
         _ -> 1
@@ -71,7 +71,7 @@ func submit(self: Report, assessment: Assessment) -> Int {
     self.score
 }
 
-func result(self: Report) -> Int {
+func Report.result(self: Report) -> Int {
     self.healthy * 1000 + self.alerts * 100 + self.score
 }
 

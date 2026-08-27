@@ -685,14 +685,11 @@ impl FunctionCompiler<'_> {
                 }
                 crate::types::Type::Reference { value, .. } => ty = *value,
                 crate::types::Type::Record { record, .. } => {
+                    let qualified_name = format!("{}.{name}", self.hir.records[*record].name);
                     let function = self
                         .hir
-                        .function_named(self.hir.records[*record].module, name)?;
-                    if self.hir.functions[function]
-                        .parameters
-                        .first()
-                        .is_none_or(|parameter| self.hir.locals[*parameter].name != "self")
-                    {
+                        .function_named(self.hir.records[*record].module, &qualified_name)?;
+                    if self.hir.functions[function].receiver.is_none() {
                         return None;
                     }
                     let receiver_matches = self
@@ -709,14 +706,12 @@ impl FunctionCompiler<'_> {
                     return receiver_matches.then_some((function, remote));
                 }
                 crate::types::Type::Variant { variant, .. } => {
+                    let qualified_name =
+                        format!("{}.{name}", self.hir.variant_types[*variant].name);
                     let function = self
                         .hir
-                        .function_named(self.hir.variant_types[*variant].module, name)?;
-                    if self.hir.functions[function]
-                        .parameters
-                        .first()
-                        .is_none_or(|parameter| self.hir.locals[*parameter].name != "self")
-                    {
+                        .function_named(self.hir.variant_types[*variant].module, &qualified_name)?;
+                    if self.hir.functions[function].receiver.is_none() {
                         return None;
                     }
                     let receiver_matches = self
@@ -751,9 +746,8 @@ impl FunctionCompiler<'_> {
         };
         let function = self.hir.function_named(module, &qualified_name)?;
         self.hir.functions[function]
-            .parameters
-            .first()
-            .is_some_and(|parameter| self.hir.locals[*parameter].name == "self")
+            .receiver
+            .is_some()
             .then_some(function)
     }
 

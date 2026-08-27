@@ -8,10 +8,10 @@ type TextSlice = & Named & Sequence<CodePoint> & {
     text: String
 }
 
-func empty?(self: TextSlice) -> Bool { self.text.empty? }
-func length(self: TextSlice) -> Int { self.text.length }
-func head(self: TextSlice) -> CodePoint { self.text.head }
-func rest(self: TextSlice) -> String {
+func TextSlice.empty?(self: TextSlice) -> Bool { self.text.empty? }
+func TextSlice.length(self: TextSlice) -> Int { self.text.length }
+func TextSlice.head(self: TextSlice) -> CodePoint { self.text.head }
+func TextSlice.rest(self: TextSlice) -> String {
     strings.slice(self.text, 1, self.text.length)
 }
 

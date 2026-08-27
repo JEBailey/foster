@@ -152,7 +152,8 @@ impl Checker<'_> {
         required: &EffectiveMethod,
     ) -> Result<(), FosterError> {
         let definition = self.hir.variant_types[owner].clone();
-        let Some(function) = self.hir.function_named(definition.module, &required.name) else {
+        let qualified_name = format!("{}.{name}", definition.name, name = required.name);
+        let Some(function) = self.hir.function_named(definition.module, &qualified_name) else {
             return Err(FosterError::runtime(format!(
                 "type `{}` is missing required method `{}`",
                 definition.name, required.name
@@ -168,11 +169,7 @@ impl Checker<'_> {
                 ),
             ));
         }
-        if implementation
-            .parameters
-            .first()
-            .is_none_or(|parameter| self.hir.locals[*parameter].name != "self")
-        {
+        if implementation.receiver.is_none() {
             return Err(self.error(
                 function,
                 format!(
@@ -480,7 +477,7 @@ impl Checker<'_> {
                 owner_name, requirement.name
             )));
         };
-        if receiver.name != "self" || receiver.ty.is_some() {
+        if !requirement.receiver || receiver.ty.is_some() {
             return Err(FosterError::runtime(format!(
                 "required method `{}.{}` must begin with an untyped `self` parameter",
                 owner_name, requirement.name
@@ -540,7 +537,8 @@ impl Checker<'_> {
         required: &EffectiveMethod,
     ) -> Result<(), FosterError> {
         let definition = self.hir.records[owner].clone();
-        let Some(function) = self.hir.function_named(definition.module, &required.name) else {
+        let qualified_name = format!("{}.{name}", definition.name, name = required.name);
+        let Some(function) = self.hir.function_named(definition.module, &qualified_name) else {
             return Err(FosterError::runtime(format!(
                 "type `{}` is missing required method `{}`",
                 definition.name, required.name
@@ -556,11 +554,7 @@ impl Checker<'_> {
                 ),
             ));
         }
-        if implementation
-            .parameters
-            .first()
-            .is_none_or(|parameter| self.hir.locals[*parameter].name != "self")
-        {
+        if implementation.receiver.is_none() {
             return Err(self.error(
                 function,
                 format!(

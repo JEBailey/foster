@@ -56,8 +56,18 @@ pub fn check_package(source_root: impl AsRef<Path>) -> Result<hir::Compilation, 
     hir::Compilation::new(package)
 }
 
+pub fn check_project(project: &project::Project) -> Result<hir::Compilation, FosterError> {
+    let package = package::Package::load_project(project)?;
+    hir::Compilation::new(package)
+}
+
 pub fn run_package(source_root: impl AsRef<Path>) -> Result<Value, FosterError> {
     let compilation = check_package(source_root)?;
+    vm::run(&compilation)
+}
+
+pub fn run_project(project: &project::Project) -> Result<Value, FosterError> {
+    let compilation = check_project(project)?;
     vm::run(&compilation)
 }
 

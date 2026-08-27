@@ -9,7 +9,7 @@ type MapIterator<T, U> = & Iterator<U> & {
 }
 
 /// Pulls and transforms one value from a mapped iterator.
-func next<T, U>(self: MapIterator<T, U>) -> Option<U> {
+func MapIterator.next<T, U>(self: MapIterator<T, U>) -> Option<U> {
     branch self.source.next() {
         Option.Some(value) -> Option.Some(self.transform(move value))
         Option.None -> Option.None
@@ -17,12 +17,12 @@ func next<T, U>(self: MapIterator<T, U>) -> Option<U> {
 }
 
 /// Lazily transforms this iterator's remaining elements.
-pub func map<T, U>(self: Iterator<T>, transform: func(consume T) -> U) -> Iterator<U> [consume self, consume transform] {
+pub func Iterator.map<T, U>(self: Iterator<T>, transform: func(consume T) -> U) -> Iterator<U> [consume self, consume transform] {
     MapIterator { source: move self, transform: move transform }
 }
 
 test "mapped iterators transform lazily" {
-    let values = map([1, 2, 3].iterator, (value: Int) -> value * 3).collect()
+    let values = [1, 2, 3].iterator.map((value: Int) -> value * 3).collect()
     assert(values.length == 3)
     assert(values[2] == 9)
     ()

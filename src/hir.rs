@@ -142,6 +142,8 @@ pub struct Function {
     pub documentation: Option<String>,
     pub module: ModuleId,
     pub name: String,
+    pub owner: Option<String>,
+    pub receiver: Option<LocalId>,
     pub test_description: Option<String>,
     pub public: bool,
     pub intrinsic: Option<String>,

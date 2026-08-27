@@ -72,12 +72,8 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 });
             owners.insert(*local, owner);
         }
-        if let Some(self_local) = definition
-            .parameters
-            .first()
-            .filter(|local| checker.hir.locals[**local].name == "self")
-        {
-            owners.insert(*self_local, crate::ast::GroupPath::root("self"));
+        if let Some(self_local) = definition.receiver {
+            owners.insert(self_local, crate::ast::GroupPath::root("self"));
             contract.insert("self".to_owned());
         }
         for (local, ty) in &checker.locals {
@@ -526,17 +522,25 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
         let receiver = self
             .checker
             .resolved(self.checker.expressions.get(&object)?.clone());
-        let module = match receiver {
-            Ty::Record(record, _) => self.checker.hir.records[record].module,
-            Ty::RawBytes => self.checker.hir.module_named("core.bytes")?,
-            Ty::RawByteBuffer => self.checker.hir.module_named("core.bytes.buffer")?,
+        let (module, owner) = match receiver {
+            Ty::Record(record, _) => (
+                self.checker.hir.records[record].module,
+                self.checker.hir.records[record].name.as_str(),
+            ),
+            Ty::RawBytes => (self.checker.hir.module_named("core.bytes")?, "RawBytes"),
+            Ty::RawByteBuffer => (
+                self.checker.hir.module_named("core.bytes.buffer")?,
+                "RawByteBuffer",
+            ),
             _ => return None,
         };
-        let method = self.checker.hir.function_named(module, name)?;
+        let method = self
+            .checker
+            .hir
+            .function_named(module, &format!("{owner}.{name}"))?;
         self.checker.hir.functions[method]
-            .parameters
-            .first()
-            .is_some_and(|local| self.checker.hir.locals[*local].name == "self")
+            .receiver
+            .is_some()
             .then_some(method)
     }
 

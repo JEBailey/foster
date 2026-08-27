@@ -16,7 +16,7 @@ extend Square {
         self.length * self.width
     }
 
-    func set_width[mut square: group Square](self: ref[square] Square, width: Int) {
+    func Square.set_width[mut square: group Square](self: ref[square] Square, width: Int) {
         self.width = width
     }
 }

@@ -4,11 +4,11 @@ type Square = {
     total_area: Int
 }
 
-func area(self: Square) -> Int {
+func Square.area(self: Square) -> Int {
     self.length * self.width
 }
 
-func set_width(self: Square, width: Int) -> () {
+func Square.set_width(self: Square, width: Int) -> () {
     self.width = width
     self.total_area = self.length * width
     println()

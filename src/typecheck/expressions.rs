@@ -18,7 +18,7 @@ impl Checker<'_> {
         let signature = self.functions[&function_id].clone();
         for (local, ty) in function.parameters.iter().zip(&signature.parameters) {
             let group = reference_group(ty).unwrap_or_else(|| {
-                if self.hir.locals[*local].name == "self" {
+                if function.receiver == Some(*local) {
                     "self".to_owned()
                 } else {
                     FRAME_GROUP.to_owned()

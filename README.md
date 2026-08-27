@@ -59,6 +59,23 @@ current directory and its parents for the nearest manifest; `fmt` and `docs` fal
 existing current-directory behavior when no manifest exists. Explicit `.fos` files and legacy
 directories whose `main.fos` sits directly at the source root remain supported.
 
+Projects can depend on other Foster projects by relative path:
+
+```toml
+[dependencies]
+collections = { path = "../foster-collections" }
+```
+
+The dependency key is its module namespace. The dependency's `src/main.fos` is mounted as
+`collections`, `src/map.fos` as `collections.map`, and `src/tree/set.fos` as
+`collections.tree.set`. Imports between modules in that dependency are rebased automatically, so
+its own `import map` resolves to `collections.map`. Imports of `core`, `std`, and dependencies
+declared by that project retain their declared names. Path dependencies are resolved transitively,
+compiled from source with the application, and included by `check`, `run`, `build`, `pack`, `test`,
+`docs`, and the language server. Dependency names must be portable module identifiers other than
+`core` or `std`; cycles, conflicting transitive names, missing projects, and duplicate mounted
+modules are errors.
+
 `run` invokes `main`. It may take no parameters, or one `std.process.Arguments` value containing
 the executable name and following command-line values. Pass program arguments after `--`, for
 example `foster run app.fos -- input.txt --verbose`. A file is treated as a one-module package; a

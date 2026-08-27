@@ -232,7 +232,7 @@ fn required_path<'a>(arguments: &'a ArgMatches, name: &str) -> &'a Path {
 #[derive(Debug)]
 struct SourceTarget {
     source: PathBuf,
-    project_root: Option<PathBuf>,
+    project: Option<foster::project::Project>,
 }
 
 impl SourceTarget {
@@ -248,7 +248,7 @@ impl SourceTarget {
         }
         Ok(Self {
             source: path.to_path_buf(),
-            project_root: None,
+            project: None,
         })
     }
 
@@ -266,13 +266,16 @@ impl SourceTarget {
 
     fn from_project(project: foster::project::Project) -> Result<Self, Box<dyn Error>> {
         Ok(Self {
-            source: project.source_root,
-            project_root: Some(project.root),
+            source: project.source_root.clone(),
+            project: Some(project),
         })
     }
 
     fn artifact_base(&self) -> &Path {
-        self.project_root.as_deref().unwrap_or(&self.source)
+        self.project
+            .as_ref()
+            .map(|project| project.root.as_path())
+            .unwrap_or(&self.source)
     }
 }
 
@@ -361,7 +364,7 @@ fn check(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let target = source_target(arguments)?;
     let path = &target.source;
     if path.is_dir() {
-        let compilation = compile_package(path)?;
+        let compilation = compile_target(&target)?;
         report_warnings(&compilation, None, None)?;
         if arguments.get_flag("dump-ownership") {
             print!("{}", compilation.ownership.debug_dump(&compilation.hir));
@@ -388,7 +391,6 @@ fn check(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
 
 fn build(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let target = source_target(arguments)?;
-    let path = &target.source;
     let native = arguments.get_flag("native");
     let output = arguments
         .get_one::<PathBuf>("output")
@@ -400,7 +402,7 @@ fn build(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
                 default_bytecode_path(target.artifact_base())
             }
         });
-    let compilation = compile_path(path)?;
+    let compilation = compile_target(&target)?;
     report_warnings(&compilation, None, None)?;
     if native {
         foster::native::build_executable(
@@ -426,7 +428,6 @@ fn build(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
 
 fn pack(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let target = source_target(arguments)?;
-    let path = &target.source;
     let output = arguments
         .get_one::<PathBuf>("output")
         .cloned()
@@ -439,7 +440,7 @@ fn pack(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
         .get_one::<PathBuf>("resources")
         .cloned()
         .or_else(|| default_resources.filter(|path| path.is_dir()));
-    let compilation = compile_path(path)?;
+    let compilation = compile_target(&target)?;
     report_warnings(&compilation, None, None)?;
     let program = foster::vm::compile_with_options(
         &compilation,
@@ -476,7 +477,7 @@ fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
         let program = foster::vm::decode_program(&fs::read(path)?)?;
         foster::vm::Machine::new(&program).run_main_with_arguments(&command_arguments)?
     } else if path.is_dir() {
-        let compilation = compile_package(path)?;
+        let compilation = compile_target(&target)?;
         report_warnings(&compilation, None, None)?;
         foster::vm::run_with_arguments(&compilation, options, &command_arguments)?
     } else {
@@ -555,7 +556,7 @@ fn test(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     if path.extension().is_some_and(|extension| extension == "fbc") {
         return Err("compiled bytecode does not retain test discovery metadata".into());
     }
-    let compilation = compile_path(path)?;
+    let compilation = compile_target(&target)?;
     report_warnings(&compilation, None, None)?;
     let program = foster::vm::compile_with_options(
         &compilation,
@@ -680,12 +681,11 @@ fn format_path(path: &Path, check: bool) -> Result<(), Box<dyn Error>> {
 
 fn docs(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let target = source_target_or_current(arguments)?;
-    let source = &target.source;
     let output = arguments
         .get_one::<PathBuf>("output")
         .cloned()
         .unwrap_or_else(|| default_documentation_directory(target.artifact_base()));
-    let compilation = compile_path(source)?;
+    let compilation = compile_target(&target)?;
     report_warnings(&compilation, None, None)?;
     let report = foster::documentation::generate(&compilation, &output)?;
     println!(
@@ -763,8 +763,60 @@ fn compile_path(path: &Path) -> Result<foster::hir::Compilation, Box<dyn Error>>
     compile_single_file(path, &source, program)
 }
 
+fn compile_target(target: &SourceTarget) -> Result<foster::hir::Compilation, Box<dyn Error>> {
+    target.project.as_ref().map_or_else(
+        || compile_path(&target.source),
+        |project| {
+            foster::check_project(project)
+                .map_err(|error| report_project_compilation_error(project, &error))
+        },
+    )
+}
+
 fn compile_package(path: &Path) -> Result<foster::hir::Compilation, Box<dyn Error>> {
     foster::check_package(path).map_err(|error| report_project_error(path, &error))
+}
+
+fn report_project_compilation_error(
+    project: &foster::project::Project,
+    error: &foster::error::FosterError,
+) -> Box<dyn Error> {
+    if let Some(module) = &error.source_module {
+        let mut projects = vec![(None, project.clone())];
+        if let Ok(dependencies) = project.resolve_dependencies() {
+            projects.extend(
+                dependencies
+                    .into_iter()
+                    .map(|dependency| (Some(dependency.name), dependency.project)),
+            );
+        }
+        for (prefix, candidate) in projects {
+            let local_module = match prefix {
+                None => module.as_str(),
+                Some(prefix) if module == &prefix => "main",
+                Some(prefix) => {
+                    let Some(local) = module.strip_prefix(&format!("{prefix}.")) else {
+                        continue;
+                    };
+                    local
+                }
+            };
+            let mut source_path = candidate.source_root.clone();
+            source_path.extend(local_module.split('.'));
+            source_path.set_extension("fos");
+            if let Ok(source) = fs::read_to_string(&source_path) {
+                let diagnostic = foster::diagnostic::Diagnostic::from_source_error(&source, error);
+                if let Err(render_error) =
+                    foster::diagnostic::eprint(&source_path.to_string_lossy(), &source, &diagnostic)
+                {
+                    eprintln!("error: could not render diagnostic: {render_error}");
+                }
+                return Box::new(Reported);
+            }
+        }
+    }
+    eprintln!("error: {error}");
+    Box::new(Reported)
 }
 
 fn report_project_error(source_root: &Path, error: &foster::error::FosterError) -> Box<dyn Error> {

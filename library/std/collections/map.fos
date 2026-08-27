@@ -21,7 +21,7 @@ pub func Map.empty<K, V>() -> Map<K, V> {
 }
 
 /// Consumes the map and returns the value associated with `key`, if present.
-pub func get<K, V>(self: Map<K, V>, key: K) -> Option<V> {
+pub func Map.get<K, V>(self: Map<K, V>, key: K) -> Option<V> {
     get_entries(move self.entries, key)
 }
 
@@ -35,7 +35,7 @@ func get_entries<K, V>(entries: List<Entry<K, V>>, key: K) -> Option<V> {
 }
 
 /// Returns whether the map contains `key` without consuming the map.
-pub func contains_key?<K, V>(self: Map<K, V>, key: K) -> Bool {
+pub func Map.contains_key?<K, V>(self: Map<K, V>, key: K) -> Bool {
     contains_entries?(self.entries, key)
 }
 
@@ -49,7 +49,7 @@ func contains_entries?<K, V>(entries: List<Entry<K, V>>, key: K) -> Bool {
 }
 
 /// Returns a map with `key` associated with `value`, replacing an existing entry when present.
-pub func put<K, V>(self: Map<K, V>, key: K, value: V) -> Map<K, V> {
+pub func Map.put<K, V>(self: Map<K, V>, key: K, value: V) -> Map<K, V> {
     Map { entries: put_entries(move self.entries, move key, move value) }
 }
 
@@ -63,22 +63,22 @@ func put_entries<K, V>(entries: List<Entry<K, V>>, key: K, value: V) -> List<Ent
 }
 
 /// Returns the number of entries in the map.
-pub func length<K, V>(self: Map<K, V>) -> Int {
+pub func Map.length<K, V>(self: Map<K, V>) -> Int {
     self.entries.length
 }
 
 /// Returns whether the map contains no entries.
-pub func empty?<K, V>(self: Map<K, V>) -> Bool {
+pub func Map.empty?<K, V>(self: Map<K, V>) -> Bool {
     self.entries.empty?
 }
 
 /// Creates an independent iterator over entries in storage order.
-pub func iterator<K, V>(self: Map<K, V>) -> Iterator<Entry<K, V>> {
+pub func Map.iterator<K, V>(self: Map<K, V>) -> Iterator<Entry<K, V>> {
     self.entries.iterator
 }
 
 /// Consumes the map and returns its keys in storage order.
-pub func keys<K, V>(self: Map<K, V>) -> List<K> {
+pub func Map.keys<K, V>(self: Map<K, V>) -> List<K> {
     keys_into(move self.entries, [])
 }
 
@@ -91,7 +91,7 @@ func keys_into<K, V>(entries: List<Entry<K, V>>, result: List<K>) -> List<K> {
 }
 
 /// Consumes the map and returns its values in storage order.
-pub func values<K, V>(self: Map<K, V>) -> List<V> {
+pub func Map.values<K, V>(self: Map<K, V>) -> List<V> {
     values_into(move self.entries, [])
 }
 

@@ -6,6 +6,6 @@ pub func Box.create<T>(value: T) -> Box<T> {
     Box { value }
 }
 
-pub func unwrap<T>(self: Box<T>) -> T {
+pub func Box.unwrap<T>(self: Box<T>) -> T {
     self.value
 }

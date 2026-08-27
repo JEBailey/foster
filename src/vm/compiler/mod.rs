@@ -98,16 +98,11 @@ pub fn compile_with_options(
                             if receiver == record
                     )
                 });
-            if receiver_matches
-                && compilation.hir.functions[*function]
-                    .parameters
-                    .first()
-                    .is_some_and(|parameter| compilation.hir.locals[*parameter].name == "self")
-            {
+            if receiver_matches && compilation.hir.functions[*function].receiver.is_some() {
                 compiler
                     .program
                     .methods
-                    .insert((record, name.clone()), *function);
+                    .insert((record, method_name(name).to_owned()), *function);
             }
         }
     }
@@ -126,16 +121,11 @@ pub fn compile_with_options(
                         crate::types::Type::Variant { variant: receiver, .. } if receiver == variant
                     )
                 });
-            if receiver_matches
-                && compilation.hir.functions[*function]
-                    .parameters
-                    .first()
-                    .is_some_and(|parameter| compilation.hir.locals[*parameter].name == "self")
-            {
+            if receiver_matches && compilation.hir.functions[*function].receiver.is_some() {
                 compiler
                     .program
                     .variant_methods
-                    .insert((variant, name.clone()), *function);
+                    .insert((variant, method_name(name).to_owned()), *function);
             }
         }
     }
@@ -178,6 +168,10 @@ pub fn compile_with_options(
     }
     super::optimizer::insert_drops(&mut compiler.program);
     Ok(compiler.program)
+}
+
+fn method_name(name: &str) -> &str {
+    name.rsplit_once('.').map_or(name, |(_, member)| member)
 }
 
 struct Compiler<'a> {

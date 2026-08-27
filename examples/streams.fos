@@ -15,7 +15,7 @@ type MemoryWriter = & Writer<StreamError> & {
     contents: Bytes
 }
 
-func read(self: MemoryReader, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining] {
+func MemoryReader.read(self: MemoryReader, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining] {
     let amount = branch {
         self.remaining.length < maximum -> self.remaining.length
         _ -> maximum
@@ -25,7 +25,7 @@ func read(self: MemoryReader, maximum: Int) -> Result<Bytes, StreamError> [mut s
     Result.Ok(chunk)
 }
 
-func write(self: MemoryWriter, contents: Bytes) -> Result<Int, StreamError> [mut self.contents] {
+func MemoryWriter.write(self: MemoryWriter, contents: Bytes) -> Result<Int, StreamError> [mut self.contents] {
     // Deliberately accept at most two bytes to exercise partial-write retrying.
     let amount = branch {
         contents.length < 2 -> contents.length
@@ -35,7 +35,7 @@ func write(self: MemoryWriter, contents: Bytes) -> Result<Int, StreamError> [mut
     Result.Ok(amount)
 }
 
-func flush(self: MemoryWriter) -> Result<(), StreamError> {
+func MemoryWriter.flush(self: MemoryWriter) -> Result<(), StreamError> {
     let scratch = ByteBuffer.empty()
     Result.Ok(scratch.reserve(0))
 }

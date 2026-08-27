@@ -30,7 +30,7 @@ func find_file(files: List<File>, path: String) -> Response {
     }
 }
 
-func handle(self: FileServer, method: String, target: String) -> Response {
+func FileServer.handle(self: FileServer, method: String, target: String) -> Response {
     branch {
         method != "GET" -> response(405, "Method Not Allowed", "text/plain", "method not allowed")
         target == "/../json_parser.pima" -> response(403, "Forbidden", "text/plain", "path escapes document root")

@@ -553,15 +553,11 @@ impl Checker<'_> {
             }
             (Ty::Variant(variant, arguments), member) => {
                 let definition = &self.hir.variant_types[variant];
+                let qualified_name = format!("{}.{member}", definition.name);
                 let has_union_method = self
                     .hir
-                    .function_named(definition.module, member)
-                    .is_some_and(|function| {
-                        self.hir.functions[function]
-                            .parameters
-                            .first()
-                            .is_some_and(|parameter| self.hir.locals[*parameter].name == "self")
-                    });
+                    .function_named(definition.module, &qualified_name)
+                    .is_some_and(|function| self.hir.functions[function].receiver.is_some());
                 if definition.kind == crate::ast::VariantKind::Enum || has_union_method {
                     self.variant_method_type(function, variant, arguments, member)
                 } else {
@@ -667,6 +663,8 @@ impl Checker<'_> {
             .module_named(module)
             .ok_or_else(|| self.error(caller, "primitive core module is unavailable"))?;
         let qualified_name = match receiver {
+            Ty::Record(record, _) => format!("{}.{name}", self.hir.records[record].name),
+            Ty::RawBytes => format!("RawBytes.{name}"),
             Ty::RawByteBuffer => format!("RawByteBuffer.{name}"),
             _ => name.to_owned(),
         };
@@ -754,17 +752,26 @@ impl Checker<'_> {
         name: &str,
     ) -> Result<Option<(FunctionId, Ty)>, FosterError> {
         let caller_module = self.hir.functions[caller].module;
-        let mut candidates = self.hir.modules[caller_module]
-            .imports
-            .values()
-            .filter_map(|module| self.hir.function_named(*module, name))
+        let resolved_receiver = self.resolved(receiver.clone());
+        let mut candidates = std::iter::once(caller_module)
+            .chain(self.hir.modules[caller_module].imports.values().copied())
+            .flat_map(|module| self.hir.modules[module].functions.values().copied())
             .filter(|function| {
                 let definition = &self.hir.functions[*function];
                 definition.public
+                    && definition.receiver.is_some()
                     && definition
-                        .parameters
-                        .first()
-                        .is_some_and(|parameter| self.hir.locals[*parameter].name == "self")
+                        .name
+                        .rsplit_once('.')
+                        .is_some_and(|(_, member)| member == name)
+                    && self.functions.get(function).is_some_and(|signature| {
+                        signature.parameters.first().is_some_and(|expected| {
+                            receiver_heads_match(
+                                &self.resolved(expected.clone()),
+                                &resolved_receiver,
+                            )
+                        })
+                    })
             })
             .collect::<Vec<_>>();
         candidates.sort_unstable_by_key(|function| function.into_raw().into_u32());
@@ -847,7 +854,8 @@ impl Checker<'_> {
         remote_read_only: bool,
     ) -> Result<Ty, FosterError> {
         let module = self.hir.records[record].module;
-        let Some(method) = self.hir.function_named(module, name) else {
+        let qualified_name = format!("{}.{name}", self.hir.records[record].name);
+        let Some(method) = self.hir.function_named(module, &qualified_name) else {
             return Err(self.error(
                 caller,
                 format!(
@@ -857,10 +865,7 @@ impl Checker<'_> {
             ));
         };
         let definition = &self.hir.functions[method];
-        let is_method = definition
-            .parameters
-            .first()
-            .is_some_and(|parameter| self.hir.locals[*parameter].name == "self");
+        let is_method = definition.receiver.is_some();
         if !is_method {
             return Err(self.error(
                 caller,
@@ -943,18 +948,15 @@ impl Checker<'_> {
         name: &str,
     ) -> Result<Ty, FosterError> {
         let definition = self.hir.variant_types[variant].clone();
-        let Some(method) = self.hir.function_named(definition.module, name) else {
+        let qualified_name = format!("{}.{name}", definition.name);
+        let Some(method) = self.hir.function_named(definition.module, &qualified_name) else {
             return Err(self.error(
                 caller,
                 format!("type `{}` has no member `{name}`", definition.name),
             ));
         };
         let function = &self.hir.functions[method];
-        if function
-            .parameters
-            .first()
-            .is_none_or(|parameter| self.hir.locals[*parameter].name != "self")
-        {
+        if function.receiver.is_none() {
             return Err(self.error(caller, format!(
                 "function `{name}` is not an instance method because its first parameter is not `self`"
             )));
@@ -1038,6 +1040,21 @@ impl Checker<'_> {
                 format!("union contract `{}` has no alternatives", definition.name),
             )
         })
+    }
+}
+
+fn receiver_heads_match(expected: &Ty, actual: &Ty) -> bool {
+    match (expected, actual) {
+        (Ty::Record(left, _), Ty::Record(right, _)) => left == right,
+        (Ty::Variant(left, _), Ty::Variant(right, _)) => left == right,
+        (Ty::RawBytes, Ty::RawBytes)
+        | (Ty::RawByteBuffer, Ty::RawByteBuffer)
+        | (Ty::RawList(_), Ty::RawList(_))
+        | (Ty::Sequence(_), Ty::Sequence(_)) => true,
+        (Ty::Reference(_, expected), Ty::Reference(_, actual)) => {
+            receiver_heads_match(expected, actual)
+        }
+        _ => false,
     }
 }
 

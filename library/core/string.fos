@@ -112,7 +112,7 @@ pub func from_code_points(characters: Sequence<CodePoint>) -> String {
 /// Returns the longest leading substring whose code points satisfy `predicate`.
 ///
 /// The predicate is evaluated from left to right and is not called after the first rejection.
-pub func take_while(self: String, predicate: Predicate<CodePoint>) -> String {
+pub func String.take_while(self: String, predicate: Predicate<CodePoint>) -> String {
     take_while_into(self, predicate, "")
 }
 
@@ -239,9 +239,9 @@ test "string algorithms preserve Unicode text" {
     assert(trim(move value) == "Foster λ")
     assert(reverse("abλ") == "λba")
     assert(starts_with?("Foster", "Fos"))
-    assert(take_while("123abc", ascii_digit?) == "123")
-    assert(take_while("abc", (_: CodePoint) -> false) == "")
-    assert(take_while("λδ1", (value: CodePoint) -> value > 127) == "λδ")
-    assert(take_while("", (_: CodePoint) -> true) == "")
+    assert("123abc".take_while(ascii_digit?) == "123")
+    assert("abc".take_while((_: CodePoint) -> false) == "")
+    assert("λδ1".take_while((value: CodePoint) -> value > 127) == "λδ")
+    assert("".take_while((_: CodePoint) -> true) == "")
     ()
 }

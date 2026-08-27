@@ -116,6 +116,109 @@ fn init_creates_a_project_that_commands_discover_from_nested_directories() {
 }
 
 #[test]
+fn projects_compile_and_run_transitive_path_dependencies() {
+    let root = temporary_directory("path-dependencies");
+    let app = root.join("app");
+    let middle = root.join("middle");
+    let leaf = root.join("leaf");
+    for project in [&app, &middle, &leaf] {
+        fs::create_dir_all(project.join("src")).unwrap();
+    }
+    fs::write(
+        app.join("foster.toml"),
+        "[package]\nname = \"app\"\nsource = \"src\"\n[dependencies]\nmiddle = { path = \"../middle\" }\n",
+    )
+    .unwrap();
+    fs::write(
+        app.join("src/main.fos"),
+        "import middle\nfunc main() -> Int { answer() }\n",
+    )
+    .unwrap();
+    fs::write(
+        middle.join("foster.toml"),
+        "[package]\nname = \"middle-package\"\nsource = \"src\"\n[dependencies]\nleaf = { path = \"../leaf\" }\n",
+    )
+    .unwrap();
+    fs::write(
+        middle.join("src/main.fos"),
+        "import helper\nimport leaf\npub func answer() -> Int { base() + increment() }\n",
+    )
+    .unwrap();
+    fs::write(
+        middle.join("src/helper.fos"),
+        "pub func increment() -> Int { 2 }\n",
+    )
+    .unwrap();
+    fs::write(
+        leaf.join("foster.toml"),
+        "[package]\nname = \"leaf-package\"\nsource = \"src\"\n",
+    )
+    .unwrap();
+    fs::write(leaf.join("src/main.fos"), "pub func base() -> Int { 40 }\n").unwrap();
+
+    let run = foster().arg("run").arg(&app).output().unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8(run.stdout).unwrap().trim(), "42");
+
+    let check = foster().arg("check").arg(&app).output().unwrap();
+    assert!(
+        check.status.success(),
+        "{}",
+        String::from_utf8_lossy(&check.stderr)
+    );
+    assert_eq!(
+        String::from_utf8(check.stdout).unwrap().trim(),
+        "ok: checked 1 module (0 implicit)"
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn project_dependencies_do_not_silently_replace_application_modules() {
+    let root = temporary_directory("dependency-collision");
+    let app = root.join("app");
+    let dependency = root.join("dependency");
+    fs::create_dir_all(app.join("src")).unwrap();
+    fs::create_dir_all(dependency.join("src")).unwrap();
+    fs::write(
+        app.join("foster.toml"),
+        "[package]\nname = \"app\"\nsource = \"src\"\n[dependencies]\nshared = { path = \"../dependency\" }\n",
+    )
+    .unwrap();
+    fs::write(app.join("src/main.fos"), "func main() -> Int { 0 }\n").unwrap();
+    fs::write(
+        app.join("src/shared.fos"),
+        "pub func application_value() -> Int { 1 }\n",
+    )
+    .unwrap();
+    fs::write(
+        dependency.join("foster.toml"),
+        "[package]\nname = \"dependency\"\nsource = \"src\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dependency.join("src/main.fos"),
+        "pub func dependency_value() -> Int { 2 }\n",
+    )
+    .unwrap();
+
+    let check = foster().arg("check").arg(&app).output().unwrap();
+    assert!(!check.status.success());
+    let stderr = String::from_utf8(check.stderr).unwrap();
+    assert!(
+        stderr.contains("module `shared` has two source files"),
+        "{stderr}"
+    );
+
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
 fn project_errors_render_their_source_locations() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/unknown_type");
     let output = foster().arg("check").arg(fixture).output().unwrap();

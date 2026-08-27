@@ -83,13 +83,7 @@ pub(super) fn infer_result_provenance(hir: &PackageHir, program: &mut Program) {
         }
         let mut parameters = parameters.into_iter().collect::<Vec<_>>();
         parameters.sort_unstable();
-        let receiver = parameters.first().is_some_and(|parameter| {
-            *parameter == 0
-                && definition
-                    .parameters
-                    .first()
-                    .is_some_and(|local| hir.locals[*local].name == "self")
-        });
+        let receiver = parameters.first() == Some(&0) && definition.receiver.is_some();
         function.result_provenance = super::ResultProvenance {
             fresh_owned: !returns_borrower,
             parameters,

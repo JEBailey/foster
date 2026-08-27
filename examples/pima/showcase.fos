@@ -15,13 +15,13 @@ func create_account(owner: String, opening_balance: Int) -> AccountResult {
     Created(Account { owner, balance: opening_balance, transactions: [] })
 }
 
-func deposit(self: Account, amount: Int) -> Int {
+func Account.deposit(self: Account, amount: Int) -> Int {
     self.balance = self.balance + amount
     self.transactions = self.transactions.append(amount)
     self.balance
 }
 
-func summary(self: Account) -> String {
+func Account.summary(self: Account) -> String {
     self.owner + " account"
 }
 

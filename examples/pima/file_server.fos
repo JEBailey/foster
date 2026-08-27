@@ -8,7 +8,7 @@ type StaticServer = {
     stylesheet: String
 }
 
-func handle(self: StaticServer, method: String, target: String) -> FileResponse {
+func StaticServer.handle(self: StaticServer, method: String, target: String) -> FileResponse {
     branch {
         method != "GET" -> FileResponse { status: 405, reason: "Method Not Allowed" }
         target == "/../json_parser.pima" -> FileResponse { status: 403, reason: "Forbidden" }

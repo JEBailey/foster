@@ -24,7 +24,7 @@ func create_account(owner: String, opening_balance: Int)
 }
 
 extend Account {
-    func deposit[mut accounts: group Account](self: ref[accounts] Account, amount: Int) {
+    func Account.deposit[mut accounts: group Account](self: ref[accounts] Account, amount: Int) {
         self.balance = self.balance + amount
         self.history.push(amount)
     }

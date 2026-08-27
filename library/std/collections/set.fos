@@ -19,27 +19,27 @@ pub func Set.from<T>(values: List<T>) -> Set<T> [consume values] {
 }
 
 /// Returns the number of values in the set.
-pub func length<T>(self: Set<T>) -> Int {
+pub func Set.length<T>(self: Set<T>) -> Int {
     self.values.length
 }
 
 /// Returns whether the set contains no values.
-pub func empty?<T>(self: Set<T>) -> Bool {
+pub func Set.empty?<T>(self: Set<T>) -> Bool {
     self.values.empty?
 }
 
 /// Creates an independent iterator in insertion order.
-pub func iterator<T>(self: Set<T>) -> Iterator<T> {
+pub func Set.iterator<T>(self: Set<T>) -> Iterator<T> {
     self.values.iterator
 }
 
 /// Returns whether `value` is present.
-pub func contains?<T>(self: Set<T>, value: T) -> Bool {
+pub func Set.contains?<T>(self: Set<T>, value: T) -> Bool {
     contains_value?(self.values, value)
 }
 
 /// Returns a set containing `value`.
-pub func insert<T>(self: Set<T>, value: T) -> Set<T> [consume self, consume value] {
+pub func Set.insert<T>(self: Set<T>, value: T) -> Set<T> [consume self, consume value] {
     branch {
         self.contains?(value) -> self
         _ -> Set { values: self.values.append(value) }
@@ -47,7 +47,7 @@ pub func insert<T>(self: Set<T>, value: T) -> Set<T> [consume self, consume valu
 }
 
 /// Returns a set without `value`.
-pub func remove<T>(self: Set<T>, value: T) -> Set<T> [consume self] {
+pub func Set.remove<T>(self: Set<T>, value: T) -> Set<T> [consume self] {
     Set { values: without(move self.values, value, []) }
 }
 

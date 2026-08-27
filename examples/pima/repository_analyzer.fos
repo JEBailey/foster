@@ -37,7 +37,7 @@ func contains_prefix_or_rest(source: String, word: String) -> Bool {
     }
 }
 
-func analyze(self: SourceWorker) -> Analysis {
+func SourceWorker.analyze(self: SourceWorker) -> Analysis {
     Analysis {
         files: 1
         lines: sequence.count(self.source, (character: CodePoint) -> character == '\n') + 1

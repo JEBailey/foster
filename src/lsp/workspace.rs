@@ -140,7 +140,7 @@ impl Workspace {
     }
 
     pub(super) fn document_symbols(&self, uri: &Uri) -> Option<DocumentSymbolResponse> {
-        let compilation = self.compile_for(uri).ok()?;
+        let compilation = self.semantic_compilation_for(uri)?;
         let module_id = module_for_uri(&compilation, uri)?;
         let module = &compilation.hir.modules[module_id];
         let source = compilation
@@ -208,7 +208,7 @@ impl Workspace {
     }
 
     pub(super) fn definition(&self, params: &TextDocumentPositionParams) -> Option<Location> {
-        let compilation = self.compile_for(&params.text_document.uri).ok()?;
+        let compilation = self.semantic_compilation_for(&params.text_document.uri)?;
         let module_id = module_for_uri(&compilation, &params.text_document.uri)?;
         let module = &compilation.hir.modules[module_id];
         let source = compilation
@@ -267,7 +267,7 @@ impl Workspace {
     }
 
     pub(super) fn hover(&self, params: &TextDocumentPositionParams) -> Option<Hover> {
-        let compilation = self.compile_for(&params.text_document.uri).ok()?;
+        let compilation = self.semantic_compilation_for(&params.text_document.uri)?;
         let module_id = module_for_uri(&compilation, &params.text_document.uri)?;
         let module = &compilation.hir.modules[module_id];
         let source = compilation
@@ -319,14 +319,13 @@ impl Workspace {
     }
 
     pub(super) fn signature_help(&self, params: &SignatureHelpParams) -> Option<SignatureHelp> {
-        let compilation = self
-            .compile_for(&params.text_document_position_params.text_document.uri)
-            .ok()?;
+        let compilation =
+            self.semantic_compilation_for(&params.text_document_position_params.text_document.uri)?;
         super::hints::signature_help(&compilation, params)
     }
 
     pub(super) fn inlay_hints(&self, params: &InlayHintParams) -> Option<Vec<InlayHint>> {
-        let compilation = self.compile_for(&params.text_document.uri).ok()?;
+        let compilation = self.semantic_compilation_for(&params.text_document.uri)?;
         super::hints::inlay_hints(&compilation, params)
     }
 
@@ -338,9 +337,9 @@ impl Workspace {
         {
             add_arguments_auto_import_completion(&document.text, offset, &mut items);
         }
-        let compilation = match self.compile_for(&position.text_document.uri) {
-            Ok(compilation) => compilation,
-            Err(_) => {
+        let compilation = match self.semantic_compilation_for(&position.text_document.uri) {
+            Some(compilation) => compilation,
+            None => {
                 return (!items.is_empty())
                     .then(|| CompletionResponse::Array(items.into_values().collect()));
             }
@@ -407,7 +406,7 @@ impl Workspace {
 
     pub(super) fn references(&self, params: &ReferenceParams) -> Option<Vec<Location>> {
         let position = &params.text_document_position;
-        let compilation = self.compile_for(&position.text_document.uri).ok()?;
+        let compilation = self.semantic_compilation_for(&position.text_document.uri)?;
         let module = module_for_uri(&compilation, &position.text_document.uri)?;
         let source = compilation
             .package
@@ -429,7 +428,7 @@ impl Workspace {
             return None;
         }
         let position = &params.text_document_position;
-        let compilation = self.compile_for(&position.text_document.uri).ok()?;
+        let compilation = self.semantic_compilation_for(&position.text_document.uri)?;
         let module = module_for_uri(&compilation, &position.text_document.uri)?;
         let source = compilation
             .package
@@ -1249,9 +1248,10 @@ fn member_function(
     let ty = compilation.types.expression_type(object)?;
     let record_id = record_from_type(&compilation.types, ty)?;
     let record = &compilation.hir.records[record_id];
+    let qualified_name = format!("{}.{member}", record.name);
     let function = compilation.hir.modules[record.module]
         .functions
-        .get(member)
+        .get(&qualified_name)
         .copied()?;
     let receiver_matches = compilation
         .types
@@ -1263,12 +1263,7 @@ fn member_function(
                 crate::types::Type::Record { record, .. } if record == record_id
             )
         });
-    (receiver_matches
-        && compilation.hir.functions[function]
-            .parameters
-            .first()
-            .is_some_and(|parameter| compilation.hir.locals[*parameter].name == "self"))
-    .then_some(function)
+    (receiver_matches && compilation.hir.functions[function].receiver.is_some()).then_some(function)
 }
 
 fn required_method(

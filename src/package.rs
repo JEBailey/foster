@@ -11,6 +11,7 @@ use crate::error::FosterError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModuleOrigin {
     Input,
+    Dependency,
     Embedded,
 }
 
@@ -220,34 +221,52 @@ impl Package {
         root: impl AsRef<Path>,
         overlays: &HashMap<Utf8PathBuf, String>,
     ) -> Result<Self, FosterError> {
-        let root = root.as_ref();
-        if !root.is_dir() {
-            return Err(FosterError::runtime(format!(
-                "package source root `{}` is not a directory",
-                root.display()
-            )));
-        }
-        let root = Utf8PathBuf::from_path_buf(root.to_path_buf()).map_err(|path| {
-            FosterError::runtime(format!(
-                "package source root is not valid UTF-8: `{}`",
-                path.display()
-            ))
-        })?;
+        let root = utf8_source_root(root.as_ref())?;
         let mut package = Self {
-            root,
+            root: root.clone(),
             modules: BTreeMap::new(),
         };
-        package.discover_modules(overlays)?;
-        package.install_standard_modules_if_imported()?;
-        package.install_bytes_bootstrap()?;
-        package.install_byte_buffer_bootstrap()?;
-        package.install_list_bootstrap()?;
-        package.install_string_bootstrap()?;
-        package.install_symbol_bootstrap()?;
-        package
-            .validate()
-            .map_err(|error| package.locate_compiler_error(error))?;
+        package.discover_modules_from(&root, ModuleOrigin::Input, None, overlays)?;
+        package.finish_loading()?;
         Ok(package)
+    }
+
+    pub fn load_project(project: &crate::project::Project) -> Result<Self, FosterError> {
+        Self::load_project_with_overlays(project, &HashMap::new())
+    }
+
+    pub fn load_project_with_overlays(
+        project: &crate::project::Project,
+        overlays: &HashMap<Utf8PathBuf, String>,
+    ) -> Result<Self, FosterError> {
+        let root = utf8_source_root(&project.source_root)?;
+        let mut package = Self {
+            root: root.clone(),
+            modules: BTreeMap::new(),
+        };
+        package.discover_modules_from(&root, ModuleOrigin::Input, None, overlays)?;
+        for dependency in project.resolve_dependencies()? {
+            let dependency_root = utf8_source_root(&dependency.project.source_root)?;
+            package.discover_modules_from(
+                &dependency_root,
+                ModuleOrigin::Dependency,
+                Some(&dependency.name),
+                overlays,
+            )?;
+        }
+        package.finish_loading()?;
+        Ok(package)
+    }
+
+    fn finish_loading(&mut self) -> Result<(), FosterError> {
+        self.install_standard_modules_if_imported()?;
+        self.install_bytes_bootstrap()?;
+        self.install_byte_buffer_bootstrap()?;
+        self.install_list_bootstrap()?;
+        self.install_string_bootstrap()?;
+        self.install_symbol_bootstrap()?;
+        self.validate()
+            .map_err(|error| self.locate_compiler_error(error))
     }
 
     fn install_string_bootstrap(&mut self) -> Result<(), FosterError> {
@@ -439,49 +458,81 @@ impl Package {
             .count()
     }
 
-    fn discover_modules(
+    fn discover_modules_from(
         &mut self,
+        root: &Utf8Path,
+        origin: ModuleOrigin,
+        prefix: Option<&str>,
         overlays: &HashMap<Utf8PathBuf, String>,
     ) -> Result<(), FosterError> {
-        let entries = WalkDir::new(&self.root)
+        let entries = WalkDir::new(root)
             .follow_links(false)
             .sort_by_file_name()
             .into_iter()
-            .filter_entry(|entry| !is_ignored_directory(entry));
+            .filter_entry(|entry| !is_ignored_directory(entry))
+            .map(|entry| {
+                let entry = entry.map_err(|error| {
+                    FosterError::runtime(format!("cannot walk `{root}`: {error}"))
+                })?;
+                let is_directory = entry.file_type().is_dir();
+                let path = Utf8PathBuf::from_path_buf(entry.into_path()).map_err(|path| {
+                    FosterError::runtime(format!(
+                        "source path is not valid UTF-8: `{}`",
+                        path.display()
+                    ))
+                })?;
+                Ok((path, is_directory))
+            })
+            .collect::<Result<Vec<_>, FosterError>>()?;
 
-        for entry in entries {
-            let entry = entry.map_err(|error| {
-                FosterError::runtime(format!("cannot walk `{}`: {error}", self.root))
-            })?;
-            let path = Utf8PathBuf::from_path_buf(entry.into_path()).map_err(|path| {
-                FosterError::runtime(format!(
-                    "source path is not valid UTF-8: `{}`",
-                    path.display()
-                ))
-            })?;
-            if path == self.root {
+        let mut rewrites = HashMap::new();
+        if let Some(prefix) = prefix {
+            self.ensure_implicit(&[prefix.to_owned()], origin);
+            rewrites.insert("main".to_owned(), vec![prefix.to_owned()]);
+            for (path, is_directory) in &entries {
+                if path == root {
+                    continue;
+                }
+                let relative = path
+                    .strip_prefix(root)
+                    .expect("walked source paths are beneath the package root");
+                if *is_directory || path.extension() == Some("fos") {
+                    let local = module_components(relative, !is_directory)?;
+                    rewrites.insert(local.join("."), mounted_components(prefix, &local));
+                }
+            }
+        }
+
+        for (path, is_directory) in entries {
+            if path == root {
                 continue;
             }
             let relative = path
-                .strip_prefix(&self.root)
+                .strip_prefix(root)
                 .expect("walked source paths are beneath the package root");
-            if path.is_dir() {
-                self.ensure_implicit(&module_components(relative, false)?);
+            if is_directory {
+                let local = module_components(relative, false)?;
+                let mounted =
+                    prefix.map_or_else(|| local.clone(), |name| mounted_components(name, &local));
+                self.ensure_implicit(&mounted, origin);
             } else if path.extension() == Some("fos") {
-                self.add_explicit(module_components(relative, true)?, path, overlays)?;
+                let local = module_components(relative, true)?;
+                let mounted =
+                    prefix.map_or_else(|| local.clone(), |name| mounted_components(name, &local));
+                self.add_explicit(mounted, path, origin, prefix.map(|_| &rewrites), overlays)?;
             }
         }
         Ok(())
     }
 
-    fn ensure_implicit(&mut self, path: &[String]) {
+    fn ensure_implicit(&mut self, path: &[String], origin: ModuleOrigin) {
         let name = path.join(".");
         self.modules.entry(name.clone()).or_insert(Module {
             name,
             source_path: None,
             program: None,
             source: None,
-            origin: ModuleOrigin::Input,
+            origin,
         });
     }
 
@@ -489,6 +540,8 @@ impl Package {
         &mut self,
         path: Vec<String>,
         source_path: Utf8PathBuf,
+        origin: ModuleOrigin,
+        import_rewrites: Option<&HashMap<String, Vec<String>>>,
         overlays: &HashMap<Utf8PathBuf, String>,
     ) -> Result<(), FosterError> {
         let name = path.join(".");
@@ -500,19 +553,26 @@ impl Package {
             },
             Ok,
         )?;
-        let program = crate::parse(&source).map_err(|mut error| {
+        let mut program = crate::parse(&source).map_err(|mut error| {
             error.message = format!("{source_path}: {}", error.message);
             if error.source_module.is_none() {
                 error.source_module = Some(name.clone());
             }
             error
         })?;
+        if let Some(import_rewrites) = import_rewrites {
+            for import in &mut program.imports {
+                if let Some(rewritten) = import_rewrites.get(&import.path.join(".")) {
+                    import.path.clone_from(rewritten);
+                }
+            }
+        }
         let module = self.modules.entry(name.clone()).or_insert(Module {
             name,
             source_path: None,
             program: None,
             source: None,
-            origin: ModuleOrigin::Input,
+            origin,
         });
         if let Some(existing) = &module.source_path {
             return Err(FosterError::runtime(format!(
@@ -523,6 +583,7 @@ impl Package {
         module.source_path = Some(source_path);
         module.program = Some(program);
         module.source = Some(source);
+        module.origin = origin;
         Ok(())
     }
 
@@ -585,8 +646,9 @@ impl Package {
                         )));
                     }
                 }
-                if let Some((owner, _)) = function.name.split_once('.') {
-                    if !program.records.iter().any(|record| record.name == owner)
+                if let Some(owner) = function.owner.as_deref() {
+                    if !function.receiver
+                        && !program.records.iter().any(|record| record.name == owner)
                         && !matches!(owner, "Byte" | "Bytes" | "ByteBuffer" | "String")
                     {
                         return Err(FosterError::runtime(format!(
@@ -594,18 +656,11 @@ impl Package {
                             module.name, function.name
                         )));
                     }
-                    if function
-                        .parameters
-                        .first()
-                        .is_some_and(|parameter| parameter.name == "self")
-                        && function.intrinsic.is_none()
-                    {
-                        return Err(FosterError::runtime(format!(
-                            "associated function `{}` cannot declare a `self` parameter; declare an instance method as `func {}`",
-                            function.name,
-                            function.name.split_once('.').unwrap().1
-                        )));
-                    }
+                } else if function.receiver {
+                    return Err(FosterError::runtime(format!(
+                        "instance method `{}` must qualify its name with its receiver type",
+                        function.name
+                    )));
                 }
                 if !definitions.insert(function.name.as_str()) {
                     return Err(FosterError::runtime(format!(
@@ -806,6 +861,32 @@ fn intrinsic_key_registered(key: &str) -> bool {
             | "tcp.close_connection"
             | "float.format"
     )
+}
+
+fn utf8_source_root(root: &Path) -> Result<Utf8PathBuf, FosterError> {
+    if !root.is_dir() {
+        return Err(FosterError::runtime(format!(
+            "package source root `{}` is not a directory",
+            root.display()
+        )));
+    }
+    Utf8PathBuf::from_path_buf(root.to_path_buf()).map_err(|path| {
+        FosterError::runtime(format!(
+            "package source root is not valid UTF-8: `{}`",
+            path.display()
+        ))
+    })
+}
+
+fn mounted_components(prefix: &str, local: &[String]) -> Vec<String> {
+    let mut mounted = vec![prefix.to_owned()];
+    let local = if local.first().is_some_and(|name| name == "main") {
+        &local[1..]
+    } else {
+        local
+    };
+    mounted.extend_from_slice(local);
+    mounted
 }
 
 fn module_components(path: &Utf8Path, strip_extension: bool) -> Result<Vec<String>, FosterError> {

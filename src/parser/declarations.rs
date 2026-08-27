@@ -377,6 +377,7 @@ impl Parser {
             &TokenKind::RParen,
             "expected `)` after required method parameters",
         )?;
+        let receiver = self.receiver_parameter(&parameters)?;
         let return_type = if self.take(&TokenKind::Arrow) {
             Some(self.type_expr()?)
         } else {
@@ -387,6 +388,7 @@ impl Parser {
             span: start..self.tokens[self.current.saturating_sub(1)].range.end,
             documentation,
             name,
+            receiver,
             public,
             type_parameters,
             groups,
@@ -423,11 +425,13 @@ impl Parser {
         let start = self.peek().range.start;
         let public = self.take(&TokenKind::Pub);
         self.expect(&TokenKind::Func, "expected `func`")?;
-        let mut name = self.expect_ident("expected function name")?;
+        let first_name = self.expect_ident("expected function name")?;
+        let mut owner = None;
+        let mut name = first_name.clone();
         if self.take(&TokenKind::Dot) {
             let member = self.expect_ident("expected associated function name after `.`")?;
-            name.push('.');
-            name.push_str(&member);
+            owner = Some(first_name.clone());
+            name = format!("{first_name}.{member}");
             if self.at(&TokenKind::Dot) {
                 return Err(
                     self.error("associated function declarations accept one type qualifier")
@@ -446,6 +450,7 @@ impl Parser {
             }
         }
         self.expect(&TokenKind::RParen, "expected `)` after parameters")?;
+        let receiver = self.receiver_parameter(&parameters)?;
         self.newlines();
         let return_type = if self.take(&TokenKind::Arrow) {
             Some(self.type_expr()?)
@@ -485,6 +490,8 @@ impl Parser {
             span: start..end,
             documentation,
             name,
+            owner,
+            receiver,
             public,
             intrinsic,
             type_parameters,
@@ -498,6 +505,20 @@ impl Parser {
             suspend_span,
             body,
         })
+    }
+
+    fn receiver_parameter(&self, parameters: &[Parameter]) -> Result<bool, FosterError> {
+        let receiver = parameters
+            .first()
+            .is_some_and(|parameter| parameter.name == "self");
+        if parameters
+            .iter()
+            .skip(usize::from(receiver))
+            .any(|parameter| parameter.name == "self")
+        {
+            return Err(self.error("`self` is a receiver and must be the first parameter"));
+        }
+        Ok(receiver)
     }
 
     pub(super) fn function_parameters(

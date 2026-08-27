@@ -15,27 +15,27 @@ pub func Queue.empty<T>() -> Queue<T> {
 }
 
 /// Returns the number of queued values.
-pub func length<T>(self: Queue<T>) -> Int {
+pub func Queue.length<T>(self: Queue<T>) -> Int {
     self.values.length
 }
 
 /// Returns whether the queue contains no values.
-pub func empty?<T>(self: Queue<T>) -> Bool {
+pub func Queue.empty?<T>(self: Queue<T>) -> Bool {
     self.values.empty?
 }
 
 /// Creates an independent iterator from front to back.
-pub func iterator<T>(self: Queue<T>) -> Iterator<T> {
+pub func Queue.iterator<T>(self: Queue<T>) -> Iterator<T> {
     self.values.iterator
 }
 
 /// Returns a queue with `value` added at the back.
-pub func push<T>(self: Queue<T>, value: T) -> Queue<T> [consume self, consume value] {
+pub func Queue.push<T>(self: Queue<T>, value: T) -> Queue<T> [consume self, consume value] {
     Queue { values: self.values.append(value) }
 }
 
 /// Removes the front value and returns the remaining queue.
-pub func pop<T>(self: Queue<T>) -> Option<QueueItem<T>> [consume self] {
+pub func Queue.pop<T>(self: Queue<T>) -> Option<QueueItem<T>> [consume self] {
     branch {
         self.values.empty? -> Option.None
         _ -> Option.Some(QueueItem { value: self.values.head, remaining: Queue { values: self.values.rest } })

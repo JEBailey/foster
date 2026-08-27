@@ -36,7 +36,7 @@ func main() -> Int {
             "rule-5-frame-loan-across-await",
             r#"
 type Worker = {}
-func value(self: Worker) -> Int { 1 }
+func Worker.value(self: Worker) -> Int { 1 }
 func wait(worker: Remote<Worker>) -> Int {
     let values = [10]
     let selected = ref values[0]
