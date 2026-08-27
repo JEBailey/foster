@@ -8,73 +8,6 @@ impl Checker<'_> {
         callee: ExprId,
         arguments: &[ExprId],
     ) -> Result<Ty, FosterError> {
-        if let hir::Expr::Member { object, name } = self.hir.expressions[callee].clone()
-            && name == "push"
-        {
-            if arguments.len() != 1 {
-                return Err(self.error(function, "`push` expects one argument"));
-            }
-            let object = self.infer_expression(function, object)?;
-            if matches!(self.resolved(object.clone()), Ty::RawByteBuffer) {
-                // Raw storage declares its own intrinsic `push` method below.
-            } else {
-                let element = self.infer_expression(function, arguments[0])?;
-                if self.is_byte_buffer_type(&object) {
-                    self.unify(Ty::Byte, element.clone(), function)?;
-                } else {
-                    self.unify(object, self.list_type(element.clone()), function)?;
-                }
-                self.expressions.insert(
-                    callee,
-                    Ty::Callable {
-                        parameters: vec![element],
-                        parameter_modes: vec![crate::ast::ParameterMode::Borrow],
-                        result: Box::new(Ty::Unit),
-                        erased: false,
-                        effects: vec![crate::ast::Effect {
-                            kind: crate::ast::EffectKind::Reshape,
-                            target: crate::ast::GroupPath::root("self").child("items"),
-                        }],
-                        suspends: false,
-                    },
-                );
-                return Ok(Ty::Unit);
-            }
-        }
-
-        if let hir::Expr::Member { object, name } = self.hir.expressions[callee].clone()
-            && name == "in?"
-        {
-            let receiver = self.infer_expression(function, object)?;
-            for argument in arguments {
-                let argument = self.infer_expression(function, *argument)?;
-                self.unify(receiver.clone(), argument, function)?;
-            }
-            self.expressions.insert(
-                callee,
-                Ty::Function(vec![receiver.clone(); arguments.len()], Box::new(Ty::Bool)),
-            );
-            return Ok(Ty::Bool);
-        }
-        if let hir::Expr::Member { object, name } = self.hir.expressions[callee].clone()
-            && name == "append"
-        {
-            if arguments.len() != 1 {
-                return Err(self.error(function, "`append` expects one argument"));
-            }
-            let element = self.fresh();
-            let object_ty = self.infer_expression(function, object)?;
-            self.unify(object_ty, self.list_type(element.clone()), function)?;
-            let argument = self.infer_expression(function, arguments[0])?;
-            self.unify(element.clone(), argument, function)?;
-            let result = self.list_type(element.clone());
-            self.expressions.insert(
-                callee,
-                Ty::Function(vec![element], Box::new(result.clone())),
-            );
-            return Ok(result);
-        }
-
         if let hir::Expr::Name(ResolvedName::Builtin(Builtin::Print | Builtin::Println)) =
             self.hir.expressions[callee]
         {
@@ -427,6 +360,9 @@ impl Checker<'_> {
         name: &str,
     ) -> Result<Ty, FosterError> {
         let object = self.resolved(object);
+        if let Ty::Reference(_, value) = object {
+            return self.infer_member(function, *value, name);
+        }
         if self.is_string_type(&object) {
             if name == "value" {
                 let Ty::Record(record, arguments) = object else {
@@ -440,7 +376,7 @@ impl Checker<'_> {
                 "head" => Ok(Ty::CodePoint),
                 "rest" => Ok(self.string_type()),
                 "utf8" => Ok(self.bytes_type()),
-                "iterator" => self.collection_iterator(Ty::CodePoint, function),
+                "iterator" => self.collection_iterator_method(Ty::CodePoint, function),
                 member => {
                     self.primitive_method_type(function, self.string_type(), "core.string", member)
                 }
@@ -452,7 +388,7 @@ impl Checker<'_> {
                 "length" => Ok(Ty::Int),
                 "head" => Ok(Ty::Byte),
                 "rest" => Ok(self.bytes_type()),
-                "iterator" => self.collection_iterator(Ty::Byte, function),
+                "iterator" => self.collection_iterator_method(Ty::Byte, function),
                 member => {
                     self.primitive_method_type(function, self.bytes_type(), "core.bytes", member)
                 }
@@ -482,11 +418,7 @@ impl Checker<'_> {
                 "length" => Ok(Ty::Int),
                 "head" => Ok(element.clone()),
                 "rest" => Ok(self.list_type(element.clone())),
-                "iterator" => self.collection_iterator(element.clone(), function),
-                "append" => Ok(Ty::Function(
-                    vec![element.clone()],
-                    Box::new(self.list_type(element)),
-                )),
+                "iterator" => self.collection_iterator_method(element.clone(), function),
                 member => self.primitive_method_type(function, object, "core.list", member),
             };
         }
@@ -498,7 +430,7 @@ impl Checker<'_> {
             (Ty::RawBytes, "length") => Ok(Ty::Int),
             (Ty::RawBytes, "head") => Ok(Ty::Byte),
             (Ty::RawBytes, "rest") => Ok(Ty::RawBytes),
-            (Ty::RawBytes, "iterator") => self.collection_iterator(Ty::Byte, function),
+            (Ty::RawBytes, "iterator") => self.collection_iterator_method(Ty::Byte, function),
             (Ty::RawBytes, member) => {
                 self.primitive_method_type(function, Ty::RawBytes, "core.bytes", member)
             }
@@ -507,20 +439,20 @@ impl Checker<'_> {
             (Ty::RawByteBuffer, member) => {
                 self.primitive_method_type(function, Ty::RawByteBuffer, "core.bytes.buffer", member)
             }
-            (Ty::Sequence(_), "empty?") => Ok(Ty::Bool),
-            (Ty::Sequence(_), "length") => Ok(Ty::Int),
-            (Ty::Sequence(element), "head") => Ok(*element),
-            (sequence @ Ty::Sequence(_), "rest") => Ok(sequence),
-            (Ty::Sequence(element), "iterator") => self.collection_iterator(*element, function),
+            (Ty::Sequence(_), "empty?") => Ok(self.sequence_accessor_method(Ty::Bool)),
+            (Ty::Sequence(_), "length") => Ok(self.sequence_accessor_method(Ty::Int)),
+            (Ty::Sequence(element), "head") => Ok(self.sequence_accessor_method(*element)),
+            (sequence @ Ty::Sequence(_), "rest") => Ok(self.sequence_accessor_method(sequence)),
+            (Ty::Sequence(element), "iterator") => {
+                self.collection_iterator_method(*element, function)
+            }
             (Ty::RawList(_), "empty?") => Ok(Ty::Bool),
             (Ty::RawList(_), "length") => Ok(Ty::Int),
             (Ty::RawList(element), "head") => Ok(*element),
             (list @ Ty::RawList(_), "rest") => Ok(list),
-            (Ty::RawList(element), "iterator") => self.collection_iterator(*element, function),
-            (Ty::RawList(element), "append") => Ok(Ty::Function(
-                vec![(*element).clone()],
-                Box::new(Ty::RawList(element)),
-            )),
+            (Ty::RawList(element), "iterator") => {
+                self.collection_iterator_method(*element, function)
+            }
             (Ty::Record(record, arguments), member) => {
                 if self
                     .effective_record_fields(record, &arguments)?
@@ -531,22 +463,7 @@ impl Checker<'_> {
                 } else if let Some(method) =
                     self.effective_method_type(function, record, &arguments, member)?
                 {
-                    match method {
-                        Ty::Callable {
-                            ref parameters,
-                            ref result,
-                            ref effects,
-                            suspends: false,
-                            ..
-                        } if parameters.is_empty()
-                            && effects
-                                .iter()
-                                .all(|effect| effect.kind == crate::ast::EffectKind::Read) =>
-                        {
-                            Ok((**result).clone())
-                        }
-                        method => Ok(method),
-                    }
+                    Ok(method)
                 } else {
                     self.record_method_type(function, record, arguments, member, false, false)
                 }
@@ -651,6 +568,38 @@ impl Checker<'_> {
         Ok(Ty::Record(record, vec![element]))
     }
 
+    fn collection_iterator_method(
+        &self,
+        element: Ty,
+        function: FunctionId,
+    ) -> Result<Ty, FosterError> {
+        Ok(Ty::Callable {
+            parameters: Vec::new(),
+            parameter_modes: Vec::new(),
+            result: Box::new(self.collection_iterator(element, function)?),
+            erased: false,
+            effects: vec![crate::ast::Effect {
+                kind: crate::ast::EffectKind::Read,
+                target: crate::ast::GroupPath::root("self"),
+            }],
+            suspends: false,
+        })
+    }
+
+    fn sequence_accessor_method(&self, result: Ty) -> Ty {
+        Ty::Callable {
+            parameters: Vec::new(),
+            parameter_modes: Vec::new(),
+            result: Box::new(result),
+            erased: false,
+            effects: vec![crate::ast::Effect {
+                kind: crate::ast::EffectKind::Read,
+                target: crate::ast::GroupPath::root("self"),
+            }],
+            suspends: false,
+        }
+    }
+
     fn primitive_method_type(
         &mut self,
         caller: FunctionId,
@@ -671,13 +620,8 @@ impl Checker<'_> {
         let function = self
             .hir
             .function_named(module, &qualified_name)
-            .ok_or_else(|| self.error(caller, format!("type has no member `{name}`")))?;
+            .ok_or_else(|| self.error(caller, format!("type has no member `{qualified_name}`")))?;
         let definition = &self.hir.functions[function];
-        let property = definition.intrinsic.is_none()
-            && definition
-                .effects
-                .iter()
-                .all(|effect| effect.kind == crate::ast::EffectKind::Read);
         if !definition.public && definition.module != self.hir.functions[caller].module {
             return Err(self.error(caller, format!("method `{name}` is private")));
         }
@@ -697,30 +641,14 @@ impl Checker<'_> {
         parameters.remove(0);
         parameter_modes.remove(0);
         let result = self.instantiate(signature.result, &mut generics);
-        let method = Ty::Callable {
+        Ok(Ty::Callable {
             parameters,
             parameter_modes,
-            result: Box::new(result.clone()),
+            result: Box::new(result),
             erased: false,
             effects: callable_effects(self.hir, function),
             suspends: definition.suspends,
-        };
-        match &method {
-            Ty::Callable {
-                parameters,
-                effects,
-                suspends: false,
-                ..
-            } if property
-                && parameters.is_empty()
-                && effects
-                    .iter()
-                    .all(|effect| effect.kind == crate::ast::EffectKind::Read) =>
-            {
-                Ok(result)
-            }
-            _ => Ok(method),
-        }
+        })
     }
 
     fn contract_method_type(
@@ -753,8 +681,14 @@ impl Checker<'_> {
     ) -> Result<Option<(FunctionId, Ty)>, FosterError> {
         let caller_module = self.hir.functions[caller].module;
         let resolved_receiver = self.resolved(receiver.clone());
+        let inherent_module = match &resolved_receiver {
+            Ty::Record(record, _) => Some(self.hir.records[*record].module),
+            Ty::Variant(variant, _) => Some(self.hir.variant_types[*variant].module),
+            _ => None,
+        };
         let mut candidates = std::iter::once(caller_module)
             .chain(self.hir.modules[caller_module].imports.values().copied())
+            .filter(|module| Some(*module) != inherent_module)
             .flat_map(|module| self.hir.modules[module].functions.values().copied())
             .filter(|function| {
                 let definition = &self.hir.functions[*function];

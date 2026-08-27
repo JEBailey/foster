@@ -16,7 +16,7 @@ func TextSlice.rest(self: TextSlice) -> String {
 }
 
 func describe(value: Named & Sequence<CodePoint>) -> String {
-    value.name + ": " + value.head.string
+    value.name + ": " + value.head().string
 }
 
 func main() -> String {

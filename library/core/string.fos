@@ -104,8 +104,8 @@ func to_code_points_into(value: String, result: List<CodePoint>) -> List<CodePoi
 /// Concatenates a sequence of code points into a string.
 pub func from_code_points(characters: Sequence<CodePoint>) -> String {
     branch {
-        characters.empty? -> ""
-        _ -> characters.head.string + from_code_points(characters.rest)
+        characters.empty?() -> ""
+        _ -> characters.head().string + from_code_points(characters.rest())
     }
 }
 

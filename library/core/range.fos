@@ -38,5 +38,5 @@ pub func Range.rest<T>(self: Range<T>) -> Sequence<T> {
 
 /// Creates an independent iterator over the range values.
 pub func Range.iterator<T>(self: Range<T>) -> Iterator<T> {
-    self.values.iterator
+    self.values.iterator()
 }

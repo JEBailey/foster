@@ -24,15 +24,15 @@ type SequenceIterator<T> = & Iterator<T> & {
 /// Advances a sequence-backed iterator unless it has been exhausted.
 func SequenceIterator.next<T>(self: SequenceIterator<T>) -> Option<T> {
     branch {
-        self.remaining.empty? -> Option.None
+        self.remaining.empty?() -> Option.None
         _ -> self.advance()
     }
 }
 
 /// Removes and returns the current head of a non-empty sequence cursor.
 func SequenceIterator.advance<T>(self: SequenceIterator<T>) -> Option<T> {
-    let value = self.remaining.head
-    self.remaining = self.remaining.rest
+    let value = self.remaining.head()
+    self.remaining = self.remaining.rest()
     Option.Some(value)
 }
 
@@ -113,7 +113,7 @@ pub func Iterator.collect<T>(self: Iterator<T>) -> List<T> [mut self] {
 }
 
 test "iterator consumers process every remaining value" {
-    let iterator = [1, 2, 3].iterator
+    let iterator = [1, 2, 3].iterator()
     let total = iterator.fold(0, (sum: Int, value: Int) -> sum + value)
     assert(total == 6)
 }

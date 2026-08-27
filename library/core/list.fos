@@ -12,6 +12,17 @@ pub type List<T> = {
     value: RawList<T>
 }
 
+/// Appends `value` to this list in place.
+pub func List.push<T>(self: List<T>, value: T) -> () [reshape self.items] = intrinsic("list.push")
+
+/// Returns this list with `value` appended.
+pub func List.append<T>(self: List<T>, value: T) -> List<T> [consume self] = intrinsic("list.append")
+
+/// Returns whether this list contains `expected`.
+pub func List.contains?<T>(self: List<T>, expected: T) -> Bool {
+    sequence.contains?(self, expected)
+}
+
 /// Returns the first element, or `None` when the list is empty.
 pub func first<T>(values: List<T>) -> Option<T> {
     branch {

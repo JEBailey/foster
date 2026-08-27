@@ -62,6 +62,7 @@ pub(super) struct Checker<'a> {
     pub(super) locals: HashMap<LocalId, Ty>,
     pub(super) local_groups: HashMap<LocalId, String>,
     pub(super) expressions: HashMap<ExprId, Ty>,
+    pub(super) bare_method_members: HashSet<ExprId>,
     pub(super) extension_methods: HashMap<ExprId, FunctionId>,
     pub(super) member_constraints: Vec<MemberConstraint>,
     pub(super) diagnostics: Vec<crate::diagnostic::Diagnostic>,

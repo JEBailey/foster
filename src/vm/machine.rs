@@ -488,7 +488,9 @@ impl Machine {
                 } => {
                     let mut list = read(frame, object)?;
                     let Some(values) = list.list_value_mut() else {
-                        return Err(RuntimeError::runtime("`append` requires a List"));
+                        return Err(RuntimeError::runtime(
+                            "List.append requires a List receiver",
+                        ));
                     };
                     values.push(read(frame, value)?);
                     write(frame, destination, list)?;

@@ -30,5 +30,5 @@ func compare_score(left: Ordered<Version>, right: Version) -> Int {
 
 func main() -> Int {
     let version = Version { number: 7 }
-    version.hash + compare_score(version, Version { number: 8 })
+    version.hash() + compare_score(version, Version { number: 8 })
 }

@@ -141,8 +141,9 @@ zero-conversion view: generic sequence functions operate on the original string 
 Foster's settled declaration syntax composes the same contract into a user type as
 `type Foo = & Sequence<CodePoint> & { }`. Sequence members are required accessor functions rather than
 implied storage, so constructors do not initialize `empty?`, `length`, `head`, or `rest`. A user
-type supplies compatible instance functions; read-only zero-argument accessors retain property
-syntax such as `value.head`. Conformance is statically duck typed, so matching readable fields can
+type supplies compatible instance functions. Declared receiver functions always use call syntax,
+so a sequence contract method is invoked as `value.head()`. Conformance is statically duck typed,
+so matching readable fields can
 also satisfy those accessor requirements without an `&` clause. Composition adds no wrapper or
 conversion. Functions in `std.sequence` are generic algorithms rather than stored members: they
 are not copied into `Foo`, and already accept it through its `Sequence<T>` contract.
@@ -164,7 +165,7 @@ receiver methods available as extensions, so pipelines remain fluent while each 
 module can independently implement the required `next` method:
 
 ```foster
-values.iterator.map(transform).filter(predicate).take(10).collect()
+values.iterator().map(transform).filter(predicate).take(10).collect()
 ```
 
 Adaptors do no element work when constructed. Their `next` implementations pull only enough input
@@ -188,7 +189,7 @@ Iterable<T>
 Map<K, V> & Collection<Entry<K, V>>
 ```
 
-`List<T>`, `String`, and `Sequence<T>` expose `.iterator` directly. Creating the cursor borrows the
+`List<T>`, `String`, and `Sequence<T>` expose `.iterator()` directly. Creating the cursor borrows the
 source at the language level; the VM materializes an independent cursor over the source's read-only
 value view, so advancing it neither consumes nor mutates the collection. The explicit
 `Iterator.from_sequence` adapter remains available when ownership should be transferred.
@@ -209,7 +210,7 @@ lowercase hexadecimal encoding, and checked hexadecimal decoding. The VM stores 
 contiguous byte storage rather than `List<Byte>`.
 
 `ByteBuffer` is mutable growable storage with direct indexing, indexed replacement, `push`,
-`extend`, `clear`, `truncate`, and `reserve`. `buffer.snapshot` borrows the buffer and copies its
+`extend`, `clear`, `truncate`, and `reserve`. `buffer.snapshot()` borrows the buffer and copies its
 current contents. `(move buffer).freeze()` consumes it and transfers the contents into immutable
 `Bytes`. Structural mutations invalidate outstanding element loans.
 

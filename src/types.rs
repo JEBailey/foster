@@ -59,7 +59,6 @@ pub struct TypeInformation {
     pub constants: HashMap<ConstantId, TypeId>,
     pub record_names: HashMap<RecordId, String>,
     pub record_fields: HashMap<RecordId, HashSet<String>>,
-    pub record_properties: HashMap<RecordId, HashSet<String>>,
     pub record_methods: HashMap<RecordId, HashSet<String>>,
     pub variant_names: HashMap<VariantTypeId, String>,
 }

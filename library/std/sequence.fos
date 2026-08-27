@@ -11,15 +11,15 @@ pub func map<T, U>(values: Sequence<T>, transform: func(T) -> U) -> List<U> {
 /// Maps the remaining sequence elements into the result accumulator.
 func map_into<T, U>(values: Sequence<T>, transform: func(T) -> U, result: List<U>) -> List<U> [consume result] {
     branch {
-        values.empty? -> result
+        values.empty?() -> result
         _ -> map_next(values, transform, move result)
     }
 }
 
 /// Transforms the next sequence element and appends it to the accumulator.
 func map_next<T, U>(values: Sequence<T>, transform: func(T) -> U, result: List<U>) -> List<U> {
-    let mapped = transform(values.head)
-    map_into(values.rest, transform, result.append(mapped))
+    let mapped = transform(values.head())
+    map_into(values.rest(), transform, result.append(mapped))
 }
 
 /// Returns sequence elements for which `include` evaluates to true.
@@ -30,9 +30,9 @@ pub func filter<T>(values: Sequence<T>, include: Predicate<T>) -> List<T> {
 /// Filters the remaining sequence elements into the result accumulator.
 func filter_into<T>(values: Sequence<T>, include: Predicate<T>, result: List<T>) -> List<T> [consume result] {
     branch {
-        values.empty? -> result
-        include(values.head) -> filter_into(values.rest, include, result.append(values.head))
-        _ -> filter_into(values.rest, include, move result)
+        values.empty?() -> result
+        include(values.head()) -> filter_into(values.rest(), include, result.append(values.head()))
+        _ -> filter_into(values.rest(), include, move result)
     }
 }
 
@@ -41,8 +41,8 @@ func filter_into<T>(values: Sequence<T>, include: Predicate<T>, result: List<T>)
 /// The sequence is consumed because the returned generic element is owned.
 pub func first<T>(values: Sequence<T>) -> Option<T> [consume values] {
     branch {
-        values.empty? -> Option.None
-        _ -> Option.Some(values.head)
+        values.empty?() -> Option.None
+        _ -> Option.Some(values.head())
     }
 }
 
@@ -51,43 +51,43 @@ pub func first<T>(values: Sequence<T>) -> Option<T> [consume values] {
 /// The sequence is consumed because the returned generic element is owned.
 pub func last<T>(values: Sequence<T>) -> Option<T> [consume values] {
     branch {
-        values.empty? -> Option.None
-        values.rest.empty? -> Option.Some(values.head)
-        _ -> last(values.rest)
+        values.empty?() -> Option.None
+        values.rest().empty?() -> Option.Some(values.head())
+        _ -> last(values.rest())
     }
 }
 
 /// Reduces the sequence from left to right, consuming its elements and the initial accumulator.
 pub func fold<T, U>(values: Sequence<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [consume values, consume initial] {
     branch {
-        values.empty? -> initial
-        _ -> fold(values.rest, combine(move initial, values.head), combine)
+        values.empty?() -> initial
+        _ -> fold(values.rest(), combine(move initial, values.head()), combine)
     }
 }
 
 /// Returns the first element satisfying `predicate`, consuming the sequence to return an owned value.
 pub func find<T>(values: Sequence<T>, predicate: Predicate<T>) -> Option<T> [consume values] {
     branch {
-        values.empty? -> Option.None
-        predicate(values.head) -> Option.Some(values.head)
-        _ -> find(values.rest, predicate)
+        values.empty?() -> Option.None
+        predicate(values.head()) -> Option.Some(values.head())
+        _ -> find(values.rest(), predicate)
     }
 }
 
 /// Returns whether at least one sequence element satisfies `predicate`.
 pub func any?<T>(values: Sequence<T>, predicate: Predicate<T>) -> Bool {
     branch {
-        values.empty? -> false
-        predicate(values.head) -> true
-        _ -> any?(values.rest, predicate)
+        values.empty?() -> false
+        predicate(values.head()) -> true
+        _ -> any?(values.rest(), predicate)
     }
 }
 
 /// Returns whether every sequence element satisfies `predicate`.
 pub func all?<T>(values: Sequence<T>, predicate: Predicate<T>) -> Bool {
     branch {
-        values.empty? -> true
-        predicate(values.head) -> all?(values.rest, predicate)
+        values.empty?() -> true
+        predicate(values.head()) -> all?(values.rest(), predicate)
         _ -> false
     }
 }
@@ -100,18 +100,18 @@ pub func none?<T>(values: Sequence<T>, predicate: Predicate<T>) -> Bool {
 /// Returns whether the sequence contains an element equal to `expected`.
 pub func contains?<T>(values: Sequence<T>, expected: T) -> Bool {
     branch {
-        values.empty? -> false
-        values.head == expected -> true
-        _ -> contains?(values.rest, expected)
+        values.empty?() -> false
+        values.head() == expected -> true
+        _ -> contains?(values.rest(), expected)
     }
 }
 
 /// Counts the sequence elements satisfying `predicate`.
 pub func count<T>(values: Sequence<T>, predicate: Predicate<T>) -> Int {
     branch {
-        values.empty? -> 0
-        predicate(values.head) -> 1 + count(values.rest, predicate)
-        _ -> count(values.rest, predicate)
+        values.empty?() -> 0
+        predicate(values.head()) -> 1 + count(values.rest(), predicate)
+        _ -> count(values.rest(), predicate)
     }
 }
 
@@ -132,7 +132,7 @@ test "sequence algorithms operate on lists without conversion" {
 func take_into<T>(values: Sequence<T>, count: Int, result: List<T>) -> List<T> [consume result] {
     branch {
         count <= 0 -> result
-        values.empty? -> result
-        _ -> take_into(values.rest, count - 1, result.append(values.head))
+        values.empty?() -> result
+        _ -> take_into(values.rest(), count - 1, result.append(values.head()))
     }
 }

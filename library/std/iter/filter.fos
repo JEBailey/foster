@@ -26,7 +26,7 @@ pub func Iterator.filter<T>(self: Iterator<T>, predicate: Predicate<T>) -> Itera
 }
 
 test "filtered iterators retain matching values" {
-    let values = [1, 2, 3, 4].iterator.filter((value: Int) -> value > 2).collect()
+    let values = [1, 2, 3, 4].iterator().filter((value: Int) -> value > 2).collect()
     assert(values.length == 2)
     assert(values[0] == 3)
     ()

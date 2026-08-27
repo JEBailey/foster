@@ -1009,6 +1009,79 @@ func main() -> Int { Left { value: 20 }.read() + Right { value: 20 }.read() }
 }
 
 #[test]
+fn owner_qualified_methods_do_not_reserve_builtin_member_names() {
+    let source = r#"
+type Bucket = { base: Int }
+type Text = { base: Int }
+type Matcher = { base: Int }
+
+func Bucket.push(self: Bucket, value: Int) -> Int { self.base + value }
+func Text.append(self: Text, value: Int) -> Int { self.base * value }
+func Matcher.in?(self: Matcher, value: Int) -> Int { self.base - value }
+
+func main() -> Int {
+    let pushed = Bucket { base: 10 }.push(2)
+    let appended = Text { base: 5 }.append(3)
+    let matched = Matcher { base: 20 }.in?(4)
+    pushed + appended + matched
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(43));
+}
+
+#[test]
+fn zero_argument_methods_require_call_parentheses() {
+    let source = r#"
+type Counter = { value: Int }
+
+func Counter.read(self: Counter) -> Int { self.value }
+
+func main() {
+    let value = Counter { value: 42 }.read
+    ()
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("method `read` must be called with parentheses"),
+        "{}",
+        error.message
+    );
+
+    let called = source.replace(
+        "func main() {\n    let value = Counter { value: 42 }.read\n    ()\n}",
+        "func main() -> Int { Counter { value: 42 }.read() }",
+    );
+    assert_eq!(foster::run(&called).unwrap(), Value::Integer(42));
+}
+
+#[test]
+fn list_operations_resolve_through_owner_qualified_methods() {
+    let source = r#"
+import core.list
+
+func main() -> Int {
+    let values = [1]
+    values.push(2)
+    let pushed_length = values.length
+    let extended = List.append(move values, 3)
+    branch {
+        extended.contains?(3) -> pushed_length * 10 + extended.length
+        _ -> 0
+    }
+}
+"#;
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),
+            Value::Integer(23)
+        );
+    }
+}
+
+#[test]
 fn associated_functions_construct_private_record_representations() {
     assert_eq!(
         foster::run_package("tests/fixtures/associated_function").unwrap(),
@@ -1544,13 +1617,13 @@ func TextSlice.head(self: TextSlice) -> CodePoint { self.text.head }
 func TextSlice.rest(self: TextSlice) -> String { strings.slice(self.text, 1, self.text.length) }
 
 func first(values: Sequence<CodePoint>) -> CodePoint {
-    values.head
+    values.head()
 }
 
 func main() -> CodePoint {
     let value = TextSlice { text: "OK" }
     first(value)
-    value.head
+    value.head()
 }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::CodePoint('O'));
@@ -1577,7 +1650,7 @@ func User.offset(self: User, amount: Int) -> Int {
 }
 
 func increment_id(value: Identified) -> Int {
-    value.id + value.offset(2)
+    value.id() + value.offset(2)
 }
 
 func main() -> Int {
@@ -1653,7 +1726,7 @@ func value_or(candidate: Option<Int>, fallback: Int) -> Int {
 }
 
 func main() -> Int {
-    let values = Range { start: 3, end: 5 }.iterator
+    let values = Range { start: 3, end: 5 }.iterator()
     let first = value_or(values.next(), -1)
     let second = value_or(values.next(), -1)
     let exhausted = value_or(values.next(), -1)
@@ -1724,14 +1797,14 @@ func option_or(value: Option<Int>, fallback: Int) -> Int {
 }
 
 func main() -> Int {
-    let total = [1, 2, 3, 4].iterator.fold(0, add)
-    let found = option_or([1, 2, 3, 4].iterator.find(two?), 0)
-    let queried = [1, 2, 3, 4].iterator
+    let total = [1, 2, 3, 4].iterator().fold(0, add)
+    let found = option_or([1, 2, 3, 4].iterator().find(two?), 0)
+    let queried = [1, 2, 3, 4].iterator()
     let any = branch { queried.any?(two?) -> 10 _ -> 0 }
     let remaining = option_or(queried.next(), 0)
-    let all = branch { [1, 2, 3].iterator.all?(positive?) -> 100 _ -> 0 }
-    let count = [1, 2, 3, 4].iterator.count()
-    [1, 2].iterator.for_each((value: Int) -> {})
+    let all = branch { [1, 2, 3].iterator().all?(positive?) -> 100 _ -> 0 }
+    let count = [1, 2, 3, 4].iterator().count()
+    [1, 2].iterator().for_each((value: Int) -> {})
     total + found + any + all + count + remaining
 }
 "#;
@@ -1752,7 +1825,7 @@ func double(value: Int) -> Int [consume value] { value * 2 }
 func greater_than_four?(value: Int) -> Bool { value > 4 }
 
 func main() -> Int {
-    let result = [1, 2, 3, 4, 5].iterator.map(double).filter(greater_than_four?).skip(1).take(2).collect()
+    let result = [1, 2, 3, 4, 5].iterator().map(double).filter(greater_than_four?).skip(1).take(2).collect()
     result.head + result.rest.head + result.length
 }
 "#;
@@ -1774,7 +1847,7 @@ import std.collections
 import core.option
 
 func size<T>(values: Collection<T>) -> Int {
-    values.length
+    values.length()
 }
 
 func value_or(candidate: Option<Int>, fallback: Int) -> Int {
@@ -1786,7 +1859,7 @@ func value_or(candidate: Option<Int>, fallback: Int) -> Int {
 
 func main() -> Int {
     let values = [4, 5]
-    let cursor = values.iterator
+    let cursor = values.iterator()
     size(values) + size("abc") + value_or(cursor.next(), -10) + value_or(cursor.next(), -10)
 }
 "#;
@@ -1810,8 +1883,8 @@ func first_value(candidate: Option<Entry<String, Int>>) -> Int {
 func main() -> Int {
     let state = Map.empty()
     let values = (move state).put("answer", 42)
-    let cursor = values.iterator
-    values.length + first_value(cursor.next())
+    let cursor = values.iterator()
+    values.length() + first_value(cursor.next())
 }
 "#;
 
@@ -1826,7 +1899,7 @@ import core.range
 import std.collections.set
 
 func size<T>(values: Collection<T>) -> Int {
-    values.length
+    values.length()
 }
 
 func main() -> Int {
@@ -1896,7 +1969,7 @@ func ordering_score(left: Ordered<Key>, right: Key) -> Int {
 }
 
 func hash_score(value: Hashing) -> Int {
-    value.hash
+    value.hash()
 }
 
 func main() -> Int {
@@ -1937,7 +2010,7 @@ type TextSlice = {
 }
 
 func first(values: Sequence<CodePoint>) -> CodePoint {
-    values.head
+    values.head()
 }
 
 func main() -> CodePoint {
@@ -1966,7 +2039,7 @@ func TextSlice.head(self: TextSlice) -> CodePoint { self.text.head }
 func TextSlice.rest(self: TextSlice) -> String { strings.slice(self.text, 1, self.text.length) }
 
 func describe(value: Named & Sequence<CodePoint>) -> String {
-    value.name + value.head.string
+    value.name + value.head().string
 }
 
 func main() -> String {
@@ -2078,7 +2151,7 @@ enum Choice = Number(Int)
     & Scored
 
 func Choice.score(self: Choice) -> Int { 42 }
-func score_of(value: Scored) -> Int { value.score }
+func score_of(value: Scored) -> Int { value.score() }
 func main() -> Int { score_of(Choice.Empty) }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
@@ -2487,8 +2560,8 @@ func main() -> String {
     buffer.extend("BC".utf8)
     buffer[1] = lower_x
 
-    let data = buffer.snapshot
-    text_or(String.from_utf8(data)) + ":" + data.hex
+    let data = buffer.snapshot()
+    text_or(String.from_utf8(data)) + ":" + data.hex()
 }
 "#;
 
@@ -2549,7 +2622,7 @@ func decode(value: Result<Bytes, HexError>) -> String {
         Result.Error(error) -> error.message
         Result.Ok(data) -> branch String.from_utf8(data) {
             Result.Ok(text) -> text
-            Result.Error(_) -> data.hex
+            Result.Error(_) -> data.hex()
         }
     }
 }
@@ -2571,7 +2644,7 @@ import core.option
 import core.result
 
 func size(values: Collection<Byte>) -> Int {
-    values.length
+    values.length()
 }
 
 func first(value: Option<Byte>) -> Int {
@@ -2584,7 +2657,7 @@ func first(value: Option<Byte>) -> Int {
 func unpack(value: Result<Bytes, HexError>) -> Int {
     branch value {
         Result.Error(_) -> -1
-        Result.Ok(data) -> size(data) * 100 + first(data.iterator.next())
+        Result.Ok(data) -> size(data) * 100 + first(data.iterator().next())
     }
 }
 
@@ -2606,13 +2679,13 @@ func main() -> String {
     let buffer = ByteBuffer.empty()
     buffer.push(Byte.unchecked(42))
     let data = (move buffer).freeze()
-    data.hex
+    data.hex()
 }
 "#;
 
     assert_string(foster::run(source).unwrap(), "2a");
 
-    let invalid = source.replace("    data.hex", "    buffer.length\n    data.hex");
+    let invalid = source.replace("    data.hex()", "    buffer.length\n    data.hex()");
     let error = foster::compile(&invalid).unwrap_err();
     assert!(
         error.message.contains("used after it was moved"),
@@ -2699,7 +2772,7 @@ func decoded(outcome: Result<Bytes, HexError>) -> Bytes {
 func rendered(outcome: Result<Bytes, StreamError>) -> String {
     branch outcome {
         Result.Error(error) -> error.message
-        Result.Ok(contents) -> contents.hex
+        Result.Ok(contents) -> contents.hex()
     }
 }
 
@@ -2719,7 +2792,7 @@ func main() -> String {
     let copy_reader = ChunkReader { remaining: copy_contents, chunk_size: 2 }
     let writer = CollectWriter { contents: Bytes.empty(), chunk_size: 3 }
     let count = copied(stream.copy(copy_reader, writer))
-    all + ":" + writer.contents.hex + ":" + count
+    all + ":" + writer.contents.hex() + ":" + count
 }
 "#;
 

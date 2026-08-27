@@ -150,49 +150,35 @@ impl FunctionCompiler<'_> {
                     return Ok(destination);
                 }
                 if let hir::Expr::Member { object, name } = &self.hir.expressions[*callee] {
-                    let raw_byte_buffer = self.types.expression_type(*object).is_some_and(|ty| {
-                        matches!(self.types.types[ty], crate::types::Type::RawByteBuffer)
-                    });
-                    if (name == "push" && !raw_byte_buffer) || name == "append" || name == "in?" {
-                        let object = self.expression(*object)?;
-                        let arguments = arguments
-                            .iter()
-                            .map(|argument| self.expression(*argument))
-                            .collect::<Result<Vec<_>, _>>()?;
+                    if name == "iterator" && self.sequence_type(*object) && arguments.is_empty() {
+                        let source = self.expression(*object)?;
+                        // Each iterator call materializes an independent cursor over
+                        // a read-only snapshot of the sequence.
+                        let snapshot = self.allocate();
+                        self.emit(
+                            Instruction::Move {
+                                destination: snapshot,
+                                source,
+                            },
+                            span.clone(),
+                        );
                         let destination = self.allocate();
-                        match (name.as_str(), arguments.as_slice()) {
-                            ("push", [value]) => {
-                                self.emit(
-                                    Instruction::Push {
-                                        destination,
-                                        object,
-                                        value: *value,
-                                    },
-                                    span,
-                                );
-                            }
-                            ("append", [value]) => {
-                                self.emit(
-                                    Instruction::Append {
-                                        destination,
-                                        object,
-                                        value: *value,
-                                    },
-                                    span,
-                                );
-                            }
-                            ("in?", candidates) => {
-                                self.emit(
-                                    Instruction::Contains {
-                                        destination,
-                                        value: object,
-                                        candidates: candidates.to_vec(),
-                                    },
-                                    span,
-                                );
-                            }
-                            _ => return Err(self.unsupported("member call arity")),
-                        }
+                        let module = self
+                            .hir
+                            .module_named("std.iter")
+                            .ok_or_else(|| self.unsupported("std.iter module"))?;
+                        let function = self
+                            .hir
+                            .function_named(module, "Iterator.from_sequence")
+                            .ok_or_else(|| self.unsupported("Iterator.from_sequence"))?;
+                        self.emit(
+                            Instruction::Call {
+                                destination,
+                                function,
+                                arguments: vec![snapshot],
+                            },
+                            span,
+                        );
                         return Ok(destination);
                     }
                     if let Some(function) = self.types.extension_methods.get(callee).copied() {
@@ -220,6 +206,15 @@ impl FunctionCompiler<'_> {
                             .map(|argument| self.expression(*argument))
                             .collect::<Result<Vec<_>, _>>()?;
                         let destination = self.allocate();
+                        if self.lower_list_intrinsic(
+                            function,
+                            receiver,
+                            &arguments,
+                            destination,
+                            span.clone(),
+                        )? {
+                            return Ok(destination);
+                        }
                         if let Some(builtin) = self.intrinsic_builtin(function) {
                             arguments.insert(0, receiver);
                             self.emit(
@@ -244,12 +239,29 @@ impl FunctionCompiler<'_> {
                         return Ok(destination);
                     }
                     if let Some((function, remote)) = self.record_method(*object, name) {
-                        let receiver = self.method_receiver(*object)?;
+                        let receiver = if matches!(
+                            self.hir.functions[function].intrinsic.as_deref(),
+                            Some("list.push" | "list.append")
+                        ) || self.read_only_method(function)
+                        {
+                            self.expression(*object)?
+                        } else {
+                            self.method_receiver(*object)?
+                        };
                         let arguments = arguments
                             .iter()
                             .map(|argument| self.expression(*argument))
                             .collect::<Result<Vec<_>, _>>()?;
                         let destination = self.allocate();
+                        if self.lower_list_intrinsic(
+                            function,
+                            receiver,
+                            &arguments,
+                            destination,
+                            span.clone(),
+                        )? {
+                            return Ok(destination);
+                        }
                         if remote {
                             let modes = self
                                 .types
@@ -311,6 +323,17 @@ impl FunctionCompiler<'_> {
                 if let hir::Expr::Name(ResolvedName::Function(function)) =
                     self.hir.expressions[*callee]
                 {
+                    if let Some((&receiver, method_arguments)) = arguments.split_first()
+                        && self.lower_list_intrinsic(
+                            function,
+                            receiver,
+                            method_arguments,
+                            destination,
+                            span.clone(),
+                        )?
+                    {
+                        return Ok(destination);
+                    }
                     if let Some(builtin) = self.intrinsic_builtin(function) {
                         self.emit(
                             Instruction::Builtin {
@@ -494,93 +517,6 @@ impl FunctionCompiler<'_> {
                 Ok(destination)
             }
             hir::Expr::Member { object, name } => {
-                if name == "iterator" && self.sequence_type(*object) {
-                    let source = self.expression(*object)?;
-                    // `.iterator` promises an independent cursor over a read-only
-                    // sequence view. Materialize that snapshot explicitly so the
-                    // consuming constructor can transfer it without consuming the
-                    // original collection.
-                    let snapshot = self.allocate();
-                    self.emit(
-                        Instruction::Move {
-                            destination: snapshot,
-                            source,
-                        },
-                        span.clone(),
-                    );
-                    let destination = self.allocate();
-                    let module = self
-                        .hir
-                        .module_named("std.iter")
-                        .ok_or_else(|| self.unsupported("std.iter module"))?;
-                    let function = self
-                        .hir
-                        .function_named(module, "Iterator.from_sequence")
-                        .ok_or_else(|| self.unsupported("Iterator.from_sequence"))?;
-                    self.emit(
-                        Instruction::Call {
-                            destination,
-                            function,
-                            arguments: vec![snapshot],
-                        },
-                        span,
-                    );
-                    return Ok(destination);
-                }
-                if let Some(function) = self.primitive_method(*object, name) {
-                    let receiver = self.expression(*object)?;
-                    let destination = self.allocate();
-                    self.emit(
-                        Instruction::CallMethod {
-                            destination,
-                            receiver,
-                            function,
-                            arguments: Vec::new(),
-                        },
-                        span,
-                    );
-                    return Ok(destination);
-                }
-                if let Some((function, false)) = self.record_method(*object, name) {
-                    let receiver = self.expression(*object)?;
-                    let destination = self.allocate();
-                    self.emit(
-                        Instruction::CallMethod {
-                            destination,
-                            receiver,
-                            function,
-                            arguments: Vec::new(),
-                        },
-                        span,
-                    );
-                    return Ok(destination);
-                }
-                if self.contract_property(*object, name) {
-                    let receiver = self.method_receiver(*object)?;
-                    let destination = self.allocate();
-                    if let Some((function, false)) = self.record_method(*object, name) {
-                        self.emit(
-                            Instruction::CallMethod {
-                                destination,
-                                receiver,
-                                function,
-                                arguments: Vec::new(),
-                            },
-                            span,
-                        );
-                    } else {
-                        self.emit(
-                            Instruction::CallContractMethod {
-                                destination,
-                                receiver,
-                                name: name.clone(),
-                                arguments: Vec::new(),
-                            },
-                            span,
-                        );
-                    }
-                    return Ok(destination);
-                }
                 let object = self.expression(*object)?;
                 let destination = self.allocate();
                 self.emit(
@@ -647,11 +583,7 @@ impl FunctionCompiler<'_> {
         let hir::Expr::Member { object, name } = &self.hir.expressions[id] else {
             return self.expression(id);
         };
-        if (name == "iterator" && self.sequence_type(*object))
-            || self.primitive_method(*object, name).is_some()
-            || self.contract_property(*object, name)
-            || self.record_method(*object, name).is_some()
-        {
+        if self.record_method(*object, name).is_some() {
             return self.expression(id);
         }
         let span = self
@@ -751,6 +683,46 @@ impl FunctionCompiler<'_> {
             .then_some(function)
     }
 
+    fn lower_list_intrinsic(
+        &mut self,
+        function: hir::FunctionId,
+        receiver: Register,
+        arguments: &[Register],
+        destination: Register,
+        span: std::ops::Range<usize>,
+    ) -> Result<bool, FosterError> {
+        let [value] = arguments else {
+            return match self.hir.functions[function].intrinsic.as_deref() {
+                Some("list.push" | "list.append") => Err(self.unsupported("list intrinsic arity")),
+                _ => Ok(false),
+            };
+        };
+        match self.hir.functions[function].intrinsic.as_deref() {
+            Some("list.push") => {
+                self.emit(
+                    Instruction::Push {
+                        destination,
+                        object: receiver,
+                        value: *value,
+                    },
+                    span,
+                );
+            }
+            Some("list.append") => {
+                self.emit(
+                    Instruction::Append {
+                        destination,
+                        object: receiver,
+                        value: *value,
+                    },
+                    span,
+                );
+            }
+            _ => return Ok(false),
+        }
+        Ok(true)
+    }
+
     fn intrinsic_builtin(&self, function: hir::FunctionId) -> Option<Builtin> {
         let function = &self.hir.functions[function];
         let key = function.intrinsic.as_deref()?;
@@ -811,10 +783,6 @@ impl FunctionCompiler<'_> {
         }
     }
 
-    fn contract_property(&self, object: ExprId, name: &str) -> bool {
-        self.contract_member(object, name, true)
-    }
-
     fn sequence_type(&self, expression: ExprId) -> bool {
         self.types
             .expression_type(expression)
@@ -838,39 +806,38 @@ impl FunctionCompiler<'_> {
     }
 
     fn contract_method(&self, object: ExprId, name: &str) -> bool {
-        self.contract_member(object, name, false)
+        self.contract_member(object, name)
     }
 
-    fn contract_member(&self, object: ExprId, name: &str, property_only: bool) -> bool {
+    fn read_only_method(&self, function: hir::FunctionId) -> bool {
+        let function = &self.hir.functions[function];
+        !function.suspends
+            && function
+                .effects
+                .iter()
+                .all(|effect| effect.kind == crate::ast::EffectKind::Read)
+    }
+
+    fn contract_member(&self, object: ExprId, name: &str) -> bool {
         let Some(ty) = self.types.expression_type(object) else {
             return false;
         };
-        self.type_has_contract_member(ty, name, property_only)
+        self.type_has_contract_member(ty, name)
     }
 
-    fn type_has_contract_member(
-        &self,
-        ty: crate::types::TypeId,
-        name: &str,
-        property_only: bool,
-    ) -> bool {
+    fn type_has_contract_member(&self, ty: crate::types::TypeId, name: &str) -> bool {
         match &self.types.types[ty] {
             crate::types::Type::Sequence(_) => {
                 matches!(name, "empty?" | "length" | "head" | "rest")
             }
-            crate::types::Type::Record { record, .. } => {
-                let members = if property_only {
-                    &self.types.record_properties
-                } else {
-                    &self.types.record_methods
-                };
-                members
-                    .get(record)
-                    .is_some_and(|methods| methods.contains(name))
-            }
+            crate::types::Type::Record { record, .. } => self
+                .types
+                .record_methods
+                .get(record)
+                .is_some_and(|methods| methods.contains(name)),
             crate::types::Type::Intersection(members) => members
                 .iter()
-                .any(|member| self.type_has_contract_member(*member, name, property_only)),
+                .any(|member| self.type_has_contract_member(*member, name)),
             _ => false,
         }
     }

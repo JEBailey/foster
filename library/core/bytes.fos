@@ -112,7 +112,7 @@ test "bytes round-trip UTF-8 and hexadecimal text" {
         Result.Error(_) -> false
     }
     assert(valid)
-    assert(encoded.hex == "466f7374657220cebb")
+    assert(encoded.hex() == "466f7374657220cebb")
 }
 
 /// Accumulates a stable byte hash.

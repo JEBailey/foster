@@ -26,7 +26,7 @@ pub func Queue.empty?<T>(self: Queue<T>) -> Bool {
 
 /// Creates an independent iterator from front to back.
 pub func Queue.iterator<T>(self: Queue<T>) -> Iterator<T> {
-    self.values.iterator
+    self.values.iterator()
 }
 
 /// Returns a queue with `value` added at the back.
@@ -50,6 +50,6 @@ pub type QueueItem<T> = {
 
 test "queues retain pushed values" {
     let queue = Queue { values: [1, 2] }
-    assert(queue.length == 2)
+    assert(queue.length() == 2)
     ()
 }

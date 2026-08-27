@@ -227,8 +227,37 @@ impl Compiler<'_> {
             let register = lower.allocate();
             lower.locals.insert(*parameter, register);
         }
-        let mut result = lower.load_constant(Constant::Unit, function.span.clone())?;
-        lower.compile_statements(&function.body, &function.span, &mut result)?;
+        let result = match function.intrinsic.as_deref() {
+            Some("list.push" | "list.append") => {
+                let [receiver, value] = function.parameters.as_slice() else {
+                    return Err(FosterError::runtime(format!(
+                        "intrinsic `{}` requires a receiver and one value",
+                        function.name
+                    )));
+                };
+                let destination = lower.allocate();
+                let instruction = match function.intrinsic.as_deref() {
+                    Some("list.push") => Instruction::Push {
+                        destination,
+                        object: lower.locals[receiver],
+                        value: lower.locals[value],
+                    },
+                    Some("list.append") => Instruction::Append {
+                        destination,
+                        object: lower.locals[receiver],
+                        value: lower.locals[value],
+                    },
+                    _ => unreachable!(),
+                };
+                lower.emit(instruction, function.span.clone());
+                destination
+            }
+            _ => {
+                let mut result = lower.load_constant(Constant::Unit, function.span.clone())?;
+                lower.compile_statements(&function.body, &function.span, &mut result)?;
+                result
+            }
+        };
         let ends_with_unconditional_return = matches!(
             function.body.last(),
             Some(hir::Stmt::Return { guard: None, .. })

@@ -4,6 +4,33 @@ use super::*;
 
 impl Checker<'_> {
     pub(super) fn finish(mut self) -> Result<TypeInformation, FosterError> {
+        let called = self
+            .hir
+            .expressions
+            .iter()
+            .filter_map(|(_, expression)| match expression {
+                hir::Expr::Call { callee, .. } => Some(*callee),
+                _ => None,
+            })
+            .collect::<HashSet<_>>();
+        for expression in self.bare_method_members.clone() {
+            if !called.contains(&expression) {
+                let hir::Expr::Member { name, .. } = &self.hir.expressions[expression] else {
+                    unreachable!()
+                };
+                let function = self.hir.expression_functions[&expression];
+                return Err(self.error_at_expression(
+                    self.error(
+                        function,
+                        format!("method `{name}` must be called with parentheses"),
+                    ),
+                    function,
+                    expression,
+                    format!("method `{name}` must be called with parentheses"),
+                ));
+            }
+        }
+
         let records = self
             .hir
             .records
@@ -18,7 +45,6 @@ impl Checker<'_> {
             })
             .collect::<Vec<_>>();
         let mut record_fields = HashMap::new();
-        let mut record_properties = HashMap::new();
         let mut record_methods = HashMap::new();
         for (record, arguments) in records {
             let fields = self
@@ -28,19 +54,6 @@ impl Checker<'_> {
                 .collect::<HashSet<_>>();
             record_fields.insert(record, fields);
             let methods = self.effective_record_methods(record, &arguments)?;
-            let properties = methods
-                .iter()
-                .filter(|method| {
-                    method.parameters.is_empty()
-                        && !method.suspends
-                        && method
-                            .effects
-                            .iter()
-                            .all(|effect| effect.kind == crate::ast::EffectKind::Read)
-                })
-                .map(|method| method.name.clone())
-                .collect::<HashSet<_>>();
-            record_properties.insert(record, properties);
             record_methods.insert(
                 record,
                 methods.into_iter().map(|method| method.name).collect(),
@@ -55,7 +68,6 @@ impl Checker<'_> {
                 .map(|(record, definition)| (record, definition.name.clone()))
                 .collect(),
             record_fields,
-            record_properties,
             record_methods,
             variant_names: self
                 .hir

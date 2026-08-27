@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 mod annotations;
 mod calls;
@@ -68,6 +68,7 @@ impl<'a> Checker<'a> {
             locals: HashMap::new(),
             local_groups: HashMap::new(),
             expressions: HashMap::new(),
+            bare_method_members: HashSet::new(),
             extension_methods: HashMap::new(),
             member_constraints: Vec::new(),
             diagnostics: Vec::new(),

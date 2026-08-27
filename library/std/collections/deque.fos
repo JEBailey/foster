@@ -26,7 +26,7 @@ pub func Deque.empty?<T>(self: Deque<T>) -> Bool {
 
 /// Creates an independent iterator from front to back.
 pub func Deque.iterator<T>(self: Deque<T>) -> Iterator<T> {
-    self.values.iterator
+    self.values.iterator()
 }
 
 /// Returns a deque with `value` added at the front.
@@ -63,7 +63,7 @@ pub type DequeItem<T> = {
 
 test "deques accept values at both ends" {
     let deque = Deque { values: [1, 2] }
-    assert(deque.length == 2)
+    assert(deque.length() == 2)
     ()
 }
 

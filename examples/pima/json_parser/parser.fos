@@ -35,7 +35,7 @@ func fail<T>(message: String) -> ParseResult<T> {
 }
 
 func skip_whitespace(characters: String) -> String {
-    let prefix = characters.take_while((character: CodePoint) -> character.in?(' ', '\n', '\r', '\t'))
+    let prefix = characters.take_while((character: CodePoint) -> [' ', '\n', '\r', '\t'].contains?(character))
     string.slice(characters, prefix.length, characters.length)
 }
 
@@ -89,13 +89,13 @@ func scan_fraction(characters: String, token: String) -> ParseResult<ScannedNumb
 
 func scan_exponent(characters: String, token: String) -> ParseResult<ScannedNumber> {
     return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if characters.empty?
-    return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if !characters.head.in?('e', 'E')
+    return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if !['e', 'E'].contains?(characters.head)
     let rest = characters.rest
     let exponent = token + characters.head.string
     return fail("expected exponent digits") if rest.empty?
 
     let scanned = branch {
-        rest.head.in?('+', '-') -> scan_digits(rest.rest, exponent + rest.head.string, 0)
+        ['+', '-'].contains?(rest.head) -> scan_digits(rest.rest, exponent + rest.head.string, 0)
         _ -> scan_digits(move rest, move exponent, 0)
     }
     return fail("expected exponent digits") if scanned.digits == 0

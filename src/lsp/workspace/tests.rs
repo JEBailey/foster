@@ -635,7 +635,7 @@ fn definition_opens_embedded_core_source_when_available() {
             .unwrap()
             .join("library/core/list.fos")
     );
-    assert_eq!(location.range.start, Position::new(32, 9));
+    assert_eq!(location.range.start, Position::new(43, 9));
 }
 
 #[test]

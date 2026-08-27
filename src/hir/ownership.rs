@@ -294,14 +294,17 @@ fn capture_effect_kind(
                 Expr::Call { callee, .. }
                     if matches!(
                         &hir.expressions[*callee],
-                        Expr::Member { object, name }
-                            if name == "push"
-                                && matches!(
-                                    hir.expressions[*object],
-                                    Expr::Name(ResolvedName::Local(found)) if found == self.captured
-                                )
+                        Expr::Member { object, .. }
+                            if matches!(
+                                hir.expressions[*object],
+                                Expr::Name(ResolvedName::Local(found)) if found == self.captured
+                            )
                     )
             ) {
+                // Receiver resolution happens during type checking. Seed an
+                // unannotated reference capture conservatively so any method
+                // can be resolved; fixed-point effect inference replaces this
+                // with the selected owner's actual method effect.
                 self.kind = ast::EffectKind::Reshape;
                 return;
             }

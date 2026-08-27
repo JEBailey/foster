@@ -432,7 +432,7 @@ reference fails.
 An expired weak place also fails safely. These are defensive runtime backstops; well-typed programs
 should be rejected statically before reaching either condition.
 
-Mutable binary construction follows the same rules. `ByteBuffer.snapshot` borrows the buffer and
+Mutable binary construction follows the same rules. `ByteBuffer.snapshot()` borrows the buffer and
 copies its current contents into immutable `Bytes`. `ByteBuffer.freeze` consumes the buffer, written
 as `(move buffer).freeze()`, and transfers its allocation into `Bytes`. Structural operations such
 as `push`, `extend`, `clear`, `truncate`, and `reserve` invalidate outstanding indexed loans because

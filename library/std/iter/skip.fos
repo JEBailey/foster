@@ -36,7 +36,7 @@ pub func Iterator.skip<T>(self: Iterator<T>, amount: Int) -> Iterator<T> [consum
 }
 
 test "skipping removes an iterator prefix" {
-    let values = [1, 2, 3].iterator.skip(2).collect()
+    let values = [1, 2, 3].iterator().skip(2).collect()
     assert(values.length == 1)
     assert(values[0] == 3)
     ()

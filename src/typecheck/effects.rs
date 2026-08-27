@@ -258,18 +258,12 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             hir::Expr::List(values) => values.iter().for_each(|value| self.walk_expr(*value)),
             hir::Expr::Call { callee, arguments } => {
                 self.walk_call(*callee, arguments);
-                if let hir::Expr::Member { object, name } = &self.checker.hir.expressions[*callee]
-                    && name == "append"
-                {
-                    self.walk_consumed_expr(*object);
-                    arguments
-                        .iter()
-                        .for_each(|argument| self.walk_consumed_expr(*argument));
-                    return;
-                }
-                if let hir::Expr::Member { name, .. } = &self.checker.hir.expressions[*callee]
-                    && name == "push"
-                {
+                if self.call_target(*callee).is_some_and(|function| {
+                    matches!(
+                        self.checker.hir.functions[function].intrinsic.as_deref(),
+                        Some("list.push" | "list.append")
+                    )
+                }) {
                     arguments
                         .iter()
                         .for_each(|argument| self.walk_consumed_expr(*argument));
@@ -345,20 +339,6 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
 
     fn walk_call(&mut self, callee: ExprId, arguments: &[ExprId]) {
         match &self.checker.hir.expressions[callee] {
-            hir::Expr::Member { object, name }
-                if name == "push"
-                    && !matches!(
-                        self.checker
-                            .resolved(self.checker.expressions[object].clone()),
-                        Ty::RawByteBuffer
-                    ) =>
-            {
-                self.add(
-                    crate::ast::EffectKind::Reshape,
-                    self.place_group(*object).child("items"),
-                );
-                return;
-            }
             hir::Expr::Member { object, name } => {
                 let receiver = self
                     .checker
@@ -542,6 +522,19 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             .receiver
             .is_some()
             .then_some(method)
+    }
+
+    fn call_target(&self, callee: ExprId) -> Option<FunctionId> {
+        match &self.checker.hir.expressions[callee] {
+            hir::Expr::Name(ResolvedName::Function(function)) => Some(*function),
+            hir::Expr::Member { object, name } => self
+                .checker
+                .extension_methods
+                .get(&callee)
+                .copied()
+                .or_else(|| self.method_for(*object, name)),
+            _ => None,
+        }
     }
 
     fn argument_group(&self, expression: ExprId) -> Option<crate::ast::GroupPath> {

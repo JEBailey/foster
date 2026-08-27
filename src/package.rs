@@ -51,6 +51,10 @@ struct BootstrapModule {
 enum BootstrapMode {
     Full,
     TypesOnly(&'static [&'static str]),
+    TypesAndFunctions {
+        types: &'static [&'static str],
+        functions: &'static [&'static str],
+    },
 }
 
 impl BootstrapModule {
@@ -71,6 +75,19 @@ impl BootstrapModule {
             name,
             source,
             mode: BootstrapMode::TypesOnly(types),
+        }
+    }
+
+    const fn types_and_functions(
+        name: &'static str,
+        source: &'static str,
+        types: &'static [&'static str],
+        functions: &'static [&'static str],
+    ) -> Self {
+        Self {
+            name,
+            source,
+            mode: BootstrapMode::TypesAndFunctions { types, functions },
         }
     }
 }
@@ -294,10 +311,11 @@ impl Package {
     }
 
     fn install_list_bootstrap(&mut self) -> Result<(), FosterError> {
-        self.install_bootstrap(BootstrapModule::types_only(
+        self.install_bootstrap(BootstrapModule::types_and_functions(
             "core.list",
             include_str!("../library/core/list.fos"),
             &["RawList", "List"],
+            &["List.push", "List.append"],
         ))
     }
 
@@ -325,11 +343,18 @@ impl Package {
                 bootstrap.name
             ))
         })?;
-        if let BootstrapMode::TypesOnly(types) = bootstrap.mode {
+        if let BootstrapMode::TypesOnly(types) | BootstrapMode::TypesAndFunctions { types, .. } =
+            bootstrap.mode
+        {
             program.imports.clear();
             program.constants.clear();
             program.variants.clear();
-            program.functions.clear();
+            match bootstrap.mode {
+                BootstrapMode::TypesAndFunctions { functions, .. } => program
+                    .functions
+                    .retain(|function| functions.contains(&function.name.as_str())),
+                _ => program.functions.clear(),
+            }
             program.tests.clear();
             program
                 .records
@@ -630,6 +655,7 @@ impl Package {
                         "core.byte" => matches!(key.as_str(), "byte.valid" | "byte.unchecked"),
                         "core.bytes" => key.starts_with("bytes."),
                         "core.bytes.buffer" => key.starts_with("byte_buffer."),
+                        "core.list" => key.starts_with("list."),
                         "core.float" => key.starts_with("float."),
                         "std.fs" | "std.path" | "std.env" => key.starts_with("io."),
                         "std.net.tcp" => key.starts_with("tcp."),
@@ -820,6 +846,8 @@ fn intrinsic_key_registered(key: &str) -> bool {
             | "bytes.encode_utf8"
             | "bytes.utf8_valid"
             | "bytes.decode_utf8"
+            | "list.push"
+            | "list.append"
             | "byte_buffer.empty"
             | "byte_buffer.with_capacity"
             | "byte_buffer.push"

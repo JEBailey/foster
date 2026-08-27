@@ -45,7 +45,7 @@ static duck typing without a wrapper or runtime conversion:
 cargo run --bin foster -- run examples/type_composition.fos
 ```
 `collections.fos` demonstrates the shared `Collection<T>` contract, a Foster-written `Set<T>`,
-the generic `Range<T>` sequence view, and borrowed `.iterator` creation.
+the generic `Range<T>` sequence view, and borrowed `.iterator()` creation.
 
 `bytes.fos` demonstrates bounded `Byte` values, compact immutable `Bytes`, UTF-8 and hexadecimal
 boundaries, and mutation followed by ownership-transferring `ByteBuffer.freeze`.

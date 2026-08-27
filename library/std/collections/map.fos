@@ -74,7 +74,7 @@ pub func Map.empty?<K, V>(self: Map<K, V>) -> Bool {
 
 /// Creates an independent iterator over entries in storage order.
 pub func Map.iterator<K, V>(self: Map<K, V>) -> Iterator<Entry<K, V>> {
-    self.entries.iterator
+    self.entries.iterator()
 }
 
 /// Consumes the map and returns its keys in storage order.
@@ -102,7 +102,7 @@ test "maps replace values without duplicating keys" {
         Option.None -> false
     }
     assert(found)
-    assert(values.length == 1)
+    assert(values.length() == 1)
 }
 
 /// Extracts values from owned entries into the result accumulator.

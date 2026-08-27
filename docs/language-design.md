@@ -225,9 +225,9 @@ type Foo = & Sequence<CodePoint> & {
 This is compile-time contract composition, not inheritance. The composed contract's accessible
 members become part of `Foo`'s effective contract, but behavioral requirements do not become stored
 fields. `Foo` therefore supplies compatible `empty?`, `length`, `head`, and `rest` instance
-functions. Read-only zero-argument contract functions support property syntax, so callers continue
-to write `value.head`; functions with arguments use ordinary call syntax. `Foo` constructors only
-initialize fields written in its effective stored-field contract.
+functions. Methods always use call syntax, including zero-argument methods such as `value.head()`.
+This keeps method invocation distinct from stored-field access. `Foo` constructors only initialize
+fields written in its effective stored-field contract.
 
 Required callable members can be declared directly in a structural type:
 
@@ -489,10 +489,12 @@ source names from VM dispatch. Intrinsic declarations have registered VM impleme
 Foster body, and neither construct nor recognize the public wrapper. Host-backed storage is
 declared explicitly, for example `intrinsic type RawByteBuffer`; it is opaque and cannot be
 constructed with record syntax.
-Representation-level operations such as functional `List.append`, checked `from_code_point(Int)`,
-and `parse_float(String)` form the narrow primitive boundary beneath the Foster-written core
-library. The older `code_point(CodePoint)` intrinsic is also accepted for compatibility; source
-code normally uses integer operators directly.
+Representation-level operations such as `List.push` and functional `List.append` are declared as
+owner-qualified intrinsics. Calls resolve their `List` owner before the stable intrinsic key selects
+the VM operation, so unrelated types remain free to define `push` or `append`. Checked
+`from_code_point(Int)` and `parse_float(String)` complete the narrow primitive boundary beneath the
+Foster-written core library. The older `code_point(CodePoint)` intrinsic is also accepted for
+compatibility; source code normally uses integer operators directly.
 It performs constraint inference across function calls and records a canonical type for every HIR
 expression, local, and function signature. Explicit generic functions use
 `func identity<T>(value: T) -> T`; their parameters are rigid while checking the body and freshly
@@ -622,10 +624,8 @@ pub type Iterable<T> = {
 ```
 
 `Iterator<T>` is stateful. Each `next()` call has exclusive mutation access to the iterator and
-returns `Option.None` after exhaustion. `Iterable<T>` is repeatable: its read-only `iterator`
-accessor creates an independent iterator. Because zero-argument read-only contract functions use
-property syntax, an iterable is opened with `value.iterator`; `next` remains call syntax because
-it mutates its receiver.
+returns `Option.None` after exhaustion. `Iterable<T>` is repeatable: its read-only `iterator()`
+method creates an independent iterator. An iterable is opened with `value.iterator()`.
 
 Both contracts use the same static duck typing and zero-conversion dispatch as other composed
 types. A concrete type implements them with `type Cursor<T> = & Iterator<T> & { ... }` or
@@ -647,7 +647,7 @@ Iterable<T>
 Map<K, V> & Collection<Entry<K, V>>
 ```
 
-`List`, `String`, and `Sequence` expose `.iterator` as a compiler-backed intrinsic whose public
+`List`, `String`, and `Sequence` expose `.iterator()` as a compiler-backed intrinsic whose public
 contract is an ordinary borrowed accessor. The VM creates an independent cursor over the source's
 read-only value view. Advancing the cursor mutates only cursor state, while explicit
 `Iterator.from_sequence` remains the ownership-transferring form.
@@ -662,7 +662,7 @@ let data = Bytes.from_hex("89504e47")
 
 let buffer = ByteBuffer.with_capacity(4096)
 buffer.extend("Foster".utf8)
-let snapshot = buffer.snapshot
+let snapshot = buffer.snapshot()
 let finished = (move buffer).freeze()
 ```
 
@@ -675,7 +675,7 @@ separately as a cursor contract.
 
 Passing all three types borrows by default. A buffer mutation requires `mut` access, indexed loans
 are invalidated by structural changes, and converting a buffer without copying requires an
-explicit move through `(move buffer).freeze()`. `buffer.snapshot` is the copying alternative.
+explicit move through `(move buffer).freeze()`. `buffer.snapshot()` is the copying alternative.
 Strings never convert to bytes implicitly: `.utf8` encodes, and `String.from_utf8` performs checked
 decoding.
 
@@ -735,9 +735,8 @@ when it composes a contract, its module must provide all inherited functions.
 Implementations must preserve the usual laws: equality is reflexive, symmetric, and transitive;
 `compare` returns `Ordering.Equal` exactly when `equal?` is true; and equal values produce the same
 hash. Hash collisions between unequal values are valid. The compiler checks member signatures and
-effects, while these semantic laws remain the implementation's responsibility. Because `hash` is
-a zero-argument read-only member it uses property syntax (`value.hash`); `equal?` and `compare`
-take arguments and use call syntax.
+effects, while these semantic laws remain the implementation's responsibility. All three are
+methods: zero-argument `hash` uses `value.hash()`, while `equal?` and `compare` take arguments.
 
 ## Ownership and groups
 

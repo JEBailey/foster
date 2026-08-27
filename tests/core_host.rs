@@ -35,7 +35,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 524);
+    assert_eq!(checked, 527);
 
     let mut modules = 0;
     let mut types = 0;
@@ -586,7 +586,7 @@ func read_after_write(path: String, outcome: Result<(), IoError>) -> String {{
 func render(outcome: Result<Bytes, IoError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
-        Result.Ok(contents) -> contents.hex
+        Result.Ok(contents) -> contents.hex()
     }}
 }}
 
