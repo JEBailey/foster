@@ -11,6 +11,10 @@
   open the Foster language-server output.
 - Add `Arguments` completion with automatic `std.process` import, and keep bundled-library
   diagnostics out of application workspaces unless those sources are explicitly opened.
+- Debounce package diagnostics while typing so rapid edits trigger one compilation after the
+  latest change instead of recompiling synchronously for every keystroke. Preserve unrelated
+  compilation snapshots across edits, reuse failed snapshots until their source changes, and reuse
+  parsed modules when rebuilding a package so only changed source is reparsed.
 - Discover `foster.toml` project roots for package runs while retaining legacy `main.fos`
   package discovery.
 - Bundle the Foster-written TOML 1.1 parser, renderer, table lookup API, and source-positioned errors.

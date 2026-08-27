@@ -763,6 +763,86 @@ fn compilation_cache_reuses_snapshots_and_invalidates_on_change() {
 }
 
 #[test]
+fn compilation_cache_preserves_unrelated_snapshots_on_change() {
+    let root = std::env::temp_dir().join(format!(
+        "foster-lsp-cache-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&root).unwrap();
+    let first_path = root.join("first.fos");
+    let second_path = root.join("second.fos");
+    std::fs::write(&first_path, "func main() -> Int { 1 }\n").unwrap();
+    std::fs::write(&second_path, "func main() -> Int { 2 }\n").unwrap();
+    let first_uri = path_to_uri(&first_path).unwrap();
+    let second_uri = path_to_uri(&second_path).unwrap();
+    let mut workspace = Workspace {
+        root: Some(root.clone()),
+        documents: HashMap::new(),
+        published: HashSet::new(),
+        compilations: Default::default(),
+    };
+
+    let first = workspace.compile_for(&first_uri).unwrap();
+    let second = workspace.compile_for(&second_uri).unwrap();
+    workspace.change(first_uri.clone(), "func main() -> Int { 3 }\n".into(), 2);
+
+    let changed = workspace.compile_for(&first_uri).unwrap();
+    let unaffected = workspace.compile_for(&second_uri).unwrap();
+    assert!(!std::rc::Rc::ptr_eq(&first, &changed));
+    assert!(std::rc::Rc::ptr_eq(&second, &unaffected));
+
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn recompiling_a_package_only_reparses_the_changed_module() {
+    let (mut workspace, uri, root) = fixture_workspace();
+    let main = root.join("main.fos");
+    let parser = root.join("json/parser.fos");
+    workspace.compile_for(&uri).unwrap();
+    assert_eq!(workspace.compilations.module_parse_count(&main), 1);
+    assert_eq!(workspace.compilations.module_parse_count(&parser), 1);
+
+    let mut source = std::fs::read_to_string(&main).unwrap();
+    source.push_str("\nfunc cache_probe() -> Int { 7 }\n");
+    workspace.change(uri.clone(), source, 2);
+    let changed = workspace.compile_for(&uri).unwrap();
+
+    assert!(
+        changed
+            .hir
+            .module_named("main")
+            .and_then(|module| changed.hir.function_named(module, "cache_probe"))
+            .is_some()
+    );
+    assert_eq!(workspace.compilations.module_parse_count(&main), 2);
+    assert_eq!(workspace.compilations.module_parse_count(&parser), 1);
+}
+
+#[test]
+fn failed_compilations_are_cached_until_the_document_changes() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let original = workspace.compile_for(&uri).unwrap();
+    workspace.change(uri.clone(), "func main( {\n".into(), 2);
+
+    let first_error = workspace.compile_for(&uri).unwrap_err();
+    assert!(workspace.compilations.has_cached_error(&uri));
+    assert_eq!(workspace.compile_for(&uri).unwrap_err(), first_error);
+    assert!(std::rc::Rc::ptr_eq(
+        &workspace.semantic_compilation_for(&uri).unwrap(),
+        &original
+    ));
+
+    workspace.change(uri.clone(), "func main() { 0 }\n".into(), 3);
+    assert!(!workspace.compilations.has_cached_error(&uri));
+    assert!(workspace.compile_for(&uri).is_ok());
+}
+
+#[test]
 fn semantic_navigation_survives_a_failed_document_compilation() {
     let (mut workspace, uri, root) = fixture_workspace();
     let position = TextDocumentPositionParams::new(

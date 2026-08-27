@@ -226,7 +226,7 @@ func upper_character(value: CodePoint) -> String {
 
 /// Returns the number of bytes required by the string's UTF-8 encoding.
 pub func byte_length(value: String) -> Int {
-    value.value.length
+    value.length
 }
 
 /// Joins strings with `separator` between adjacent values.

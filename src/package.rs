@@ -8,6 +8,100 @@ use walkdir::{DirEntry, WalkDir};
 use crate::ast::Program;
 use crate::error::FosterError;
 
+#[derive(Debug, Clone)]
+struct CachedModule {
+    source: String,
+    parsed: Result<Program, FosterError>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+enum ModuleCacheKey {
+    Source(Utf8PathBuf),
+    Embedded(String),
+}
+
+/// Parsed Foster modules retained across language-server package rebuilds.
+///
+/// Entries are replaced only when their source text changes. Cached parse errors are retained too,
+/// so an unchanged invalid module does not repeatedly run through the lexer and parser.
+#[derive(Debug, Default)]
+pub(crate) struct ModuleCache {
+    entries: HashMap<ModuleCacheKey, CachedModule>,
+    #[cfg(test)]
+    parse_counts: HashMap<ModuleCacheKey, usize>,
+}
+
+impl ModuleCache {
+    pub(crate) fn parse_source(
+        &mut self,
+        path: &Utf8Path,
+        source: &str,
+    ) -> Result<Program, FosterError> {
+        self.parse(ModuleCacheKey::Source(path.to_owned()), source)
+    }
+
+    fn parse_embedded(&mut self, name: &str, source: &str) -> Result<Program, FosterError> {
+        self.parse(ModuleCacheKey::Embedded(name.to_owned()), source)
+    }
+
+    fn parse(&mut self, key: ModuleCacheKey, source: &str) -> Result<Program, FosterError> {
+        if let Some(cached) = self.entries.get(&key)
+            && cached.source == source
+        {
+            return cached.parsed.clone();
+        }
+
+        let parsed = crate::parse(source);
+        self.entries.insert(
+            key.clone(),
+            CachedModule {
+                source: source.to_owned(),
+                parsed: parsed.clone(),
+            },
+        );
+        self.record_parse(&key);
+        parsed
+    }
+
+    #[cfg(test)]
+    fn record_parse(&mut self, key: &ModuleCacheKey) {
+        *self.parse_counts.entry(key.clone()).or_default() += 1;
+    }
+
+    #[cfg(not(test))]
+    fn record_parse(&mut self, _key: &ModuleCacheKey) {}
+
+    #[cfg(test)]
+    pub(crate) fn source_parse_count(&self, path: &Utf8Path) -> usize {
+        self.parse_counts
+            .get(&ModuleCacheKey::Source(path.to_owned()))
+            .copied()
+            .unwrap_or_default()
+    }
+}
+
+fn parse_source_module(
+    cache: &mut Option<&mut ModuleCache>,
+    path: &Utf8Path,
+    source: &str,
+) -> Result<Program, FosterError> {
+    cache.as_deref_mut().map_or_else(
+        || crate::parse(source),
+        |cache| cache.parse_source(path, source),
+    )
+}
+
+fn parse_embedded_module(
+    cache: &mut Option<&mut ModuleCache>,
+    name: &str,
+    source: &str,
+) -> Result<Program, FosterError> {
+    cache.as_deref_mut().map_or_else(
+        || crate::parse(source),
+        |cache| cache.parse_embedded(name, source),
+    )
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ModuleOrigin {
     Input,
@@ -218,15 +312,17 @@ impl Package {
         program: Program,
     ) -> Result<Self, FosterError> {
         let mut package = Self::from_program(name, program);
-        package.install_standard_modules_if_imported()?;
-        package.install_bytes_bootstrap()?;
-        package.install_byte_buffer_bootstrap()?;
-        package.install_list_bootstrap()?;
-        package.install_string_bootstrap()?;
-        package.install_symbol_bootstrap()?;
-        package
-            .validate()
-            .map_err(|error| package.locate_compiler_error(error))?;
+        package.finish_loading(&mut None)?;
+        Ok(package)
+    }
+
+    pub(crate) fn from_program_with_core_cached(
+        name: impl Into<String>,
+        program: Program,
+        cache: &mut ModuleCache,
+    ) -> Result<Self, FosterError> {
+        let mut package = Self::from_program(name, program);
+        package.finish_loading(&mut Some(cache))?;
         Ok(package)
     }
 
@@ -238,13 +334,29 @@ impl Package {
         root: impl AsRef<Path>,
         overlays: &HashMap<Utf8PathBuf, String>,
     ) -> Result<Self, FosterError> {
-        let root = utf8_source_root(root.as_ref())?;
+        Self::load_with_overlays_and_cache(root.as_ref(), overlays, &mut None)
+    }
+
+    pub(crate) fn load_with_overlays_cached(
+        root: impl AsRef<Path>,
+        overlays: &HashMap<Utf8PathBuf, String>,
+        cache: &mut ModuleCache,
+    ) -> Result<Self, FosterError> {
+        Self::load_with_overlays_and_cache(root.as_ref(), overlays, &mut Some(cache))
+    }
+
+    fn load_with_overlays_and_cache(
+        root: &Path,
+        overlays: &HashMap<Utf8PathBuf, String>,
+        cache: &mut Option<&mut ModuleCache>,
+    ) -> Result<Self, FosterError> {
+        let root = utf8_source_root(root)?;
         let mut package = Self {
             root: root.clone(),
             modules: BTreeMap::new(),
         };
-        package.discover_modules_from(&root, ModuleOrigin::Input, None, overlays)?;
-        package.finish_loading()?;
+        package.discover_modules_from(&root, ModuleOrigin::Input, None, overlays, cache)?;
+        package.finish_loading(cache)?;
         Ok(package)
     }
 
@@ -256,12 +368,28 @@ impl Package {
         project: &crate::project::Project,
         overlays: &HashMap<Utf8PathBuf, String>,
     ) -> Result<Self, FosterError> {
+        Self::load_project_with_overlays_and_cache(project, overlays, &mut None)
+    }
+
+    pub(crate) fn load_project_with_overlays_cached(
+        project: &crate::project::Project,
+        overlays: &HashMap<Utf8PathBuf, String>,
+        cache: &mut ModuleCache,
+    ) -> Result<Self, FosterError> {
+        Self::load_project_with_overlays_and_cache(project, overlays, &mut Some(cache))
+    }
+
+    fn load_project_with_overlays_and_cache(
+        project: &crate::project::Project,
+        overlays: &HashMap<Utf8PathBuf, String>,
+        cache: &mut Option<&mut ModuleCache>,
+    ) -> Result<Self, FosterError> {
         let root = utf8_source_root(&project.source_root)?;
         let mut package = Self {
             root: root.clone(),
             modules: BTreeMap::new(),
         };
-        package.discover_modules_from(&root, ModuleOrigin::Input, None, overlays)?;
+        package.discover_modules_from(&root, ModuleOrigin::Input, None, overlays, cache)?;
         for dependency in project.resolve_dependencies()? {
             let dependency_root = utf8_source_root(&dependency.project.source_root)?;
             package.discover_modules_from(
@@ -269,64 +397,96 @@ impl Package {
                 ModuleOrigin::Dependency,
                 Some(&dependency.name),
                 overlays,
+                cache,
             )?;
         }
-        package.finish_loading()?;
+        package.finish_loading(cache)?;
         Ok(package)
     }
 
-    fn finish_loading(&mut self) -> Result<(), FosterError> {
-        self.install_standard_modules_if_imported()?;
-        self.install_bytes_bootstrap()?;
-        self.install_byte_buffer_bootstrap()?;
-        self.install_list_bootstrap()?;
-        self.install_string_bootstrap()?;
-        self.install_symbol_bootstrap()?;
+    fn finish_loading(&mut self, cache: &mut Option<&mut ModuleCache>) -> Result<(), FosterError> {
+        self.install_standard_modules_if_imported(cache)?;
+        self.install_bytes_bootstrap(cache)?;
+        self.install_byte_buffer_bootstrap(cache)?;
+        self.install_list_bootstrap(cache)?;
+        self.install_string_bootstrap(cache)?;
+        self.install_symbol_bootstrap(cache)?;
         self.validate()
             .map_err(|error| self.locate_compiler_error(error))
     }
 
-    fn install_string_bootstrap(&mut self) -> Result<(), FosterError> {
-        self.install_bootstrap(BootstrapModule::types_only(
-            "core.string",
-            include_str!("../library/core/string.fos"),
-            &["String"],
-        ))
+    fn install_string_bootstrap(
+        &mut self,
+        cache: &mut Option<&mut ModuleCache>,
+    ) -> Result<(), FosterError> {
+        self.install_bootstrap(
+            BootstrapModule::types_only(
+                "core.string",
+                include_str!("../library/core/string.fos"),
+                &["String"],
+            ),
+            cache,
+        )
     }
 
-    fn install_bytes_bootstrap(&mut self) -> Result<(), FosterError> {
-        self.install_bootstrap(BootstrapModule::types_only(
-            "core.bytes",
-            include_str!("../library/core/bytes.fos"),
-            &["RawBytes", "Bytes"],
-        ))
+    fn install_bytes_bootstrap(
+        &mut self,
+        cache: &mut Option<&mut ModuleCache>,
+    ) -> Result<(), FosterError> {
+        self.install_bootstrap(
+            BootstrapModule::types_only(
+                "core.bytes",
+                include_str!("../library/core/bytes.fos"),
+                &["RawBytes", "Bytes"],
+            ),
+            cache,
+        )
     }
 
-    fn install_byte_buffer_bootstrap(&mut self) -> Result<(), FosterError> {
-        self.install_bootstrap(BootstrapModule::types_only(
-            "core.bytes.buffer",
-            include_str!("../library/core/bytes/buffer.fos"),
-            &["RawByteBuffer", "ByteBuffer"],
-        ))
+    fn install_byte_buffer_bootstrap(
+        &mut self,
+        cache: &mut Option<&mut ModuleCache>,
+    ) -> Result<(), FosterError> {
+        self.install_bootstrap(
+            BootstrapModule::types_only(
+                "core.bytes.buffer",
+                include_str!("../library/core/bytes/buffer.fos"),
+                &["RawByteBuffer", "ByteBuffer"],
+            ),
+            cache,
+        )
     }
 
-    fn install_list_bootstrap(&mut self) -> Result<(), FosterError> {
-        self.install_bootstrap(BootstrapModule::types_and_functions(
-            "core.list",
-            include_str!("../library/core/list.fos"),
-            &["RawList", "List"],
-            &["List.push", "List.append"],
-        ))
+    fn install_list_bootstrap(
+        &mut self,
+        cache: &mut Option<&mut ModuleCache>,
+    ) -> Result<(), FosterError> {
+        self.install_bootstrap(
+            BootstrapModule::types_and_functions(
+                "core.list",
+                include_str!("../library/core/list.fos"),
+                &["RawList", "List"],
+                &["List.push", "List.append"],
+            ),
+            cache,
+        )
     }
 
-    fn install_symbol_bootstrap(&mut self) -> Result<(), FosterError> {
-        self.install_bootstrap(BootstrapModule::full(
-            "core.symbol",
-            include_str!("../library/core/symbol.fos"),
-        ))
+    fn install_symbol_bootstrap(
+        &mut self,
+        cache: &mut Option<&mut ModuleCache>,
+    ) -> Result<(), FosterError> {
+        self.install_bootstrap(
+            BootstrapModule::full("core.symbol", include_str!("../library/core/symbol.fos")),
+            cache,
+        )
     }
 
-    fn install_bootstrap(&mut self, bootstrap: BootstrapModule) -> Result<(), FosterError> {
+    fn install_bootstrap(
+        &mut self,
+        bootstrap: BootstrapModule,
+        cache: &mut Option<&mut ModuleCache>,
+    ) -> Result<(), FosterError> {
         if self.modules.contains_key(bootstrap.name) {
             return Ok(());
         }
@@ -337,12 +497,13 @@ impl Package {
             source: None,
             origin: ModuleOrigin::Embedded,
         });
-        let mut program = crate::parse(bootstrap.source).map_err(|error| {
-            FosterError::runtime(format!(
-                "embedded module `{}` is invalid: {error}",
-                bootstrap.name
-            ))
-        })?;
+        let mut program =
+            parse_embedded_module(cache, bootstrap.name, bootstrap.source).map_err(|error| {
+                FosterError::runtime(format!(
+                    "embedded module `{}` is invalid: {error}",
+                    bootstrap.name
+                ))
+            })?;
         if let BootstrapMode::TypesOnly(types) | BootstrapMode::TypesAndFunctions { types, .. } =
             bootstrap.mode
         {
@@ -380,7 +541,10 @@ impl Package {
         Ok(())
     }
 
-    fn install_standard_modules_if_imported(&mut self) -> Result<(), FosterError> {
+    fn install_standard_modules_if_imported(
+        &mut self,
+        cache: &mut Option<&mut ModuleCache>,
+    ) -> Result<(), FosterError> {
         let imports_embedded = self.modules.values().any(|module| {
             module.program.as_ref().is_some_and(|program| {
                 program.imports.iter().any(|import| {
@@ -423,7 +587,7 @@ impl Package {
             });
         }
         for (name, source) in EMBEDDED_MODULES {
-            let program = crate::parse(source).map_err(|error| {
+            let program = parse_embedded_module(cache, name, source).map_err(|error| {
                 FosterError::runtime(format!("embedded module `{name}` is invalid: {error}"))
             })?;
             self.modules.insert(
@@ -489,6 +653,7 @@ impl Package {
         origin: ModuleOrigin,
         prefix: Option<&str>,
         overlays: &HashMap<Utf8PathBuf, String>,
+        cache: &mut Option<&mut ModuleCache>,
     ) -> Result<(), FosterError> {
         let entries = WalkDir::new(root)
             .follow_links(false)
@@ -544,7 +709,14 @@ impl Package {
                 let local = module_components(relative, true)?;
                 let mounted =
                     prefix.map_or_else(|| local.clone(), |name| mounted_components(name, &local));
-                self.add_explicit(mounted, path, origin, prefix.map(|_| &rewrites), overlays)?;
+                self.add_explicit(
+                    mounted,
+                    path,
+                    origin,
+                    prefix.map(|_| &rewrites),
+                    overlays,
+                    cache,
+                )?;
             }
         }
         Ok(())
@@ -568,6 +740,7 @@ impl Package {
         origin: ModuleOrigin,
         import_rewrites: Option<&HashMap<String, Vec<String>>>,
         overlays: &HashMap<Utf8PathBuf, String>,
+        cache: &mut Option<&mut ModuleCache>,
     ) -> Result<(), FosterError> {
         let name = path.join(".");
         let source = overlays.get(&source_path).cloned().map_or_else(
@@ -578,13 +751,14 @@ impl Package {
             },
             Ok,
         )?;
-        let mut program = crate::parse(&source).map_err(|mut error| {
-            error.message = format!("{source_path}: {}", error.message);
-            if error.source_module.is_none() {
-                error.source_module = Some(name.clone());
-            }
-            error
-        })?;
+        let mut program =
+            parse_source_module(cache, &source_path, &source).map_err(|mut error| {
+                error.message = format!("{source_path}: {}", error.message);
+                if error.source_module.is_none() {
+                    error.source_module = Some(name.clone());
+                }
+                error
+            })?;
         if let Some(import_rewrites) = import_rewrites {
             for import in &mut program.imports {
                 if let Some(rewritten) = import_rewrites.get(&import.path.join(".")) {

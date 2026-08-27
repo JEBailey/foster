@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::time::{Duration, Instant};
 
 use lsp_server::{Connection, ErrorCode, Message, Notification, Response};
 use lsp_types::{
@@ -19,6 +20,27 @@ mod compilation;
 mod hints;
 mod workspace;
 use workspace::Workspace;
+
+const DIAGNOSTIC_DEBOUNCE: Duration = Duration::from_millis(150);
+
+#[derive(Default)]
+struct DiagnosticSchedule {
+    deadline: Option<Instant>,
+}
+
+impl DiagnosticSchedule {
+    fn postpone(&mut self, now: Instant) {
+        self.deadline = Some(now + DIAGNOSTIC_DEBOUNCE);
+    }
+
+    fn deadline(&self) -> Option<Instant> {
+        self.deadline
+    }
+
+    fn clear(&mut self) {
+        self.deadline = None;
+    }
+}
 
 pub fn run() -> Result<(), Box<dyn Error>> {
     let (connection, io_threads) = Connection::stdio();
@@ -55,7 +77,27 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     )?;
     let mut workspace = Workspace::new(&initialize_params);
 
-    for message in &connection.receiver {
+    let mut diagnostics = DiagnosticSchedule::default();
+    loop {
+        let message = if let Some(deadline) = diagnostics.deadline() {
+            match connection
+                .receiver
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+            {
+                Ok(message) => message,
+                Err(error) if error.is_timeout() => {
+                    workspace.publish_diagnostics(&connection)?;
+                    diagnostics.clear();
+                    continue;
+                }
+                Err(_) => break,
+            }
+        } else {
+            match connection.receiver.recv() {
+                Ok(message) => message,
+                Err(_) => break,
+            }
+        };
         match message {
             Message::Request(request) => {
                 if connection.handle_shutdown(&request)? {
@@ -118,7 +160,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                     let uri = params.text_document.uri;
                     let text = params.text_document.text;
                     workspace.open(uri, text, params.text_document.version);
-                    workspace.publish_diagnostics(&connection)?;
+                    diagnostics.postpone(Instant::now());
                 }
                 "textDocument/didChange" => {
                     let params: DidChangeTextDocumentParams =
@@ -126,17 +168,18 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                     if let Some(change) = params.content_changes.into_iter().last() {
                         let uri = params.text_document.uri;
                         workspace.change(uri, change.text, params.text_document.version);
-                        workspace.publish_diagnostics(&connection)?;
+                        diagnostics.postpone(Instant::now());
                     }
                 }
                 "textDocument/didClose" => {
                     let params: DidCloseTextDocumentParams =
                         serde_json::from_value(notification.params)?;
                     workspace.close(&params.text_document.uri);
-                    workspace.publish_diagnostics(&connection)?;
+                    diagnostics.postpone(Instant::now());
                 }
                 "workspace/didChangeWatchedFiles" => {
-                    workspace.publish_diagnostics(&connection)?;
+                    workspace.invalidate_compilations();
+                    diagnostics.postpone(Instant::now());
                 }
                 _ => {}
             },
@@ -145,6 +188,26 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     }
     io_threads.join()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod scheduling_tests {
+    use super::*;
+
+    #[test]
+    fn repeated_changes_postpone_diagnostics_until_after_the_latest_change() {
+        let start = Instant::now();
+        let mut diagnostics = DiagnosticSchedule::default();
+        diagnostics.postpone(start);
+        assert_eq!(diagnostics.deadline(), Some(start + DIAGNOSTIC_DEBOUNCE));
+
+        let later = start + Duration::from_millis(100);
+        diagnostics.postpone(later);
+        assert_eq!(diagnostics.deadline(), Some(later + DIAGNOSTIC_DEBOUNCE));
+
+        diagnostics.clear();
+        assert_eq!(diagnostics.deadline(), None);
+    }
 }
 
 pub(super) fn publish(

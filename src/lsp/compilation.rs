@@ -13,12 +13,30 @@ use crate::hir::Compilation;
 #[derive(Default)]
 pub(super) struct CompilationCache {
     entries: RefCell<HashMap<Uri, Rc<Compilation>>>,
+    errors: RefCell<HashMap<Uri, FosterError>>,
     last_good: RefCell<HashMap<Uri, Rc<Compilation>>>,
+    modules: RefCell<crate::package::ModuleCache>,
 }
 
 impl CompilationCache {
     pub(super) fn clear(&self) {
+        // Watched-file changes can invalidate package membership, so discard semantic snapshots.
+        // Parsed modules remain content-addressed in `modules` and are reused on the next build.
         self.entries.borrow_mut().clear();
+        self.errors.borrow_mut().clear();
+    }
+
+    pub(super) fn invalidate(&self, uri: &Uri) {
+        let invalid = self.entries.borrow().get(uri).cloned();
+        let mut entries = self.entries.borrow_mut();
+        if let Some(invalid) = invalid {
+            entries.retain(|_, compilation| !Rc::ptr_eq(compilation, &invalid));
+        } else {
+            entries.remove(uri);
+        }
+        // Failed compilations are keyed by the document that requested them rather than by a
+        // resolved package, so conservatively discard these small entries on any source change.
+        self.errors.borrow_mut().clear();
     }
 
     fn get(&self, uri: &Uri) -> Option<Rc<Compilation>> {
@@ -29,11 +47,21 @@ impl CompilationCache {
         self.last_good.borrow().get(uri).cloned()
     }
 
+    fn error(&self, uri: &Uri) -> Option<FosterError> {
+        self.errors.borrow().get(uri).cloned()
+    }
+
+    fn insert_error(&self, uri: Uri, error: FosterError) {
+        self.errors.borrow_mut().insert(uri, error);
+    }
+
     fn insert(&self, uri: Uri, compilation: Compilation) -> Rc<Compilation> {
         let compilation = Rc::new(compilation);
         let mut entries = self.entries.borrow_mut();
+        let mut errors = self.errors.borrow_mut();
         let mut last_good = self.last_good.borrow_mut();
         entries.insert(uri.clone(), Rc::clone(&compilation));
+        errors.remove(&uri);
         last_good.insert(uri, Rc::clone(&compilation));
         for (_, module) in compilation.hir.modules.iter() {
             let Some(path) = module.source_path.as_deref() else {
@@ -43,9 +71,23 @@ impl CompilationCache {
                 continue;
             };
             entries.insert(uri.clone(), Rc::clone(&compilation));
+            errors.remove(&uri);
             last_good.insert(uri, Rc::clone(&compilation));
         }
         compilation
+    }
+
+    #[cfg(test)]
+    pub(super) fn has_cached_error(&self, uri: &Uri) -> bool {
+        self.errors.borrow().contains_key(uri)
+    }
+
+    #[cfg(test)]
+    pub(super) fn module_parse_count(&self, path: &Path) -> usize {
+        let Ok(path) = Utf8PathBuf::from_path_buf(path.to_owned()) else {
+            return 0;
+        };
+        self.modules.borrow().source_parse_count(&path)
     }
 }
 
@@ -54,8 +96,16 @@ impl Workspace {
         if let Some(compilation) = self.compilations.get(uri) {
             return Ok(compilation);
         }
-        let compilation = self.compile_uncached(uri)?;
-        Ok(self.compilations.insert(uri.clone(), compilation))
+        if let Some(error) = self.compilations.error(uri) {
+            return Err(error);
+        }
+        match self.compile_uncached(uri) {
+            Ok(compilation) => Ok(self.compilations.insert(uri.clone(), compilation)),
+            Err(error) => {
+                self.compilations.insert_error(uri.clone(), error.clone());
+                Err(error)
+            }
+        }
     }
 
     pub(super) fn semantic_compilation_for(&self, uri: &Uri) -> Option<Rc<Compilation>> {
@@ -80,7 +130,11 @@ impl Workspace {
         if let Some(project) = crate::project::Project::discover(&path, self.root.as_deref())?
             && path.starts_with(&project.source_root)
         {
-            let package = crate::package::Package::load_project_with_overlays(&project, &overlays)?;
+            let package = crate::package::Package::load_project_with_overlays_cached(
+                &project,
+                &overlays,
+                &mut self.compilations.modules.borrow_mut(),
+            )?;
             if package.modules.values().any(|module| {
                 module
                     .source_path
@@ -105,14 +159,16 @@ impl Workspace {
             {
                 break;
             }
-            if let Ok(package) = crate::package::Package::load_with_overlays(root, &overlays)
-                && package.modules.values().any(|module| {
-                    module
-                        .source_path
-                        .as_ref()
-                        .is_some_and(|source| source.as_std_path() == path)
-                })
-            {
+            if let Ok(package) = crate::package::Package::load_with_overlays_cached(
+                root,
+                &overlays,
+                &mut self.compilations.modules.borrow_mut(),
+            ) && package.modules.values().any(|module| {
+                module
+                    .source_path
+                    .as_ref()
+                    .is_some_and(|source| source.as_std_path() == path)
+            }) {
                 return Compilation::new(package);
             }
             if self
@@ -147,13 +203,18 @@ impl Workspace {
             },
             Ok,
         )?;
-        let program = crate::parse(&source)?;
+        let mut modules = self.compilations.modules.borrow_mut();
+        let program = modules.parse_source(&source_path, &source)?;
         let module_name = path
             .file_stem()
             .and_then(|name| name.to_str())
             .unwrap_or("main")
             .to_owned();
-        let mut package = crate::package::Package::from_program_with_core(&module_name, program)?;
+        let mut package = crate::package::Package::from_program_with_core_cached(
+            &module_name,
+            program,
+            &mut modules,
+        )?;
         let module = package
             .modules
             .get_mut(&module_name)

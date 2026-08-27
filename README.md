@@ -305,7 +305,10 @@ cargo run --bin foster -- lsp
 It supports package diagnostics with open-buffer overlays, document symbols, go-to-definition
 through imports and receiver-resolved methods, references, identity-aware rename, rich Markdown
 documentation hovers, call signature help, inferred type and argument-name inlay hints, and
-scope-aware completion. The development VS Code extension lives in
+scope-aware completion. Diagnostics wait for a short typing pause before recompiling, while
+interactive requests still compile the latest open-buffer state on demand. Package recompilation
+reuses cached parsed modules and reparses only sources whose contents changed. The development VS
+Code extension lives in
 [`editors/vscode`](editors/vscode/README.md).
 
 ## Documentation map

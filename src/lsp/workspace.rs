@@ -46,8 +46,8 @@ impl Workspace {
     }
 
     pub(super) fn open(&mut self, uri: Uri, text: String, version: i32) {
+        self.compilations.invalidate(&uri);
         self.documents.insert(uri, OpenDocument { text, version });
-        self.compilations.clear();
     }
 
     pub(super) fn change(&mut self, uri: Uri, text: String, version: i32) {
@@ -55,7 +55,11 @@ impl Workspace {
     }
 
     pub(super) fn close(&mut self, uri: &Uri) {
+        self.compilations.invalidate(uri);
         self.documents.remove(uri);
+    }
+
+    pub(super) fn invalidate_compilations(&self) {
         self.compilations.clear();
     }
 
