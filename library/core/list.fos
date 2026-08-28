@@ -20,7 +20,7 @@ pub func List.append<T>(self: List<T>, value: T) -> List<T> [consume self] = int
 
 /// Returns whether this list contains `expected`.
 pub func List.contains?<T>(self: List<T>, expected: T) -> Bool {
-    sequence.contains?(self, expected)
+    sequence::contains?(self, expected)
 }
 
 /// Returns the first element, or `None` when the list is empty.
@@ -42,12 +42,12 @@ pub func last<T>(values: List<T>) -> Option<T> {
 
 /// Applies `transform` to every element and returns the transformed list.
 pub func map<T, U>(values: List<T>, transform: func(T) -> U) -> List<U> {
-    sequence.map(values, transform)
+    sequence::map(values, transform)
 }
 
 /// Returns the elements for which `include` evaluates to true.
 pub func filter<T>(values: List<T>, include: Predicate<T>) -> List<T> {
-    sequence.filter(values, include)
+    sequence::filter(values, include)
 }
 
 /// Reduces the list from left to right, beginning with `initial`.
@@ -69,17 +69,17 @@ pub func find<T>(values: List<T>, predicate: Predicate<T>) -> Option<T> {
 
 /// Returns whether at least one element satisfies `predicate`.
 pub func any?<T>(values: List<T>, predicate: Predicate<T>) -> Bool {
-    sequence.any?(values, predicate)
+    sequence::any?(values, predicate)
 }
 
 /// Returns whether every element satisfies `predicate`.
 pub func all?<T>(values: List<T>, predicate: Predicate<T>) -> Bool {
-    sequence.all?(values, predicate)
+    sequence::all?(values, predicate)
 }
 
 /// Returns whether the list contains an element equal to `expected`.
 pub func contains?<T>(values: List<T>, expected: T) -> Bool {
-    sequence.contains?(values, expected)
+    sequence::contains?(values, expected)
 }
 
 /// Returns a list containing the elements in reverse order.
@@ -117,7 +117,7 @@ pub func get<T>(values: List<T>, index: Int) -> Option<T> {
 
 /// Returns at most the first `count` elements.
 pub func take<T>(values: List<T>, count: Int) -> List<T> {
-    sequence.take(values, count)
+    sequence::take(values, count)
 }
 
 /// Consumes the list and returns the elements after the first `count` entries.
@@ -159,12 +159,12 @@ pub func flatten<T>(values: List<List<T>>) -> List<T> {
 
 /// Counts the elements satisfying `predicate`.
 pub func count<T>(values: List<T>, predicate: Predicate<T>) -> Int {
-    sequence.count(values, predicate)
+    sequence::count(values, predicate)
 }
 
 /// Returns whether no element satisfies `predicate`.
 pub func none?<T>(values: List<T>, predicate: Predicate<T>) -> Bool {
-    sequence.none?(values, predicate)
+    sequence::none?(values, predicate)
 }
 
 /// Combines a nonempty list into one value, or returns `None` for an empty list.

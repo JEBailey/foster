@@ -1,5 +1,5 @@
 import library
 
 func main() -> Int {
-    library.person().secret
+    library::person().secret
 }

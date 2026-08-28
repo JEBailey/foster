@@ -9,7 +9,7 @@ type ExpectedMetrics = {
 
 func main() -> Bool {
     let fixture = "import core.list\nfunc first() { 1 }\n// TODO\nfunc second() { 2 }\n// FIXME\n"
-    let actual = ExpectedMetrics { lines: sequence.count(fixture, (character: CodePoint) -> character == '\n'), todos: 2, functions: 2, imports: 1 }
+    let actual = ExpectedMetrics { lines: sequence::count(fixture, (character: CodePoint) -> character == '\n'), todos: 2, functions: 2, imports: 1 }
     branch {
         actual.lines != 5 -> false
         actual.todos != 2 -> false

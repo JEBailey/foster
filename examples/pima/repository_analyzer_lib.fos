@@ -30,7 +30,7 @@ func count_lines(source: String) -> Int {
 }
 
 func count_newlines(source: String) -> Int {
-    sequence.count(source, (character: CodePoint) -> character == '\n')
+    sequence::count(source, (character: CodePoint) -> character == '\n')
 }
 
 func analyze(source: String) -> Metrics {

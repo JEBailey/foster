@@ -621,7 +621,7 @@ fn carries_source_spans_into_package_hir() {
         .unwrap();
     assert_eq!(
         &source[compilation.hir.expression_spans[&qualified_parse].clone()],
-        "parser.parse"
+        "parser::parse"
     );
     assert_eq!(
         compilation.hir.expression_functions[&qualified_parse],

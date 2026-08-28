@@ -3,11 +3,11 @@ import json.parser as parser
 import tools.text.trim
 
 func decode(source: String) -> String {
-    parser.parse(move source)
+    parser::parse(move source)
 }
 
 func decode_through_parent(source: String) -> String {
-    json.parser.parse(move source)
+    json::parser::parse(move source)
 }
 
 func main() -> Int {

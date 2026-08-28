@@ -40,7 +40,7 @@ func contains_prefix_or_rest(source: String, word: String) -> Bool {
 func SourceWorker.analyze(self: SourceWorker) -> Analysis {
     Analysis {
         files: 1
-        lines: sequence.count(self.source, (character: CodePoint) -> character == '\n') + 1
+        lines: sequence::count(self.source, (character: CodePoint) -> character == '\n') + 1
         todos: branch { contains(self.source, "TODO") -> 1 _ -> 0 }
         functions: branch { contains(self.source, "func ") -> 1 _ -> 0 }
         imports: branch { contains(self.source, "import ") -> 1 _ -> 0 }

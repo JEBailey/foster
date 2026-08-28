@@ -9,6 +9,11 @@ use crate::hir::{Compilation, Expr, ExprId, LocalKind};
 use super::byte_range_to_lsp;
 use super::workspace::{callable_presentation, module_for_uri, position_to_offset};
 
+struct FunctionMapping {
+    semantic: std::ops::Range<usize>,
+    current: std::ops::Range<usize>,
+}
+
 pub(super) fn inlay_hints(
     compilation: &Compilation,
     params: &InlayHintParams,
@@ -118,6 +123,115 @@ pub(super) fn inlay_hints(
     }
     hints.sort_by_key(|hint| (hint.position.line, hint.position.character));
     Some(hints)
+}
+
+/// Reuse hints from a last-good compilation only inside functions whose complete source text is
+/// unchanged. This keeps a broken function from suppressing hints elsewhere without risking stale
+/// insertion positions in the edited function itself.
+pub(super) fn inlay_hints_for_unchanged_functions(
+    compilation: &Compilation,
+    params: &InlayHintParams,
+    current_source: &str,
+) -> Option<Vec<InlayHint>> {
+    let module_id = module_for_uri(compilation, &params.text_document.uri)?;
+    let module = &compilation.hir.modules[module_id];
+    let source_module = compilation.package.module(&module.name)?;
+    let semantic_source = source_module.source.as_deref()?;
+    let program = source_module.program.as_ref()?;
+    let mappings = program
+        .functions
+        .iter()
+        .map(|function| &function.span)
+        .chain(program.tests.iter().map(|test| &test.span))
+        .filter_map(|span| unchanged_function_mapping(semantic_source, current_source, span))
+        .collect::<Vec<_>>();
+    if mappings.is_empty() {
+        return Some(Vec::new());
+    }
+
+    let mut semantic_params = params.clone();
+    semantic_params.range =
+        byte_range_to_lsp(semantic_source, 0..semantic_source.len().saturating_sub(1));
+    let requested_start = position_to_offset(current_source, params.range.start)?;
+    let requested_end = position_to_offset(current_source, params.range.end)?;
+    let mut hints = inlay_hints(compilation, &semantic_params)?;
+    hints.retain_mut(|hint| {
+        let Some(semantic_offset) = position_to_offset(semantic_source, hint.position) else {
+            return false;
+        };
+        let Some(mapping) = mappings.iter().find(|mapping| {
+            mapping.semantic.start <= semantic_offset && semantic_offset <= mapping.semantic.end
+        }) else {
+            return false;
+        };
+        let current_offset = mapping.current.start + semantic_offset - mapping.semantic.start;
+        if current_offset < requested_start || current_offset > requested_end {
+            return false;
+        }
+        hint.position = byte_range_to_lsp(current_source, current_offset..current_offset).start;
+        remap_hint_locations(
+            hint,
+            &params.text_document.uri,
+            semantic_source,
+            current_source,
+            &mappings,
+        );
+        true
+    });
+    hints.sort_by_key(|hint| (hint.position.line, hint.position.character));
+    Some(hints)
+}
+
+fn unchanged_function_mapping(
+    semantic_source: &str,
+    current_source: &str,
+    span: &std::ops::Range<usize>,
+) -> Option<FunctionMapping> {
+    let text = semantic_source.get(span.clone())?;
+    let mut matches = current_source.match_indices(text);
+    let (start, _) = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(FunctionMapping {
+        semantic: span.clone(),
+        current: start..start + text.len(),
+    })
+}
+
+fn remap_hint_locations(
+    hint: &mut InlayHint,
+    uri: &lsp_types::Uri,
+    semantic_source: &str,
+    current_source: &str,
+    mappings: &[FunctionMapping],
+) {
+    let InlayHintLabel::LabelParts(parts) = &mut hint.label else {
+        return;
+    };
+    for part in parts {
+        let Some(location) = &mut part.location else {
+            continue;
+        };
+        if &location.uri != uri {
+            continue;
+        }
+        let Some(start) = position_to_offset(semantic_source, location.range.start) else {
+            continue;
+        };
+        let Some(end) = position_to_offset(semantic_source, location.range.end) else {
+            continue;
+        };
+        let Some(mapping) = mappings
+            .iter()
+            .find(|mapping| mapping.semantic.start <= start && end <= mapping.semantic.end)
+        else {
+            continue;
+        };
+        let current_start = mapping.current.start + start - mapping.semantic.start;
+        let current_end = mapping.current.start + end - mapping.semantic.start;
+        location.range = byte_range_to_lsp(current_source, current_start..current_end);
+    }
 }
 
 pub(super) fn signature_help(

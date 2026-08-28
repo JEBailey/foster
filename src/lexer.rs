@@ -63,6 +63,7 @@ pub enum TokenKind {
     RBracket,
     Comma,
     Colon,
+    DoubleColon,
     Dot,
     Arrow,
     Equal,
@@ -222,6 +223,16 @@ impl<'a> Lexer<'a> {
                 ',' => {
                     self.advance();
                     out.push(tok(TokenKind::Comma, line, column, offset..self.byte_index));
+                }
+                ':' if self.peek_next() == Some(':') => {
+                    self.advance();
+                    self.advance();
+                    out.push(tok(
+                        TokenKind::DoubleColon,
+                        line,
+                        column,
+                        offset..self.byte_index,
+                    ));
                 }
                 ':' => {
                     self.advance();

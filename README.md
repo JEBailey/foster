@@ -138,6 +138,21 @@ The current implementation includes:
   and
 - an initial Cranelift AOT backend for standalone primitive-value executables.
 
+Module qualification uses `::`; type accessors and runtime value access use `.`. Imports keep their
+canonical dotted module names:
+
+```foster
+import core.result
+
+let outcome = Result.Ok(42)
+let mapped = result::map(outcome, (value: Int) -> value + 1)
+let name = user.name
+user.rename("Ada")
+```
+
+Use `::` only to select declarations through a module name, including module-qualified types and
+constants. Use `.` for type-associated functions, enum cases, fields, and instance methods.
+
 Conditional `branch` expressions use `_` for their required fallback arm:
 
 ```foster
@@ -321,7 +336,8 @@ documentation hovers, call signature help, inferred type and argument-name inlay
 scope-aware completion. Diagnostics wait for a short typing pause before recompiling, while
 interactive requests still compile the latest open-buffer state on demand. Package recompilation
 reuses cached parsed modules and reparses only sources whose contents changed. The development VS
-Code extension lives in
+Code extension keeps correctly positioned inlay hints in unchanged functions even when another
+function currently fails to compile. It lives in
 [`editors/vscode`](editors/vscode/README.md).
 
 ## Documentation map

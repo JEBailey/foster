@@ -68,6 +68,15 @@
     "declarations": {
       "patterns": [
         {
+          "match": "\\b(func)\\s+([A-Za-z_][A-Za-z0-9_?]*)(\\.)([A-Za-z_][A-Za-z0-9_?]*)",
+          "captures": {
+            "1": { "name": "storage.type.function.foster" },
+            "2": { "name": "entity.name.type.foster" },
+            "3": { "name": "punctuation.accessor.foster" },
+            "4": { "name": "entity.name.function.foster" }
+          }
+        },
+        {
           "match": "\\b(func)\\s+([A-Za-z_][A-Za-z0-9_?]*)",
           "captures": {
             "1": { "name": "storage.type.function.foster" },
@@ -98,6 +107,7 @@
     },
     "operators": {
       "patterns": [
+        { "name": "keyword.operator.qualification.foster", "match": "::" },
         { "name": "keyword.operator.type.intersection.foster", "match": "&" },
         { "name": "keyword.operator.type.union.foster", "match": "\\|" }
       ]

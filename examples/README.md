@@ -44,6 +44,7 @@ static duck typing without a wrapper or runtime conversion:
 ```console
 cargo run --bin foster -- run examples/type_composition.fos
 ```
+
 `collections.fos` demonstrates the shared `Collection<T>` contract, a Foster-written `Set<T>`,
 the generic `Range<T>` sequence view, and borrowed `.iterator()` creation.
 
@@ -51,7 +52,7 @@ the generic `Range<T>` sequence view, and borrowed `.iterator()` creation.
 boundaries, and mutation followed by ownership-transferring `ByteBuffer.freeze`.
 
 `streams.fos` demonstrates generic `Reader<E>` and `Writer<E>` conformance, partial writes,
-clean EOF, and the Foster-written `stream.copy` algorithm.
+clean EOF, and the Foster-written `stream::copy` algorithm.
 
 `result_propagation.fos` demonstrates `try`: a successful `Result` value is unwrapped while an
 error is returned immediately, even though the operation and enclosing function have different

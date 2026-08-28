@@ -15,7 +15,7 @@ pub use mir::{
 
 /// Source-language compatibility level. Increment for intentional breaking
 /// syntax or type-system changes.
-pub const LANGUAGE_VERSION: u16 = 5;
+pub const LANGUAGE_VERSION: u16 = 6;
 
 /// Normative ownership-contract compatibility level. Increment whenever a
 /// previously accepted safe program is intentionally rejected or an ownership

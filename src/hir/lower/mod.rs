@@ -468,10 +468,10 @@ fn lower_constant_value(
         Expr::Name(name) => {
             ConstantValue::Constant(resolve_constant_name(hir, module, imports, name)?)
         }
-        Expr::Member { object, name } => {
-            let Expr::Name(import) = object.unspanned() else {
+        Expr::Qualified { namespace, name } => {
+            let Expr::Name(import) = namespace.unspanned() else {
                 return Err(FosterError::runtime(
-                    "constant initializer contains a non-constant member expression",
+                    "constant initializer contains an invalid qualification path",
                 ));
             };
             let imported = imports.get(import).ok_or_else(|| {
@@ -485,11 +485,20 @@ fn lower_constant_value(
             })?;
             if !hir.constants[constant].public {
                 return Err(FosterError::runtime(format!(
-                    "constant `{}.{name}` is private",
+                    "constant `{}::{name}` is private",
                     hir.modules[*imported].name
                 )));
             }
             ConstantValue::Constant(constant)
+        }
+        Expr::Member { object, name } if matches!(object.unspanned(), Expr::Name(import) if imports.contains_key(import)) =>
+        {
+            let Expr::Name(import) = object.unspanned() else {
+                unreachable!()
+            };
+            return Err(FosterError::runtime(format!(
+                "module qualification uses `::`; write `{import}::{name}`"
+            )));
         }
         _ => {
             return Err(FosterError::runtime(

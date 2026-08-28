@@ -9,11 +9,11 @@ import core.list
 import core.option
 
 func first_doubled(values: List<Int>) -> Option<Int> {
-    list.first(list.map(values, (value: Int) -> value * 2))
+    list::first(list::map(values, (value: Int) -> value * 2))
 }
 ```
 
-`import core.option` exposes its public `Option` type directly. The `option.Option` spelling remains
+`import core.option` exposes its public `Option` type directly. The `option::Option` spelling remains
 available when qualification improves clarity or resolves an ambiguity. Common function names such
 as `map` should normally remain module-qualified when several collection or result modules are
 imported.

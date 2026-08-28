@@ -313,6 +313,10 @@ pub enum Expr {
         object: Box<Expr>,
         name: String,
     },
+    Qualified {
+        namespace: Box<Expr>,
+        name: String,
+    },
     Index {
         object: Box<Expr>,
         index: Box<Expr>,
@@ -419,6 +423,7 @@ pub enum Pattern {
     Symbol(String),
     Variant {
         path: Vec<String>,
+        enum_accessor: bool,
         fields: Vec<Pattern>,
     },
 }

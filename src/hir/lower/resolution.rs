@@ -115,7 +115,11 @@ impl FunctionLowerer<'_> {
             .ok_or_else(|| self.error(format!("enum `{type_name}` has no case `{case}`")))
     }
 
-    pub(super) fn resolve_variant(&self, path: &[String]) -> Result<VariantId, FosterError> {
+    pub(super) fn resolve_variant(
+        &self,
+        path: &[String],
+        enum_accessor: bool,
+    ) -> Result<VariantId, FosterError> {
         if path.len() == 1 {
             let local = self.hir.modules[self.module]
                 .variant_types
@@ -158,6 +162,7 @@ impl FunctionLowerer<'_> {
         }
         if path.len() != 2 {
             if path.len() == 3
+                && enum_accessor
                 && let Some(module) = self.imports.get(&path[0]).copied()
                 && let Some(parent) = self.hir.variant_type_named(module, &path[1])
             {
@@ -184,10 +189,7 @@ impl FunctionLowerer<'_> {
             }
             return Err(self.error("enum pattern must name a case"));
         }
-        if let Some(variant) = self.resolve_variant_constructor(&path[0], &path[1])? {
-            return Ok(variant);
-        }
-        if let Some(module) = self.imports.get(&path[0]).copied() {
+        if !enum_accessor && let Some(module) = self.imports.get(&path[0]).copied() {
             let matches = self.hir.modules[module]
                 .variant_types
                 .values()
@@ -209,6 +211,15 @@ impl FunctionLowerer<'_> {
                     path[0], path[1]
                 ))),
             };
+        }
+        if !enum_accessor {
+            return Err(self.error(format!(
+                "enum type access uses `.`; write `{}.{}`",
+                path[0], path[1]
+            )));
+        }
+        if let Some(variant) = self.resolve_variant_constructor(&path[0], &path[1])? {
+            return Ok(variant);
         }
         let parent = self
             .hir
@@ -329,26 +340,6 @@ impl FunctionLowerer<'_> {
 
     pub(super) fn resolve_qualified(&self, path: &[&str]) -> Result<ResolvedName, FosterError> {
         let mut module = self.imports[path[0]];
-        if path.len() == 3
-            && let Some(parent) = self.hir.variant_type_named(module, path[1])
-            && self.hir.variant_types[parent].kind == ast::VariantKind::Enum
-        {
-            if !self.hir.variant_types[parent].public {
-                return Err(self.error(format!("type `{}.{}` is private", path[0], path[1])));
-            }
-            let variant = self.hir.variant_types[parent]
-                .alternatives
-                .iter()
-                .copied()
-                .find(|id| self.hir.variants[*id].name == path[2])
-                .ok_or_else(|| {
-                    self.error(format!(
-                        "enum `{}.{}` has no case `{}`",
-                        path[0], path[1], path[2]
-                    ))
-                })?;
-            return Ok(ResolvedName::Variant(variant));
-        }
         for (index, component) in path.iter().enumerate().skip(1) {
             let last = index + 1 == path.len();
             if last && let Some(constant) = self.hir.constant_named(module, component) {
@@ -433,7 +424,7 @@ pub(super) fn qualified_path(expression: &ast::Expr) -> Option<Vec<&str>> {
                 path.push(name);
                 true
             }
-            ast::Expr::Member { object, name } if collect(object, path) => {
+            ast::Expr::Qualified { namespace, name } if collect(namespace, path) => {
                 path.push(name);
                 true
             }
@@ -443,4 +434,13 @@ pub(super) fn qualified_path(expression: &ast::Expr) -> Option<Vec<&str>> {
 
     let mut path = Vec::new();
     collect(expression, &mut path).then_some(path)
+}
+
+pub(super) fn accessor_path(expression: &ast::Expr) -> Option<Vec<&str>> {
+    let ast::Expr::Member { object, name } = expression.unspanned() else {
+        return None;
+    };
+    let mut path = qualified_path(object)?;
+    path.push(name);
+    Some(path)
 }

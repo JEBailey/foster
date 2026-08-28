@@ -10,7 +10,7 @@ func read_port(configured: Bool) -> Result<Int, String> {
 
 func endpoint(configured: Bool) -> Result<String, String> {
     let port = try read_port(configured)
-    Result.Ok("localhost:" + int.to_string(port))
+    Result.Ok("localhost:" + int::to_string(port))
 }
 
 func render(outcome: Result<String, String>) -> String {

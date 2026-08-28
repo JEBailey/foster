@@ -45,15 +45,29 @@ import json
 import json.parser as parser
 
 func decode(source: String) {
-    parser.parse(source)
+    parser::parse(source)
 }
 ```
 
 An import makes the module's public declarations available directly and also binds its final path
 component as a module qualifier. Thus `import core.option` permits both `Option<T>` and
-`option.Option<T>`. Same-module declarations take precedence. If multiple imported modules expose
+`option::Option<T>`. Same-module declarations take precedence. If multiple imported modules expose
 the same unqualified name, Foster requires a module-qualified use at that point; importing the
 modules themselves remains valid.
+
+Module qualification uses `::`, while type accessors and runtime value access use `.`. Module
+functions, qualified constants, and qualified type names therefore use `::`; associated functions,
+enum cases, fields, and instance methods use `.`:
+
+```foster
+let decoded = parser::parse(source)
+let outcome = Result.Ok(decoded)
+let name = user.name
+user.rename("Ada")
+```
+
+Canonical module identities in imports remain dotted, such as `import std.net.tcp`. This keeps
+filesystem module paths visually distinct from selecting a declaration through a module.
 
 Modules and declarations occupy one logical name system. Modules established by a `.fos` file,
 a directory, or both are implicitly public and may always be addressed by canonical path. Every
@@ -108,8 +122,8 @@ func main(arguments: Arguments) -> String {
 }
 ```
 
-`Arguments.executable: String` is the path or command used to invoke the program.
-`Arguments.values: List<String>` contains the remaining values and does not repeat the executable.
+The `executable: String` field of `Arguments` is the path or command used to invoke the program.
+Its `values: List<String>` field contains the remaining values and does not repeat the executable.
 `foster run` accepts these after an explicit `--`; a native executable receives its operating
 system command line directly. A `main` with any other parameter list is rejected with `E0901`.
 Command arguments must be valid Unicode because Foster `String` preserves valid UTF-8.
@@ -288,7 +302,7 @@ An owner-qualified declaration with no `self` receiver is an associated function
 with `self` is an instance method, such as
 `func Map.get(self: Map<K, V>, key: K)`. The qualifier is part of method identity, so different
 types in one module may declare the same member name. Both directly imported `Map.empty()` and
-explicitly module-qualified `map.Map.empty()` calls resolve to the same function.
+explicitly module-qualified `map::Map.empty()` calls resolve to the same function.
 
 ## Union contracts and enums
 
@@ -710,7 +724,7 @@ required. Empty bytes or text signal clean EOF. A binary write may be partial an
 the number accepted. Successful non-empty reads and writes must make progress.
 
 Mutable parameters are borrowed places in VM call frames. Consequently, calling a generic helper
-such as `stream.copy(reader, writer)` mutates the original stateful values rather than temporary
+such as `stream::copy(reader, writer)` mutates the original stateful values rather than temporary
 copies. Consuming parameters still transfer ownership, and read-only parameters retain ordinary
 borrow behavior.
 

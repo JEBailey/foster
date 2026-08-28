@@ -437,6 +437,10 @@ impl Parser {
                     self.error("associated function declarations accept one type qualifier")
                 );
             }
+        } else if self.at(&TokenKind::DoubleColon) {
+            return Err(
+                self.error("associated function declarations use `.`; replace `::` with `.`")
+            );
         }
         let (type_parameters, groups) = self.function_parameters()?;
         self.expect(&TokenKind::LParen, "expected `(` after function name")?;
@@ -635,9 +639,12 @@ impl Parser {
             });
         }
         let mut name = self.expect_ident("expected type name")?;
-        while self.take(&TokenKind::Dot) {
+        while self.take(&TokenKind::DoubleColon) {
             name.push('.');
-            name.push_str(&self.expect_ident("expected type name after `.`")?);
+            name.push_str(&self.expect_ident("expected type name after `::`")?);
+        }
+        if self.at(&TokenKind::Dot) {
+            return Err(self.error("qualified type names use `::`; replace `.` with `::`"));
         }
         let mut arguments = Vec::new();
         if self.take(&TokenKind::Less) {

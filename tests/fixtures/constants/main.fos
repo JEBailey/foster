@@ -1,5 +1,5 @@
 import values
 
 func main() -> Int {
-    EXPORTED + values.OFFSET
+    EXPORTED + values::OFFSET
 }

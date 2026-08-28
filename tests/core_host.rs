@@ -368,8 +368,8 @@ import core.int
 import core.string
 
 func main() -> String {
-    let parts = string.split("one,two,three", ",")
-    string.upper(string.join(parts, "-") + ":" + int.to_string(-42))
+    let parts = string::split("one,two,three", ",")
+    string::upper(string::join(parts, "-") + ":" + int::to_string(-42))
 }
 "#;
     assert_string(foster::run(source).unwrap(), "ONE-TWO-THREE:-42");
@@ -434,14 +434,14 @@ func failed_int(message: String) -> Result<Int, String> { Result.Error(message) 
 func nested_result() -> Result<Result<Int, String>, String> { Result.Ok(Result.Ok(5)) }
 
 func main() -> Int {
-    let a = option.unwrap_or_else(no_int(), option_fallback)
-    let b = option.unwrap_or(option.flatten(nested_option()), 0)
-    let c = option.unwrap_or(option.or_else(no_int(), option_recovery), 0)
-    let d = result.unwrap_or_else(failed_int("four"), result_fallback)
-    let e = result.unwrap_or(result.flatten(nested_result()), 0)
-    let f = result.unwrap_or(result.or_else(failed_int("six"), result_recovery), 0)
-    let absent = option.absent?(no_int())
-    let failed = result.error?(failed_int("failure"))
+    let a = option::unwrap_or_else(no_int(), option_fallback)
+    let b = option::unwrap_or(option::flatten(nested_option()), 0)
+    let c = option::unwrap_or(option::or_else(no_int(), option_recovery), 0)
+    let d = result::unwrap_or_else(failed_int("four"), result_fallback)
+    let e = result::unwrap_or(result::flatten(nested_result()), 0)
+    let f = result::unwrap_or(result::or_else(failed_int("six"), result_recovery), 0)
+    let absent = option::absent?(no_int())
+    let failed = result::error?(failed_int("failure"))
     branch {
         absent -> branch {
             failed -> a + b + c + d + e + f
@@ -619,8 +619,8 @@ func text(outcome: Result<String, IoError>) -> String {
 }
 
 func main() -> String {
-    let cwd = text(environment.current_directory())
-    text(paths.canonicalize(paths.join(cwd, ".")))
+    let cwd = text(environment::current_directory())
+    text(paths::canonicalize(paths::join(cwd, ".")))
 }
 "#;
 
@@ -670,12 +670,12 @@ func receive(connection: Connection, outcome: Result<String, NetworkError>) -> S
 }}
 
 func finish(connection: Connection, text: String) -> String {{
-    tcp.close_connection(connection)
+    tcp::close_connection(connection)
     text
 }}
 
 func main() -> String {{
-    start(tcp.connect("127.0.0.1", {port}))
+    start(tcp::connect("127.0.0.1", {port}))
 }}
 "#
     );

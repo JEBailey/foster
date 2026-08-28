@@ -69,3 +69,19 @@ The enclosing function may use a different success type, but its error type must
 The ownership-model version remains 1 because the success and error edges use the existing
 consumption, scope-destruction, and return rules. The bytecode format remains version 7 because
 the compiler lowers `try` to existing pattern tests, jumps, and return instructions.
+
+## Language version 6
+
+Language version 6 separates module qualification from access through a type or runtime value.
+Module declarations, module-qualified constants, functions, and type names use `::`. Associated
+function declarations, type accessors, enum cases, fields, and instance members use `.`. Module
+identities in import declarations remain dotted, so `import core.result` is unchanged.
+
+Migrate `result.map` to `result::map` and a qualified type such as `model.User` to `model::User`.
+Type spellings such as `Result.Ok` and `func Box.make` remain dotted, as do runtime expressions such
+as `user.name` and `user.rename()`. The compiler reports actionable replacement hints for former
+dotted module qualification and accidental `::` type access; no data or ABI migration is needed.
+
+The ownership-model version remains 1 because this is a parse and name-resolution distinction with
+no ownership, group, lifetime, or effect change. The bytecode format remains version 7 because
+qualification is completely resolved before bytecode lowering.

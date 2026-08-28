@@ -98,7 +98,7 @@ fn associated_function_navigation_uses_the_type_namespace() {
             },
         })
         .unwrap();
-    assert_eq!(references.len(), 3);
+    assert_eq!(references.len(), 3, "{references:?}");
 
     let completion = workspace
         .completion(&CompletionParams {
@@ -106,7 +106,7 @@ fn associated_function_navigation_uses_the_type_namespace() {
                 lsp_types::TextDocumentIdentifier::new(
                     path_to_uri(&root.join("main.fos")).unwrap(),
                 ),
-                Position::new(3, 21),
+                Position::new(3, 22),
             ),
             work_done_progress_params: Default::default(),
             partial_result_params: Default::default(),
@@ -393,7 +393,7 @@ func select(value: Choice) -> String {
     let location = workspace
         .definition(&TextDocumentPositionParams::new(
             lsp_types::TextDocumentIdentifier::new(uri.clone()),
-            Position::new(5, 32),
+            Position::new(5, 33),
         ))
         .unwrap();
 
@@ -493,23 +493,49 @@ func main() -> Int {
 }
 
 #[test]
-fn inlay_hints_do_not_reuse_stale_positions_after_an_invalid_edit() {
+fn inlay_hints_survive_an_error_in_another_function_without_stale_positions() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let source = r#"func add(left: Int, right: Int) -> Int { left + right }
+    let source = r#"func changing() -> Int {
+    let temporary = 1
+    temporary
+}
+
+func add(left: Int, right: Int) -> Int { left + right }
 func main() -> Int {
-    add(1, 2)
+    let value = add(1, 2)
+    value
 }
 "#;
     workspace.open(uri.clone(), source.into(), 1);
     let params = InlayHintParams {
         work_done_progress_params: Default::default(),
         text_document: lsp_types::TextDocumentIdentifier::new(uri.clone()),
-        range: lsp_types::Range::new(Position::new(0, 0), Position::new(3, 1)),
+        range: lsp_types::Range::new(Position::new(0, 0), Position::new(9, 1)),
     };
     assert!(!workspace.inlay_hints(&params).unwrap().is_empty());
 
-    workspace.change(uri, format!("@\n{source}"), 2);
-    assert!(workspace.inlay_hints(&params).unwrap().is_empty());
+    let invalid = r#"func changing() -> Int {
+    let temporary = 1
+    @
+    temporary
+}
+
+func add(left: Int, right: Int) -> Int { left + right }
+func main() -> Int {
+    let value = add(1, 2)
+    value
+}
+"#;
+    workspace.change(uri, invalid.into(), 2);
+    let hints = workspace.inlay_hints(&params).unwrap();
+    assert!(!hints.is_empty());
+    assert!(hints.iter().all(|hint| hint.position.line >= 7));
+    for expected in ["left:", "right:"] {
+        assert!(hints.iter().any(|hint| {
+            hint.position.line == 8
+                && matches!(&hint.label, lsp_types::InlayHintLabel::LabelParts(parts) if parts.iter().any(|part| part.value == expected))
+        }));
+    }
 }
 
 #[test]

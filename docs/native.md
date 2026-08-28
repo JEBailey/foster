@@ -21,7 +21,7 @@ The native ABI stores each currently supported Foster value in one 64-bit word. 
 
 - `()`, `Bool`, `Int`, binary64 `Float`, `CodePoint`, and `Byte` parameters and results;
 - String constants, equality, command-argument strings, and String results;
-- `Arguments.executable`, `Arguments.values`, and read-only `List<String>` indexing, `empty?`,
+- the `executable` and `values` fields of `Arguments`, plus read-only `List<String>` indexing, `empty?`,
   `length`, and `head` operations;
 - primitive constants, moves, unary operations, arithmetic, bit operations, shifts, and comparisons;
 - direct function and statically resolved method calls;

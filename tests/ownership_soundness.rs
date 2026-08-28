@@ -331,7 +331,7 @@ func main() { 0 }
     let first_dump = first.ownership.debug_dump(&first.hir);
     let second_dump = second.ownership.debug_dump(&second.hir);
     assert_eq!(first_dump, second_dump);
-    assert!(first_dump.contains("foster-language=5 ownership-model=1"));
+    assert!(first_dump.contains("foster-language=6 ownership-model=1"));
     assert!(first_dump.contains("loan L"));
     assert!(first_dump.contains("region L"));
 
@@ -351,7 +351,7 @@ func main() -> Int {
 
 #[test]
 fn ownership_compatibility_surface_is_stable() {
-    assert_eq!(foster::ownership::LANGUAGE_VERSION, 5);
+    assert_eq!(foster::ownership::LANGUAGE_VERSION, 6);
     assert_eq!(foster::ownership::MODEL_VERSION, 1);
     assert_eq!(
         foster::ownership::diagnostics::CATALOG
@@ -407,6 +407,26 @@ func main() -> Result<Int, String> {
 }
 "#;
     assert!(foster::compile(propagation).is_ok());
+}
+
+#[test]
+fn language_version_six_separates_qualification_from_member_access() {
+    let old_case =
+        foster::compile("enum Choice = Value(Int)\nfunc main() -> Choice { Choice::Value(1) }")
+            .unwrap_err();
+    assert!(
+        old_case.message.contains("type access uses `.`")
+            && old_case.message.contains("Choice.Value"),
+        "{old_case:?}"
+    );
+
+    let new_case = r#"
+enum Choice = Value(Int)
+type Box = { value: Choice }
+func Box.make(value: Choice) -> Box { Box { value } }
+func main() -> Choice { Box.make(Choice.Value(1)).value }
+"#;
+    assert!(foster::compile(new_case).is_ok());
 }
 
 #[test]

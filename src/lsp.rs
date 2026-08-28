@@ -480,7 +480,7 @@ mod tests {
 
     #[test]
     fn missing_module_members_point_to_the_member_expression() {
-        let source = "import core.float\nfunc main() -> String { float.missing(1.0) }\n";
+        let source = "import core.float\nfunc main() -> String { float::missing(1.0) }\n";
         let diagnostics = diagnostics(source);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].severity, Some(DiagnosticSeverity::ERROR));
@@ -490,7 +490,7 @@ mod tests {
                 .contains("module `core.float` has no member `missing`")
         );
         assert_eq!(diagnostics[0].range.start, Position::new(1, 24));
-        assert_eq!(diagnostics[0].range.end, Position::new(1, 37));
+        assert_eq!(diagnostics[0].range.end, Position::new(1, 38));
     }
 
     #[test]

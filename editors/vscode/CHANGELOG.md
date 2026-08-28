@@ -1,5 +1,11 @@
 # Change Log
 
+- Keep inlay hints active in unchanged functions when another function has a syntax or semantic
+  failure, with current-buffer position remapping to prevent hints appearing inside source text.
+- Use `::` only for module qualification; keep `.` for type accessors, enum cases, runtime fields,
+  and instance members.
+- Advance source-language compatibility to version 6 for the qualification syntax migration;
+  ownership and bytecode compatibility remain unchanged.
 - Add highlighting and completion support for the `try` Result-propagation expression.
 - Advance source-language compatibility to version 5 because `try` is now reserved; ownership and
   bytecode compatibility remain unchanged.

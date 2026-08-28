@@ -1,4 +1,4 @@
-use super::resolution::qualified_path;
+use super::resolution::{accessor_path, qualified_path};
 use super::*;
 
 impl FunctionLowerer<'_> {
@@ -195,7 +195,16 @@ impl FunctionLowerer<'_> {
             self.hir.expression_spans.insert(lowered, span.clone());
             return Ok(lowered);
         }
-        if let Some(path) = qualified_path(expression)
+        if let ast::Expr::Member { object, name } = expression.unspanned() {
+            if let ast::Expr::Name(qualifier) = object.unspanned() {
+                if self.imports.contains_key(qualifier) {
+                    return Err(self.error(format!(
+                        "module qualification uses `::`; write `{qualifier}::{name}`"
+                    )));
+                }
+            }
+        }
+        if let Some(path) = accessor_path(expression)
             && path.len() == 2
         {
             let mut unions = std::iter::once(self.module)
@@ -213,16 +222,42 @@ impl FunctionLowerer<'_> {
                 )));
             }
         }
-        if let Some(path) = qualified_path(expression)
+        if let Some(path) = accessor_path(expression)
             && path.len() == 2
             && let Some(variant) = self.resolve_variant_constructor(path[0], path[1])?
         {
             return Ok(self.alloc_expression(Expr::Name(ResolvedName::Variant(variant))));
         }
-        if let Some(path) = qualified_path(expression)
+        if let Some(path) = accessor_path(expression)
             && let Some(function) = self.resolve_associated_function(&path)?
         {
             return Ok(self.alloc_expression(Expr::Name(ResolvedName::Function(function))));
+        }
+        if let Some(path) = qualified_path(expression) {
+            if path.len() == 2
+                && !self.imports.contains_key(path[0])
+                && (self.hir.record_named(self.module, path[0]).is_some()
+                    || self.hir.variant_type_named(self.module, path[0]).is_some()
+                    || self.imports.values().any(|module| {
+                        self.hir.record_named(*module, path[0]).is_some()
+                            || self.hir.variant_type_named(*module, path[0]).is_some()
+                    }))
+            {
+                return Err(self.error(format!(
+                    "type access uses `.`; write `{}.{}`",
+                    path[0], path[1]
+                )));
+            }
+            if path.len() == 3
+                && let Some(module) = self.imports.get(path[0]).copied()
+                && (self.hir.record_named(module, path[1]).is_some()
+                    || self.hir.variant_type_named(module, path[1]).is_some())
+            {
+                return Err(self.error(format!(
+                    "type access uses `.`; write `{}::{}.{}`",
+                    path[0], path[1], path[2]
+                )));
+            }
         }
         if let Some(path) = qualified_path(expression)
             && self.imports.contains_key(path[0])
@@ -258,6 +293,11 @@ impl FunctionLowerer<'_> {
                 object: self.lower_expression(object)?,
                 name: name.clone(),
             },
+            ast::Expr::Qualified { .. } => {
+                return Err(
+                    self.error("`::` requires an imported module name on its left-hand side")
+                );
+            }
             ast::Expr::Index { object, index } => Expr::Index {
                 object: self.lower_expression(object)?,
                 index: self.lower_expression(index)?,
@@ -444,8 +484,12 @@ impl FunctionLowerer<'_> {
             ast::Pattern::String(v) => Pattern::String(v.clone()),
             ast::Pattern::CodePoint(v) => Pattern::CodePoint(v.clone()),
             ast::Pattern::Symbol(v) => Pattern::Symbol(v.clone()),
-            ast::Pattern::Variant { path, fields } => {
-                let variant = self.resolve_variant(path)?;
+            ast::Pattern::Variant {
+                path,
+                enum_accessor,
+                fields,
+            } => {
+                let variant = self.resolve_variant(path, *enum_accessor)?;
                 Pattern::Variant {
                     variant,
                     fields: fields

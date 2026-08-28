@@ -26,3 +26,7 @@ for (const unsupported of [String.raw`\b`, String.raw`\/`, String.raw`\u1234`]) 
 }
 
 assert.equal(operators.some((operator) => operator.name === "keyword.operator.type.union.foster"), true);
+assert.equal(
+  operators.some((operator) => operator.name === "keyword.operator.qualification.foster"),
+  true,
+);

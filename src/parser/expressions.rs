@@ -249,6 +249,15 @@ impl Parser {
                         name,
                     },
                 );
+            } else if self.take(&TokenKind::DoubleColon) {
+                let name = self.expect_ident("expected qualified name after `::`")?;
+                expr = self.spanned(
+                    start,
+                    Expr::Qualified {
+                        namespace: Box::new(expr),
+                        name,
+                    },
+                );
             } else if self.take(&TokenKind::LBracket) {
                 let index = self.expression()?;
                 self.expect(&TokenKind::RBracket, "expected `]` after index")?;
@@ -542,8 +551,15 @@ impl Parser {
             TokenKind::Symbol(value) => Pattern::Symbol(value),
             TokenKind::Ident(first) => {
                 let mut path = vec![first];
-                while self.take(&TokenKind::Dot) {
-                    path.push(self.expect_ident("expected name after `.` in pattern")?);
+                while self.take(&TokenKind::DoubleColon) {
+                    path.push(self.expect_ident("expected name after `::` in pattern")?);
+                }
+                let enum_accessor = self.take(&TokenKind::Dot);
+                if enum_accessor {
+                    path.push(self.expect_ident("expected enum case name after `.`")?);
+                    if self.at(&TokenKind::Dot) || self.at(&TokenKind::DoubleColon) {
+                        return Err(self.error("an enum pattern ends with one `.Case` accessor"));
+                    }
                 }
                 if path.len() > 1 || self.at(&TokenKind::LParen) {
                     let mut fields = Vec::new();
@@ -558,7 +574,11 @@ impl Parser {
                         }
                         self.expect(&TokenKind::RParen, "expected `)` after enum pattern")?;
                     }
-                    Pattern::Variant { path, fields }
+                    Pattern::Variant {
+                        path,
+                        enum_accessor,
+                        fields,
+                    }
                 } else {
                     Pattern::Binding(path.remove(0))
                 }

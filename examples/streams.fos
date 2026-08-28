@@ -53,5 +53,5 @@ func render(outcome: Result<Int, StreamError>, writer: MemoryWriter) -> String {
 func main() -> String {
     let reader = MemoryReader { remaining: "Foster!".utf8 }
     let writer = MemoryWriter { contents: Bytes.empty() }
-    render(stream.copy(reader, writer), writer)
+    render(stream::copy(reader, writer), writer)
 }

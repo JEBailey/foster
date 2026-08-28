@@ -1702,7 +1702,7 @@ type TextSlice = & Sequence<CodePoint> & {
 func TextSlice.empty?(self: TextSlice) -> Bool { self.text.empty? }
 func TextSlice.length(self: TextSlice) -> Int { self.text.length }
 func TextSlice.head(self: TextSlice) -> CodePoint { self.text.head }
-func TextSlice.rest(self: TextSlice) -> String { strings.slice(self.text, 1, self.text.length) }
+func TextSlice.rest(self: TextSlice) -> String { strings::slice(self.text, 1, self.text.length) }
 
 func first(values: Sequence<CodePoint>) -> CodePoint {
     values.head()
@@ -2124,7 +2124,7 @@ type TextSlice = & Named & Sequence<CodePoint> & {
 func TextSlice.empty?(self: TextSlice) -> Bool { self.text.empty? }
 func TextSlice.length(self: TextSlice) -> Int { self.text.length }
 func TextSlice.head(self: TextSlice) -> CodePoint { self.text.head }
-func TextSlice.rest(self: TextSlice) -> String { strings.slice(self.text, 1, self.text.length) }
+func TextSlice.rest(self: TextSlice) -> String { strings::slice(self.text, 1, self.text.length) }
 
 func describe(value: Named & Sequence<CodePoint>) -> String {
     value.name + value.head().string
@@ -2566,8 +2566,8 @@ fn strings_and_lists_implement_sequence_without_conversion() {
 import std.sequence
 
 func main() -> Int {
-    let letters = sequence.count("banana", (value: CodePoint) -> value == 'a')
-    let evens = sequence.count([1, 2, 3, 4], (value: Int) -> value / 2 * 2 == value)
+    let letters = sequence::count("banana", (value: CodePoint) -> value == 'a')
+    let evens = sequence::count([1, 2, 3, 4], (value: Int) -> value / 2 * 2 == value)
     letters * 10 + evens
 }
 "#;
@@ -2959,7 +2959,7 @@ func rendered(outcome: Result<Bytes, StreamError>) -> String {
 func copied(outcome: Result<Int, StreamError>) -> String {
     branch outcome {
         Result.Error(error) -> error.message
-        Result.Ok(count) -> int.to_string(count)
+        Result.Ok(count) -> int::to_string(count)
     }
 }
 
@@ -2971,7 +2971,7 @@ func main() -> String {
     let copy_contents = decoded(Bytes.from_hex("00010203040506"))
     let copy_reader = ChunkReader { remaining: copy_contents, chunk_size: 2 }
     let writer = CollectWriter { contents: Bytes.empty(), chunk_size: 3 }
-    let count = copied(stream.copy(copy_reader, writer))
+    let count = copied(stream::copy(copy_reader, writer))
     all + ":" + writer.contents.hex() + ":" + count
 }
 "#;

@@ -2,6 +2,6 @@ import collection
 
 func main() -> Int {
     let direct = Box.create(41)
-    let qualified = collection.Box.create(1)
+    let qualified = collection::Box.create(1)
     direct.unwrap() + qualified.unwrap()
 }

@@ -138,9 +138,10 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
     for constant_id in module.constants.values().copied() {
         count += 1;
         let constant = &compilation.hir.constants[constant_id];
-        contents_entry(&mut contents, &constant.name, "constant");
+        contents_entry(&mut contents, &constant.name, &constant.name, "constant");
         declaration(
             &mut body,
+            &constant.name,
             &constant.name,
             constant.public,
             &constant_signature(compilation, constant_id),
@@ -154,10 +155,12 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
         }
         count += 1;
         let function = &compilation.hir.functions[function_id];
-        contents_entry(&mut contents, &function.name, "function");
+        let source_name = source_function_name(function);
+        contents_entry(&mut contents, &function.name, &source_name, "function");
         declaration(
             &mut body,
             &function.name,
+            &source_name,
             function.public,
             &function_signature(compilation, function_id),
             function.documentation.as_deref(),
@@ -167,9 +170,10 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
     for record_id in module.records.values().copied() {
         count += 1;
         let record = &compilation.hir.records[record_id];
-        contents_entry(&mut contents, &record.name, "type");
+        contents_entry(&mut contents, &record.name, &record.name, "type");
         declaration(
             &mut body,
+            &record.name,
             &record.name,
             record.public,
             &record_signature(record),
@@ -180,9 +184,10 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
     for variant_id in module.variant_types.values().copied() {
         count += 1;
         let variant = &compilation.hir.variant_types[variant_id];
-        contents_entry(&mut contents, &variant.name, "variant");
+        contents_entry(&mut contents, &variant.name, &variant.name, "variant");
         declaration(
             &mut body,
+            &variant.name,
             &variant.name,
             variant.public,
             &variant_signature(compilation, variant_id),
@@ -406,17 +411,18 @@ fn constant_signature(compilation: &Compilation, id: ConstantId) -> String {
     )
 }
 
-fn contents_entry(contents: &mut String, name: &str, kind: &str) {
+fn contents_entry(contents: &mut String, anchor: &str, name: &str, kind: &str) {
     let _ = write!(
         contents,
         "<li><a href=\"#{}\">{} <small>{kind}</small></a></li>",
-        escape(name),
+        escape(anchor),
         escape(name)
     );
 }
 
 fn declaration(
     body: &mut String,
+    anchor: &str,
     name: &str,
     public: bool,
     signature: &str,
@@ -426,8 +432,8 @@ fn declaration(
     let _ = write!(
         body,
         "<article id=\"{}\"><h2><a class=\"anchor\" href=\"#{}\">{}</a><span class=\"badge kind\">{kind}</span><span class=\"badge\">{}</span></h2><pre><code>{}</code></pre>",
-        escape(name),
-        escape(name),
+        escape(anchor),
+        escape(anchor),
         escape(name),
         if public { "public" } else { "private" },
         escape(signature)
@@ -474,8 +480,12 @@ fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
     format!(
         "{}func {}{generics}{groups}({parameters}) -> {result}{effects}",
         if function.public { "pub " } else { "" },
-        function.name
+        source_function_name(function)
     )
+}
+
+fn source_function_name(function: &crate::hir::Function) -> String {
+    function.name.clone()
 }
 
 fn record_signature(record: &crate::hir::Record) -> String {
@@ -584,7 +594,8 @@ fn type_expr(ty: &TypeExpr) -> String {
     match ty {
         TypeExpr::Unit => "()".into(),
         TypeExpr::Named(name, arguments) => format!(
-            "{name}{}",
+            "{}{}",
+            name.replace('.', "::"),
             angled(&arguments.iter().map(type_expr).collect::<Vec<_>>())
         ),
         TypeExpr::Intersection(members) => members

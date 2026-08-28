@@ -1,6 +1,6 @@
 import json.parser as parser
 
 func main() {
-    parser.parse(42)
+    parser::parse(42)
 }
 

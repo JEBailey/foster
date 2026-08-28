@@ -1,6 +1,6 @@
 import math.power as powers
 
 func main() -> Int {
-    powers.raise(5, 2)
+    powers::raise(5, 2)
 }
 

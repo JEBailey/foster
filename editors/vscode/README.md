@@ -20,9 +20,8 @@ and launches the Foster language server. Language features include:
   package fallback) in a shared task terminal.
 
 The bundled grammar highlights line comments, nested block-comment delimiters, documentation
-comments, control keywords such as `try`, code-point literals, effect clauses, sequence types,
-structural intersections, and
-union/variant type members.
+comments, control keywords such as `try`, module `::` qualification, code-point literals,
+effect clauses, sequence types, structural intersections, and union/variant type members.
 
 ## Installation
 
@@ -67,8 +66,9 @@ Code notifications instead of leaving them only in the extension-host log.
 Hover over a declaration or use **Go to Definition** (`F12`, or Ctrl+click on Windows/Linux) to
 inspect and navigate the resolved symbol. Signature help appears after `(` and `,`. VS Code shows
 type and parameter hints by default; they can be toggled with **View: Toggle Inlay Hints** or the
-`editor.inlayHints.enabled` setting. Hints are temporarily suppressed when the open document does
-not compile, preventing stale source positions from placing labels inside edited text.
+`editor.inlayHints.enabled` setting. When a document does not compile, the server safely reuses
+hints only for functions whose complete source is unchanged and remaps them to the current buffer.
+The edited function receives no stale hints, while failures there do not suppress hints elsewhere.
 
 ## Packaging
 

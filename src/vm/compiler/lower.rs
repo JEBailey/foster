@@ -519,13 +519,13 @@ impl FunctionCompiler<'_> {
                 let result = self
                     .hir
                     .variant_type_named(result_module, "Result")
-                    .ok_or_else(|| FosterError::runtime("`try` requires `core.result.Result`"))?;
+                    .ok_or_else(|| FosterError::runtime("`try` requires `core.result::Result`"))?;
                 let ok = self.hir.variant_types[result]
                     .alternatives
                     .iter()
                     .copied()
                     .find(|variant| self.hir.variants[*variant].name == "Ok")
-                    .ok_or_else(|| FosterError::runtime("`core.result.Result.Ok` is missing"))?;
+                    .ok_or_else(|| FosterError::runtime("`core.result::Result.Ok` is missing"))?;
                 let unwrapped = self.allocate();
                 self.locals.insert(*binding, unwrapped);
                 let matched = self.allocate();

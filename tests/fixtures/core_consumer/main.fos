@@ -9,9 +9,9 @@ func initial() -> Result<Int, String> {
 }
 
 func main() -> Int {
-    let values = list.map([1, 2, 3], double)
+    let values = list::map([1, 2, 3], double)
     let first = first(move values)
-    let mapped = result.map(initial(), double)
+    let mapped = result::map(initial(), double)
     branch first {
         Option.Some(value) -> branch mapped {
             Result.Ok(other) -> value + other

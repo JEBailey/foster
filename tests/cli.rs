@@ -324,7 +324,7 @@ fn check_can_dump_deterministic_ownership_state() {
     assert!(first.status.success());
     assert_eq!(first.stdout, second.stdout);
     let output = String::from_utf8(first.stdout).unwrap();
-    assert!(output.contains("foster-language=5 ownership-model=1"));
+    assert!(output.contains("foster-language=6 ownership-model=1"));
     assert!(output.contains("function main.main"));
 }
 

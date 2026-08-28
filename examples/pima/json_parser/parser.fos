@@ -36,7 +36,7 @@ func fail<T>(message: String) -> ParseResult<T> {
 
 func skip_whitespace(characters: String) -> String {
     let prefix = characters.take_while((character: CodePoint) -> [' ', '\n', '\r', '\t'].contains?(character))
-    string.slice(characters, prefix.length, characters.length)
+    string::slice(characters, prefix.length, characters.length)
 }
 
 func digit_value(character: CodePoint) -> Int {
@@ -74,7 +74,7 @@ func scan_digits(characters: String, token: String, count: Int) -> ScannedNumber
     let matched = prefix.length
     ScannedNumber {
         token: token + prefix
-        rest: string.slice(characters, matched, characters.length)
+        rest: string::slice(characters, matched, characters.length)
         digits: count + matched
     }
 }

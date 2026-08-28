@@ -201,8 +201,9 @@ impl Workspace {
                 function.module == module_id && !function.name.contains('$')
             })
         {
+            let name = source_function_name(function);
             symbols.push(symbol(
-                &function.name,
+                &name,
                 SymbolKind::FUNCTION,
                 source,
                 function.span.clone(),
@@ -333,14 +334,14 @@ impl Workspace {
     }
 
     pub(super) fn inlay_hints(&self, params: &InlayHintParams) -> Option<Vec<InlayHint>> {
-        // Unlike hover and navigation, hints carry insertion positions that must correspond to the
-        // current source exactly. A last-good semantic snapshot can have stale spans after an edit
-        // and would place labels inside unrelated tokens while the new source is temporarily invalid.
-        let compilation = match self.compile_for(&params.text_document.uri) {
-            Ok(compilation) => compilation,
-            Err(_) => return Some(Vec::new()),
-        };
-        super::hints::inlay_hints(&compilation, params)
+        match self.compile_for(&params.text_document.uri) {
+            Ok(compilation) => super::hints::inlay_hints(&compilation, params),
+            Err(_) => {
+                let compilation = self.semantic_compilation_for(&params.text_document.uri)?;
+                let current = &self.documents.get(&params.text_document.uri)?.text;
+                super::hints::inlay_hints_for_unchanged_functions(&compilation, params, current)
+            }
+        }
     }
 
     pub(super) fn completion(&self, params: &CompletionParams) -> Option<CompletionResponse> {
@@ -648,8 +649,9 @@ fn symbol_at(
             .rsplit('.')
             .next()
             .unwrap_or(&definition.name);
+        let source_name = source_function_name(definition);
         if declared_name == name
-            && find_name(source, definition.span.clone(), &definition.name)
+            && find_name(source, definition.span.clone(), &source_name)
                 .is_some_and(|span| span.start <= offset && offset <= span.end)
         {
             return Some(SymbolIdentity::Function(function));
@@ -796,19 +798,22 @@ fn symbol_locations(
             continue;
         };
         let name = symbol_name(compilation, symbol);
-        let ranges = if name.contains('.') {
-            qualified_name_ranges(source, name)
+        let source_name = name.to_owned();
+        let ranges = if source_name.contains('.') {
+            qualified_name_ranges(source, &source_name)
         } else {
-            identifier_ranges(source, name).collect()
+            identifier_ranges(source, &source_name).collect()
         };
         for range in ranges {
-            let lookup_offset = name
+            let lookup_offset = source_name
                 .rsplit_once('.')
                 .map_or(range.start, |(_, member)| range.end - member.len());
             if symbol_at(compilation, module_id, source, lookup_offset) == Some(symbol) {
-                let location_range = name.rsplit_once('.').map_or(range.clone(), |(_, member)| {
-                    range.end - member.len()..range.end
-                });
+                let location_range = source_name
+                    .rsplit_once('.')
+                    .map_or(range.clone(), |(_, member)| {
+                        range.end - member.len()..range.end
+                    });
                 locations.push(Location::new(
                     uri.clone(),
                     byte_range_to_lsp(source, location_range),
@@ -1358,8 +1363,12 @@ pub(super) fn function_signature(
     format!(
         "{}func {}{generics}{groups}({parameters}) -> {result}{effects}",
         if function.public { "pub " } else { "" },
-        function.name
+        source_function_name(function)
     )
+}
+
+fn source_function_name(function: &crate::hir::Function) -> String {
+    function.name.clone()
 }
 
 fn record_signature(record: &crate::hir::Record) -> String {
@@ -1553,7 +1562,11 @@ fn display_type_expr(ty: &crate::ast::TypeExpr) -> String {
         crate::ast::TypeExpr::Unit => "()".into(),
         crate::ast::TypeExpr::Named(name, arguments) => {
             let arguments = arguments.iter().map(display_type_expr).collect::<Vec<_>>();
-            format!("{name}{}", angle_parameters(&arguments))
+            format!(
+                "{}{}",
+                name.replace('.', "::"),
+                angle_parameters(&arguments)
+            )
         }
         crate::ast::TypeExpr::Intersection(members) => members
             .iter()
@@ -1803,10 +1816,13 @@ fn qualifier_before(source: &str, start: usize) -> Option<String> {
     while end > 0 && bytes[end - 1].is_ascii_whitespace() {
         end -= 1;
     }
-    if end == 0 || bytes[end - 1] != b'.' {
+    if end >= 2 && &bytes[end - 2..end] == b"::" {
+        end -= 2;
+    } else if end > 0 && bytes[end - 1] == b'.' {
+        end -= 1;
+    } else {
         return None;
     }
-    end -= 1;
     let mut begin = end;
     while begin > 0 && is_ident(bytes[begin - 1]) {
         begin -= 1;

@@ -9,7 +9,7 @@ import core.list
 import core.option
 
 func first_name(names: List<String>) -> Option<String> {
-    list.first(names)
+    list::first(names)
 }
 ```
 
@@ -124,11 +124,11 @@ import core.result
 import std.toml
 
 func package_name(source: String) -> Option<String> {
-    branch toml.parse(move source) {
+    branch toml::parse(move source) {
         Result.Error(_) -> Option.None
-        Result.Ok(document) -> branch toml.get(move document, "package") {
+        Result.Ok(document) -> branch toml::get(move document, "package") {
             Option.None -> Option.None
-            Option.Some(package) -> branch toml.get_table(move package, "name") {
+            Option.Some(package) -> branch toml::get_table(move package, "name") {
                 Option.Some(TomlValue.String(name)) -> Option.Some(name)
                 _ -> Option.None
             }
@@ -157,7 +157,7 @@ also satisfy those accessor requirements without an `&` clause. Composition adds
 conversion. Functions in `std.sequence` are generic algorithms rather than stored members: they
 are not copied into `Foo`, and already accept it through its `Sequence<T>` contract.
 Code-point literals use single quotes, while string literals use double quotes. Operations that
-return an owned generic element, such as `sequence.first`, consume their sequence argument;
+return an owned generic element, such as `sequence::first`, consume their sequence argument;
 observations such as `count`, `contains?`, `any?`, and `all?` borrow it.
 
 `std.iter` defines the stateful `Iterator<T>` and repeatable `Iterable<T>` contracts.
@@ -234,7 +234,7 @@ structural contracts. Binary reads return at most the requested number of bytes 
 successful non-empty operations must make progress. `read_all`, `write_all`, and `copy` implement
 the retry and accumulation policy in Foster. `Duplex<E>` is the combined binary contract.
 
-`std.net.tcp.Connection` implements `Duplex<NetworkError>`. Its `read` and `write` methods are the
+`std.net.tcp::Connection` implements `Duplex<NetworkError>`. Its `read` and `write` methods are the
 contract operations, while `read_text`, `write_text`, `read_bytes`, and `write_bytes` are explicit
 convenience spellings. Filesystem path functions remain whole-file operations rather than claiming
 to be stateful streams.
