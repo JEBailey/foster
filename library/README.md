@@ -59,3 +59,7 @@ Current modules:
 The register VM executes imported core code and calls across modules after the normal checked-HIR
 pipeline. Filesystem and TCP operations cross into the Rust runtime. TOML grammar, validation,
 document construction, and rendering remain Foster source and use only general scalar primitives.
+
+Fallible APIs return the Foster-written `Result<T, E>` type. Library implementations use `try`
+only to forward the same error type; recovery, error mapping, and conversion remain explicit
+`branch` expressions so those policy decisions stay visible.

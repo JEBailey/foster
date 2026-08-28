@@ -6,10 +6,15 @@ impl Checker<'_> {
         expected: Ty,
         actual: Ty,
         function: FunctionId,
-        _expression: ExprId,
+        expression: ExprId,
     ) -> Result<(), FosterError> {
         let expected = self.resolved(expected);
         let actual = self.resolved(actual);
+        if expected == Ty::Int && matches!(actual, Ty::CodePoint | Ty::Byte) {
+            self.integer_promotions.insert(expression);
+            self.expressions.insert(expression, Ty::Int);
+            return Ok(());
+        }
         let Ty::Variant(union, arguments) = expected.clone() else {
             return self.coerce(expected, actual, function);
         };

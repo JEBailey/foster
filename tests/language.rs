@@ -5,6 +5,94 @@ fn assert_string(value: Value, expected: &str) {
 }
 
 #[test]
+fn try_unwraps_success_and_returns_errors_early() {
+    let source = r#"
+import core.result
+
+func operation(fail: Bool) -> Result<Int, Int> {
+    branch fail {
+        true -> Result.Error(7)
+        _ -> Result.Ok(21)
+    }
+}
+
+func propagate(fail: Bool) -> Result<Bool, Int> {
+    let value = try operation(fail)
+    Result.Ok(value == 21)
+}
+
+func main() -> Result<Bool, Int> { propagate(false) }
+"#;
+
+    for optimize in [false, true] {
+        let success =
+            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap();
+        let Value::Variant {
+            alternative,
+            payload,
+            ..
+        } = success
+        else {
+            panic!("try success returned a non-Result value");
+        };
+        assert_eq!(alternative.as_ref(), "Ok");
+        assert_eq!(payload, vec![Value::Bool(true)]);
+
+        let failure_source = source.replace("propagate(false)", "propagate(true)");
+        let failure =
+            foster::run_with_options(&failure_source, foster::vm::CompileOptions { optimize })
+                .unwrap();
+        let Value::Variant {
+            alternative,
+            payload,
+            ..
+        } = failure
+        else {
+            panic!("try failure returned a non-Result value");
+        };
+        assert_eq!(alternative.as_ref(), "Error");
+        assert_eq!(payload, vec![Value::Integer(7)]);
+    }
+}
+
+#[test]
+fn try_requires_compatible_result_types() {
+    let non_result = r#"
+import core.result
+func checked() -> Result<Int, String> { Result.Ok(try 1) }
+func main() -> () { () }
+"#;
+    let error = foster::compile(non_result).unwrap_err();
+    assert!(
+        error.message.contains("requires a Result value"),
+        "{error:?}"
+    );
+
+    let non_result_function = r#"
+import core.result
+func operation() -> Result<Int, String> { Result.Ok(1) }
+func checked() -> Int { try operation() }
+func main() -> () { () }
+"#;
+    let error = foster::compile(non_result_function).unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("enclosing function to return Result"),
+        "{error:?}"
+    );
+
+    let mismatched_error = r#"
+import core.result
+func operation() -> Result<Int, String> { Result.Ok(1) }
+func checked() -> Result<Int, Bool> { Result.Ok(try operation()) }
+func main() -> () { () }
+"#;
+    let error = foster::compile(mismatched_error).unwrap_err();
+    assert!(error.message.contains("same error type"), "{error:?}");
+}
+
+#[test]
 fn assertions_stop_the_current_invocation_with_an_optional_message() {
     let passing = r#"
 func checked(value: Int) -> Int {
@@ -2520,6 +2608,98 @@ func main() -> Int {
                 .unwrap();
         assert_eq!(result, Value::Integer(92));
     }
+}
+
+#[test]
+fn code_point_core_methods_support_instance_and_associated_calls() {
+    let source = r#"
+import core.code_point
+
+func main() -> Int {
+    let first = 'A'
+    first.as_int() + CodePoint.as_int('B')
+}
+"#;
+
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(131));
+}
+
+#[test]
+fn byte_and_code_point_widen_to_int_in_expected_type_contexts() {
+    let source = r#"
+import core.byte
+
+func accept(value: Int) -> Int { value }
+
+func code_point_value() -> Int { 'A' }
+
+func choose(use_code_point: Bool) -> Int {
+    branch {
+        use_code_point -> 'B'
+        _ -> Byte.unchecked(3)
+    }
+}
+
+func main() -> Int {
+    let assigned = 0
+    assigned = 'C'
+    accept('A') + accept(Byte.unchecked(2)) + code_point_value() + choose(false) + assigned
+}
+"#;
+
+    let compilation = foster::compile(source).unwrap();
+    for optimize in [false, true] {
+        let result =
+            foster::vm::run_with_options(&compilation, foster::vm::CompileOptions { optimize })
+                .unwrap();
+        assert_eq!(result, Value::Integer(202));
+    }
+}
+
+#[test]
+fn integer_widening_does_not_apply_in_reverse() {
+    let code_point = foster::compile("func main() -> CodePoint { 65 }").unwrap_err();
+    assert!(
+        code_point.message.contains("CodePoint") && code_point.message.contains("Int"),
+        "{code_point:?}"
+    );
+
+    let byte = foster::compile(
+        r#"
+import core.byte
+func receive(value: Byte) -> Byte { value }
+func main() -> Byte { receive(65) }
+"#,
+    )
+    .unwrap_err();
+    assert!(
+        byte.message.contains("Byte") && byte.message.contains("Int"),
+        "{byte:?}"
+    );
+}
+
+#[test]
+fn integer_widening_preserves_generic_inference_and_container_invariance() {
+    let generic = r#"
+func identity<T>(value: T) -> T [consume value] { value }
+func main() -> CodePoint { identity('A') }
+"#;
+    assert_eq!(foster::run(generic).unwrap(), Value::CodePoint('A'));
+
+    let container = foster::compile(
+        r#"
+func first(values: List<Int>) -> Int { values.head }
+func main() -> Int {
+    let characters = ['A']
+    first(characters)
+}
+"#,
+    )
+    .unwrap_err();
+    assert!(
+        container.message.contains("CodePoint") && container.message.contains("Int"),
+        "{container:?}"
+    );
 }
 
 #[test]

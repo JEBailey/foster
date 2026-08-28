@@ -94,6 +94,7 @@ pub(crate) fn walk_expression<V: Visitor + ?Sized>(
         | Expr::Unary {
             operand: object, ..
         } => visitor.visit_expression(hir, *object),
+        Expr::Try { value, .. } => visitor.visit_expression(hir, *value),
         Expr::Index { object, index }
         | Expr::Binary {
             left: object,

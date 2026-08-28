@@ -1,6 +1,6 @@
 # Foster Ownership and Borrowing
 
-**Status:** language version 4, ownership-model version 1; implemented foundation with provisional
+**Status:** language version 5, ownership-model version 1; implemented foundation with provisional
 rules and known conservative checks.
 
 This document describes Foster's ownership model, its source-level behavior, and how the compiler
@@ -315,8 +315,8 @@ model must preserve these rules:
 10. Assignment cannot create an owned self-borrowing cycle or otherwise make a borrower responsible
     for keeping its own origin alive.
 11. Every control transfer ends or carries loans consistently, including normal and guarded return,
-    loop `break` and `continue`, and loop back-edges,
-    future `break` and `continue`, error propagation, cancellation, and runtime unwinding.
+    `try` error propagation, loop `break` and `continue`, loop back-edges, cancellation, and runtime
+    unwinding.
 12. Temporal validity alone does not permit concurrent mutation. Loans crossing task or remote
     boundaries remain subject to task ownership, overlapping-group, transfer, and synchronization
     rules.
@@ -345,6 +345,11 @@ program outside the implemented model. The current status is:
 | 5, 8, 11, 13 | Enforced for named locals, ordinary return, `await`, and cancellation in the current non-unwinding runtime; temporaries and future unwinding remain partial | Finish expression-temporary destruction and define unwinding before stable release. |
 | 12 | Partial | Loans remain governed by task ownership and effects; crossing-task storage and exclusivity still require a complete specification. |
 | 15 | Unsupported as a general boundary | Host and foreign interfaces must not retain references until retention contracts are implemented. |
+
+A `try` expression consumes its `Result` operand and introduces two control-flow edges. The
+`Result.Ok` edge continues with the success payload. The `Result.Error` edge performs the same
+scope destruction and loan termination as an explicit return before returning that error from the
+enclosing function.
 
 Normative reborrow behavior is therefore fixed: loan issuance records all reaching source loans as
 parents; backward demand for a child also demands its complete parent chain; destructive access to

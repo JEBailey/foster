@@ -56,3 +56,16 @@ targets an enclosing loop, if one exists; otherwise it is a compile error. Branc
 fall through to later pattern or condition tests. Migrate branch-local continuation by expressing
 the selection as guarded conditions or by moving the repeated decision into a loop. The ownership
 model and bytecode format remain unchanged.
+
+## Language version 5
+
+Language version 5 reserves `try` and introduces prefix propagation for `Result<T, E>` values.
+Source that previously used `try` as a declaration or local name must rename that identifier; no
+other automated migration is necessary. A `try expression` evaluates its operand once, yields the
+payload of `Result.Ok`, or immediately returns the same `Result.Error` from the enclosing function.
+The enclosing function may use a different success type, but its error type must match exactly;
+`try` performs no error conversion.
+
+The ownership-model version remains 1 because the success and error edges use the existing
+consumption, scope-destruction, and return rules. The bytecode format remains version 7 because
+the compiler lowers `try` to existing pattern tests, jumps, and return instructions.

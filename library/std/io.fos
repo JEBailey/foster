@@ -81,12 +81,10 @@ pub func copy<E>(reader: Reader<E>, writer: Writer<E>) -> Result<Int, E> [mut re
 
 /// Continues accumulating chunks until the reader reports EOF.
 func read_remaining<E>(reader: Reader<E>, buffer: ByteBuffer) -> Result<Bytes, E> [mut reader, reshape buffer, consume buffer] {
-    branch reader.read(8192) {
-        Result.Error(error) -> Result.Error(error)
-        Result.Ok(chunk) -> branch {
-            chunk.empty? -> Result.Ok((move buffer).freeze())
-            _ -> append_and_read(reader, move buffer, chunk)
-        }
+    let chunk = try reader.read(8192)
+    branch {
+        chunk.empty? -> Result.Ok((move buffer).freeze())
+        _ -> append_and_read(reader, move buffer, chunk)
     }
 }
 
@@ -97,39 +95,31 @@ func append_and_read<E>(reader: Reader<E>, buffer: ByteBuffer, chunk: Bytes) -> 
 }
 
 /// Handles one partial write and retries the unwritten suffix.
-func continue_write<E>(writer: Writer<E>, contents: Bytes, outcome: Result<Int, E>) -> Result<(), E> [mut writer] {
-    branch outcome {
-        Result.Error(error) -> Result.Error(error)
-        Result.Ok(written) -> write_all(writer, contents.slice(written, contents.length))
-    }
+func continue_write<E>(writer: Writer<E>, contents: Bytes, outcome: Result<Int, E>) -> Result<(), E> [mut writer, consume outcome] {
+    let written = try move outcome
+    write_all(writer, contents.slice(written, contents.length))
 }
 
 /// Continues copying after requesting one chunk.
 func copy_remaining<E>(reader: Reader<E>, writer: Writer<E>, total: Int) -> Result<Int, E> [mut reader, mut writer] {
-    branch reader.read(8192) {
-        Result.Error(error) -> Result.Error(error)
-        Result.Ok(chunk) -> branch {
-            chunk.empty? -> finish_copy(total, writer.flush())
-            _ -> write_copy_chunk(reader, writer, chunk, total, writer.write(chunk))
-        }
+    let chunk = try reader.read(8192)
+    branch {
+        chunk.empty? -> finish_copy(total, writer.flush())
+        _ -> write_copy_chunk(reader, writer, chunk, total, writer.write(chunk))
     }
 }
 
 /// Handles a partial chunk write without flushing between input chunks.
-func write_copy_chunk<E>(reader: Reader<E>, writer: Writer<E>, chunk: Bytes, total: Int, outcome: Result<Int, E>) -> Result<Int, E> [mut reader, mut writer] {
-    branch outcome {
-        Result.Error(error) -> Result.Error(error)
-        Result.Ok(written) -> branch {
-            written == chunk.length -> copy_remaining(reader, writer, total + written)
-            _ -> write_copy_chunk(reader, writer, chunk.slice(written, chunk.length), total + written, writer.write(chunk.slice(written, chunk.length)))
-        }
+func write_copy_chunk<E>(reader: Reader<E>, writer: Writer<E>, chunk: Bytes, total: Int, outcome: Result<Int, E>) -> Result<Int, E> [mut reader, mut writer, consume outcome] {
+    let written = try move outcome
+    branch {
+        written == chunk.length -> copy_remaining(reader, writer, total + written)
+        _ -> write_copy_chunk(reader, writer, chunk.slice(written, chunk.length), total + written, writer.write(chunk.slice(written, chunk.length)))
     }
 }
 
 /// Converts the final flush result into the completed byte count.
-func finish_copy<E>(total: Int, outcome: Result<(), E>) -> Result<Int, E> {
-    branch outcome {
-        Result.Error(error) -> Result.Error(error)
-        Result.Ok(_) -> Result.Ok(total)
-    }
+func finish_copy<E>(total: Int, outcome: Result<(), E>) -> Result<Int, E> [consume outcome] {
+    try move outcome
+    Result.Ok(total)
 }

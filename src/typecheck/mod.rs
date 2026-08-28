@@ -68,6 +68,7 @@ impl<'a> Checker<'a> {
             locals: HashMap::new(),
             local_groups: HashMap::new(),
             expressions: HashMap::new(),
+            integer_promotions: HashSet::new(),
             bare_method_members: HashSet::new(),
             extension_methods: HashMap::new(),
             member_constraints: Vec::new(),
@@ -420,9 +421,13 @@ impl<'a> Checker<'a> {
                         function.name
                     )));
                 };
-                let declared_owner = self.resolve_nominal_type(module, owner)?;
-                let receiver_owner = self.resolve_nominal_type(module, receiver_name)?;
-                if declared_owner != receiver_owner {
+                let owners_match = if owner == "CodePoint" || receiver_name == "CodePoint" {
+                    owner == "CodePoint" && receiver_name == "CodePoint"
+                } else {
+                    self.resolve_nominal_type(module, owner)?
+                        == self.resolve_nominal_type(module, receiver_name)?
+                };
+                if !owners_match {
                     return Err(FosterError::runtime(format!(
                         "method `{}` is owned by `{owner}` but receives `{receiver_name}`",
                         function.name

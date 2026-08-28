@@ -252,6 +252,10 @@ pub enum Expr {
     MoveOut(ExprId),
     Remote(ExprId),
     Await(ExprId),
+    Try {
+        value: ExprId,
+        binding: LocalId,
+    },
     Record {
         record: RecordId,
         fields: Vec<(String, ExprId)>,

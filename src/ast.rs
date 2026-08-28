@@ -321,6 +321,7 @@ pub enum Expr {
     MoveOut(Box<Expr>),
     Remote(Box<Expr>),
     Await(Box<Expr>),
+    Try(Box<Expr>),
     Record {
         constructor: Box<Expr>,
         fields: Vec<RecordFieldValue>,

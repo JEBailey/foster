@@ -22,7 +22,7 @@ pub func Byte.from(value: Int) -> Result<Byte, ByteError> {
 
 /// Converts a byte to its nonnegative integer value.
 pub func to_int(value: Byte) -> Int {
-    value.int
+    value
 }
 
 test "byte conversion preserves values in range" {

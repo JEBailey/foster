@@ -229,6 +229,10 @@ impl Workspace {
         let (name, name_start) = identifier_at(source, offset)?;
         let qualifier = qualifier_before(source, name_start);
 
+        if qualifier.is_none() && name == "CodePoint" {
+            return embedded_module_location("core.code_point");
+        }
+
         if qualifier.is_none()
             && let Some((function_id, function)) =
                 compilation.hir.functions.iter().find(|(_, function)| {
@@ -329,7 +333,13 @@ impl Workspace {
     }
 
     pub(super) fn inlay_hints(&self, params: &InlayHintParams) -> Option<Vec<InlayHint>> {
-        let compilation = self.semantic_compilation_for(&params.text_document.uri)?;
+        // Unlike hover and navigation, hints carry insertion positions that must correspond to the
+        // current source exactly. A last-good semantic snapshot can have stale spans after an edit
+        // and would place labels inside unrelated tokens while the new source is temporarily invalid.
+        let compilation = match self.compile_for(&params.text_document.uri) {
+            Ok(compilation) => compilation,
+            Err(_) => return Some(Vec::new()),
+        };
         super::hints::inlay_hints(&compilation, params)
     }
 
@@ -400,7 +410,7 @@ impl Workspace {
             for keyword in [
                 "assert", "await", "branch", "break", "continue", "copy", "false", "func",
                 "import", "let", "loop", "move", "pub", "ref", "remote", "return", "true", "type",
-                "enum",
+                "enum", "try",
             ] {
                 insert_completion(&mut items, keyword, CompletionItemKind::KEYWORD, None);
             }
@@ -1719,6 +1729,14 @@ fn module_location(
     module: crate::hir::ModuleId,
 ) -> Option<Location> {
     location(compilation, module, 0..0, "")
+}
+
+fn embedded_module_location(module: &str) -> Option<Location> {
+    let path = crate::package::embedded_source_path(module)?;
+    Some(Location::new(
+        path_to_uri(path.as_std_path())?,
+        lsp_types::Range::default(),
+    ))
 }
 
 fn location(

@@ -42,6 +42,38 @@ impl DiagnosticSchedule {
     }
 }
 
+#[derive(Default)]
+struct ShutdownState {
+    requested: bool,
+}
+
+impl ShutdownState {
+    fn handle_request(&mut self, request: &lsp_server::Request) -> Option<Response> {
+        if request.method != "shutdown" {
+            return None;
+        }
+        let response = if self.requested {
+            Response::new_err(
+                request.id.clone(),
+                ErrorCode::InvalidRequest as i32,
+                "the Foster language server is already shutting down".into(),
+            )
+        } else {
+            self.requested = true;
+            Response::new_ok(request.id.clone(), ())
+        };
+        Some(response)
+    }
+
+    fn is_requested(&self) -> bool {
+        self.requested
+    }
+
+    fn should_exit(&self, notification: &Notification) -> bool {
+        notification.method == "exit"
+    }
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let (connection, io_threads) = Connection::stdio();
     let (initialize_id, initialize_params) = connection.initialize_start()?;
@@ -78,6 +110,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let mut workspace = Workspace::new(&initialize_params);
 
     let mut diagnostics = DiagnosticSchedule::default();
+    let mut shutdown = ShutdownState::default();
     loop {
         let message = if let Some(deadline) = diagnostics.deadline() {
             match connection
@@ -100,8 +133,18 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         };
         match message {
             Message::Request(request) => {
-                if connection.handle_shutdown(&request)? {
-                    break;
+                if let Some(response) = shutdown.handle_request(&request) {
+                    diagnostics.clear();
+                    connection.sender.send(Message::Response(response))?;
+                    continue;
+                }
+                if shutdown.is_requested() {
+                    connection.sender.send(Message::Response(Response::new_err(
+                        request.id,
+                        ErrorCode::InvalidRequest as i32,
+                        "the Foster language server is shutting down".into(),
+                    )))?;
+                    continue;
                 }
                 let response = match request.method.as_str() {
                     DocumentSymbolRequest::METHOD => {
@@ -153,39 +196,48 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                 };
                 connection.sender.send(Message::Response(response))?;
             }
-            Message::Notification(notification) => match notification.method.as_str() {
-                "textDocument/didOpen" => {
-                    let params: DidOpenTextDocumentParams =
-                        serde_json::from_value(notification.params)?;
-                    let uri = params.text_document.uri;
-                    let text = params.text_document.text;
-                    workspace.open(uri, text, params.text_document.version);
-                    diagnostics.postpone(Instant::now());
+            Message::Notification(notification) => {
+                if shutdown.should_exit(&notification) {
+                    break;
                 }
-                "textDocument/didChange" => {
-                    let params: DidChangeTextDocumentParams =
-                        serde_json::from_value(notification.params)?;
-                    if let Some(change) = params.content_changes.into_iter().last() {
+                if shutdown.is_requested() {
+                    continue;
+                }
+                match notification.method.as_str() {
+                    "textDocument/didOpen" => {
+                        let params: DidOpenTextDocumentParams =
+                            serde_json::from_value(notification.params)?;
                         let uri = params.text_document.uri;
-                        workspace.change(uri, change.text, params.text_document.version);
+                        let text = params.text_document.text;
+                        workspace.open(uri, text, params.text_document.version);
                         diagnostics.postpone(Instant::now());
                     }
+                    "textDocument/didChange" => {
+                        let params: DidChangeTextDocumentParams =
+                            serde_json::from_value(notification.params)?;
+                        if let Some(change) = params.content_changes.into_iter().last() {
+                            let uri = params.text_document.uri;
+                            workspace.change(uri, change.text, params.text_document.version);
+                            diagnostics.postpone(Instant::now());
+                        }
+                    }
+                    "textDocument/didClose" => {
+                        let params: DidCloseTextDocumentParams =
+                            serde_json::from_value(notification.params)?;
+                        workspace.close(&params.text_document.uri);
+                        diagnostics.postpone(Instant::now());
+                    }
+                    "workspace/didChangeWatchedFiles" => {
+                        workspace.invalidate_compilations();
+                        diagnostics.postpone(Instant::now());
+                    }
+                    _ => {}
                 }
-                "textDocument/didClose" => {
-                    let params: DidCloseTextDocumentParams =
-                        serde_json::from_value(notification.params)?;
-                    workspace.close(&params.text_document.uri);
-                    diagnostics.postpone(Instant::now());
-                }
-                "workspace/didChangeWatchedFiles" => {
-                    workspace.invalidate_compilations();
-                    diagnostics.postpone(Instant::now());
-                }
-                _ => {}
-            },
+            }
             Message::Response(_) => {}
         }
     }
+    drop(connection);
     io_threads.join()?;
     Ok(())
 }
@@ -207,6 +259,26 @@ mod scheduling_tests {
 
         diagnostics.clear();
         assert_eq!(diagnostics.deadline(), None);
+    }
+
+    #[test]
+    fn shutdown_allows_cancellation_notifications_before_exit() {
+        let mut shutdown = ShutdownState::default();
+        let request = lsp_server::Request {
+            id: 1.into(),
+            method: "shutdown".into(),
+            params: serde_json::Value::Null,
+        };
+        let response = shutdown.handle_request(&request).unwrap();
+        assert!(response.response_result.is_ok());
+        assert!(shutdown.is_requested());
+
+        let cancellation =
+            Notification::new("$/cancelRequest".into(), serde_json::json!({ "id": 2 }));
+        assert!(!shutdown.should_exit(&cancellation));
+
+        let exit = Notification::new("exit".into(), serde_json::Value::Null);
+        assert!(shutdown.should_exit(&exit));
     }
 }
 

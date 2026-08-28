@@ -224,6 +224,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                     self.walk_statement_block(&arm.body, true);
                 }
             }
+            hir::Expr::Try { value, .. } => self.walk_consumed_expr(*value),
             hir::Expr::Closure { captures, .. } => {
                 for capture in captures {
                     match capture.mode {
@@ -306,6 +307,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 self.suspends = true;
                 self.walk_expr(*value);
             }
+            hir::Expr::Try { value, .. } => self.walk_expr(*value),
             hir::Expr::Record { fields, .. } => {
                 fields.iter().for_each(|(_, value)| self.walk_expr(*value))
             }

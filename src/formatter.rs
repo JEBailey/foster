@@ -254,4 +254,13 @@ mod tests {
             "func main() -> Int {\n    branch {\n        true -> {\n            let value = 42\n            value\n        }\n        _ -> 0\n    }\n}\n"
         );
     }
+
+    #[test]
+    fn formats_try_expressions() {
+        let source = "import core.result\nfunc checked() -> Result<Int, String> {\nlet value = try Result.Ok(42)\nResult.Ok(value)\n}\n";
+        assert_eq!(
+            format(source).unwrap(),
+            "import core.result\nfunc checked() -> Result<Int, String> {\n    let value = try Result.Ok(42)\n    Result.Ok(value)\n}\n"
+        );
+    }
 }

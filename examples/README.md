@@ -53,5 +53,9 @@ boundaries, and mutation followed by ownership-transferring `ByteBuffer.freeze`.
 `streams.fos` demonstrates generic `Reader<E>` and `Writer<E>` conformance, partial writes,
 clean EOF, and the Foster-written `stream.copy` algorithm.
 
+`result_propagation.fos` demonstrates `try`: a successful `Result` value is unwrapped while an
+error is returned immediately, even though the operation and enclosing function have different
+success types.
+
 `linked_list.fos` implements an owned generic linked list as a recursive variant, including
 constant-time prepend/pop, reverse, map, fold, and conversion to the built-in list type.

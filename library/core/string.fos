@@ -44,8 +44,19 @@ func reverse_into(value: String, result: String) -> String [consume result] {
     }
 }
 
+
 /// Returns whether `value` begins with `prefix`.
-pub func starts_with?(value: String, prefix: String) -> Bool {
+pub func String.starts_with?(self: String, prefix: String) -> Bool {
+    branch {
+        prefix.empty? -> true
+        self.empty? -> false
+        self.head != prefix.head -> false
+        _ -> starts_with?(self.rest, prefix.rest)
+    }
+}
+
+/// Returns whether `value` begins with `prefix`.
+pub func starts_with?(value: String, prefix: String) -> Bool [read value, read prefix] {
     branch {
         prefix.empty? -> true
         value.empty? -> false
@@ -53,6 +64,7 @@ pub func starts_with?(value: String, prefix: String) -> Bool {
         _ -> starts_with?(value.rest, prefix.rest)
     }
 }
+
 
 /// Returns whether `value` ends with `suffix`.
 pub func ends_with?(value: String, suffix: String) -> Bool {

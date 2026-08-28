@@ -30,6 +30,14 @@ func main() -> Float {
 }
 
 #[test]
+fn compiles_lossless_integer_widening_to_an_int_result() {
+    let compilation = foster::compile("func main() -> Int { 'A' }").unwrap();
+    let artifact = compile_object(&compilation, CompileOptions::default()).unwrap();
+    assert!(!artifact.bytes.is_empty());
+    assert_eq!(artifact.result, NativeType::Int);
+}
+
+#[test]
 fn rejects_unsupported_reachable_types_with_actionable_guidance() {
     let compilation = foster::compile(r#"func main() -> Symbol { :hello }"#).unwrap();
     let error = compile_object(&compilation, CompileOptions::default()).unwrap_err();

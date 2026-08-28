@@ -7,7 +7,10 @@ impl FunctionLowerer<'_> {
     ) -> Result<Option<FunctionId>, FosterError> {
         let (module, type_name, member, imported) = match path {
             [type_name, member] => {
-                if matches!(*type_name, "Byte" | "Bytes" | "ByteBuffer" | "String") {
+                if matches!(
+                    *type_name,
+                    "Byte" | "Bytes" | "ByteBuffer" | "CodePoint" | "String"
+                ) {
                     let qualified_name = format!("{type_name}.{member}");
                     let mut candidates = std::iter::once(self.module)
                         .chain(self.imports.values().copied())
@@ -45,11 +48,13 @@ impl FunctionLowerer<'_> {
                 };
                 let names_type = self.hir.record_named(module, type_name).is_some()
                     || self.hir.variant_type_named(module, type_name).is_some()
-                    || (matches!(*type_name, "Byte" | "Bytes" | "ByteBuffer" | "String")
-                        && self
-                            .hir
-                            .function_named(module, &format!("{type_name}.{member}"))
-                            .is_some());
+                    || (matches!(
+                        *type_name,
+                        "Byte" | "Bytes" | "ByteBuffer" | "CodePoint" | "String"
+                    ) && self
+                        .hir
+                        .function_named(module, &format!("{type_name}.{member}"))
+                        .is_some());
                 if !names_type {
                     return Ok(None);
                 }

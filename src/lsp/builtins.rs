@@ -32,7 +32,7 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
             "code_point",
             "code_point(character: CodePoint) -> Int",
             &["character"],
-            "Legacy explicit conversion to a Unicode scalar value. CodePoint participates directly in integer operators.",
+            "Legacy explicit conversion to a Unicode scalar value. CodePoint widens in expected Int contexts and participates directly in integer operators.",
         ),
         Builtin::FromCodePoint => builtin(
             "from_code_point",

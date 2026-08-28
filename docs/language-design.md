@@ -209,10 +209,13 @@ string to a sequence parameter retains the original runtime value and ownership.
 members are `empty?`, `length`, `head`, and `rest`. For strings, `head` returns a `CodePoint` and
 `rest` remains a `String` when accessed directly; through a `Sequence<CodePoint>` parameter,
 `rest` has sequence type. A code point exposes `.string` and `.whitespace?`. `CodePoint` is a
-bounded integer-like primitive: integer arithmetic and comparisons promote its Unicode scalar
-value, and arithmetic produces `Int`. This permits expressions such as `'9' - '0'` and
-`character < 32` without an extraction member. Conversion from an arbitrary `Int` remains checked
-because surrogate values and values above `0x10FFFF` are not Unicode scalar values.
+bounded integer-like primitive: it widens losslessly where `Int` is expected, integer arithmetic
+and comparisons promote its Unicode scalar value, and arithmetic produces `Int`. This permits
+direct arguments and results such as `func ordinal(character: Int) -> Int { character }` called as
+`ordinal('A')`, as well as expressions such as `'9' - '0'` and `character < 32`. Conversion from an
+arbitrary `Int` remains checked because surrogate values and values above `0x10FFFF` are not Unicode
+scalar values. The `core.code_point` module can attach owner-qualified receiver functions to the
+primitive, making imported operations available through calls such as `character.as_int()`.
 The bootstrap compiler supplies the `String` and `List<T>` conformances. A type definition begins
 after `=`, and each composed contract is aligned with `&` on the right-hand side:
 
@@ -465,8 +468,8 @@ representation, while their accessible contract participates in structural confo
 
 The implemented type system includes nominally constructed records with structural adaptation and
 declared contract composition, untagged union contracts, tagged enums, explicit parametric generics using
-`Type<Argument>`, function and intersection types, callable-member contracts, and no implicit
-numeric or nullable conversions.
+`Type<Argument>`, function and intersection types, callable-member contracts, two lossless integer
+widenings, and no implicit nullable conversions.
 
 Types, traits, and functions may be qualified by modules. The HIR resolves every source-level name
 to a local binding, function, module, builtin, or later a type-level definition before type checking.
@@ -476,6 +479,11 @@ The unit type is written `()`. The bootstrap compiler also resolves `Bool`, `Int
 representation erasure, records,
 enums, union contracts, generics, and record intersections. Decimal and scientific-notation literals produce
 `Float`; there are no implicit conversions between `Int` and `Float`.
+`Byte` and `CodePoint` widen to `Int` when an assignment, stored field, argument, branch arm, or
+function result has an expected `Int` type. The compiler records the conversion in typed output and
+produces an `Int` value; it does not merely reinterpret the source value. Widening is not reversed,
+does not lift through containers, and does not change unconstrained generic inference. Converting an
+`Int` to `Byte` or `CodePoint` remains explicit and checked because not every integer is valid.
 `String`, `Symbol`, `Bytes`, `ByteBuffer`, and `List<T>` are instead always-available opaque Foster
 types declared in their respective core modules. `String` contains private `Bytes`, `Symbol`
 contains private `String`, and the collection types contain private implementation-only storage:
@@ -666,8 +674,9 @@ let snapshot = buffer.snapshot()
 let finished = (move buffer).freeze()
 ```
 
-`Byte` is a copy type in the inclusive range `0..255`. Ordinary arithmetic widens it to `Int`;
-bitwise and shift operators retain `Byte`. `Bytes` is an opaque Foster type over immutable
+`Byte` is a copy type in the inclusive range `0..255`. It widens to `Int` in expected-type contexts,
+and ordinary arithmetic also produces `Int`; bitwise and shift operators retain `Byte`. `Bytes` is
+an opaque Foster type over immutable
 contiguous raw storage, implementing
 the read-only `Sequence<Byte>` and `Collection<Byte>` behavior. `ByteBuffer` is mutable and
 growable, but deliberately has no implicit position or limit; stateful reading can be introduced
@@ -864,8 +873,24 @@ func parse(input: String) -> Result<Json, JsonError> {
 }
 ```
 
-The VM host boundary follows the same rule for `std.fs`, `std.path`, `std.env`, and `std.net.tcp`. The language does not
-provide dedicated `throw` or typed error-effect syntax.
+The prefix `try` expression propagates an error while yielding a successful value:
+
+```foster
+func load(input: String) -> Result<Json, JsonError> {
+    let value = try parse_value(input)
+    Result.Ok(value)
+}
+```
+
+`try operation()` requires `operation()` to have type `Result<T, E>` and the enclosing function
+to return `Result<U, E>`. The success types `T` and `U` may differ, but the error type `E` must be
+the same; `try` does not perform error conversion. The operation is evaluated exactly once. An
+`Ok(value)` produces `value`, while an `Error(error)` immediately returns `Result.Error(error)`
+from the enclosing function. Consequently, `try` is only valid inside a Result-returning function.
+
+The VM host boundary follows the same rule for `std.fs`, `std.path`, `std.env`, and `std.net.tcp`.
+The language does not provide dedicated `throw` or typed error-effect syntax.
+`try` is control-flow sugar over ordinary `Result` values, not an exception mechanism.
 
 ## Module initialization
 

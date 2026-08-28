@@ -12,13 +12,16 @@ and launches the Foster language server. Language features include:
 - call signature help with active-parameter tracking;
 - inferred local-type and argument-name inlay hints, with clickable parameter hints;
 - scope-aware completion for locals, declarations, imports, qualified modules, and keywords,
-  including automatic `std.process` import when completing `Arguments`;
-- automatic diagnostic refresh when Foster files change on disk.
+  including `try` and automatic `std.process` import when completing `Arguments`;
+- automatic diagnostic refresh when Foster files change on disk;
+- cached package snapshots and parsed modules, so edits reparse changed sources while preserving
+  unaffected compilation work;
 - commands to run the active file or its nearest `foster.toml` project (with legacy `main.fos`
   package fallback) in a shared task terminal.
 
 The bundled grammar highlights line comments, nested block-comment delimiters, documentation
-comments, code-point literals, effect clauses, sequence types, structural intersections, and
+comments, control keywords such as `try`, code-point literals, effect clauses, sequence types,
+structural intersections, and
 union/variant type members.
 
 ## Installation
@@ -64,7 +67,8 @@ Code notifications instead of leaving them only in the extension-host log.
 Hover over a declaration or use **Go to Definition** (`F12`, or Ctrl+click on Windows/Linux) to
 inspect and navigate the resolved symbol. Signature help appears after `(` and `,`. VS Code shows
 type and parameter hints by default; they can be toggled with **View: Toggle Inlay Hints** or the
-`editor.inlayHints.enabled` setting.
+`editor.inlayHints.enabled` setting. Hints are temporarily suppressed when the open document does
+not compile, preventing stale source positions from placing labels inside edited text.
 
 ## Packaging
 

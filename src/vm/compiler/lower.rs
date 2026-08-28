@@ -3,7 +3,29 @@ use crate::hir::Builtin;
 
 impl FunctionCompiler<'_> {
     pub(super) fn expression(&mut self, id: ExprId) -> Result<Register, FosterError> {
-        self.expression_unwrapped(id)
+        let source = self.expression_unwrapped(id)?;
+        if !self.types.integer_promotions.contains(&id) {
+            return Ok(source);
+        }
+
+        let span = self
+            .hir
+            .expression_spans
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| self.hir.functions[self.function].span.clone());
+        let zero = self.load_constant(Constant::Integer(0), span.clone())?;
+        let destination = self.allocate();
+        self.emit(
+            Instruction::Binary {
+                destination,
+                operator: crate::ast::BinaryOp::Add,
+                left: zero,
+                right: source,
+            },
+            span,
+        );
+        Ok(destination)
     }
 
     fn expression_unwrapped(&mut self, id: ExprId) -> Result<Register, FosterError> {
@@ -488,6 +510,49 @@ impl FunctionCompiler<'_> {
                     span,
                 );
                 Ok(destination)
+            }
+            hir::Expr::Try { value, binding } => {
+                let source = self.expression(*value)?;
+                let result_module = self.hir.module_named("core.result").ok_or_else(|| {
+                    FosterError::runtime("`try` requires the embedded `core.result` module")
+                })?;
+                let result = self
+                    .hir
+                    .variant_type_named(result_module, "Result")
+                    .ok_or_else(|| FosterError::runtime("`try` requires `core.result.Result`"))?;
+                let ok = self.hir.variant_types[result]
+                    .alternatives
+                    .iter()
+                    .copied()
+                    .find(|variant| self.hir.variants[*variant].name == "Ok")
+                    .ok_or_else(|| FosterError::runtime("`core.result.Result.Ok` is missing"))?;
+                let unwrapped = self.allocate();
+                self.locals.insert(*binding, unwrapped);
+                let matched = self.allocate();
+                self.emit(
+                    Instruction::MatchPattern {
+                        destination: matched,
+                        subject: source,
+                        pattern: hir::Pattern::Variant {
+                            variant: ok,
+                            fields: vec![hir::Pattern::Binding(*binding)],
+                        },
+                        bindings: vec![unwrapped],
+                    },
+                    span.clone(),
+                );
+                let failed = self.emit(
+                    Instruction::JumpIfFalse {
+                        condition: matched,
+                        target: 0,
+                    },
+                    span.clone(),
+                );
+                let succeeded = self.emit(Instruction::Jump { target: 0 }, span.clone());
+                self.patch_target(failed, self.instructions.len())?;
+                self.emit(Instruction::Return { source }, span.clone());
+                self.patch_target(succeeded, self.instructions.len())?;
+                Ok(unwrapped)
             }
             hir::Expr::Record { record, fields } => {
                 let values = fields.iter().cloned().collect::<HashMap<_, _>>();

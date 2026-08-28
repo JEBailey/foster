@@ -55,12 +55,16 @@ an intermediate reference wrapper flattens onto that root, so nested method rece
 strong keep-alive edge or form an `Rc` cycle.
 
 The current instruction set covers constants, moves, typed unary and binary operations, direct and
-method calls, assertions, guarded returns, loops, guarded `break`/`continue`, conditional and
+method calls, assertions, guarded returns, `try` Result propagation, loops, guarded
+`break`/`continue`, conditional and
 subject-based pattern branches, jumps, lists and indexing, records and field mutation, enum-case
 construction, atomic pattern bindings, closure
 environments, dynamic and specialized non-escaping closure calls, partial application, projected
 references, structural mutation, remote objects, futures, await, and returns.
 Lowering rejects unsupported HIR explicitly; it never interprets an unsupported node as a fallback.
+`try` evaluates its operand into one register, tests the `Result.Ok` payload, and lowers the
+`Result.Error` edge to the existing return machinery, so it requires no dedicated bytecode
+instruction or format change.
 
 Closure frames use a fixed `[captures][parameters][locals/temporaries]` register layout. Copy and
 move captures contain values; reference captures contain weak `PlaceHandle`s that are materialized

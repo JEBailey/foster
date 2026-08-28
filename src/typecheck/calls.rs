@@ -984,7 +984,8 @@ fn receiver_heads_match(expected: &Ty, actual: &Ty) -> bool {
         (Ty::RawBytes, Ty::RawBytes)
         | (Ty::RawByteBuffer, Ty::RawByteBuffer)
         | (Ty::RawList(_), Ty::RawList(_))
-        | (Ty::Sequence(_), Ty::Sequence(_)) => true,
+        | (Ty::Sequence(_), Ty::Sequence(_))
+        | (Ty::CodePoint, Ty::CodePoint) => true,
         (Ty::Reference(_, expected), Ty::Reference(_, actual)) => {
             receiver_heads_match(expected, actual)
         }

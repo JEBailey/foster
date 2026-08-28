@@ -52,7 +52,7 @@ func grow(value: Bytes, count: Int) -> Bytes {
 }
 
 func main() -> Int {
-    grow("Foster bytes".utf8, 7).hex.length
+    grow("Foster bytes".utf8, 7).hex().length
 }
 "#;
 

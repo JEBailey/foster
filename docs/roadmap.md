@@ -31,8 +31,8 @@ work.
 - Decide on transparent aliases and distinct wrapper declarations.
 - Improve compile-time constants while retaining declaration-only module bodies and avoiding
   observable module initialization order.
-- Settle error propagation syntax and whether typed error effects complement or replace explicit
-  `Result<T, E>` values in some APIs.
+- Decide whether typed error effects or explicit error-conversion protocols should complement the
+  implemented `try` propagation over `Result<T, E>` values.
 - Define aggregate copy/clone contracts; today copy behavior is limited to built-in copy values.
 - Decide the user-facing task, synchronization, `Send`, and `Share` model around the existing remote
   object and virtual-thread runtime.

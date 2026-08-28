@@ -231,8 +231,19 @@ async function stop(): Promise<void> {
   const running = client;
   client = undefined;
   if (running !== undefined && running.state !== State.Stopped) {
-    await running.stop();
+    try {
+      await running.stop();
+    } catch (error) {
+      if (!isClosedStreamError(error)) {
+        throw error;
+      }
+    }
   }
+}
+
+function isClosedStreamError(error: unknown): boolean {
+  return error instanceof Error &&
+    (error.message.includes("EPIPE") || error.message.includes("stream was destroyed"));
 }
 
 function resolveServerCommand(context: vscode.ExtensionContext): string {

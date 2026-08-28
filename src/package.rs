@@ -849,7 +849,10 @@ impl Package {
                 if let Some(owner) = function.owner.as_deref() {
                     if !function.receiver
                         && !program.records.iter().any(|record| record.name == owner)
-                        && !matches!(owner, "Byte" | "Bytes" | "ByteBuffer" | "String")
+                        && !matches!(
+                            owner,
+                            "Byte" | "Bytes" | "ByteBuffer" | "CodePoint" | "String"
+                        )
                     {
                         return Err(FosterError::runtime(format!(
                             "module `{}` defines associated function `{}` for unknown record type `{owner}`",
@@ -915,7 +918,7 @@ impl Package {
     }
 }
 
-fn embedded_source_path(module: &str) -> Option<Utf8PathBuf> {
+pub(crate) fn embedded_source_path(module: &str) -> Option<Utf8PathBuf> {
     let relative = format!("library/{}.fos", module.replace('.', "/"));
     let source_tree = Utf8PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(&relative);
     if source_tree.is_file() {

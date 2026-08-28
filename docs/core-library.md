@@ -56,6 +56,11 @@ being added accidentally.
 | `std.toml` | Typed TOML parsing, table lookup, rendering, and source-positioned errors |
 | `std.net.tcp` | Typed TCP listeners and connections |
 
+Primitive `CodePoint` operations may be declared as owner-qualified receiver functions in
+`core.code_point`. After importing the module, `character.as_int()` calls
+`CodePoint.as_int(self: CodePoint)`. Go to Definition on a `CodePoint` type annotation opens that
+module even when it has not yet been imported.
+
 ## Boundary with the runtime
 
 The library is written in Foster wherever the language can express the operation. The bootstrap
@@ -75,6 +80,10 @@ and conversion into `Result` values are defined in Foster. `IoError` includes th
 and host message; `NetworkError` includes the operation and host message. TCP resources expose no
 public handle field, so user code obtains them only through `listen`, `connect`, and `accept`.
 
+Foster-written library code uses `try` when it forwards an unchanged error type, including the
+`std.io` transfer algorithms, TCP adapters, and TOML rendering helpers. It keeps an explicit
+`branch` when an API recovers from an error, translates it, or otherwise needs to inspect it.
+
 ### Compiler intrinsics
 
 These names form the typed boundary used by Foster-written library code. Editor navigation opens
@@ -83,7 +92,7 @@ this table for an intrinsic because it has no Foster implementation body.
 | Intrinsic | Purpose |
 | --- | --- |
 | `print`, `println` | Write values to standard output, without or with a trailing newline |
-| `code_point`, `from_code_point` | Legacy explicit widening and checked construction of `CodePoint`; ordinary widening uses integer operators |
+| `code_point`, `from_code_point` | Legacy explicit widening and checked construction of `CodePoint`; ordinary widening applies in `Int` contexts and integer operators |
 | `parse_float` | Parse a binary64 floating-point value from text |
 | `FloatHost.format` | Format a binary64 value as round-trippable scalar text |
 | `FsHost.read_text`, `FsHost.write_text`, `FsHost.read_bytes`, `FsHost.write_bytes` | Perform whole-file text and binary operations |
@@ -200,8 +209,9 @@ the compiler and VM.
 
 ## Binary data
 
-`Byte` is a copyable integer subtype bounded to `0..255`. `Byte.from(value)` performs checked
-construction and returns `Result<Byte, ByteError>`. Arithmetic with a byte widens to `Int`, while
+`Byte` is a copyable integer-like primitive bounded to `0..255`. `Byte.from(value)` performs checked
+construction and returns `Result<Byte, ByteError>`. A byte widens losslessly where `Int` is expected,
+and arithmetic with a byte produces `Int`, while
 `&`, `|`, `^`, `~`, `<<`, and `>>` retain `Byte`; shift counts must be between zero and seven.
 
 `Bytes` is immutable compact storage and structurally implements `Sequence<Byte>` and

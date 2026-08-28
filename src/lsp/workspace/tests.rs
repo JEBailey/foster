@@ -288,6 +288,7 @@ fn completion_uses_scope_and_import_visibility() {
     };
     assert!(items.iter().any(|item| item.label == "source"));
     assert!(items.iter().any(|item| item.label == "branch"));
+    assert!(items.iter().any(|item| item.label == "try"));
 }
 
 #[test]
@@ -492,6 +493,26 @@ func main() -> Int {
 }
 
 #[test]
+fn inlay_hints_do_not_reuse_stale_positions_after_an_invalid_edit() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = r#"func add(left: Int, right: Int) -> Int { left + right }
+func main() -> Int {
+    add(1, 2)
+}
+"#;
+    workspace.open(uri.clone(), source.into(), 1);
+    let params = InlayHintParams {
+        work_done_progress_params: Default::default(),
+        text_document: lsp_types::TextDocumentIdentifier::new(uri.clone()),
+        range: lsp_types::Range::new(Position::new(0, 0), Position::new(3, 1)),
+    };
+    assert!(!workspace.inlay_hints(&params).unwrap().is_empty());
+
+    workspace.change(uri, format!("@\n{source}"), 2);
+    assert!(workspace.inlay_hints(&params).unwrap().is_empty());
+}
+
+#[test]
 fn signature_help_selects_the_active_argument_and_shows_docs() {
     let (mut workspace, uri, _) = fixture_workspace();
     let source = r#"/// Adds two values.
@@ -636,6 +657,27 @@ fn definition_opens_embedded_core_source_when_available() {
             .join("library/core/list.fos")
     );
     assert_eq!(location.range.start, Position::new(43, 9));
+}
+
+#[test]
+fn code_point_type_definition_opens_its_core_module() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = "func identity(value: CodePoint) -> CodePoint { value }\n";
+    workspace.open(uri.clone(), source.into(), 1);
+
+    let location = workspace
+        .definition(&TextDocumentPositionParams::new(
+            lsp_types::TextDocumentIdentifier::new(uri),
+            Position::new(0, 22),
+        ))
+        .unwrap();
+    assert_eq!(
+        uri_to_path(&location.uri).unwrap(),
+        std::env::current_dir()
+            .unwrap()
+            .join("library/core/code_point.fos")
+    );
+    assert_eq!(location.range.start, Position::new(0, 0));
 }
 
 #[test]

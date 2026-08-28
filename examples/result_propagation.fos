@@ -1,0 +1,23 @@
+import core.result
+import core.int
+
+func read_port(configured: Bool) -> Result<Int, String> {
+    branch configured {
+        true -> Result.Ok(8080)
+        _ -> Result.Error("port is not configured")
+    }
+}
+
+func endpoint(configured: Bool) -> Result<String, String> {
+    let port = try read_port(configured)
+    Result.Ok("localhost:" + int.to_string(port))
+}
+
+func render(outcome: Result<String, String>) -> String {
+    branch outcome {
+        Result.Ok(value) -> value
+        Result.Error(error) -> "error: " + error
+    }
+}
+
+func main() -> String { render(endpoint(true)) }

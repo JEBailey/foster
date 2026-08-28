@@ -261,9 +261,7 @@ impl Checker<'_> {
             return Ok(expected);
         }
 
-        if let hir::Expr::Branch { subject, arms } = expression
-            && matches!(expected, Ty::Variant(_, _))
-        {
+        if let hir::Expr::Branch { subject, arms } = expression {
             if arms.is_empty() {
                 return Err(self.error(function, "branch expression has no arms"));
             }
@@ -374,8 +372,7 @@ impl Checker<'_> {
             }
             hir::Expr::Index { object, index } => {
                 let object = self.infer_expression(function, object)?;
-                let index = self.infer_expression(function, index)?;
-                self.unify(Ty::Int, index, function)?;
+                self.check_expression(function, index, Ty::Int)?;
                 if self.is_bytes_type(&object) || self.is_byte_buffer_type(&object) {
                     Ty::Byte
                 } else if let Some(element) = self.list_element(&object) {
@@ -429,6 +426,50 @@ impl Checker<'_> {
                 let future = self.infer_expression(function, future)?;
                 self.unify(future, Ty::Future(Box::new(result.clone())), function)?;
                 result
+            }
+            hir::Expr::Try { value, binding } => {
+                let result_module = self.hir.module_named("core.result").ok_or_else(|| {
+                    FosterError::runtime("`try` requires the embedded `core.result` module")
+                })?;
+                let result_type = self
+                    .hir
+                    .variant_type_named(result_module, "Result")
+                    .ok_or_else(|| FosterError::runtime("`try` requires `core.result.Result`"))?;
+                let success = self.fresh();
+                let error = self.fresh();
+                let operand = self.infer_expression(function, value)?;
+                self.unify(
+                    Ty::Variant(result_type, vec![success.clone(), error.clone()]),
+                    operand,
+                    function,
+                )
+                .map_err(|_| {
+                    self.error(
+                        function,
+                        format!(
+                            "`try` requires a Result value, found `{}`",
+                            self.describe(&self.resolved(self.expressions[&value].clone()))
+                        ),
+                    )
+                })?;
+                let function_success = self.fresh();
+                let function_result = self.functions[&function].result.clone();
+                self.unify(
+                    Ty::Variant(result_type, vec![function_success, error]),
+                    function_result.clone(),
+                    function,
+                )
+                .map_err(|_| {
+                    self.error(
+                        function,
+                        format!(
+                            "`try` requires the enclosing function to return Result with the same error type, found `{}`",
+                            self.describe(&self.resolved(function_result))
+                        ),
+                    )
+                })?;
+                self.locals.insert(binding, success.clone());
+                success
             }
             hir::Expr::Record { record, fields } => self.infer_record(function, record, &fields)?,
             hir::Expr::Unary { operator, operand } => {

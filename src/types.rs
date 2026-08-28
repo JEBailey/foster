@@ -53,6 +53,7 @@ pub struct FunctionType {
 pub struct TypeInformation {
     pub types: Arena<Type>,
     pub expressions: HashMap<ExprId, TypeId>,
+    pub integer_promotions: HashSet<ExprId>,
     pub extension_methods: HashMap<ExprId, FunctionId>,
     pub locals: HashMap<LocalId, TypeId>,
     pub functions: HashMap<FunctionId, FunctionType>,

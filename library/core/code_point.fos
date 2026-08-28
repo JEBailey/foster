@@ -2,6 +2,18 @@
 
 import core.option
 
+/// Returns the Unicode scalar value represented by this code point.
+pub func CodePoint.as_int(self: CodePoint) -> Int {
+    self
+}
+
+/// Returns the string representation of this code point.
+pub func CodePoint.as_string(self: CodePoint) -> String {
+    to_string(self)
+}
+
+
+
 /// Creates a code point from a valid Unicode scalar value.
 ///
 /// Returns `None` for negative values, surrogate code points, and values above `0x10FFFF`.
@@ -19,7 +31,7 @@ pub func from_int(value: Int) -> Option<CodePoint> {
 
 /// Returns the Unicode scalar value represented by `character`.
 pub func to_int(character: CodePoint) -> Int {
-    character + 0
+    character
 }
 
 /// Converts one code point to its single-code-point string representation.

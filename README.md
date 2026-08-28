@@ -115,8 +115,11 @@ The current implementation includes:
 - functions, recursion, explicit `let` local declarations, local inference, explicit generics,
   closures, partial application, immediate-failure assertions, and statement loops with guarded
   `break` and `continue` transfers;
+- ordinary typed `Result<T, E>` error values and single-evaluation `try` propagation with an exact
+  matching error type;
 - `Bool`, `Int`, binary64 `Float`, `String`, `CodePoint`, `Symbol`, `()`, homogeneous `List<T>`,
-  and zero-conversion `Sequence<T>` views;
+  and zero-conversion `Sequence<T>` views, with lossless `Byte` and `CodePoint` widening to `Int`
+  when an assignment, argument, field, branch, or result expects `Int`;
 - generic records, associated factories, instance methods, private-by-default declarations,
   untagged union contracts, and tagged enums with exhaustive pattern branches;
 - statically checked structural record adaptation, declaration-side composition such as
@@ -129,8 +132,8 @@ The current implementation includes:
   call-scoped borrowed messages, and persistent remote read loans;
 - explicit core-library imports, typed filesystem APIs, and typed TCP connections;
 - line, nested block, and Markdown module (`//!`) and declaration (`///`, `/** ... */`) documentation comments;
-- a package-aware LSP and VS Code extension; and
-- first-class `test "description" { ... }` declarations with a package-aware test runner; and
+- a package-aware LSP and VS Code extension;
+- first-class `test "description" { ... }` declarations with a package-aware test runner;
 - an optional optimizing register-bytecode pipeline with a verifier and iterative VM call frames;
   and
 - an initial Cranelift AOT backend for standalone primitive-value executables.
@@ -192,6 +195,16 @@ func unwrap_or(result: Result<Int, String>, fallback: Int) -> Int {
         Result.Ok(value) -> value
         Result.Error(_) -> fallback
     }
+}
+```
+
+Use `try` to unwrap a successful result or return its error from a function with the same error
+type. The operation is evaluated once, and the enclosing function's success type may differ:
+
+```foster
+func validate() -> Result<Bool, String> {
+    let value = try read_value()
+    Result.Ok(value > 0)
 }
 ```
 
@@ -314,8 +327,10 @@ Code extension lives in
 ## Documentation map
 
 - [Language design and implemented syntax](docs/language-design.md)
+- [Source and ownership compatibility policy](docs/compatibility.md)
 - [Roadmap](docs/roadmap.md)
 - [Ownership and borrowing](docs/ownership.md)
+- [Ownership verification](docs/ownership-verification.md)
 - [Closures and group borrowing](docs/closures.md)
 - [Effect derivation](docs/effect-derivation.md)
 - [Compiler diagnostics](docs/diagnostics.md)
@@ -323,7 +338,9 @@ Code extension lives in
 - [Register VM](docs/vm.md)
 - [Native compilation](docs/native.md)
 - [Compiled bytecode format](docs/binary-format.md)
+- [Package archive format](docs/package-format.md)
 - [Core library](docs/core-library.md)
+- [Standard-library source guide](library/README.md)
 - [Optimization and benchmarks](docs/benchmarking.md)
 - [Executable examples](examples/README.md)
 

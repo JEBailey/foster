@@ -350,6 +350,7 @@ impl Parser {
             TokenKind::Ref => Expr::Reference(Box::new(self.postfix()?)),
             TokenKind::Remote => Expr::Remote(Box::new(self.postfix()?)),
             TokenKind::Await => Expr::Await(Box::new(self.unary()?)),
+            TokenKind::Try => Expr::Try(Box::new(self.unary()?)),
             _ => {
                 return Err(FosterError::new(
                     "expected expression",

@@ -120,6 +120,7 @@ The effect walker covers every implemented HIR expression and statement. The imp
 | In-place list `push` | `reshape <group>.items` |
 | `move place` | `consume` on the place path |
 | `await expression` | `suspend` plus effects needed to produce the future |
+| `try expression` | effects needed to consume its `Result` operand; the error edge returns from the enclosing function |
 | Direct, method, or callable invocation | instantiated callee effects |
 | Record/list/enum-case construction | effects of each supplied expression |
 | `remote value` | effects needed to construct the transferred value; actor `self` effects are cut |

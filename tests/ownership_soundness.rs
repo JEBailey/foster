@@ -331,7 +331,7 @@ func main() { 0 }
     let first_dump = first.ownership.debug_dump(&first.hir);
     let second_dump = second.ownership.debug_dump(&second.hir);
     assert_eq!(first_dump, second_dump);
-    assert!(first_dump.contains("foster-language=4 ownership-model=1"));
+    assert!(first_dump.contains("foster-language=5 ownership-model=1"));
     assert!(first_dump.contains("loan L"));
     assert!(first_dump.contains("region L"));
 
@@ -351,7 +351,7 @@ func main() -> Int {
 
 #[test]
 fn ownership_compatibility_surface_is_stable() {
-    assert_eq!(foster::ownership::LANGUAGE_VERSION, 4);
+    assert_eq!(foster::ownership::LANGUAGE_VERSION, 5);
     assert_eq!(foster::ownership::MODEL_VERSION, 1);
     assert_eq!(
         foster::ownership::diagnostics::CATALOG
@@ -391,6 +391,22 @@ func main() -> Int {
         foster::compile("func main() -> () { loop { branch { true -> { continue } _ -> () } } }")
             .is_ok()
     );
+}
+
+#[test]
+fn language_version_five_reserves_try_for_result_propagation() {
+    assert!(foster::compile("func try() -> Int { 1 }").is_err());
+    let propagation = r#"
+import core.result
+
+func operation() -> Result<Int, String> { Result.Ok(1) }
+
+func main() -> Result<Int, String> {
+    let value = try operation()
+    Result.Ok(value)
+}
+"#;
+    assert!(foster::compile(propagation).is_ok());
 }
 
 #[test]

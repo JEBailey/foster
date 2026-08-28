@@ -360,6 +360,17 @@ impl<'a> Builder<'a> {
                     span: self.span(expression),
                 });
             }
+            hir::Expr::Try { value, .. } => {
+                self.expression(*value, Context::Consume);
+                let returned = self.block();
+                let continued = self.block();
+                self.terminate(Terminator::Branch(vec![returned, continued]));
+                self.current = returned;
+                self.emit_return(*value);
+                self.emit_scope_destruction(self.span(expression));
+                self.terminate(Terminator::Return);
+                self.current = continued;
+            }
             hir::Expr::Record { fields, .. } => {
                 for (_, value) in fields {
                     self.expression(*value, Context::Consume);
@@ -565,6 +576,7 @@ impl<'a> Builder<'a> {
             hir::Expr::Remote(value)
             | hir::Expr::Await(value)
             | hir::Expr::Unary { operand: value, .. } => self.borrow_value(*value),
+            hir::Expr::Try { .. } => BorrowValue::Empty,
             hir::Expr::Binary { left, right, .. } => {
                 BorrowValue::Merge(vec![self.borrow_value(*left), self.borrow_value(*right)])
             }

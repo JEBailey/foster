@@ -1346,10 +1346,8 @@ func insert_nested_table_value(entries: List<TomlEntry>, key: String, rest: List
 
 /// Internal helper for the Foster TOML implementation.
 func create_nested_table(entries: List<TomlEntry>, key: String, rest: List<String>, value: TomlValue) -> Result<List<TomlEntry>, String> [consume entries, consume key, consume rest, consume value] {
-    branch insert_table_value([], move rest, move value) {
-        Result.Error(message) -> Result.Error(move message)
-        Result.Ok(nested) -> Result.Ok(entries.append(TomlEntry { key: move key, value: TomlValue.Table(move nested) }))
-    }
+    let nested = try insert_table_value([], move rest, move value)
+    Result.Ok(entries.append(TomlEntry { key: move key, value: TomlValue.Table(move nested) }))
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1362,9 +1360,9 @@ func rewrite_nested_table(entries: List<TomlEntry>, key: String, rest: List<Stri
 /// Internal helper for the Foster TOML implementation.
 func rewrite_matching_table(entries: List<TomlEntry>, key: String, rest: List<String>, value: TomlValue, prefix: List<TomlEntry>) -> Result<List<TomlEntry>, String> [consume entries, consume key, consume rest, consume value, consume prefix] {
     branch entries.head.value {
-        TomlValue.Table(nested) -> branch insert_table_value(move nested, move rest, move value) {
-            Result.Error(message) -> Result.Error(move message)
-            Result.Ok(updated) -> Result.Ok(list.concat(prefix.append(TomlEntry { key: move key, value: TomlValue.Table(move updated) }), entries.rest))
+        TomlValue.Table(nested) -> {
+            let updated = try insert_table_value(move nested, move rest, move value)
+            Result.Ok(list.concat(prefix.append(TomlEntry { key: move key, value: TomlValue.Table(move updated) }), entries.rest))
         }
         _ -> Result.Error("inline table key conflicts with a value")
     }
@@ -1530,10 +1528,8 @@ func render_entries(entries: List<TomlEntry>, output: String) -> Result<String, 
 
 /// Internal helper for the Foster TOML implementation.
 func render_entry_line(entry: TomlEntry, remaining: List<TomlEntry>, output: String) -> Result<String, TomlError> [consume entry, consume remaining, consume output] {
-    branch render_value(move entry.value) {
-        Result.Error(error) -> Result.Error(move error)
-        Result.Ok(value) -> render_entries(move remaining, output + render_key(move entry.key) + " = " + value + "\n")
-    }
+    let value = try render_value(move entry.value)
+    render_entries(move remaining, output + render_key(move entry.key) + " = " + value + "\n")
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1579,10 +1575,8 @@ func render_array(values: List<TomlValue>, output: String) -> Result<String, Tom
 
 /// Internal helper for the Foster TOML implementation.
 func render_array_first(value: TomlValue, remaining: List<TomlValue>, output: String) -> Result<String, TomlError> [consume value, consume remaining, consume output] {
-    branch render_value(move value) {
-        Result.Error(error) -> Result.Error(move error)
-        Result.Ok(text) -> render_array_tail(move remaining, output + text)
-    }
+    let text = try render_value(move value)
+    render_array_tail(move remaining, output + text)
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1593,10 +1587,8 @@ func render_array_tail(values: List<TomlValue>, output: String) -> Result<String
 
 /// Internal helper for the Foster TOML implementation.
 func render_array_next(value: TomlValue, remaining: List<TomlValue>, output: String) -> Result<String, TomlError> [consume value, consume remaining, consume output] {
-    branch render_value(move value) {
-        Result.Error(error) -> Result.Error(move error)
-        Result.Ok(text) -> render_array_tail(move remaining, output + ", " + text)
-    }
+    let text = try render_value(move value)
+    render_array_tail(move remaining, output + ", " + text)
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1609,10 +1601,8 @@ func render_inline_table(entries: List<TomlEntry>) -> Result<String, TomlError> 
 
 /// Internal helper for the Foster TOML implementation.
 func render_inline_first(entry: TomlEntry, remaining: List<TomlEntry>) -> Result<String, TomlError> [consume entry, consume remaining] {
-    branch render_value(move entry.value) {
-        Result.Error(error) -> Result.Error(move error)
-        Result.Ok(value) -> render_inline_tail(move remaining, "{ " + render_key(move entry.key) + " = " + value)
-    }
+    let value = try render_value(move entry.value)
+    render_inline_tail(move remaining, "{ " + render_key(move entry.key) + " = " + value)
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1623,10 +1613,8 @@ func render_inline_tail(entries: List<TomlEntry>, output: String) -> Result<Stri
 
 /// Internal helper for the Foster TOML implementation.
 func render_inline_next(entry: TomlEntry, remaining: List<TomlEntry>, output: String) -> Result<String, TomlError> [consume entry, consume remaining, consume output] {
-    branch render_value(move entry.value) {
-        Result.Error(error) -> Result.Error(move error)
-        Result.Ok(value) -> render_inline_tail(move remaining, output + ", " + render_key(move entry.key) + " = " + value)
-    }
+    let value = try render_value(move entry.value)
+    render_inline_tail(move remaining, output + ", " + render_key(move entry.key) + " = " + value)
 }
 
 /// Internal helper for the Foster TOML implementation.

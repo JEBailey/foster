@@ -274,6 +274,16 @@ impl FunctionLowerer<'_> {
             }
             ast::Expr::Remote(value) => Expr::Remote(self.lower_expression(value)?),
             ast::Expr::Await(future) => Expr::Await(self.lower_expression(future)?),
+            ast::Expr::Try(value) => {
+                let value = self.lower_expression(value)?;
+                let binding = self.hir.locals.alloc(Local {
+                    span: self.hir.functions[self.function].span.clone(),
+                    function: self.function,
+                    name: "$try".to_owned(),
+                    kind: LocalKind::Binding,
+                });
+                Expr::Try { value, binding }
+            }
             ast::Expr::Record {
                 constructor,
                 fields,
