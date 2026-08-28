@@ -35,7 +35,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 530);
+    assert_eq!(checked, 536);
 
     let mut modules = 0;
     let mut types = 0;
@@ -127,10 +127,10 @@ import core.option
 import core.result
 import std.toml
 
-func enabled(document: TomlDocument) -> Bool {
-    branch get(move document, "package") {
+func enabled(document: TomlDocument) -> Bool [consume document] {
+    branch (move document).get("package") {
         Option.None -> false
-        Option.Some(value) -> branch get_table(move value, "enabled") {
+        Option.Some(value) -> branch (move value).get("enabled") {
             Option.Some(TomlValue.Bool(enabled)) -> enabled
             _ -> false
         }
@@ -170,7 +170,7 @@ func main() -> String {
     let document = TomlDocument {
         entries: [TomlEntry { key: "count", value: TomlValue.Int(3) }, TomlEntry { key: "title", value: TomlValue.String("Foster") }]
     }
-    branch render(move document) {
+    branch (move document).render() {
         Result.Ok(source) -> source
         Result.Error(error) -> error.message
     }
@@ -209,7 +209,7 @@ func main() -> Int {
     let source = "array = [1, 2]\nboolean = true\ndatetime = 1979-05-27T07:32:00Z\nfloat = 1.5\ninteger = 3\nstring = \"x\"\n[table]\nnested = false\n"
     branch parse(move source) {
         Result.Error(_) -> 0
-        Result.Ok(document) -> branch render(move document) {
+        Result.Ok(document) -> branch (move document).render() {
             Result.Error(_) -> 0
             Result.Ok(rendered) -> branch parse(move rendered) {
                 Result.Error(_) -> 0
@@ -233,7 +233,7 @@ import std.toml
 
 func main() -> Int {
     let document = TomlDocument { entries: [TomlEntry { key: "when", value: TomlValue.DateTime("not-a-date") }] }
-    branch render(move document) {
+    branch (move document).render() {
         Result.Ok(_) -> -1
         Result.Error(error) -> error.line + error.column
     }
@@ -277,8 +277,8 @@ import core.option
 import core.result
 import std.toml
 
-func second_product_has_details(document: TomlDocument) -> Bool {{
-    branch get(move document, "products") {{
+func second_product_has_details(document: TomlDocument) -> Bool [consume document] {{
+    branch (move document).get("products") {{
         Option.Some(TomlValue.Array(products)) -> branch {{
             products.length != 2 -> false
             _ -> branch products[1] {{
@@ -302,7 +302,7 @@ func find_details(entries: List<TomlEntry>) -> Option<TomlValue> {{
 func main() -> Int {{
     branch parse({document:?}) {{
         Result.Error(_) -> 0
-        Result.Ok(parsed) -> branch render(move parsed) {{
+        Result.Ok(parsed) -> branch (move parsed).render() {{
             Result.Error(_) -> 1
             Result.Ok(rendered) -> branch parse(move rendered) {{
                 Result.Error(_) -> 2
@@ -368,8 +368,8 @@ import core.int
 import core.string
 
 func main() -> String {
-    let parts = string::split("one,two,three", ",")
-    string::upper(string::join(parts, "-") + ":" + int::to_string(-42))
+    let parts = "one,two,three".split(",")
+    (parts.join("-") + ":" + (-42).as_string()).upper()
 }
 "#;
     assert_string(foster::run(source).unwrap(), "ONE-TWO-THREE:-42");
@@ -434,14 +434,14 @@ func failed_int(message: String) -> Result<Int, String> { Result.Error(message) 
 func nested_result() -> Result<Result<Int, String>, String> { Result.Ok(Result.Ok(5)) }
 
 func main() -> Int {
-    let a = option::unwrap_or_else(no_int(), option_fallback)
-    let b = option::unwrap_or(option::flatten(nested_option()), 0)
-    let c = option::unwrap_or(option::or_else(no_int(), option_recovery), 0)
-    let d = result::unwrap_or_else(failed_int("four"), result_fallback)
-    let e = result::unwrap_or(result::flatten(nested_result()), 0)
-    let f = result::unwrap_or(result::or_else(failed_int("six"), result_recovery), 0)
-    let absent = option::absent?(no_int())
-    let failed = result::error?(failed_int("failure"))
+    let a = no_int().unwrap_or_else(option_fallback)
+    let b = nested_option().flatten().unwrap_or(0)
+    let c = no_int().or_else(option_recovery).unwrap_or(0)
+    let d = failed_int("four").unwrap_or_else(result_fallback)
+    let e = nested_result().flatten().unwrap_or(0)
+    let f = failed_int("six").or_else(result_recovery).unwrap_or(0)
+    let absent = no_int().absent?()
+    let failed = failed_int("failure").error?()
     branch {
         absent -> branch {
             failed -> a + b + c + d + e + f
@@ -651,26 +651,36 @@ import core.result
 func start(outcome: Result<Connection, NetworkError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
-        Result.Ok(connection) -> send(connection, connection.write_text("ping"))
+        Result.Ok(connection) -> write(move connection)
     }}
 }}
 
-func send(connection: Connection, outcome: Result<(), NetworkError>) -> String {{
+func write(connection: Connection) -> String [consume connection] {{
+    let outcome = connection.write_text("ping")
+    send(move connection, move outcome)
+}}
+
+func send(connection: Connection, outcome: Result<(), NetworkError>) -> String [consume connection, consume outcome] {{
     branch outcome {{
         Result.Error(error) -> error.message
-        Result.Ok(_) -> receive(connection, connection.read_text(64))
+        Result.Ok(_) -> read_connection(move connection)
     }}
 }}
 
-func receive(connection: Connection, outcome: Result<String, NetworkError>) -> String {{
+func read_connection(connection: Connection) -> String [consume connection] {{
+    let outcome = connection.read_text(64)
+    receive(move connection, move outcome)
+}}
+
+func receive(connection: Connection, outcome: Result<String, NetworkError>) -> String [consume connection, consume outcome] {{
     branch outcome {{
         Result.Error(error) -> error.message
-        Result.Ok(text) -> finish(connection, move text)
+        Result.Ok(text) -> finish(move connection, move text)
     }}
 }}
 
-func finish(connection: Connection, text: String) -> String {{
-    tcp::close_connection(connection)
+func finish(connection: Connection, text: String) -> String [consume connection, consume text] {{
+    (move connection).close()
     text
 }}
 

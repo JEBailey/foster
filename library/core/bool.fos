@@ -1,39 +1,39 @@
 //! Boolean logic helpers.
 
 /// Returns the logical negation of `value`.
-pub func not(value: Bool) -> Bool {
-    return false if value
+pub func Bool.not(self: Bool) -> Bool {
+    return false if self
     true
 }
 
 /// Returns true only when both values are true.
-pub func and(left: Bool, right: Bool) -> Bool {
-    return right if left
+pub func Bool.and(self: Bool, right: Bool) -> Bool {
+    return right if self
     false
 }
 
 /// Returns true when either value is true.
-pub func or(left: Bool, right: Bool) -> Bool {
-    return true if left
+pub func Bool.or(self: Bool, right: Bool) -> Bool {
+    return true if self
     right
 }
 
 /// Returns true when exactly one value is true.
-pub func xor(left: Bool, right: Bool) -> Bool {
-    return not(right) if left
+pub func Bool.xor(self: Bool, right: Bool) -> Bool {
+    return right.not() if self
     right
 }
 
 /// Returns a singleton list containing `value` when `condition` is true, or an empty list otherwise.
-pub func then<T>(condition: Bool, value: T) -> List<T> [consume value] {
-    return [value] if condition
+pub func Bool.then<T>(self: Bool, value: T) -> List<T> [read self, consume value] {
+    return [value] if self
     []
 }
 
 test "boolean helpers implement their truth tables" {
-    assert(not(true) == false)
-    assert(and(true, true))
-    assert(or(false, true))
-    assert(xor(true, false))
+    assert(true.not() == false)
+    assert(true.and(true))
+    assert(false.or(true))
+    assert(true.xor(false))
     ()
 }

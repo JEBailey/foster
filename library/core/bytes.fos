@@ -92,11 +92,6 @@ pub func Bytes.hash(self: Bytes) -> Int {
     hash_remaining(self, 17)
 }
 
-/// Encodes a string as UTF-8.
-pub func utf8(value: String) -> Bytes {
-    BytesHost.encode_utf8(value)
-}
-
 /// Decodes valid UTF-8 or returns a typed error.
 pub func String.from_utf8(value: Bytes) -> Result<String, Utf8Error> {
     branch {
@@ -106,7 +101,7 @@ pub func String.from_utf8(value: Bytes) -> Result<String, Utf8Error> {
 }
 
 test "bytes round-trip UTF-8 and hexadecimal text" {
-    let encoded = utf8("Foster λ")
+    let encoded = "Foster λ".utf8
     let valid = branch String.from_utf8(encoded) {
         Result.Ok(value) -> value == "Foster λ"
         Result.Error(_) -> false

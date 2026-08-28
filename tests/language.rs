@@ -1521,8 +1521,18 @@ fn checks_explicit_import_core_library_usage() {
     assert!(compilation.package.module("core.string").is_some());
     let string = compilation.hir.module_named("core.string").unwrap();
     let list = compilation.hir.module_named("core.list").unwrap();
-    assert!(compilation.hir.function_named(string, "trim").is_some());
-    assert!(compilation.hir.function_named(list, "flat_map").is_some());
+    assert!(
+        compilation
+            .hir
+            .function_named(string, "String.trim")
+            .is_some()
+    );
+    assert!(
+        compilation
+            .hir
+            .function_named(list, "List.flat_map")
+            .is_some()
+    );
 }
 
 #[test]
@@ -1702,7 +1712,7 @@ type TextSlice = & Sequence<CodePoint> & {
 func TextSlice.empty?(self: TextSlice) -> Bool { self.text.empty? }
 func TextSlice.length(self: TextSlice) -> Int { self.text.length }
 func TextSlice.head(self: TextSlice) -> CodePoint { self.text.head }
-func TextSlice.rest(self: TextSlice) -> String { strings::slice(self.text, 1, self.text.length) }
+func TextSlice.rest(self: TextSlice) -> String { self.text.slice(1, self.text.length) }
 
 func first(values: Sequence<CodePoint>) -> CodePoint {
     values.head()
@@ -2124,7 +2134,7 @@ type TextSlice = & Named & Sequence<CodePoint> & {
 func TextSlice.empty?(self: TextSlice) -> Bool { self.text.empty? }
 func TextSlice.length(self: TextSlice) -> Int { self.text.length }
 func TextSlice.head(self: TextSlice) -> CodePoint { self.text.head }
-func TextSlice.rest(self: TextSlice) -> String { strings::slice(self.text, 1, self.text.length) }
+func TextSlice.rest(self: TextSlice) -> String { self.text.slice(1, self.text.length) }
 
 func describe(value: Named & Sequence<CodePoint>) -> String {
     value.name + value.head().string
@@ -2959,7 +2969,7 @@ func rendered(outcome: Result<Bytes, StreamError>) -> String {
 func copied(outcome: Result<Int, StreamError>) -> String {
     branch outcome {
         Result.Error(error) -> error.message
-        Result.Ok(count) -> int::to_string(count)
+        Result.Ok(count) -> count.as_string()
     }
 }
 

@@ -9,14 +9,17 @@ import core.list
 import core.option
 
 func first_doubled(values: List<Int>) -> Option<Int> {
-    list::first(list::map(values, (value: Int) -> value * 2))
+    values.map((value: Int) -> value * 2).first()
 }
 ```
 
 `import core.option` exposes its public `Option` type directly. The `option::Option` spelling remains
-available when qualification improves clarity or resolves an ambiguity. Common function names such
-as `map` should normally remain module-qualified when several collection or result modules are
-imported.
+available when qualification improves clarity or resolves an ambiguity. Operations that have one
+natural nominal receiver are instance methods, so scalar values, lists, strings, options, results,
+orderings, and TOML values use fluent calls such as `base.power(exponent)`,
+`values.map(transform)`, and `document.get(key)`. Module
+functions remain for construction and algorithms without one nominal receiver, such as
+`toml::parse(source)`, `sequence::map(values, transform)`, and `io::copy(reader, writer)`.
 
 The compiler embeds these source modules so installed tools can resolve `core.*` and `std.*`
 without depending on the repository layout. The files in this directory remain authoritative.

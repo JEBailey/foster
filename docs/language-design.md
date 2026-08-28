@@ -66,6 +66,11 @@ let name = user.name
 user.rename("Ada")
 ```
 
+Library operations with one natural nominal receiver are instance methods, such as
+`values.map(transform)`, `outcome.map(transform)`, and `document.get(key)`. A module function is
+reserved for construction or an algorithm without one nominal receiver, such as
+`toml::parse(source)`, `sequence::map(values, transform)`, or `io::copy(reader, writer)`.
+
 Canonical module identities in imports remain dotted, such as `import std.net.tcp`. This keeps
 filesystem module paths visually distinct from selecting a declaration through a module.
 
@@ -228,8 +233,9 @@ and comparisons promote its Unicode scalar value, and arithmetic produces `Int`.
 direct arguments and results such as `func ordinal(character: Int) -> Int { character }` called as
 `ordinal('A')`, as well as expressions such as `'9' - '0'` and `character < 32`. Conversion from an
 arbitrary `Int` remains checked because surrogate values and values above `0x10FFFF` are not Unicode
-scalar values. The `core.code_point` module can attach owner-qualified receiver functions to the
-primitive, making imported operations available through calls such as `character.as_int()`.
+scalar values. The `core.code_point` module attaches owner-qualified operations to the primitive,
+making imported operations available through calls such as `character.as_int()` and checked
+construction available through `CodePoint.from(value)`.
 The bootstrap compiler supplies the `String` and `List<T>` conformances. A type definition begins
 after `=`, and each composed contract is aligned with `&` on the right-hand side:
 

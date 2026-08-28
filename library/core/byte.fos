@@ -20,14 +20,9 @@ pub func Byte.from(value: Int) -> Result<Byte, ByteError> {
     Result.Error(ByteError { value, message: "Byte must be between 0 and 255" })
 }
 
-/// Converts a byte to its nonnegative integer value.
-pub func to_int(value: Byte) -> Int {
-    value
-}
-
 test "byte conversion preserves values in range" {
     let valid = branch Byte.from(255) {
-        Result.Ok(value) -> to_int(value) == 255
+        Result.Ok(value) -> value.int == 255
         Result.Error(_) -> false
     }
     assert(valid)

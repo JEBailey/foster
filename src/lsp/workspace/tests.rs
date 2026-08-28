@@ -693,6 +693,66 @@ func main() -> Bool { Parser { remaining: "" }.skip() }
 }
 
 #[test]
+fn definition_resolves_enum_instance_methods() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = r#"enum Choice<T> = Value(T) | Empty
+
+/// Returns whether this choice contains a value.
+func Choice.present?<T>(self: Choice<T>) -> Bool {
+    branch self {
+        Choice.Value(_) -> true
+        Choice.Empty -> false
+    }
+}
+
+func main() -> Bool {
+    Choice.Value(42).present?()
+}
+"#;
+    workspace.open(uri.clone(), source.into(), 1);
+    let position = TextDocumentPositionParams::new(
+        lsp_types::TextDocumentIdentifier::new(uri.clone()),
+        Position::new(11, 23),
+    );
+
+    let location = workspace.definition(&position).unwrap();
+    assert_eq!(location.uri, uri);
+    assert_eq!(location.range.start, Position::new(3, 12));
+
+    let hover = workspace.hover(&position).unwrap();
+    let HoverContents::Markup(contents) = hover.contents else {
+        panic!("expected markdown hover")
+    };
+    assert!(contents.value.contains("Returns whether this choice"));
+}
+
+#[test]
+fn definition_resolves_primitive_instance_methods() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = r#"import core.int
+
+func main() -> Int {
+    2.power(3)
+}
+"#;
+    workspace.open(uri.clone(), source.into(), 1);
+    let location = workspace
+        .definition(&TextDocumentPositionParams::new(
+            lsp_types::TextDocumentIdentifier::new(uri),
+            Position::new(3, 7),
+        ))
+        .unwrap();
+
+    assert_eq!(
+        uri_to_path(&location.uri).unwrap(),
+        std::env::current_dir()
+            .unwrap()
+            .join("library/core/int.fos")
+    );
+    assert_eq!(location.range.start, Position::new(70, 13));
+}
+
+#[test]
 fn definition_opens_embedded_core_source_when_available() {
     let root = std::env::current_dir()
         .unwrap()
@@ -708,7 +768,7 @@ fn definition_opens_embedded_core_source_when_available() {
     let location = workspace
         .definition(&TextDocumentPositionParams::new(
             lsp_types::TextDocumentIdentifier::new(uri),
-            Position::new(11, 19),
+            Position::new(11, 28),
         ))
         .unwrap();
     assert_eq!(
@@ -717,7 +777,7 @@ fn definition_opens_embedded_core_source_when_available() {
             .unwrap()
             .join("library/core/list.fos")
     );
-    assert_eq!(location.range.start, Position::new(43, 9));
+    assert_eq!(location.range.start, Position::new(48, 14));
 }
 
 #[test]

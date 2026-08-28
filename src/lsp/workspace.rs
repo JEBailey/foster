@@ -1265,10 +1265,27 @@ fn member_function(
     member: &str,
 ) -> Option<crate::hir::FunctionId> {
     let ty = compilation.types.expression_type(object)?;
-    let record_id = record_from_type(&compilation.types, ty)?;
-    let record = &compilation.hir.records[record_id];
-    let qualified_name = format!("{}.{member}", record.name);
-    let function = compilation.hir.modules[record.module]
+    let owner = nominal_owner_from_type(&compilation.types, ty)?;
+    let (module, name) = match owner {
+        NominalOwner::Record(record) => {
+            let definition = &compilation.hir.records[record];
+            (definition.module, definition.name.as_str())
+        }
+        NominalOwner::Variant(variant) => {
+            let definition = &compilation.hir.variant_types[variant];
+            (definition.module, definition.name.as_str())
+        }
+        NominalOwner::Bool => (compilation.hir.module_named("core.bool")?, "Bool"),
+        NominalOwner::Int => (compilation.hir.module_named("core.int")?, "Int"),
+        NominalOwner::Float => (compilation.hir.module_named("core.float")?, "Float"),
+        NominalOwner::CodePoint => (
+            compilation.hir.module_named("core.code_point")?,
+            "CodePoint",
+        ),
+        NominalOwner::Byte => (compilation.hir.module_named("core.byte")?, "Byte"),
+    };
+    let qualified_name = format!("{name}.{member}");
+    let function = compilation.hir.modules[module]
         .functions
         .get(&qualified_name)
         .copied()?;
@@ -1278,11 +1295,57 @@ fn member_function(
         .and_then(|signature| signature.parameters.first())
         .is_some_and(|ty| {
             matches!(
-                compilation.types.types[*ty],
-                crate::types::Type::Record { record, .. } if record == record_id
+                (owner, &compilation.types.types[*ty]),
+                (
+                    NominalOwner::Record(expected),
+                    crate::types::Type::Record { record, .. }
+                ) if expected == *record
+            ) || matches!(
+                (owner, &compilation.types.types[*ty]),
+                (
+                    NominalOwner::Variant(expected),
+                    crate::types::Type::Variant { variant, .. }
+                ) if expected == *variant
+            ) || matches!(
+                (owner, &compilation.types.types[*ty]),
+                (NominalOwner::Bool, crate::types::Type::Bool)
+                    | (NominalOwner::Int, crate::types::Type::Int)
+                    | (NominalOwner::Float, crate::types::Type::Float)
+                    | (NominalOwner::CodePoint, crate::types::Type::CodePoint)
+                    | (NominalOwner::Byte, crate::types::Type::Byte)
             )
         });
     (receiver_matches && compilation.hir.functions[function].receiver.is_some()).then_some(function)
+}
+
+#[derive(Clone, Copy)]
+enum NominalOwner {
+    Record(crate::hir::RecordId),
+    Variant(crate::hir::VariantTypeId),
+    Bool,
+    Int,
+    Float,
+    CodePoint,
+    Byte,
+}
+
+fn nominal_owner_from_type(
+    types: &crate::types::TypeInformation,
+    ty: crate::types::TypeId,
+) -> Option<NominalOwner> {
+    match &types.types[ty] {
+        crate::types::Type::Record { record, .. } => Some(NominalOwner::Record(*record)),
+        crate::types::Type::Variant { variant, .. } => Some(NominalOwner::Variant(*variant)),
+        crate::types::Type::Bool => Some(NominalOwner::Bool),
+        crate::types::Type::Int => Some(NominalOwner::Int),
+        crate::types::Type::Float => Some(NominalOwner::Float),
+        crate::types::Type::CodePoint => Some(NominalOwner::CodePoint),
+        crate::types::Type::Byte => Some(NominalOwner::Byte),
+        crate::types::Type::Reference { value, .. } | crate::types::Type::Remote(value) => {
+            nominal_owner_from_type(types, *value)
+        }
+        _ => None,
+    }
 }
 
 fn required_method(

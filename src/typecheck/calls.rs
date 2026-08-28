@@ -425,7 +425,20 @@ impl Checker<'_> {
         match (object, name) {
             (Ty::CodePoint, "whitespace?") => Ok(Ty::Bool),
             (Ty::CodePoint, "string") => Ok(self.string_type()),
+            (Ty::CodePoint, member) => {
+                self.primitive_method_type(function, Ty::CodePoint, "core.code_point", member)
+            }
             (Ty::Byte, "int") => Ok(Ty::Int),
+            (Ty::Byte, member) => {
+                self.primitive_method_type(function, Ty::Byte, "core.byte", member)
+            }
+            (Ty::Bool, member) => {
+                self.primitive_method_type(function, Ty::Bool, "core.bool", member)
+            }
+            (Ty::Int, member) => self.primitive_method_type(function, Ty::Int, "core.int", member),
+            (Ty::Float, member) => {
+                self.primitive_method_type(function, Ty::Float, "core.float", member)
+            }
             (Ty::RawBytes, "empty?") => Ok(Ty::Bool),
             (Ty::RawBytes, "length") => Ok(Ty::Int),
             (Ty::RawBytes, "head") => Ok(Ty::Byte),
@@ -610,9 +623,14 @@ impl Checker<'_> {
         let module = self
             .hir
             .module_named(module)
-            .ok_or_else(|| self.error(caller, "primitive core module is unavailable"))?;
+            .ok_or_else(|| self.error(caller, format!("type has no member `{name}`")))?;
         let qualified_name = match receiver {
             Ty::Record(record, _) => format!("{}.{name}", self.hir.records[record].name),
+            Ty::Bool => format!("Bool.{name}"),
+            Ty::Int => format!("Int.{name}"),
+            Ty::Float => format!("Float.{name}"),
+            Ty::CodePoint => format!("CodePoint.{name}"),
+            Ty::Byte => format!("Byte.{name}"),
             Ty::RawBytes => format!("RawBytes.{name}"),
             Ty::RawByteBuffer => format!("RawByteBuffer.{name}"),
             _ => name.to_owned(),
@@ -620,7 +638,7 @@ impl Checker<'_> {
         let function = self
             .hir
             .function_named(module, &qualified_name)
-            .ok_or_else(|| self.error(caller, format!("type has no member `{qualified_name}`")))?;
+            .ok_or_else(|| self.error(caller, format!("type has no member `{name}`")))?;
         let definition = &self.hir.functions[function];
         if !definition.public && definition.module != self.hir.functions[caller].module {
             return Err(self.error(caller, format!("method `{name}` is private")));
@@ -681,11 +699,26 @@ impl Checker<'_> {
     ) -> Result<Option<(FunctionId, Ty)>, FosterError> {
         let caller_module = self.hir.functions[caller].module;
         let resolved_receiver = self.resolved(receiver.clone());
-        let inherent_module = match &resolved_receiver {
-            Ty::Record(record, _) => Some(self.hir.records[*record].module),
-            Ty::Variant(variant, _) => Some(self.hir.variant_types[*variant].module),
+        let inherent_owner = match &resolved_receiver {
+            Ty::Record(record, _) => Some((
+                self.hir.records[*record].module,
+                self.hir.records[*record].name.as_str(),
+            )),
+            Ty::Variant(variant, _) => Some((
+                self.hir.variant_types[*variant].module,
+                self.hir.variant_types[*variant].name.as_str(),
+            )),
             _ => None,
         };
+        if let Some((module, owner)) = inherent_owner
+            && self
+                .hir
+                .function_named(module, &format!("{owner}.{name}"))
+                .is_some_and(|function| self.hir.functions[function].receiver.is_some())
+        {
+            return Ok(None);
+        }
+        let inherent_module = inherent_owner.map(|(module, _)| module);
         let mut candidates = std::iter::once(caller_module)
             .chain(self.hir.modules[caller_module].imports.values().copied())
             .filter(|module| Some(*module) != inherent_module)
@@ -985,7 +1018,11 @@ fn receiver_heads_match(expected: &Ty, actual: &Ty) -> bool {
         | (Ty::RawByteBuffer, Ty::RawByteBuffer)
         | (Ty::RawList(_), Ty::RawList(_))
         | (Ty::Sequence(_), Ty::Sequence(_))
-        | (Ty::CodePoint, Ty::CodePoint) => true,
+        | (Ty::Bool, Ty::Bool)
+        | (Ty::Int, Ty::Int)
+        | (Ty::Float, Ty::Float)
+        | (Ty::CodePoint, Ty::CodePoint)
+        | (Ty::Byte, Ty::Byte) => true,
         (Ty::Reference(_, expected), Ty::Reference(_, actual)) => {
             receiver_heads_match(expected, actual)
         }

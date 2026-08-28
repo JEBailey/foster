@@ -145,13 +145,15 @@ canonical dotted module names:
 import core.result
 
 let outcome = Result.Ok(42)
-let mapped = result::map(outcome, (value: Int) -> value + 1)
+let mapped = outcome.map((value: Int) -> value + 1)
 let name = user.name
 user.rename("Ada")
 ```
 
 Use `::` only to select declarations through a module name, including module-qualified types and
-constants. Use `.` for type-associated functions, enum cases, fields, and instance methods.
+constants. Use `.` for type-associated functions, enum cases, fields, and instance methods. Core
+operations with a natural receiver are fluent (`values.map(transform)`, `outcome.map(transform)`);
+module qualification remains for namespace operations such as `toml::parse(source)`.
 
 Conditional `branch` expressions use `_` for their required fallback arm:
 

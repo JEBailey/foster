@@ -24,114 +24,129 @@ pub func List.contains?<T>(self: List<T>, expected: T) -> Bool {
 }
 
 /// Returns the first element, or `None` when the list is empty.
-pub func first<T>(values: List<T>) -> Option<T> {
+pub func List.first<T>(self: List<T>) -> Option<T> {
     branch {
-        values.empty? -> Option.None
-        _ -> Option.Some(values.head)
+        self.empty? -> Option.None
+        _ -> Option.Some(self.head)
     }
 }
 
 /// Returns the final element, or `None` when the list is empty.
-pub func last<T>(values: List<T>) -> Option<T> {
+pub func List.last<T>(self: List<T>) -> Option<T> {
+    last_value(self)
+}
+
+/// Finds the final element by walking the remaining list.
+func last_value<T>(values: List<T>) -> Option<T> [read values] {
     branch {
         values.empty? -> Option.None
         values.rest.empty? -> Option.Some(values.head)
-        _ -> last(values.rest)
+        _ -> last_value(values.rest)
     }
 }
 
 /// Applies `transform` to every element and returns the transformed list.
-pub func map<T, U>(values: List<T>, transform: func(T) -> U) -> List<U> {
-    sequence::map(values, transform)
+pub func List.map<T, U>(self: List<T>, transform: func(T) -> U) -> List<U> {
+    sequence::map(self, transform)
 }
 
 /// Returns the elements for which `include` evaluates to true.
-pub func filter<T>(values: List<T>, include: Predicate<T>) -> List<T> {
-    sequence::filter(values, include)
+pub func List.filter<T>(self: List<T>, include: Predicate<T>) -> List<T> {
+    sequence::filter(self, include)
 }
 
 /// Reduces the list from left to right, beginning with `initial`.
-pub func fold<T, U>(values: List<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [consume initial] {
+pub func List.fold<T, U>(self: List<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [read self, consume initial] {
+    fold_values(self, move initial, combine)
+}
+
+/// Reduces the remaining values into the accumulator.
+func fold_values<T, U>(values: List<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [read values, consume initial] {
     branch {
         values.empty? -> initial
-        _ -> fold(values.rest, combine(move initial, values.head), combine)
+        _ -> fold_values(values.rest, combine(move initial, values.head), combine)
     }
 }
 
 /// Returns the first element satisfying `predicate`, or `None` if none does.
-pub func find<T>(values: List<T>, predicate: Predicate<T>) -> Option<T> {
+pub func List.find<T>(self: List<T>, predicate: Predicate<T>) -> Option<T> {
+    find_value(self, predicate)
+}
+
+/// Finds the first matching value in the remaining list.
+func find_value<T>(values: List<T>, predicate: Predicate<T>) -> Option<T> [read values] {
     branch {
         values.empty? -> Option.None
         predicate(values.head) -> Option.Some(values.head)
-        _ -> find(values.rest, predicate)
+        _ -> find_value(values.rest, predicate)
     }
 }
 
 /// Returns whether at least one element satisfies `predicate`.
-pub func any?<T>(values: List<T>, predicate: Predicate<T>) -> Bool {
-    sequence::any?(values, predicate)
+pub func List.any?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
+    sequence::any?(self, predicate)
 }
 
 /// Returns whether every element satisfies `predicate`.
-pub func all?<T>(values: List<T>, predicate: Predicate<T>) -> Bool {
-    sequence::all?(values, predicate)
-}
-
-/// Returns whether the list contains an element equal to `expected`.
-pub func contains?<T>(values: List<T>, expected: T) -> Bool {
-    sequence::contains?(values, expected)
+pub func List.all?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
+    sequence::all?(self, predicate)
 }
 
 /// Returns a list containing the elements in reverse order.
-pub func reverse<T>(values: List<T>) -> List<T> {
+pub func List.reverse<T>(self: List<T>) -> List<T> {
+    reverse_values(self, [])
+}
+
+/// Prepends remaining values to the reverse accumulator.
+func reverse_values<T>(values: List<T>, result: List<T>) -> List<T> [read values, consume result] {
     branch {
-        values.empty? -> []
-        _ -> reverse(values.rest).append(values.head)
+        values.empty? -> result
+        _ -> reverse_values(values.rest, [values.head].concat(move result))
     }
 }
 
 /// Appends every element of `right` to `left`, consuming the left list.
-pub func concat<T>(left: List<T>, right: List<T>) -> List<T> [consume left] {
-    fold(right, move left, (result: List<T>, value: T) -> result.append(value))
-}
-
-/// Returns whether the list contains no elements.
-pub func empty?<T>(values: List<T>) -> Bool {
-    values.empty?
-}
-
-/// Returns the number of elements in the list.
-pub func length<T>(values: List<T>) -> Int {
-    values.length
+pub func List.concat<T>(self: List<T>, right: List<T>) -> List<T> [consume self, read right] {
+    right.fold(move self, (result: List<T>, value: T) -> result.append(value))
 }
 
 /// Returns the element at `index`, or `None` when the index is outside the list.
-pub func get<T>(values: List<T>, index: Int) -> Option<T> {
+pub func List.get<T>(self: List<T>, index: Int) -> Option<T> {
+    get_at(self, index)
+}
+
+/// Finds an element at the remaining zero-based index.
+func get_at<T>(values: List<T>, index: Int) -> Option<T> [read values] {
     branch {
         index < 0 -> Option.None
         values.empty? -> Option.None
         index == 0 -> Option.Some(values.head)
-        _ -> get(values.rest, index - 1)
+        _ -> get_at(values.rest, index - 1)
     }
 }
 
 /// Returns at most the first `count` elements.
-pub func take<T>(values: List<T>, count: Int) -> List<T> {
-    sequence::take(values, count)
+pub func List.take<T>(self: List<T>, count: Int) -> List<T> {
+    sequence::take(self, count)
 }
 
 /// Consumes the list and returns the elements after the first `count` entries.
-pub func drop<T>(values: List<T>, count: Int) -> List<T> [consume values] {
+pub func List.drop<T>(self: List<T>, count: Int) -> List<T> [consume self] {
+    drop_values(move self, count)
+}
+
+/// Consumes leading values until the requested count is exhausted.
+func drop_values<T>(values: List<T>, count: Int) -> List<T> [consume values] {
     branch {
         count <= 0 -> values
         values.empty? -> values
-        _ -> drop(values.rest, count - 1)
+        _ -> drop_values(values.rest, count - 1)
     }
 }
 
 /// Maps each element to a list and concatenates the produced lists.
-pub func flat_map<T, U>(values: List<T>, transform: func(T) -> List<U>) -> List<U> {
-    flat_map_into(values, transform, [])
+pub func List.flat_map<T, U>(self: List<T>, transform: func(T) -> List<U>) -> List<U> {
+    flat_map_into(self, transform, [])
 }
 
 /// Accumulates the lists produced from the remaining source elements.
@@ -145,50 +160,62 @@ func flat_map_into<T, U>(values: List<T>, transform: func(T) -> List<U>, result:
 /// Transforms the next element and appends its values to the accumulator.
 func flat_map_next<T, U>(values: List<T>, transform: func(T) -> List<U>, result: List<U>) -> List<U> [consume result] {
     let mapped = transform(values.head)
-    let next = concat(move result, mapped)
+    let next = (move result).concat(mapped)
     flat_map_into(values.rest, transform, move next)
 }
 
 /// Concatenates a list of lists into one list.
-pub func flatten<T>(values: List<List<T>>) -> List<T> {
+pub func List.flatten<T>(self: List<List<T>>) -> List<T> {
+    flatten_values(self)
+}
+
+/// Concatenates the remaining nested lists.
+func flatten_values<T>(values: List<List<T>>) -> List<T> [read values] {
     branch {
         values.empty? -> []
-        _ -> concat(values.head, flatten(values.rest))
+        _ -> flatten_next(values)
     }
 }
 
+/// Copies the next nested list before joining it with the flattened tail.
+func flatten_next<T>(values: List<List<T>>) -> List<T> [read values] {
+    let head = values.head.fold([], (result: List<T>, value: T) -> result.append(value))
+    let tail = flatten_values(values.rest)
+    (move head).concat(tail)
+}
+
 /// Counts the elements satisfying `predicate`.
-pub func count<T>(values: List<T>, predicate: Predicate<T>) -> Int {
-    sequence::count(values, predicate)
+pub func List.count<T>(self: List<T>, predicate: Predicate<T>) -> Int {
+    sequence::count(self, predicate)
 }
 
 /// Returns whether no element satisfies `predicate`.
-pub func none?<T>(values: List<T>, predicate: Predicate<T>) -> Bool {
-    sequence::none?(values, predicate)
+pub func List.none?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
+    sequence::none?(self, predicate)
 }
 
 /// Combines a nonempty list into one value, or returns `None` for an empty list.
-pub func reduce<T>(values: List<T>, combine: func(T, T) -> T) -> Option<T> {
+pub func List.reduce<T>(self: List<T>, combine: func(T, T) -> T) -> Option<T> {
     branch {
-        values.empty? -> Option.None
-        _ -> Option.Some(fold(values.rest, values.head, combine))
+        self.empty? -> Option.None
+        _ -> Option.Some(fold_values(self.rest, self.head, combine))
     }
 }
 
 /// Joins strings with `separator` between adjacent values.
-pub func join(values: List<String>, separator: String) -> String {
+pub func List.join(self: List<String>, separator: String) -> String {
     branch {
-        values.empty? -> ""
-        _ -> join_rest(values.rest, separator, values.head)
+        self.empty? -> ""
+        _ -> join_rest(self.rest, separator, self.head)
     }
 }
 
 test "list algorithms transform and aggregate values" {
-    let values = map([1, 2, 3], (value: Int) -> value * 2)
+    let values = [1, 2, 3].map((value: Int) -> value * 2)
     assert(values.length == 3)
     assert(values[0] == 2)
     assert(values[2] == 6)
-    assert(fold(values, 0, (total: Int, value: Int) -> total + value) == 12)
+    assert(values.fold(0, (total: Int, value: Int) -> total + value) == 12)
     ()
 }
 

@@ -9,7 +9,7 @@ pub func CodePoint.as_int(self: CodePoint) -> Int {
 
 /// Returns the string representation of this code point.
 pub func CodePoint.as_string(self: CodePoint) -> String {
-    to_string(self)
+    self.string
 }
 
 
@@ -17,7 +17,7 @@ pub func CodePoint.as_string(self: CodePoint) -> String {
 /// Creates a code point from a valid Unicode scalar value.
 ///
 /// Returns `None` for negative values, surrogate code points, and values above `0x10FFFF`.
-pub func from_int(value: Int) -> Option<CodePoint> {
+pub func CodePoint.from(value: Int) -> Option<CodePoint> {
     branch {
         value < 0 -> Option.None
         value > 1114111 -> Option.None
@@ -29,21 +29,11 @@ pub func from_int(value: Int) -> Option<CodePoint> {
     }
 }
 
-/// Returns the Unicode scalar value represented by `character`.
-pub func to_int(character: CodePoint) -> Int {
-    character
-}
-
-/// Converts one code point to its single-code-point string representation.
-pub func to_string(character: CodePoint) -> String {
-    character.string
-}
-
 test "code points round-trip Unicode scalar values" {
-    let valid = branch from_int(955) {
+    let valid = branch CodePoint.from(955) {
         Option.Some(character) -> branch {
-            to_int(character) != 955 -> false
-            _ -> to_string(character) == "λ"
+            character.as_int() != 955 -> false
+            _ -> character.as_string() == "λ"
         }
         Option.None -> false
     }

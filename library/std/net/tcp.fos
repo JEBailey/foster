@@ -61,8 +61,8 @@ func wrap_listener(outcome: Result<Int, NetworkError>) -> Result<Listener, Netwo
 }
 
 /// Waits for and accepts one incoming connection.
-pub func accept(listener: Listener) -> Result<Connection, NetworkError> {
-    wrap_connection(TcpHost.accept(listener.handle))
+pub func Listener.accept(self: Listener) -> Result<Connection, NetworkError> [mut self.handle] {
+    wrap_connection(TcpHost.accept(self.handle))
 }
 
 /// Converts a successful connection handle into an opaque `Connection`.
@@ -107,18 +107,18 @@ pub func Connection.write_bytes(self: Connection, contents: Bytes) -> Result<Int
 }
 
 /// Sets the connection's read and write timeout in milliseconds.
-pub func set_timeout(connection: Connection, milliseconds: Int) -> Result<(), NetworkError> {
-    TcpHost.set_timeout(connection.handle, milliseconds)
+pub func Connection.set_timeout(self: Connection, milliseconds: Int) -> Result<(), NetworkError> [mut self.handle] {
+    TcpHost.set_timeout(self.handle, milliseconds)
 }
 
 /// Closes a listening socket.
-pub func close_listener(listener: Listener) -> Result<(), NetworkError> {
-    TcpHost.close_listener(listener.handle)
+pub func Listener.close(self: Listener) -> Result<(), NetworkError> [consume self] {
+    TcpHost.close_listener(self.handle)
 }
 
 /// Closes a connected TCP stream.
-pub func close_connection(connection: Connection) -> Result<(), NetworkError> {
-    TcpHost.close_connection(connection.handle)
+pub func Connection.close(self: Connection) -> Result<(), NetworkError> [consume self] {
+    TcpHost.close_connection(self.handle)
 }
 
 /// Converts a completed host write into the stream writer's byte count.

@@ -421,8 +421,10 @@ impl<'a> Checker<'a> {
                         function.name
                     )));
                 };
-                let owners_match = if owner == "CodePoint" || receiver_name == "CodePoint" {
-                    owner == "CodePoint" && receiver_name == "CodePoint"
+                let primitive_owner =
+                    |name: &str| matches!(name, "Bool" | "Int" | "Float" | "CodePoint" | "Byte");
+                let owners_match = if primitive_owner(owner) || primitive_owner(receiver_name) {
+                    owner == receiver_name
                 } else {
                     self.resolve_nominal_type(module, owner)?
                         == self.resolve_nominal_type(module, receiver_name)?

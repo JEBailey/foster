@@ -128,7 +128,6 @@ pub fn compile_object(
     for function in ordered {
         define_function(
             &mut module,
-            compilation,
             &program,
             function,
             native_ids[&function],
@@ -392,7 +391,6 @@ fn validate_program(
 
 fn define_function(
     module: &mut ObjectModule,
-    compilation: &Compilation,
     program: &Program,
     function_id: FunctionId,
     native_id: FuncId,
@@ -414,23 +412,20 @@ fn define_function(
     let mut builder_context = FunctionBuilderContext::new();
     {
         let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
-        lower_body(
-            &mut builder,
-            module,
+        let lowering = LowerBodyContext {
             program,
-            function,
             native_ids,
-            &register_types,
+            register_types: &register_types,
             pointer_type,
             runtime_string_indices,
-        )?;
+        };
+        lower_body(&mut builder, module, function, &lowering)?;
         builder.finalize(frontend_config);
     }
     module
         .define_function(native_id, &mut context)
         .map_err(|error| native_error(format!("cannot compile `{}`: {error}", function.name)))?;
     module.clear_context(&mut context);
-    let _ = compilation;
     Ok(())
 }
 
@@ -592,15 +587,19 @@ fn field_type(receiver: NativeType, field: &str) -> Result<NativeType, FosterErr
     }
 }
 
+struct LowerBodyContext<'a> {
+    program: &'a Program,
+    native_ids: &'a HashMap<FunctionId, FuncId>,
+    register_types: &'a [Option<NativeType>],
+    pointer_type: cranelift_codegen::ir::Type,
+    runtime_string_indices: &'a HashMap<u16, u64>,
+}
+
 fn lower_body(
     builder: &mut FunctionBuilder<'_>,
     module: &mut ObjectModule,
-    program: &Program,
     function: &BytecodeFunction,
-    native_ids: &HashMap<FunctionId, FuncId>,
-    register_types: &[Option<NativeType>],
-    pointer_type: cranelift_codegen::ir::Type,
-    runtime_string_indices: &HashMap<u16, u64>,
+    context: &LowerBodyContext<'_>,
 ) -> Result<(), FosterError> {
     let leaders = block_leaders(function)?;
     let blocks = leaders
@@ -618,7 +617,7 @@ fn lower_body(
     builder.switch_to_block(entry);
     for (index, value) in builder.block_params(entry).to_vec().into_iter().enumerate() {
         builder.ins().stack_store(
-            pointer_type,
+            context.pointer_type,
             value,
             registers,
             register_offset(Register(index as u16))?,
@@ -632,16 +631,16 @@ fn lower_body(
         let terminated = lower_instruction(
             builder,
             module,
-            program,
+            context.program,
             function,
             instruction,
             registers,
             &blocks,
-            native_ids,
-            register_types,
+            context.native_ids,
+            context.register_types,
             index,
-            pointer_type,
-            runtime_string_indices,
+            context.pointer_type,
+            context.runtime_string_indices,
         )?;
         let next = index + 1;
         if !terminated && blocks.contains_key(&next) {

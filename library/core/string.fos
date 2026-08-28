@@ -15,25 +15,30 @@ pub type String = {
 }
 
 /// Returns the first code point, or `None` when the string is empty.
-pub func first(value: String) -> Option<CodePoint> {
+pub func String.first(self: String) -> Option<CodePoint> {
     branch {
-        value.empty? -> Option.None
-        _ -> Option.Some(value.head)
+        self.empty? -> Option.None
+        _ -> Option.Some(self.head)
     }
 }
 
 /// Returns the final code point, or `None` when the string is empty.
-pub func last(value: String) -> Option<CodePoint> {
+pub func String.last(self: String) -> Option<CodePoint> {
+    last_code_point(self)
+}
+
+/// Finds the final code point in the remaining string.
+func last_code_point(value: String) -> Option<CodePoint> [read value] {
     branch {
         value.empty? -> Option.None
         value.rest.empty? -> Option.Some(value.head)
-        _ -> last(value.rest)
+        _ -> last_code_point(value.rest)
     }
 }
 
 /// Returns the string with its code points in reverse order.
-pub func reverse(value: String) -> String {
-    reverse_into(value, "")
+pub func String.reverse(self: String) -> String {
+    reverse_into(self, "")
 }
 
 /// Prepends remaining code points to the reversed-string accumulator.
@@ -47,62 +52,67 @@ func reverse_into(value: String, result: String) -> String [consume result] {
 
 /// Returns whether `value` begins with `prefix`.
 pub func String.starts_with?(self: String, prefix: String) -> Bool {
-    branch {
-        prefix.empty? -> true
-        self.empty? -> false
-        self.head != prefix.head -> false
-        _ -> starts_with?(self.rest, prefix.rest)
-    }
+    starts_with(self, prefix)
 }
 
-/// Returns whether `value` begins with `prefix`.
-pub func starts_with?(value: String, prefix: String) -> Bool [read value, read prefix] {
+/// Compares the remaining value and prefix code points.
+func starts_with(value: String, prefix: String) -> Bool [read value, read prefix] {
     branch {
         prefix.empty? -> true
         value.empty? -> false
         value.head != prefix.head -> false
-        _ -> starts_with?(value.rest, prefix.rest)
+        _ -> starts_with(value.rest, prefix.rest)
     }
 }
 
 
 /// Returns whether `value` ends with `suffix`.
-pub func ends_with?(value: String, suffix: String) -> Bool {
-    starts_with?(reverse(value), reverse(suffix))
+pub func String.ends_with?(self: String, suffix: String) -> Bool {
+    self.reverse().starts_with?(suffix.reverse())
 }
 
 /// Returns whether `value` contains `fragment`.
-pub func contains?(value: String, fragment: String) -> Bool {
+pub func String.contains?(self: String, fragment: String) -> Bool {
+    contains_fragment(self, fragment)
+}
+
+/// Searches the remaining string for the fragment.
+func contains_fragment(value: String, fragment: String) -> Bool [read value, read fragment] {
     branch {
         fragment.empty? -> true
         value.empty? -> false
-        starts_with?(value, fragment) -> true
-        _ -> contains?(value.rest, fragment)
+        starts_with(value, fragment) -> true
+        _ -> contains_fragment(value.rest, fragment)
     }
 }
 
 /// Consumes the string and removes leading Unicode whitespace.
-pub func trim_start(value: String) -> String [consume value] {
+pub func String.trim_start(self: String) -> String [consume self] {
+    trim_start_value(move self)
+}
+
+/// Consumes leading whitespace from the remaining string.
+func trim_start_value(value: String) -> String [consume value] {
     branch {
         value.empty? -> value
-        value.head.whitespace? -> trim_start(value.rest)
+        value.head.whitespace? -> trim_start_value(value.rest)
         _ -> value
     }
 }
 
 /// Returns the string without trailing Unicode whitespace.
-pub func trim_end(value: String) -> String {
-    reverse(trim_start(reverse(value)))
+pub func String.trim_end(self: String) -> String {
+    self.reverse().trim_start().reverse()
 }
 
 /// Consumes the string and removes leading and trailing Unicode whitespace.
-pub func trim(value: String) -> String [consume value] {
-    trim_end(trim_start(move value))
+pub func String.trim(self: String) -> String [consume self] {
+    (move self).trim_start().trim_end()
 }
 
 /// Materializes the string's Unicode scalar values as a list of code points.
-pub func to_code_points(value: String) -> List<CodePoint> {
-    to_code_points_into(value, [])
+pub func String.code_points(self: String) -> List<CodePoint> {
+    to_code_points_into(self, [])
 }
 
 /// Appends remaining string code points to the list accumulator.
@@ -114,7 +124,12 @@ func to_code_points_into(value: String, result: List<CodePoint>) -> List<CodePoi
 }
 
 /// Concatenates a sequence of code points into a string.
-pub func from_code_points(characters: Sequence<CodePoint>) -> String {
+pub func String.from_code_points(characters: Sequence<CodePoint>) -> String {
+    from_code_points(characters)
+}
+
+/// Concatenates the remaining code points into text.
+func from_code_points(characters: Sequence<CodePoint>) -> String [read characters] {
     branch {
         characters.empty?() -> ""
         _ -> characters.head().string + from_code_points(characters.rest())
@@ -146,14 +161,9 @@ func ascii_digit?(value: CodePoint) -> Bool {
     }
 }
 
-/// Returns the number of Unicode code points in the string.
-pub func length(value: String) -> Int {
-    value.length
-}
-
-/// Returns the half-open code-point range `[start, end)` from the string.
-pub func slice(value: String, start: Int, end: Int) -> String {
-    slice_into(value, 0, start, end, "")
+/// Returns the code points in the half-open range from `start` through `end`.
+pub func String.slice(self: String, start: Int, end: Int) -> String {
+    slice_into(self, 0, start, end, "")
 }
 
 /// Copies code points in the selected range into the string accumulator.
@@ -169,10 +179,10 @@ func slice_into(value: String, index: Int, start: Int, end: Int, result: String)
 /// Consumes and splits a string around each occurrence of `separator`.
 ///
 /// An empty separator produces one single-code-point string per element.
-pub func split(value: String, separator: String) -> List<String> [consume value] {
+pub func String.split(self: String, separator: String) -> List<String> [consume self] {
     branch {
-        separator.empty? -> split_characters(value, [])
-        _ -> split_into(move value, separator, "", [])
+        separator.empty? -> split_characters(self, [])
+        _ -> split_into(move self, separator, "", [])
     }
 }
 
@@ -188,7 +198,7 @@ func split_characters(value: String, result: List<String>) -> List<String> [cons
 func split_into(value: String, separator: String, current: String, result: List<String>) -> List<String> [consume value, consume current, consume result] {
     branch {
         value.empty? -> result.append(current)
-        starts_with?(value, separator) -> split_into(drop_prefix(move value, separator.length), separator, "", result.append(current))
+        value.starts_with?(separator) -> split_into(drop_prefix(move value, separator.length), separator, "", result.append(current))
         _ -> split_into(value.rest, separator, current + value.head.string, move result)
     }
 }
@@ -203,54 +213,59 @@ func drop_prefix(value: String, count: Int) -> String [consume value] {
 }
 
 /// Returns an ASCII-lowercase version of the string.
-pub func lower(value: String) -> String {
+pub func String.lower(self: String) -> String {
+    lower_into(self, "")
+}
+
+/// Appends lowercased ASCII code points to the result accumulator.
+func lower_into(value: String, result: String) -> String [read value, consume result] {
     branch {
-        value.empty? -> ""
-        _ -> lower_character(value.head) + lower(value.rest)
+        value.empty? -> result
+        _ -> lower_into(value.rest, move result + lower_character(value.head))
     }
 }
 
 /// Converts one ASCII uppercase code point to lowercase text.
 func lower_character(value: CodePoint) -> String {
     branch {
-        value < 'A' -> value.string
-        value > 'Z' -> value.string
+        value < 'A' -> from_code_point(value).string
+        value > 'Z' -> from_code_point(value).string
         _ -> from_code_point(value + 32).string
     }
 }
 
 /// Returns an ASCII-uppercase version of the string.
-pub func upper(value: String) -> String {
+pub func String.upper(self: String) -> String {
+    upper_into(self, "")
+}
+
+/// Appends uppercased ASCII code points to the result accumulator.
+func upper_into(value: String, result: String) -> String [read value, consume result] {
     branch {
-        value.empty? -> ""
-        _ -> upper_character(value.head) + upper(value.rest)
+        value.empty? -> result
+        _ -> upper_into(value.rest, move result + upper_character(value.head))
     }
 }
 
 /// Converts one ASCII lowercase code point to uppercase text.
 func upper_character(value: CodePoint) -> String {
     branch {
-        value < 'a' -> value.string
-        value > 'z' -> value.string
+        value < 'a' -> from_code_point(value).string
+        value > 'z' -> from_code_point(value).string
         _ -> from_code_point(value - 32).string
     }
 }
 
 /// Returns the number of bytes required by the string's UTF-8 encoding.
-pub func byte_length(value: String) -> Int {
-    value.length
-}
-
-/// Joins strings with `separator` between adjacent values.
-pub func join(values: List<String>, separator: String) -> String {
-    list::join(values, separator)
+pub func String.byte_length(self: String) -> Int {
+    self.length
 }
 
 test "string algorithms preserve Unicode text" {
     let value = "  Foster λ  "
-    assert(trim(move value) == "Foster λ")
-    assert(reverse("abλ") == "λba")
-    assert(starts_with?("Foster", "Fos"))
+    assert((move value).trim() == "Foster λ")
+    assert("abλ".reverse() == "λba")
+    assert("Foster".starts_with?("Fos"))
     assert("123abc".take_while(ascii_digit?) == "123")
     assert("abc".take_while((_: CodePoint) -> false) == "")
     assert("λδ1".take_while((value: CodePoint) -> value > 127) == "λδ")

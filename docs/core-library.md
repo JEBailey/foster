@@ -9,13 +9,16 @@ import core.list
 import core.option
 
 func first_name(names: List<String>) -> Option<String> {
-    list::first(names)
+    names.first()
 }
 ```
 
 Importing a module makes its public declarations directly available and also binds the final module
-component for qualification. Qualification is preferred when common names such as `map`, `first`,
-`minimum`, or `contains?` would otherwise be ambiguous.
+component for qualification. A public operation with one natural nominal receiver is exposed as an
+instance method, such as `names.first()`, `result.map(transform)`, or `document.get(key)`. Module
+functions remain for namespace operations and structural algorithms without one nominal receiver,
+such as `toml::parse(source)`, `sequence::map(values, transform)`, and
+`io::copy(reader, writer)`.
 
 Every standard-library function, including private implementation helpers, has an attached Markdown
 documentation comment. Public documentation is available through language-server hover and
@@ -56,10 +59,10 @@ being added accidentally.
 | `std.toml` | Typed TOML parsing, table lookup, rendering, and source-positioned errors |
 | `std.net.tcp` | Typed TCP listeners and connections |
 
-Primitive `CodePoint` operations may be declared as owner-qualified receiver functions in
-`core.code_point`. After importing the module, `character.as_int()` calls
-`CodePoint.as_int(self: CodePoint)`. Go to Definition on a `CodePoint` type annotation opens that
-module even when it has not yet been imported.
+Primitive `CodePoint` operations are owner-qualified in `core.code_point`. After importing the
+module, `character.as_int()` calls `CodePoint.as_int(self: CodePoint)`, while
+`CodePoint.from(value)` performs checked construction. Go to Definition on a `CodePoint` type
+annotation opens that module even when it has not yet been imported.
 
 ## Boundary with the runtime
 
@@ -78,7 +81,8 @@ runtime supplies representation-level primitives and capabilities that must cros
 The host-facing intrinsics are private implementation details. Public APIs, opaque resource records,
 and conversion into `Result` values are defined in Foster. `IoError` includes the operation, path,
 and host message; `NetworkError` includes the operation and host message. TCP resources expose no
-public handle field, so user code obtains them only through `listen`, `connect`, and `accept`.
+public handle field, so user code obtains them only through `listen`, `connect`, and
+`listener.accept()`.
 
 Foster-written library code uses `try` when it forwards an unchanged error type, including the
 `std.io` transfer algorithms, TCP adapters, and TOML rendering helpers. It keeps an explicit
@@ -114,9 +118,9 @@ this table for an intrinsic because it has no Foster implementation body.
 `std.toml` represents a document as a `TomlDocument` containing top-level `TomlEntry` values.
 Nested values use the closed `TomlValue` enum: `String`, `Integer`, `Float`, `Boolean`,
 `DateTime`, `Array`, or `Table`. TOML date, time, and date-time forms retain their TOML text in the
-`DateTime` case. `get` looks up a top-level key, while `get_table` looks inside a table
-value. Both return `Option<TomlValue>` and consume the selected aggregate because they return an
-owned value.
+`DateTime` case. `document.get(key)` looks up a top-level key, while `value.get(key)` looks inside a
+table value. Both return `Option<TomlValue>` and consume the selected aggregate because they return
+an owned value.
 
 ```foster
 import core.option
@@ -126,9 +130,9 @@ import std.toml
 func package_name(source: String) -> Option<String> {
     branch toml::parse(move source) {
         Result.Error(_) -> Option.None
-        Result.Ok(document) -> branch toml::get(move document, "package") {
+        Result.Ok(document) -> branch (move document).get("package") {
             Option.None -> Option.None
-            Option.Some(package) -> branch toml::get_table(move package, "name") {
+            Option.Some(package) -> branch (move package).get("name") {
                 Option.Some(TomlValue.String(name)) -> Option.Some(name)
                 _ -> Option.None
             }
@@ -137,9 +141,9 @@ func package_name(source: String) -> Option<String> {
 }
 ```
 
-`parse` returns `Result<TomlDocument, TomlError>`. Parse errors contain a message and one-based
-line and column. `render` validates a constructed document and returns deterministic TOML text;
-render-time errors use zero for line and column because they do not refer to source text.
+`toml::parse` returns `Result<TomlDocument, TomlError>`. Parse errors contain a message and one-based
+line and column. `document.render()` validates a constructed document and returns deterministic
+TOML text; render-time errors use zero for line and column because they do not refer to source text.
 
 The parser and renderer implement the TOML 1.1 grammar in `std.toml` itself. Project discovery
 bootstraps the same embedded Foster module before package source loading, so `foster.toml` and user
@@ -234,7 +238,7 @@ structural contracts. Binary reads return at most the requested number of bytes 
 successful non-empty operations must make progress. `read_all`, `write_all`, and `copy` implement
 the retry and accumulation policy in Foster. `Duplex<E>` is the combined binary contract.
 
-`std.net.tcp::Connection` implements `Duplex<NetworkError>`. Its `read` and `write` methods are the
+`tcp::Connection` implements `Duplex<NetworkError>`. Its `read` and `write` methods are the
 contract operations, while `read_text`, `write_text`, `read_bytes`, and `write_bytes` are explicit
 convenience spellings. Filesystem path functions remain whole-file operations rather than claiming
 to be stateful streams.
@@ -251,5 +255,5 @@ Socket readiness, TLS, and explicit filesystem/network capability tokens remain 
 Core APIs should not bypass ownership. In particular, operations that must retain an owned generic
 value after invoking user code require a borrowed-callback type; they are intentionally omitted
 until that contract can be expressed without weakening move checking. For the same reason,
-`std.collections.map.get`, `keys`, and `values` consume the map when returning owned generic values, while
+`Map.get`, `keys`, and `values` consume the map when returning owned generic values, while
 queries such as `contains_key?`, `length`, and `empty?` only borrow it.

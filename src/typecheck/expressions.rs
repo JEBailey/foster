@@ -363,7 +363,7 @@ impl Checker<'_> {
             }
             hir::Expr::Member { object, name } => {
                 let object = self.infer_expression(function, object)?;
-                let stored_field = self.has_stored_member(function, &object, &name)?;
+                let stored_field = self.has_stored_member(&object, &name)?;
                 let member = self.infer_member(function, object, &name)?;
                 if !stored_field && matches!(self.resolved(member.clone()), Ty::Callable { .. }) {
                     self.bare_method_members.insert(expression_id);
@@ -571,21 +571,16 @@ impl Checker<'_> {
         Ok(ty)
     }
 
-    fn has_stored_member(
-        &mut self,
-        function: FunctionId,
-        object: &Ty,
-        name: &str,
-    ) -> Result<bool, FosterError> {
+    fn has_stored_member(&mut self, object: &Ty, name: &str) -> Result<bool, FosterError> {
         match self.resolved(object.clone()) {
-            Ty::Reference(_, value) => self.has_stored_member(function, &value, name),
+            Ty::Reference(_, value) => self.has_stored_member(&value, name),
             Ty::Record(record, arguments) => Ok(self
                 .effective_record_fields(record, &arguments)?
                 .iter()
                 .any(|field| field.name == name)),
             Ty::Intersection(members) => {
                 for member in members {
-                    if self.has_stored_member(function, &member, name)? {
+                    if self.has_stored_member(&member, name)? {
                         return Ok(true);
                     }
                 }

@@ -686,9 +686,7 @@ impl FunctionCompiler<'_> {
                     let function = self
                         .hir
                         .function_named(self.hir.records[*record].module, &qualified_name)?;
-                    if self.hir.functions[function].receiver.is_none() {
-                        return None;
-                    }
+                    self.hir.functions[function].receiver?;
                     let receiver_matches = self
                         .types
                         .function_type(function)
@@ -708,9 +706,7 @@ impl FunctionCompiler<'_> {
                     let function = self
                         .hir
                         .function_named(self.hir.variant_types[*variant].module, &qualified_name)?;
-                    if self.hir.functions[function].receiver.is_none() {
-                        return None;
-                    }
+                    self.hir.functions[function].receiver?;
                     let receiver_matches = self
                         .types
                         .function_type(function)

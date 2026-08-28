@@ -195,14 +195,13 @@ impl FunctionLowerer<'_> {
             self.hir.expression_spans.insert(lowered, span.clone());
             return Ok(lowered);
         }
-        if let ast::Expr::Member { object, name } = expression.unspanned() {
-            if let ast::Expr::Name(qualifier) = object.unspanned() {
-                if self.imports.contains_key(qualifier) {
-                    return Err(self.error(format!(
-                        "module qualification uses `::`; write `{qualifier}::{name}`"
-                    )));
-                }
-            }
+        if let ast::Expr::Member { object, name } = expression.unspanned()
+            && let ast::Expr::Name(qualifier) = object.unspanned()
+            && self.imports.contains_key(qualifier)
+        {
+            return Err(self.error(format!(
+                "module qualification uses `::`; write `{qualifier}::{name}`"
+            )));
         }
         if let Some(path) = accessor_path(expression)
             && path.len() == 2

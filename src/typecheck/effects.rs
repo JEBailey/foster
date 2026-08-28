@@ -340,84 +340,81 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     }
 
     fn walk_call(&mut self, callee: ExprId, arguments: &[ExprId]) {
-        match &self.checker.hir.expressions[callee] {
-            hir::Expr::Member { object, name } => {
-                let receiver = self
-                    .checker
-                    .resolved(self.checker.expressions[object].clone());
-                if let Ty::Remote(value) = receiver {
-                    let receiver_group = match *value {
-                        Ty::Reference(group, _) => Some(group),
-                        _ => None,
-                    };
-                    if let Some(method) = self.method_for(*object, name) {
-                        let definition = &self.checker.hir.functions[method];
-                        let parameter_names = definition
-                            .parameters
-                            .iter()
-                            .skip(1)
-                            .map(|parameter| self.checker.hir.locals[*parameter].name.clone())
-                            .collect::<Vec<_>>();
-                        let effects = definition.effects.clone();
-                        for effect in effects {
-                            let group = if effect.target.root == "self" {
-                                receiver_group
-                                    .as_ref()
-                                    .map(|group| crate::ast::GroupPath::root(group.clone()))
-                            } else {
-                                parameter_names
-                                    .iter()
-                                    .position(|name| *name == effect.target.root)
-                                    .and_then(|index| arguments.get(index))
-                                    .map(|argument| self.place_group(*argument))
-                            };
-                            if let Some(group) = group {
-                                self.add(effect.kind, group.with_children(&effect.target.children));
-                            }
-                        }
-                    }
-                    return;
-                }
+        if let hir::Expr::Member { object, name } = &self.checker.hir.expressions[callee] {
+            let receiver = self
+                .checker
+                .resolved(self.checker.expressions[object].clone());
+            if let Ty::Remote(value) = receiver {
+                let receiver_group = match *value {
+                    Ty::Reference(group, _) => Some(group),
+                    _ => None,
+                };
                 if let Some(method) = self.method_for(*object, name) {
-                    self.apply_callee(method, Some(*object), arguments);
-                    return;
-                }
-                if let Some(Ty::Callable {
-                    parameters,
-                    effects,
-                    suspends,
-                    ..
-                }) = self
-                    .checker
-                    .expressions
-                    .get(&callee)
-                    .map(|ty| self.checker.resolved(ty.clone()))
-                {
-                    self.suspends |= suspends;
+                    let definition = &self.checker.hir.functions[method];
+                    let parameter_names = definition
+                        .parameters
+                        .iter()
+                        .skip(1)
+                        .map(|parameter| self.checker.hir.locals[*parameter].name.clone())
+                        .collect::<Vec<_>>();
+                    let effects = definition.effects.clone();
                     for effect in effects {
                         let group = if effect.target.root == "self" {
-                            self.place_group(*object)
+                            receiver_group
+                                .as_ref()
+                                .map(|group| crate::ast::GroupPath::root(group.clone()))
                         } else {
-                            parameters
+                            parameter_names
                                 .iter()
-                                .position(|parameter| {
-                                    reference_group(parameter).as_deref()
-                                        == Some(effect.target.root.as_str())
-                                })
+                                .position(|name| *name == effect.target.root)
                                 .and_then(|index| arguments.get(index))
-                                .and_then(|argument| self.argument_group(*argument))
-                                .unwrap_or_else(|| {
-                                    crate::ast::GroupPath::root(effect.target.root.clone())
-                                })
+                                .map(|argument| self.place_group(*argument))
+                        };
+                        if let Some(group) = group {
+                            self.add(effect.kind, group.with_children(&effect.target.children));
                         }
-                        .with_children(&effect.target.children);
-                        self.add(effect.kind, group);
                     }
-                    return;
                 }
-                self.add(crate::ast::EffectKind::Read, self.place_group(*object));
+                return;
             }
-            _ => {}
+            if let Some(method) = self.method_for(*object, name) {
+                self.apply_callee(method, Some(*object), arguments);
+                return;
+            }
+            if let Some(Ty::Callable {
+                parameters,
+                effects,
+                suspends,
+                ..
+            }) = self
+                .checker
+                .expressions
+                .get(&callee)
+                .map(|ty| self.checker.resolved(ty.clone()))
+            {
+                self.suspends |= suspends;
+                for effect in effects {
+                    let group = if effect.target.root == "self" {
+                        self.place_group(*object)
+                    } else {
+                        parameters
+                            .iter()
+                            .position(|parameter| {
+                                reference_group(parameter).as_deref()
+                                    == Some(effect.target.root.as_str())
+                            })
+                            .and_then(|index| arguments.get(index))
+                            .and_then(|argument| self.argument_group(*argument))
+                            .unwrap_or_else(|| {
+                                crate::ast::GroupPath::root(effect.target.root.clone())
+                            })
+                    }
+                    .with_children(&effect.target.children);
+                    self.add(effect.kind, group);
+                }
+                return;
+            }
+            self.add(crate::ast::EffectKind::Read, self.place_group(*object));
         }
         match self.checker.hir.expressions[callee] {
             hir::Expr::Name(ResolvedName::Builtin(

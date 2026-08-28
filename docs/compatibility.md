@@ -77,7 +77,8 @@ Module declarations, module-qualified constants, functions, and type names use `
 function declarations, type accessors, enum cases, fields, and instance members use `.`. Module
 identities in import declarations remain dotted, so `import core.result` is unchanged.
 
-Migrate `result.map` to `result::map` and a qualified type such as `model.User` to `model::User`.
+Migrate a module function such as `toml.parse(source)` to `toml::parse(source)` and a qualified type
+such as `model.User` to `model::User`.
 Type spellings such as `Result.Ok` and `func Box.make` remain dotted, as do runtime expressions such
 as `user.name` and `user.rename()`. The compiler reports actionable replacement hints for former
 dotted module qualification and accidental `::` type access; no data or ABI migration is needed.
@@ -85,3 +86,14 @@ dotted module qualification and accidental `::` type access; no data or ABI migr
 The ownership-model version remains 1 because this is a parse and name-resolution distinction with
 no ownership, group, lifetime, or effect change. The bytecode format remains version 7 because
 qualification is completely resolved before bytecode lowering.
+
+## Core-library receiver API
+
+The pre-1.0 core library now exposes operations with one natural nominal receiver as instance
+methods. Migrate calls such as `list::map(values, transform)`, `option::unwrap_or(value, fallback)`,
+`int::power(base, exponent)`, and `toml::get(document, key)` to `values.map(transform)`,
+`value.unwrap_or(fallback)`, `base.power(exponent)`, and `document.get(key)`. List and string
+`empty?` and `length` use their existing properties. Namespace
+operations and algorithms over structural contracts remain module functions, including
+`toml::parse`, `sequence::map`, `io::copy`, filesystem operations, and path operations. This is a
+source-library migration and does not change the language, ownership-model, or bytecode versions.

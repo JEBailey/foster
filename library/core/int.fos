@@ -2,87 +2,92 @@
 
 import core.ordering
 
-/// Returns the absolute value of `value`.
-pub func absolute(value: Int) -> Int {
+/// Returns the absolute value of this integer.
+pub func Int.absolute(self: Int) -> Int {
     branch {
-        value < 0 -> -value
-        _ -> value
+        self < 0 -> -self
+        _ -> self
     }
 }
 
 /// Returns the smaller of `left` and `right`.
-pub func minimum(left: Int, right: Int) -> Int {
+pub func Int.minimum(self: Int, right: Int) -> Int {
     branch {
-        left <= right -> left
+        self <= right -> self
         _ -> right
     }
 }
 
 /// Returns the larger of `left` and `right`.
-pub func maximum(left: Int, right: Int) -> Int {
+pub func Int.maximum(self: Int, right: Int) -> Int {
     branch {
-        left >= right -> left
+        self >= right -> self
         _ -> right
     }
 }
 
 /// Restricts `value` to the inclusive range from `lower` to `upper`.
-pub func clamp(value: Int, lower: Int, upper: Int) -> Int {
-    minimum(maximum(value, lower), upper)
+pub func Int.clamp(self: Int, lower: Int, upper: Int) -> Int {
+    self.maximum(lower).minimum(upper)
 }
 
 /// Returns `-1`, `0`, or `1` according to the sign of `value`.
-pub func sign(value: Int) -> Int {
+pub func Int.sign(self: Int) -> Int {
     branch {
-        value < 0 -> -1
-        value > 0 -> 1
+        self < 0 -> -1
+        self > 0 -> 1
         _ -> 0
     }
 }
 
 /// Compares two integers and returns their ordering.
-pub func compare(left: Int, right: Int) -> Ordering {
+pub func Int.compare(self: Int, right: Int) -> Ordering {
     branch {
-        left < right -> Ordering.Less
-        left > right -> Ordering.Greater
+        self < right -> Ordering.Less
+        self > right -> Ordering.Greater
         _ -> Ordering.Equal
     }
 }
 
 /// Returns whether `value` lies in the inclusive range from `lower` to `upper`.
-pub func between?(value: Int, lower: Int, upper: Int) -> Bool {
+pub func Int.between?(self: Int, lower: Int, upper: Int) -> Bool {
     branch {
-        value < lower -> false
-        _ -> value <= upper
+        self < lower -> false
+        _ -> self <= upper
     }
 }
 
 /// Returns whether `value` is evenly divisible by two.
-pub func even?(value: Int) -> Bool {
-    value / 2 * 2 == value
+pub func Int.even?(self: Int) -> Bool {
+    self / 2 * 2 == self
 }
 
 /// Returns whether `value` is not evenly divisible by two.
-pub func odd?(value: Int) -> Bool {
-    value / 2 * 2 != value
+pub func Int.odd?(self: Int) -> Bool {
+    self / 2 * 2 != self
 }
 
 /// Raises `base` to a nonnegative integer `exponent`.
-pub func power(base: Int, exponent: Int) -> Int {
+pub func Int.power(self: Int, exponent: Int) -> Int {
+    power_of(self, exponent)
+}
+
+/// Multiplies the base for each remaining exponent step.
+func power_of(base: Int, exponent: Int) -> Int {
     branch {
         exponent <= 0 -> 1
-        _ -> base * power(base, exponent - 1)
+        _ -> base * power_of(base, exponent - 1)
     }
 }
 
 /// Returns the remainder after integer division by `divisor`.
-pub func modulo(value: Int, divisor: Int) -> Int {
-    value - value / divisor * divisor
+pub func Int.modulo(self: Int, divisor: Int) -> Int {
+    self - self / divisor * divisor
 }
 
 /// Builds the half-open integer range `[start, end)`.
-pub func range(start: Int, end: Int) -> List<Int> {
-    range_into(start, end, [])
+pub func Int.range(self: Int, end: Int) -> List<Int> {
+    range_into(self, end, [])
 }
 
 /// Appends consecutive integers to the range accumulator.
@@ -94,18 +99,18 @@ func range_into(value: Int, end: Int, result: List<Int>) -> List<Int> [consume r
 }
 
 /// Formats an integer as decimal text.
-pub func to_string(value: Int) -> String {
+pub func Int.as_string(self: Int) -> String {
     branch {
-        value < 0 -> "-" + negative_string(value)
-        _ -> unsigned_string(value)
+        self < 0 -> "-" + negative_string(self)
+        _ -> unsigned_string(self)
     }
 }
 
 test "integer helpers cover signs ranges and powers" {
-    assert(absolute(-4) == 4)
-    assert(clamp(12, 0, 10) == 10)
-    assert(power(2, 5) == 32)
-    assert(range(2, 5).length == 3)
+    assert((-4).absolute() == 4)
+    assert(12.clamp(0, 10) == 10)
+    assert(2.power(5) == 32)
+    assert(2.range(5).length == 3)
     ()
 }
 

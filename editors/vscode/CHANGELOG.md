@@ -1,5 +1,9 @@
 # Change Log
 
+- Navigate, hover, and show signatures for enum instance methods, including the fluent `Option`,
+  `Result`, and `Ordering` APIs.
+- Move natural scalar, list, string, option, result, ordering, TOML, TCP, byte, and code-point
+  operations from module functions to their nominal type or instance.
 - Keep inlay hints active in unchanged functions when another function has a syntax or semantic
   failure, with current-buffer position remapping to prevent hints appearing inside source text.
 - Use `::` only for module qualification; keep `.` for type accessors, enum cases, runtime fields,

@@ -77,18 +77,18 @@ pub func parse(source: String) -> Result<TomlDocument, TomlError> {
 }
 
 /// Renders a typed TOML document as deterministic TOML text.
-pub func render(document: TomlDocument) -> Result<String, TomlError> {
-    render_entries(move document.entries, "")
+pub func TomlDocument.render(self: TomlDocument) -> Result<String, TomlError> [consume self] {
+    render_entries(move self.entries, "")
 }
 
 /// Finds a top-level document value by key.
-pub func get(document: TomlDocument, key: String) -> Option<TomlValue> {
-    find_entry(move document.entries, move key)
+pub func TomlDocument.get(self: TomlDocument, key: String) -> Option<TomlValue> [consume self, consume key] {
+    find_entry(move self.entries, move key)
 }
 
 /// Finds a value by key when `value` is a table, returning `None` otherwise.
-pub func get_table(value: TomlValue, key: String) -> Option<TomlValue> {
-    branch value {
+pub func TomlValue.get(self: TomlValue, key: String) -> Option<TomlValue> [consume self, consume key] {
+    branch self {
         TomlValue.Table(entries) -> find_entry(move entries, move key)
         _ -> Option.None
     }
@@ -118,8 +118,8 @@ func Parser.parse_statements(self: Parser) -> () [mut self] {
     return () if self.failed?()
     return () if self.remaining.empty?
     branch {
-        string::starts_with?(self.remaining, "[[") -> self.parse_header(true)
-        string::starts_with?(self.remaining, "[") -> self.parse_header(false)
+        self.remaining.starts_with?("[[") -> self.parse_header(true)
+        self.remaining.starts_with?("[") -> self.parse_header(false)
         _ -> self.parse_key_value()
     }
     self.finish_statement()
@@ -136,15 +136,15 @@ func Parser.parse_key_value(self: Parser) -> () [mut self] {
     self.skip_horizontal_space()
     let value = self.parse_value()
     return () if self.failed?()
-    let path = list::concat([], self.context)
-    self.insert_value(list::concat(move path, key_parts(move keys)), move value)
+    let path = [].concat(self.context)
+    self.insert_value((move path).concat(key_parts(move keys)), move value)
 }
 
 /// Internal helper for the Foster TOML implementation.
 func key_parts(keys: List<String>) -> List<PathPart> {
     branch {
         keys.empty? -> []
-        _ -> list::concat([PathPart.Key(keys.head)], key_parts(keys.rest))
+        _ -> [PathPart.Key(keys.head)].concat(key_parts(keys.rest))
     }
 }
 
@@ -170,7 +170,7 @@ func Parser.take_array_header_open(self: Parser, array_header: Bool) -> () [mut 
 
 /// Internal helper for the Foster TOML implementation.
 func Parser.close_array_header(self: Parser, keys: List<String>) -> () [mut self, consume keys] {
-    return self.fail("expected `]]` after array-of-tables header") if string::starts_with?(self.remaining, "]]" ) == false
+    return self.fail("expected `]]` after array-of-tables header") if self.remaining.starts_with?("]]" ) == false
     self.take()
     self.take()
     self.declare_array_table(move keys)
@@ -222,13 +222,13 @@ func Parser.skip_comment_text(self: Parser) -> () [mut self] {
 
 /// Internal helper for the Foster TOML implementation.
 func Parser.newline?(self: Parser) -> Bool {
-    either?(string::starts_with?(self.remaining, "\n"), string::starts_with?(self.remaining, "\r\n"))
+    either?(self.remaining.starts_with?("\n"), self.remaining.starts_with?("\r\n"))
 }
 
 /// Internal helper for the Foster TOML implementation.
 func Parser.take_newline(self: Parser) -> () [mut self] {
-    return self.take_crlf() if string::starts_with?(self.remaining, "\r\n")
-    return self.take_lf() if string::starts_with?(self.remaining, "\n")
+    return self.take_crlf() if self.remaining.starts_with?("\r\n")
+    return self.take_lf() if self.remaining.starts_with?("\n")
     self.fail("expected a newline")
 }
 
@@ -309,8 +309,8 @@ func Parser.parse_key_tail(self: Parser, keys: List<String>) -> List<String> [mu
 /// Internal helper for the Foster TOML implementation.
 func Parser.parse_key(self: Parser) -> String [mut self] {
     branch {
-        string::starts_with?(self.remaining, "\"") -> self.parse_basic_string(false)
-        string::starts_with?(self.remaining, "'") -> self.parse_literal_string(false)
+        self.remaining.starts_with?("\"") -> self.parse_basic_string(false)
+        self.remaining.starts_with?("'") -> self.parse_literal_string(false)
         _ -> self.parse_bare_key()
     }
 }
@@ -361,7 +361,7 @@ func Parser.open_multiline_basic(self: Parser) -> () [mut self] {
 /// Internal helper for the Foster TOML implementation.
 func Parser.parse_basic_characters(self: Parser, output: String, multiline: Bool) -> String [mut self, consume output] {
     return self.unterminated_basic(move output) if self.remaining.empty?
-    return self.close_multiline_basic(move output) if both?(multiline, string::starts_with?(self.remaining, "\"\"\""))
+    return self.close_multiline_basic(move output) if both?(multiline, self.remaining.starts_with?("\"\"\""))
     return self.close_basic(move output) if both?(multiline == false, self.peek?('\"'))
     return self.start_escape(move output, multiline) if self.peek?('\\')
     return self.basic_newline(move output, multiline) if self.newline?()
@@ -467,7 +467,7 @@ func Parser.escaped_code_point(self: Parser, output: String, value: Int, multili
 func Parser.parse_unicode_escape(self: Parser, output: String, digits: Int, multiline: Bool) -> String [mut self, consume output] {
     self.take()
     let value = self.take_hex_digits(digits, 0)
-    branch code_point::from_int(value) {
+    branch CodePoint.from(value) {
         Option.Some(character) -> self.parse_basic_characters(output + character.string, multiline)
         Option.None -> self.invalid_unicode_escape(move output)
     }
@@ -508,7 +508,7 @@ func Parser.escape_fold_start?(self: Parser) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func fold_space_then_newline?(value: String) -> Bool {
     branch {
-        either?(string::starts_with?(value, "\n"), string::starts_with?(value, "\r\n")) -> true
+        either?(value.starts_with?("\n"), value.starts_with?("\r\n")) -> true
         value.empty? -> false
         either?(value.head == ' ', value.head == '\t') -> fold_space_then_newline?(value.rest)
         _ -> false
@@ -563,7 +563,7 @@ func Parser.open_multiline_literal(self: Parser) -> () [mut self] {
 /// Internal helper for the Foster TOML implementation.
 func Parser.parse_literal_characters(self: Parser, output: String, multiline: Bool) -> String [mut self, consume output] {
     return self.unterminated_literal(move output) if self.remaining.empty?
-    return self.close_multiline_literal(move output) if both?(multiline, string::starts_with?(self.remaining, "'''"))
+    return self.close_multiline_literal(move output) if both?(multiline, self.remaining.starts_with?("'''"))
     return self.close_literal(move output) if both?(multiline == false, self.peek?('\''))
     return self.literal_newline(move output, multiline) if self.newline?()
     return self.forbidden_literal(move output) if forbidden_string_character?(self.remaining.head)
@@ -637,7 +637,7 @@ func Parser.consume_text(self: Parser, text: String) -> () [mut self] {
 
 /// Internal helper for the Foster TOML implementation.
 func forbidden_string_character?(character: CodePoint) -> Bool {
-    let value = code_point::to_int(character)
+    let value = character.as_int()
     branch {
         value == 9 -> false
         value < 32 -> true
@@ -648,7 +648,7 @@ func forbidden_string_character?(character: CodePoint) -> Bool {
 
 /// Internal helper for the Foster TOML implementation.
 func control_character?(character: CodePoint) -> Bool {
-    let value = code_point::to_int(character)
+    let value = character.as_int()
     return false if value == 9
     either?(value < 32, value == 127)
 }
@@ -669,19 +669,19 @@ func hex_digit?(character: CodePoint) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func hex_value(character: CodePoint) -> Int {
     branch {
-        character <= '9' -> code_point::to_int(character) - 48
-        character <= 'F' -> code_point::to_int(character) - 55
-        _ -> code_point::to_int(character) - 87
+        character <= '9' -> character.as_int() - 48
+        character <= 'F' -> character.as_int() - 55
+        _ -> character.as_int() - 87
     }
 }
 
 /// Internal helper for the Foster TOML implementation.
 func Parser.parse_value(self: Parser) -> TomlValue [mut self] {
     branch {
-        string::starts_with?(self.remaining, "\"\"\"") -> TomlValue.String(self.parse_basic_string(true))
-        string::starts_with?(self.remaining, "'''") -> TomlValue.String(self.parse_literal_string(true))
-        string::starts_with?(self.remaining, "\"") -> TomlValue.String(self.parse_basic_string(false))
-        string::starts_with?(self.remaining, "'") -> TomlValue.String(self.parse_literal_string(false))
+        self.remaining.starts_with?("\"\"\"") -> TomlValue.String(self.parse_basic_string(true))
+        self.remaining.starts_with?("'''") -> TomlValue.String(self.parse_literal_string(true))
+        self.remaining.starts_with?("\"") -> TomlValue.String(self.parse_basic_string(false))
+        self.remaining.starts_with?("'") -> TomlValue.String(self.parse_literal_string(false))
         self.peek?('[') -> self.parse_array()
         self.peek?('{') -> self.parse_inline_table()
         _ -> self.parse_bare_value()
@@ -867,7 +867,7 @@ func Parser.take_date_time_space(self: Parser, output: String) -> String [mut se
 func date_time_space?(output: String, remaining: String) -> Bool {
     return false if output.length != 10
     return false if local_date?(output) == false
-    return false if string::starts_with?(remaining, " ") == false
+    return false if remaining.starts_with?(" ") == false
     return false if remaining.rest.empty?
     decimal_digit?(remaining.rest.head)
 }
@@ -899,12 +899,12 @@ func remove_underscores(value: String) -> String {
 /// Internal helper for the Foster TOML implementation.
 func integer_text?(value: String) -> Bool {
     let unsigned = drop_sign(value)
-    let signed = either?(string::starts_with?(value, "+"), string::starts_with?(value, "-"))
+    let signed = either?(value.starts_with?("+"), value.starts_with?("-"))
     return false if both?(signed, based_prefix?(unsigned))
     branch {
-        string::starts_with?(unsigned, "0x") -> based_digits?(unsigned.rest.rest, 16)
-        string::starts_with?(unsigned, "0o") -> based_digits?(unsigned.rest.rest, 8)
-        string::starts_with?(unsigned, "0b") -> based_digits?(unsigned.rest.rest, 2)
+        unsigned.starts_with?("0x") -> based_digits?(unsigned.rest.rest, 16)
+        unsigned.starts_with?("0o") -> based_digits?(unsigned.rest.rest, 8)
+        unsigned.starts_with?("0b") -> based_digits?(unsigned.rest.rest, 2)
         unsigned.empty? -> false
         both?(unsigned.head == '0', unsigned.rest.empty? == false) -> false
         _ -> based_digits?(unsigned, 10)
@@ -913,15 +913,15 @@ func integer_text?(value: String) -> Bool {
 
 /// Internal helper for the Foster TOML implementation.
 func based_prefix?(value: String) -> Bool {
-    either?(string::starts_with?(value, "0x"), either?(string::starts_with?(value, "0o"), string::starts_with?(value, "0b")))
+    either?(value.starts_with?("0x"), either?(value.starts_with?("0o"), value.starts_with?("0b")))
 }
 
 /// Internal helper for the Foster TOML implementation.
 func drop_sign(value: String) -> String {
     branch {
         value.empty? -> ""
-        either?(value.head == '+', value.head == '-') -> string::slice(value, 1, value.length)
-        _ -> string::slice(value, 0, value.length)
+        either?(value.head == '+', value.head == '-') -> value.slice(1, value.length)
+        _ -> value.slice(0, value.length)
     }
 }
 
@@ -947,19 +947,19 @@ func based_digit_tail?(value: String, base: Int, saw_digit: Bool, previous_under
 /// Internal helper for the Foster TOML implementation.
 func digit_for_base?(character: CodePoint, base: Int) -> Bool {
     branch {
-        base <= 10 -> both?(character >= '0', code_point::to_int(character) < 48 + base)
+        base <= 10 -> both?(character >= '0', character.as_int() < 48 + base)
         _ -> hex_digit?(character)
     }
 }
 
 /// Internal helper for the Foster TOML implementation.
 func Parser.parse_integer(self: Parser, text: String) -> Int [mut self, consume text] {
-    let negative = string::starts_with?(text, "-")
+    let negative = text.starts_with?("-")
     let unsigned = drop_sign(move text)
     branch {
-        string::starts_with?(unsigned, "0x") -> self.accumulate_integer(unsigned.rest.rest, 16, negative, 0)
-        string::starts_with?(unsigned, "0o") -> self.accumulate_integer(unsigned.rest.rest, 8, negative, 0)
-        string::starts_with?(unsigned, "0b") -> self.accumulate_integer(unsigned.rest.rest, 2, negative, 0)
+        unsigned.starts_with?("0x") -> self.accumulate_integer(unsigned.rest.rest, 16, negative, 0)
+        unsigned.starts_with?("0o") -> self.accumulate_integer(unsigned.rest.rest, 8, negative, 0)
+        unsigned.starts_with?("0b") -> self.accumulate_integer(unsigned.rest.rest, 2, negative, 0)
         _ -> self.accumulate_integer(move unsigned, 10, negative, 0)
     }
 }
@@ -988,8 +988,8 @@ func float_text?(value: String) -> Bool {
     let unsigned = drop_sign(value)
     branch {
         unsigned.empty? -> false
-        string::contains?(unsigned, ".") -> decimal_float?(unsigned)
-        either?(string::contains?(unsigned, "e"), string::contains?(unsigned, "E")) -> decimal_float?(unsigned)
+        unsigned.contains?(".") -> decimal_float?(unsigned)
+        either?(unsigned.contains?("e"), unsigned.contains?("E")) -> decimal_float?(unsigned)
         _ -> false
     }
 }
@@ -997,13 +997,13 @@ func float_text?(value: String) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func decimal_float?(value: String) -> Bool {
     let whole = take_decimal_prefix(value)
-    let normalized = remove_underscores(string::slice(whole, 0, whole.length))
+    let normalized = remove_underscores(whole.slice(0, whole.length))
     branch {
         whole.empty? -> false
         normalized.empty? -> false
         both?(normalized.length > 1, normalized.head == '0') -> false
         decimal_component?(whole) == false -> false
-        _ -> decimal_float_suffix?(string::slice(value, whole.length, value.length))
+        _ -> decimal_float_suffix?(value.slice(whole.length, value.length))
     }
 }
 
@@ -1015,8 +1015,8 @@ func take_decimal_prefix(value: String) -> String {
 /// Internal helper for the Foster TOML implementation.
 func decimal_float_suffix?(suffix: String) -> Bool {
     branch {
-        string::starts_with?(suffix, ".") -> fraction_and_exponent?(suffix.rest)
-        either?(string::starts_with?(suffix, "e"), string::starts_with?(suffix, "E")) -> exponent?(suffix.rest)
+        suffix.starts_with?(".") -> fraction_and_exponent?(suffix.rest)
+        either?(suffix.starts_with?("e"), suffix.starts_with?("E")) -> exponent?(suffix.rest)
         _ -> false
     }
 }
@@ -1027,14 +1027,14 @@ func fraction_and_exponent?(value: String) -> Bool {
     branch {
         decimal_component?(fraction) == false -> false
         fraction.length == value.length -> true
-        _ -> exponent_marker?(string::slice(value, fraction.length, value.length))
+        _ -> exponent_marker?(value.slice(fraction.length, value.length))
     }
 }
 
 /// Internal helper for the Foster TOML implementation.
 func exponent_marker?(value: String) -> Bool {
     branch {
-        either?(string::starts_with?(value, "e"), string::starts_with?(value, "E")) -> exponent?(value.rest)
+        either?(value.starts_with?("e"), value.starts_with?("E")) -> exponent?(value.rest)
         _ -> false
     }
 }
@@ -1075,7 +1075,7 @@ func Parser.declare_table(self: Parser, keys: List<String>) -> () [mut self, con
     let path = resolve_header_path(self.entries, [], move keys)
     return self.fail("table is already defined") if exact_path?(self.entries, path)
     return self.fail("table conflicts with an existing value") if scalar_prefix_conflict?(self.entries, path)
-    let context = list::concat([], path)
+    let context = [].concat(path)
     self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.TableMarker })
     self.context = move context
     ()
@@ -1084,13 +1084,13 @@ func Parser.declare_table(self: Parser, keys: List<String>) -> () [mut self, con
 /// Internal helper for the Foster TOML implementation.
 func Parser.declare_array_table(self: Parser, keys: List<String>) -> () [mut self, consume keys] {
     return self.fail("array-of-tables header requires a key") if keys.empty?
-    let parents = list::take(keys, keys.length - 1)
-    let name = option::unwrap_or(list::last(keys), "")
+    let parents = keys.take(keys.length - 1)
+    let name = keys.last().unwrap_or("")
     let parent = resolve_header_path(self.entries, [], move parents)
     return self.fail("array of tables conflicts with an existing value") if child_key_conflict?(self.entries, parent, name)
     let index = next_array_index(self.entries, parent, name)
     let path = parent.append(PathPart.ArrayItem(PathItem { key: move name, index }))
-    let context = list::concat([], path)
+    let context = [].concat(path)
     self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.ArrayTableMarker })
     self.context = move context
     ()
@@ -1127,7 +1127,7 @@ func next_array_index(entries: List<FlatEntry>, prefix: List<PathPart>, name: St
 /// Internal helper for the Foster TOML implementation.
 func direct_item_index(path: List<PathPart>, prefix: List<PathPart>, name: String) -> Int {
     return -1 if path_starts_with?(path, prefix) == false
-    branch list::get(path, prefix.length) {
+    branch path.get(prefix.length) {
         Option.Some(part) -> branch part {
             PathPart.ArrayItem(item) -> branch {
                 item.key == name -> item.index
@@ -1185,7 +1185,7 @@ func child_key_conflict?(entries: List<FlatEntry>, prefix: List<PathPart>, name:
 /// Internal helper for the Foster TOML implementation.
 func direct_key_child?(path: List<PathPart>, prefix: List<PathPart>, name: String) -> Bool {
     return false if path_starts_with?(path, prefix) == false
-    branch list::get(path, prefix.length) {
+    branch path.get(prefix.length) {
         Option.Some(part) -> branch part {
             PathPart.Key(candidate) -> candidate == name
             _ -> false
@@ -1227,7 +1227,7 @@ func direct_children(entries: List<FlatEntry>, prefix: List<PathPart>, output: L
 /// Internal helper for the Foster TOML implementation.
 func direct_child(path: List<PathPart>, prefix: List<PathPart>) -> Option<Child> {
     return Option.None if path_starts_with?(path, prefix) == false
-    branch list::get(path, prefix.length) {
+    branch path.get(prefix.length) {
         Option.Some(part) -> branch part {
             PathPart.Key(name) -> Option.Some(Child.Table(move name))
             PathPart.ArrayItem(item) -> Option.Some(Child.Array(move item.key))
@@ -1262,7 +1262,7 @@ func child_name(child: Child) -> String {
 /// Internal helper for the Foster TOML implementation.
 func materialize_children(children: List<Child>, entries: List<FlatEntry>, prefix: List<PathPart>, output: List<TomlEntry>) -> List<TomlEntry> [consume output] {
     return output if children.empty?
-    let child_prefix = list::concat([], prefix)
+    let child_prefix = [].concat(prefix)
     let entry = materialize_child(children.head, entries, move child_prefix)
     materialize_children(children.rest, entries, prefix, output.append(move entry))
 }
@@ -1277,7 +1277,7 @@ func materialize_child(child: Child, entries: List<FlatEntry>, prefix: List<Path
 
 /// Internal helper for the Foster TOML implementation.
 func materialize_array_child(name: String, entries: List<FlatEntry>, prefix: List<PathPart>) -> TomlEntry [consume name, consume prefix] {
-    let key = string::slice(name, 0, name.length)
+    let key = name.slice(0, name.length)
     TomlEntry {
         key: move key,
         value: TomlValue.Array(materialize_array_items(entries, move prefix, move name, 0, []))
@@ -1310,7 +1310,7 @@ func flat_scalar(entry: FlatEntry) -> Option<TomlValue> {
 
 /// Internal helper for the Foster TOML implementation.
 func materialize_array_items(entries: List<FlatEntry>, prefix: List<PathPart>, name: String, index: Int, output: List<TomlValue>) -> List<TomlValue> [consume output] {
-    let path = prefix.append(PathPart.ArrayItem(PathItem { key: string::slice(name, 0, name.length), index }))
+    let path = prefix.append(PathPart.ArrayItem(PathItem { key: name.slice(0, name.length), index }))
     return output if exact_path?(entries, path) == false
     let table = TomlValue.Table(materialize(entries, path))
     materialize_array_items(entries, prefix, name, index + 1, output.append(move table))
@@ -1362,7 +1362,7 @@ func rewrite_matching_table(entries: List<TomlEntry>, key: String, rest: List<St
     branch entries.head.value {
         TomlValue.Table(nested) -> {
             let updated = try insert_table_value(move nested, move rest, move value)
-            Result.Ok(list::concat(prefix.append(TomlEntry { key: move key, value: TomlValue.Table(move updated) }), entries.rest))
+            Result.Ok(prefix.append(TomlEntry { key: move key, value: TomlValue.Table(move updated) }).concat(entries.rest))
         }
         _ -> Result.Error("inline table key conflicts with a value")
     }
@@ -1412,9 +1412,9 @@ func days_in_month(year: Int, month: Int) -> Int {
 
 /// Internal helper for the Foster TOML implementation.
 func leap_year?(year: Int) -> Bool {
-    return true if int::modulo(year, 400) == 0
-    return false if int::modulo(year, 100) == 0
-    int::modulo(year, 4) == 0
+    return true if year.modulo(400) == 0
+    return false if year.modulo(100) == 0
+    year.modulo(4) == 0
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1446,9 +1446,9 @@ func fraction_digits?(value: String, index: Int) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func full_date_time?(value: String) -> Bool {
     return false if value.length < 16
-    return false if local_date?(string::slice(value, 0, 10)) == false
-    return false if date_time_separator?(string::slice(value, 10, 11)) == false
-    valid_time_and_offset?(string::slice(value, 11, value.length))
+    return false if local_date?(value.slice(0, 10)) == false
+    return false if date_time_separator?(value.slice(10, 11)) == false
+    valid_time_and_offset?(value.slice(11, value.length))
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1458,17 +1458,17 @@ func date_time_separator?(value: String) -> Bool {
 
 /// Internal helper for the Foster TOML implementation.
 func valid_time_and_offset?(value: String) -> Bool {
-    return local_time?(string::slice(value, 0, value.length - 1)) if ends_in_z?(value)
+    return local_time?(value.slice(0, value.length - 1)) if ends_in_z?(value)
     let offset = find_offset(value, 0)
     return local_time?(value) if offset < 0
     return false if offset + 6 != value.length
-    return false if local_time?(string::slice(value, 0, offset)) == false
-    valid_offset?(string::slice(value, offset, value.length))
+    return false if local_time?(value.slice(0, offset)) == false
+    valid_offset?(value.slice(offset, value.length))
 }
 
 /// Internal helper for the Foster TOML implementation.
 func ends_in_z?(value: String) -> Bool {
-    either?(string::ends_with?(value, "Z"), string::ends_with?(value, "z"))
+    either?(value.ends_with?("Z"), value.ends_with?("z"))
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1491,7 +1491,7 @@ func valid_offset?(value: String) -> Bool {
 
 /// Internal helper for the Foster TOML implementation.
 func character_at?(value: String, index: Int, expected: CodePoint) -> Bool {
-    branch list::get(string::to_code_points(value), index) {
+    branch value.code_points().get(index) {
         Option.Some(character) -> character == expected
         Option.None -> false
     }
@@ -1500,7 +1500,7 @@ func character_at?(value: String, index: Int, expected: CodePoint) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func digits_at?(value: String, start: Int, count: Int) -> Bool {
     return true if count == 0
-    branch list::get(string::to_code_points(value), start) {
+    branch value.code_points().get(start) {
         Option.Some(character) -> branch {
             decimal_digit?(character) -> digits_at?(value, start + 1, count - 1)
             _ -> false
@@ -1512,7 +1512,7 @@ func digits_at?(value: String, start: Int, count: Int) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func decimal_at(value: String, start: Int, count: Int, output: Int) -> Int {
     return output if count == 0
-    branch list::get(string::to_code_points(value), start) {
+    branch value.code_points().get(start) {
         Option.Some(character) -> decimal_at(value, start + 1, count - 1, output * 10 + hex_value(character))
         Option.None -> output
     }
@@ -1520,7 +1520,7 @@ func decimal_at(value: String, start: Int, count: Int, output: Int) -> Int {
 
 /// Internal helper for the Foster TOML implementation.
 func render_entries(entries: List<TomlEntry>, output: String) -> Result<String, TomlError> [consume entries, consume output] {
-    let validation_entries = list::concat([], entries)
+    let validation_entries = [].concat(entries)
     return Result.Error(render_error("duplicate key in TOML document")) if duplicate_entries?(move validation_entries)
     return Result.Ok(move output) if entries.empty?
     render_entry_line(entries.head, entries.rest, move output)
@@ -1536,7 +1536,7 @@ func render_entry_line(entry: TomlEntry, remaining: List<TomlEntry>, output: Str
 func render_value(value: TomlValue) -> Result<String, TomlError> {
     branch value {
         TomlValue.String(text) -> Result.Ok("\"" + escape_basic(text) + "\"")
-        TomlValue.Int(number) -> Result.Ok(int::to_string(number))
+        TomlValue.Int(number) -> Result.Ok(number.as_string())
         TomlValue.Float(number) -> Result.Ok(render_float(number))
         TomlValue.Bool(flag) -> Result.Ok(render_bool(flag))
         TomlValue.DateTime(text) -> render_date_time(move text)
@@ -1555,9 +1555,9 @@ func render_bool(value: Bool) -> String {
 
 /// Internal helper for the Foster TOML implementation.
 func render_float(value: Float) -> String {
-    let text = float::to_string(value)
+    let text = value.as_string()
     return "nan" if text == "NaN"
-    return text if either?(either?(string::contains?(text, "."), string::contains?(text, "e")), string::contains?(text, "inf"))
+    return text if either?(either?(text.contains?("."), text.contains?("e")), text.contains?("inf"))
     text + ".0"
 }
 
@@ -1593,7 +1593,7 @@ func render_array_next(value: TomlValue, remaining: List<TomlValue>, output: Str
 
 /// Internal helper for the Foster TOML implementation.
 func render_inline_table(entries: List<TomlEntry>) -> Result<String, TomlError> [consume entries] {
-    let validation_entries = list::concat([], entries)
+    let validation_entries = [].concat(entries)
     return Result.Error(render_error("duplicate key in TomlValue.Table")) if duplicate_entries?(move validation_entries)
     return Result.Ok("{}") if entries.empty?
     render_inline_first(entries.head, entries.rest)
@@ -1652,7 +1652,7 @@ func escape_basic(value: String) -> String {
 
 /// Internal helper for the Foster TOML implementation.
 func escape_character(character: CodePoint) -> String {
-    let value = code_point::to_int(character)
+    let value = character.as_int()
     branch {
         value == 8 -> "\\b"
         value == 9 -> "\\t"
@@ -1671,8 +1671,8 @@ func escape_character(character: CodePoint) -> String {
 /// Internal helper for the Foster TOML implementation.
 func fixed_hex(value: Int, digits: Int) -> String {
     return "" if digits == 0
-    let divisor = int::power(16, digits - 1)
-    hex_character(value / divisor) + fixed_hex(int::modulo(value, divisor), digits - 1)
+    let divisor = 16.power(digits - 1)
+    hex_character(value / divisor) + fixed_hex(value.modulo(divisor), digits - 1)
 }
 
 /// Internal helper for the Foster TOML implementation.

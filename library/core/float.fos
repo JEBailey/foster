@@ -8,66 +8,66 @@ type FloatHost = {}
 func FloatHost.format(value: Float) -> String = intrinsic("float.format")
 
 /// Formats a binary64 value as round-trippable decimal text.
-pub func to_string(value: Float) -> String { FloatHost.format(value) }
+pub func Float.as_string(self: Float) -> String { FloatHost.format(self) }
 
 /// Returns the absolute value of `value`.
-pub func absolute(value: Float) -> Float {
+pub func Float.absolute(self: Float) -> Float {
     branch {
-        value < 0.0 -> -value
-        _ -> value
+        self < 0.0 -> -self
+        _ -> self
     }
 }
 
 /// Returns the smaller of `left` and `right`.
-pub func minimum(left: Float, right: Float) -> Float {
+pub func Float.minimum(self: Float, right: Float) -> Float {
     branch {
-        left <= right -> left
+        self <= right -> self
         _ -> right
     }
 }
 
 /// Returns the larger of `left` and `right`.
-pub func maximum(left: Float, right: Float) -> Float {
+pub func Float.maximum(self: Float, right: Float) -> Float {
     branch {
-        left >= right -> left
+        self >= right -> self
         _ -> right
     }
 }
 
 /// Restricts `value` to the inclusive range from `lower` to `upper`.
-pub func clamp(value: Float, lower: Float, upper: Float) -> Float {
-    minimum(maximum(value, lower), upper)
+pub func Float.clamp(self: Float, lower: Float, upper: Float) -> Float {
+    self.maximum(lower).minimum(upper)
 }
 
 /// Returns `-1`, `0`, or `1` according to the sign of `value`.
-pub func sign(value: Float) -> Int {
+pub func Float.sign(self: Float) -> Int {
     branch {
-        value < 0.0 -> -1
-        value > 0.0 -> 1
+        self < 0.0 -> -1
+        self > 0.0 -> 1
         _ -> 0
     }
 }
 
 /// Compares two floating-point values and returns their ordering.
-pub func compare(left: Float, right: Float) -> Ordering {
+pub func Float.compare(self: Float, right: Float) -> Ordering {
     branch {
-        left < right -> Ordering.Less
-        left > right -> Ordering.Greater
+        self < right -> Ordering.Less
+        self > right -> Ordering.Greater
         _ -> Ordering.Equal
     }
 }
 
 /// Returns whether `value` lies in the inclusive range from `lower` to `upper`.
-pub func between?(value: Float, lower: Float, upper: Float) -> Bool {
+pub func Float.between?(self: Float, lower: Float, upper: Float) -> Bool {
     branch {
-        value < lower -> false
-        _ -> value <= upper
+        self < lower -> false
+        _ -> self <= upper
     }
 }
 
 test "floating-point helpers clamp and compare values" {
-    assert(absolute(-2.5) == 2.5)
-    assert(clamp(4.0, 0.0, 3.0) == 3.0)
-    assert(between?(2.0, 1.0, 3.0))
+    assert((-2.5).absolute() == 2.5)
+    assert(4.0.clamp(0.0, 3.0) == 3.0)
+    assert(2.0.between?(1.0, 3.0))
     ()
 }
