@@ -1831,7 +1831,7 @@ fn qualifier_before(source: &str, start: usize) -> Option<String> {
 }
 
 fn is_ident(byte: u8) -> bool {
-    byte == b'_' || byte.is_ascii_alphanumeric()
+    byte == b'_' || byte == b'?' || byte.is_ascii_alphanumeric()
 }
 
 pub(super) fn position_to_offset(source: &str, position: Position) -> Option<usize> {

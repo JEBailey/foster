@@ -658,6 +658,41 @@ fn definition_resolves_instance_methods_from_receiver_types() {
 }
 
 #[test]
+fn definition_resolves_question_mark_instance_methods() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = r#"type Parser = { remaining: String }
+
+func Parser.peek?(self: Parser, expected: CodePoint) -> Bool { false }
+func Parser.newline?(self: Parser) -> Bool { false }
+
+func Parser.skip(self: Parser) -> Bool {
+    self.peek?('#')
+}
+
+func Parser.line(self: Parser) -> Bool {
+    self.newline?()
+}
+
+func main() -> Bool { Parser { remaining: "" }.skip() }
+"#;
+    workspace.open(uri.clone(), source.into(), 2);
+
+    for (position, declaration) in [
+        (Position::new(6, 13), Position::new(2, 12)),
+        (Position::new(10, 16), Position::new(3, 12)),
+    ] {
+        let location = workspace
+            .definition(&TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri.clone()),
+                position,
+            ))
+            .unwrap();
+        assert_eq!(location.uri, uri);
+        assert_eq!(location.range.start, declaration);
+    }
+}
+
+#[test]
 fn definition_opens_embedded_core_source_when_available() {
     let root = std::env::current_dir()
         .unwrap()
