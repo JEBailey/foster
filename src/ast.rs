@@ -339,6 +339,11 @@ pub enum Expr {
         operator: BinaryOp,
         right: Box<Expr>,
     },
+    Logical {
+        left: Box<Expr>,
+        operator: LogicalOp,
+        right: Box<Expr>,
+    },
     Branch {
         subject: Option<Box<Expr>>,
         arms: Vec<BranchArm>,
@@ -468,4 +473,10 @@ pub enum BinaryOp {
     LessEqual,
     Greater,
     GreaterEqual,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogicalOp {
+    And,
+    Or,
 }

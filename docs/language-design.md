@@ -435,6 +435,24 @@ loop {
 An arm block that falls through must end in a value expression; it does not acquire an implicit
 value from a preceding binding, assignment, or assertion.
 
+## Logical operators
+
+`!value` and `not value` are equivalent prefix logical-negation expressions. Both accept a `Bool`
+operand, return `Bool`, and bind more tightly than binary operators.
+
+`&&` and `||` also accept `Bool` operands and return `Bool`. They evaluate from left to right and
+short-circuit: `left && right` evaluates `right` only when `left` is `true`, while `left || right`
+evaluates `right` only when `left` is `false`.
+
+```foster
+let valid = index >= 0 && index < values.length
+let available = cached? || load_from_disk()
+let unavailable = not available
+```
+
+`&&` binds more tightly than `||`, and both bind less tightly than equality, comparison, bitwise,
+shift, and arithmetic operators. Parentheses can make a different grouping explicit.
+
 ## Remote objects and virtual threads
 
 `remote` transfers a record into an isolated virtual thread. An owner-qualified function whose

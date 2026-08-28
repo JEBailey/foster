@@ -385,6 +385,11 @@ impl FunctionLowerer<'_> {
                 operator: *operator,
                 right: self.lower_expression(right)?,
             },
+            ast::Expr::Logical {
+                left,
+                operator,
+                right,
+            } => self.lower_logical(left, *operator, right)?,
             ast::Expr::Branch { subject, arms } => {
                 let subject = subject
                     .as_ref()
@@ -443,6 +448,56 @@ impl FunctionLowerer<'_> {
             }
         };
         Ok(self.alloc_expression(expression))
+    }
+
+    fn lower_logical(
+        &mut self,
+        left: &ast::Expr,
+        operator: ast::LogicalOp,
+        right: &ast::Expr,
+    ) -> Result<Expr, FosterError> {
+        let left = self.lower_expression(left)?;
+        let right_span = right
+            .span()
+            .unwrap_or_else(|| self.hir.functions[self.function].span.clone());
+        let right = self.lower_expression(right)?;
+        let literal_value = matches!(operator, ast::LogicalOp::Or);
+        let literal = self.alloc_expression(Expr::Bool(literal_value));
+        let literal_span = self
+            .hir
+            .expression_spans
+            .get(&left)
+            .cloned()
+            .unwrap_or_else(|| self.hir.functions[self.function].span.clone());
+
+        let (matched, fallback) = match operator {
+            ast::LogicalOp::And => (right, literal),
+            ast::LogicalOp::Or => (literal, right),
+        };
+        let matched_span = if matches!(operator, ast::LogicalOp::And) {
+            right_span.clone()
+        } else {
+            literal_span.clone()
+        };
+        let fallback_span = if matches!(operator, ast::LogicalOp::And) {
+            literal_span
+        } else {
+            right_span
+        };
+
+        Ok(Expr::Branch {
+            subject: None,
+            arms: vec![
+                BranchArm {
+                    test: BranchTest::Condition(left),
+                    body: crate::block::Block::single(Stmt::Expr(matched), matched_span),
+                },
+                BranchArm {
+                    test: BranchTest::Wildcard,
+                    body: crate::block::Block::single(Stmt::Expr(fallback), fallback_span),
+                },
+            ],
+        })
     }
 
     pub(super) fn alloc_expression(&mut self, expression: Expr) -> ExprId {

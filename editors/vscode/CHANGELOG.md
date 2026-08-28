@@ -1,5 +1,8 @@
 # Change Log
 
+- Highlight and complete the `not` keyword alias and the `!`, `&&`, and `||` logical operators.
+- Advance source-language compatibility to version 7 because `not` is now reserved; ownership and
+  bytecode compatibility remain unchanged.
 - Navigate, hover, and show signatures for enum instance methods, including the fluent `Option`,
   `Result`, and `Ordering` APIs.
 - Move natural scalar, list, string, option, result, ordering, TOML, TCP, byte, and code-point

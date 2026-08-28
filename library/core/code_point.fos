@@ -12,8 +12,6 @@ pub func CodePoint.as_string(self: CodePoint) -> String {
     self.string
 }
 
-
-
 /// Creates a code point from a valid Unicode scalar value.
 ///
 /// Returns `None` for negative values, surrogate code points, and values above `0x10FFFF`.

@@ -331,7 +331,7 @@ func main() { 0 }
     let first_dump = first.ownership.debug_dump(&first.hir);
     let second_dump = second.ownership.debug_dump(&second.hir);
     assert_eq!(first_dump, second_dump);
-    assert!(first_dump.contains("foster-language=6 ownership-model=1"));
+    assert!(first_dump.contains("foster-language=7 ownership-model=1"));
     assert!(first_dump.contains("loan L"));
     assert!(first_dump.contains("region L"));
 
@@ -351,7 +351,7 @@ func main() -> Int {
 
 #[test]
 fn ownership_compatibility_surface_is_stable() {
-    assert_eq!(foster::ownership::LANGUAGE_VERSION, 6);
+    assert_eq!(foster::ownership::LANGUAGE_VERSION, 7);
     assert_eq!(foster::ownership::MODEL_VERSION, 1);
     assert_eq!(
         foster::ownership::diagnostics::CATALOG
@@ -427,6 +427,12 @@ func Box.make(value: Choice) -> Box { Box { value } }
 func main() -> Choice { Box.make(Choice.Value(1)).value }
 "#;
     assert!(foster::compile(new_case).is_ok());
+}
+
+#[test]
+fn language_version_seven_reserves_not_as_logical_negation() {
+    assert!(foster::compile("func not(value: Bool) -> Bool { value }").is_err());
+    assert!(foster::compile("func main() -> Bool { not false == !false }").is_ok());
 }
 
 #[test]

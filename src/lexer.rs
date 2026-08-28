@@ -52,7 +52,9 @@ pub enum TokenKind {
     Suspend,
     Intrinsic,
     Pipe,
+    DoublePipe,
     Ampersand,
+    DoubleAmpersand,
     Caret,
     Tilde,
     LParen,
@@ -69,6 +71,7 @@ pub enum TokenKind {
     Equal,
     EqualEqual,
     Bang,
+    Not,
     BangEqual,
     Plus,
     Minus,
@@ -190,9 +193,29 @@ impl<'a> Lexer<'a> {
                         offset..self.byte_index,
                     ));
                 }
+                '|' if self.peek_next() == Some('|') => {
+                    self.advance();
+                    self.advance();
+                    out.push(tok(
+                        TokenKind::DoublePipe,
+                        line,
+                        column,
+                        offset..self.byte_index,
+                    ));
+                }
                 '|' => {
                     self.advance();
                     out.push(tok(TokenKind::Pipe, line, column, offset..self.byte_index));
+                }
+                '&' if self.peek_next() == Some('&') => {
+                    self.advance();
+                    self.advance();
+                    out.push(tok(
+                        TokenKind::DoubleAmpersand,
+                        line,
+                        column,
+                        offset..self.byte_index,
+                    ));
                 }
                 '&' => {
                     self.advance();
@@ -570,6 +593,7 @@ impl<'a> Lexer<'a> {
             "remote" => TokenKind::Remote,
             "await" => TokenKind::Await,
             "try" => TokenKind::Try,
+            "not" => TokenKind::Not,
             "true" => TokenKind::True,
             "false" => TokenKind::False,
             "copy" => TokenKind::Copy,

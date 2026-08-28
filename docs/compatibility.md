@@ -87,6 +87,15 @@ The ownership-model version remains 1 because this is a parse and name-resolutio
 no ownership, group, lifetime, or effect change. The bytecode format remains version 7 because
 qualification is completely resolved before bytecode lowering.
 
+## Language version 7
+
+Language version 7 reserves `not` as a prefix logical-negation operator equivalent to `!`.
+Source that previously used `not` as a bare declaration, parameter, or local name must rename that
+identifier; no automated migration is needed for other programs. `not` is contextual after `.`, so
+existing members such as `Bool.not` remain legal. The ownership-model version remains 1 because
+negation retains its existing type and ownership behavior. The bytecode format remains version 7
+because both spellings lower to the existing unary-not instruction.
+
 ## Core-library receiver API
 
 The pre-1.0 core library now exposes operations with one natural nominal receiver as instance

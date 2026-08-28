@@ -113,8 +113,9 @@ machines. Generated `documentation/` directories are ignored during Foster modul
 The current implementation includes:
 
 - functions, recursion, explicit `let` local declarations, local inference, explicit generics,
-  closures, partial application, immediate-failure assertions, and statement loops with guarded
-  `break` and `continue` transfers;
+  closures, partial application, immediate-failure assertions, logical negation through `!` or
+  `not`, short-circuit `&&` and `||`, and statement loops with guarded `break` and `continue`
+  transfers;
 - ordinary typed `Result<T, E>` error values and single-evaluation `try` propagation with an exact
   matching error type;
 - `Bool`, `Int`, binary64 `Float`, `String`, `CodePoint`, `Symbol`, `()`, homogeneous `List<T>`,

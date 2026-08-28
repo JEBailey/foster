@@ -1,6 +1,6 @@
 # Foster Ownership and Borrowing
 
-**Status:** language version 6, ownership-model version 1; implemented foundation with provisional
+**Status:** language version 7, ownership-model version 1; implemented foundation with provisional
 rules and known conservative checks.
 
 This document describes Foster's ownership model, its source-level behavior, and how the compiler

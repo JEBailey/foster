@@ -952,6 +952,51 @@ func main() { choose(6 * 2) }
 }
 
 #[test]
+fn logical_operators_short_circuit_and_obey_precedence() {
+    let source = r#"
+func must_not_run() -> Bool {
+    assert(false, "logical right operand was evaluated")
+    true
+}
+
+func main() -> Bool {
+    let skipped_and = false && must_not_run()
+    let skipped_or = true || must_not_run()
+    let required_and = true && false
+    let required_or = false || true
+    let logical_precedence = true || false && false
+    let equality_precedence = false == false && false
+    let symbolic_not = !false
+    let named_not = not false
+    skipped_and == false && skipped_or && required_and == false && required_or && logical_precedence && equality_precedence == false && symbolic_not && named_not
+}
+"#;
+
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),
+            Value::Bool(true)
+        );
+    }
+
+    let compilation = foster::compile(source).unwrap();
+    foster::native::compile_object(&compilation, foster::native::CompileOptions::default())
+        .unwrap();
+}
+
+#[test]
+fn logical_operators_require_boolean_operands() {
+    let left = foster::compile("func main() -> Bool { 1 && true }").unwrap_err();
+    assert!(left.message.contains("Bool"), "{}", left.message);
+
+    let right = foster::compile("func main() -> Bool { false || 1 }").unwrap_err();
+    assert!(right.message.contains("Bool"), "{}", right.message);
+
+    let negated = foster::compile("func main() -> Bool { not 1 }").unwrap_err();
+    assert!(negated.message.contains("Bool"), "{}", negated.message);
+}
+
+#[test]
 fn conditional_branches_require_a_wildcard_arm() {
     let missing = foster::compile("func main() { branch { true -> 1 } }").unwrap_err();
     assert!(missing.message.contains("requires a `_` arm"));

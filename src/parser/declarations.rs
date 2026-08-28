@@ -429,7 +429,7 @@ impl Parser {
         let mut owner = None;
         let mut name = first_name.clone();
         if self.take(&TokenKind::Dot) {
-            let member = self.expect_ident("expected associated function name after `.`")?;
+            let member = self.expect_member_ident("expected associated function name after `.`")?;
             owner = Some(first_name.clone());
             name = format!("{first_name}.{member}");
             if self.at(&TokenKind::Dot) {
@@ -697,7 +697,7 @@ impl Parser {
                 let root = self.expect_ident("expected effect target")?;
                 let mut children = Vec::new();
                 while self.take(&TokenKind::Dot) {
-                    children.push(self.expect_ident("expected effect path component")?);
+                    children.push(self.expect_member_ident("expected effect path component")?);
                 }
                 effects.push(Effect {
                     kind,

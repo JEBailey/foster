@@ -288,6 +288,7 @@ fn completion_uses_scope_and_import_visibility() {
     };
     assert!(items.iter().any(|item| item.label == "source"));
     assert!(items.iter().any(|item| item.label == "branch"));
+    assert!(items.iter().any(|item| item.label == "not"));
     assert!(items.iter().any(|item| item.label == "try"));
 }
 

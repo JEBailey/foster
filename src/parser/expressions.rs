@@ -2,7 +2,37 @@ use super::*;
 
 impl Parser {
     pub(super) fn expression(&mut self) -> Result<Expr, FosterError> {
-        self.equality()
+        self.logical_or()
+    }
+
+    fn logical_or(&mut self) -> Result<Expr, FosterError> {
+        self.logical_level(Self::logical_and, &TokenKind::DoublePipe, LogicalOp::Or)
+    }
+
+    fn logical_and(&mut self) -> Result<Expr, FosterError> {
+        self.logical_level(Self::equality, &TokenKind::DoubleAmpersand, LogicalOp::And)
+    }
+
+    fn logical_level(
+        &mut self,
+        operand: fn(&mut Self) -> Result<Expr, FosterError>,
+        token: &TokenKind,
+        operator: LogicalOp,
+    ) -> Result<Expr, FosterError> {
+        let mut expr = operand(self)?;
+        while self.take(token) {
+            let start = expr.span().map_or(0, |span| span.start);
+            let right = operand(self)?;
+            expr = self.spanned(
+                start,
+                Expr::Logical {
+                    left: Box::new(expr),
+                    operator,
+                    right: Box::new(right),
+                },
+            );
+        }
+        Ok(expr)
     }
 
     pub(super) fn equality(&mut self) -> Result<Expr, FosterError> {
@@ -196,7 +226,7 @@ impl Parser {
                 },
             ));
         }
-        if self.take(&TokenKind::Bang) {
+        if self.take(&TokenKind::Bang) || self.take(&TokenKind::Not) {
             let operand = self.unary()?;
             return Ok(self.spanned(
                 start,
@@ -241,7 +271,7 @@ impl Parser {
                 let call = self.desugar_partial_application(call);
                 expr = self.spanned(start, call);
             } else if self.take(&TokenKind::Dot) {
-                let name = self.expect_ident("expected member name after `.`")?;
+                let name = self.expect_member_ident("expected member name after `.`")?;
                 expr = self.spanned(
                     start,
                     Expr::Member {
@@ -556,7 +586,7 @@ impl Parser {
                 }
                 let enum_accessor = self.take(&TokenKind::Dot);
                 if enum_accessor {
-                    path.push(self.expect_ident("expected enum case name after `.`")?);
+                    path.push(self.expect_member_ident("expected enum case name after `.`")?);
                     if self.at(&TokenKind::Dot) || self.at(&TokenKind::DoubleColon) {
                         return Err(self.error("an enum pattern ends with one `.Case` accessor"));
                     }

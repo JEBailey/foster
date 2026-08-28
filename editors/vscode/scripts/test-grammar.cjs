@@ -8,6 +8,12 @@ const literals = grammar.repository.strings.patterns;
 const codePoint = new RegExp(`^(?:${literals[0].match})$`);
 const stringEscape = new RegExp(`^(?:${literals[1].patterns[0].match})$`);
 const operators = grammar.repository.operators.patterns;
+const logicalOperator = operators.find(
+  (operator) => operator.name === "keyword.operator.logical.foster",
+);
+const logicalKeyword = grammar.repository.keywords.patterns.find(
+  (keyword) => keyword.name === "keyword.operator.logical.foster",
+);
 
 for (const literal of [String.raw`'\\'`, String.raw`'\"'`, String.raw`'\''`, String.raw`'\n'`, `'x'`]) {
   assert.match(literal, codePoint, `code-point grammar must recognize ${literal}`);
@@ -30,3 +36,9 @@ assert.equal(
   operators.some((operator) => operator.name === "keyword.operator.qualification.foster"),
   true,
 );
+assert.ok(logicalOperator, "grammar must define symbolic logical operators");
+assert.ok(logicalKeyword, "grammar must define the named logical operator");
+for (const operator of ["!", "&&", "||"]) {
+  assert.match(operator, new RegExp(`^(?:${logicalOperator.match})$`));
+}
+assert.match("not", new RegExp(`^(?:${logicalKeyword.match})$`));

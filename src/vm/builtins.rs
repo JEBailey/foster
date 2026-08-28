@@ -460,7 +460,7 @@ fn decode_hex(value: &str) -> Result<Vec<u8>, (usize, String)> {
         ));
     }
     let mut decoded = Vec::with_capacity(value.len() / 2);
-    for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+    for (index, pair) in value.as_bytes().as_chunks::<2>().0.iter().enumerate() {
         let offset = index * 2;
         let high = hex_nibble(pair[0]).ok_or_else(|| {
             (

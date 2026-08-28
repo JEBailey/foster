@@ -12,7 +12,7 @@ and launches the Foster language server. Language features include:
 - call signature help with active-parameter tracking;
 - inferred local-type and argument-name inlay hints, with clickable parameter hints;
 - scope-aware completion for locals, declarations, imports, qualified modules, and keywords,
-  including `try` and automatic `std.process` import when completing `Arguments`;
+  including `try`, `not`, and automatic `std.process` import when completing `Arguments`;
 - automatic diagnostic refresh when Foster files change on disk;
 - cached package snapshots and parsed modules, so edits reparse changed sources while preserving
   unaffected compilation work;
@@ -20,7 +20,8 @@ and launches the Foster language server. Language features include:
   package fallback) in a shared task terminal.
 
 The bundled grammar highlights line comments, nested block-comment delimiters, documentation
-comments, control keywords such as `try`, module `::` qualification, code-point literals,
+comments, control keywords such as `try`, logical operators including `not`, module `::`
+qualification, code-point literals,
 effect clauses, sequence types, structural intersections, and union/variant type members.
 
 ## Installation

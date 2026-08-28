@@ -70,6 +70,13 @@ impl Parser {
             _ => Err(FosterError::new(message, token.line, token.column)),
         }
     }
+    pub(super) fn expect_member_ident(&mut self, message: &str) -> Result<String, FosterError> {
+        if self.take(&TokenKind::Not) {
+            Ok("not".into())
+        } else {
+            self.expect_ident(message)
+        }
+    }
     pub(super) fn error(&self, message: &str) -> FosterError {
         FosterError::new(message, self.peek().line, self.peek().column)
     }
