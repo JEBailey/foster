@@ -389,6 +389,7 @@ test "another case" {}
         compilation.hir.modules[compilation.hir.module_named("main").unwrap()]
             .functions
             .values()
+            .flatten()
             .all(|function| !compilation.hir.tests.contains(function))
     );
     let program = foster::vm::compile(&compilation).unwrap();
@@ -3101,7 +3102,18 @@ func main() -> String {
 }
 "#;
 
-    assert_string(foster::run(source).unwrap(), "int:code point:pair");
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let overloads = compilation.hir.functions_named(module, "render");
+    assert_eq!(overloads.len(), 3);
+    assert_eq!(
+        compilation.hir.function_named(module, "render"),
+        overloads.first().copied()
+    );
+    assert_string(
+        foster::vm::run(&compilation).unwrap(),
+        "int:code point:pair",
+    );
 }
 
 #[test]

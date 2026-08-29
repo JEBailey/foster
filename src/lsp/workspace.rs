@@ -796,6 +796,7 @@ fn declaration_identity(
             definitions
                 .functions
                 .get(name)
+                .and_then(|overloads| overloads.first())
                 .copied()
                 .map(SymbolIdentity::Function)
         })
@@ -1031,10 +1032,15 @@ fn declaration_hover(
             definition.documentation.as_deref(),
         ));
     }
-    if let Some(function) = definitions.functions.get(name) {
-        let definition = &compilation.hir.functions[*function];
+    if let Some(function) = definitions
+        .functions
+        .get(name)
+        .and_then(|overloads| overloads.first())
+        .copied()
+    {
+        let definition = &compilation.hir.functions[function];
         return Some(documented_hover(
-            function_signature(compilation, *function, false),
+            function_signature(compilation, function, false),
             definition.documentation.as_deref(),
         ));
     }
@@ -1078,10 +1084,17 @@ fn add_module_completions(
             );
         }
     }
-    for (name, function) in &definitions.functions {
-        let definition = &compilation.hir.functions[*function];
-        if !definition.name.contains('$') && (!public_only || definition.public) {
-            let detail = compilation.types.function_type(*function).map(|signature| {
+    for (name, overloads) in &definitions.functions {
+        let Some(function) = overloads
+            .iter()
+            .copied()
+            .find(|function| !public_only || compilation.hir.functions[*function].public)
+        else {
+            continue;
+        };
+        let definition = &compilation.hir.functions[function];
+        if !definition.name.contains('$') {
+            let detail = compilation.types.function_type(function).map(|signature| {
                 format!(
                     "func({}) -> {}",
                     signature
@@ -1167,15 +1180,19 @@ fn add_associated_completions(
         _ => return false,
     };
     let prefix = format!("{type_name}.");
-    for (name, function) in &compilation.hir.modules[module].functions {
+    for (name, overloads) in &compilation.hir.modules[module].functions {
         let Some(member) = name.strip_prefix(&prefix) else {
             continue;
         };
-        let definition = &compilation.hir.functions[*function];
-        if public_only && !definition.public {
+        let Some(function) = overloads
+            .iter()
+            .copied()
+            .find(|function| !public_only || compilation.hir.functions[*function].public)
+        else {
             continue;
-        }
-        let detail = compilation.types.function_type(*function).map(|signature| {
+        };
+        let definition = &compilation.hir.functions[function];
+        let detail = compilation.types.function_type(function).map(|signature| {
             format!(
                 "func({}) -> {}",
                 signature
@@ -1349,34 +1366,38 @@ fn member_function(
     let function = compilation.hir.modules[module]
         .functions
         .get(&qualified_name)
-        .copied()?;
-    let receiver_matches = compilation
-        .types
-        .function_type(function)
-        .and_then(|signature| signature.parameters.first())
-        .is_some_and(|ty| {
-            matches!(
-                (owner, &compilation.types.types[*ty]),
-                (
-                    NominalOwner::Record(expected),
-                    crate::types::Type::Record { record, .. }
-                ) if expected == *record
-            ) || matches!(
-                (owner, &compilation.types.types[*ty]),
-                (
-                    NominalOwner::Variant(expected),
-                    crate::types::Type::Variant { variant, .. }
-                ) if expected == *variant
-            ) || matches!(
-                (owner, &compilation.types.types[*ty]),
-                (NominalOwner::Bool, crate::types::Type::Bool)
-                    | (NominalOwner::Int, crate::types::Type::Int)
-                    | (NominalOwner::Float, crate::types::Type::Float)
-                    | (NominalOwner::CodePoint, crate::types::Type::CodePoint)
-                    | (NominalOwner::Byte, crate::types::Type::Byte)
-            )
-        });
-    (receiver_matches && compilation.hir.functions[function].receiver.is_some()).then_some(function)
+        .and_then(|overloads| {
+            overloads.iter().copied().find(|function| {
+                let receiver_matches = compilation
+                    .types
+                    .function_type(*function)
+                    .and_then(|signature| signature.parameters.first())
+                    .is_some_and(|ty| {
+                        matches!(
+                            (owner, &compilation.types.types[*ty]),
+                            (
+                                NominalOwner::Record(expected),
+                                crate::types::Type::Record { record, .. }
+                            ) if expected == *record
+                        ) || matches!(
+                            (owner, &compilation.types.types[*ty]),
+                            (
+                                NominalOwner::Variant(expected),
+                                crate::types::Type::Variant { variant, .. }
+                            ) if expected == *variant
+                        ) || matches!(
+                            (owner, &compilation.types.types[*ty]),
+                            (NominalOwner::Bool, crate::types::Type::Bool)
+                                | (NominalOwner::Int, crate::types::Type::Int)
+                                | (NominalOwner::Float, crate::types::Type::Float)
+                                | (NominalOwner::CodePoint, crate::types::Type::CodePoint)
+                                | (NominalOwner::Byte, crate::types::Type::Byte)
+                        )
+                    });
+                receiver_matches && compilation.hir.functions[*function].receiver.is_some()
+            })
+        })?;
+    Some(function)
 }
 
 #[derive(Clone, Copy)]
@@ -1844,6 +1865,7 @@ fn definition_in_module(
             definition
                 .functions
                 .get(name)
+                .and_then(|overloads| overloads.first())
                 .map(|id| compilation.hir.functions[*id].span.clone())
         })
         .or_else(|| {

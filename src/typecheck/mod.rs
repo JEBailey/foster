@@ -199,7 +199,7 @@ impl<'a> Checker<'a> {
 
     fn validate_overloads(&self) -> Result<(), FosterError> {
         for (_, module) in self.hir.modules.iter() {
-            for (name, overloads) in &module.function_overloads {
+            for (name, overloads) in &module.functions {
                 if overloads.len() < 2 {
                     continue;
                 }

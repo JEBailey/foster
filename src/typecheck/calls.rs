@@ -899,7 +899,7 @@ impl Checker<'_> {
             .filter(|module| Some(*module) != inherent_module)
         {
             for function in self.hir.modules[module]
-                .function_overloads
+                .functions
                 .values()
                 .flatten()
                 .copied()

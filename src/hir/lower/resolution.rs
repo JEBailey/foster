@@ -18,7 +18,7 @@ impl FunctionLowerer<'_> {
                             if module == self.module {
                                 self.hir.function_named(module, &qualified_name)
                             } else {
-                                self.public_function_named(module, &qualified_name)
+                                self.hir.public_function_named(module, &qualified_name)
                             }
                         })
                         .collect::<Vec<_>>();
@@ -66,7 +66,7 @@ impl FunctionLowerer<'_> {
 
         let qualified_name = format!("{type_name}.{member}");
         let function = if imported {
-            self.public_function_named(module, &qualified_name)
+            self.hir.public_function_named(module, &qualified_name)
         } else {
             self.hir.function_named(module, &qualified_name)
         };
@@ -293,7 +293,7 @@ impl FunctionLowerer<'_> {
             {
                 imported.push(ResolvedName::Constant(constant));
             }
-            if let Some(function) = self.public_function_named(*module, name)
+            if let Some(function) = self.hir.public_function_named(*module, name)
                 && !imported.contains(&ResolvedName::Function(function))
             {
                 imported.push(ResolvedName::Function(function));
@@ -358,7 +358,7 @@ impl FunctionLowerer<'_> {
                 }
                 return Ok(ResolvedName::Constant(constant));
             }
-            if last && let Some(function) = self.public_function_named(module, component) {
+            if last && let Some(function) = self.hir.public_function_named(module, component) {
                 return Ok(ResolvedName::Function(function));
             }
             if last && !self.hir.functions_named(module, component).is_empty() {
@@ -412,14 +412,6 @@ impl FunctionLowerer<'_> {
             }
         }
         Ok(ResolvedName::Module(module))
-    }
-
-    fn public_function_named(&self, module: ModuleId, name: &str) -> Option<FunctionId> {
-        self.hir
-            .functions_named(module, name)
-            .iter()
-            .copied()
-            .find(|function| self.hir.functions[*function].public)
     }
 
     pub(super) fn error(&self, message: impl Into<String>) -> FosterError {

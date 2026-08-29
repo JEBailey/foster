@@ -87,7 +87,8 @@ pub(super) fn site(compilation: &Compilation) -> Site {
         let count = module
             .functions
             .values()
-            .filter(|id| visible_function(compilation, **id))
+            .filter_map(|overloads| overloads.first().copied())
+            .filter(|id| visible_function(compilation, *id))
             .count()
             + module.constants.len()
             + module.records.len()
@@ -149,7 +150,11 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
             "constant",
         );
     }
-    for function_id in module.functions.values().copied() {
+    for function_id in module
+        .functions
+        .values()
+        .filter_map(|overloads| overloads.first().copied())
+    {
         if !visible_function(compilation, function_id) {
             continue;
         }
@@ -320,7 +325,7 @@ fn type_card(
     let functions = compilation.hir.modules[module_id]
         .functions
         .values()
-        .copied()
+        .filter_map(|overloads| overloads.first().copied())
         .filter(|id| {
             compilation.hir.functions[*id].public
                 && function_owner(compilation, *id).as_deref() == Some(name)

@@ -20,7 +20,6 @@ impl PackageHir {
                 source_path: package.modules[name].source_path.clone(),
                 imports_with_spans: Vec::new(),
                 functions: BTreeMap::new(),
-                function_overloads: BTreeMap::new(),
                 constants: BTreeMap::new(),
                 records: BTreeMap::new(),
                 variant_types: BTreeMap::new(),
@@ -255,10 +254,6 @@ impl PackageHir {
                 hir.modules[module]
                     .functions
                     .entry(source_function.name.clone())
-                    .or_insert(function);
-                hir.modules[module]
-                    .function_overloads
-                    .entry(source_function.name.clone())
                     .or_default()
                     .push(function);
                 source_functions.insert((module, index), function);
@@ -384,16 +379,26 @@ impl PackageHir {
         self.modules_by_name.get(name).copied()
     }
 
+    /// Returns the declaration used to represent a function name before overload resolution.
     pub fn function_named(&self, module: ModuleId, name: &str) -> Option<FunctionId> {
-        self.modules[module].functions.get(name).copied()
+        self.functions_named(module, name).first().copied()
     }
 
+    /// Returns every declaration in the overload set, in source order.
     pub fn functions_named(&self, module: ModuleId, name: &str) -> &[FunctionId] {
         self.modules[module]
-            .function_overloads
+            .functions
             .get(name)
             .map(Vec::as_slice)
             .unwrap_or(&[])
+    }
+
+    /// Returns the first public declaration in an overload set.
+    pub fn public_function_named(&self, module: ModuleId, name: &str) -> Option<FunctionId> {
+        self.functions_named(module, name)
+            .iter()
+            .copied()
+            .find(|function| self.functions[*function].public)
     }
 
     pub fn constant_named(&self, module: ModuleId, name: &str) -> Option<ConstantId> {
