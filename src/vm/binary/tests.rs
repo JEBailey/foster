@@ -25,7 +25,7 @@ fn rejects_invalid_envelopes() {
     let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
     let program = compile(&compilation).unwrap();
     let mut bytes = encode_program(&program).unwrap();
-    bytes[8] = 99;
+    bytes[8..10].copy_from_slice(&(FORMAT_VERSION - 1).to_le_bytes());
     assert!(
         decode_program(&bytes)
             .unwrap_err()

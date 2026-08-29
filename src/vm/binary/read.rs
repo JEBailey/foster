@@ -3,7 +3,6 @@ use super::*;
 pub(super) struct Reader<'a> {
     pub(super) bytes: &'a [u8],
     pub(super) offset: usize,
-    pub(super) version: u16,
 }
 impl<'a> Reader<'a> {
     pub(super) fn take(&mut self, count: usize) -> Result<&'a [u8], BinaryError> {
@@ -64,16 +63,6 @@ impl<'a> Reader<'a> {
         let parameters =
             self.vec(|reader| Ok((reader.parameter_mode()?, reader.dispatch_type(0)?)))?;
         Ok(MethodKey { name, parameters })
-    }
-    pub(super) fn compatible_method_key(&mut self) -> Result<MethodKey, BinaryError> {
-        if self.version >= 8 {
-            self.method_key()
-        } else {
-            Ok(MethodKey {
-                name: self.string()?,
-                parameters: Vec::new(),
-            })
-        }
     }
     fn dispatch_type(&mut self, depth: usize) -> Result<DispatchTypeKey, BinaryError> {
         if depth >= 64 {
@@ -318,7 +307,7 @@ impl<'a> Reader<'a> {
             27 => Instruction::CallContractMethod {
                 destination: r!(),
                 receiver: r!(),
-                method: self.compatible_method_key()?,
+                method: self.method_key()?,
                 arguments: self.regs()?,
             },
             28 => Instruction::MakeClosure {

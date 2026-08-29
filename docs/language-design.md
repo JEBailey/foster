@@ -563,8 +563,8 @@ Representation-level operations such as `List.push` and functional `List.append`
 owner-qualified intrinsics. Calls resolve their `List` owner before the stable intrinsic key selects
 the VM operation, so unrelated types remain free to define `push` or `append`. Checked
 `from_code_point(Int)` and `parse_float(String)` complete the narrow primitive boundary beneath the
-Foster-written core library. The older `code_point(CodePoint)` intrinsic is also accepted for
-compatibility; source code normally uses integer operators directly.
+Foster-written core library. Code points convert to integers through `as_int()` and also widen in
+expected `Int` contexts.
 It performs constraint inference across function calls and records a canonical type for every HIR
 expression, local, and function signature. Explicit generic functions use
 `func identity<T>(value: T) -> T`; their parameters are rigid while checking the body and freshly

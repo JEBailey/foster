@@ -1,9 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 8, implemented by `foster::vm::{encode_program, decode_program}`.
-
-The decoder also accepts version 5 through 7 artifacts, treating a version 5 `main` function as
-zero-argument.
+Status: version 9, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after lowering and optimization. It contains everything needed to verify and
@@ -28,7 +25,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `8` |
+| version | `u16` | `9` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -67,8 +64,8 @@ Integer(u64 bits)`, `5 Float(u64 bits)`, `6 String(string)`, `7 CodePoint(string
 Capture modes: `0 Copy`, `1 Move`, `2 Ref`. Parameter modes: `0 Borrow`, `1 Consume`. Unary
 operators: `0 Negate`, `1 Not`, `2 BitNot`. Binary tags in order are Add, Subtract, Multiply,
 Divide, BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight, Equal, NotEqual, Less, LessEqual, Greater,
-GreaterEqual. Builtin tags use `hir::Builtin` declaration order, `Print = 0` through
-`TcpCloseConnection = 56`.
+GreaterEqual. Builtin tags use `hir::Builtin` declaration order, from `Print = 0` through
+`TcpCloseConnection = 55`.
 
 ## Instructions
 
@@ -113,8 +110,8 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 8 readers accept versions 5 through 8 with zero flags. Version 5 through 7 method strings
-are promoted to compatibility keys during decoding. Changing any existing tag, opcode, field,
-or meaning requires a new version. A canonical encoder emits sorted maps, exact lengths, no
+Version 9 readers accept only version 9 with zero flags. Development bytecode from another version
+must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
+canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of
 `HashMap` iteration order.

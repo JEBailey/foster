@@ -30,9 +30,7 @@ completion information, and the test suite enforces complete function coverage.
 The implementations use fully qualified enum constructors and patterns, explicit public
 signatures, and explicit record fields. Primitive members such as `List.push` and `List.append` are
 owner-qualified intrinsic declarations, so their source identity is resolved before VM dispatch.
-Library implementations use `not`, `&&`, and `||` for Boolean logic and short-circuiting. The
-fluent `Bool.not`, `Bool.and`, and `Bool.or` methods remain available as compatibility helpers and
-are themselves implemented with the language operators.
+Library implementations use `not`, `&&`, and `||` for Boolean logic and short-circuiting.
 `String` is an opaque Foster record backed by valid UTF-8 `Bytes`; literals and host decoding are
 its trusted construction paths, while its library algorithms are ordinary Foster functions.
 

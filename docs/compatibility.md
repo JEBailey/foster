@@ -92,7 +92,7 @@ qualification is completely resolved before bytecode lowering.
 Language version 7 reserves `not` as a prefix logical-negation operator equivalent to `!`.
 Source that previously used `not` as a bare declaration, parameter, or local name must rename that
 identifier; no automated migration is needed for other programs. `not` is contextual after `.`, so
-existing members such as `Bool.not` remain legal. The ownership-model version remains 1 because
+members named `not` remain legal. The ownership-model version remains 1 because
 negation retains its existing type and ownership behavior. The bytecode format remains version 7
 because both spellings lower to the existing unary-not instruction.
 
@@ -119,9 +119,8 @@ matches requiring a lossless conversion; equally ranked matches are rejected as 
 Overloaded declarations require explicit parameter types, and an overload set cannot be used as a
 bare function value because no arguments are available to select one declaration. Contract
 composition merges identical requirements and preserves distinct parameter signatures for dynamic
-dispatch. The ownership-model version remains unchanged. Bytecode format version 8 replaces
-display-string dispatch identities with structural method keys; current readers continue to accept
-version 5 through 7 artifacts.
+dispatch. The ownership-model version remains unchanged. Bytecode uses structural method keys and,
+while Foster remains unreleased, only the current bytecode format is accepted.
 
 ## Resource-location library API
 

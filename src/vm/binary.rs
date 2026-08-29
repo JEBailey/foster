@@ -12,7 +12,7 @@ use crate::hir::{Builtin, CaptureMode, Function, Local, Pattern, Record, Variant
 use crate::types::{DispatchTypeKey, MethodKey};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 8;
+pub const FORMAT_VERSION: u16 = 9;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -109,21 +109,16 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
 
 /// Decodes, bounds-checks, and verifies a serialized program.
 pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
-    let mut r = Reader {
-        bytes,
-        offset: 0,
-        version: FORMAT_VERSION,
-    };
+    let mut r = Reader { bytes, offset: 0 };
     if r.take(8)? != MAGIC {
         return Err(BinaryError::new("not a Foster bytecode file"));
     }
     let version = r.u16()?;
-    if !(5..=FORMAT_VERSION).contains(&version) {
+    if version != FORMAT_VERSION {
         return Err(BinaryError::new(format!(
             "unsupported Foster bytecode version {version}"
         )));
     }
-    r.version = version;
     let flags = r.u16()?;
     if flags != 0 {
         return Err(BinaryError::new(format!(
@@ -133,7 +128,7 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
     let constants = r.vec(|r| r.constant())?;
     let functions = r.map(|r| Ok((r.id::<Function>()?, r.function()?)))?;
     let main = r.option_id::<Function>()?;
-    let main_arguments = if version >= 6 { r.bool()? } else { false };
+    let main_arguments = r.bool()?;
     let string_record = r.option_id::<Record>()?;
     let symbol_record = r.option_id::<Record>()?;
     let record_entries = r.vec(|r| {
@@ -151,15 +146,10 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         .into_iter()
         .map(|(id, _, fields)| (id, fields))
         .collect();
-    let methods = r.map(|r| {
-        Ok((
-            (r.id::<Record>()?, r.compatible_method_key()?),
-            r.id::<Function>()?,
-        ))
-    })?;
+    let methods = r.map(|r| Ok(((r.id::<Record>()?, r.method_key()?), r.id::<Function>()?)))?;
     let variant_methods = r.map(|r| {
         Ok((
-            (r.id::<VariantType>()?, r.compatible_method_key()?),
+            (r.id::<VariantType>()?, r.method_key()?),
             r.id::<Function>()?,
         ))
     })?;
@@ -206,9 +196,9 @@ fn id<T>(value: u32) -> Idx<T> {
 const BUILTINS: &[Builtin] = &[
     Builtin::Print,
     Builtin::Println,
-    Builtin::CodePoint,
     Builtin::FromCodePoint,
     Builtin::ParseFloat,
+    Builtin::FormatFloat,
     Builtin::ByteValid,
     Builtin::ByteUnchecked,
     Builtin::BytesEmpty,
@@ -260,7 +250,6 @@ const BUILTINS: &[Builtin] = &[
     Builtin::TcpSetTimeout,
     Builtin::TcpCloseListener,
     Builtin::TcpCloseConnection,
-    Builtin::FormatFloat,
 ];
 fn builtin_tag(value: Builtin) -> u8 {
     BUILTINS.iter().position(|item| *item == value).unwrap() as u8

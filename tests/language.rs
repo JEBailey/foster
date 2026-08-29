@@ -983,6 +983,10 @@ func main() -> Bool {
     let compilation = foster::compile(source).unwrap();
     foster::native::compile_object(&compilation, foster::native::CompileOptions::default())
         .unwrap();
+
+    let removed_method =
+        foster::compile("import core.bool\nfunc main() -> Bool { true.not() }").unwrap_err();
+    assert!(removed_method.message.contains("no member `not`"));
 }
 
 #[test]
@@ -2686,6 +2690,13 @@ func main() -> Int {
 "#;
 
     assert_eq!(foster::run(source).unwrap(), Value::Integer(131));
+
+    let removed_builtin = foster::compile("func main() -> Int { code_point('A') }").unwrap_err();
+    assert!(
+        removed_builtin
+            .message
+            .contains("unknown name `code_point`")
+    );
 }
 
 #[test]

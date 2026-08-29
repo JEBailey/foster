@@ -28,12 +28,6 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
             &["value"],
             "Prints values followed by a newline.",
         ),
-        Builtin::CodePoint => builtin(
-            "code_point",
-            "code_point(character: CodePoint) -> Int",
-            &["character"],
-            "Legacy explicit conversion to a Unicode scalar value. CodePoint widens in expected Int contexts and participates directly in integer operators.",
-        ),
         Builtin::FromCodePoint => builtin(
             "from_code_point",
             "from_code_point(value: Int) -> CodePoint",

@@ -313,7 +313,6 @@ impl Checker<'_> {
         let string = self.string_type();
         let bytes = self.bytes_type();
         Ok(match builtin {
-            Builtin::CodePoint => (vec![Ty::CodePoint], Ty::Int),
             Builtin::FromCodePoint => (vec![Ty::Int], Ty::CodePoint),
             Builtin::ParseFloat => (vec![string.clone()], Ty::Float),
             Builtin::FormatFloat => (vec![Ty::Float], string.clone()),

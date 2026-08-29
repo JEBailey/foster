@@ -337,7 +337,6 @@ impl FunctionLowerer<'_> {
             [] => match name {
                 "print" => Ok(ResolvedName::Builtin(Builtin::Print)),
                 "println" => Ok(ResolvedName::Builtin(Builtin::Println)),
-                "code_point" => Ok(ResolvedName::Builtin(Builtin::CodePoint)),
                 "from_code_point" => Ok(ResolvedName::Builtin(Builtin::FromCodePoint)),
                 "parse_float" => Ok(ResolvedName::Builtin(Builtin::ParseFloat)),
                 _ => Err(self.error(format!("unknown name `{name}`"))),

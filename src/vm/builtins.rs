@@ -30,7 +30,6 @@ pub(super) fn dispatch(
             }
             Ok(Value::Unit)
         }
-        (Builtin::CodePoint, [Value::CodePoint(value)]) => Ok(Value::Integer(*value as i64)),
         (Builtin::FromCodePoint, [Value::Integer(value)]) => u32::try_from(*value)
             .ok()
             .and_then(char::from_u32)

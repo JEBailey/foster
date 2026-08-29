@@ -308,7 +308,6 @@ pub enum ResolvedName {
 pub enum Builtin {
     Print,
     Println,
-    CodePoint,
     FromCodePoint,
     ParseFloat,
     FormatFloat,

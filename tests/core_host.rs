@@ -35,7 +35,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 563);
+    assert_eq!(checked, 560);
 
     let mut modules = 0;
     let mut types = 0;

@@ -1,20 +1,5 @@
 //! Boolean logic helpers.
 
-/// Returns the logical negation of `value`.
-pub func Bool.not(self: Bool) -> Bool {
-    not self
-}
-
-/// Returns true only when both values are true.
-pub func Bool.and(self: Bool, right: Bool) -> Bool {
-    self && right
-}
-
-/// Returns true when either value is true.
-pub func Bool.or(self: Bool, right: Bool) -> Bool {
-    self || right
-}
-
 /// Returns true when exactly one value is true.
 pub func Bool.xor(self: Bool, right: Bool) -> Bool {
     self != right
@@ -30,9 +15,6 @@ test "boolean helpers implement their truth tables" {
     assert(not true == false)
     assert(true && true)
     assert(false || true)
-    assert(true.not() == not true)
-    assert(true.and(true) == (true && true))
-    assert(false.or(true) == (false || true))
     assert(true.xor(false))
     ()
 }
