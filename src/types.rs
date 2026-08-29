@@ -81,6 +81,12 @@ pub struct MethodKey {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DispatchSlot(pub u32);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum NominalTypeId {
+    Record(RecordId),
+    Variant(VariantTypeId),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedCall {
     Function(FunctionId),
@@ -110,8 +116,7 @@ pub struct TypeInformation {
     pub expressions: HashMap<ExprId, TypeId>,
     pub integer_promotions: HashSet<ExprId>,
     pub resolved_calls: HashMap<ExprId, ResolvedCall>,
-    pub record_dispatch: HashMap<(RecordId, DispatchSlot), FunctionId>,
-    pub variant_dispatch: HashMap<(VariantTypeId, DispatchSlot), FunctionId>,
+    pub dispatch: HashMap<(NominalTypeId, DispatchSlot), FunctionId>,
     pub locals: HashMap<LocalId, TypeId>,
     pub functions: HashMap<FunctionId, FunctionType>,
     pub constants: HashMap<ConstantId, TypeId>,

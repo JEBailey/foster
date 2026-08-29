@@ -103,8 +103,8 @@ impl Checker<'_> {
                 }
                 let nominal = self.resolve_nominal_type(module, name)?;
                 let expected = match nominal {
-                    NominalType::Record(record) => self.hir.records[record].parameters.len(),
-                    NominalType::Variant(variant) => {
+                    NominalTypeId::Record(record) => self.hir.records[record].parameters.len(),
+                    NominalTypeId::Variant(variant) => {
                         self.hir.variant_types[variant].parameters.len()
                     }
                 };
@@ -118,7 +118,7 @@ impl Checker<'_> {
                     .iter()
                     .map(|argument| self.annotation_type(module, argument, generics))
                     .collect::<Result<Vec<_>, _>>()?;
-                if let NominalType::Variant(variant) = nominal {
+                if let NominalTypeId::Variant(variant) = nominal {
                     let definition = self.hir.variant_types[variant].clone();
                     if definition.kind == crate::ast::VariantKind::Union
                         && definition.alternatives.len() == 1
@@ -149,8 +149,8 @@ impl Checker<'_> {
                     }
                 }
                 Ok(match nominal {
-                    NominalType::Record(record) => Ty::Record(record, arguments),
-                    NominalType::Variant(variant) => Ty::Variant(variant, arguments),
+                    NominalTypeId::Record(record) => Ty::Record(record, arguments),
+                    NominalTypeId::Variant(variant) => Ty::Variant(variant, arguments),
                 })
             }
             TypeExpr::Reference { group, value } => Ok(Ty::Reference(
@@ -183,7 +183,7 @@ impl Checker<'_> {
         &self,
         current_module: hir::ModuleId,
         name: &str,
-    ) -> Result<NominalType, FosterError> {
+    ) -> Result<NominalTypeId, FosterError> {
         if let Some((qualifier, local_name)) = name.rsplit_once('.') {
             let first = qualifier.split('.').next().unwrap_or(qualifier);
             let module = self.hir.modules[current_module]
@@ -198,8 +198,8 @@ impl Checker<'_> {
                 .nominal_type_in(module, local_name)
                 .ok_or_else(|| FosterError::runtime(format!("unknown type `{name}`")))?;
             let public = match found {
-                NominalType::Record(id) => self.hir.records[id].public,
-                NominalType::Variant(id) => self.hir.variant_types[id].public,
+                NominalTypeId::Record(id) => self.hir.records[id].public,
+                NominalTypeId::Variant(id) => self.hir.variant_types[id].public,
             };
             if module != current_module && !public {
                 return Err(FosterError::runtime(format!("type `{name}` is private")));
@@ -213,8 +213,8 @@ impl Checker<'_> {
         for imported_module in self.hir.modules[current_module].imports.values() {
             if let Some(found) = self.nominal_type_in(*imported_module, name) {
                 let public = match found {
-                    NominalType::Record(id) => self.hir.records[id].public,
-                    NominalType::Variant(id) => self.hir.variant_types[id].public,
+                    NominalTypeId::Record(id) => self.hir.records[id].public,
+                    NominalTypeId::Variant(id) => self.hir.variant_types[id].public,
                 };
                 if public && !imported.contains(&found) {
                     imported.push(found);
@@ -230,14 +230,18 @@ impl Checker<'_> {
         }
     }
 
-    pub(super) fn nominal_type_in(&self, module: hir::ModuleId, name: &str) -> Option<NominalType> {
+    pub(super) fn nominal_type_in(
+        &self,
+        module: hir::ModuleId,
+        name: &str,
+    ) -> Option<NominalTypeId> {
         self.hir
             .record_named(module, name)
-            .map(NominalType::Record)
+            .map(NominalTypeId::Record)
             .or_else(|| {
                 self.hir
                     .variant_type_named(module, name)
-                    .map(NominalType::Variant)
+                    .map(NominalTypeId::Variant)
             })
     }
 

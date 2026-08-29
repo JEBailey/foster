@@ -4,7 +4,9 @@ use crate::error::FosterError;
 use crate::hir::{self, ExprId, FunctionId, LocalId, ResolvedName};
 use crate::types::TypeInformation;
 
-use super::{BytecodeFunction, Constant, Instruction, Program, Register};
+use super::{
+    BytecodeFunction, Constant, Instruction, Program, Register, RuntimeRecord, RuntimeVariant,
+};
 
 mod lower;
 
@@ -49,12 +51,6 @@ pub fn compile_with_options(
         .hir
         .records
         .iter()
-        .map(|(id, value)| (id, value.name.clone()))
-        .collect();
-    compiler.program.record_layouts = compilation
-        .hir
-        .records
-        .iter()
         .map(|(id, value)| {
             let mut fields = compilation
                 .types
@@ -73,7 +69,10 @@ pub fn compile_with_options(
             fields.sort();
             (
                 id,
-                std::sync::Arc::new(super::value::RecordLayout::new(fields)),
+                RuntimeRecord {
+                    name: value.name.clone(),
+                    layout: std::sync::Arc::new(super::value::RecordLayout::new(fields)),
+                },
             )
         })
         .collect();
@@ -85,8 +84,7 @@ pub fn compile_with_options(
         .hir
         .module_named("core.symbol")
         .and_then(|module| compilation.hir.record_named(module, "Symbol"));
-    compiler.program.methods = compilation.types.record_dispatch.clone();
-    compiler.program.variant_methods = compilation.types.variant_dispatch.clone();
+    compiler.program.dispatch = compilation.types.dispatch.clone();
     let variant_type_names = compilation
         .hir
         .variant_types
@@ -103,11 +101,11 @@ pub fn compile_with_options(
         .map(|(id, value)| {
             (
                 id,
-                (
-                    value.parent,
-                    variant_type_names[&value.parent].clone(),
-                    std::sync::Arc::from(value.name.as_str()),
-                ),
+                RuntimeVariant {
+                    parent: value.parent,
+                    type_name: variant_type_names[&value.parent].clone(),
+                    alternative: std::sync::Arc::from(value.name.as_str()),
+                },
             )
         })
         .collect();

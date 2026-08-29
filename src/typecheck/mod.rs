@@ -26,8 +26,8 @@ use crate::hir::{
     self, Builtin, ConstantId, ExprId, FunctionId, LocalId, RecordId, ResolvedName, VariantTypeId,
 };
 use crate::types::{
-    DispatchSlot, DispatchTypeKey, FunctionType, MethodKey, ResolvedCall, Type, TypeId,
-    TypeInformation,
+    DispatchSlot, DispatchTypeKey, FunctionType, MethodKey, NominalTypeId, ResolvedCall, Type,
+    TypeId, TypeInformation,
 };
 
 type InferredEffects = HashMap<FunctionId, (Vec<crate::ast::Effect>, bool)>;

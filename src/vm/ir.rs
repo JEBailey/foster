@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::ast::{BinaryOp, UnaryOp};
 use crate::hir::{Builtin, FunctionId, RecordId, VariantId, VariantTypeId};
-use crate::types::DispatchSlot;
+use crate::types::{DispatchSlot, NominalTypeId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Register(pub u16);
@@ -450,11 +450,22 @@ pub struct Program {
     pub main_arguments: bool,
     pub string_record: Option<RecordId>,
     pub symbol_record: Option<RecordId>,
-    pub records: HashMap<RecordId, String>,
-    pub record_layouts: HashMap<RecordId, Arc<super::value::RecordLayout>>,
-    pub methods: HashMap<(RecordId, DispatchSlot), FunctionId>,
-    pub variant_methods: HashMap<(VariantTypeId, DispatchSlot), FunctionId>,
-    pub variants: HashMap<VariantId, (VariantTypeId, Arc<str>, Arc<str>)>,
+    pub records: HashMap<RecordId, RuntimeRecord>,
+    pub dispatch: HashMap<(NominalTypeId, DispatchSlot), FunctionId>,
+    pub variants: HashMap<VariantId, RuntimeVariant>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeRecord {
+    pub name: String,
+    pub layout: Arc<super::value::RecordLayout>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeVariant {
+    pub parent: VariantTypeId,
+    pub type_name: Arc<str>,
+    pub alternative: Arc<str>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

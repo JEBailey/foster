@@ -321,14 +321,14 @@ impl Machine {
                         .into_iter()
                         .map(|(_, register)| read(frame, register))
                         .collect::<Result<Vec<_>, RuntimeError>>()?;
-                    let fields =
-                        RecordFields::new(self.program.record_layouts[&record].clone(), values)?;
+                    let metadata = &self.program.records[&record];
+                    let fields = RecordFields::new(metadata.layout.clone(), values)?;
                     write(
                         frame,
                         destination,
                         Value::Record {
                             record: Some(record),
-                            name: self.program.records[&record].clone(),
+                            name: metadata.name.clone(),
                             fields,
                         },
                     )?;
@@ -338,7 +338,7 @@ impl Machine {
                     variant,
                     payload,
                 } => {
-                    let (variant_type, type_name, alternative) = &self.program.variants[&variant];
+                    let metadata = &self.program.variants[&variant];
                     let payload = payload
                         .into_iter()
                         .map(|register| read(frame, register))
@@ -347,9 +347,9 @@ impl Machine {
                         frame,
                         destination,
                         Value::Variant {
-                            variant: Some(*variant_type),
-                            type_name: type_name.clone(),
-                            alternative: alternative.clone(),
+                            variant: Some(metadata.parent),
+                            type_name: metadata.type_name.clone(),
+                            alternative: metadata.alternative.clone(),
                             payload,
                         },
                     )?;
@@ -729,11 +729,19 @@ impl Machine {
                         Value::Record {
                             record: Some(record),
                             ..
-                        } => self.program.methods.get(&(*record, slot)).copied(),
+                        } => self
+                            .program
+                            .dispatch
+                            .get(&(crate::types::NominalTypeId::Record(*record), slot))
+                            .copied(),
                         Value::Variant {
                             variant: Some(variant),
                             ..
-                        } => self.program.variant_methods.get(&(*variant, slot)).copied(),
+                        } => self
+                            .program
+                            .dispatch
+                            .get(&(crate::types::NominalTypeId::Variant(*variant), slot))
+                            .copied(),
                         _ => None,
                     };
                     let function = function.ok_or_else(|| {

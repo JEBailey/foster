@@ -6,13 +6,16 @@ use std::ops::Range;
 
 use la_arena::{Idx, RawIdx};
 
-use super::{BytecodeFunction, Constant, Instruction, Program, Register, verify};
+use super::{
+    BytecodeFunction, Constant, Instruction, Program, Register, RuntimeRecord, RuntimeVariant,
+    verify,
+};
 use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::hir::{Builtin, CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
-use crate::types::DispatchSlot;
+use crate::types::{DispatchSlot, NominalTypeId};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 10;
+pub const FORMAT_VERSION: u16 = 11;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -64,33 +67,20 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
     let mut records: Vec<_> = program.records.iter().collect();
     records.sort_by_key(|(id, _)| raw(**id));
     w.u32(records.len())?;
-    for (id, name) in records {
+    for (id, record) in records {
         w.id(*id);
-        w.string(name)?;
-        let layout = program
-            .record_layouts
-            .get(id)
-            .ok_or_else(|| BinaryError::new("record is missing its field layout"))?;
-        w.u32(layout.names().len())?;
-        for field in layout.names() {
+        w.string(&record.name)?;
+        w.u32(record.layout.names().len())?;
+        for field in record.layout.names() {
             w.string(field)?;
         }
     }
 
-    let mut methods: Vec<_> = program.methods.iter().collect();
-    methods.sort_by_key(|((record, slot), _)| (raw(*record), *slot));
-    w.u32(methods.len())?;
-    for ((record, slot), function) in methods {
-        w.id(*record);
-        w.u32_value(slot.0);
-        w.id(*function);
-    }
-
-    let mut variant_methods: Vec<_> = program.variant_methods.iter().collect();
-    variant_methods.sort_by_key(|((variant, slot), _)| (raw(*variant), *slot));
-    w.u32(variant_methods.len())?;
-    for ((variant, slot), function) in variant_methods {
-        w.id(*variant);
+    let mut dispatch: Vec<_> = program.dispatch.iter().collect();
+    dispatch.sort_by_key(|((nominal, slot), _)| (*nominal, *slot));
+    w.u32(dispatch.len())?;
+    for ((nominal, slot), function) in dispatch {
+        w.nominal_type(*nominal);
         w.u32_value(slot.0);
         w.id(*function);
     }
@@ -98,11 +88,11 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
     let mut variants: Vec<_> = program.variants.iter().collect();
     variants.sort_by_key(|(id, _)| raw(**id));
     w.u32(variants.len())?;
-    for (id, (parent, ty, alternative)) in variants {
+    for (id, variant) in variants {
         w.id(*id);
-        w.id(*parent);
-        w.string(ty)?;
-        w.string(alternative)?;
+        w.id(variant.parent);
+        w.string(&variant.type_name)?;
+        w.string(&variant.alternative)?;
     }
     Ok(w.bytes)
 }
@@ -131,41 +121,31 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
     let main_arguments = r.bool()?;
     let string_record = r.option_id::<Record>()?;
     let symbol_record = r.option_id::<Record>()?;
-    let record_entries = r.vec(|r| {
+    let records = r.map(|r| {
         Ok((
             r.id::<Record>()?,
-            r.string()?,
-            std::sync::Arc::new(super::value::RecordLayout::new(r.vec(|r| r.string())?)),
+            RuntimeRecord {
+                name: r.string()?,
+                layout: std::sync::Arc::new(super::value::RecordLayout::new(
+                    r.vec(|r| r.string())?,
+                )),
+            },
         ))
     })?;
-    let records = record_entries
-        .iter()
-        .map(|(id, name, _)| (*id, name.clone()))
-        .collect();
-    let record_layouts = record_entries
-        .into_iter()
-        .map(|(id, _, fields)| (id, fields))
-        .collect();
-    let methods = r.map(|r| {
+    let dispatch = r.map(|r| {
         Ok((
-            (r.id::<Record>()?, DispatchSlot(r.u32()?)),
-            r.id::<Function>()?,
-        ))
-    })?;
-    let variant_methods = r.map(|r| {
-        Ok((
-            (r.id::<VariantType>()?, DispatchSlot(r.u32()?)),
+            (r.nominal_type()?, DispatchSlot(r.u32()?)),
             r.id::<Function>()?,
         ))
     })?;
     let variants = r.map(|r| {
         Ok((
             r.id::<Variant>()?,
-            (
-                r.id::<VariantType>()?,
-                std::sync::Arc::from(r.string()?),
-                std::sync::Arc::from(r.string()?),
-            ),
+            RuntimeVariant {
+                parent: r.id::<VariantType>()?,
+                type_name: std::sync::Arc::from(r.string()?),
+                alternative: std::sync::Arc::from(r.string()?),
+            },
         ))
     })?;
     if r.offset != bytes.len() {
@@ -181,9 +161,7 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         string_record,
         symbol_record,
         records,
-        record_layouts,
-        methods,
-        variant_methods,
+        dispatch,
         variants,
     };
     verify(&program)

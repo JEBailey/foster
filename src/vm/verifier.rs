@@ -3,16 +3,6 @@ use crate::error::FosterError;
 use super::{Instruction, Program};
 
 pub fn verify(program: &Program) -> Result<(), FosterError> {
-    if program.records.len() != program.record_layouts.len()
-        || program
-            .records
-            .keys()
-            .any(|record| !program.record_layouts.contains_key(record))
-    {
-        return Err(FosterError::runtime(
-            "bytecode record layouts are incomplete",
-        ));
-    }
     if let Some(main) = program.main {
         let main = program
             .functions

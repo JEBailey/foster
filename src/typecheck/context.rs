@@ -32,12 +32,6 @@ pub(super) enum Ty {
     Module(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum NominalType {
-    Record(RecordId),
-    Variant(VariantTypeId),
-}
-
 #[derive(Debug, Clone)]
 pub(super) struct Signature {
     pub(super) parameters: Vec<Ty>,

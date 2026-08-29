@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 10, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 11, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after lowering and optimization. It contains everything needed to verify and
@@ -25,7 +25,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `10` |
+| version | `u16` | `11` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -34,14 +34,14 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | string record | optional `RecordId` | String wrapper |
 | symbol record | optional `RecordId` | Symbol wrapper |
 | records | `vector<(RecordId, string, vector<string>)>` | runtime name and indexed field layout |
-| methods | `vector<(RecordId, u32 slot, FunctionId)>` | record dispatch |
-| enum methods | `vector<(VariantTypeId, u32 slot, FunctionId)>` | enum dispatch |
+| dispatch | `vector<(NominalTypeId, u32 slot, FunctionId)>` | record and enum dispatch |
 | enum cases | `vector<(VariantId, VariantTypeId, string, string)>` | parent enum and case label |
 
 Dispatch slots are program-local `u32` identifiers assigned to the contract signatures selected by
 type checking. The type checker also resolves every concrete record and enum implementation for
 each used slot. Runtime lookup is therefore a direct `(concrete type, slot)` table access and does
-not repeat signature matching.
+not repeat signature matching. A `NominalTypeId` is tag `0` followed by a `RecordId`, or tag `1`
+followed by a `VariantTypeId`.
 
 A function is `string name`, `u16 parameter_count`, `vector<ParameterMode> parameter_modes`,
 `vector<bool> mutable_parameters`, `u16 capture_count`, `u16 register_count`,
@@ -106,7 +106,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 10 readers accept only version 10 with zero flags. Development bytecode from another version
+Version 11 readers accept only version 11 with zero flags. Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
 canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of

@@ -28,6 +28,18 @@ impl Writer {
     pub(super) fn reg(&mut self, value: Register) {
         self.u16(value.0);
     }
+    pub(super) fn nominal_type(&mut self, value: NominalTypeId) {
+        match value {
+            NominalTypeId::Record(record) => {
+                self.u8(0);
+                self.id(record);
+            }
+            NominalTypeId::Variant(variant) => {
+                self.u8(1);
+                self.id(variant);
+            }
+        }
+    }
     pub(super) fn string(&mut self, value: &str) -> Result<(), BinaryError> {
         self.u32(value.len())?;
         self.bytes.extend_from_slice(value.as_bytes());

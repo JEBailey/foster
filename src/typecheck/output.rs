@@ -130,7 +130,9 @@ impl Checker<'_> {
                         receiver_is_record(&information, function, record)
                     })
                 {
-                    information.record_dispatch.insert((record, slot), function);
+                    information
+                        .dispatch
+                        .insert((NominalTypeId::Record(record), slot), function);
                 }
             }
             for (variant, definition) in self.hir.variant_types.iter() {
@@ -141,8 +143,8 @@ impl Checker<'_> {
                         })
                 {
                     information
-                        .variant_dispatch
-                        .insert((variant, slot), function);
+                        .dispatch
+                        .insert((NominalTypeId::Variant(variant), slot), function);
                 }
             }
         }

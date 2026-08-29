@@ -43,6 +43,13 @@ impl<'a> Reader<'a> {
     pub(super) fn reg(&mut self) -> Result<Register, BinaryError> {
         Ok(Register(self.u16()?))
     }
+    pub(super) fn nominal_type(&mut self) -> Result<NominalTypeId, BinaryError> {
+        match self.u8()? {
+            0 => Ok(NominalTypeId::Record(self.id::<Record>()?)),
+            1 => Ok(NominalTypeId::Variant(self.id::<VariantType>()?)),
+            tag => Err(BinaryError::new(format!("invalid nominal type {tag}"))),
+        }
+    }
     pub(super) fn bool(&mut self) -> Result<bool, BinaryError> {
         match self.u8()? {
             0 => Ok(false),
