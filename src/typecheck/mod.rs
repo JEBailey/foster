@@ -71,6 +71,8 @@ impl<'a> Checker<'a> {
             integer_promotions: HashSet::new(),
             bare_method_members: HashSet::new(),
             extension_methods: HashMap::new(),
+            resolved_calls: HashMap::new(),
+            contract_dispatch_names: HashMap::new(),
             member_constraints: Vec::new(),
             diagnostics: Vec::new(),
             inferred_effects: HashMap::new(),
@@ -177,6 +179,7 @@ impl<'a> Checker<'a> {
         self.check_variant_declarations()?;
         self.declare_constants()?;
         self.declare_signatures()?;
+        self.validate_overloads()?;
         self.check_record_compositions()?;
         self.check_variant_compositions()?;
         for (function, _) in self.hir.functions.iter() {
@@ -191,6 +194,62 @@ impl<'a> Checker<'a> {
             diagnostics,
             inferred_effects,
         })
+    }
+
+    fn validate_overloads(&self) -> Result<(), FosterError> {
+        for (_, module) in self.hir.modules.iter() {
+            for (name, overloads) in &module.function_overloads {
+                if overloads.len() < 2 {
+                    continue;
+                }
+                let mut signatures = HashMap::<Vec<String>, FunctionId>::new();
+                for function in overloads {
+                    let definition = &self.hir.functions[*function];
+                    let generics = definition
+                        .type_parameters
+                        .iter()
+                        .enumerate()
+                        .map(|(index, name)| (name.as_str(), index))
+                        .collect::<HashMap<_, _>>();
+                    let groups = definition
+                        .groups
+                        .iter()
+                        .enumerate()
+                        .map(|(index, group)| (group.name.as_str(), index))
+                        .collect::<HashMap<_, _>>();
+                    let signature = definition
+                        .parameter_types
+                        .iter()
+                        .map(|parameter| {
+                            parameter
+                                .as_ref()
+                                .map(|parameter| overload_type_key(parameter, &generics, &groups))
+                                .ok_or_else(|| {
+                                    self.error(
+                                        *function,
+                                        format!(
+                                            "overloaded function `{name}` must give every parameter a type"
+                                        ),
+                                    )
+                                })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    if let Some(previous) = signatures.insert(signature, *function) {
+                        return Err(self.error(
+                            *function,
+                            format!(
+                                "overload `{name}` has the same parameter signature as another declaration; return types and effects do not distinguish overloads"
+                            ),
+                        )
+                        .with_label(
+                            self.hir.functions[previous].span.clone(),
+                            "the first declaration with this parameter signature is here",
+                        ));
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn check_derived_effects(&mut self, validate: bool) -> Result<(), FosterError> {
@@ -461,6 +520,68 @@ impl<'a> Checker<'a> {
             );
         }
         Ok(())
+    }
+}
+
+fn overload_type_key(
+    ty: &crate::ast::TypeExpr,
+    generics: &HashMap<&str, usize>,
+    groups: &HashMap<&str, usize>,
+) -> String {
+    match ty {
+        crate::ast::TypeExpr::Unit => "()".to_owned(),
+        crate::ast::TypeExpr::Named(name, arguments) => {
+            let name = generics
+                .get(name.as_str())
+                .map_or_else(|| name.clone(), |index| format!("${index}"));
+            if arguments.is_empty() {
+                name
+            } else {
+                format!(
+                    "{name}<{}>",
+                    arguments
+                        .iter()
+                        .map(|argument| overload_type_key(argument, generics, groups))
+                        .collect::<Vec<_>>()
+                        .join(",")
+                )
+            }
+        }
+        crate::ast::TypeExpr::Intersection(members) => {
+            let mut members = members
+                .iter()
+                .map(|member| overload_type_key(member, generics, groups))
+                .collect::<Vec<_>>();
+            members.sort();
+            members.join("&")
+        }
+        crate::ast::TypeExpr::Reference { group, value } => {
+            let group = groups
+                .get(group.as_str())
+                .map_or_else(|| group.clone(), |index| format!("@{index}"));
+            format!("ref[{group}]{}", overload_type_key(value, generics, groups))
+        }
+        crate::ast::TypeExpr::Function {
+            parameters,
+            parameter_modes,
+            result,
+            effects,
+            suspends,
+        } => format!(
+            "func({})->{}[{:?};{:?};{suspends}]",
+            parameters
+                .iter()
+                .zip(parameter_modes)
+                .map(|(parameter, mode)| format!(
+                    "{mode:?}:{}",
+                    overload_type_key(parameter, generics, groups)
+                ))
+                .collect::<Vec<_>>()
+                .join(","),
+            overload_type_key(result, generics, groups),
+            parameter_modes,
+            effects
+        ),
     }
 }
 

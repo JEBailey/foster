@@ -3,6 +3,7 @@
 import core.option
 import core.result
 import std.io
+import std.resource
 
 type PathHost = {}
 
@@ -16,6 +17,50 @@ func PathHost.file_name(path: String) -> String = intrinsic("io.file_name")
 func PathHost.extension(path: String) -> String = intrinsic("io.extension")
 /// Canonicalizes a host path.
 func PathHost.canonicalize(path: String) -> Result<String, IoError> = intrinsic("io.canonicalize")
+
+/// A typed host-filesystem path.
+///
+/// `Path` preserves the host spelling supplied by the caller. Use `canonical` when an absolute,
+/// normalized path is required.
+pub type Path = & ResourceLocation & {
+    value: String
+}
+
+/// Wraps host path text in a typed path value.
+pub func Path.from(value: String) -> Path { Path { value } }
+
+/// Returns the host path text.
+pub func Path.as_string(self: Path) -> String { self.value.slice(0, self.value.length) }
+
+/// Joins this path with another typed path.
+pub func Path.join(self: Path, right: Path) -> Path {
+    Path.from(PathHost.join(self.value, right.value))
+}
+
+/// Joins one textual path component onto this path.
+pub func Path.child(self: Path, component: String) -> Path {
+    Path.from(PathHost.join(self.value, component))
+}
+
+/// Returns this path's parent, or `None` when no parent component exists.
+pub func Path.parent(self: Path) -> Option<Path> {
+    path_option(PathHost.parent(self.value))
+}
+
+/// Returns this path's final component, or `None` when it is absent.
+pub func Path.file_name(self: Path) -> Option<String> {
+    optional_component(PathHost.file_name(self.value))
+}
+
+/// Returns this path's final extension without its separator.
+pub func Path.extension(self: Path) -> Option<String> {
+    optional_component(PathHost.extension(self.value))
+}
+
+/// Resolves this path to an absolute canonical path.
+pub func Path.canonical(self: Path) -> Result<Path, IoError> {
+    path_result(PathHost.canonicalize(self.value))
+}
 
 /// Joins two platform path components.
 pub func join(left: String, right: String) -> String { PathHost.join(left, right) }
@@ -48,6 +93,22 @@ func optional_component(value: String) -> Option<String> {
     branch {
         value.empty? -> Option.None
         _ -> Option.Some(value)
+    }
+}
+
+/// Converts the host boundary's empty sentinel into an optional typed path.
+func path_option(value: String) -> Option<Path> {
+    branch {
+        value.empty? -> Option.None
+        _ -> Option.Some(Path.from(move value))
+    }
+}
+
+/// Converts a successful host path result into a typed path.
+func path_result(outcome: Result<String, IoError>) -> Result<Path, IoError> [consume outcome] {
+    branch move outcome {
+        Result.Error(error) -> Result.Error(error)
+        Result.Ok(value) -> Result.Ok(Path.from(move value))
     }
 }
 

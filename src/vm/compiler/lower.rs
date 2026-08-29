@@ -329,7 +329,12 @@ impl FunctionCompiler<'_> {
                             Instruction::CallContractMethod {
                                 destination,
                                 receiver,
-                                name: name.clone(),
+                                name: self
+                                    .types
+                                    .contract_dispatch_names
+                                    .get(callee)
+                                    .cloned()
+                                    .unwrap_or_else(|| name.clone()),
                                 arguments,
                             },
                             span,
@@ -342,9 +347,16 @@ impl FunctionCompiler<'_> {
                     .map(|argument| self.expression(*argument))
                     .collect::<Result<Vec<_>, _>>()?;
                 let destination = self.allocate();
-                if let hir::Expr::Name(ResolvedName::Function(function)) =
-                    self.hir.expressions[*callee]
-                {
+                let resolved_function = self.types.resolved_calls.get(&id).copied().or_else(|| {
+                    if let hir::Expr::Name(ResolvedName::Function(function)) =
+                        self.hir.expressions[*callee]
+                    {
+                        Some(function)
+                    } else {
+                        None
+                    }
+                });
+                if let Some(function) = resolved_function {
                     if let Some((&receiver, method_arguments)) = arguments.split_first()
                         && self.lower_list_intrinsic(
                             function,

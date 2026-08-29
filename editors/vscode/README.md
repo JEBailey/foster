@@ -5,11 +5,12 @@ and launches the Foster language server. Language features include:
 
 - package-wide compiler errors and warnings with open-buffer overlays;
 - document symbols;
-- go-to-definition across imported modules, instance methods, and repository core-library source;
+- go-to-definition across imported modules, selected function and concrete method overloads,
+  instance methods, and repository core-library source;
 - find-references across package modules;
 - identity-aware local and declaration rename;
 - rich Foster signatures and Markdown documentation on hover;
-- call signature help with active-parameter tracking;
+- call signature help with active-parameter tracking and the resolved overload's signature;
 - inferred local-type and argument-name inlay hints, with clickable parameter hints;
 - scope-aware completion for locals, declarations, imports, qualified modules, and keywords,
   including `try`, `not`, and automatic `std.process` import when completing `Arguments`;

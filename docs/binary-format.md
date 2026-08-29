@@ -41,6 +41,10 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | enum methods | `vector<(VariantTypeId, string, FunctionId)>` | enum dispatch |
 | enum cases | `vector<(VariantId, VariantTypeId, string, string)>` | parent enum and case label |
 
+A method-table string is the source member name for ordinary dispatch. Contract overload dispatch
+uses an internal signature-qualified string key so methods with the same source name remain
+distinct. This reuses the existing string encoding and does not change the container format.
+
 A function is `string name`, `u16 parameter_count`, `vector<ParameterMode> parameter_modes`,
 `vector<bool> mutable_parameters`, `u16 capture_count`, `u16 register_count`,
 `vector<Instruction>`, then `vector<Span>`. A span is `u32

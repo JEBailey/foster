@@ -585,11 +585,7 @@ impl<'a> Builder<'a> {
     }
 
     fn call_result_borrow_value(&mut self, callee: ExprId, arguments: &[ExprId]) -> BorrowValue {
-        let direct = match self.hir.expressions[callee] {
-            hir::Expr::Name(ResolvedName::Function(function)) => Some(function),
-            hir::Expr::Member { .. } => self.types.extension_methods.get(&callee).copied(),
-            _ => None,
-        };
+        let direct = self.types.resolved_function_for_callee(self.hir, callee);
         let Some(function) = direct else {
             let mut values = vec![self.borrow_value(callee)];
             values.extend(

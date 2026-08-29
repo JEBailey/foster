@@ -39,9 +39,11 @@ work.
 
 ## Runtime and platform
 
-- Introduce explicit filesystem and network capability values suitable for production, sandboxed,
-  and in-memory hosts.
-- Add byte buffers, socket readiness, and TLS support to the I/O boundary.
+- Introduce explicit host-provider filesystem and network capability tokens suitable for
+  production, sandboxed, and in-memory hosts; these would complement the existing structural
+  resource contracts.
+- Add socket readiness and TLS support to the I/O boundary, and extend resource providers beyond
+  the current whole-file and TCP implementations.
 - Stabilize a backend-neutral lowered IR.
 - Extend the initial Cranelift AOT backend from primitive values to aggregates, closures, native
   runtime services, and cross-target object output while retaining the register VM as the semantic

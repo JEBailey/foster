@@ -48,16 +48,18 @@ Current modules:
 - `core.ordering`: `Ordering`, `Equality<T>`, `Ordered<T>`, `Hashing`, and `reverse`
 - `std.sequence`: map, filter, fold, search, slicing, and query algorithms shared by strings and lists
 - `core.list`: safe access, map, filter, fold, find, predicates, reverse, and concatenation
-- `core.code_point`: validated Unicode scalar construction and conversion
+- `core.code_point`: validated Unicode scalar construction plus `as_int` and `as_string` conversion
 - `core.string`: slicing, splitting, joining, trimming, case conversion, and Unicode helpers
 - `core.bool`, `core.int`, and `core.float`: scalar algorithms and comparisons
 - `core.byte`: checked construction and integer conversion for eight-bit unsigned values
 - `core.bytes`: immutable compact bytes, hexadecimal conversion, hashing, and UTF-8 conversion
 - `core.bytes.buffer`: mutable binary construction with consuming `freeze` and borrowing `snapshot`
 - `std.io`: generic binary/text stream contracts plus `read_all`, `write_all`, and `copy`
+- `std.resource`: abstract resource locations plus readable, writable, and read/write structural capabilities
 - `std.collections.map`: a generic Foster-written map with opaque list-backed storage
-- `std.fs`: typed text and binary files, directory creation/removal, copying, moving, and inspection
-- `std.path`: platform path composition, inspection, and canonicalization
+- `std.fs`: `File` resources, typed text and binary I/O, directory mutation, copying, moving, and inspection
+- `std.path`: typed `Path` values plus compatible string-based composition, inspection, and canonicalization
+- `std.uri`: parsed URI resource locations; protocol-specific I/O remains separate
 - `std.env`: process environment queries
 - `std.toml`: a Foster-written TOML 1.1 parser, typed documents, table lookup, rendering, and positioned errors
 - `std.net.tcp`: typed TCP listeners and `Duplex<NetworkError>` connections

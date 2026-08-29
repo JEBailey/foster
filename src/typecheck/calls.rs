@@ -1,3 +1,4 @@
+use super::composition::EffectiveMethod;
 use super::*;
 
 impl Checker<'_> {
@@ -33,6 +34,32 @@ impl Checker<'_> {
             return Ok(result);
         }
 
+        if let hir::Expr::Name(ResolvedName::Function(representative)) =
+            self.hir.expressions[callee]
+        {
+            let definition = &self.hir.functions[representative];
+            let overloads = self
+                .hir
+                .functions_named(definition.module, &definition.name)
+                .iter()
+                .copied()
+                .filter(|candidate| {
+                    definition.module == self.hir.functions[function].module
+                        || self.hir.functions[*candidate].public
+                })
+                .collect::<Vec<_>>();
+            if overloads.len() > 1 {
+                return self.infer_overloaded_function_call(
+                    function,
+                    call,
+                    callee,
+                    arguments,
+                    &definition.name,
+                    &overloads,
+                );
+            }
+        }
+
         if let hir::Expr::Member { object, name } = self.hir.expressions[callee].clone() {
             let object_type = self.infer_expression(function, object)?;
             if name == "freeze"
@@ -43,6 +70,45 @@ impl Checker<'_> {
                     function,
                     "method `freeze` consumes its receiver; call `(move buffer).freeze()`",
                 ));
+            }
+            let method_overloads = self.inherent_method_overloads(
+                function,
+                &self.resolved(object_type.clone()),
+                &name,
+            );
+            if method_overloads.len() > 1 {
+                return self.infer_overloaded_method_call(
+                    function,
+                    call,
+                    callee,
+                    arguments,
+                    object_type,
+                    &method_overloads,
+                );
+            }
+            let extension_overloads =
+                self.extension_method_candidates(function, object_type.clone(), &name)?;
+            if extension_overloads.len() > 1 {
+                return self.infer_overloaded_method_call(
+                    function,
+                    call,
+                    callee,
+                    arguments,
+                    object_type,
+                    &extension_overloads,
+                );
+            }
+            let contract_overloads =
+                self.contract_method_overloads(function, object_type.clone(), &name)?;
+            if contract_overloads.len() > 1 {
+                return self.infer_overloaded_contract_method_call(
+                    function,
+                    call,
+                    callee,
+                    arguments,
+                    &name,
+                    &contract_overloads,
+                );
             }
             if let Some(method) = self.contract_method_type(function, object_type.clone(), &name)? {
                 self.expressions.insert(callee, method);
@@ -118,6 +184,516 @@ impl Checker<'_> {
             function,
             call,
             callee_type,
+            arguments,
+            argument_types,
+            result.clone(),
+        )?;
+        Ok(result)
+    }
+
+    fn contract_method_overloads(
+        &mut self,
+        caller: FunctionId,
+        object: Ty,
+        name: &str,
+    ) -> Result<Vec<EffectiveMethod>, FosterError> {
+        match self.resolved(object) {
+            Ty::Record(record, arguments) => {
+                let definition = &self.hir.records[record];
+                Ok(self
+                    .effective_record_methods(record, &arguments)?
+                    .into_iter()
+                    .filter(|method| {
+                        method.name == name
+                            && (definition.module == self.hir.functions[caller].module
+                                || method.public)
+                    })
+                    .collect())
+            }
+            Ty::Intersection(members) => {
+                let mut methods = Vec::new();
+                for member in members {
+                    for method in self.contract_method_overloads(caller, member, name)? {
+                        if !methods.iter().any(|existing: &EffectiveMethod| {
+                            existing.parameters == method.parameters
+                                && existing.parameter_modes == method.parameter_modes
+                        }) {
+                            methods.push(method);
+                        }
+                    }
+                }
+                Ok(methods)
+            }
+            _ => Ok(Vec::new()),
+        }
+    }
+
+    fn infer_overloaded_contract_method_call(
+        &mut self,
+        function: FunctionId,
+        call: ExprId,
+        callee: ExprId,
+        arguments: &[ExprId],
+        name: &str,
+        overloads: &[EffectiveMethod],
+    ) -> Result<Ty, FosterError> {
+        let argument_types = arguments
+            .iter()
+            .map(|argument| self.infer_expression(function, *argument))
+            .collect::<Result<Vec<_>, _>>()?;
+        let initial_substitutions = self.substitutions.clone();
+        let initial_next_variable = self.next_variable;
+        let mut matches = Vec::new();
+        for method in overloads
+            .iter()
+            .filter(|method| method.parameters.len() == arguments.len())
+        {
+            self.substitutions = initial_substitutions.clone();
+            self.next_variable = initial_next_variable;
+            let mut conversions = 0usize;
+            let mut compatible = true;
+            for (expected, actual) in method
+                .parameters
+                .iter()
+                .cloned()
+                .zip(argument_types.iter().cloned())
+            {
+                let expected_resolved = self.resolved(expected.clone());
+                let actual_resolved = self.resolved(actual.clone());
+                if expected_resolved != actual_resolved {
+                    conversions += 1;
+                }
+                let widening = expected_resolved == Ty::Int
+                    && matches!(actual_resolved, Ty::CodePoint | Ty::Byte);
+                if !widening && self.coerce(expected, actual, function).is_err() {
+                    compatible = false;
+                    break;
+                }
+            }
+            if compatible {
+                matches.push((
+                    conversions,
+                    method.clone(),
+                    self.substitutions.clone(),
+                    self.next_variable,
+                ));
+            }
+        }
+        self.substitutions = initial_substitutions;
+        self.next_variable = initial_next_variable;
+        let Some(best_rank) = matches.iter().map(|candidate| candidate.0).min() else {
+            return Err(self.error_at_expression(
+                self.error(
+                    function,
+                    format!("no overload of contract method `{name}` accepts these arguments"),
+                ),
+                function,
+                call,
+                "arguments are incompatible with every contract overload",
+            ));
+        };
+        let best = matches
+            .into_iter()
+            .filter(|candidate| candidate.0 == best_rank)
+            .collect::<Vec<_>>();
+        if best.len() != 1 {
+            return Err(self.error_at_expression(
+                self.error(
+                    function,
+                    format!("call to overloaded contract method `{name}` is ambiguous"),
+                ),
+                function,
+                call,
+                "more than one contract overload is equally specific",
+            ));
+        }
+        let (_, method, substitutions, next_variable) = best.into_iter().next().unwrap();
+        self.substitutions = substitutions;
+        self.next_variable = next_variable;
+        let callable = Ty::Callable {
+            parameters: method.parameters.clone(),
+            parameter_modes: method.parameter_modes.clone(),
+            result: Box::new(method.result.clone()),
+            erased: false,
+            effects: method.effects,
+            suspends: method.suspends,
+        };
+        self.expressions.insert(callee, callable.clone());
+        let dispatch_name = format!(
+            "{name}\u{1f}{}",
+            method
+                .parameters
+                .iter()
+                .zip(&method.parameter_modes)
+                .map(|(parameter, mode)| format!("{mode:?}:{}", self.describe(parameter)))
+                .collect::<Vec<_>>()
+                .join(",")
+        );
+        self.contract_dispatch_names.insert(callee, dispatch_name);
+        self.check_argument_modes(function, &callable, arguments, &argument_types)?;
+        let result = self.fresh();
+        self.unify_call(
+            function,
+            call,
+            callable,
+            arguments,
+            argument_types,
+            result.clone(),
+        )?;
+        Ok(result)
+    }
+
+    fn inherent_method_overloads(
+        &self,
+        caller: FunctionId,
+        receiver: &Ty,
+        name: &str,
+    ) -> Vec<FunctionId> {
+        let receiver = match receiver {
+            Ty::Reference(_, value) => value.as_ref(),
+            receiver => receiver,
+        };
+        let owner = match receiver {
+            Ty::Record(record, _) => Some((
+                self.hir.records[*record].module,
+                self.hir.records[*record].name.as_str(),
+            )),
+            Ty::Variant(variant, _) => Some((
+                self.hir.variant_types[*variant].module,
+                self.hir.variant_types[*variant].name.as_str(),
+            )),
+            Ty::Bool => self
+                .hir
+                .module_named("core.bool")
+                .map(|module| (module, "Bool")),
+            Ty::Int => self
+                .hir
+                .module_named("core.int")
+                .map(|module| (module, "Int")),
+            Ty::Float => self
+                .hir
+                .module_named("core.float")
+                .map(|module| (module, "Float")),
+            Ty::CodePoint => self
+                .hir
+                .module_named("core.code_point")
+                .map(|module| (module, "CodePoint")),
+            Ty::Byte => self
+                .hir
+                .module_named("core.byte")
+                .map(|module| (module, "Byte")),
+            Ty::RawBytes => self
+                .hir
+                .module_named("core.bytes")
+                .map(|module| (module, "RawBytes")),
+            Ty::RawByteBuffer => self
+                .hir
+                .module_named("core.bytes.buffer")
+                .map(|module| (module, "RawByteBuffer")),
+            _ => None,
+        };
+        let Some((module, owner)) = owner else {
+            return Vec::new();
+        };
+        self.hir
+            .functions_named(module, &format!("{owner}.{name}"))
+            .iter()
+            .copied()
+            .filter(|function| {
+                self.hir.functions[*function].receiver.is_some()
+                    && (module == self.hir.functions[caller].module
+                        || self.hir.functions[*function].public)
+            })
+            .collect()
+    }
+
+    fn infer_overloaded_method_call(
+        &mut self,
+        function: FunctionId,
+        call: ExprId,
+        callee: ExprId,
+        arguments: &[ExprId],
+        receiver: Ty,
+        overloads: &[FunctionId],
+    ) -> Result<Ty, FosterError> {
+        let name = self.hir.functions[overloads[0]]
+            .name
+            .rsplit_once('.')
+            .map_or_else(
+                || self.hir.functions[overloads[0]].name.clone(),
+                |(_, name)| name.to_owned(),
+            );
+        let argument_types = arguments
+            .iter()
+            .map(|argument| self.infer_expression(function, *argument))
+            .collect::<Result<Vec<_>, _>>()?;
+        let arity_matches = overloads
+            .iter()
+            .copied()
+            .filter(|candidate| self.functions[candidate].parameters.len() == arguments.len() + 1)
+            .collect::<Vec<_>>();
+        if arity_matches.is_empty() {
+            return Err(self.error_at_expression(
+                self.error(
+                    function,
+                    format!(
+                        "no overload of method `{name}` accepts {} argument(s)",
+                        arguments.len()
+                    ),
+                ),
+                function,
+                call,
+                "argument count does not match any method overload",
+            ));
+        }
+        let initial_substitutions = self.substitutions.clone();
+        let initial_next_variable = self.next_variable;
+        let mut matches = Vec::new();
+        for candidate in arity_matches {
+            self.substitutions = initial_substitutions.clone();
+            self.next_variable = initial_next_variable;
+            let callable = self.type_of_name(ResolvedName::Function(candidate))?;
+            let Ty::Callable {
+                mut parameters,
+                mut parameter_modes,
+                result,
+                erased,
+                effects,
+                suspends,
+            } = callable
+            else {
+                unreachable!("declared methods have callable types")
+            };
+            let expected_receiver = parameters.remove(0);
+            parameter_modes.remove(0);
+            if self
+                .coerce(expected_receiver, receiver.clone(), function)
+                .is_err()
+            {
+                continue;
+            }
+            let mut conversions = 0usize;
+            let mut compatible = true;
+            for (expected, actual) in parameters
+                .iter()
+                .cloned()
+                .zip(argument_types.iter().cloned())
+            {
+                let expected_resolved = self.resolved(expected.clone());
+                let actual_resolved = self.resolved(actual.clone());
+                if expected_resolved != actual_resolved {
+                    conversions += 1;
+                }
+                let widening = expected_resolved == Ty::Int
+                    && matches!(actual_resolved, Ty::CodePoint | Ty::Byte);
+                if !widening && self.coerce(expected, actual, function).is_err() {
+                    compatible = false;
+                    break;
+                }
+            }
+            if compatible {
+                matches.push((
+                    conversions,
+                    candidate,
+                    Ty::Callable {
+                        parameters,
+                        parameter_modes,
+                        result,
+                        erased,
+                        effects,
+                        suspends,
+                    },
+                    self.substitutions.clone(),
+                    self.next_variable,
+                ));
+            }
+        }
+        self.substitutions = initial_substitutions;
+        self.next_variable = initial_next_variable;
+        let Some(best_rank) = matches.iter().map(|candidate| candidate.0).min() else {
+            return Err(self.error_at_expression(
+                self.error(
+                    function,
+                    format!("no overload of method `{name}` accepts these argument types"),
+                ),
+                function,
+                call,
+                "arguments are incompatible with every method overload",
+            ));
+        };
+        let best = matches
+            .into_iter()
+            .filter(|candidate| candidate.0 == best_rank)
+            .collect::<Vec<_>>();
+        if best.len() != 1 {
+            return Err(self.error_at_expression(
+                self.error(
+                    function,
+                    format!("call to overloaded method `{name}` is ambiguous"),
+                ),
+                function,
+                call,
+                "more than one method overload is equally specific",
+            ));
+        }
+        let (_, selected, callable, substitutions, next_variable) =
+            best.into_iter().next().unwrap();
+        self.substitutions = substitutions;
+        self.next_variable = next_variable;
+        self.expressions.insert(callee, callable.clone());
+        self.extension_methods.insert(callee, selected);
+        let callable = instantiate_call_groups(callable, &argument_types);
+        self.check_argument_modes(function, &callable, arguments, &argument_types)?;
+        let result = self.fresh();
+        self.unify_call(
+            function,
+            call,
+            callable,
+            arguments,
+            argument_types,
+            result.clone(),
+        )?;
+        Ok(result)
+    }
+
+    fn infer_overloaded_function_call(
+        &mut self,
+        function: FunctionId,
+        call: ExprId,
+        callee: ExprId,
+        arguments: &[ExprId],
+        name: &str,
+        overloads: &[FunctionId],
+    ) -> Result<Ty, FosterError> {
+        let argument_types = arguments
+            .iter()
+            .map(|argument| self.infer_expression(function, *argument))
+            .collect::<Result<Vec<_>, _>>()?;
+        let arity_matches = overloads
+            .iter()
+            .copied()
+            .filter(|candidate| self.functions[candidate].parameters.len() == arguments.len())
+            .collect::<Vec<_>>();
+        if arity_matches.is_empty() {
+            let mut arities = overloads
+                .iter()
+                .map(|candidate| self.functions[candidate].parameters.len())
+                .collect::<Vec<_>>();
+            arities.sort_unstable();
+            arities.dedup();
+            return Err(self.error_at_expression(
+                self.error(
+                    function,
+                    format!(
+                        "no overload of `{name}` accepts {} argument(s); available arities: {}",
+                        arguments.len(),
+                        arities
+                            .iter()
+                            .map(usize::to_string)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                ),
+                function,
+                call,
+                "argument count does not match any overload",
+            ));
+        }
+
+        let initial_substitutions = self.substitutions.clone();
+        let initial_next_variable = self.next_variable;
+        let mut matches = Vec::new();
+        for candidate in arity_matches {
+            self.substitutions = initial_substitutions.clone();
+            self.next_variable = initial_next_variable;
+            let callable = self.type_of_name(ResolvedName::Function(candidate))?;
+            let Ty::Callable { parameters, .. } = self.resolved(callable.clone()) else {
+                unreachable!("declared functions have callable types")
+            };
+            let mut conversions = 0usize;
+            let mut compatible = true;
+            for (expected, actual) in parameters
+                .iter()
+                .cloned()
+                .zip(argument_types.iter().cloned())
+            {
+                let expected_resolved = self.resolved(expected.clone());
+                let actual_resolved = self.resolved(actual.clone());
+                if expected_resolved != actual_resolved {
+                    conversions += 1;
+                }
+                let widening = expected_resolved == Ty::Int
+                    && matches!(actual_resolved, Ty::CodePoint | Ty::Byte);
+                if !widening && self.coerce(expected, actual, function).is_err() {
+                    compatible = false;
+                    break;
+                }
+            }
+            if compatible {
+                matches.push((
+                    conversions,
+                    candidate,
+                    callable,
+                    self.substitutions.clone(),
+                    self.next_variable,
+                ));
+            }
+        }
+        self.substitutions = initial_substitutions;
+        self.next_variable = initial_next_variable;
+        let Some(best_rank) = matches.iter().map(|candidate| candidate.0).min() else {
+            return Err(self.error_at_expression(
+                self.error(
+                    function,
+                    format!(
+                        "no overload of `{name}` accepts argument types ({})",
+                        argument_types
+                            .iter()
+                            .map(|argument| self.describe(argument))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                ),
+                function,
+                call,
+                "arguments are incompatible with every overload",
+            ));
+        };
+        let best = matches
+            .into_iter()
+            .filter(|candidate| candidate.0 == best_rank)
+            .collect::<Vec<_>>();
+        if best.len() != 1 {
+            return Err(self.error_at_expression(
+                self.error(
+                    function,
+                    format!(
+                        "call to overloaded function `{name}` is ambiguous for argument types ({})",
+                        argument_types
+                            .iter()
+                            .map(|argument| self.describe(argument))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                ),
+                function,
+                call,
+                "more than one overload is equally specific",
+            ));
+        }
+        let (_, selected, callable, substitutions, next_variable) =
+            best.into_iter().next().unwrap();
+        self.substitutions = substitutions;
+        self.next_variable = next_variable;
+        self.expressions.insert(callee, callable.clone());
+        self.resolved_calls.insert(call, selected);
+        let callable = instantiate_call_groups(callable, &argument_types);
+        self.check_argument_modes(function, &callable, arguments, &argument_types)?;
+        let result = self.fresh();
+        self.unify_call(
+            function,
+            call,
+            callable,
             arguments,
             argument_types,
             result.clone(),
@@ -697,61 +1273,10 @@ impl Checker<'_> {
         receiver: Ty,
         name: &str,
     ) -> Result<Option<(FunctionId, Ty)>, FosterError> {
-        let caller_module = self.hir.functions[caller].module;
-        let resolved_receiver = self.resolved(receiver.clone());
-        let inherent_owner = match &resolved_receiver {
-            Ty::Record(record, _) => Some((
-                self.hir.records[*record].module,
-                self.hir.records[*record].name.as_str(),
-            )),
-            Ty::Variant(variant, _) => Some((
-                self.hir.variant_types[*variant].module,
-                self.hir.variant_types[*variant].name.as_str(),
-            )),
-            _ => None,
-        };
-        if let Some((module, owner)) = inherent_owner
-            && self
-                .hir
-                .function_named(module, &format!("{owner}.{name}"))
-                .is_some_and(|function| self.hir.functions[function].receiver.is_some())
-        {
-            return Ok(None);
-        }
-        let inherent_module = inherent_owner.map(|(module, _)| module);
-        let mut candidates = std::iter::once(caller_module)
-            .chain(self.hir.modules[caller_module].imports.values().copied())
-            .filter(|module| Some(*module) != inherent_module)
-            .flat_map(|module| self.hir.modules[module].functions.values().copied())
-            .filter(|function| {
-                let definition = &self.hir.functions[*function];
-                definition.public
-                    && definition.receiver.is_some()
-                    && definition
-                        .name
-                        .rsplit_once('.')
-                        .is_some_and(|(_, member)| member == name)
-                    && self.functions.get(function).is_some_and(|signature| {
-                        signature.parameters.first().is_some_and(|expected| {
-                            receiver_heads_match(
-                                &self.resolved(expected.clone()),
-                                &resolved_receiver,
-                            )
-                        })
-                    })
-            })
-            .collect::<Vec<_>>();
-        candidates.sort_unstable_by_key(|function| function.into_raw().into_u32());
-        candidates.dedup();
+        let candidates = self.extension_method_candidates(caller, receiver.clone(), name)?;
         let Some(method_function) = candidates.first().copied() else {
             return Ok(None);
         };
-        if candidates.len() > 1 {
-            return Err(self.error(
-                caller,
-                format!("extension method `{name}` is imported from more than one module"),
-            ));
-        }
 
         let definition = &self.hir.functions[method_function];
         let signature = self.functions[&method_function].clone();
@@ -781,6 +1306,83 @@ impl Checker<'_> {
                 suspends: definition.suspends,
             },
         )))
+    }
+
+    fn extension_method_candidates(
+        &self,
+        caller: FunctionId,
+        receiver: Ty,
+        name: &str,
+    ) -> Result<Vec<FunctionId>, FosterError> {
+        let caller_module = self.hir.functions[caller].module;
+        let resolved_receiver = self.resolved(receiver);
+        let resolved_receiver = match resolved_receiver {
+            Ty::Reference(_, value) => *value,
+            receiver => receiver,
+        };
+        let inherent_owner = match &resolved_receiver {
+            Ty::Record(record, _) => Some((
+                self.hir.records[*record].module,
+                self.hir.records[*record].name.as_str(),
+            )),
+            Ty::Variant(variant, _) => Some((
+                self.hir.variant_types[*variant].module,
+                self.hir.variant_types[*variant].name.as_str(),
+            )),
+            _ => None,
+        };
+        if let Some((module, owner)) = inherent_owner
+            && self
+                .hir
+                .functions_named(module, &format!("{owner}.{name}"))
+                .iter()
+                .any(|function| self.hir.functions[*function].receiver.is_some())
+        {
+            return Ok(Vec::new());
+        }
+        let inherent_module = inherent_owner.map(|(module, _)| module);
+        let mut candidates = Vec::new();
+        let mut candidate_modules = HashSet::new();
+        for module in std::iter::once(caller_module)
+            .chain(self.hir.modules[caller_module].imports.values().copied())
+            .filter(|module| Some(*module) != inherent_module)
+        {
+            for function in self.hir.modules[module]
+                .function_overloads
+                .values()
+                .flatten()
+                .copied()
+            {
+                let definition = &self.hir.functions[function];
+                if definition.public
+                    && definition.receiver.is_some()
+                    && definition
+                        .name
+                        .rsplit_once('.')
+                        .is_some_and(|(_, member)| member == name)
+                    && self.functions.get(&function).is_some_and(|signature| {
+                        signature.parameters.first().is_some_and(|expected| {
+                            receiver_heads_match(
+                                &self.resolved(expected.clone()),
+                                &resolved_receiver,
+                            )
+                        })
+                    })
+                {
+                    candidates.push(function);
+                    candidate_modules.insert(module);
+                }
+            }
+        }
+        if candidate_modules.len() > 1 {
+            return Err(self.error(
+                caller,
+                format!("extension method `{name}` is imported from more than one module"),
+            ));
+        }
+        candidates.sort_unstable_by_key(|function| function.into_raw().into_u32());
+        candidates.dedup();
+        Ok(candidates)
     }
 
     fn effective_method_type(

@@ -3,6 +3,8 @@
 import core.result
 import core.bytes
 import std.io
+import std.path as paths
+import std.resource
 
 type FsHost = {}
 
@@ -34,6 +36,53 @@ func FsHost.remove_directory(path: String) -> Result<(), IoError> = intrinsic("i
 func FsHost.rename(from: String, to: String) -> Result<(), IoError> = intrinsic("io.rename")
 /// Copies one file and returns the number of bytes copied.
 func FsHost.copy_file(from: String, to: String) -> Result<Int, IoError> = intrinsic("io.copy_file")
+
+/// A located file with whole-resource binary read and write capabilities.
+///
+/// Constructing a `File` does not touch the filesystem. Reads and writes can still fail if the
+/// location is unavailable, unsupported by the host provider, or its permissions change.
+pub type File = & ReadableResource<IoError> & WritableResource<IoError> & {
+    pub location: ResourceLocation
+}
+
+/// Creates a file resource at a location without opening or creating the underlying file.
+pub func File.at(location: ResourceLocation) -> File [consume location] {
+    File { location: move location }
+}
+
+/// Creates a file resource from host path text.
+pub func File.from(path: String) -> File { File { location: paths::Path.from(move path) } }
+
+/// Reads the complete file as immutable bytes.
+pub func File.read(self: File) -> Result<Bytes, IoError> {
+    FsHost.read_bytes(self.location.as_string())
+}
+
+/// Replaces the complete file and returns the number of bytes written.
+pub func File.write(self: File, contents: Bytes) -> Result<Int, IoError> {
+    written_bytes(contents.length, FsHost.write_bytes(self.location.as_string(), contents))
+}
+
+/// Files written through whole-file operations have no pending userspace buffer.
+pub func File.flush(self: File) -> Result<(), IoError> { Result.Ok(()) }
+
+/// Reads the complete file as UTF-8 text.
+pub func File.read_text(self: File) -> Result<String, IoError> {
+    FsHost.read_text(self.location.as_string())
+}
+
+/// Replaces the complete file with UTF-8 text.
+pub func File.write_text(self: File, text: String) -> Result<(), IoError> {
+    FsHost.write_text(self.location.as_string(), text)
+}
+
+/// Converts a successful whole-file write into its byte count.
+func written_bytes(length: Int, outcome: Result<(), IoError>) -> Result<Int, IoError> [consume outcome] {
+    branch move outcome {
+        Result.Error(error) -> Result.Error(error)
+        Result.Ok(_) -> Result.Ok(length)
+    }
+}
 
 /// Reads an entire UTF-8 text file.
 pub func read_text(path: String) -> Result<String, IoError> { FsHost.read_text(path) }

@@ -375,9 +375,8 @@ impl Checker<'_> {
             if !method.public && expected_definition.module != caller_module {
                 continue;
             }
-            let Some(actual_method) =
-                self.structural_method_type(function, &actual, &method.name)?
-            else {
+            let actual_methods = self.structural_method_types(function, &actual, &method.name)?;
+            if actual_methods.is_empty() {
                 return Err(self.error(
                     function,
                     format!(
@@ -387,28 +386,54 @@ impl Checker<'_> {
                         method.name
                     ),
                 ));
-            };
-            let Ty::Callable {
-                parameters,
-                parameter_modes,
-                result,
-                effects,
-                suspends,
-                ..
-            } = self.resolved(actual_method)
-            else {
-                unreachable!("structural method lookup returns a callable")
-            };
+            }
             let mut allowed_effects = method.effects.clone();
             allowed_effects.push(crate::ast::Effect {
                 kind: crate::ast::EffectKind::Read,
                 target: crate::ast::GroupPath::root("self"),
             });
-            if parameters.len() != method.parameters.len()
-                || parameter_modes != method.parameter_modes
-                || !effects_are_subset(&effects, &allowed_effects)
-                || (suspends && !method.suspends)
-            {
+            let initial_substitutions = self.substitutions.clone();
+            let initial_next_variable = self.next_variable;
+            let mut matched = None;
+            for actual_method in actual_methods {
+                self.substitutions = initial_substitutions.clone();
+                self.next_variable = initial_next_variable;
+                let Ty::Callable {
+                    parameters,
+                    parameter_modes,
+                    result,
+                    effects,
+                    suspends,
+                    ..
+                } = self.resolved(actual_method)
+                else {
+                    unreachable!("structural method lookup returns a callable")
+                };
+                if parameters.len() != method.parameters.len()
+                    || parameter_modes != method.parameter_modes
+                    || !effects_are_subset(&effects, &allowed_effects)
+                    || (suspends && !method.suspends)
+                {
+                    continue;
+                }
+                let parameters_match = method
+                    .parameters
+                    .iter()
+                    .cloned()
+                    .zip(parameters)
+                    .all(|(expected, actual)| self.unify(expected, actual, function).is_ok());
+                if parameters_match
+                    && self
+                        .coerce(method.result.clone(), *result, function)
+                        .is_ok()
+                {
+                    matched = Some((self.substitutions.clone(), self.next_variable));
+                    break;
+                }
+            }
+            let Some((substitutions, next_variable)) = matched else {
+                self.substitutions = initial_substitutions;
+                self.next_variable = initial_next_variable;
                 return Err(self.error(
                     function,
                     format!(
@@ -417,11 +442,9 @@ impl Checker<'_> {
                         method.name
                     ),
                 ));
-            }
-            for (expected, actual) in method.parameters.into_iter().zip(parameters) {
-                self.unify(expected, actual, function)?;
-            }
-            self.coerce(method.result, *result, function)?;
+            };
+            self.substitutions = substitutions;
+            self.next_variable = next_variable;
         }
         Ok(())
     }
@@ -478,6 +501,37 @@ impl Checker<'_> {
             }));
         }
         Ok(None)
+    }
+
+    fn structural_method_types(
+        &mut self,
+        function: FunctionId,
+        actual: &Ty,
+        name: &str,
+    ) -> Result<Vec<Ty>, FosterError> {
+        let resolved = self.resolved(actual.clone());
+        if let Ty::Record(record, arguments) = &resolved {
+            let methods = self
+                .effective_record_methods(*record, arguments)?
+                .into_iter()
+                .filter(|method| method.name == name)
+                .map(|method| Ty::Callable {
+                    parameters: method.parameters,
+                    parameter_modes: method.parameter_modes,
+                    result: Box::new(method.result),
+                    erased: false,
+                    effects: method.effects,
+                    suspends: method.suspends,
+                })
+                .collect::<Vec<_>>();
+            if !methods.is_empty() {
+                return Ok(methods);
+            }
+        }
+        Ok(self
+            .structural_method_type(function, &resolved, name)?
+            .into_iter()
+            .collect())
     }
 
     fn builtin_collection_method(&self, actual: &Ty, name: &str) -> Option<Ty> {

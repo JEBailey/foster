@@ -1,0 +1,81 @@
+//! URI resource identities without protocol-specific network access.
+
+import core.result
+import std.resource
+
+/// Describes an invalid URI passed to `Uri.parse`.
+pub type UriError = {
+    pub value: String
+    pub message: String
+}
+
+/// A parsed URI resource location.
+///
+/// `Uri` implements `ResourceLocation` but deliberately provides no resource or I/O capability.
+/// Protocol providers can use it as the location of an appropriate resource implementation.
+pub type Uri = & ResourceLocation & {
+    value: String
+    scheme_value: String
+    path_value: String
+}
+
+/// Parses an absolute URI with a non-empty RFC-style scheme.
+pub func Uri.parse(value: String) -> Result<Uri, UriError> {
+    branch {
+        value.empty? -> invalid_uri(move value, "URI must not be empty")
+        not scheme_start?(value.head) -> invalid_uri(move value, "URI scheme must begin with an ASCII letter")
+        _ -> begin_scheme(move value)
+    }
+}
+
+/// Begins scanning after the already validated first scheme character.
+func begin_scheme(value: String) -> Result<Uri, UriError> [consume value] {
+    let remaining = value.rest
+    parse_scheme(move value, remaining, 1)
+}
+
+/// Builds a URI from an already separated scheme and resource path.
+pub func Uri.from_parts(scheme: String, path: String) -> Result<Uri, UriError> {
+    Uri.parse(scheme + ":" + path)
+}
+
+/// Returns the complete URI text.
+pub func Uri.as_string(self: Uri) -> String { self.value.slice(0, self.value.length) }
+
+/// Returns the scheme spelling supplied to the parser.
+pub func Uri.scheme(self: Uri) -> String { self.scheme_value.slice(0, self.scheme_value.length) }
+
+/// Returns the resource portion following the URI scheme separator.
+pub func Uri.path(self: Uri) -> String { self.path_value.slice(0, self.path_value.length) }
+
+/// Scans the URI scheme until its separator.
+func parse_scheme(value: String, remaining: String, index: Int) -> Result<Uri, UriError> {
+    branch {
+        remaining.empty? -> invalid_uri(move value, "URI must contain a scheme separator")
+        remaining.head == ':' -> parsed_uri(move value, index)
+        scheme_character?(remaining.head) -> parse_scheme(move value, remaining.rest, index + 1)
+        _ -> invalid_uri(move value, "URI scheme contains an invalid character")
+    }
+}
+
+/// Separates validated URI text into its scheme and resource path.
+func parsed_uri(value: String, index: Int) -> Result<Uri, UriError> [consume value] {
+    let scheme_value = value.slice(0, index)
+    let path_value = value.slice(index + 1, value.length)
+    Result.Ok(Uri { value: move value, scheme_value, path_value })
+}
+
+/// Returns whether a code point may begin a URI scheme.
+func scheme_start?(character: CodePoint) -> Bool {
+    (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
+}
+
+/// Returns whether a code point may follow the first URI scheme character.
+func scheme_character?(character: CodePoint) -> Bool {
+    scheme_start?(character) || (character >= '0' && character <= '9') || character == '+' || character == '-' || character == '.'
+}
+
+/// Constructs an invalid-URI result.
+func invalid_uri(value: String, message: String) -> Result<Uri, UriError> {
+    Result.Error(UriError { value, message })
+}

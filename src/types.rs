@@ -55,6 +55,8 @@ pub struct TypeInformation {
     pub expressions: HashMap<ExprId, TypeId>,
     pub integer_promotions: HashSet<ExprId>,
     pub extension_methods: HashMap<ExprId, FunctionId>,
+    pub resolved_calls: HashMap<ExprId, FunctionId>,
+    pub contract_dispatch_names: HashMap<ExprId, String>,
     pub locals: HashMap<LocalId, TypeId>,
     pub functions: HashMap<FunctionId, FunctionType>,
     pub constants: HashMap<ConstantId, TypeId>,
@@ -86,6 +88,47 @@ impl TypeInformation {
 
     pub fn function_type(&self, function: FunctionId) -> Option<&FunctionType> {
         self.functions.get(&function)
+    }
+
+    pub fn method_dispatch_name(&self, function: FunctionId, name: &str) -> Option<String> {
+        let signature = self.function_type(function)?;
+        Some(format!(
+            "{name}\u{1f}{}",
+            signature
+                .parameters
+                .iter()
+                .skip(1)
+                .zip(signature.parameter_modes.iter().skip(1))
+                .map(|(parameter, mode)| format!("{mode:?}:{}", self.display(*parameter)))
+                .collect::<Vec<_>>()
+                .join(",")
+        ))
+    }
+
+    pub fn resolved_function_for_callee(
+        &self,
+        hir: &crate::hir::PackageHir,
+        callee: ExprId,
+    ) -> Option<FunctionId> {
+        if let Some(function) = self.extension_methods.get(&callee) {
+            return Some(*function);
+        }
+        if let Some(function) =
+            hir.expressions
+                .iter()
+                .find_map(|(call, expression)| match expression {
+                    crate::hir::Expr::Call {
+                        callee: candidate, ..
+                    } if *candidate == callee => self.resolved_calls.get(&call).copied(),
+                    _ => None,
+                })
+        {
+            return Some(function);
+        }
+        match hir.expressions[callee] {
+            crate::hir::Expr::Name(crate::hir::ResolvedName::Function(function)) => Some(function),
+            _ => None,
+        }
     }
 
     pub fn display(&self, ty: TypeId) -> String {

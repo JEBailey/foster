@@ -61,6 +61,8 @@ impl Checker<'_> {
         }
         let mut information = TypeInformation {
             extension_methods: self.extension_methods.clone(),
+            resolved_calls: self.resolved_calls.clone(),
+            contract_dispatch_names: self.contract_dispatch_names.clone(),
             integer_promotions: self.integer_promotions.clone(),
             record_names: self
                 .hir

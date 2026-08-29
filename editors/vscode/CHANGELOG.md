@@ -1,5 +1,9 @@
 # Change Log
 
+- Resolve overloaded calls in hover, signature help, and Go to Definition so editor information
+  follows the declaration selected from the call's argument count and types.
+- Navigate and document `ResourceLocation`, typed `Path` and `Uri` locations, and `File` resource
+  capabilities from the bundled Foster standard library.
 - Highlight and complete the `not` keyword alias and the `!`, `&&`, and `||` logical operators.
 - Advance source-language compatibility to version 7 because `not` is now reserved; ownership and
   bytecode compatibility remain unchanged.

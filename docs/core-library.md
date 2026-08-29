@@ -37,6 +37,7 @@ being added accidentally.
 | `core.bytes` | Immutable compact bytes, hexadecimal conversion, and UTF-8 decoding |
 | `core.bytes.buffer` | Mutable growable byte storage |
 | `std.io` | Generic binary/text stream contracts and binary transfer algorithms |
+| `std.resource` | Resource identity and whole-resource readable/writable capability contracts |
 | `std.collections.set` | Insertion-ordered `Set<T>` |
 | `std.collections.queue` | First-in, first-out `Queue<T>` |
 | `std.collections.deque` | Double-ended `Deque<T>` |
@@ -52,17 +53,18 @@ being added accidentally.
 | `core.bool` | Boolean composition and conditional singleton-list construction |
 | `core.int` | Bounds, comparison, sign, parity, ranges, formatting, and integer powers |
 | `core.float` | Bounds, comparison, sign, clamping, and round-trippable formatting |
-| `std.fs` | Typed whole-file I/O, directory creation/removal, copying, moving, listing, and path-kind queries |
-| `std.path` | Platform path composition, inspection, and canonicalization |
+| `std.fs` | `File` resources, typed whole-file I/O, directory operations, copying, moving, and path-kind queries |
+| `std.path` | Typed `Path` values plus compatible string-based platform path operations |
+| `std.uri` | Parsed URI resource locations without implicit protocol I/O |
 | `std.env` | Process environment queries such as the current directory |
 | `std.process` | Typed executable name and command arguments supplied to `main` |
 | `std.toml` | Typed TOML parsing, table lookup, rendering, and source-positioned errors |
 | `std.net.tcp` | Typed TCP listeners and connections |
 
 Primitive `CodePoint` operations are owner-qualified in `core.code_point`. After importing the
-module, `character.as_int()` calls `CodePoint.as_int(self: CodePoint)`, while
-`CodePoint.from(value)` performs checked construction. Go to Definition on a `CodePoint` type
-annotation opens that module even when it has not yet been imported.
+module, `character.as_int()` and `character.as_string()` call the corresponding `CodePoint`
+instance methods, while `CodePoint.from(value)` performs checked construction. Go to Definition on
+a `CodePoint` type annotation opens that module even when it has not yet been imported.
 
 ## Boundary with the runtime
 
@@ -238,10 +240,19 @@ structural contracts. Binary reads return at most the requested number of bytes 
 successful non-empty operations must make progress. `read_all`, `write_all`, and `copy` implement
 the retry and accumulation policy in Foster. `Duplex<E>` is the combined binary contract.
 
+`std.resource` separates location from authority. `ResourceLocation` requires a stable textual
+`as_string()` representation, while `Resource` associates a value with a `ResourceLocation`.
+`ReadableResource<E>`, `WritableResource<E>`, and `ReadWriteResource<E>` describe whole-resource
+binary capabilities. `std.path.Path` and `std.uri.Uri` implement `ResourceLocation`; neither gains
+I/O authority merely by identifying something. `std.fs.File` stores an abstract
+`ResourceLocation` and implements both binary capabilities. Constructing a file does not access
+its provider, so unsupported locations, permission changes, and availability failures remain typed
+`IoError` results at the operation.
+
 `tcp::Connection` implements `Duplex<NetworkError>`. Its `read` and `write` methods are the
 contract operations, while `read_text`, `write_text`, `read_bytes`, and `write_bytes` are explicit
-convenience spellings. Filesystem path functions remain whole-file operations rather than claiming
-to be stateful streams.
+convenience spellings. A `File` is a whole-resource capability rather than a positioned stream;
+the existing string-based filesystem functions remain available during migration to typed paths.
 
 `core.ordering` also defines the structural contracts `Equality<T>`, `Ordered<T>`, and `Hashing`.
 `Ordered<T>` composes equality and returns the existing `Ordering` enum from `compare`.

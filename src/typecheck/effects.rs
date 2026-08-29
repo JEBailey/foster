@@ -524,6 +524,23 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     }
 
     fn call_target(&self, callee: ExprId) -> Option<FunctionId> {
+        if let Some(function) = self.checker.extension_methods.get(&callee) {
+            return Some(*function);
+        }
+        if let Some(function) =
+            self.checker
+                .hir
+                .expressions
+                .iter()
+                .find_map(|(call, expression)| match expression {
+                    hir::Expr::Call {
+                        callee: candidate, ..
+                    } if *candidate == callee => self.checker.resolved_calls.get(&call).copied(),
+                    _ => None,
+                })
+        {
+            return Some(function);
+        }
         match &self.checker.hir.expressions[callee] {
             hir::Expr::Name(ResolvedName::Function(function)) => Some(*function),
             hir::Expr::Member { object, name } => self

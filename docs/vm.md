@@ -66,6 +66,11 @@ Lowering rejects unsupported HIR explicitly; it never interprets an unsupported 
 `Result.Error` edge to the existing return machinery, so it requires no dedicated bytecode
 instruction or format change.
 
+Function and concrete-method overloads are selected during type checking and lower to their exact
+function IDs. A call through a structural contract carries the statically selected method
+signature in its dispatch key, allowing the VM to choose the corresponding implementation on the
+runtime receiver without repeating overload resolution.
+
 Closure frames use a fixed `[captures][parameters][locals/temporaries]` register layout. Copy and
 move captures contain values; reference captures contain weak `PlaceHandle`s that are materialized
 as forwarding slots in the called frame. Reference wrappers are flattened when captured so an

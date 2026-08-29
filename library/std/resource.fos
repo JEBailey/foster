@@ -1,0 +1,47 @@
+//! Resource locations and compile-time read/write capability contracts.
+
+import core.bytes
+import core.result
+
+/// A stable, displayable location that identifies a resource.
+pub type ResourceLocation = {
+    /// Returns the complete textual representation of this location.
+    pub func as_string(self) -> String [read self]
+}
+
+/// A value associated with a resource location through its public `location` field.
+pub type Resource = {
+    pub location: ResourceLocation
+}
+
+/// A resource whose complete binary contents can be read.
+pub type ReadableResource<E> = & Resource & {
+    /// Reads the complete resource contents.
+    pub func read(self) -> Result<Bytes, E> [mut self]
+}
+
+/// A resource whose binary contents can be replaced.
+pub type WritableResource<E> = & Resource & {
+    /// Writes bytes and returns the number accepted.
+    pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
+
+    /// Makes buffered output visible to the resource destination.
+    pub func flush(self) -> Result<(), E> [mut self]
+}
+
+/// A resource supporting both binary reads and writes.
+///
+/// This repeats the combined structural surface because it is itself a contract, rather than a
+/// concrete implementation of `ReadableResource` and `WritableResource`.
+pub type ReadWriteResource<E> = {
+    pub location: ResourceLocation
+
+    /// Reads the complete resource contents.
+    pub func read(self) -> Result<Bytes, E> [mut self]
+
+    /// Writes bytes and returns the number accepted.
+    pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
+
+    /// Makes buffered output visible to the resource destination.
+    pub func flush(self) -> Result<(), E> [mut self]
+}

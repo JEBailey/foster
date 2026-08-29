@@ -56,6 +56,7 @@ pub struct Module {
     pub source_path: Option<camino::Utf8PathBuf>,
     pub imports_with_spans: Vec<ImportBinding>,
     pub functions: BTreeMap<String, FunctionId>,
+    pub function_overloads: BTreeMap<String, Vec<FunctionId>>,
     pub constants: BTreeMap<String, ConstantId>,
     pub records: BTreeMap<String, RecordId>,
     pub variant_types: BTreeMap<String, VariantTypeId>,

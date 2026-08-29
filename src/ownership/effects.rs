@@ -1,4 +1,4 @@
-use crate::hir::{self, ExprId, Projection, ResolvedName};
+use crate::hir::{self, ExprId, Projection};
 use crate::types::TypeInformation;
 
 use super::InvalidationKind;
@@ -19,10 +19,7 @@ pub(crate) fn call_invalidations(
         hir::Expr::Member { object, .. } => Some(object),
         _ => None,
     };
-    let function = match hir.expressions[callee] {
-        hir::Expr::Name(ResolvedName::Function(function)) => Some(function),
-        _ => types.extension_methods.get(&callee).copied(),
-    };
+    let function = types.resolved_function_for_callee(hir, callee);
 
     signature
         .effects

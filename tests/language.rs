@@ -3049,3 +3049,121 @@ fn runs_the_generic_recursive_linked_list_example() {
         );
     }
 }
+
+#[test]
+fn resource_locations_do_not_implicitly_gain_read_capability() {
+    let source = r#"
+import core.result
+import std.resource
+import std.uri
+
+func require_readable(value: ReadableResource<UriError>) { () }
+
+func inspect(outcome: Result<Uri, UriError>) [consume outcome] {
+    branch move outcome {
+        Result.Error(_) -> ()
+        Result.Ok(value) -> require_readable(value)
+    }
+}
+
+func main() {
+    inspect(Uri.parse("https://example.com/resource"))
+}
+"#;
+
+    let error = foster::compile(source).unwrap_err();
+    assert!(
+        error.message.contains("ReadableResource") || error.message.contains("method `read`"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn functions_overload_by_arity_and_parameter_type() {
+    let source = r#"
+import core.code_point
+
+func render(value: Int) -> String { "int" }
+func render(value: CodePoint) -> String { "code point" }
+func render(left: Int, right: Int) -> String { "pair" }
+
+func main() -> String {
+    render(42) + ":" + render('x') + ":" + render(20, 22)
+}
+"#;
+
+    assert_string(foster::run(source).unwrap(), "int:code point:pair");
+}
+
+#[test]
+fn overloads_reject_duplicate_parameters_and_ambiguous_conversions() {
+    let duplicate = r#"
+func parse(value: String) -> Int { 0 }
+func parse(value: String) -> Float { 0.0 }
+func main() -> Int { parse("42") }
+"#;
+    let error = foster::compile(duplicate).unwrap_err();
+    assert!(
+        error.message.contains("same parameter signature"),
+        "{}",
+        error.message
+    );
+
+    let ambiguous = r#"
+func choose(left: Int, right: CodePoint) -> Int { 1 }
+func choose(left: CodePoint, right: Int) -> Int { 2 }
+func main() -> Int { choose('a', 'b') }
+"#;
+    let error = foster::compile(ambiguous).unwrap_err();
+    assert!(error.message.contains("ambiguous"), "{}", error.message);
+}
+
+#[test]
+fn instance_methods_overload_by_arity_and_parameter_type() {
+    let source = r#"
+type Formatter = {}
+
+func Formatter.render(self: Formatter, value: Int) -> String { "int" }
+func Formatter.render(self: Formatter, value: CodePoint) -> String { "code point" }
+func Formatter.render(self: Formatter, left: Int, right: Int) -> String { "pair" }
+
+func main() -> String {
+    let formatter = Formatter {}
+    formatter.render(42) + ":" + formatter.render('x') + ":" + formatter.render(20, 22)
+}
+
+"#;
+
+    assert_string(foster::run(source).unwrap(), "int:code point:pair");
+}
+
+#[test]
+fn contract_methods_merge_identical_requirements_and_dispatch_overloads() {
+    let source = r#"
+type IntegerRenderer = {
+    pub func render(self, value: Int) -> String [read self]
+}
+
+type CodePointRenderer = {
+    pub func render(self, value: CodePoint) -> String [read self]
+}
+
+type Renderer = & IntegerRenderer & CodePointRenderer & {
+    pub func render(self, value: Int) -> String [read self]
+}
+
+type Formatter = & Renderer & {}
+
+func Formatter.render(self: Formatter, value: Int) -> String { "int" }
+func Formatter.render(self: Formatter, value: CodePoint) -> String { "code point" }
+
+func render(value: Renderer) -> String {
+    value.render(42) + ":" + value.render('x')
+}
+
+func main() -> String { render(Formatter {}) }
+"#;
+
+    assert_string(foster::run(source).unwrap(), "int:code point");
+}

@@ -24,13 +24,8 @@ fn protected_slots(program: &Program) -> HashMap<crate::hir::FunctionId, HashSet
                 }
             }
         }
+        protect_reference_origins(function, protected.entry(*caller).or_default());
         for instruction in &function.instructions {
-            if let Instruction::MakeReference { object, .. }
-            | Instruction::MakeFieldReference { object, .. } = instruction
-            {
-                // PlaceHandle is weak; retain its origin slot for this frame.
-                protected.entry(*caller).or_default().insert(*object);
-            }
             match instruction {
                 Instruction::MakeClosure {
                     function: target,
@@ -69,6 +64,22 @@ fn protected_slots(program: &Program) -> HashMap<crate::hir::FunctionId, HashSet
         }
     }
     protected
+}
+
+fn protect_reference_origins(function: &BytecodeFunction, protected: &mut HashSet<Register>) {
+    for instruction in &function.instructions {
+        if let Instruction::MakeReference { object, .. }
+        | Instruction::MakeFieldReference { object, .. }
+        | Instruction::LoadField {
+            object,
+            by_reference: true,
+            ..
+        } = instruction
+        {
+            // PlaceHandle is weak; retain its origin slot for this frame.
+            protected.insert(*object);
+        }
+    }
 }
 
 fn insert_function(function: &mut BytecodeFunction, protected: HashSet<Register>) {
@@ -266,5 +277,37 @@ mod tests {
                 .count(),
             2
         );
+    }
+
+    #[test]
+    fn retains_the_origin_of_a_field_loaded_by_reference() {
+        let mut function = BytecodeFunction {
+            name: "field receiver".to_owned(),
+            parameters: 1,
+            parameter_modes: vec![crate::ast::ParameterMode::Borrow],
+            mutable_parameters: vec![false],
+            captures: 0,
+            registers: 2,
+            instructions: vec![
+                Instruction::LoadField {
+                    destination: Register(1),
+                    object: Register(0),
+                    field: "location".to_owned(),
+                    by_reference: true,
+                },
+                Instruction::Return {
+                    source: Register(1),
+                },
+            ],
+            instruction_spans: vec![0..1; 2],
+        };
+
+        let mut protected = HashSet::new();
+        protect_reference_origins(&function, &mut protected);
+        insert_function(&mut function, protected);
+
+        assert!(!function.instructions.iter().any(
+            |instruction| matches!(instruction, Instruction::Drop { register } if *register == Register(0))
+        ));
     }
 }

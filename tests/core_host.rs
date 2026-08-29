@@ -35,7 +35,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 534);
+    assert_eq!(checked, 563);
 
     let mut modules = 0;
     let mut types = 0;
@@ -628,6 +628,111 @@ func main() -> String {
     assert_string(
         foster::run(source).unwrap(),
         expected.to_string_lossy().as_ref(),
+    );
+}
+
+#[test]
+fn typed_files_implement_resource_read_and_write_capabilities() {
+    let directory = std::env::temp_dir().join(format!(
+        "foster-resource-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("resource.bin");
+    let path_literal = serde_json::to_string(&path.to_string_lossy()).unwrap();
+    let source = format!(
+        r#"
+import core.bytes
+import core.int
+import core.result
+import std.fs
+import std.io
+import std.path as paths
+import std.resource
+
+func location_text(value: ResourceLocation) -> String {{ value.as_string() }}
+
+func resource_location_text(value: Resource) -> String {{ value.location.as_string() }}
+
+func read_write_location_text(value: ReadWriteResource<IoError>) -> String {{ value.location.as_string() }}
+
+func replace(value: WritableResource<IoError>, contents: Bytes) -> Result<Int, IoError> [mut value] {{
+    value.write(contents)
+}}
+
+func load(value: ReadableResource<IoError>) -> Result<Bytes, IoError> [mut value] {{
+    value.read()
+}}
+
+func render(file: File, outcome: Result<Int, IoError>) -> String [mut file, consume outcome] {{
+    branch move outcome {{
+        Result.Error(error) -> error.message
+        Result.Ok(written) -> branch load(file) {{
+            Result.Error(error) -> error.message
+            Result.Ok(contents) -> location_text(file.location) + ":" + resource_location_text(file) + ":" + read_write_location_text(file) + ":" + written.as_string() + ":" + contents.hex()
+        }}
+    }}
+}}
+
+func main() -> String {{
+    let path = paths::Path.from({path_literal})
+    let file = File.at(move path)
+    let contents = branch Bytes.from_hex("00ff41") {{
+        Result.Error(_) -> Bytes.empty()
+        Result.Ok(value) -> value
+    }}
+    render(file, replace(file, contents))
+}}
+"#
+    );
+
+    let expected = format!(
+        "{}:{}:{}:3:00ff41",
+        path.to_string_lossy(),
+        path.to_string_lossy(),
+        path.to_string_lossy()
+    );
+    assert_string(foster::run(&source).unwrap(), &expected);
+    assert_eq!(std::fs::read(&path).unwrap(), [0, 255, 65]);
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
+fn uri_is_a_parsed_resource_location_without_implicit_io() {
+    let source = r#"
+import core.result
+import std.fs
+import std.resource
+import std.uri
+
+func render(outcome: Result<Uri, UriError>) -> String [consume outcome] {
+    branch move outcome {
+        Result.Error(error) -> error.message
+        Result.Ok(value) -> {
+            let file = File.at(move value)
+            file.location.as_string()
+        }
+    }
+}
+
+func main() -> String {
+    render(Uri.parse("https://example.com/assets/data.bin"))
+}
+"#;
+
+    assert_string(
+        foster::run(source).unwrap(),
+        "https://example.com/assets/data.bin",
+    );
+
+    let invalid = source.replace(
+        "https://example.com/assets/data.bin",
+        "1https://example.com",
+    );
+    assert_string(
+        foster::run(&invalid).unwrap(),
+        "URI scheme must begin with an ASCII letter",
     );
 }
 

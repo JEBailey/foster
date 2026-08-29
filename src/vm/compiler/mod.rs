@@ -105,6 +105,34 @@ pub fn compile_with_options(
                     .insert((record, method_name(name).to_owned()), *function);
             }
         }
+        for (function, function_definition) in compilation
+            .hir
+            .functions
+            .iter()
+            .filter(|(_, function)| function.module == definition.module)
+        {
+            let receiver_matches = compilation
+                .types
+                .function_type(function)
+                .and_then(|signature| signature.parameters.first())
+                .is_some_and(|ty| {
+                    matches!(
+                        compilation.types.types[*ty],
+                        crate::types::Type::Record { record: receiver, .. }
+                            if receiver == record
+                    )
+                });
+            if receiver_matches && function_definition.receiver.is_some() {
+                let name = method_name(&function_definition.name);
+                if let Some(dispatch_name) = compilation.types.method_dispatch_name(function, name)
+                {
+                    compiler
+                        .program
+                        .methods
+                        .insert((record, dispatch_name), function);
+                }
+            }
+        }
     }
     for (variant, definition) in compilation.hir.variant_types.iter() {
         if definition.kind != crate::ast::VariantKind::Enum {
@@ -126,6 +154,33 @@ pub fn compile_with_options(
                     .program
                     .variant_methods
                     .insert((variant, method_name(name).to_owned()), *function);
+            }
+        }
+        for (function, function_definition) in compilation
+            .hir
+            .functions
+            .iter()
+            .filter(|(_, function)| function.module == definition.module)
+        {
+            let receiver_matches = compilation
+                .types
+                .function_type(function)
+                .and_then(|signature| signature.parameters.first())
+                .is_some_and(|ty| {
+                    matches!(
+                        compilation.types.types[*ty],
+                        crate::types::Type::Variant { variant: receiver, .. } if receiver == variant
+                    )
+                });
+            if receiver_matches && function_definition.receiver.is_some() {
+                let name = method_name(&function_definition.name);
+                if let Some(dispatch_name) = compilation.types.method_dispatch_name(function, name)
+                {
+                    compiler
+                        .program
+                        .variant_methods
+                        .insert((variant, dispatch_name), function);
+                }
             }
         }
     }

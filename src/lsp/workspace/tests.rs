@@ -254,6 +254,69 @@ func main() -> Int {
 }
 
 #[test]
+fn string_method_hover_publishes_library_documentation() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = "import core.string\n\nfunc main() -> String {\n    \"hello\".slice(1, 4)\n}\n";
+    workspace.open(uri.clone(), source.into(), 1);
+    workspace
+        .compile_for(&uri)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+
+    let hover = workspace
+        .hover(&TextDocumentPositionParams::new(
+            lsp_types::TextDocumentIdentifier::new(uri),
+            Position::new(3, 14),
+        ))
+        .unwrap();
+    let HoverContents::Markup(hover) = hover.contents else {
+        panic!("expected markdown hover")
+    };
+    assert!(
+        hover
+            .value
+            .contains("func String.slice(self: String, start: Int, end: Int) -> String"),
+        "{}",
+        hover.value
+    );
+    assert!(
+        hover
+            .value
+            .contains("Returns the code points in the half-open range"),
+        "{}",
+        hover.value
+    );
+}
+
+#[test]
+fn method_hover_survives_an_error_in_another_function() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let valid = "import core.string\n\nfunc broken() -> Int { 0 }\n\nfunc main() -> String {\n    \"hello\".slice(1, 4)\n}\n";
+    workspace.open(uri.clone(), valid.into(), 1);
+    workspace.compile_for(&uri).unwrap();
+
+    let invalid = "import core.string\n\nfunc broken() -> Int {\n    \"wrong\"\n}\n\nfunc main() -> String {\n    \"hello\".slice(1, 4)\n}\n";
+    workspace.change(uri.clone(), invalid.into(), 2);
+    assert!(workspace.compile_for(&uri).is_err());
+
+    let hover = workspace
+        .hover(&TextDocumentPositionParams::new(
+            lsp_types::TextDocumentIdentifier::new(uri),
+            Position::new(7, 14),
+        ))
+        .unwrap();
+    let HoverContents::Markup(hover) = hover.contents else {
+        panic!("expected markdown hover")
+    };
+    assert!(
+        hover
+            .value
+            .contains("Returns the code points in the half-open range"),
+        "{}",
+        hover.value
+    );
+}
+
+#[test]
 fn completion_uses_scope_and_import_visibility() {
     let (workspace, uri, _) = fixture_workspace();
     let response = workspace
@@ -960,6 +1023,52 @@ fn compilation_cache_preserves_unrelated_snapshots_on_change() {
     assert!(std::rc::Rc::ptr_eq(&second, &unaffected));
 
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn overload_calls_hover_navigate_and_show_the_selected_signature() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = r#"func select(value: Int) -> Int { value }
+func select(text: String) -> String { text }
+
+func main() -> String {
+    select("chosen")
+}
+"#;
+    workspace.open(uri.clone(), source.into(), 1);
+    let position = TextDocumentPositionParams::new(
+        lsp_types::TextDocumentIdentifier::new(uri.clone()),
+        Position::new(4, 7),
+    );
+    let hover = workspace.hover(&position).unwrap();
+    let HoverContents::Markup(hover) = hover.contents else {
+        panic!("expected markdown hover")
+    };
+    assert!(
+        hover
+            .value
+            .contains("select(text: consume String) -> String"),
+        "{}",
+        hover.value
+    );
+
+    let definition = workspace.definition(&position).unwrap();
+    assert_eq!(definition.range.start.line, 1);
+
+    let help = workspace
+        .signature_help(&SignatureHelpParams {
+            context: None,
+            text_document_position_params: TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri),
+                Position::new(4, 19),
+            ),
+            work_done_progress_params: Default::default(),
+        })
+        .unwrap();
+    assert_eq!(
+        help.signatures[0].label,
+        "func select(text: consume String) -> String"
+    );
 }
 
 #[test]

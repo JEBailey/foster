@@ -794,6 +794,7 @@ impl Package {
                 continue;
             };
             let mut definitions = HashSet::new();
+            let mut function_names = HashSet::new();
             for record in &program.records {
                 if record.intrinsic
                     && !matches!(
@@ -865,12 +866,16 @@ impl Package {
                         function.name
                     )));
                 }
-                if !definitions.insert(function.name.as_str()) {
+                if definitions.contains(function.name.as_str())
+                    && !function_names.contains(function.name.as_str())
+                {
                     return Err(FosterError::runtime(format!(
                         "module `{}` defines `{}` more than once",
                         module.name, function.name
                     )));
                 }
+                definitions.insert(function.name.as_str());
+                function_names.insert(function.name.as_str());
             }
             let mut aliases = HashSet::new();
             for import in &program.imports {
@@ -941,6 +946,7 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
     ("core.byte", include_str!("../library/core/byte.fos")),
     ("core.bytes", include_str!("../library/core/bytes.fos")),
     ("std.io", include_str!("../library/std/io.fos")),
+    ("std.resource", include_str!("../library/std/resource.fos")),
     (
         "core.bytes.buffer",
         include_str!("../library/core/bytes/buffer.fos"),
@@ -1002,6 +1008,7 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
     ("core.range", include_str!("../library/core/range.fos")),
     ("std.fs", include_str!("../library/std/fs.fos")),
     ("std.path", include_str!("../library/std/path.fos")),
+    ("std.uri", include_str!("../library/std/uri.fos")),
     ("std.env", include_str!("../library/std/env.fos")),
     ("std.process", include_str!("../library/std/process.fos")),
     ("std.toml", include_str!("../library/std/toml.fos")),

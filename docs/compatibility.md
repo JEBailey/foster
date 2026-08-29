@@ -106,3 +106,25 @@ methods. Migrate calls such as `list::map(values, transform)`, `option::unwrap_o
 operations and algorithms over structural contracts remain module functions, including
 `toml::parse`, `sequence::map`, `io::copy`, filesystem operations, and path operations. This is a
 source-library migration and does not change the language, ownership-model, or bytecode versions.
+
+## Function and method overloads
+
+Foster accepts functions, associated functions, instance methods, and contract requirements with
+the same name when their parameter signatures differ. This is additive and therefore does not
+advance the source-language version. Existing duplicate declarations remain errors: return types,
+ownership modes, effects, and suspension do not distinguish overloads.
+
+Calls resolve by argument count and compatible parameter types. Exact matches are preferred over
+matches requiring a lossless conversion; equally ranked matches are rejected as ambiguous.
+Overloaded declarations require explicit parameter types, and an overload set cannot be used as a
+bare function value because no arguments are available to select one declaration. Contract
+composition merges identical requirements and preserves distinct parameter signatures for dynamic
+dispatch. The ownership-model and bytecode format versions remain unchanged.
+
+## Resource-location library API
+
+The pre-1.0 standard library separates resource identity from authority. `std.resource` defines
+the structural `ResourceLocation`, `Resource`, `ReadableResource<E>`, `WritableResource<E>`, and
+`ReadWriteResource<E>` contracts. `Path` and `Uri` are locations only; `File` stores an abstract
+`ResourceLocation` and supplies whole-resource read and write capabilities. This additive library
+API does not change the language, ownership-model, or bytecode versions.

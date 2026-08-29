@@ -8,6 +8,7 @@ impl PackageHir {
     pub fn lower(package: &Package) -> Result<Self, FosterError> {
         let mut hir = Self::default();
         let mut test_functions = HashMap::<(ModuleId, usize), FunctionId>::new();
+        let mut source_functions = HashMap::<(ModuleId, usize), FunctionId>::new();
 
         for name in package.modules.keys() {
             let id = hir.modules.alloc(Module {
@@ -19,6 +20,7 @@ impl PackageHir {
                 source_path: package.modules[name].source_path.clone(),
                 imports_with_spans: Vec::new(),
                 functions: BTreeMap::new(),
+                function_overloads: BTreeMap::new(),
                 constants: BTreeMap::new(),
                 records: BTreeMap::new(),
                 variant_types: BTreeMap::new(),
@@ -156,9 +158,13 @@ impl PackageHir {
                     }
                 }
                 for method in &source_record.methods {
-                    if !fields.insert(method.name.as_str()) {
+                    if source_record
+                        .fields
+                        .iter()
+                        .any(|field| field.name == method.name)
+                    {
                         return Err(FosterError::runtime(format!(
-                            "type `{}` declares member `{}` more than once",
+                            "type `{}` declares field and method `{}` with the same name",
                             source_record.name, method.name
                         )));
                     }
@@ -202,7 +208,7 @@ impl PackageHir {
                     .records
                     .insert(source_record.name.clone(), record);
             }
-            for source_function in &program.functions {
+            for (index, source_function) in program.functions.iter().enumerate() {
                 if hir.modules[module]
                     .records
                     .contains_key(&source_function.name)
@@ -248,7 +254,14 @@ impl PackageHir {
                 });
                 hir.modules[module]
                     .functions
-                    .insert(source_function.name.clone(), function);
+                    .entry(source_function.name.clone())
+                    .or_insert(function);
+                hir.modules[module]
+                    .function_overloads
+                    .entry(source_function.name.clone())
+                    .or_default()
+                    .push(function);
+                source_functions.insert((module, index), function);
             }
             let mut descriptions = std::collections::HashSet::new();
             for (index, test) in program.tests.iter().enumerate() {
@@ -315,8 +328,8 @@ impl PackageHir {
                 hir.constants[constant].value =
                     lower_constant_value(&hir, module, &imports, &source.value)?;
             }
-            for source_function in &program.functions {
-                let function = hir.modules[module].functions[&source_function.name];
+            for (index, source_function) in program.functions.iter().enumerate() {
+                let function = source_functions[&(module, index)];
                 let mut lowerer = FunctionLowerer {
                     hir: &mut hir,
                     module,
@@ -373,6 +386,14 @@ impl PackageHir {
 
     pub fn function_named(&self, module: ModuleId, name: &str) -> Option<FunctionId> {
         self.modules[module].functions.get(name).copied()
+    }
+
+    pub fn functions_named(&self, module: ModuleId, name: &str) -> &[FunctionId] {
+        self.modules[module]
+            .function_overloads
+            .get(name)
+            .map(Vec::as_slice)
+            .unwrap_or(&[])
     }
 
     pub fn constant_named(&self, module: ModuleId, name: &str) -> Option<ConstantId> {

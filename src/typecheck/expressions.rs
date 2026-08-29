@@ -357,6 +357,24 @@ impl Checker<'_> {
                 }
                 self.list_type(element)
             }
+            hir::Expr::Name(ResolvedName::Function(function_id))
+                if self
+                    .hir
+                    .functions_named(
+                        self.hir.functions[function_id].module,
+                        &self.hir.functions[function_id].name,
+                    )
+                    .len()
+                    > 1 =>
+            {
+                return Err(self.error(
+                    function,
+                    format!(
+                        "overloaded function `{}` requires a call whose arguments select one overload",
+                        self.hir.functions[function_id].name
+                    ),
+                ));
+            }
             hir::Expr::Name(name) => self.type_of_name(name)?,
             hir::Expr::Call { callee, arguments } => {
                 self.infer_call(function, expression_id, callee, &arguments)?

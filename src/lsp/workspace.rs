@@ -279,18 +279,32 @@ impl Workspace {
         let compilation = self.semantic_compilation_for(&params.text_document.uri)?;
         let module_id = module_for_uri(&compilation, &params.text_document.uri)?;
         let module = &compilation.hir.modules[module_id];
-        let source = compilation
+        let semantic_source = compilation
             .package
             .module(&module.name)?
             .source
             .as_deref()?;
-        let offset = position_to_offset(source, params.position)?;
-        let (name, start) = identifier_at(source, offset)?;
-        let range = byte_range_to_lsp(source, start..start + name.len());
-        let qualifier = qualifier_before(source, start);
+        let current_source = self
+            .documents
+            .get(&params.text_document.uri)
+            .map_or(semantic_source, |document| document.text.as_str());
+        let current_offset = position_to_offset(current_source, params.position)?;
+        let (name, start) = identifier_at(current_source, current_offset)?;
+        let range = byte_range_to_lsp(current_source, start..start + name.len());
+        let qualifier = qualifier_before(current_source, start);
+        let semantic_offset = if current_source == semantic_source {
+            current_offset
+        } else {
+            super::hints::semantic_offset_for_unchanged_function(
+                &compilation,
+                &params.text_document.uri,
+                current_source,
+                current_offset,
+            )?
+        };
 
         let value = if qualifier.is_none()
-            && let Some(function_id) = function_at(&compilation, module_id, offset)
+            && let Some(function_id) = function_at(&compilation, module_id, semantic_offset)
             && let Some((local_id, _)) = compilation
                 .hir
                 .locals
@@ -299,7 +313,8 @@ impl Workspace {
         {
             let ty = compilation.types.local_type(local_id)?;
             documented_hover(format!("{}: {}", name, compilation.types.display(ty)), None)
-        } else if let Some(symbol) = symbol_at(&compilation, module_id, source, offset)
+        } else if let Some(symbol) =
+            symbol_at(&compilation, module_id, semantic_source, semantic_offset)
             && let Some(value) = symbol_hover(&compilation, symbol)
         {
             value
@@ -604,11 +619,25 @@ fn symbol_at(
     let module = &compilation.hir.modules[module_id];
     let qualifier = qualifier_before(source, start);
     if let Some(expression) = expression_at(compilation, module_id, offset) {
+        if let crate::hir::Expr::Call { callee, .. } = compilation.hir.expressions[expression]
+            && let Some(function) = compilation
+                .types
+                .resolved_calls
+                .get(&expression)
+                .copied()
+                .or_else(|| selected_function_for_callee(compilation, callee))
+        {
+            return Some(SymbolIdentity::Function(function));
+        }
+        let selected_function = selected_function_for_callee(compilation, expression);
         match &compilation.hir.expressions[expression] {
             crate::hir::Expr::Member {
                 object,
                 name: member,
             } if member == name => {
+                if let Some(function) = selected_function {
+                    return Some(SymbolIdentity::Function(function));
+                }
                 if let Some(function) = member_function(compilation, *object, member) {
                     return Some(SymbolIdentity::Function(function));
                 }
@@ -624,7 +653,9 @@ fn symbol_at(
                     return Some(SymbolIdentity::Constant(constant));
                 }
                 crate::hir::ResolvedName::Function(function) => {
-                    return Some(SymbolIdentity::Function(function));
+                    return Some(SymbolIdentity::Function(
+                        selected_function.unwrap_or(function),
+                    ));
                 }
                 crate::hir::ResolvedName::Record(record) => {
                     return Some(SymbolIdentity::Record(record));
@@ -708,11 +739,13 @@ fn symbol_hover(compilation: &crate::hir::Compilation, symbol: SymbolIdentity) -
                 )
             })
         }
-        SymbolIdentity::Function(function) => declaration_hover(
-            compilation,
-            compilation.hir.functions[function].module,
-            &compilation.hir.functions[function].name,
-        ),
+        SymbolIdentity::Function(function) => {
+            let definition = &compilation.hir.functions[function];
+            Some(documented_hover(
+                function_signature(compilation, function, false),
+                definition.documentation.as_deref(),
+            ))
+        }
         SymbolIdentity::Record(record) => {
             let definition = &compilation.hir.records[record];
             Some(documented_hover(
@@ -1207,9 +1240,14 @@ pub(super) fn callable_presentation(
     callee: crate::hir::ExprId,
 ) -> Option<CallablePresentation> {
     let (function, receiver) = match &compilation.hir.expressions[callee] {
-        crate::hir::Expr::Name(crate::hir::ResolvedName::Function(function)) => (*function, false),
+        crate::hir::Expr::Name(crate::hir::ResolvedName::Function(function)) => (
+            selected_function_for_callee(compilation, callee).unwrap_or(*function),
+            false,
+        ),
         crate::hir::Expr::Member { object, name } => {
-            if let Some(function) = member_function(compilation, *object, name) {
+            if let Some(function) = selected_function_for_callee(compilation, callee) {
+                (function, true)
+            } else if let Some(function) = member_function(compilation, *object, name) {
                 (function, true)
             } else {
                 let (record, method_index) = required_method(compilation, *object, name)?;
@@ -1257,6 +1295,15 @@ pub(super) fn callable_presentation(
         documentation: definition.documentation.clone(),
         definition: symbol_declaration(compilation, SymbolIdentity::Function(function)),
     })
+}
+
+fn selected_function_for_callee(
+    compilation: &crate::hir::Compilation,
+    callee: crate::hir::ExprId,
+) -> Option<crate::hir::FunctionId> {
+    compilation
+        .types
+        .resolved_function_for_callee(&compilation.hir, callee)
 }
 
 fn member_function(

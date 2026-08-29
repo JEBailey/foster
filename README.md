@@ -121,7 +121,9 @@ The current implementation includes:
 - `Bool`, `Int`, binary64 `Float`, `String`, `CodePoint`, `Symbol`, `()`, homogeneous `List<T>`,
   and zero-conversion `Sequence<T>` views, with lossless `Byte` and `CodePoint` widening to `Int`
   when an assignment, argument, field, branch, or result expects `Int`;
-- generic records, associated factories, instance methods, private-by-default declarations,
+- generic records, associated factories, and arity- and parameter-type-based function/method
+  overloads, with exact matches preferred over lossless widening and ambiguous calls rejected;
+- instance methods, private-by-default declarations,
   untagged union contracts, and tagged enums with exhaustive pattern branches;
 - statically checked structural record adaptation, declaration-side composition such as
   `type Text = & Sequence<CodePoint> & { ... }`, and intersection contracts such as
@@ -131,7 +133,8 @@ The current implementation includes:
 - inferred or explicit `read`, `mut`, `reshape`, `consume`, and `suspend` effects;
 - remote objects, virtual threads, FIFO method messages, futures, `await`, transferred messages,
   call-scoped borrowed messages, and persistent remote read loans;
-- explicit core-library imports, typed filesystem APIs, and typed TCP connections;
+- explicit core-library imports, structural resource locations and read/write capabilities, typed
+  filesystem APIs, parsed URI locations, and typed TCP connections;
 - line, nested block, and Markdown module (`//!`) and declaration (`///`, `/** ... */`) documentation comments;
 - a package-aware LSP and VS Code extension;
 - first-class `test "description" { ... }` declarations with a package-aware test runner;
@@ -255,8 +258,9 @@ qualifier. Modules are public; declarations and record fields are private unless
 ## Standard library
 
 Foster has no prelude. Programs explicitly import embedded Foster-written modules such as
-`core.functions`, `core.option`, `std.iter`, `core.result`, `std.sequence`, `core.list`, `std.collections.map`, `std.fs`, and
-`std.path`, `std.env`, `std.toml`, and `std.net.tcp`. The TOML 1.1 parser, validator, table builder,
+`core.functions`, `core.option`, `std.iter`, `core.result`, `std.sequence`, `core.list`,
+`std.collections.map`, `std.resource`, `std.fs`, `std.path`, `std.uri`, `std.env`, `std.toml`, and
+`std.net.tcp`. Resource capabilities, URI parsing, the TOML 1.1 parser, validator, table builder,
 and renderer are Foster code; only general scalar conversion and host-dependent filesystem and
 socket operations cross the VM boundary. See
 [the standard library reference](docs/core-library.md).

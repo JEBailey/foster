@@ -123,15 +123,13 @@ impl Checker<'_> {
         methods: &mut Vec<EffectiveMethod>,
         incoming: EffectiveMethod,
     ) -> Result<(), FosterError> {
-        let Some(existing) = methods
-            .iter_mut()
-            .find(|method| method.name == incoming.name)
-        else {
+        let Some(existing) = methods.iter_mut().find(|method| {
+            method.name == incoming.name && method.parameters == incoming.parameters
+        }) else {
             methods.push(incoming);
             return Ok(());
         };
-        if existing.parameters != incoming.parameters
-            || existing.parameter_modes != incoming.parameter_modes
+        if existing.parameter_modes != incoming.parameter_modes
             || existing.result != incoming.result
             || existing.effects != incoming.effects
             || existing.suspends != incoming.suspends
@@ -153,7 +151,14 @@ impl Checker<'_> {
     ) -> Result<(), FosterError> {
         let definition = self.hir.variant_types[owner].clone();
         let qualified_name = format!("{}.{name}", definition.name, name = required.name);
-        let Some(function) = self.hir.function_named(definition.module, &qualified_name) else {
+        let Some(function) = self.matching_method_implementation(
+            definition.module,
+            &qualified_name,
+            Ty::Variant(owner, arguments.to_vec()),
+            &required.parameters,
+            &required.parameter_modes,
+        )?
+        else {
             return Err(FosterError::runtime(format!(
                 "type `{}` is missing required method `{}`",
                 definition.name, required.name
@@ -538,7 +543,14 @@ impl Checker<'_> {
     ) -> Result<(), FosterError> {
         let definition = self.hir.records[owner].clone();
         let qualified_name = format!("{}.{name}", definition.name, name = required.name);
-        let Some(function) = self.hir.function_named(definition.module, &qualified_name) else {
+        let Some(function) = self.matching_method_implementation(
+            definition.module,
+            &qualified_name,
+            Ty::Record(owner, arguments.to_vec()),
+            &required.parameters,
+            &required.parameter_modes,
+        )?
+        else {
             return Err(FosterError::runtime(format!(
                 "type `{}` is missing required method `{}`",
                 definition.name, required.name
@@ -669,15 +681,13 @@ impl Checker<'_> {
         methods: &mut Vec<EffectiveMethod>,
         incoming: EffectiveMethod,
     ) -> Result<(), FosterError> {
-        let Some(existing) = methods
-            .iter_mut()
-            .find(|method| method.name == incoming.name)
-        else {
+        let Some(existing) = methods.iter_mut().find(|method| {
+            method.name == incoming.name && method.parameters == incoming.parameters
+        }) else {
             methods.push(incoming);
             return Ok(());
         };
-        let compatible = existing.parameters == incoming.parameters
-            && existing.parameter_modes == incoming.parameter_modes
+        let compatible = existing.parameter_modes == incoming.parameter_modes
             && existing.result == incoming.result
             && existing.effects == incoming.effects
             && existing.suspends == incoming.suspends;
@@ -690,6 +700,55 @@ impl Checker<'_> {
         existing.public |= incoming.public;
         existing.required_by_composition |= incoming.required_by_composition;
         Ok(())
+    }
+
+    fn matching_method_implementation(
+        &mut self,
+        module: crate::hir::ModuleId,
+        qualified_name: &str,
+        receiver: Ty,
+        required_parameters: &[Ty],
+        required_modes: &[crate::ast::ParameterMode],
+    ) -> Result<Option<FunctionId>, FosterError> {
+        let initial_substitutions = self.substitutions.clone();
+        let initial_next_variable = self.next_variable;
+        let mut found = Vec::new();
+        for function in self.hir.functions_named(module, qualified_name) {
+            let signature = self.functions[function].clone();
+            if self.hir.functions[*function].receiver.is_none()
+                || signature.parameters.len() != required_parameters.len() + 1
+                || signature.parameter_modes[1..] != *required_modes
+            {
+                continue;
+            }
+            self.substitutions = initial_substitutions.clone();
+            self.next_variable = initial_next_variable;
+            let compatible_receiver = self
+                .unify(receiver.clone(), signature.parameters[0].clone(), *function)
+                .is_ok();
+            let compatible_parameters = compatible_receiver
+                && required_parameters
+                    .iter()
+                    .cloned()
+                    .zip(signature.parameters.iter().skip(1).cloned())
+                    .all(|(expected, actual)| self.unify(expected, actual, *function).is_ok());
+            if compatible_parameters {
+                found.push((*function, self.substitutions.clone(), self.next_variable));
+            }
+        }
+        self.substitutions = initial_substitutions;
+        self.next_variable = initial_next_variable;
+        match found.as_slice() {
+            [] => Ok(None),
+            [(function, substitutions, next_variable)] => {
+                self.substitutions = substitutions.clone();
+                self.next_variable = *next_variable;
+                Ok(Some(*function))
+            }
+            _ => Err(FosterError::runtime(format!(
+                "method implementation `{qualified_name}` is ambiguous"
+            ))),
+        }
     }
 
     fn enter_composition(

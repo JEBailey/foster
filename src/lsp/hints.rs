@@ -199,6 +199,32 @@ fn unchanged_function_mapping(
     })
 }
 
+/// Maps an offset in the current document back into a function from the last-good semantic
+/// snapshot when that function's complete source text is unchanged.
+pub(super) fn semantic_offset_for_unchanged_function(
+    compilation: &Compilation,
+    uri: &lsp_types::Uri,
+    current_source: &str,
+    current_offset: usize,
+) -> Option<usize> {
+    let module_id = module_for_uri(compilation, uri)?;
+    let module = &compilation.hir.modules[module_id];
+    let source_module = compilation.package.module(&module.name)?;
+    let semantic_source = source_module.source.as_deref()?;
+    let program = source_module.program.as_ref()?;
+
+    program
+        .functions
+        .iter()
+        .map(|function| &function.span)
+        .chain(program.tests.iter().map(|test| &test.span))
+        .filter_map(|span| unchanged_function_mapping(semantic_source, current_source, span))
+        .find(|mapping| {
+            mapping.current.start <= current_offset && current_offset <= mapping.current.end
+        })
+        .map(|mapping| mapping.semantic.start + current_offset - mapping.current.start)
+}
+
 fn remap_hint_locations(
     hint: &mut InlayHint,
     uri: &lsp_types::Uri,

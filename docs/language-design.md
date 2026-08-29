@@ -113,6 +113,29 @@ func double(value: Int) -> Int {
 }
 ```
 
+### Function and method overloads
+
+Functions, associated functions, and instance methods may share a name when their parameter
+signatures differ. Every parameter of an overloaded declaration must have an explicit type.
+Resolution first filters by argument count and then by compatible parameter types:
+
+```foster
+func render(value: Int) -> String { "integer" }
+func render(value: CodePoint) -> String { "code point" }
+func render(left: Int, right: Int) -> String { "pair" }
+```
+
+An exact parameter match is preferred over a match requiring conversion, so `render('x')` selects
+the `CodePoint` overload rather than widening the argument to `Int`. If equally specific candidates
+remain, the call is ambiguous and compilation fails. Return types, ownership/effect declarations,
+and suspension do not distinguish overloads; declarations that differ only in those properties are
+duplicate parameter signatures. Referring to an overload set without calling it is also ambiguous.
+
+Contract composition merges repeated method requirements with identical complete signatures.
+Requirements with the same name but different parameter signatures remain overloads. The call's
+arguments select a signature statically, and contract dispatch invokes that signature on the
+concrete receiver at runtime.
+
 ### Command entry arguments
 
 An executable entry may remain `func main()`, or take exactly one command-argument record from
@@ -227,15 +250,16 @@ enum Option<T> = Some(T)
 string to a sequence parameter retains the original runtime value and ownership. Its common
 members are `empty?`, `length`, `head`, and `rest`. For strings, `head` returns a `CodePoint` and
 `rest` remains a `String` when accessed directly; through a `Sequence<CodePoint>` parameter,
-`rest` has sequence type. A code point exposes `.string` and `.whitespace?`. `CodePoint` is a
+`rest` has sequence type. A code point has the primitive `.whitespace?` query. Importing
+`core.code_point` adds the public `.as_string()` and `.as_int()` methods. `CodePoint` is a
 bounded integer-like primitive: it widens losslessly where `Int` is expected, integer arithmetic
 and comparisons promote its Unicode scalar value, and arithmetic produces `Int`. This permits
 direct arguments and results such as `func ordinal(character: Int) -> Int { character }` called as
 `ordinal('A')`, as well as expressions such as `'9' - '0'` and `character < 32`. Conversion from an
 arbitrary `Int` remains checked because surrogate values and values above `0x10FFFF` are not Unicode
 scalar values. The `core.code_point` module attaches owner-qualified operations to the primitive,
-making imported operations available through calls such as `character.as_int()` and checked
-construction available through `CodePoint.from(value)`.
+making imported operations available through calls such as `character.as_int()` and
+`character.as_string()`, with checked construction available through `CodePoint.from(value)`.
 The bootstrap compiler supplies the `String` and `List<T>` conformances. A type definition begins
 after `=`, and each composed contract is aligned with `&` on the right-hand side:
 
@@ -726,10 +750,26 @@ explicit move through `(move buffer).freeze()`. `buffer.snapshot()` is the copyi
 Strings never convert to bytes implicitly: `.utf8` encodes, and `String.from_utf8` performs checked
 decoding.
 
+## Resource identity and capabilities
+
+Resource location is separate from permission and I/O implementation. `std.resource` defines a
+structural `ResourceLocation` contract with `as_string()` and a `Resource` contract containing a
+`location: ResourceLocation` field. Whole-resource capabilities are represented by
+`ReadableResource<E>`, `WritableResource<E>`, and `ReadWriteResource<E>` rather than Boolean flags,
+so a function can state its requirement in its parameter type and the compiler rejects a resource
+that cannot provide it.
+
+`std.path.Path` and `std.uri.Uri` compose with `ResourceLocation`. Structural adaptation retains
+the concrete value, so calling `as_string()` through the contract dispatches to the original path
+or URI implementation without a wrapper or allocation. `std.fs.File` stores an abstract
+`ResourceLocation` and conforms to both readable and writable resource contracts. Construction is
+side-effect free; each operation can still return `IoError` because a provider may not support the
+location or its permissions and availability may change. A URI remains only a location until a
+protocol provider places it in a resource with the appropriate capability.
+
 ## Stream contracts
 
-Stream behavior is expressed with generic structural contracts rather than a common resource base
-class:
+Stateful, positioned stream behavior remains expressed with generic structural contracts:
 
 ```foster
 pub type Reader<E> = {
@@ -941,9 +981,11 @@ one another when name and signature resolution can settle the cycle.
 
 ## Filesystem and network access
 
-`std.fs` exposes typed UTF-8 file and directory operations. `std.path` provides platform path
-operations, and `std.env` provides process environment queries. Fallible operations return
-`Result<..., IoError>`, using the shared error type from `std.io`.
+`std.fs` exposes `File` resources along with compatible string-based UTF-8, binary, and directory
+operations. `std.path` provides typed `Path` values and platform path operations; `std.uri` provides
+parsed URI identities without performing network I/O; and `std.env` provides process environment
+queries. Fallible filesystem operations return `Result<..., IoError>`, using the shared error type
+from `std.io`.
 `std.net.tcp` exposes opaque listeners and connections with typed `NetworkError` results. Their
 public records and wrappers are Foster code; private VM intrinsics perform the host operations.
 
