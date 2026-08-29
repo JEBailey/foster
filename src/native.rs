@@ -1111,6 +1111,7 @@ fn instruction_name(instruction: &Instruction) -> &'static str {
         Instruction::StoreField { .. } => "StoreField",
         Instruction::StoreIndex { .. } => "StoreIndex",
         Instruction::MakeReference { .. } => "MakeReference",
+        Instruction::MakeWholeReference { .. } => "MakeWholeReference",
         Instruction::MakeFieldReference { .. } => "MakeFieldReference",
         Instruction::MoveOut { .. } => "MoveOut",
         Instruction::Push { .. } => "Push",

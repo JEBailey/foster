@@ -399,7 +399,16 @@ impl FunctionCompiler<'_> {
             }
             hir::Expr::Reference(place) => {
                 let Some(place) = crate::hir::queries::expression_place(self.hir, *place) else {
-                    return Err(self.unsupported("reference to a non-place expression"));
+                    let object = self.expression(*place)?;
+                    let destination = self.allocate();
+                    self.emit(
+                        Instruction::MakeWholeReference {
+                            destination,
+                            object,
+                        },
+                        span,
+                    );
+                    return Ok(destination);
                 };
                 let mut object = self.locals[&place.root];
                 for projection in place.projections {

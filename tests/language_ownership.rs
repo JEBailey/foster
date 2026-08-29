@@ -1327,17 +1327,15 @@ func main() -> Int {
     assert_eq!(
         before_return
             .contents
-            .get(&foster::hir::Place {
-                root: selected,
-                projections: Vec::new(),
-            })
+            .get(&foster::ownership::Place::local(selected))
             .unwrap(),
         &std::collections::HashSet::from([foster::ownership::LoanId(0)])
     );
-    assert!(!before_return.contents.contains_key(&foster::hir::Place {
-        root: description,
-        projections: Vec::new(),
-    }));
+    assert!(
+        !before_return
+            .contents
+            .contains_key(&foster::ownership::Place::local(description))
+    );
 }
 
 #[test]
@@ -1539,12 +1537,12 @@ func main() -> Int {
         !before_return
             .contents
             .keys()
-            .any(|place| place.root == saved)
+            .any(|place| place.root == foster::ownership::PlaceRoot::Local(saved))
     );
     let moved_loans = before_return
         .contents
         .iter()
-        .filter(|(place, _)| place.root == moved)
+        .filter(|(place, _)| place.root == foster::ownership::PlaceRoot::Local(moved))
         .flat_map(|(_, loans)| loans)
         .copied()
         .collect::<std::collections::HashSet<_>>();
@@ -1600,6 +1598,90 @@ func main() -> Int {
 }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+}
+
+#[test]
+fn list_aggregate_provenance_distinguishes_constant_indices() {
+    let source = r#"
+func main() -> Int {
+    let left = [10]
+    let right = [20]
+    let left_value = ref left[0]
+    let right_value = ref right[0]
+    let left_callback = [ref left_value] () -> left_value
+    let right_callback = [ref right_value] () -> right_value
+    let callbacks = [(move left_callback), (move right_callback)]
+    left.push(30)
+    callbacks[1]()
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(20));
+}
+
+#[test]
+fn dynamic_list_projection_conservatively_reads_every_element_provenance() {
+    let source = r#"
+func main() -> Int {
+    let left = [10]
+    let right = [20]
+    let left_value = ref left[0]
+    let right_value = ref right[0]
+    let left_callback = [ref left_value] () -> left_value
+    let right_callback = [ref right_value] () -> right_value
+    let callbacks = [(move left_callback), (move right_callback)]
+    let index = 1
+    left.push(30)
+    callbacks[index]()
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+    assert!(error.message.contains("closure `callbacks`"), "{error:?}");
+}
+
+#[test]
+fn nested_branch_results_preserve_aggregate_provenance() {
+    let source = r#"
+type Callback = { call: func() -> Int }
+
+func main() -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    let callback = Callback {
+        call: branch {
+            true -> [ref selected] () -> selected
+            _ -> [ref selected] () -> selected
+        }
+    }
+    values.push(20)
+    callback.call()
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+    assert!(error.message.contains("closure `callback`"), "{error:?}");
+}
+
+#[test]
+fn variant_pattern_bindings_inherit_payload_provenance() {
+    let source = r#"
+enum Wrapped = Callback(func() -> Int)
+
+func main() -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    let wrapped = Wrapped.Callback([ref selected] () -> selected)
+    branch wrapped {
+        Wrapped.Callback(callback) -> {
+            values.push(20)
+            callback()
+        }
+    }
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+    assert!(error.message.contains("closure `callback`"), "{error:?}");
 }
 
 #[test]
@@ -1808,4 +1890,312 @@ func main() -> Int {
 }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+}
+
+#[test]
+fn ownership_mir_materializes_borrowed_expression_temporaries() {
+    let source = r#"
+func invoke(callback: func() -> Int) -> Int { callback() }
+
+func main() -> Int {
+    let value = 42
+    invoke([ref value] () -> value)
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let main = compilation.hir.function_named(module, "main").unwrap();
+    let operations = compilation.ownership.functions[&main]
+        .blocks
+        .iter()
+        .flat_map(|block| &block.operations)
+        .collect::<Vec<_>>();
+    let temporary = operations.iter().find_map(|operation| match operation {
+        foster::ownership::Operation::Initialize { place, .. }
+            if matches!(place.root, foster::ownership::PlaceRoot::Temporary(_)) =>
+        {
+            Some(place.clone())
+        }
+        _ => None,
+    });
+    let temporary = temporary.expect("borrowed closure argument should be materialized");
+    assert!(operations.iter().any(|operation| matches!(
+        operation,
+        foster::ownership::Operation::StoreBorrower { destination, .. }
+            if *destination == temporary
+    )));
+    assert!(operations.iter().any(|operation| matches!(
+        operation,
+        foster::ownership::Operation::Use {
+            place,
+            mode: foster::ownership::UseMode::Borrow,
+            ..
+        } if *place == temporary
+    )));
+    assert!(operations.iter().any(|operation| matches!(
+        operation,
+        foster::ownership::Operation::Destroy { place, .. } if *place == temporary
+    )));
+}
+
+#[test]
+fn temporary_borrow_remains_live_through_its_call() {
+    let source = r#"
+func observe[value: group Int](item: ref[value] Int) -> Int { item }
+func make() -> Int { 42 }
+
+func main() -> Int {
+    observe(ref (make()))
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let main = compilation.hir.function_named(module, "main").unwrap();
+    let operations = compilation.ownership.functions[&main]
+        .blocks
+        .iter()
+        .flat_map(|block| &block.operations)
+        .collect::<Vec<_>>();
+    let initialized = operations
+        .iter()
+        .filter_map(|operation| match operation {
+            foster::ownership::Operation::Initialize { place, .. }
+                if matches!(place.root, foster::ownership::PlaceRoot::Temporary(_)) =>
+            {
+                Some(place.root)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let destroyed = operations
+        .iter()
+        .filter_map(|operation| match operation {
+            foster::ownership::Operation::Destroy { place, .. }
+                if matches!(place.root, foster::ownership::PlaceRoot::Temporary(_)) =>
+            {
+                Some(place.root)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(initialized.len(), 2);
+    assert_eq!(
+        destroyed,
+        initialized.iter().rev().copied().collect::<Vec<_>>()
+    );
+    for optimize in [false, true] {
+        assert_eq!(
+            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),
+            Value::Integer(42)
+        );
+    }
+}
+
+#[test]
+fn expression_temporaries_are_destroyed_on_try_return_paths() {
+    let source = r#"
+import core.result
+
+func combine[value: group Int](item: ref[value] Int, other: Int) -> Int { other }
+func make() -> Int { 42 }
+func operation() -> Result<Int, String> { Result.Error("stop") }
+
+func checked() -> Result<Int, String> {
+    Result.Ok(combine(ref (make()), try operation()))
+}
+
+func main() -> Int { 0 }
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let checked = compilation.hir.function_named(module, "checked").unwrap();
+    let returned_with_temporary_cleanup = compilation.ownership.functions[&checked]
+        .blocks
+        .iter()
+        .filter(|block| {
+            matches!(block.terminator, foster::ownership::Terminator::Return)
+                && block.operations.iter().any(|operation| {
+                    matches!(
+                        operation,
+                        foster::ownership::Operation::Destroy {
+                            place: foster::ownership::Place {
+                                root: foster::ownership::PlaceRoot::Temporary(_),
+                                ..
+                            },
+                            ..
+                        }
+                    )
+                })
+        })
+        .count();
+    assert_eq!(returned_with_temporary_cleanup, 2);
+}
+
+#[test]
+fn expression_temporaries_are_destroyed_on_loop_transfer_paths() {
+    let source = r#"
+func combine[value: group Int](item: ref[value] Int, other: Int) -> Int { other }
+func make() -> Int { 42 }
+
+func transfer() -> Int {
+    loop {
+        combine(ref (make()), branch {
+            _ -> {
+                break
+                0
+            }
+        })
+    }
+    0
+}
+
+func main() -> Int { transfer() }
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let transfer = compilation.hir.function_named(module, "transfer").unwrap();
+    let function = &compilation.ownership.functions[&transfer];
+    assert!(function.blocks.iter().enumerate().any(|(index, block)| {
+        compilation.ownership.provenance[&transfer].points[index].is_some()
+            && matches!(block.terminator, foster::ownership::Terminator::Goto(_))
+            && block.operations.iter().any(|operation| {
+                matches!(
+                    operation,
+                    foster::ownership::Operation::Destroy {
+                        place: foster::ownership::Place {
+                            root: foster::ownership::PlaceRoot::Temporary(_),
+                            ..
+                        },
+                        ..
+                    }
+                )
+            })
+    }));
+}
+
+#[test]
+fn rejects_a_borrow_that_escapes_its_expression_temporary() {
+    let source = r#"
+func keep[value: group Int](item: ref[value] Int) -> ref[value] Int { ref item }
+func make() -> Int { 42 }
+
+func main() -> Int {
+    let item = keep(ref (make()))
+    println(item)
+    0
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(
+        error.code.as_deref(),
+        Some(foster::ownership::diagnostics::INVALIDATED_LOAN),
+        "{error:?}"
+    );
+    assert!(error.message.contains("temporary"), "{}", error.message);
+
+    let returned = r#"
+func make() -> Int { 42 }
+func escape() { ref (make()) }
+func main() -> Int { 0 }
+"#;
+    let error = foster::compile(returned).unwrap_err();
+    assert_eq!(
+        error.code.as_deref(),
+        Some(foster::ownership::diagnostics::BORROW_ESCAPE),
+        "{error:?}"
+    );
+    assert!(error.message.contains("temporary"), "{error:?}");
+}
+
+#[test]
+fn assertion_failure_has_an_explicit_reverse_cleanup_path() {
+    let source = r#"
+func decide(callback: func() -> Bool) -> Bool { callback() }
+
+func main() -> Int {
+    let owned = "still owned"
+    assert(decide(() -> false), owned)
+    0
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let main = compilation.hir.function_named(module, "main").unwrap();
+    let owned = compilation
+        .hir
+        .locals
+        .iter()
+        .find_map(|(local, definition)| {
+            (definition.function == main && definition.name == "owned").then_some(local)
+        })
+        .unwrap();
+    let function = &compilation.ownership.functions[&main];
+    let failure = function
+        .blocks
+        .iter()
+        .find(|block| matches!(block.terminator, foster::ownership::Terminator::Fail))
+        .expect("assert should have a failure cleanup block");
+    let destroyed = failure
+        .operations
+        .iter()
+        .filter_map(|operation| match operation {
+            foster::ownership::Operation::Destroy { place, .. } => Some(place.root),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        destroyed.first(),
+        Some(foster::ownership::PlaceRoot::Temporary(_))
+    ));
+    assert_eq!(
+        destroyed.last(),
+        Some(&foster::ownership::PlaceRoot::Local(owned))
+    );
+
+    for optimize in [false, true] {
+        let error =
+            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap_err();
+        assert!(error.message.contains("assertion failed"), "{error:?}");
+    }
+}
+
+#[test]
+fn function_cleanup_destroys_owned_but_not_borrowed_parameters() {
+    let source = r#"
+func consume_value(value: String) -> Int [consume value] { value.length }
+func inspect(value: String) -> Int { value.length }
+func main() -> Int { consume_value("owned") + inspect("borrowed") }
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let consumed = compilation
+        .hir
+        .function_named(module, "consume_value")
+        .unwrap();
+    let inspected = compilation.hir.function_named(module, "inspect").unwrap();
+    let consumed_parameter = compilation.hir.functions[consumed].parameters[0];
+    let inspected_parameter = compilation.hir.functions[inspected].parameters[0];
+    assert!(
+        compilation.ownership.functions[&consumed]
+            .blocks
+            .iter()
+            .flat_map(|block| &block.operations)
+            .any(|operation| matches!(
+                operation,
+                foster::ownership::Operation::Destroy { place, .. }
+                    if place.root == foster::ownership::PlaceRoot::Local(consumed_parameter)
+            ))
+    );
+    assert!(
+        !compilation.ownership.functions[&inspected]
+            .blocks
+            .iter()
+            .flat_map(|block| &block.operations)
+            .any(|operation| matches!(
+                operation,
+                foster::ownership::Operation::Destroy { place, .. }
+                    if place.root == foster::ownership::PlaceRoot::Local(inspected_parameter)
+            ))
+    );
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(13));
 }

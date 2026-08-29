@@ -34,63 +34,6 @@ pub(crate) fn expression_place(hir: &PackageHir, expression: ExprId) -> Option<P
     }
 }
 
-pub(crate) fn place_contains(parent: &Place, child: &Place) -> bool {
-    parent.root == child.root
-        && parent.projections.len() <= child.projections.len()
-        && parent
-            .projections
-            .iter()
-            .zip(&child.projections)
-            .all(|(left, right)| projections_equal(left, right))
-}
-
-pub(crate) fn places_overlap(left: &Place, right: &Place) -> bool {
-    if left.root != right.root {
-        return false;
-    }
-    for (left, right) in left.projections.iter().zip(&right.projections) {
-        match (left, right) {
-            (Projection::Field(left), Projection::Field(right)) if left != right => return false,
-            (
-                Projection::Index {
-                    constant: Some(left),
-                    ..
-                },
-                Projection::Index {
-                    constant: Some(right),
-                    ..
-                },
-            ) if left != right => return false,
-            (Projection::Field(_), Projection::Field(_))
-            | (Projection::Index { .. }, Projection::Index { .. })
-            | (Projection::Dereference, Projection::Dereference) => {}
-            _ => return true,
-        }
-    }
-    true
-}
-
-fn projections_equal(left: &Projection, right: &Projection) -> bool {
-    match (left, right) {
-        (Projection::Field(left), Projection::Field(right)) => left == right,
-        (
-            Projection::Index {
-                expression: left_expression,
-                constant: left_constant,
-            },
-            Projection::Index {
-                expression: right_expression,
-                constant: right_constant,
-            },
-        ) => match (left_constant, right_constant) {
-            (Some(left), Some(right)) => left == right,
-            _ => left_expression == right_expression,
-        },
-        (Projection::Dereference, Projection::Dereference) => true,
-        _ => false,
-    }
-}
-
 pub(crate) fn type_exposes_group(ty: Option<&ast::TypeExpr>, group: &str) -> bool {
     match ty {
         Some(ast::TypeExpr::Unit) => false,

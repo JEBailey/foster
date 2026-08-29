@@ -5,13 +5,13 @@ use crate::error::FosterError;
 use crate::hir::{LocalId, PackageHir};
 use crate::types::TypeInformation;
 
-use super::{Function, Operation, Program, UseMode};
+use super::{Function, Operation, Place, PlaceRoot, Program, UseMode};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct State {
-    initialized: HashSet<LocalId>,
-    moved: HashMap<crate::hir::Place, Range<usize>>,
-    last_move: HashMap<LocalId, Range<usize>>,
+    initialized: HashSet<PlaceRoot>,
+    moved: HashMap<Place, Range<usize>>,
+    last_move: HashMap<PlaceRoot, Range<usize>>,
 }
 
 pub(super) fn check(
@@ -47,41 +47,48 @@ fn check_function(
             match operation {
                 Operation::Use { place, mode, span } => {
                     if !place_is_usable(&state, place) {
-                        let local = &hir.locals[place.root];
                         let definition = &hir.functions[function];
+                        let (name, declared_at) = match place.root {
+                            PlaceRoot::Local(local) => (
+                                hir.locals[local].name.clone(),
+                                hir.locals[local].span.clone(),
+                            ),
+                            PlaceRoot::Temporary(temporary) => {
+                                (format!("temporary#{}", temporary.0), span.clone())
+                            }
+                        };
                         let mut error = FosterError::runtime(format!(
                             "in `{}.{}`: value `{}` is used after it was moved or before it was initialized",
                             hir.modules[definition.module].name,
                             definition.name,
-                            local.name
+                            name
                         ))
                         .with_code(super::diagnostics::USE_AFTER_MOVE)
                         .with_source_module(hir.modules[definition.module].name.clone())
-                        .with_primary_label(span.clone(), format!("`{}` is not usable here", local.name))
-                        .with_label(local.span.clone(), "value is declared here");
+                        .with_primary_label(span.clone(), format!("`{name}` is not usable here"))
+                        .with_label(declared_at, "value is created here");
                         if let Some(moved_at) = move_origin(&state, place) {
                             error = error
                                 .with_label(moved_at, "ownership was moved from this place")
                                 .with_help(format!(
                                     "borrow `{}` instead, or move it only after its final use",
-                                    local.name
+                                    name
                                 ));
                         } else {
                             error = error.with_help(format!(
                                 "initialize `{}` on every control-flow path before using it",
-                                local.name
+                                name
                             ));
                         }
                         return Err(error);
                     }
                     if *mode == UseMode::Move {
-                        if hir.functions[function].parameters.contains(&place.root)
-                            && !parameter_can_be_consumed(hir, types, function, place.root)
-                            && types
-                                .local_type(place.root)
-                                .is_none_or(|ty| !types.is_copy(ty))
+                        if let Some(local) = place.local_root()
+                            && hir.functions[function].parameters.contains(&local)
+                            && !parameter_can_be_consumed(hir, types, function, local)
+                            && types.local_type(local).is_none_or(|ty| !types.is_copy(ty))
                         {
-                            let name = &hir.locals[place.root].name;
+                            let name = &hir.locals[local].name;
                             return Err(FosterError::runtime(format!(
                                 "in `{}.{}`: borrowed parameter `{name}` is consumed; add `consume {name}` to the function contract",
                                 hir.modules[hir.functions[function].module].name,
@@ -90,7 +97,7 @@ fn check_function(
                             .with_code(super::diagnostics::BORROWED_PARAMETER_CONSUMED)
                             .with_source_module(hir.modules[hir.functions[function].module].name.clone())
                             .with_primary_label(span.clone(), format!("ownership of borrowed parameter `{name}` is taken here"))
-                            .with_label(hir.locals[place.root].span.clone(), "this parameter borrows by default")
+                            .with_label(hir.locals[local].span.clone(), "this parameter borrows by default")
                             .with_help(format!("add `consume {name}` to the function contract and pass existing values with `move`")));
                         }
                         if place.projections.is_empty() {
@@ -102,16 +109,20 @@ fn check_function(
                         }
                     }
                 }
-                Operation::Initialize { local, .. } => {
-                    state.initialized.insert(*local);
-                    state.moved.retain(|place, _| place.root != *local);
-                    state.last_move.remove(local);
+                Operation::Initialize { place, .. } => {
+                    state.initialized.insert(place.root);
+                    state.moved.retain(|moved, _| moved.root != place.root);
+                    state.last_move.remove(&place.root);
                 }
                 Operation::StoreBorrower { .. }
                 | Operation::ReturnBorrower { .. }
                 | Operation::Invalidate { .. }
-                | Operation::Suspend { .. }
-                | Operation::Destroy { .. } => {}
+                | Operation::Suspend { .. } => {}
+                Operation::Destroy { place, .. } => {
+                    state.initialized.remove(&place.root);
+                    state.moved.retain(|moved, _| moved.root != place.root);
+                    state.last_move.remove(&place.root);
+                }
             }
         }
 
@@ -186,12 +197,12 @@ fn parameter_can_be_consumed(
     })
 }
 
-fn place_is_usable(state: &State, place: &crate::hir::Place) -> bool {
+fn place_is_usable(state: &State, place: &Place) -> bool {
     state.initialized.contains(&place.root)
         && !state.moved.keys().any(|moved| places_overlap(moved, place))
 }
 
-fn move_origin(state: &State, place: &crate::hir::Place) -> Option<Range<usize>> {
+fn move_origin(state: &State, place: &Place) -> Option<Range<usize>> {
     if !state.initialized.contains(&place.root) {
         return state.last_move.get(&place.root).cloned();
     }
@@ -202,6 +213,6 @@ fn move_origin(state: &State, place: &crate::hir::Place) -> Option<Range<usize>>
         .map(|(_, span)| span.clone())
 }
 
-fn places_overlap(moved: &crate::hir::Place, used: &crate::hir::Place) -> bool {
-    crate::hir::queries::places_overlap(moved, used)
+fn places_overlap(moved: &Place, used: &Place) -> bool {
+    super::mir::places_overlap(moved, used)
 }

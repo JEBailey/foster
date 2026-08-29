@@ -10,7 +10,6 @@ after the compiler, runtime, and tests agree on their behavior.
 The immediate priority is to make the ownership, group, effect, and structural-contract model more
 general without weakening its current guarantees.
 
-- Track richer place provenance through nested fields and aggregates.
 - Make loan states more precise across control-flow joins.
 - Generalize interprocedural `reshape` metadata and projected-reference invalidation.
 - Define method-level generic requirements and default contract implementations.

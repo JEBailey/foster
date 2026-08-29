@@ -20,6 +20,31 @@ fn round_trips_and_executes_compiled_program() {
 }
 
 #[test]
+fn round_trips_a_reference_to_an_expression_temporary() {
+    let source = r#"
+func observe[value: group Int](item: ref[value] Int) -> Int { item }
+func make() -> Int { 42 }
+func main() -> Int { observe(ref (make())) }
+"#;
+    let compilation = crate::compile(source).unwrap();
+    let program = compile(&compilation).unwrap();
+    assert!(program.functions.values().any(|function| {
+        function.instructions.iter().any(|instruction| {
+            matches!(
+                instruction,
+                crate::vm::Instruction::MakeWholeReference { .. }
+            )
+        })
+    }));
+    let decoded = decode_program(&encode_program(&program).unwrap()).unwrap();
+    assert_eq!(program, decoded);
+    assert_eq!(
+        Machine::new(&decoded).run_main().unwrap(),
+        crate::vm::Value::Integer(42)
+    );
+}
+
+#[test]
 fn rejects_invalid_envelopes() {
     assert!(decode_program(b"not bytecode").is_err());
     let compilation = crate::compile("func main() -> Int { 42 }").unwrap();

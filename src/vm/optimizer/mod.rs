@@ -62,6 +62,7 @@ fn optimization_barrier(function: &super::BytecodeFunction) -> bool {
                 Instruction::StoreField { .. }
                     | Instruction::StoreIndex { .. }
                     | Instruction::MakeReference { .. }
+                    | Instruction::MakeWholeReference { .. }
                     | Instruction::MakeFieldReference { .. }
                     | Instruction::MoveOut { .. }
                     | Instruction::Push { .. }

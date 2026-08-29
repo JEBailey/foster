@@ -5,11 +5,17 @@ regression tests. Verification is layered so that a failure identifies which ass
 
 ## Place reasoning
 
-All move and loan checks use the canonical place relations in `src/hir/queries.rs`. Named sibling
-fields are disjoint. Integer-literal indices retain their constant key, so different constant
-indices are disjoint; equal constants overlap even when they came from different expressions.
-Dynamic indices conservatively overlap every index. Dereference and mixed projection shapes remain
-conservative.
+All move and loan checks use the canonical ownership-place relations in `src/ownership/mir.rs`.
+Ownership places distinguish named locals from expression temporaries while sharing HIR projection
+metadata. Named sibling fields are disjoint. Integer-literal indices retain their constant key, so
+different constant indices are disjoint; equal constants overlap even when they came from different
+expressions. Dynamic indices conservatively overlap every index. Dereference and mixed projection
+shapes remain conservative.
+
+Aggregate constructors keep provenance under their field or constant-index projection. Non-copy
+branch results use full-expression temporary roots, and pattern bindings transfer provenance from
+the matched subject or enum payload projection. Verification therefore covers provenance both when
+values are assembled and when pattern matching extracts them.
 
 ## Rule witnesses
 
@@ -28,7 +34,7 @@ cargo test
 ```
 
 Long-running release qualification should additionally run a Rust mutation-testing tool against
-`src/ownership/regions.rs`, `src/ownership/lower.rs`, and `src/hir/queries.rs`. Surviving mutations
+`src/ownership/regions.rs`, `src/ownership/lower.rs`, and `src/ownership/mir.rs`. Surviving mutations
 in place overlap, requirement transfer, invalidation, return escape, suspension, or destruction are
 release blockers unless documented as equivalent transformations.
 

@@ -1,6 +1,6 @@
 # Foster Ownership and Borrowing
 
-**Status:** language version 7, ownership-model version 1; implemented foundation with provisional
+**Status:** language version 7, ownership-model version 3; implemented foundation with provisional
 rules and known conservative checks.
 
 This document describes Foster's ownership model, its source-level behavior, and how the compiler
@@ -246,11 +246,11 @@ sequenceDiagram
 The reshape is allowed after the old loan's last required use. Code that needs the element again
 must acquire a new reference after the reshape.
 
-Borrow provenance follows values stored in records, lists, and closures. If any such value contains
-a projected reference and its origin is later reshaped, using the aggregate or calling the closure
-is rejected. Field-sensitive overlap permits a reshape through a disjoint record field. Index
-projections remain conservatively aliasing because Foster does not attempt to prove index values
-different.
+Borrow provenance follows values stored in records, lists, variants, pattern bindings, closures,
+and nested branch results. If any such value contains a projected reference and its origin is later
+reshaped, using the aggregate or calling the closure is rejected. Named record fields and distinct
+constant list indices are disjoint. A dynamic index conservatively overlaps every element because
+Foster does not attempt to prove its runtime value.
 
 Invalidation comes from the callee's typed `reshape` and `consume` effects, including indirect and
 extension calls; it is not inferred from a method's spelling. A guarded return applies effects from
@@ -392,7 +392,7 @@ program outside the implemented model. The current status is:
 | Rules | Status | Production requirement |
 | --- | --- | --- |
 | 1-4, 6-7, 9-10, 14, 16 | Enforced, with documented conservative place overlap at dynamic indices and erased callable calls | Maintain compile-pass and compile-fail coverage for every rule and CFG shape. |
-| 5, 8, 11, 13 | Enforced for named locals, ordinary return, `await`, and cancellation in the current non-unwinding runtime; temporaries and future unwinding remain partial | Finish expression-temporary destruction and define unwinding before stable release. |
+| 5, 8, 11, 13 | Enforced for named locals, consumed parameters, expression temporaries, ordinary and guarded return, assertion failure, `try`, loop transfer, `await`, and cancellation; arbitrary runtime-error MIR edges and resource destructors remain partial | Finish generalized failure-edge lowering and define destructor execution before stable release. |
 | 12 | Partial | Loans remain governed by task ownership and effects; crossing-task storage and exclusivity still require a complete specification. |
 | 15 | Unsupported as a general boundary | Host and foreign interfaces must not retain references until retention contracts are implemented. |
 
@@ -421,10 +421,27 @@ destroys the parked frame and does not resume it, so no post-cancellation loan u
 values still cannot cross remote or task-message boundaries. Ownership MIR emits `Destroy`
 operations for named bindings in reverse declaration order on every ordinary function exit.
 Borrower escape is checked before destruction, and a destruction conflicts with any loan demanded
-after it. Runtime last-use drops may occur earlier only when observably equivalent. Expression
-temporaries are destroyed at the end of their containing expression unless their value and
-provenance are transferred into a destination; explicit temporary MIR points remain required before
-this part of the model is considered complete.
+after it. Runtime last-use drops may occur earlier only when observably equivalent. Ownership MIR
+gives borrowed non-place expressions explicit temporary roots. Those roots are initialized when
+materialized and destroyed in reverse creation order at the end of the full expression; return,
+`try`, `break`, and `continue` edges destroy any active expression temporaries before transferring
+control. Transferring an owned result into a destination does not transfer a borrow of a temporary
+origin, so a later use of that borrower is rejected.
+
+Aggregate construction stores provenance at the corresponding field or constant-index projection
+instead of flattening it onto the whole destination. A non-copy branch result is materialized into
+one expression temporary and every reaching arm stores its provenance there. Pattern bindings copy
+the matched subject's provenance; enum payload bindings use the corresponding payload projection.
+This preserves loans through nested records, lists, branches, and enum extraction while still
+allowing operations on provably disjoint aggregate components.
+
+An `assert` statement has explicit success and failure successors in ownership MIR. Its failure
+block destroys active expression temporaries followed by owned function storage and terminates with
+`Fail`; its success block performs the ordinary full-expression cleanup and continues. Consumed
+parameters participate in function cleanup, while borrowed parameters do not invalidate their
+caller's storage. At runtime, failure unwinds invocation frames from callee to caller and detaches
+each frame's registers in reverse allocation order. This deterministic frame teardown applies to
+all VM errors even where ownership MIR does not yet carry an explicit exceptional successor.
 
 ## Compiler implementation
 
@@ -524,7 +541,7 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   retain the union of reaching loan identities and successor requirements. The compiler does not
   yet correlate predicates across separate branches or prove mutually exclusive index values.
 - Ownership and loan places model field, index, and dereference projections. Different named fields
-  are disjoint; index projections conservatively overlap.
+  and different constant indices are disjoint; dynamic indices conservatively overlap all indices.
 - Provenance flows through the implemented aggregate and closure expressions. Direct calls
   substitute the callee's inferred result provenance at matching receiver and argument places;
   summaries are propagated to a fixed point across chains of direct calls. Indirect and erased
@@ -539,7 +556,11 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   remain alive through frame teardown. Borrow edges are weak and therefore do not create reference
   cycles. Native layout, arbitrary cyclic owned graphs, resource destructors, and destructor
   ordering remain backend work.
+- Explicit assertion failures are represented in ownership MIR. Other dynamic failures, such as
+  bounds errors and host-operation errors, use deterministic runtime frame teardown but do not yet
+  have per-operation exceptional successors in ownership MIR.
 
 The intended evolution is path-sensitive loan states and precise provenance through erased
-callables while preserving the source model: ownership transfer stays explicit, references name
-groups, and API effects remain readable contracts rather than inferred lifetime syntax.
+callables and future aggregate forms while preserving the source model: ownership transfer stays
+explicit, references name groups, and API effects remain readable contracts rather than inferred
+lifetime syntax.

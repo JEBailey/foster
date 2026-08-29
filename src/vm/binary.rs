@@ -15,7 +15,7 @@ use crate::hir::{Builtin, CaptureMode, Function, Local, Pattern, Record, Variant
 use crate::types::{DispatchSlot, NominalTypeId};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 12;
+pub const FORMAT_VERSION: u16 = 13;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 

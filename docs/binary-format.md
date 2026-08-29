@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 12, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 13, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after lowering and optimization. It contains everything needed to verify and
@@ -25,7 +25,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `12` |
+| version | `u16` | `13` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -103,10 +103,11 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 31 | Return | `R source` |
 | 32 | MakeFieldReference | `R destination, R object, string field` |
 | 33 | Assert | `R condition, optional<R> message` |
+| 34 | MakeWholeReference | `R destination, R object` |
 
 ## Compatibility and canonical form
 
-Version 12 readers accept only version 12 with zero flags. Development bytecode from another version
+Version 13 readers accept only version 13 with zero flags. Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
 canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of

@@ -257,6 +257,14 @@ impl Writer {
                 self.reg(*object);
                 self.string(field)?;
             }
+            Instruction::MakeWholeReference {
+                destination,
+                object,
+            } => {
+                self.u8(34);
+                self.reg(*destination);
+                self.reg(*object);
+            }
             Instruction::MoveOut {
                 destination,
                 source,

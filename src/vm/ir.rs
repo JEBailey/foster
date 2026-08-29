@@ -88,6 +88,10 @@ pub enum Instruction {
         object: Register,
         index: Register,
     },
+    MakeWholeReference {
+        destination: Register,
+        object: Register,
+    },
     MakeFieldReference {
         destination: Register,
         object: Register,
@@ -282,6 +286,13 @@ impl Instruction {
                 visit(*destination);
                 visit(*object);
                 visit(*index);
+            }
+            Self::MakeWholeReference {
+                destination,
+                object,
+            } => {
+                visit(*destination);
+                visit(*object);
             }
             Self::MakeFieldReference {
                 destination,

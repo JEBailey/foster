@@ -21,6 +21,43 @@ struct Frame {
     argument_leases: Vec<AccessLease>,
 }
 
+impl Drop for Frame {
+    fn drop(&mut self) {
+        // Register numbers follow allocation order. Tear the frame down in the
+        // opposite order so borrower wrappers and later temporaries release
+        // before the storage they can reference.
+        for register in self.registers.iter_mut().rev() {
+            register.detach();
+        }
+        self.shared_commit.take();
+        self.argument_leases.clear();
+    }
+}
+
+struct FrameStack(Vec<Frame>);
+
+impl std::ops::Deref for FrameStack {
+    type Target = Vec<Frame>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for FrameStack {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Drop for FrameStack {
+    fn drop(&mut self) {
+        // Runtime failures leave the active call stack intact. Pop explicitly
+        // so invocation frames unwind from callee to caller.
+        while self.0.pop().is_some() {}
+    }
+}
+
 enum RegisterCell {
     Inline(Value),
     /// A place whose writes remain observable by its owner.
@@ -210,11 +247,11 @@ impl Machine {
         receiver: Option<Rc<Slot>>,
         argument_leases: Vec<AccessLease>,
     ) -> Result<(Value, Option<Value>), RuntimeError> {
-        let mut frames = vec![if let Some(receiver) = receiver.clone() {
+        let mut frames = FrameStack(vec![if let Some(receiver) = receiver.clone() {
             self.method_frame(entry, receiver, arguments, None)?
         } else {
             self.frame(entry, captures, arguments, None)?
-        }];
+        }]);
         frames[0].argument_leases = argument_leases;
 
         loop {
@@ -436,6 +473,13 @@ impl Machine {
                     let index = usize::try_from(index)
                         .map_err(|_| RuntimeError::runtime("reference index is out of bounds"))?;
                     let reference = PlaceHandle::indexed(place(frame, object), index)?;
+                    write(frame, destination, Value::Reference(reference))?;
+                }
+                Instruction::MakeWholeReference {
+                    destination,
+                    object,
+                } => {
+                    let reference = Slot::place(&place(frame, object));
                     write(frame, destination, Value::Reference(reference))?;
                 }
                 Instruction::MakeFieldReference {
@@ -953,8 +997,8 @@ impl Machine {
                     } else {
                         read(frame, source)?
                     };
-                    let completed = frames.pop().expect("return has a frame");
-                    if let Some(commit) = completed.shared_commit {
+                    let mut completed = frames.pop().expect("return has a frame");
+                    if let Some(commit) = completed.shared_commit.take() {
                         commit.shared.commit(commit.receiver.read()?.into_wire()?)?;
                     }
                     let Some(caller) = frames.last_mut() else {

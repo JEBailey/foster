@@ -29,6 +29,38 @@ changes receive review.
 Foster is currently pre-1.0, so compatibility may change deliberately. It must nevertheless change
 through these gates rather than silently.
 
+## Ownership-model version 3
+
+Ownership-model version 3 preserves loan provenance at record fields, constant list indices,
+non-copy branch-result temporaries, and enum pattern payload bindings. Different constant list
+indices are now disjoint, while dynamic indices still conservatively overlap every element.
+
+This precision accepts programs that invalidate a borrower stored at one constant list index and
+later use only a different index. It also rejects formerly accepted programs that extract a
+borrower through a nested branch or enum payload, invalidate its origin, and then use the extracted
+value. Safe source requires no automated migration. A newly rejected program must use the borrower
+before invalidation, reacquire it afterward, or move owned data into the aggregate. The bytecode
+format remains version 13 because this change affects ownership MIR and analysis only.
+
+## Ownership-model version 2
+
+Ownership-model version 2 gives borrowed non-place expressions explicit full-expression
+temporaries. A temporary remains alive through the call or expression that borrows it, is destroyed
+in reverse creation order afterward, and is also destroyed on `return`, `try`, `break`, and
+`continue` edges that leave the expression. Borrowers retained beyond that boundary are rejected
+with the existing invalidated-loan diagnostic.
+
+The same model version makes assertion failure an explicit ownership-MIR terminal edge, includes
+consumed parameters in function destruction, and specifies callee-first, reverse-register VM frame
+teardown for runtime failures. These additions strengthen cleanup guarantees without requiring a
+source migration.
+
+Code such as `observe(ref (make()))` is now executable instead of failing during VM lowering. Code
+that stores and later uses a reference derived from `make()` must bind the owned result first and
+borrow that binding, or return an owned value. No automated migration is necessary. Serialized
+programs use bytecode format version 13, which adds `MakeWholeReference`; older development
+bytecode must be rebuilt.
+
 ## Language version 2
 
 Language version 2 reserves `assert` and introduces immediate assertion failures. Source that

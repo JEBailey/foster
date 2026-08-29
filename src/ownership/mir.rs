@@ -1,7 +1,109 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use crate::hir::{FunctionId, LocalId, Place};
+use crate::hir::{FunctionId, LocalId, Projection};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct TemporaryId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PlaceRoot {
+    Local(LocalId),
+    Temporary(TemporaryId),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Place {
+    pub root: PlaceRoot,
+    pub projections: Vec<Projection>,
+}
+
+impl Place {
+    pub fn local(local: LocalId) -> Self {
+        Self {
+            root: PlaceRoot::Local(local),
+            projections: Vec::new(),
+        }
+    }
+
+    pub fn temporary(temporary: TemporaryId) -> Self {
+        Self {
+            root: PlaceRoot::Temporary(temporary),
+            projections: Vec::new(),
+        }
+    }
+
+    pub fn from_hir(place: crate::hir::Place) -> Self {
+        Self {
+            root: PlaceRoot::Local(place.root),
+            projections: place.projections,
+        }
+    }
+
+    pub fn local_root(&self) -> Option<LocalId> {
+        match self.root {
+            PlaceRoot::Local(local) => Some(local),
+            PlaceRoot::Temporary(_) => None,
+        }
+    }
+}
+
+pub(crate) fn place_contains(parent: &Place, child: &Place) -> bool {
+    parent.root == child.root
+        && parent.projections.len() <= child.projections.len()
+        && parent
+            .projections
+            .iter()
+            .zip(&child.projections)
+            .all(|(left, right)| projections_equal(left, right))
+}
+
+pub(crate) fn places_overlap(left: &Place, right: &Place) -> bool {
+    if left.root != right.root {
+        return false;
+    }
+    for (left, right) in left.projections.iter().zip(&right.projections) {
+        match (left, right) {
+            (Projection::Field(left), Projection::Field(right)) if left != right => return false,
+            (
+                Projection::Index {
+                    constant: Some(left),
+                    ..
+                },
+                Projection::Index {
+                    constant: Some(right),
+                    ..
+                },
+            ) if left != right => return false,
+            (Projection::Field(_), Projection::Field(_))
+            | (Projection::Index { .. }, Projection::Index { .. })
+            | (Projection::Dereference, Projection::Dereference) => {}
+            _ => return true,
+        }
+    }
+    true
+}
+
+fn projections_equal(left: &Projection, right: &Projection) -> bool {
+    match (left, right) {
+        (Projection::Field(left), Projection::Field(right)) => left == right,
+        (
+            Projection::Index {
+                expression: left_expression,
+                constant: left_constant,
+            },
+            Projection::Index {
+                expression: right_expression,
+                constant: right_constant,
+            },
+        ) => match (left_constant, right_constant) {
+            (Some(left), Some(right)) => left == right,
+            _ => left_expression == right_expression,
+        },
+        (Projection::Dereference, Projection::Dereference) => true,
+        _ => false,
+    }
+}
 
 pub type BlockId = usize;
 
@@ -93,7 +195,10 @@ impl Program {
 }
 
 fn place_label(hir: &crate::hir::PackageHir, place: &Place) -> String {
-    let mut label = hir.locals[place.root].name.clone();
+    let mut label = match place.root {
+        PlaceRoot::Local(local) => hir.locals[local].name.clone(),
+        PlaceRoot::Temporary(temporary) => format!("temporary#{}", temporary.0),
+    };
     for projection in &place.projections {
         match projection {
             crate::hir::Projection::Field(field) => {
@@ -210,7 +315,7 @@ pub enum Operation {
         span: Range<usize>,
     },
     Initialize {
-        local: LocalId,
+        place: Place,
         span: Range<usize>,
     },
     StoreBorrower {
@@ -231,8 +336,9 @@ pub enum Operation {
     Suspend {
         span: Range<usize>,
     },
-    /// Semantic destruction at function-scope exit. Runtime last-use drops
-    /// may occur earlier when they are observationally equivalent.
+    /// Semantic destruction at a full-expression or function-scope boundary.
+    /// This is a no-op for an uninitialized or already-moved root. Runtime
+    /// last-use drops may occur earlier when observationally equivalent.
     Destroy {
         place: Place,
         span: Range<usize>,
@@ -265,6 +371,9 @@ pub enum Terminator {
     Goto(BlockId),
     Branch(Vec<BlockId>),
     Return,
+    /// Terminates the current invocation with a runtime failure after its
+    /// active ownership scopes have been destroyed.
+    Fail,
 }
 
 impl Terminator {
@@ -272,7 +381,7 @@ impl Terminator {
         match self {
             Self::Goto(target) => std::slice::from_ref(target),
             Self::Branch(targets) => targets,
-            Self::Unreachable | Self::Return => &[],
+            Self::Unreachable | Self::Return | Self::Fail => &[],
         }
     }
 }

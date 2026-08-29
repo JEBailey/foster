@@ -3,7 +3,7 @@ use crate::types::TypeInformation;
 
 use super::{
     BasicBlock, BlockId, BorrowValue, Function, InvalidationKind, LoanDefinition, LoanId, MirPoint,
-    Operation, Program, Terminator, UseMode,
+    Operation, Place, Program, TemporaryId, Terminator, UseMode,
 };
 
 #[derive(Clone, Copy)]
@@ -60,6 +60,9 @@ struct Builder<'a> {
     result_provenance: &'a std::collections::HashMap<FunctionId, super::ResultProvenance>,
     loans: Vec<LoanDefinition>,
     loops: Vec<LoopTargets>,
+    next_temporary: usize,
+    temporary_scopes: Vec<Vec<(ExprId, Place)>>,
+    active_temporaries: std::collections::HashMap<ExprId, Place>,
 }
 
 #[derive(Clone, Copy)]
@@ -86,6 +89,9 @@ impl<'a> Builder<'a> {
             result_provenance,
             loans: Vec::new(),
             loops: Vec::new(),
+            next_temporary: 0,
+            temporary_scopes: Vec::new(),
+            active_temporaries: std::collections::HashMap::new(),
         }
     }
 
@@ -131,29 +137,49 @@ impl<'a> Builder<'a> {
         match statement {
             hir::Stmt::Return { value, guard } => {
                 if let Some(guard) = guard {
+                    self.begin_temporary_scope();
                     self.expression(*guard, Context::Read);
+                    self.end_temporary_scope(self.span(*guard));
                     let returned = self.block();
                     let continued = self.block();
                     self.terminate(Terminator::Branch(vec![returned, continued]));
                     self.current = returned;
+                    self.begin_temporary_scope();
                     self.expression(*value, Context::Consume);
                     self.emit_return(*value);
+                    self.end_temporary_scope(self.span(*value));
+                    self.emit_active_temporary_destruction(self.span(*value));
                     self.emit_scope_destruction(self.span(*value));
                     self.terminate(Terminator::Return);
                     self.current = continued;
                 } else {
+                    self.begin_temporary_scope();
                     self.expression(*value, Context::Consume);
                     self.emit_return(*value);
+                    self.end_temporary_scope(self.span(*value));
+                    self.emit_active_temporary_destruction(self.span(*value));
                     self.emit_scope_destruction(self.span(*value));
                     self.terminate(Terminator::Return);
                     self.current = self.block();
                 }
             }
             hir::Stmt::Assert { condition, message } => {
+                self.begin_temporary_scope();
                 self.expression(*condition, Context::Read);
                 if let Some(message) = message {
                     self.expression(*message, Context::Read);
                 }
+                let span =
+                    message.map_or_else(|| self.span(*condition), |message| self.span(message));
+                let failed = self.block();
+                let continued = self.block();
+                self.terminate(Terminator::Branch(vec![failed, continued]));
+                self.current = failed;
+                self.emit_active_temporary_destruction(span.clone());
+                self.emit_scope_destruction(span.clone());
+                self.terminate(Terminator::Fail);
+                self.current = continued;
+                self.end_temporary_scope(span);
             }
             hir::Stmt::Loop { body, .. } => {
                 let cfg = crate::control_flow::LoopCfg::new();
@@ -195,6 +221,7 @@ impl<'a> Builder<'a> {
                 self.loop_transfer(*guard, target);
             }
             hir::Stmt::Bind { local, value } => {
+                self.begin_temporary_scope();
                 self.expression_into(*value, Context::Consume, Some(Self::local_place(*local)));
                 self.initialize(*local, self.span(*value));
                 if is_last {
@@ -204,12 +231,16 @@ impl<'a> Builder<'a> {
                         span: self.span(*value),
                     });
                 }
+                self.end_temporary_scope(self.span(*value));
             }
             hir::Stmt::Assign { local, value } => {
+                self.begin_temporary_scope();
                 self.expression_into(*value, Context::Consume, Some(Self::local_place(*local)));
                 self.initialize(*local, self.span(*value));
+                self.end_temporary_scope(self.span(*value));
             }
             hir::Stmt::Expr(value) => {
+                self.begin_temporary_scope();
                 self.expression(
                     *value,
                     if is_last {
@@ -221,25 +252,33 @@ impl<'a> Builder<'a> {
                 if is_last {
                     self.emit_return(*value);
                 }
+                self.end_temporary_scope(self.span(*value));
             }
             hir::Stmt::Set { place, value } => {
+                self.begin_temporary_scope();
                 let destination = self.owned_place(*place);
                 self.expression_into(*value, Context::Consume, destination);
                 self.place_use(*place, UseMode::Write);
+                self.end_temporary_scope(self.span(*value));
             }
         }
     }
 
     fn loop_transfer(&mut self, guard: Option<ExprId>, target: BlockId) {
         if let Some(guard) = guard {
+            self.begin_temporary_scope();
             self.expression(guard, Context::Read);
+            self.end_temporary_scope(self.span(guard));
             let transferred = self.block();
             let continued = self.block();
             self.terminate(Terminator::Branch(vec![transferred, continued]));
             self.current = transferred;
+            self.emit_active_temporary_destruction(self.span(guard));
             self.terminate(Terminator::Goto(target));
             self.current = continued;
         } else {
+            let span = self.hir.functions[self.function].span.clone();
+            self.emit_active_temporary_destruction(span);
             self.terminate(Terminator::Goto(target));
             self.current = self.block();
         }
@@ -249,7 +288,7 @@ impl<'a> Builder<'a> {
         &mut self,
         expression: ExprId,
         context: Context,
-        destination: Option<hir::Place>,
+        destination: Option<Place>,
     ) {
         if let hir::Expr::Branch { subject, arms } = &self.hir.expressions[expression]
             && let Some(destination) = destination
@@ -305,6 +344,16 @@ impl<'a> Builder<'a> {
             }
             hir::Expr::Call { callee, arguments } => {
                 self.expression(*callee, Context::Call);
+                if let hir::Expr::Member { object, .. } = self.hir.expressions[*callee]
+                    && self.owned_place(object).is_none()
+                {
+                    let place = self.materialize_temporary(object);
+                    self.emit(Operation::Use {
+                        place,
+                        mode: UseMode::Borrow,
+                        span: self.span(object),
+                    });
+                }
                 let parameter_modes = self
                     .types
                     .expression_type(*callee)
@@ -324,6 +373,14 @@ impl<'a> Builder<'a> {
                         Context::Borrow
                     };
                     self.expression(*argument, context);
+                    if matches!(context, Context::Borrow) && self.owned_place(*argument).is_none() {
+                        let place = self.materialize_temporary(*argument);
+                        self.emit(Operation::Use {
+                            place,
+                            mode: UseMode::Borrow,
+                            span: self.span(*argument),
+                        });
+                    }
                 }
                 self.emit_call_invalidations(*callee, arguments, expression);
             }
@@ -348,12 +405,24 @@ impl<'a> Builder<'a> {
                 self.expression(*object, Context::Read);
                 self.expression(*index, Context::Read);
             }
-            hir::Expr::Reference(place) => self.place_use(*place, UseMode::Borrow),
+            hir::Expr::Reference(place) => {
+                if self.owned_place(*place).is_some() {
+                    self.place_use(*place, UseMode::Borrow);
+                } else {
+                    self.expression(*place, Context::Consume);
+                    let place = self.materialize_temporary(*place);
+                    self.emit(Operation::Use {
+                        place,
+                        mode: UseMode::Borrow,
+                        span: self.span(expression),
+                    });
+                }
+            }
             hir::Expr::MoveOut(place) => {
                 self.place_use(*place, UseMode::Move);
                 if let Some(place) = hir::queries::expression_place(self.hir, *place) {
                     self.emit(Operation::Invalidate {
-                        place,
+                        place: Place::from_hir(place),
                         kind: InvalidationKind::Consume,
                         span: self.span(expression),
                     });
@@ -375,6 +444,7 @@ impl<'a> Builder<'a> {
                 self.terminate(Terminator::Branch(vec![returned, continued]));
                 self.current = returned;
                 self.emit_return(*value);
+                self.emit_active_temporary_destruction(self.span(expression));
                 self.emit_scope_destruction(self.span(expression));
                 self.terminate(Terminator::Return);
                 self.current = continued;
@@ -392,7 +462,9 @@ impl<'a> Builder<'a> {
             hir::Expr::Branch { subject, arms } => {
                 let subject = *subject;
                 let arms = arms.clone();
-                self.lower_branch_expression(subject, &arms, context, None);
+                let destination =
+                    (!self.copy_expression(expression)).then(|| self.reserve_temporary(expression));
+                self.lower_branch_expression(subject, &arms, context, destination);
             }
             hir::Expr::Closure { captures, .. } => {
                 for capture in captures {
@@ -402,10 +474,7 @@ impl<'a> Builder<'a> {
                         CaptureMode::Ref => UseMode::Borrow,
                     };
                     self.emit(Operation::Use {
-                        place: hir::Place {
-                            root: capture.local,
-                            projections: Vec::new(),
-                        },
+                        place: Self::local_place(capture.local),
                         mode,
                         span: self.span(expression),
                     });
@@ -426,7 +495,7 @@ impl<'a> Builder<'a> {
         &mut self,
         arm: &hir::BranchArm,
         context: Context,
-        destination: Option<hir::Place>,
+        destination: Option<Place>,
     ) {
         let Some(last) = arm.body.last() else {
             return;
@@ -450,11 +519,22 @@ impl<'a> Builder<'a> {
         subject: Option<ExprId>,
         arms: &[hir::BranchArm],
         context: Context,
-        destination: Option<hir::Place>,
+        destination: Option<Place>,
     ) {
-        if let Some(subject) = subject {
+        let pattern_source = if let Some(subject) = subject {
             self.expression(subject, Context::Read);
-        }
+            let has_bindings = arms.iter().any(|arm| {
+                matches!(&arm.test, BranchTest::Pattern(pattern) if Self::pattern_has_bindings(pattern))
+            });
+            if has_bindings && !self.copy_expression(subject) {
+                self.owned_place(subject)
+                    .or_else(|| Some(self.materialize_temporary(subject)))
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let cfg = crate::control_flow::BranchCfg::new(arms);
         let blocks = cfg.nodes().map(|_| self.block()).collect::<Vec<_>>();
@@ -492,7 +572,12 @@ impl<'a> Builder<'a> {
                     self.current = blocks[node_id.0];
                     let arm = &arms[arm];
                     if let BranchTest::Pattern(pattern) = &arm.test {
-                        self.initialize_pattern(pattern, self.branch_arm_span(arm));
+                        self.initialize_pattern(
+                            pattern,
+                            pattern_source.as_ref(),
+                            subject,
+                            self.branch_arm_span(arm),
+                        );
                     }
                     self.lower_branch_arm(arm, context, destination.clone());
                     if let Some(completed) = completed
@@ -528,9 +613,15 @@ impl<'a> Builder<'a> {
     }
 
     fn borrow_value(&mut self, expression: ExprId) -> BorrowValue {
+        if let Some(place) = self.active_temporaries.get(&expression) {
+            return BorrowValue::Place(place.clone());
+        }
         match &self.hir.expressions[expression] {
             hir::Expr::Reference(origin) => {
-                let Some(origin) = hir::queries::expression_place(self.hir, *origin) else {
+                let origin = self
+                    .owned_place(*origin)
+                    .or_else(|| self.active_temporaries.get(origin).cloned());
+                let Some(origin) = origin else {
                     return BorrowValue::Empty;
                 };
                 self.issue_reborrow(origin, self.span(expression))
@@ -542,10 +633,22 @@ impl<'a> Builder<'a> {
             {
                 BorrowValue::Place(self.owned_place(expression).unwrap())
             }
-            hir::Expr::List(values) => BorrowValue::Merge(
+            hir::Expr::List(values) => BorrowValue::Fields(
                 values
                     .iter()
-                    .map(|value| self.borrow_value(*value))
+                    .enumerate()
+                    .map(|(index, value)| {
+                        (
+                            vec![hir::Projection::Index {
+                                expression: *value,
+                                constant: Some(
+                                    i64::try_from(index)
+                                        .expect("list literal index fits in an i64"),
+                                ),
+                            }],
+                            self.borrow_value(*value),
+                        )
+                    })
                     .collect(),
             ),
             hir::Expr::Record { fields, .. } => BorrowValue::Fields(
@@ -579,6 +682,7 @@ impl<'a> Builder<'a> {
             }
             hir::Expr::Branch { .. } => BorrowValue::Empty,
             hir::Expr::MoveOut(value) => hir::queries::expression_place(self.hir, *value)
+                .map(Place::from_hir)
                 .map(BorrowValue::MovePlace)
                 .unwrap_or(BorrowValue::Empty),
             hir::Expr::Remote(value)
@@ -625,7 +729,7 @@ impl<'a> Builder<'a> {
         BorrowValue::Merge(values)
     }
 
-    fn issue_reborrow(&mut self, origin: hir::Place, span: std::ops::Range<usize>) -> BorrowValue {
+    fn issue_reborrow(&mut self, origin: Place, span: std::ops::Range<usize>) -> BorrowValue {
         let id = LoanId(self.loans.len());
         self.loans.push(LoanDefinition {
             id,
@@ -674,22 +778,19 @@ impl<'a> Builder<'a> {
             super::effects::call_invalidations(self.hir, self.types, callee, arguments)
         {
             self.emit(Operation::Invalidate {
-                place,
+                place: Place::from_hir(place),
                 kind,
                 span: self.span(expression),
             });
         }
     }
 
-    fn local_place(local: hir::LocalId) -> hir::Place {
-        hir::Place {
-            root: local,
-            projections: Vec::new(),
-        }
+    fn local_place(local: hir::LocalId) -> Place {
+        Place::local(local)
     }
 
-    fn owned_place(&self, expression: ExprId) -> Option<hir::Place> {
-        let place = hir::queries::expression_place(self.hir, expression)?;
+    fn owned_place(&self, expression: ExprId) -> Option<Place> {
+        let place = Place::from_hir(hir::queries::expression_place(self.hir, expression)?);
         match &self.hir.expressions[expression] {
             hir::Expr::Member { object, name } => {
                 let ty = self.types.expression_type(*object)?;
@@ -709,16 +810,139 @@ impl<'a> Builder<'a> {
     }
 
     fn initialize(&mut self, local: hir::LocalId, span: std::ops::Range<usize>) {
-        self.emit(Operation::Initialize { local, span });
+        self.emit(Operation::Initialize {
+            place: Self::local_place(local),
+            span,
+        });
     }
 
-    fn initialize_pattern(&mut self, pattern: &hir::Pattern, span: std::ops::Range<usize>) {
+    fn begin_temporary_scope(&mut self) {
+        self.temporary_scopes.push(Vec::new());
+    }
+
+    fn end_temporary_scope(&mut self, span: std::ops::Range<usize>) {
+        let temporaries = self
+            .temporary_scopes
+            .pop()
+            .expect("temporary scopes are balanced");
+        for (expression, place) in temporaries.into_iter().rev() {
+            self.emit(Operation::Destroy {
+                place,
+                span: span.clone(),
+            });
+            self.active_temporaries.remove(&expression);
+        }
+    }
+
+    fn emit_active_temporary_destruction(&mut self, span: std::ops::Range<usize>) {
+        let places = self
+            .temporary_scopes
+            .iter()
+            .rev()
+            .flat_map(|scope| scope.iter().rev())
+            .map(|(_, place)| place.clone())
+            .collect::<Vec<_>>();
+        for place in places {
+            self.emit(Operation::Destroy {
+                place,
+                span: span.clone(),
+            });
+        }
+    }
+
+    fn materialize_temporary(&mut self, expression: ExprId) -> Place {
+        if let Some(place) = self.active_temporaries.get(&expression) {
+            return place.clone();
+        }
+        let place = Place::temporary(TemporaryId(self.next_temporary));
+        self.next_temporary += 1;
+        let span = self.span(expression);
+        self.emit(Operation::Initialize {
+            place: place.clone(),
+            span: span.clone(),
+        });
+        let value = if self.copy_expression(expression) {
+            BorrowValue::Empty
+        } else {
+            self.borrow_value(expression)
+        };
+        self.emit(Operation::StoreBorrower {
+            destination: place.clone(),
+            value,
+            span,
+        });
+        self.active_temporaries.insert(expression, place.clone());
+        self.temporary_scopes
+            .last_mut()
+            .expect("temporary materialization requires an expression scope")
+            .push((expression, place.clone()));
+        place
+    }
+
+    fn reserve_temporary(&mut self, expression: ExprId) -> Place {
+        if let Some(place) = self.active_temporaries.get(&expression) {
+            return place.clone();
+        }
+        let place = Place::temporary(TemporaryId(self.next_temporary));
+        self.next_temporary += 1;
+        self.emit(Operation::Initialize {
+            place: place.clone(),
+            span: self.span(expression),
+        });
+        self.active_temporaries.insert(expression, place.clone());
+        self.temporary_scopes
+            .last_mut()
+            .expect("temporary materialization requires an expression scope")
+            .push((expression, place.clone()));
+        place
+    }
+
+    fn pattern_has_bindings(pattern: &hir::Pattern) -> bool {
+        match pattern.unspanned() {
+            hir::Pattern::Binding(_) => true,
+            hir::Pattern::Variant { fields, .. } => fields.iter().any(Self::pattern_has_bindings),
+            _ => false,
+        }
+    }
+
+    fn initialize_pattern(
+        &mut self,
+        pattern: &hir::Pattern,
+        source: Option<&Place>,
+        source_expression: Option<ExprId>,
+        span: std::ops::Range<usize>,
+    ) {
         let span = pattern.span().unwrap_or(span);
         match pattern.unspanned() {
-            hir::Pattern::Binding(local) => self.initialize(*local, span),
+            hir::Pattern::Binding(local) => {
+                self.initialize(*local, span.clone());
+                if let Some(source) = source {
+                    self.emit(Operation::StoreBorrower {
+                        destination: Self::local_place(*local),
+                        value: BorrowValue::Place(source.clone()),
+                        span,
+                    });
+                }
+            }
             hir::Pattern::Variant { fields, .. } => {
-                for field in fields {
-                    self.initialize_pattern(field, span.clone());
+                for (index, field) in fields.iter().enumerate() {
+                    let projected = source.map(|source| {
+                        let mut projected = source.clone();
+                        projected.projections.push(hir::Projection::Index {
+                            expression: source_expression
+                                .expect("pattern projection has a subject expression"),
+                            constant: Some(
+                                i64::try_from(index).expect("variant payload index fits in an i64"),
+                            ),
+                        });
+                        projected
+                    });
+                    self.initialize_pattern(
+                        field,
+                        projected.as_ref(),
+                        source_expression,
+                        span.clone(),
+                    );
                 }
             }
             _ => {}
@@ -738,12 +962,29 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_scope_destruction(&mut self, span: std::ops::Range<usize>) {
+        let definition = &self.hir.functions[self.function];
+        let parameter_modes = self
+            .types
+            .function_type(self.function)
+            .map(|function| function.parameter_modes.as_slice())
+            .unwrap_or_default();
+        let owned_parameters = definition
+            .parameters
+            .iter()
+            .zip(parameter_modes)
+            .filter_map(|(parameter, mode)| {
+                (*mode == crate::ast::ParameterMode::Consume).then_some(*parameter)
+            })
+            .collect::<std::collections::HashSet<_>>();
         let mut locals = self
             .hir
             .locals
             .iter()
             .filter_map(|(local, definition)| {
-                (definition.function == self.function && definition.kind == hir::LocalKind::Binding)
+                if definition.function != self.function {
+                    return None;
+                }
+                (definition.kind == hir::LocalKind::Binding || owned_parameters.contains(&local))
                     .then_some(local)
             })
             .collect::<Vec<_>>();

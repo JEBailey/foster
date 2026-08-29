@@ -73,6 +73,22 @@ func main() -> Int {
 "#,
         ),
         (
+            "model-3-constant-list-aggregate-indices",
+            r#"
+func main() -> Int {
+    let left = [10]
+    let right = [20]
+    let left_value = ref left[0]
+    let right_value = ref right[0]
+    let left_callback = [ref left_value] () -> left_value
+    let right_callback = [ref right_value] () -> right_value
+    let callbacks = [(move left_callback), (move right_callback)]
+    left.push(30)
+    callbacks[1]()
+}
+"#,
+        ),
+        (
             "mutable-ref-parameter-writes-through-to-caller",
             r#"
 type Person = { name: Int }
@@ -176,6 +192,23 @@ func replace[g: group Int](value: ref[g] Int) -> Int [mut g] {
 func main() -> Int {
     let values = [1]
     replace(ref values[0])
+}
+"#,
+        ),
+        (
+            "model-3-variant-pattern-payload-provenance",
+            r#"
+enum Wrapped = Callback(func() -> Int)
+func main() -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    let wrapped = Wrapped.Callback([ref selected] () -> selected)
+    branch wrapped {
+        Wrapped.Callback(callback) -> {
+            values.push(20)
+            callback()
+        }
+    }
 }
 "#,
         ),
@@ -331,7 +364,7 @@ func main() { 0 }
     let first_dump = first.ownership.debug_dump(&first.hir);
     let second_dump = second.ownership.debug_dump(&second.hir);
     assert_eq!(first_dump, second_dump);
-    assert!(first_dump.contains("foster-language=7 ownership-model=1"));
+    assert!(first_dump.contains("foster-language=7 ownership-model=3"));
     assert!(first_dump.contains("loan L"));
     assert!(first_dump.contains("region L"));
 
@@ -352,7 +385,7 @@ func main() -> Int {
 #[test]
 fn ownership_compatibility_surface_is_stable() {
     assert_eq!(foster::ownership::LANGUAGE_VERSION, 7);
-    assert_eq!(foster::ownership::MODEL_VERSION, 1);
+    assert_eq!(foster::ownership::MODEL_VERSION, 3);
     assert_eq!(
         foster::ownership::diagnostics::CATALOG
             .iter()
@@ -360,6 +393,32 @@ fn ownership_compatibility_surface_is_stable() {
             .collect::<Vec<_>>(),
         vec!["E0382", "E0401", "E0402", "E0403", "E0507", "E0728"]
     );
+}
+
+#[test]
+fn ownership_model_two_defines_expression_temporary_lifetimes() {
+    let scoped = r#"
+func observe[value: group Int](item: ref[value] Int) -> Int { item }
+func make() -> Int { 42 }
+func main() -> Int { observe(ref (make())) }
+"#;
+    assert_eq!(foster::run(scoped).unwrap(), foster::vm::Value::Integer(42));
+
+    let escaped = r#"
+func preserve[value: group Int](item: ref[value] Int) -> ref[value] Int { ref item }
+func make() -> Int { 42 }
+func main() -> Int {
+    let item = preserve(ref (make()))
+    println(item)
+    0
+}
+"#;
+    let error = foster::compile(escaped).unwrap_err();
+    assert_eq!(
+        error.code.as_deref(),
+        Some(foster::ownership::diagnostics::INVALIDATED_LOAN)
+    );
+    assert!(error.message.contains("temporary"), "{error:?}");
 }
 
 #[test]

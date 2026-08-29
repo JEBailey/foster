@@ -191,7 +191,7 @@ then performs a final checked type/effect pass before loan and ownership validat
 
 The effect contract is implemented, but provenance can still become conservative:
 
-- aggregate provenance for loans stored inside arbitrary records and enums is incomplete;
+- provenance through indirect or erased callable results is conservative;
 - structural invalidation metadata currently covers the implemented list-storage model rather
   than a general user-defined collection protocol;
 - path-disjoint reasoning beyond named fields and the initial `items` model is limited; and

@@ -69,6 +69,7 @@ fn protected_slots(program: &Program) -> HashMap<crate::hir::FunctionId, HashSet
 fn protect_reference_origins(function: &BytecodeFunction, protected: &mut HashSet<Register>) {
     for instruction in &function.instructions {
         if let Instruction::MakeReference { object, .. }
+        | Instruction::MakeWholeReference { object, .. }
         | Instruction::MakeFieldReference { object, .. }
         | Instruction::LoadField {
             object,

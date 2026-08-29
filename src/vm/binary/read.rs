@@ -306,6 +306,10 @@ impl<'a> Reader<'a> {
                     }
                 },
             },
+            34 => Instruction::MakeWholeReference {
+                destination: r!(),
+                object: r!(),
+            },
             tag => {
                 return Err(BinaryError::new(format!(
                     "unknown instruction opcode {tag}"

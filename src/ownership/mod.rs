@@ -9,8 +9,9 @@ mod regions;
 
 pub use mir::{
     BasicBlock, BlockId, BorrowValue, Function, InvalidationKind, LoanDefinition, LoanId, MirPoint,
-    Operation, Program, ProvenanceAnalysis, ProvenanceState, RequiredUse, RequirementAnalysis,
-    RequirementState, ResultProvenance, ReturnKind, Terminator, UseMode,
+    Operation, Place, PlaceRoot, Program, ProvenanceAnalysis, ProvenanceState, RequiredUse,
+    RequirementAnalysis, RequirementState, ResultProvenance, ReturnKind, TemporaryId, Terminator,
+    UseMode,
 };
 
 /// Source-language compatibility level. Increment for intentional breaking
@@ -20,7 +21,7 @@ pub const LANGUAGE_VERSION: u16 = 7;
 /// Normative ownership-contract compatibility level. Increment whenever a
 /// previously accepted safe program is intentionally rejected or an ownership
 /// guarantee changes meaning.
-pub const MODEL_VERSION: u16 = 1;
+pub const MODEL_VERSION: u16 = 3;
 
 use crate::error::FosterError;
 use crate::hir::PackageHir;

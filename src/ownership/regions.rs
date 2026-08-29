@@ -1,13 +1,20 @@
 use std::collections::{HashSet, VecDeque};
 
 use crate::error::FosterError;
-use crate::hir::queries::{place_contains, places_overlap};
-use crate::hir::{FunctionId, PackageHir, Place, Projection};
+use crate::hir::{FunctionId, PackageHir, Projection};
 
+use super::mir::{place_contains, places_overlap};
 use super::{
-    BorrowValue, Function, InvalidationKind, LoanId, Operation, Program, ProvenanceAnalysis,
-    ProvenanceState, RequirementAnalysis, RequirementState,
+    BorrowValue, Function, InvalidationKind, LoanId, Operation, Place, PlaceRoot, Program,
+    ProvenanceAnalysis, ProvenanceState, RequirementAnalysis, RequirementState,
 };
+
+fn place_name(hir: &PackageHir, place: &Place) -> String {
+    match place.root {
+        PlaceRoot::Local(local) => hir.locals[local].name.clone(),
+        PlaceRoot::Temporary(temporary) => format!("temporary#{}", temporary.0),
+    }
+}
 
 pub(super) fn analyze(
     program: &Program,
@@ -103,10 +110,11 @@ fn collect_parameter_origins(
         return;
     }
     let loan = &function.loans[loan.0];
-    if let Some(parameter) = definition
-        .parameters
-        .iter()
-        .position(|local| *local == loan.origin.root)
+    if let Some(local) = loan.origin.local_root()
+        && let Some(parameter) = definition
+            .parameters
+            .iter()
+            .position(|parameter| *parameter == local)
     {
         parameters.insert(parameter);
     }
@@ -326,8 +334,8 @@ pub(super) fn validate(hir: &PackageHir, program: &Program) -> Result<(), Foster
         validate_suspensions(hir, *function_id, function, requirements)?;
         if let Some(conflict) = find_conflict(function, requirements) {
             let definition = &hir.functions[*function_id];
-            let origin_name = &hir.locals[conflict.loan.origin.root].name;
-            let borrower_name = &hir.locals[conflict.required_use.place.root].name;
+            let origin_name = place_name(hir, &conflict.loan.origin);
+            let borrower_name = place_name(hir, &conflict.required_use.place);
             let is_call = conflict.required_use.mode == super::UseMode::Call;
             let message = if is_call {
                 format!(
@@ -391,8 +399,11 @@ fn validate_suspensions(
             };
             for loan in points[operation_index + 1].loans.keys() {
                 let loan = &function.loans[loan.0];
-                let owner = &hir.locals[loan.origin.root];
-                if owner.function != function_id {
+                if loan
+                    .origin
+                    .local_root()
+                    .is_some_and(|owner| hir.locals[owner].function != function_id)
+                {
                     let definition = &hir.functions[function_id];
                     return Err(FosterError::runtime(format!(
                         "in `{}.{}`: a loan required after suspension does not belong to the parked invocation",
@@ -436,14 +447,16 @@ fn validate_storage_and_escape(
                         .map(|loan| &function.loans[loan.0])
                         .filter(|loan| places_overlap(destination, &loan.origin))
                         .filter(|loan| {
-                            !(definition.parameters.contains(&destination.root)
+                            !(destination
+                                .local_root()
+                                .is_some_and(|local| definition.parameters.contains(&local))
                                 && loan.origin == *destination
                                 && loan.issued_at.block == block
                                 && loan.issued_at.operation == operation_index)
                         })
                         .min_by_key(|loan| loan.id)
                     {
-                        let name = &hir.locals[destination.root].name;
+                        let name = place_name(hir, destination);
                         return Err(FosterError::runtime(format!(
                             "in `{}.{}`: cannot store a value borrowing `{name}` into its own origin",
                             hir.modules[definition.module].name, definition.name
@@ -507,11 +520,32 @@ fn validate_returned_loan(
     returned_at: &std::ops::Range<usize>,
 ) -> Result<(), FosterError> {
     let module = &hir.modules[function.module].name;
-    let name = &hir.locals[loan.origin.root].name;
+    let Some(origin) = loan.origin.local_root() else {
+        let noun = match kind {
+            super::ReturnKind::Closure => "closure",
+            super::ReturnKind::Reference => "reference",
+            super::ReturnKind::Aggregate => "value",
+        };
+        return Err(FosterError::runtime(format!(
+            "in `{module}.{}`: returned {noun} borrows an expression temporary",
+            function.name
+        ))
+        .with_code(super::diagnostics::BORROW_ESCAPE)
+        .with_source_module(module.clone())
+        .with_primary_label(
+            returned_at.clone(),
+            "this returned value contains a reference to temporary storage",
+        )
+        .with_label(loan.span.clone(), "temporary loan is issued here")
+        .with_help(
+            "bind the owned value to a local before borrowing it, or return an owned value",
+        ));
+    };
+    let name = &hir.locals[origin].name;
     let Some(parameter) = function
         .parameters
         .iter()
-        .position(|parameter| *parameter == loan.origin.root)
+        .position(|parameter| *parameter == origin)
     else {
         let noun = match kind {
             super::ReturnKind::Closure => "closure",
@@ -528,7 +562,7 @@ fn validate_returned_loan(
             returned_at.clone(),
             "this returned value contains a reference to frame-local storage",
         )
-        .with_label(hir.locals[loan.origin.root].span.clone(), "borrowed local is declared here")
+        .with_label(hir.locals[origin].span.clone(), "borrowed local is declared here")
         .with_help("return an owned value, or borrow from a reference parameter whose group appears in the result type"));
     };
     let Some(crate::ast::TypeExpr::Reference { group, .. }) =
@@ -796,7 +830,7 @@ mod tests {
     fn replacement_kills_old_contents_and_joins_reaching_loans() {
         let local = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(0));
         let place = Place {
-            root: local,
+            root: PlaceRoot::Local(local),
             projections: Vec::new(),
         };
         let store = |loan| Operation::StoreBorrower {
@@ -840,7 +874,7 @@ mod tests {
     fn branch_overwrite_does_not_keep_the_replaced_definition() {
         let local = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(0));
         let place = Place {
-            root: local,
+            root: PlaceRoot::Local(local),
             projections: Vec::new(),
         };
         let store = |value| Operation::StoreBorrower {
@@ -879,15 +913,15 @@ mod tests {
     fn field_replacement_preserves_disjoint_borrower_contents() {
         let local = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(0));
         let root = Place {
-            root: local,
+            root: PlaceRoot::Local(local),
             projections: Vec::new(),
         };
         let left = Place {
-            root: local,
+            root: PlaceRoot::Local(local),
             projections: vec![crate::hir::Projection::Field("left".into())],
         };
         let right = Place {
-            root: local,
+            root: PlaceRoot::Local(local),
             projections: vec![crate::hir::Projection::Field("right".into())],
         };
         let function = Function {
@@ -932,17 +966,17 @@ mod tests {
         let owner = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(1));
         let index = crate::hir::ExprId::from_raw(la_arena::RawIdx::from_u32(0));
         let borrower_place = Place {
-            root: borrower,
+            root: PlaceRoot::Local(borrower),
             projections: Vec::new(),
         };
         let owner_place = Place {
-            root: owner,
+            root: PlaceRoot::Local(owner),
             projections: Vec::new(),
         };
         let loan = super::super::LoanDefinition {
             id: LoanId(0),
             origin: Place {
-                root: owner,
+                root: PlaceRoot::Local(owner),
                 projections: vec![Projection::Index {
                     expression: index,
                     constant: None,
@@ -1004,7 +1038,7 @@ mod tests {
         let owner = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(1));
         let index = crate::hir::ExprId::from_raw(la_arena::RawIdx::from_u32(0));
         let borrower_place = Place {
-            root: borrower,
+            root: PlaceRoot::Local(borrower),
             projections: Vec::new(),
         };
         let function = Function {
@@ -1023,7 +1057,7 @@ mod tests {
                     },
                     Operation::Invalidate {
                         place: Place {
-                            root: owner,
+                            root: PlaceRoot::Local(owner),
                             projections: Vec::new(),
                         },
                         kind: InvalidationKind::Reshape,
@@ -1035,7 +1069,7 @@ mod tests {
             loans: vec![super::super::LoanDefinition {
                 id: LoanId(0),
                 origin: Place {
-                    root: owner,
+                    root: PlaceRoot::Local(owner),
                     projections: vec![Projection::Index {
                         expression: index,
                         constant: None,
@@ -1061,7 +1095,7 @@ mod tests {
         let owner = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(1));
         let index = crate::hir::ExprId::from_raw(la_arena::RawIdx::from_u32(0));
         let borrower_place = Place {
-            root: borrower,
+            root: PlaceRoot::Local(borrower),
             projections: Vec::new(),
         };
         let function = Function {
@@ -1078,7 +1112,7 @@ mod tests {
                 BasicBlock {
                     operations: vec![Operation::Invalidate {
                         place: Place {
-                            root: owner,
+                            root: PlaceRoot::Local(owner),
                             projections: Vec::new(),
                         },
                         kind: InvalidationKind::Reshape,
@@ -1098,7 +1132,7 @@ mod tests {
             loans: vec![super::super::LoanDefinition {
                 id: LoanId(0),
                 origin: Place {
-                    root: owner,
+                    root: PlaceRoot::Local(owner),
                     projections: vec![Projection::Index {
                         expression: index,
                         constant: None,
@@ -1131,11 +1165,11 @@ mod tests {
         let owner = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(1));
         let index = crate::hir::ExprId::from_raw(la_arena::RawIdx::from_u32(0));
         let borrower_place = Place {
-            root: borrower,
+            root: PlaceRoot::Local(borrower),
             projections: Vec::new(),
         };
         let owner_place = Place {
-            root: owner,
+            root: PlaceRoot::Local(owner),
             projections: Vec::new(),
         };
         let operations = events
@@ -1173,7 +1207,7 @@ mod tests {
             loans: vec![super::super::LoanDefinition {
                 id: LoanId(0),
                 origin: Place {
-                    root: owner,
+                    root: PlaceRoot::Local(owner),
                     projections: vec![Projection::Index {
                         expression: index,
                         constant: None,
@@ -1264,7 +1298,7 @@ mod tests {
         let local = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(0));
         let expression = |value| crate::hir::ExprId::from_raw(la_arena::RawIdx::from_u32(value));
         let place = |constant, value| Place {
-            root: local,
+            root: PlaceRoot::Local(local),
             projections: vec![Projection::Index {
                 expression: expression(value),
                 constant,
