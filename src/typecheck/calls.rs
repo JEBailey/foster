@@ -125,17 +125,20 @@ impl Checker<'_> {
                     );
                 } else {
                     let requirement = self.contract_method_requirement(object_type.clone(), &name);
+                    let dispatch = match &method {
+                        Ty::Callable {
+                            parameters,
+                            parameter_modes,
+                            ..
+                        } => self.method_key(&name, parameters, parameter_modes),
+                        _ => unreachable!("contract methods are callable"),
+                    };
+                    let slot = self.dispatch_slot(dispatch);
                     self.resolved_calls.insert(
                         callee,
                         ResolvedCall::ContractMethod {
-                            dispatch: match &method {
-                                Ty::Callable {
-                                    parameters,
-                                    parameter_modes,
-                                    ..
-                                } => self.method_key(&name, parameters, parameter_modes),
-                                _ => unreachable!("contract methods are callable"),
-                            },
+                            slot,
+                            name: name.clone(),
                             requirement,
                         },
                     );
@@ -168,6 +171,31 @@ impl Checker<'_> {
         }
 
         let callee_type = self.infer_expression(function, callee)?;
+        if !self.resolved_calls.contains_key(&callee)
+            && let hir::Expr::Member { object, name } = self.hir.expressions[callee].clone()
+            && let Ty::Callable {
+                parameters,
+                parameter_modes,
+                ..
+            } = self.resolved(callee_type.clone())
+        {
+            let object_type = self.infer_expression(function, object)?;
+            let value_member = self.has_stored_member(&object_type, &name)?
+                || name == "head" && self.list_element(&object_type).is_some();
+            if !value_member {
+                let dispatch = self.method_key(&name, &parameters, &parameter_modes);
+                let slot = self.dispatch_slot(dispatch);
+                let requirement = self.contract_method_requirement(object_type, &name);
+                self.resolved_calls.insert(
+                    callee,
+                    ResolvedCall::ContractMethod {
+                        slot,
+                        name,
+                        requirement,
+                    },
+                );
+            }
+        }
         let expected_arguments = match self.resolved(callee_type.clone()) {
             Ty::Function(parameters, _) | Ty::Callable { parameters, .. }
                 if parameters.len() == arguments.len() =>

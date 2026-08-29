@@ -648,14 +648,15 @@ impl Machine {
                 Instruction::CallContractMethod {
                     destination,
                     receiver,
-                    method,
+                    slot,
+                    name,
                     arguments,
                 } => {
                     let receiver = place(frame, receiver);
                     let value = receiver.read()?;
                     if let Value::Record { fields, .. } = &value
                         && arguments.is_empty()
-                        && let Some(field) = fields.get(&method.name)
+                        && let Some(field) = fields.get(&name)
                         && value.string_bytes().is_none()
                     {
                         write(frame, destination, field.clone())?;
@@ -665,13 +666,13 @@ impl Machine {
                         if !arguments.is_empty() {
                             return Err(RuntimeError::runtime(format!(
                                 "contract member `{}` does not accept arguments",
-                                method.name
+                                name
                             )));
                         }
                         write(
                             frame,
                             destination,
-                            member(value, &method.name, self.program.string_record)?,
+                            member(value, &name, self.program.string_record)?,
                         )?;
                         continue;
                     }
@@ -679,13 +680,13 @@ impl Machine {
                         if !arguments.is_empty() {
                             return Err(RuntimeError::runtime(format!(
                                 "contract member `{}` does not accept arguments",
-                                method.name
+                                name
                             )));
                         }
                         write(
                             frame,
                             destination,
-                            member(value, &method.name, self.program.string_record)?,
+                            member(value, &name, self.program.string_record)?,
                         )?;
                         continue;
                     }
@@ -693,13 +694,13 @@ impl Machine {
                         if !arguments.is_empty() {
                             return Err(RuntimeError::runtime(format!(
                                 "contract member `{}` does not accept arguments",
-                                method.name
+                                name
                             )));
                         }
                         write(
                             frame,
                             destination,
-                            member(value, &method.name, self.program.string_record)?,
+                            member(value, &name, self.program.string_record)?,
                         )?;
                         continue;
                     }
@@ -714,13 +715,13 @@ impl Machine {
                         if !arguments.is_empty() {
                             return Err(RuntimeError::runtime(format!(
                                 "contract member `{}` does not accept arguments",
-                                method.name
+                                name
                             )));
                         }
                         write(
                             frame,
                             destination,
-                            member(value, &method.name, self.program.string_record)?,
+                            member(value, &name, self.program.string_record)?,
                         )?;
                         continue;
                     }
@@ -728,25 +729,17 @@ impl Machine {
                         Value::Record {
                             record: Some(record),
                             ..
-                        } => self
-                            .program
-                            .methods
-                            .get(&(*record, method.clone()))
-                            .copied(),
+                        } => self.program.methods.get(&(*record, slot)).copied(),
                         Value::Variant {
                             variant: Some(variant),
                             ..
-                        } => self
-                            .program
-                            .variant_methods
-                            .get(&(*variant, method.clone()))
-                            .copied(),
+                        } => self.program.variant_methods.get(&(*variant, slot)).copied(),
                         _ => None,
                     };
                     let function = function.ok_or_else(|| {
                         RuntimeError::runtime(format!(
                             "value has no implementation of required method `{}`",
-                            method.name
+                            name
                         ))
                     })?;
                     if let Some(shared) = receiver.shared() {

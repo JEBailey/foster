@@ -119,8 +119,9 @@ matches requiring a lossless conversion; equally ranked matches are rejected as 
 Overloaded declarations require explicit parameter types, and an overload set cannot be used as a
 bare function value because no arguments are available to select one declaration. Contract
 composition merges identical requirements and preserves distinct parameter signatures for dynamic
-dispatch. The ownership-model version remains unchanged. Bytecode uses structural method keys and,
-while Foster remains unreleased, only the current bytecode format is accepted.
+dispatch. The ownership-model version remains unchanged. Type checking assigns program-local
+dispatch slots and emits finalized concrete implementation tables; while Foster remains unreleased,
+only the current bytecode format is accepted.
 
 ## Resource-location library API
 

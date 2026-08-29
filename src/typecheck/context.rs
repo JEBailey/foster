@@ -65,6 +65,8 @@ pub(super) struct Checker<'a> {
     pub(super) integer_promotions: HashSet<ExprId>,
     pub(super) bare_method_members: HashSet<ExprId>,
     pub(super) resolved_calls: HashMap<ExprId, crate::types::ResolvedCall>,
+    pub(super) dispatch_slots: HashMap<MethodKey, DispatchSlot>,
+    pub(super) dispatch_keys: Vec<MethodKey>,
     pub(super) member_constraints: Vec<MemberConstraint>,
     pub(super) diagnostics: Vec<crate::diagnostic::Diagnostic>,
     pub(super) inferred_effects: InferredEffects,

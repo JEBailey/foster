@@ -9,10 +9,10 @@ use la_arena::{Idx, RawIdx};
 use super::{BytecodeFunction, Constant, Instruction, Program, Register, verify};
 use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::hir::{Builtin, CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
-use crate::types::{DispatchTypeKey, MethodKey};
+use crate::types::DispatchSlot;
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 9;
+pub const FORMAT_VERSION: u16 = 10;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -78,20 +78,20 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
     }
 
     let mut methods: Vec<_> = program.methods.iter().collect();
-    methods.sort_by(|((a, an), _), ((b, bn), _)| (raw(*a), an).cmp(&(raw(*b), bn)));
+    methods.sort_by_key(|((record, slot), _)| (raw(*record), *slot));
     w.u32(methods.len())?;
-    for ((record, name), function) in methods {
+    for ((record, slot), function) in methods {
         w.id(*record);
-        w.method_key(name)?;
+        w.u32_value(slot.0);
         w.id(*function);
     }
 
     let mut variant_methods: Vec<_> = program.variant_methods.iter().collect();
-    variant_methods.sort_by(|((a, an), _), ((b, bn), _)| (raw(*a), an).cmp(&(raw(*b), bn)));
+    variant_methods.sort_by_key(|((variant, slot), _)| (raw(*variant), *slot));
     w.u32(variant_methods.len())?;
-    for ((variant, name), function) in variant_methods {
+    for ((variant, slot), function) in variant_methods {
         w.id(*variant);
-        w.method_key(name)?;
+        w.u32_value(slot.0);
         w.id(*function);
     }
 
@@ -146,10 +146,15 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         .into_iter()
         .map(|(id, _, fields)| (id, fields))
         .collect();
-    let methods = r.map(|r| Ok(((r.id::<Record>()?, r.method_key()?), r.id::<Function>()?)))?;
+    let methods = r.map(|r| {
+        Ok((
+            (r.id::<Record>()?, DispatchSlot(r.u32()?)),
+            r.id::<Function>()?,
+        ))
+    })?;
     let variant_methods = r.map(|r| {
         Ok((
-            (r.id::<VariantType>()?, r.method_key()?),
+            (r.id::<VariantType>()?, DispatchSlot(r.u32()?)),
             r.id::<Function>()?,
         ))
     })?;

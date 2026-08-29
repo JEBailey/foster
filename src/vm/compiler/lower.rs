@@ -273,104 +273,9 @@ impl FunctionCompiler<'_> {
                         self.emit(instruction, span);
                         return Ok(destination);
                     }
-                    if let Some(function) = self.primitive_method(*object, name) {
-                        let receiver = self.expression(*object)?;
-                        let mut arguments = arguments
-                            .iter()
-                            .map(|argument| self.expression(*argument))
-                            .collect::<Result<Vec<_>, _>>()?;
-                        let destination = self.allocate();
-                        if self.lower_list_intrinsic(
-                            function,
-                            receiver,
-                            &arguments,
-                            destination,
-                            span.clone(),
-                        )? {
-                            return Ok(destination);
-                        }
-                        if let Some(builtin) = self.intrinsic_builtin(function) {
-                            arguments.insert(0, receiver);
-                            self.emit(
-                                Instruction::Builtin {
-                                    destination,
-                                    builtin,
-                                    arguments,
-                                },
-                                span,
-                            );
-                            return Ok(destination);
-                        }
-                        self.emit(
-                            Instruction::CallMethod {
-                                destination,
-                                receiver,
-                                function,
-                                arguments,
-                            },
-                            span,
-                        );
-                        return Ok(destination);
-                    }
-                    if let Some((function, remote)) = self.record_method(*object, name) {
-                        let receiver = if matches!(
-                            self.hir.functions[function].intrinsic.as_deref(),
-                            Some("list.push" | "list.append")
-                        ) || self.read_only_method(function)
-                        {
-                            self.expression(*object)?
-                        } else {
-                            self.method_receiver(*object)?
-                        };
-                        let arguments = arguments
-                            .iter()
-                            .map(|argument| self.expression(*argument))
-                            .collect::<Result<Vec<_>, _>>()?;
-                        let destination = self.allocate();
-                        if self.lower_list_intrinsic(
-                            function,
-                            receiver,
-                            &arguments,
-                            destination,
-                            span.clone(),
-                        )? {
-                            return Ok(destination);
-                        }
-                        if remote {
-                            let modes = self
-                                .types
-                                .function_type(function)
-                                .ok_or_else(|| self.unsupported("remote method parameter modes"))?;
-                            let arguments = modes
-                                .parameter_modes
-                                .iter()
-                                .copied()
-                                .skip(1)
-                                .zip(arguments)
-                                .collect();
-                            self.emit(
-                                Instruction::RemoteCall {
-                                    destination,
-                                    remote: receiver,
-                                    function,
-                                    arguments,
-                                },
-                                span,
-                            );
-                        } else {
-                            self.emit(
-                                Instruction::CallMethod {
-                                    destination,
-                                    receiver,
-                                    function,
-                                    arguments,
-                                },
-                                span,
-                            );
-                        }
-                        return Ok(destination);
-                    }
-                    if self.contract_method(*object, name) {
+                    if let Some(crate::types::ResolvedCall::ContractMethod { slot, name, .. }) =
+                        self.types.resolved_call(*callee)
+                    {
                         let receiver = self.method_receiver(*object)?;
                         let arguments = arguments
                             .iter()
@@ -381,16 +286,8 @@ impl FunctionCompiler<'_> {
                             Instruction::CallContractMethod {
                                 destination,
                                 receiver,
-                                method: match self.types.resolved_call(*callee) {
-                                    Some(crate::types::ResolvedCall::ContractMethod {
-                                        dispatch,
-                                        ..
-                                    }) => dispatch.clone(),
-                                    _ => crate::types::MethodKey {
-                                        name: name.clone(),
-                                        parameters: Vec::new(),
-                                    },
-                                },
+                                slot: *slot,
+                                name: name.clone(),
                                 arguments,
                             },
                             span,
@@ -406,16 +303,7 @@ impl FunctionCompiler<'_> {
                 let resolved_function = self
                     .types
                     .resolved_call(*callee)
-                    .and_then(crate::types::ResolvedCall::function)
-                    .or_else(|| {
-                        if let hir::Expr::Name(ResolvedName::Function(function)) =
-                            self.hir.expressions[*callee]
-                        {
-                            Some(function)
-                        } else {
-                            None
-                        }
-                    });
+                    .and_then(crate::types::ResolvedCall::function);
                 if let Some(function) = resolved_function {
                     if let Some((&receiver, method_arguments)) = arguments.split_first()
                         && self.lower_list_intrinsic(
@@ -720,9 +608,6 @@ impl FunctionCompiler<'_> {
         let hir::Expr::Member { object, name } = &self.hir.expressions[id] else {
             return self.expression(id);
         };
-        if self.record_method(*object, name).is_some() {
-            return self.expression(id);
-        }
         let span = self
             .hir
             .expression_spans
@@ -741,79 +626,6 @@ impl FunctionCompiler<'_> {
             span,
         );
         Ok(destination)
-    }
-
-    fn record_method(&self, object: ExprId, name: &str) -> Option<(hir::FunctionId, bool)> {
-        let mut ty = self.types.expression_type(object)?;
-        let mut remote = false;
-        loop {
-            match &self.types.types[ty] {
-                crate::types::Type::Remote(inner) => {
-                    remote = true;
-                    ty = *inner;
-                }
-                crate::types::Type::Reference { value, .. } => ty = *value,
-                crate::types::Type::Record { record, .. } => {
-                    let qualified_name = format!("{}.{name}", self.hir.records[*record].name);
-                    let function = self
-                        .hir
-                        .function_named(self.hir.records[*record].module, &qualified_name)?;
-                    self.hir.functions[function].receiver?;
-                    let receiver_matches = self
-                        .types
-                        .function_type(function)
-                        .and_then(|signature| signature.parameters.first())
-                        .is_some_and(|ty| {
-                            matches!(
-                                self.types.types[*ty],
-                                crate::types::Type::Record { record: receiver, .. }
-                                    if receiver == *record
-                            )
-                        });
-                    return receiver_matches.then_some((function, remote));
-                }
-                crate::types::Type::Variant { variant, .. } => {
-                    let qualified_name =
-                        format!("{}.{name}", self.hir.variant_types[*variant].name);
-                    let function = self
-                        .hir
-                        .function_named(self.hir.variant_types[*variant].module, &qualified_name)?;
-                    self.hir.functions[function].receiver?;
-                    let receiver_matches = self
-                        .types
-                        .function_type(function)
-                        .and_then(|signature| signature.parameters.first())
-                        .is_some_and(|ty| {
-                            matches!(
-                                self.types.types[*ty],
-                                crate::types::Type::Variant { variant: receiver, .. }
-                                    if receiver == *variant
-                            )
-                        });
-                    return receiver_matches.then_some((function, remote));
-                }
-                _ => return None,
-            }
-        }
-    }
-
-    fn primitive_method(&self, object: ExprId, name: &str) -> Option<hir::FunctionId> {
-        let ty = self.types.expression_type(object)?;
-        let module = match self.types.types[ty] {
-            crate::types::Type::RawBytes => "core.bytes",
-            crate::types::Type::RawByteBuffer => "core.bytes.buffer",
-            _ => return None,
-        };
-        let module = self.hir.module_named(module)?;
-        let qualified_name = match self.types.types[ty] {
-            crate::types::Type::RawByteBuffer => format!("RawByteBuffer.{name}"),
-            _ => name.to_owned(),
-        };
-        let function = self.hir.function_named(module, &qualified_name)?;
-        self.hir.functions[function]
-            .receiver
-            .is_some()
-            .then_some(function)
     }
 
     fn lower_list_intrinsic(
@@ -938,10 +750,6 @@ impl FunctionCompiler<'_> {
             })
     }
 
-    fn contract_method(&self, object: ExprId, name: &str) -> bool {
-        self.contract_member(object, name)
-    }
-
     fn read_only_method(&self, function: hir::FunctionId) -> bool {
         let function = &self.hir.functions[function];
         !function.suspends
@@ -949,30 +757,6 @@ impl FunctionCompiler<'_> {
                 .effects
                 .iter()
                 .all(|effect| effect.kind == crate::ast::EffectKind::Read)
-    }
-
-    fn contract_member(&self, object: ExprId, name: &str) -> bool {
-        let Some(ty) = self.types.expression_type(object) else {
-            return false;
-        };
-        self.type_has_contract_member(ty, name)
-    }
-
-    fn type_has_contract_member(&self, ty: crate::types::TypeId, name: &str) -> bool {
-        match &self.types.types[ty] {
-            crate::types::Type::Sequence(_) => {
-                matches!(name, "empty?" | "length" | "head" | "rest")
-            }
-            crate::types::Type::Record { record, .. } => self
-                .types
-                .record_methods
-                .get(record)
-                .is_some_and(|methods| methods.contains(name)),
-            crate::types::Type::Intersection(members) => members
-                .iter()
-                .any(|member| self.type_has_contract_member(*member, name)),
-            _ => false,
-        }
     }
 
     fn function_captures(

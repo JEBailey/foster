@@ -78,6 +78,9 @@ pub struct MethodKey {
     pub parameters: Vec<(ast::ParameterMode, DispatchTypeKey)>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DispatchSlot(pub u32);
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolvedCall {
     Function(FunctionId),
@@ -86,7 +89,8 @@ pub enum ResolvedCall {
         remote: bool,
     },
     ContractMethod {
-        dispatch: MethodKey,
+        slot: DispatchSlot,
+        name: String,
         requirement: Option<(RecordId, usize)>,
     },
 }
@@ -106,6 +110,8 @@ pub struct TypeInformation {
     pub expressions: HashMap<ExprId, TypeId>,
     pub integer_promotions: HashSet<ExprId>,
     pub resolved_calls: HashMap<ExprId, ResolvedCall>,
+    pub record_dispatch: HashMap<(RecordId, DispatchSlot), FunctionId>,
+    pub variant_dispatch: HashMap<(VariantTypeId, DispatchSlot), FunctionId>,
     pub locals: HashMap<LocalId, TypeId>,
     pub functions: HashMap<FunctionId, FunctionType>,
     pub constants: HashMap<ConstantId, TypeId>,

@@ -542,17 +542,18 @@ fn infer_register_types(
             Instruction::CallContractMethod {
                 destination,
                 receiver,
-                method,
+                name,
                 arguments,
+                ..
             } => {
                 if !arguments.is_empty() {
                     return Err(native_error(format!(
                         "native contract call `{}` in `{}` does not yet accept arguments",
-                        method.name, function.name
+                        name, function.name
                     )));
                 }
                 let receiver = register_type(&result, *receiver, function)?;
-                result[usize::from(destination.0)] = Some(field_type(receiver, &method.name)?);
+                result[usize::from(destination.0)] = Some(field_type(receiver, name)?);
             }
             _ => {}
         }
@@ -829,18 +830,19 @@ fn lower_instruction(
         Instruction::CallContractMethod {
             destination,
             receiver,
-            method,
+            name,
             arguments,
+            ..
         } => {
             if !arguments.is_empty() {
                 return Err(native_error(format!(
                     "native contract call `{}` does not yet accept arguments",
-                    method.name
+                    name
                 )));
             }
             let value = load(builder, *receiver)?;
             let receiver_type = register_type(register_types, *receiver, function)?;
-            let helper = match (receiver_type, method.name.as_str()) {
+            let helper = match (receiver_type, name.as_str()) {
                 (NativeType::StringList, "empty?") => "foster_string_list_empty",
                 (NativeType::StringList, "length") => "foster_string_list_length",
                 (NativeType::StringList, "head") => "foster_string_list_head",
@@ -850,7 +852,7 @@ fn lower_instruction(
                 _ => {
                     return Err(native_error(format!(
                         "native compilation does not support contract property `{}` on `{receiver_type:?}`",
-                        method.name
+                        name
                     )));
                 }
             };

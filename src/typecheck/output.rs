@@ -122,6 +122,30 @@ impl Checker<'_> {
                 },
             );
         }
+        for (index, dispatch) in self.dispatch_keys.iter().enumerate() {
+            let slot = DispatchSlot(index as u32);
+            for (record, _) in self.hir.records.iter() {
+                if let Some(function) =
+                    best_dispatch_method(self.hir, &information, dispatch, |function| {
+                        receiver_is_record(&information, function, record)
+                    })
+                {
+                    information.record_dispatch.insert((record, slot), function);
+                }
+            }
+            for (variant, definition) in self.hir.variant_types.iter() {
+                if definition.kind == crate::ast::VariantKind::Enum
+                    && let Some(function) =
+                        best_dispatch_method(self.hir, &information, dispatch, |function| {
+                            receiver_is_variant(&information, function, variant)
+                        })
+                {
+                    information
+                        .variant_dispatch
+                        .insert((variant, slot), function);
+                }
+            }
+        }
         Ok(information)
     }
 
@@ -266,6 +290,136 @@ impl Checker<'_> {
         }
         error
     }
+}
+
+fn receiver_is_record(
+    information: &TypeInformation,
+    function: FunctionId,
+    record: RecordId,
+) -> bool {
+    information
+        .function_type(function)
+        .and_then(|signature| signature.parameters.first())
+        .is_some_and(|ty| matches!(information.types[*ty], Type::Record { record: receiver, .. } if receiver == record))
+}
+
+fn receiver_is_variant(
+    information: &TypeInformation,
+    function: FunctionId,
+    variant: VariantTypeId,
+) -> bool {
+    information
+        .function_type(function)
+        .and_then(|signature| signature.parameters.first())
+        .is_some_and(|ty| matches!(information.types[*ty], Type::Variant { variant: receiver, .. } if receiver == variant))
+}
+
+fn best_dispatch_method(
+    hir: &hir::PackageHir,
+    information: &TypeInformation,
+    dispatch: &MethodKey,
+    receiver_matches: impl Fn(FunctionId) -> bool,
+) -> Option<FunctionId> {
+    hir.functions
+        .iter()
+        .filter(|(function, definition)| {
+            definition.receiver.is_some() && receiver_matches(*function)
+        })
+        .filter_map(|(function, definition)| {
+            let name = definition
+                .name
+                .rsplit_once('.')
+                .map_or(definition.name.as_str(), |(_, member)| member);
+            let key = information.method_dispatch_key(function, name)?;
+            method_key_matches(&key, dispatch).then_some((dispatch_generics(&key), function))
+        })
+        .min_by_key(|(generics, function)| (*generics, function.into_raw().into_u32()))
+        .map(|(_, function)| function)
+}
+
+fn method_key_matches(pattern: &MethodKey, concrete: &MethodKey) -> bool {
+    let mut generics = HashMap::new();
+    pattern.name == concrete.name
+        && pattern.parameters.len() == concrete.parameters.len()
+        && pattern.parameters.iter().zip(&concrete.parameters).all(
+            |((left_mode, left), (right_mode, right))| {
+                left_mode == right_mode && dispatch_type_matches(left, right, &mut generics)
+            },
+        )
+}
+
+fn dispatch_type_matches(
+    pattern: &DispatchTypeKey,
+    concrete: &DispatchTypeKey,
+    generics: &mut HashMap<u32, DispatchTypeKey>,
+) -> bool {
+    if let DispatchTypeKey::Generic(index) = pattern {
+        return generics.entry(*index).or_insert_with(|| concrete.clone()) == concrete;
+    }
+    match (pattern, concrete) {
+        (DispatchTypeKey::Reference(left), DispatchTypeKey::Reference(right))
+        | (DispatchTypeKey::RawList(left), DispatchTypeKey::RawList(right))
+        | (DispatchTypeKey::Sequence(left), DispatchTypeKey::Sequence(right))
+        | (DispatchTypeKey::Remote(left), DispatchTypeKey::Remote(right))
+        | (DispatchTypeKey::Future(left), DispatchTypeKey::Future(right)) => {
+            dispatch_type_matches(left, right, generics)
+        }
+        (DispatchTypeKey::Record(left, left_args), DispatchTypeKey::Record(right, right_args)) => {
+            left == right && dispatch_types_match(left_args, right_args, generics)
+        }
+        (
+            DispatchTypeKey::Variant(left, left_args),
+            DispatchTypeKey::Variant(right, right_args),
+        ) => left == right && dispatch_types_match(left_args, right_args, generics),
+        (DispatchTypeKey::Intersection(left), DispatchTypeKey::Intersection(right)) => {
+            dispatch_types_match(left, right, generics)
+        }
+        (
+            DispatchTypeKey::Function(left, left_result),
+            DispatchTypeKey::Function(right, right_result),
+        ) => {
+            left.len() == right.len()
+                && left
+                    .iter()
+                    .zip(right)
+                    .all(|((lm, lt), (rm, rt))| lm == rm && dispatch_type_matches(lt, rt, generics))
+                && dispatch_type_matches(left_result, right_result, generics)
+        }
+        _ => pattern == concrete,
+    }
+}
+
+fn dispatch_types_match(
+    pattern: &[DispatchTypeKey],
+    concrete: &[DispatchTypeKey],
+    generics: &mut HashMap<u32, DispatchTypeKey>,
+) -> bool {
+    pattern.len() == concrete.len()
+        && pattern
+            .iter()
+            .zip(concrete)
+            .all(|(left, right)| dispatch_type_matches(left, right, generics))
+}
+
+fn dispatch_generics(key: &MethodKey) -> usize {
+    fn count(ty: &DispatchTypeKey) -> usize {
+        match ty {
+            DispatchTypeKey::Generic(_) => 1,
+            DispatchTypeKey::Reference(value)
+            | DispatchTypeKey::RawList(value)
+            | DispatchTypeKey::Sequence(value)
+            | DispatchTypeKey::Remote(value)
+            | DispatchTypeKey::Future(value) => count(value),
+            DispatchTypeKey::Record(_, values)
+            | DispatchTypeKey::Intersection(values)
+            | DispatchTypeKey::Variant(_, values) => values.iter().map(count).sum(),
+            DispatchTypeKey::Function(parameters, result) => {
+                parameters.iter().map(|(_, ty)| count(ty)).sum::<usize>() + count(result)
+            }
+            _ => 0,
+        }
+    }
+    key.parameters.iter().map(|(_, ty)| count(ty)).sum()
 }
 
 fn intern_type(

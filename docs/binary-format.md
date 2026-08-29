@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 9, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 10, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after lowering and optimization. It contains everything needed to verify and
@@ -25,7 +25,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `9` |
+| version | `u16` | `10` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -34,18 +34,14 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | string record | optional `RecordId` | String wrapper |
 | symbol record | optional `RecordId` | Symbol wrapper |
 | records | `vector<(RecordId, string, vector<string>)>` | runtime name and indexed field layout |
-| methods | `vector<(RecordId, MethodKey, FunctionId)>` | record dispatch |
-| enum methods | `vector<(VariantTypeId, MethodKey, FunctionId)>` | enum dispatch |
+| methods | `vector<(RecordId, u32 slot, FunctionId)>` | record dispatch |
+| enum methods | `vector<(VariantTypeId, u32 slot, FunctionId)>` | enum dispatch |
 | enum cases | `vector<(VariantId, VariantTypeId, string, string)>` | parent enum and case label |
 
-A `MethodKey` is `string name` followed by `vector<(ParameterMode, DispatchTypeKey)>`. It records
-the non-receiver parameter signature selected by type checking. Dispatch types use recursive tags:
-`0 Generic(u32)`, `1 Unit`, `2 Bool`, `3 Int`, `4 Float`, `5 CodePoint`, `6 Byte`, `7 RawBytes`,
-`8 RawByteBuffer`, `9 Reference(type)`, `10 RawList(type)`, `11 Sequence(type)`, `12 Remote(type)`,
-`13 Future(type)`, `14 Function(vector<(ParameterMode, type)>, result)`,
-`15 Record(RecordId, vector<type>)`, `16 Intersection(vector<type>)`,
-`17 Variant(VariantTypeId, vector<type>)`, and `18 Module(string)`. Generic indexes preserve
-relationships such as `(T, T)` versus `(T, U)` without depending on source parameter names.
+Dispatch slots are program-local `u32` identifiers assigned to the contract signatures selected by
+type checking. The type checker also resolves every concrete record and enum implementation for
+each used slot. Runtime lookup is therefore a direct `(concrete type, slot)` table access and does
+not repeat signature matching.
 
 A function is `string name`, `u16 parameter_count`, `vector<ParameterMode> parameter_modes`,
 `vector<bool> mutable_parameters`, `u16 capture_count`, `u16 register_count`,
@@ -100,7 +96,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 24 | JumpIfFalse | `R condition, u32 target` |
 | 25 | Call | `R destination, F, regs` |
 | 26 | CallMethod | `R destination, R receiver, F, regs` |
-| 27 | CallContractMethod | `R destination, R receiver, MethodKey, regs` |
+| 27 | CallContractMethod | `R destination, R receiver, u32 slot, string name, regs` |
 | 28 | MakeClosure | `R destination, F, vector<(CaptureMode, R)>` |
 | 29 | CallValue | `R destination, R callee, regs` |
 | 30 | CallClosure | `R destination, F, vector<(CaptureMode, R)>, regs` |
@@ -110,7 +106,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 9 readers accept only version 9 with zero flags. Development bytecode from another version
+Version 10 readers accept only version 10 with zero flags. Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
 canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of

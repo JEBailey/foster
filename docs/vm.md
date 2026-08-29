@@ -67,9 +67,10 @@ Lowering rejects unsupported HIR explicitly; it never interprets an unsupported 
 instruction or format change.
 
 Function and concrete-method overloads are selected during type checking and lower to their exact
-function IDs. A call through a structural contract carries the statically selected method
-signature in its dispatch key, allowing the VM to choose the corresponding implementation on the
-runtime receiver without repeating overload resolution.
+function IDs. A structural-contract call lowers to a program-local dispatch slot. Type checking
+builds the complete `(concrete type, slot) -> function` tables, so the VM performs one direct lookup
+and never repeats overload or generic-signature matching. Lowering consumes the resolved call kind
+directly; it does not search for methods or reclassify contract members from their receiver types.
 
 Closure frames use a fixed `[captures][parameters][locals/temporaries]` register layout. Copy and
 move captures contain values; reference captures contain weak `PlaceHandle`s that are materialized

@@ -26,7 +26,8 @@ use crate::hir::{
     self, Builtin, ConstantId, ExprId, FunctionId, LocalId, RecordId, ResolvedName, VariantTypeId,
 };
 use crate::types::{
-    DispatchTypeKey, FunctionType, MethodKey, ResolvedCall, Type, TypeId, TypeInformation,
+    DispatchSlot, DispatchTypeKey, FunctionType, MethodKey, ResolvedCall, Type, TypeId,
+    TypeInformation,
 };
 
 type InferredEffects = HashMap<FunctionId, (Vec<crate::ast::Effect>, bool)>;
@@ -74,6 +75,8 @@ impl<'a> Checker<'a> {
             integer_promotions: HashSet::new(),
             bare_method_members: HashSet::new(),
             resolved_calls: HashMap::new(),
+            dispatch_slots: HashMap::new(),
+            dispatch_keys: Vec::new(),
             member_constraints: Vec::new(),
             diagnostics: Vec::new(),
             inferred_effects: HashMap::new(),

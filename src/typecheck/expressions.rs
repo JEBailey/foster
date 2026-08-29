@@ -589,7 +589,11 @@ impl Checker<'_> {
         Ok(ty)
     }
 
-    fn has_stored_member(&mut self, object: &Ty, name: &str) -> Result<bool, FosterError> {
+    pub(super) fn has_stored_member(
+        &mut self,
+        object: &Ty,
+        name: &str,
+    ) -> Result<bool, FosterError> {
         match self.resolved(object.clone()) {
             Ty::Reference(_, value) => self.has_stored_member(&value, name),
             Ty::Record(record, arguments) => Ok(self

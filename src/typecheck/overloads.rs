@@ -31,6 +31,16 @@ fn select_best<T>(matches: Vec<Ranked<T>>) -> Selection<T> {
 }
 
 impl Checker<'_> {
+    pub(super) fn dispatch_slot(&mut self, key: MethodKey) -> DispatchSlot {
+        if let Some(slot) = self.dispatch_slots.get(&key) {
+            return *slot;
+        }
+        let slot = DispatchSlot(self.dispatch_keys.len() as u32);
+        self.dispatch_keys.push(key.clone());
+        self.dispatch_slots.insert(key, slot);
+        slot
+    }
+
     pub(super) fn method_key(
         &self,
         name: &str,
@@ -258,11 +268,13 @@ impl Checker<'_> {
         };
         self.expressions.insert(callee, callable.clone());
         let dispatch = self.method_key(name, &method.parameters, &method.parameter_modes);
+        let slot = self.dispatch_slot(dispatch);
         let requirement = method.requirement;
         self.resolved_calls.insert(
             callee,
             ResolvedCall::ContractMethod {
-                dispatch,
+                slot,
+                name: name.to_owned(),
                 requirement,
             },
         );
