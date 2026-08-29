@@ -585,7 +585,7 @@ impl<'a> Builder<'a> {
     }
 
     fn call_result_borrow_value(&mut self, callee: ExprId, arguments: &[ExprId]) -> BorrowValue {
-        let direct = self.types.resolved_function_for_callee(self.hir, callee);
+        let direct = self.types.resolved_function_for_callee(callee);
         let Some(function) = direct else {
             let mut values = vec![self.borrow_value(callee)];
             values.extend(

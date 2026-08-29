@@ -1072,6 +1072,71 @@ func main() -> String {
 }
 
 #[test]
+fn overloaded_contract_calls_use_the_selected_requirement_for_lsp_features() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = r#"type IntegerRenderer = {
+    /// Renders an integer.
+    pub func render(self, value: Int) -> String [read self]
+}
+
+type CodePointRenderer = {
+    /// Renders a code point.
+    pub func render(self, value: CodePoint) -> String [read self]
+}
+
+type Renderer = & IntegerRenderer & CodePointRenderer & {
+    pub func render(self, value: Int) -> String [read self]
+}
+
+type Formatter = & Renderer & {}
+
+func Formatter.render(self: Formatter, value: Int) -> String { "integer" }
+func Formatter.render(self: Formatter, value: CodePoint) -> String { "code point" }
+
+func inspect(value: Renderer) -> String {
+    value.render('x')
+}
+
+func main() -> String { inspect(Formatter {}) }
+"#;
+    workspace.open(uri.clone(), source.into(), 1);
+    let position = TextDocumentPositionParams::new(
+        lsp_types::TextDocumentIdentifier::new(uri.clone()),
+        Position::new(20, 12),
+    );
+
+    let hover = workspace.hover(&position).unwrap();
+    let HoverContents::Markup(hover) = hover.contents else {
+        panic!("expected markdown hover")
+    };
+    assert!(
+        hover.value.contains("render(self, value: CodePoint)"),
+        "{}",
+        hover.value
+    );
+    assert!(hover.value.contains("Renders a code point"));
+
+    let definition = workspace.definition(&position).unwrap();
+    assert_eq!(definition.range.start, Position::new(7, 13));
+
+    let help = workspace
+        .signature_help(&SignatureHelpParams {
+            context: None,
+            text_document_position_params: TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri),
+                Position::new(20, 20),
+            ),
+            work_done_progress_params: Default::default(),
+        })
+        .unwrap();
+    assert!(
+        help.signatures[0]
+            .label
+            .contains("render(self, value: CodePoint)")
+    );
+}
+
+#[test]
 fn recompiling_a_package_only_reparses_the_changed_module() {
     let (mut workspace, uri, root) = fixture_workspace();
     let main = root.join("main.fos");

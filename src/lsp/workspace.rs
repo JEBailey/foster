@@ -622,9 +622,8 @@ fn symbol_at(
         if let crate::hir::Expr::Call { callee, .. } = compilation.hir.expressions[expression]
             && let Some(function) = compilation
                 .types
-                .resolved_calls
-                .get(&expression)
-                .copied()
+                .resolved_call(callee)
+                .and_then(crate::types::ResolvedCall::function)
                 .or_else(|| selected_function_for_callee(compilation, callee))
         {
             return Some(SymbolIdentity::Function(function));
@@ -637,6 +636,11 @@ fn symbol_at(
             } if member == name => {
                 if let Some(function) = selected_function {
                     return Some(SymbolIdentity::Function(function));
+                }
+                if let Some((record, method)) =
+                    selected_requirement_for_callee(compilation, expression)
+                {
+                    return Some(SymbolIdentity::RequiredMethod(record, method));
                 }
                 if let Some(function) = member_function(compilation, *object, member) {
                     return Some(SymbolIdentity::Function(function));
@@ -1250,7 +1254,9 @@ pub(super) fn callable_presentation(
             } else if let Some(function) = member_function(compilation, *object, name) {
                 (function, true)
             } else {
-                let (record, method_index) = required_method(compilation, *object, name)?;
+                let (record, method_index) =
+                    selected_requirement_for_callee(compilation, callee)
+                        .or_else(|| required_method(compilation, *object, name))?;
                 let method = &compilation.hir.records[record].methods[method_index];
                 return Some(CallablePresentation {
                     signature: method_requirement_signature(method),
@@ -1301,9 +1307,17 @@ fn selected_function_for_callee(
     compilation: &crate::hir::Compilation,
     callee: crate::hir::ExprId,
 ) -> Option<crate::hir::FunctionId> {
-    compilation
-        .types
-        .resolved_function_for_callee(&compilation.hir, callee)
+    compilation.types.resolved_function_for_callee(callee)
+}
+
+fn selected_requirement_for_callee(
+    compilation: &crate::hir::Compilation,
+    callee: crate::hir::ExprId,
+) -> Option<(crate::hir::RecordId, usize)> {
+    match compilation.types.resolved_call(callee)? {
+        crate::types::ResolvedCall::ContractMethod { requirement, .. } => *requirement,
+        _ => None,
+    }
 }
 
 fn member_function(

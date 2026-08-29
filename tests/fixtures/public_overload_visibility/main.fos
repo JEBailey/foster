@@ -1,0 +1,5 @@
+import library
+
+func main() -> String {
+    render("unqualified") + ":" + library::render("qualified")
+}

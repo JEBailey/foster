@@ -33,6 +33,86 @@ impl Writer {
         self.bytes.extend_from_slice(value.as_bytes());
         Ok(())
     }
+    pub(super) fn method_key(&mut self, method: &MethodKey) -> Result<(), BinaryError> {
+        self.string(&method.name)?;
+        self.u32(method.parameters.len())?;
+        for (mode, ty) in &method.parameters {
+            self.parameter_mode(*mode);
+            self.dispatch_type(ty)?;
+        }
+        Ok(())
+    }
+    fn dispatch_type(&mut self, ty: &DispatchTypeKey) -> Result<(), BinaryError> {
+        match ty {
+            DispatchTypeKey::Generic(index) => {
+                self.u8(0);
+                self.u32_value(*index);
+            }
+            DispatchTypeKey::Unit => self.u8(1),
+            DispatchTypeKey::Bool => self.u8(2),
+            DispatchTypeKey::Int => self.u8(3),
+            DispatchTypeKey::Float => self.u8(4),
+            DispatchTypeKey::CodePoint => self.u8(5),
+            DispatchTypeKey::Byte => self.u8(6),
+            DispatchTypeKey::RawBytes => self.u8(7),
+            DispatchTypeKey::RawByteBuffer => self.u8(8),
+            DispatchTypeKey::Reference(value) => {
+                self.u8(9);
+                self.dispatch_type(value)?;
+            }
+            DispatchTypeKey::RawList(value) => {
+                self.u8(10);
+                self.dispatch_type(value)?;
+            }
+            DispatchTypeKey::Sequence(value) => {
+                self.u8(11);
+                self.dispatch_type(value)?;
+            }
+            DispatchTypeKey::Remote(value) => {
+                self.u8(12);
+                self.dispatch_type(value)?;
+            }
+            DispatchTypeKey::Future(value) => {
+                self.u8(13);
+                self.dispatch_type(value)?;
+            }
+            DispatchTypeKey::Function(parameters, result) => {
+                self.u8(14);
+                self.u32(parameters.len())?;
+                for (mode, parameter) in parameters {
+                    self.parameter_mode(*mode);
+                    self.dispatch_type(parameter)?;
+                }
+                self.dispatch_type(result)?;
+            }
+            DispatchTypeKey::Record(record, arguments) => {
+                self.u8(15);
+                self.id(*record);
+                self.dispatch_types(arguments)?;
+            }
+            DispatchTypeKey::Intersection(members) => {
+                self.u8(16);
+                self.dispatch_types(members)?;
+            }
+            DispatchTypeKey::Variant(variant, arguments) => {
+                self.u8(17);
+                self.id(*variant);
+                self.dispatch_types(arguments)?;
+            }
+            DispatchTypeKey::Module(name) => {
+                self.u8(18);
+                self.string(name)?;
+            }
+        }
+        Ok(())
+    }
+    fn dispatch_types(&mut self, types: &[DispatchTypeKey]) -> Result<(), BinaryError> {
+        self.u32(types.len())?;
+        for ty in types {
+            self.dispatch_type(ty)?;
+        }
+        Ok(())
+    }
     pub(super) fn option_id<T>(&mut self, value: Option<Idx<T>>) {
         match value {
             Some(id) => {
@@ -375,13 +455,13 @@ impl Writer {
             Instruction::CallContractMethod {
                 destination,
                 receiver,
-                name,
+                method,
                 arguments,
             } => {
                 self.u8(27);
                 self.reg(*destination);
                 self.reg(*receiver);
-                self.string(name)?;
+                self.method_key(method)?;
                 self.regs(arguments)?;
             }
             Instruction::MakeClosure {

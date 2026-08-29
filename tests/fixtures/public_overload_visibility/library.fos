@@ -1,0 +1,7 @@
+func render(value: Int) -> String {
+    "private"
+}
+
+pub func render(value: String) -> String {
+    value
+}

@@ -203,22 +203,74 @@ impl FunctionCompiler<'_> {
                         );
                         return Ok(destination);
                     }
-                    if let Some(function) = self.types.extension_methods.get(callee).copied() {
-                        let receiver = self.method_receiver(*object)?;
-                        let arguments = arguments
+                    if let Some(crate::types::ResolvedCall::Method { function, remote }) =
+                        self.types.resolved_call(*callee)
+                    {
+                        let function = *function;
+                        let remote = *remote;
+                        let receiver = if remote
+                            || matches!(
+                                self.hir.functions[function].intrinsic.as_deref(),
+                                Some("list.push" | "list.append")
+                            )
+                            || self.read_only_method(function)
+                        {
+                            self.expression(*object)?
+                        } else {
+                            self.method_receiver(*object)?
+                        };
+                        let mut arguments = arguments
                             .iter()
                             .map(|argument| self.expression(*argument))
                             .collect::<Result<Vec<_>, _>>()?;
                         let destination = self.allocate();
-                        self.emit(
+                        if self.lower_list_intrinsic(
+                            function,
+                            receiver,
+                            &arguments,
+                            destination,
+                            span.clone(),
+                        )? {
+                            return Ok(destination);
+                        }
+                        if let Some(builtin) = self.intrinsic_builtin(function) {
+                            arguments.insert(0, receiver);
+                            self.emit(
+                                Instruction::Builtin {
+                                    destination,
+                                    builtin,
+                                    arguments,
+                                },
+                                span,
+                            );
+                            return Ok(destination);
+                        }
+                        let instruction = if remote {
+                            let modes = self
+                                .types
+                                .function_type(function)
+                                .ok_or_else(|| self.unsupported("remote method parameter modes"))?;
+                            Instruction::RemoteCall {
+                                destination,
+                                remote: receiver,
+                                function,
+                                arguments: modes
+                                    .parameter_modes
+                                    .iter()
+                                    .copied()
+                                    .skip(1)
+                                    .zip(arguments)
+                                    .collect(),
+                            }
+                        } else {
                             Instruction::CallMethod {
                                 destination,
                                 receiver,
                                 function,
                                 arguments,
-                            },
-                            span,
-                        );
+                            }
+                        };
+                        self.emit(instruction, span);
                         return Ok(destination);
                     }
                     if let Some(function) = self.primitive_method(*object, name) {
@@ -329,12 +381,16 @@ impl FunctionCompiler<'_> {
                             Instruction::CallContractMethod {
                                 destination,
                                 receiver,
-                                name: self
-                                    .types
-                                    .contract_dispatch_names
-                                    .get(callee)
-                                    .cloned()
-                                    .unwrap_or_else(|| name.clone()),
+                                method: match self.types.resolved_call(*callee) {
+                                    Some(crate::types::ResolvedCall::ContractMethod {
+                                        dispatch,
+                                        ..
+                                    }) => dispatch.clone(),
+                                    _ => crate::types::MethodKey {
+                                        name: name.clone(),
+                                        parameters: Vec::new(),
+                                    },
+                                },
                                 arguments,
                             },
                             span,
@@ -347,15 +403,19 @@ impl FunctionCompiler<'_> {
                     .map(|argument| self.expression(*argument))
                     .collect::<Result<Vec<_>, _>>()?;
                 let destination = self.allocate();
-                let resolved_function = self.types.resolved_calls.get(&id).copied().or_else(|| {
-                    if let hir::Expr::Name(ResolvedName::Function(function)) =
-                        self.hir.expressions[*callee]
-                    {
-                        Some(function)
-                    } else {
-                        None
-                    }
-                });
+                let resolved_function = self
+                    .types
+                    .resolved_call(*callee)
+                    .and_then(crate::types::ResolvedCall::function)
+                    .or_else(|| {
+                        if let hir::Expr::Name(ResolvedName::Function(function)) =
+                            self.hir.expressions[*callee]
+                        {
+                            Some(function)
+                        } else {
+                            None
+                        }
+                    });
                 if let Some(function) = resolved_function {
                     if let Some((&receiver, method_arguments)) = arguments.split_first()
                         && self.lower_list_intrinsic(

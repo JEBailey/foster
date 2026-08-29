@@ -340,7 +340,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     }
 
     fn walk_call(&mut self, callee: ExprId, arguments: &[ExprId]) {
-        if let hir::Expr::Member { object, name } = &self.checker.hir.expressions[callee] {
+        if let hir::Expr::Member { object, .. } = &self.checker.hir.expressions[callee] {
             let receiver = self
                 .checker
                 .resolved(self.checker.expressions[object].clone());
@@ -349,7 +349,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                     Ty::Reference(group, _) => Some(group),
                     _ => None,
                 };
-                if let Some(method) = self.method_for(*object, name) {
+                if let Some(method) = self.call_target(callee) {
                     let definition = &self.checker.hir.functions[method];
                     let parameter_names = definition
                         .parameters
@@ -377,7 +377,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 }
                 return;
             }
-            if let Some(method) = self.method_for(*object, name) {
+            if let Some(method) = self.call_target(callee) {
                 self.apply_callee(method, Some(*object), arguments);
                 return;
             }
@@ -524,31 +524,17 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     }
 
     fn call_target(&self, callee: ExprId) -> Option<FunctionId> {
-        if let Some(function) = self.checker.extension_methods.get(&callee) {
-            return Some(*function);
-        }
-        if let Some(function) =
-            self.checker
-                .hir
-                .expressions
-                .iter()
-                .find_map(|(call, expression)| match expression {
-                    hir::Expr::Call {
-                        callee: candidate, ..
-                    } if *candidate == callee => self.checker.resolved_calls.get(&call).copied(),
-                    _ => None,
-                })
+        if let Some(function) = self
+            .checker
+            .resolved_calls
+            .get(&callee)
+            .and_then(ResolvedCall::function)
         {
             return Some(function);
         }
         match &self.checker.hir.expressions[callee] {
             hir::Expr::Name(ResolvedName::Function(function)) => Some(*function),
-            hir::Expr::Member { object, name } => self
-                .checker
-                .extension_methods
-                .get(&callee)
-                .copied()
-                .or_else(|| self.method_for(*object, name)),
+            hir::Expr::Member { object, name } => self.method_for(*object, name),
             _ => None,
         }
     }

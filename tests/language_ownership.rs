@@ -24,6 +24,27 @@ func main() -> Int {
 }
 
 #[test]
+fn remote_objects_dispatch_overloaded_methods() {
+    let source = r#"
+type Formatter = {}
+
+func Formatter.render(self: Formatter, value: Int) -> Int {
+    value
+}
+
+func Formatter.render(self: Formatter, value: CodePoint) -> Int {
+    42
+}
+
+func main() -> Int {
+    let formatter = remote Formatter {}
+    await formatter.render('x')
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+}
+
+#[test]
 fn remote_assertion_failures_are_delivered_through_futures() {
     let source = r#"
 type Worker = {}

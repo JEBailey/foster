@@ -19,6 +19,7 @@ pub(super) struct EffectiveMethod {
     pub(super) effects: Vec<crate::ast::Effect>,
     pub(super) suspends: bool,
     pub(super) required_by_composition: bool,
+    pub(super) requirement: Option<(RecordId, usize)>,
 }
 
 impl Checker<'_> {
@@ -61,6 +62,7 @@ impl Checker<'_> {
                     requirement,
                     &generics,
                     false,
+                    None,
                 )?;
                 Self::merge_variant_method(&definition.name, &mut methods, method)?;
             }
@@ -393,13 +395,14 @@ impl Checker<'_> {
             let contract = self.annotation_type(definition.module, composition, &generics)?;
             self.collect_contract_methods(record, contract, visiting, &mut methods)?;
         }
-        for requirement in &definition.methods {
+        for (method_index, requirement) in definition.methods.iter().enumerate() {
             let method = self.method_requirement(
                 &definition.name,
                 definition.module,
                 requirement,
                 &generics,
                 inherited,
+                Some((record, method_index)),
             )?;
             self.merge_effective_method(record, &mut methods, method)?;
         }
@@ -447,6 +450,7 @@ impl Checker<'_> {
                             effects: Vec::new(),
                             suspends: false,
                             required_by_composition: true,
+                            requirement: None,
                         },
                     )?;
                 }
@@ -469,6 +473,7 @@ impl Checker<'_> {
         requirement: &crate::ast::MethodRequirement,
         record_generics: &HashMap<String, Ty>,
         inherited: bool,
+        origin: Option<(RecordId, usize)>,
     ) -> Result<EffectiveMethod, FosterError> {
         if !requirement.type_parameters.is_empty() || !requirement.groups.is_empty() {
             return Err(FosterError::runtime(format!(
@@ -532,6 +537,7 @@ impl Checker<'_> {
             effects: requirement.effects.clone(),
             suspends: requirement.suspends,
             required_by_composition: inherited,
+            requirement: origin,
         })
     }
 

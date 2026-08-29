@@ -542,17 +542,17 @@ fn infer_register_types(
             Instruction::CallContractMethod {
                 destination,
                 receiver,
-                name,
+                method,
                 arguments,
             } => {
                 if !arguments.is_empty() {
                     return Err(native_error(format!(
-                        "native contract call `{name}` in `{}` does not yet accept arguments",
-                        function.name
+                        "native contract call `{}` in `{}` does not yet accept arguments",
+                        method.name, function.name
                     )));
                 }
                 let receiver = register_type(&result, *receiver, function)?;
-                result[usize::from(destination.0)] = Some(field_type(receiver, name)?);
+                result[usize::from(destination.0)] = Some(field_type(receiver, &method.name)?);
             }
             _ => {}
         }
@@ -829,17 +829,18 @@ fn lower_instruction(
         Instruction::CallContractMethod {
             destination,
             receiver,
-            name,
+            method,
             arguments,
         } => {
             if !arguments.is_empty() {
                 return Err(native_error(format!(
-                    "native contract call `{name}` does not yet accept arguments"
+                    "native contract call `{}` does not yet accept arguments",
+                    method.name
                 )));
             }
             let value = load(builder, *receiver)?;
             let receiver_type = register_type(register_types, *receiver, function)?;
-            let helper = match (receiver_type, name.as_str()) {
+            let helper = match (receiver_type, method.name.as_str()) {
                 (NativeType::StringList, "empty?") => "foster_string_list_empty",
                 (NativeType::StringList, "length") => "foster_string_list_length",
                 (NativeType::StringList, "head") => "foster_string_list_head",
@@ -848,7 +849,8 @@ fn lower_instruction(
                 (NativeType::String, "head") => "foster_string_head",
                 _ => {
                     return Err(native_error(format!(
-                        "native compilation does not support contract property `{name}` on `{receiver_type:?}`"
+                        "native compilation does not support contract property `{}` on `{receiver_type:?}`",
+                        method.name
                     )));
                 }
             };

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use crate::ast::{BinaryOp, UnaryOp};
 use crate::hir::{Builtin, FunctionId, RecordId, VariantId, VariantTypeId};
+use crate::types::MethodKey;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Register(pub u16);
@@ -165,7 +166,7 @@ pub enum Instruction {
     CallContractMethod {
         destination: Register,
         receiver: Register,
-        name: String,
+        method: MethodKey,
         arguments: Vec<Register>,
     },
     MakeClosure {
@@ -450,8 +451,8 @@ pub struct Program {
     pub symbol_record: Option<RecordId>,
     pub records: HashMap<RecordId, String>,
     pub record_layouts: HashMap<RecordId, Arc<super::value::RecordLayout>>,
-    pub methods: HashMap<(RecordId, String), FunctionId>,
-    pub variant_methods: HashMap<(VariantTypeId, String), FunctionId>,
+    pub methods: HashMap<(RecordId, MethodKey), FunctionId>,
+    pub variant_methods: HashMap<(VariantTypeId, MethodKey), FunctionId>,
     pub variants: HashMap<VariantId, (VariantTypeId, Arc<str>, Arc<str>)>,
 }
 

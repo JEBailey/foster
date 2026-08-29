@@ -15,11 +15,11 @@ impl FunctionLowerer<'_> {
                     let mut candidates = std::iter::once(self.module)
                         .chain(self.imports.values().copied())
                         .filter_map(|module| {
-                            self.hir
-                                .function_named(module, &qualified_name)
-                                .filter(|function| {
-                                    module == self.module || self.hir.functions[*function].public
-                                })
+                            if module == self.module {
+                                self.hir.function_named(module, &qualified_name)
+                            } else {
+                                self.public_function_named(module, &qualified_name)
+                            }
                         })
                         .collect::<Vec<_>>();
                     candidates.sort();
@@ -53,8 +53,9 @@ impl FunctionLowerer<'_> {
                         "Byte" | "Bytes" | "ByteBuffer" | "CodePoint" | "String"
                     ) && self
                         .hir
-                        .function_named(module, &format!("{type_name}.{member}"))
-                        .is_some());
+                        .functions_named(module, &format!("{type_name}.{member}"))
+                        .iter()
+                        .any(|function| self.hir.functions[*function].public));
                 if !names_type {
                     return Ok(None);
                 }
@@ -64,12 +65,19 @@ impl FunctionLowerer<'_> {
         };
 
         let qualified_name = format!("{type_name}.{member}");
-        let Some(function) = self.hir.function_named(module, &qualified_name) else {
+        let function = if imported {
+            self.public_function_named(module, &qualified_name)
+        } else {
+            self.hir.function_named(module, &qualified_name)
+        };
+        let Some(function) = function else {
+            if imported && !self.hir.functions_named(module, &qualified_name).is_empty() {
+                return Err(
+                    self.error(format!("associated function `{qualified_name}` is private"))
+                );
+            }
             return Ok(None);
         };
-        if imported && !self.hir.functions[function].public {
-            return Err(self.error(format!("associated function `{qualified_name}` is private")));
-        }
         Ok(Some(function))
     }
 
@@ -285,8 +293,7 @@ impl FunctionLowerer<'_> {
             {
                 imported.push(ResolvedName::Constant(constant));
             }
-            if let Some(function) = self.hir.function_named(*module, name)
-                && self.hir.functions[function].public
+            if let Some(function) = self.public_function_named(*module, name)
                 && !imported.contains(&ResolvedName::Function(function))
             {
                 imported.push(ResolvedName::Function(function));
@@ -351,14 +358,14 @@ impl FunctionLowerer<'_> {
                 }
                 return Ok(ResolvedName::Constant(constant));
             }
-            if last && let Some(function) = self.hir.function_named(module, component) {
-                if !self.hir.functions[function].public {
-                    return Err(self.error(format!(
-                        "function `{}.{component}` is private",
-                        self.hir.modules[module].name
-                    )));
-                }
+            if last && let Some(function) = self.public_function_named(module, component) {
                 return Ok(ResolvedName::Function(function));
+            }
+            if last && !self.hir.functions_named(module, component).is_empty() {
+                return Err(self.error(format!(
+                    "function `{}.{component}` is private",
+                    self.hir.modules[module].name
+                )));
             }
             if last && let Some(record) = self.hir.record_named(module, component) {
                 if !self.hir.records[record].public {
@@ -405,6 +412,14 @@ impl FunctionLowerer<'_> {
             }
         }
         Ok(ResolvedName::Module(module))
+    }
+
+    fn public_function_named(&self, module: ModuleId, name: &str) -> Option<FunctionId> {
+        self.hir
+            .functions_named(module, name)
+            .iter()
+            .copied()
+            .find(|function| self.hir.functions[*function].public)
     }
 
     pub(super) fn error(&self, message: impl Into<String>) -> FosterError {

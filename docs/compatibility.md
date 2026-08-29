@@ -119,7 +119,9 @@ matches requiring a lossless conversion; equally ranked matches are rejected as 
 Overloaded declarations require explicit parameter types, and an overload set cannot be used as a
 bare function value because no arguments are available to select one declaration. Contract
 composition merges identical requirements and preserves distinct parameter signatures for dynamic
-dispatch. The ownership-model and bytecode format versions remain unchanged.
+dispatch. The ownership-model version remains unchanged. Bytecode format version 8 replaces
+display-string dispatch identities with structural method keys; current readers continue to accept
+version 5 through 7 artifacts.
 
 ## Resource-location library API
 

@@ -1033,6 +1033,14 @@ fn declarations_are_private_by_default_across_public_modules() {
 }
 
 #[test]
+fn public_overloads_are_visible_when_a_private_overload_is_declared_first() {
+    assert_string(
+        foster::run_package("tests/fixtures/public_overload_visibility").unwrap(),
+        "unqualified:qualified",
+    );
+}
+
+#[test]
 fn constructs_reads_and_mutates_nominal_records() {
     let source = r#"
 pub type Person = {
@@ -3166,4 +3174,29 @@ func main() -> String { render(Formatter {}) }
 "#;
 
     assert_string(foster::run(source).unwrap(), "int:code point");
+}
+
+#[test]
+fn generic_contract_methods_use_structural_dispatch_keys() {
+    let source = r#"
+type Renderer<T> = {
+    pub func render(self, value: T) -> String [read self]
+}
+
+type Formatter<T> = & Renderer<T> & {}
+
+func Formatter.render<T>(self: Formatter<T>, value: T) -> String {
+    "generic"
+}
+
+func render(value: Renderer<Int>) -> String {
+    value.render(42)
+}
+
+func main() -> String {
+    render(Formatter {})
+}
+"#;
+
+    assert_string(foster::run(source).unwrap(), "generic");
 }

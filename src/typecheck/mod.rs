@@ -8,6 +8,7 @@ mod context;
 mod effects;
 mod expressions;
 mod output;
+mod overloads;
 mod predicates;
 mod records;
 mod unify;
@@ -24,7 +25,9 @@ use crate::error::FosterError;
 use crate::hir::{
     self, Builtin, ConstantId, ExprId, FunctionId, LocalId, RecordId, ResolvedName, VariantTypeId,
 };
-use crate::types::{FunctionType, Type, TypeId, TypeInformation};
+use crate::types::{
+    DispatchTypeKey, FunctionType, MethodKey, ResolvedCall, Type, TypeId, TypeInformation,
+};
 
 type InferredEffects = HashMap<FunctionId, (Vec<crate::ast::Effect>, bool)>;
 
@@ -70,9 +73,7 @@ impl<'a> Checker<'a> {
             expressions: HashMap::new(),
             integer_promotions: HashSet::new(),
             bare_method_members: HashSet::new(),
-            extension_methods: HashMap::new(),
             resolved_calls: HashMap::new(),
-            contract_dispatch_names: HashMap::new(),
             member_constraints: Vec::new(),
             diagnostics: Vec::new(),
             inferred_effects: HashMap::new(),

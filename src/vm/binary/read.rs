@@ -3,6 +3,7 @@ use super::*;
 pub(super) struct Reader<'a> {
     pub(super) bytes: &'a [u8],
     pub(super) offset: usize,
+    pub(super) version: u16,
 }
 impl<'a> Reader<'a> {
     pub(super) fn take(&mut self, count: usize) -> Result<&'a [u8], BinaryError> {
@@ -57,6 +58,63 @@ impl<'a> Reader<'a> {
         }
         String::from_utf8(self.take(count)?.to_vec())
             .map_err(|_| BinaryError::new("invalid UTF-8 string"))
+    }
+    pub(super) fn method_key(&mut self) -> Result<MethodKey, BinaryError> {
+        let name = self.string()?;
+        let parameters =
+            self.vec(|reader| Ok((reader.parameter_mode()?, reader.dispatch_type(0)?)))?;
+        Ok(MethodKey { name, parameters })
+    }
+    pub(super) fn compatible_method_key(&mut self) -> Result<MethodKey, BinaryError> {
+        if self.version >= 8 {
+            self.method_key()
+        } else {
+            Ok(MethodKey {
+                name: self.string()?,
+                parameters: Vec::new(),
+            })
+        }
+    }
+    fn dispatch_type(&mut self, depth: usize) -> Result<DispatchTypeKey, BinaryError> {
+        if depth >= 64 {
+            return Err(BinaryError::new("dispatch type nesting exceeds limit"));
+        }
+        let nested = |reader: &mut Self| reader.dispatch_type(depth + 1);
+        Ok(match self.u8()? {
+            0 => DispatchTypeKey::Generic(self.u32()?),
+            1 => DispatchTypeKey::Unit,
+            2 => DispatchTypeKey::Bool,
+            3 => DispatchTypeKey::Int,
+            4 => DispatchTypeKey::Float,
+            5 => DispatchTypeKey::CodePoint,
+            6 => DispatchTypeKey::Byte,
+            7 => DispatchTypeKey::RawBytes,
+            8 => DispatchTypeKey::RawByteBuffer,
+            9 => DispatchTypeKey::Reference(Box::new(nested(self)?)),
+            10 => DispatchTypeKey::RawList(Box::new(nested(self)?)),
+            11 => DispatchTypeKey::Sequence(Box::new(nested(self)?)),
+            12 => DispatchTypeKey::Remote(Box::new(nested(self)?)),
+            13 => DispatchTypeKey::Future(Box::new(nested(self)?)),
+            14 => DispatchTypeKey::Function(
+                self.vec(|reader| {
+                    Ok((reader.parameter_mode()?, reader.dispatch_type(depth + 1)?))
+                })?,
+                Box::new(nested(self)?),
+            ),
+            15 => DispatchTypeKey::Record(
+                self.id::<Record>()?,
+                self.vec(|reader| reader.dispatch_type(depth + 1))?,
+            ),
+            16 => {
+                DispatchTypeKey::Intersection(self.vec(|reader| reader.dispatch_type(depth + 1))?)
+            }
+            17 => DispatchTypeKey::Variant(
+                self.id::<VariantType>()?,
+                self.vec(|reader| reader.dispatch_type(depth + 1))?,
+            ),
+            18 => DispatchTypeKey::Module(self.string()?),
+            tag => return Err(BinaryError::new(format!("invalid dispatch type {tag}"))),
+        })
     }
     pub(super) fn option_id<T>(&mut self) -> Result<Option<Idx<T>>, BinaryError> {
         match self.u8()? {
@@ -260,7 +318,7 @@ impl<'a> Reader<'a> {
             27 => Instruction::CallContractMethod {
                 destination: r!(),
                 receiver: r!(),
-                name: self.string()?,
+                method: self.compatible_method_key()?,
                 arguments: self.regs()?,
             },
             28 => Instruction::MakeClosure {

@@ -9,9 +9,10 @@ use la_arena::{Idx, RawIdx};
 use super::{BytecodeFunction, Constant, Instruction, Program, Register, verify};
 use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::hir::{Builtin, CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
+use crate::types::{DispatchTypeKey, MethodKey};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 7;
+pub const FORMAT_VERSION: u16 = 8;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -81,7 +82,7 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
     w.u32(methods.len())?;
     for ((record, name), function) in methods {
         w.id(*record);
-        w.string(name)?;
+        w.method_key(name)?;
         w.id(*function);
     }
 
@@ -90,7 +91,7 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
     w.u32(variant_methods.len())?;
     for ((variant, name), function) in variant_methods {
         w.id(*variant);
-        w.string(name)?;
+        w.method_key(name)?;
         w.id(*function);
     }
 
@@ -108,16 +109,21 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
 
 /// Decodes, bounds-checks, and verifies a serialized program.
 pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
-    let mut r = Reader { bytes, offset: 0 };
+    let mut r = Reader {
+        bytes,
+        offset: 0,
+        version: FORMAT_VERSION,
+    };
     if r.take(8)? != MAGIC {
         return Err(BinaryError::new("not a Foster bytecode file"));
     }
     let version = r.u16()?;
-    if !matches!(version, 5 | 6 | FORMAT_VERSION) {
+    if !(5..=FORMAT_VERSION).contains(&version) {
         return Err(BinaryError::new(format!(
             "unsupported Foster bytecode version {version}"
         )));
     }
+    r.version = version;
     let flags = r.u16()?;
     if flags != 0 {
         return Err(BinaryError::new(format!(
@@ -145,9 +151,18 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         .into_iter()
         .map(|(id, _, fields)| (id, fields))
         .collect();
-    let methods = r.map(|r| Ok(((r.id::<Record>()?, r.string()?), r.id::<Function>()?)))?;
-    let variant_methods =
-        r.map(|r| Ok(((r.id::<VariantType>()?, r.string()?), r.id::<Function>()?)))?;
+    let methods = r.map(|r| {
+        Ok((
+            (r.id::<Record>()?, r.compatible_method_key()?),
+            r.id::<Function>()?,
+        ))
+    })?;
+    let variant_methods = r.map(|r| {
+        Ok((
+            (r.id::<VariantType>()?, r.compatible_method_key()?),
+            r.id::<Function>()?,
+        ))
+    })?;
     let variants = r.map(|r| {
         Ok((
             r.id::<Variant>()?,

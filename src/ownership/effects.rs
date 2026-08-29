@@ -19,7 +19,7 @@ pub(crate) fn call_invalidations(
         hir::Expr::Member { object, .. } => Some(object),
         _ => None,
     };
-    let function = types.resolved_function_for_callee(hir, callee);
+    let function = types.resolved_function_for_callee(callee);
 
     signature
         .effects

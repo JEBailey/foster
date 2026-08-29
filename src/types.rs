@@ -49,14 +49,63 @@ pub struct FunctionType {
     pub suspends: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum DispatchTypeKey {
+    Generic(u32),
+    Unit,
+    Bool,
+    Int,
+    Float,
+    CodePoint,
+    Byte,
+    RawBytes,
+    RawByteBuffer,
+    Reference(Box<Self>),
+    RawList(Box<Self>),
+    Sequence(Box<Self>),
+    Remote(Box<Self>),
+    Future(Box<Self>),
+    Function(Vec<(ast::ParameterMode, Self)>, Box<Self>),
+    Record(RecordId, Vec<Self>),
+    Intersection(Vec<Self>),
+    Variant(VariantTypeId, Vec<Self>),
+    Module(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct MethodKey {
+    pub name: String,
+    pub parameters: Vec<(ast::ParameterMode, DispatchTypeKey)>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolvedCall {
+    Function(FunctionId),
+    Method {
+        function: FunctionId,
+        remote: bool,
+    },
+    ContractMethod {
+        dispatch: MethodKey,
+        requirement: Option<(RecordId, usize)>,
+    },
+}
+
+impl ResolvedCall {
+    pub fn function(&self) -> Option<FunctionId> {
+        match *self {
+            Self::Function(function) | Self::Method { function, .. } => Some(function),
+            Self::ContractMethod { .. } => None,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct TypeInformation {
     pub types: Arena<Type>,
     pub expressions: HashMap<ExprId, TypeId>,
     pub integer_promotions: HashSet<ExprId>,
-    pub extension_methods: HashMap<ExprId, FunctionId>,
-    pub resolved_calls: HashMap<ExprId, FunctionId>,
-    pub contract_dispatch_names: HashMap<ExprId, String>,
+    pub resolved_calls: HashMap<ExprId, ResolvedCall>,
     pub locals: HashMap<LocalId, TypeId>,
     pub functions: HashMap<FunctionId, FunctionType>,
     pub constants: HashMap<ConstantId, TypeId>,
@@ -90,45 +139,104 @@ impl TypeInformation {
         self.functions.get(&function)
     }
 
-    pub fn method_dispatch_name(&self, function: FunctionId, name: &str) -> Option<String> {
+    pub fn method_dispatch_key(&self, function: FunctionId, name: &str) -> Option<MethodKey> {
         let signature = self.function_type(function)?;
-        Some(format!(
-            "{name}\u{1f}{}",
-            signature
+        let mut generics = HashMap::new();
+        Some(MethodKey {
+            name: name.to_owned(),
+            parameters: signature
                 .parameters
                 .iter()
                 .skip(1)
                 .zip(signature.parameter_modes.iter().skip(1))
-                .map(|(parameter, mode)| format!("{mode:?}:{}", self.display(*parameter)))
-                .collect::<Vec<_>>()
-                .join(",")
-        ))
+                .map(|(parameter, mode)| {
+                    (
+                        *mode,
+                        self.dispatch_type_key_with_generics(*parameter, &mut generics),
+                    )
+                })
+                .collect(),
+        })
     }
 
-    pub fn resolved_function_for_callee(
+    pub fn dispatch_type_key(&self, ty: TypeId) -> DispatchTypeKey {
+        self.dispatch_type_key_with_generics(ty, &mut HashMap::new())
+    }
+
+    fn dispatch_type_key_with_generics(
         &self,
-        hir: &crate::hir::PackageHir,
-        callee: ExprId,
-    ) -> Option<FunctionId> {
-        if let Some(function) = self.extension_methods.get(&callee) {
-            return Some(*function);
+        ty: TypeId,
+        generics: &mut HashMap<String, u32>,
+    ) -> DispatchTypeKey {
+        match &self.types[ty] {
+            Type::Generic(name) => {
+                let next = generics.len() as u32;
+                DispatchTypeKey::Generic(*generics.entry(name.clone()).or_insert(next))
+            }
+            Type::Unit => DispatchTypeKey::Unit,
+            Type::Bool => DispatchTypeKey::Bool,
+            Type::Int => DispatchTypeKey::Int,
+            Type::Float => DispatchTypeKey::Float,
+            Type::CodePoint => DispatchTypeKey::CodePoint,
+            Type::Byte => DispatchTypeKey::Byte,
+            Type::RawBytes => DispatchTypeKey::RawBytes,
+            Type::RawByteBuffer => DispatchTypeKey::RawByteBuffer,
+            Type::Reference { value, .. } => DispatchTypeKey::Reference(Box::new(
+                self.dispatch_type_key_with_generics(*value, generics),
+            )),
+            Type::RawList(value) => DispatchTypeKey::RawList(Box::new(
+                self.dispatch_type_key_with_generics(*value, generics),
+            )),
+            Type::Sequence(value) => DispatchTypeKey::Sequence(Box::new(
+                self.dispatch_type_key_with_generics(*value, generics),
+            )),
+            Type::Remote(value) => DispatchTypeKey::Remote(Box::new(
+                self.dispatch_type_key_with_generics(*value, generics),
+            )),
+            Type::Future(value) => DispatchTypeKey::Future(Box::new(
+                self.dispatch_type_key_with_generics(*value, generics),
+            )),
+            Type::Function(function) => DispatchTypeKey::Function(
+                function
+                    .parameter_modes
+                    .iter()
+                    .copied()
+                    .zip(function.parameters.iter().map(|parameter| {
+                        self.dispatch_type_key_with_generics(*parameter, generics)
+                    }))
+                    .collect(),
+                Box::new(self.dispatch_type_key_with_generics(function.result, generics)),
+            ),
+            Type::Record { record, arguments } => DispatchTypeKey::Record(
+                *record,
+                arguments
+                    .iter()
+                    .map(|argument| self.dispatch_type_key_with_generics(*argument, generics))
+                    .collect(),
+            ),
+            Type::Intersection(members) => DispatchTypeKey::Intersection(
+                members
+                    .iter()
+                    .map(|member| self.dispatch_type_key_with_generics(*member, generics))
+                    .collect(),
+            ),
+            Type::Variant { variant, arguments } => DispatchTypeKey::Variant(
+                *variant,
+                arguments
+                    .iter()
+                    .map(|argument| self.dispatch_type_key_with_generics(*argument, generics))
+                    .collect(),
+            ),
+            Type::Module(name) => DispatchTypeKey::Module(name.clone()),
         }
-        if let Some(function) =
-            hir.expressions
-                .iter()
-                .find_map(|(call, expression)| match expression {
-                    crate::hir::Expr::Call {
-                        callee: candidate, ..
-                    } if *candidate == callee => self.resolved_calls.get(&call).copied(),
-                    _ => None,
-                })
-        {
-            return Some(function);
-        }
-        match hir.expressions[callee] {
-            crate::hir::Expr::Name(crate::hir::ResolvedName::Function(function)) => Some(function),
-            _ => None,
-        }
+    }
+
+    pub fn resolved_call(&self, callee: ExprId) -> Option<&ResolvedCall> {
+        self.resolved_calls.get(&callee)
+    }
+
+    pub fn resolved_function_for_callee(&self, callee: ExprId) -> Option<FunctionId> {
+        self.resolved_call(callee).and_then(ResolvedCall::function)
     }
 
     pub fn display(&self, ty: TypeId) -> String {
