@@ -1011,18 +1011,19 @@ fn conditional_branches_require_a_wildcard_arm() {
 }
 
 #[test]
-fn runs_newly_unblocked_pima_ports() {
+fn runs_closure_and_numeric_showcase_examples() {
     assert_eq!(
-        foster::run(include_str!("../examples/pima/curried_example.fos")).unwrap(),
+        foster::run(include_str!("../examples/showcase/partial_application.fos")).unwrap(),
         Value::Integer(19)
     );
-    let Value::Float(root) = foster::run(include_str!("../examples/pima/newton.fos")).unwrap()
+    let Value::Float(root) =
+        foster::run(include_str!("../examples/showcase/nested_functions.fos")).unwrap()
     else {
-        panic!("Newton example should return Float")
+        panic!("nested-functions example should return Float")
     };
     assert!((root - 4.0).abs() < 0.001);
     assert_eq!(
-        foster::run(include_str!("../examples/pima/birthday_paradox.fos")).unwrap(),
+        foster::run(include_str!("../examples/showcase/float_recursion.fos")).unwrap(),
         Value::Float(23.0)
     );
 }
@@ -1448,7 +1449,7 @@ func main() { 0 }
 }
 
 fn json_parser_with_main(expression: &str) -> String {
-    let parser = include_str!("../examples/pima/json_parser/parser.fos");
+    let parser = include_str!("../examples/json_parser/parser.fos");
     format!("{parser}\nfunc main() {{ {expression} }}")
 }
 
@@ -1467,7 +1468,7 @@ fn runs_the_foster_json_parser() {
 
 #[test]
 fn runs_the_json_actor_pipeline() {
-    let value = foster::run_package("examples/pima/json_parser").unwrap();
+    let value = foster::run_package("examples/json_parser").unwrap();
     let Value::Record { name, fields, .. } = value else {
         panic!("pipeline should return a report record")
     };

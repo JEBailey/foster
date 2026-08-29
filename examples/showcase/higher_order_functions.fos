@@ -1,0 +1,23 @@
+//! Callable parameters and recursive higher-order function use.
+
+func say_something(block: func(String) -> (), name: String) -> () {
+    block(name)
+}
+
+func remainder(value: Int, divisor: Int) -> Int {
+    return value if value < divisor
+    remainder(value - divisor, divisor)
+}
+
+func gcd(left: Int, right: Int) -> Int {
+    return left if right == 0
+    gcd(right, remainder(left, right))
+}
+
+func main() -> Int {
+    let hello = (name: String) -> println("hello world my name is", name)
+    say_something(hello, "jason")
+    println("GCD of 40902 and 24140 is", gcd(40902, 24140))
+    println("GCD of 12 and 8 is", gcd(12, 8))
+    gcd(8, 12) + gcd(3, 7)
+}

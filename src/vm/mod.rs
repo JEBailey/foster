@@ -77,6 +77,145 @@ mod tests {
     }
 
     #[test]
+    fn returned_references_preserve_their_live_origin() {
+        let source = r#"
+func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
+    ref value
+}
+
+func set[g: group Int](value: ref[g] Int, replacement: Int) -> Int [mut g] {
+    value = replacement
+}
+
+func main() -> Int {
+    let values = [10, 20]
+    let selected = preserve(ref values[0])
+    set(selected, 42)
+    values.head
+}
+"#;
+        let compilation = crate::compile(source).unwrap();
+        let program =
+            compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
+        let preserve = program
+            .functions
+            .values()
+            .find(|function| function.name == "preserve")
+            .unwrap();
+        let main = &program.functions[&program.main.unwrap()];
+
+        assert!(preserve.returns_reference);
+        assert!(!main.returns_reference);
+        assert_eq!(
+            Machine::new(&program).run_main().unwrap(),
+            Value::Integer(42)
+        );
+        assert_eq!(run(&compilation).unwrap(), Value::Integer(42));
+    }
+
+    #[test]
+    fn returned_references_keep_structural_generation_checks() {
+        let compilation = crate::compile(
+            "func select(values: List<Int>) -> Int { values[0] }\n\
+             func main() -> Int {\n\
+                 let values = [10, 20]\n\
+                 let selected = select(values)\n\
+                 values.push(30)\n\
+                 selected\n\
+             }",
+        )
+        .unwrap();
+        let mut program =
+            compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
+        for function in program.functions.values_mut() {
+            remove_drops(function);
+        }
+        let (_, select) = program
+            .functions
+            .iter_mut()
+            .find(|(_, function)| function.name == "select")
+            .unwrap();
+        select.returns_reference = true;
+        for instruction in &mut select.instructions {
+            if let Instruction::Index {
+                destination,
+                object,
+                index,
+            } = instruction
+            {
+                *instruction = Instruction::MakeReference {
+                    destination: *destination,
+                    object: *object,
+                    index: *index,
+                };
+            }
+        }
+
+        let error = Machine::new(&program).run_main().unwrap_err();
+        assert!(
+            error
+                .message
+                .contains("reference was invalidated by structural mutation"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn returned_reference_to_destroyed_frame_storage_expires_safely() {
+        let compilation = crate::compile(
+            "func select() -> Int {\n\
+                 let values = [10]\n\
+                 values[0]\n\
+             }\n\
+             func main() -> Int { select() }",
+        )
+        .unwrap();
+        let mut program =
+            compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
+        for function in program.functions.values_mut() {
+            remove_drops(function);
+        }
+        let (_, select) = program
+            .functions
+            .iter_mut()
+            .find(|(_, function)| function.name == "select")
+            .unwrap();
+        select.returns_reference = true;
+        for instruction in &mut select.instructions {
+            if let Instruction::Index {
+                destination,
+                object,
+                index,
+            } = instruction
+            {
+                *instruction = Instruction::MakeReference {
+                    destination: *destination,
+                    object: *object,
+                    index: *index,
+                };
+            }
+        }
+
+        let error = Machine::new(&program).run_main().unwrap_err();
+        assert!(
+            error.message.contains("borrowed place has expired"),
+            "{}",
+            error.message
+        );
+    }
+
+    fn remove_drops(function: &mut BytecodeFunction) {
+        let (instructions, spans) = std::mem::take(&mut function.instructions)
+            .into_iter()
+            .zip(std::mem::take(&mut function.instruction_spans))
+            .filter(|(instruction, _)| !matches!(instruction, Instruction::Drop { .. }))
+            .unzip();
+        function.instructions = instructions;
+        function.instruction_spans = spans;
+    }
+
+    #[test]
     fn optimized_and_unoptimized_programs_are_semantically_equivalent() {
         let sources = [
             "func main() -> Int { branch { true -> 20 + 22 _ -> 0 } }",

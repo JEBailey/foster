@@ -1,0 +1,24 @@
+//! Ownership groups, references, closure captures, and partial application.
+
+func set[state: group Int](value: ref[state] Int, next: Int) -> Int {
+    value = next
+    value
+}
+
+func add(left: Int, right: Int) -> Int {
+    left + right
+}
+
+func main() -> Int {
+    let values = [1, 2]
+    set(ref values[0], 7)
+
+    let count = 0
+    let increment = [ref count] () -> {
+        count = count + 1
+    }
+    increment()
+
+    let add_seven = add(7, _)
+    add_seven(count)
+}

@@ -1,8 +1,0 @@
-func fibonacci(number: Int) -> Int {
-    return number if number < 2
-    fibonacci(number - 1) + fibonacci(number - 2)
-}
-
-func main() -> Int {
-    fibonacci(10)
-}

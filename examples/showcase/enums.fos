@@ -1,0 +1,27 @@
+//! Enum construction and exhaustive pattern matching over associated values.
+
+type Score = { name: String, value: Int }
+
+enum ScoreResult = Ok(Score)
+    | Error(String)
+
+func describe(result: ScoreResult) -> Int {
+    branch result {
+        Ok(score) -> describe_score(score.name, score.value)
+        Error(message) -> describe_error(message)
+    }
+}
+
+func describe_score(name: String, score: Int) -> Int {
+    println(name, "scored", score)
+    score
+}
+
+func describe_error(message: String) -> Int {
+    println("Error:", message)
+    0
+}
+
+func main() -> Int {
+    describe(Ok(Score { name: "Ada", value: 42 })) + describe(Error("missing score"))
+}

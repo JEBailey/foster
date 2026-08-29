@@ -15,8 +15,12 @@ and launches the Foster language server. Language features include:
 - scope-aware completion for locals, declarations, imports, qualified modules, and keywords,
   including `try`, `not`, and automatic `std.process` import when completing `Arguments`;
 - automatic diagnostic refresh when Foster files change on disk;
+- background semantic compilation that keeps the protocol loop responsive, tags work with the
+  current document versions and workspace generation, and supersedes cancelled or stale requests;
 - cached package snapshots and parsed modules, so edits reparse changed sources while preserving
   unaffected compilation work;
+- error-tolerant module parsing that reports independent syntax errors together, skips damaged
+  declarations, and continues semantic analysis for complete declarations later in the file;
 - commands to run the active file or its nearest `foster.toml` project (with legacy `main.fos`
   package fallback) in a shared task terminal.
 
@@ -69,8 +73,16 @@ Hover over a declaration or use **Go to Definition** (`F12`, or Ctrl+click on Wi
 inspect and navigate the resolved symbol. Signature help appears after `(` and `,`. VS Code shows
 type and parameter hints by default; they can be toggled with **View: Toggle Inlay Hints** or the
 `editor.inlayHints.enabled` setting. When a document does not compile, the server safely reuses
-hints only for functions whose complete source is unchanged and remaps them to the current buffer.
-The edited function receives no stale hints, while failures there do not suppress hints elsewhere.
+semantic snapshots only for functions whose complete source is unchanged and remaps them to the
+current buffer. Hover, definition, signature help, completion, references, local rename, document
+symbols, and inlay hints therefore remain available outside the edited function without publishing
+stale positions from the broken function. Package-wide rename remains disabled while an open
+source is stale so it cannot produce an incomplete edit.
+
+Syntax recovery synchronizes at top-level declaration boundaries. A malformed function, constant,
+type, or test is omitted from the current semantic snapshot, while complete declarations after it
+continue to provide symbols, navigation, hover, completion, and type checking. All independently
+recoverable syntax errors are published in the same diagnostic pass.
 
 ## Packaging
 

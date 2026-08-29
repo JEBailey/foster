@@ -120,6 +120,7 @@ impl<'a> Reader<'a> {
             parameters: self.u16()?,
             parameter_modes: self.vec(|r| r.parameter_mode())?,
             mutable_parameters: self.vec(|r| r.bool())?,
+            returns_reference: self.bool()?,
             captures: self.u16()?,
             registers: self.u16()?,
             instructions: self.vec(|r| r.instruction())?,

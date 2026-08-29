@@ -485,6 +485,9 @@ At runtime, VM references retain a field/index projection path and the origin's 
 generation but only a weak connection to the root slot. Projection through another reference is
 flattened onto the same root. A reshape increments that generation, and dereferencing an older
 reference fails.
+Returning a reference transfers that same place handle to the caller; it does not read or snapshot
+the referenced value. Ordinary owned returns continue to transfer values. Consequently, returned
+references observe their live origin and remain subject to its lifetime and structural generation.
 An expired weak place also fails safely. These are defensive runtime backstops; well-typed programs
 should be rejected statically before reaching either condition.
 

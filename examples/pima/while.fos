@@ -1,8 +1,0 @@
-func main() -> Int {
-    let current = 0
-    loop {
-        break if current == 12000
-        current = current + 1
-    }
-    current
-}

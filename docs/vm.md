@@ -78,7 +78,7 @@ as forwarding slots in the called frame. Reference wrappers are flattened when c
 escaping closure points directly to the original place. Named recursion resolves directly to a
 function ID. Calls execute on an explicit VM frame vector rather than recursively invoking Rust.
 
-## Lessons adopted from Pima
+## VM design principles
 
 - keep lowering, IR, verification, and execution in separate modules;
 - keep the VM as the complete semantic reference while native coverage grows;
@@ -88,10 +88,9 @@ function ID. Calls execute on an explicit VM frame vector rather than recursivel
 - verify register bounds, constant references, and function references;
 - add compiler passes only through an explicit pipeline once there is a demonstrated need.
 
-Foster does not adopt Pima's dynamic binding cells, runtime type constraints, namespace dispatch,
-or dynamic callable machinery. Foster's type, ownership, group, and effect passes settle those
-questions before bytecode lowering. Runtime checks should therefore cover genuinely dynamic
-conditions, not repeat static analysis.
+Foster resolves type, ownership, group, effect, namespace, and callable questions before bytecode
+lowering. Runtime checks therefore cover genuinely dynamic conditions rather than repeating static
+analysis.
 
 ## Implemented evolution
 

@@ -1,0 +1,12 @@
+//! Generic recursion over lists without element-specific logic.
+
+func reverse<T>(remaining: List<T>) -> List<T> {
+    return [] if remaining.empty?
+    reverse(remaining.rest).append(remaining.head)
+}
+
+func main() -> Int {
+    let reversed = reverse([1, 2, 3, 4, 5, 6, 7])
+    println(reversed)
+    reversed.head
+}

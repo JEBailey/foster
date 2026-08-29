@@ -1,6 +1,115 @@
 use super::*;
 
 impl Parser {
+    pub(super) fn program_recovering(&mut self) -> RecoveringParse {
+        let mut program = Program {
+            documentation: None,
+            imports: Vec::new(),
+            constants: Vec::new(),
+            records: Vec::new(),
+            variants: Vec::new(),
+            functions: Vec::new(),
+            tests: Vec::new(),
+        };
+        let mut diagnostics = Vec::new();
+        let mut recovery_nodes = Vec::new();
+
+        self.newlines();
+        program.documentation = self.module_documentation();
+        let mut documentation = self.documentation();
+        while !self.at(&TokenKind::Eof) {
+            let start_index = self.current;
+            let start = self.peek().range.start;
+            let result = self.recoverable_declaration(documentation.take(), &mut program);
+            match result {
+                Ok(()) => {}
+                Err(error) => {
+                    let kind = recovery_kind(&error);
+                    self.synchronize_declaration(start_index, self.tokens[start_index].column);
+                    let end = self.peek().range.start.max(start);
+                    diagnostics.push(error);
+                    recovery_nodes.push(RecoveryNode {
+                        kind,
+                        range: start..end,
+                    });
+                }
+            }
+            self.newlines();
+            documentation = self.documentation();
+        }
+        if documentation.is_some() {
+            let error = self.error("documentation comment must precede a declaration");
+            diagnostics.push(error);
+            recovery_nodes.push(RecoveryNode {
+                kind: RecoveryKind::Declaration,
+                range: self.peek().range.clone(),
+            });
+        }
+
+        RecoveringParse {
+            program,
+            diagnostics,
+            recovery_nodes,
+        }
+    }
+
+    fn recoverable_declaration(
+        &mut self,
+        documentation: Option<String>,
+        program: &mut Program,
+    ) -> Result<(), FosterError> {
+        if self.at(&TokenKind::Import) {
+            program.imports.push(self.import()?);
+        } else if self.at(&TokenKind::Let) {
+            return Err(self.error(
+                "local declarations are only allowed inside function, closure, or test bodies",
+            ));
+        } else if self.at(&TokenKind::Const)
+            || (self.at(&TokenKind::Pub)
+                && self
+                    .peek_n(1)
+                    .is_some_and(|token| token.kind == TokenKind::Const))
+        {
+            program.constants.push(self.constant(documentation)?);
+        } else if self.at(&TokenKind::Type)
+            || self.at(&TokenKind::Enum)
+            || self.at(&TokenKind::Intrinsic)
+            || (self.at(&TokenKind::Pub)
+                && self
+                    .peek_n(1)
+                    .is_some_and(|token| matches!(token.kind, TokenKind::Type | TokenKind::Enum)))
+        {
+            let (record, variant) = self.type_decl(documentation)?;
+            program.records.extend(record);
+            program.variants.extend(variant);
+        } else if self.at(&TokenKind::Test) {
+            if documentation.is_some() {
+                return Err(self.error("test declarations do not accept documentation comments"));
+            }
+            program.tests.push(self.test()?);
+        } else {
+            program.functions.push(self.function(documentation)?);
+        }
+        Ok(())
+    }
+
+    fn synchronize_declaration(&mut self, start_index: usize, start_column: usize) {
+        if self.current == start_index && !self.at(&TokenKind::Eof) {
+            self.advance();
+        }
+        while !self.at(&TokenKind::Eof) {
+            let follows_newline =
+                self.current > 0 && self.tokens[self.current - 1].kind == TokenKind::Newline;
+            if follows_newline
+                && self.peek().column <= start_column
+                && is_declaration_boundary(&self.peek().kind)
+            {
+                break;
+            }
+            self.advance();
+        }
+    }
+
     pub(super) fn program(&mut self) -> Result<Program, FosterError> {
         let mut imports = Vec::new();
         let mut constants = Vec::new();
@@ -832,5 +941,36 @@ impl Parser {
             return Err(self.error("postfix `if` may only guard a control statement"));
         }
         Ok(())
+    }
+}
+
+fn is_declaration_boundary(kind: &TokenKind) -> bool {
+    matches!(
+        kind,
+        TokenKind::Import
+            | TokenKind::Const
+            | TokenKind::Pub
+            | TokenKind::Type
+            | TokenKind::Enum
+            | TokenKind::Intrinsic
+            | TokenKind::Test
+            | TokenKind::Func
+            | TokenKind::DocComment(_)
+    )
+}
+
+fn recovery_kind(error: &FosterError) -> RecoveryKind {
+    let message = error.message.as_str();
+    if message.contains("type") {
+        RecoveryKind::Type
+    } else if message.contains("expression") || message.contains("value") {
+        RecoveryKind::Expression
+    } else if message.contains("statement")
+        || message.contains("local")
+        || message.contains("control")
+    {
+        RecoveryKind::Statement
+    } else {
+        RecoveryKind::Declaration
     }
 }

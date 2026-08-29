@@ -1,9 +1,0 @@
-func power(value: Int, exponent: Int) -> Int {
-    return value if exponent < 2
-    value * power(value, exponent - 1)
-}
-
-func main() -> () {
-    println(power(5, 2))
-}
-

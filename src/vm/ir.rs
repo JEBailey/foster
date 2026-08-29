@@ -435,6 +435,8 @@ pub struct BytecodeFunction {
     pub parameters: u16,
     pub parameter_modes: Vec<crate::ast::ParameterMode>,
     pub mutable_parameters: Vec<bool>,
+    /// Whether `Return` transfers a live place handle instead of reading its current value.
+    pub returns_reference: bool,
     pub captures: u16,
     pub registers: u16,
     pub instructions: Vec<Instruction>,

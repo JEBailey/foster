@@ -242,6 +242,7 @@ mod tests {
             parameters: 1,
             parameter_modes: vec![crate::ast::ParameterMode::Borrow],
             mutable_parameters: vec![false],
+            returns_reference: false,
             captures: 0,
             registers: 2,
             instructions: vec![
@@ -286,6 +287,7 @@ mod tests {
             parameters: 1,
             parameter_modes: vec![crate::ast::ParameterMode::Borrow],
             mutable_parameters: vec![false],
+            returns_reference: false,
             captures: 0,
             registers: 2,
             instructions: vec![

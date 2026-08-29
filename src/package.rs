@@ -11,7 +11,7 @@ use crate::error::FosterError;
 #[derive(Debug, Clone)]
 struct CachedModule {
     source: String,
-    parsed: Result<Program, FosterError>,
+    parsed: Result<crate::parser::RecoveringParse, FosterError>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -48,10 +48,10 @@ impl ModuleCache {
         if let Some(cached) = self.entries.get(&key)
             && cached.source == source
         {
-            return cached.parsed.clone();
+            return cached_program(&key, cached.parsed.clone());
         }
 
-        let parsed = crate::parse(source);
+        let parsed = crate::parse_recovering(source);
         self.entries.insert(
             key.clone(),
             CachedModule {
@@ -60,7 +60,15 @@ impl ModuleCache {
             },
         );
         self.record_parse(&key);
-        parsed
+        cached_program(&key, parsed)
+    }
+
+    pub(crate) fn source_diagnostics(&self, path: &Utf8Path) -> Vec<FosterError> {
+        self.entries
+            .get(&ModuleCacheKey::Source(path.to_owned()))
+            .and_then(|cached| cached.parsed.as_ref().ok())
+            .map(|parsed| parsed.diagnostics.clone())
+            .unwrap_or_default()
     }
 
     #[cfg(test)]
@@ -78,6 +86,19 @@ impl ModuleCache {
             .copied()
             .unwrap_or_default()
     }
+}
+
+fn cached_program(
+    key: &ModuleCacheKey,
+    parsed: Result<crate::parser::RecoveringParse, FosterError>,
+) -> Result<Program, FosterError> {
+    let parsed = parsed?;
+    if matches!(key, ModuleCacheKey::Embedded(_))
+        && let Some(error) = parsed.diagnostics.first()
+    {
+        return Err(error.clone());
+    }
+    Ok(parsed.program)
 }
 
 fn parse_source_module(

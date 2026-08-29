@@ -1,0 +1,70 @@
+//! Remote actors, futures, and asynchronous source-analysis aggregation.
+
+import std.sequence
+
+type Analysis = {
+    files: Int
+    lines: Int
+    todos: Int
+    functions: Int
+    imports: Int
+}
+
+type SourceWorker = {
+    source: String
+}
+
+func contains(source: String, word: String) -> Bool {
+    branch {
+        word.empty? -> true
+        source.empty? -> false
+        source.head == word.head -> contains_prefix_or_rest(source, word)
+        _ -> contains(source.rest, word)
+    }
+}
+
+func prefix(source: String, word: String) -> Bool {
+    branch {
+        word.empty? -> true
+        source.empty? -> false
+        source.head != word.head -> false
+        _ -> prefix(source.rest, word.rest)
+    }
+}
+
+func contains_prefix_or_rest(source: String, word: String) -> Bool {
+    branch {
+        prefix(source, word) -> true
+        _ -> contains(source.rest, word)
+    }
+}
+
+func SourceWorker.analyze(self: SourceWorker) -> Analysis {
+    Analysis {
+        files: 1
+        lines: sequence::count(self.source, (character: CodePoint) -> character == '\n') + 1
+        todos: branch { contains(self.source, "TODO") -> 1 _ -> 0 }
+        functions: branch { contains(self.source, "func ") -> 1 _ -> 0 }
+        imports: branch { contains(self.source, "import ") -> 1 _ -> 0 }
+    }
+}
+
+func combine(left: Analysis, right: Analysis) -> Analysis {
+    Analysis {
+        files: left.files + right.files
+        lines: left.lines + right.lines
+        todos: left.todos + right.todos
+        functions: left.functions + right.functions
+        imports: left.imports + right.imports
+    }
+}
+
+func main() -> Int {
+    let first = remote SourceWorker { source: "import core.list\nfunc scan() { 1 }\n// TODO\n" }
+    let second = remote SourceWorker { source: "func render() { 2 }\n" }
+    let first_future = first.analyze()
+    let second_future = second.analyze()
+    let summary = combine(await first_future, await second_future)
+    println("Foster repository analysis", summary.files, summary.lines, summary.todos)
+    summary.files * 10000 + summary.lines * 1000 + summary.todos * 100 + summary.functions * 10 + summary.imports
+}

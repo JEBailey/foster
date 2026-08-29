@@ -89,6 +89,13 @@ impl CompilationCache {
         };
         self.modules.borrow().source_parse_count(&path)
     }
+
+    pub(super) fn parse_diagnostics(&self, path: &Path) -> Vec<FosterError> {
+        let Ok(path) = Utf8PathBuf::from_path_buf(path.to_owned()) else {
+            return Vec::new();
+        };
+        self.modules.borrow().source_diagnostics(&path)
+    }
 }
 
 impl Workspace {

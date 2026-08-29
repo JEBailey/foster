@@ -1,0 +1,6 @@
+//! Recursive exponentiation exposed through a nested module path.
+
+pub func raise(value: Int, exponent: Int) -> Int {
+    return value if exponent < 2
+    value * raise(value, exponent - 1)
+}

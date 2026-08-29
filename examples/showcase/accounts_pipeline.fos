@@ -1,0 +1,63 @@
+//! Records, enums, methods, closures, and lazy iterators in an account-processing pipeline.
+
+import std.iter
+import std.iter.filter as filtering
+
+type Account = {
+    owner: String
+    balance: Int
+    transactions: List<Int>
+}
+
+enum AccountResult = Created(Account)
+    | InvalidOpeningBalance(String)
+
+func create_account(owner: String, opening_balance: Int) -> AccountResult {
+    return InvalidOpeningBalance("opening balance must not be negative") if opening_balance < 0
+    Created(Account { owner, balance: opening_balance, transactions: [] })
+}
+
+func Account.deposit(self: Account, amount: Int) -> Int {
+    self.balance = self.balance + amount
+    self.transactions = self.transactions.append(amount)
+    self.balance
+}
+
+func Account.summary(self: Account) -> String {
+    self.owner + " account"
+}
+
+func multiplier(factor: Int) -> func(Int) -> Int {
+    (value: Int) -> factor * value
+}
+
+func over_ten?(value: Int) -> Bool { value > 10 }
+
+func add(total: Int, value: Int) -> Int { total + value }
+
+func use_account(result: AccountResult) -> Int {
+    branch result {
+        InvalidOpeningBalance(message) -> report_error(message)
+        Created(account) -> operate(move account)
+    }
+}
+
+func report_error(message: String) -> Int {
+    println("Expected error:", message)
+    0
+}
+
+func operate(account: Account) -> Int {
+    account.deposit(25)
+    account.deposit(10)
+    println("Account:", account.summary())
+    account.balance
+}
+
+func main() -> Int {
+    let triple = multiplier(3)
+    let generated = [triple(1), triple(2), triple(3), triple(4), triple(5), triple(6)]
+    let total = generated.iterator().filter(over_ten?).fold(0, add)
+    println("Selected total:", total)
+    use_account(create_account("Ada", total)) + use_account(create_account("Grace", -1))
+}

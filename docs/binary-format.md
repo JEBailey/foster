@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 11, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 12, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after lowering and optimization. It contains everything needed to verify and
@@ -25,7 +25,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `11` |
+| version | `u16` | `12` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -44,7 +44,7 @@ not repeat signature matching. A `NominalTypeId` is tag `0` followed by a `Recor
 followed by a `VariantTypeId`.
 
 A function is `string name`, `u16 parameter_count`, `vector<ParameterMode> parameter_modes`,
-`vector<bool> mutable_parameters`, `u16 capture_count`, `u16 register_count`,
+`vector<bool> mutable_parameters`, `bool returns_reference`, `u16 capture_count`, `u16 register_count`,
 `vector<Instruction>`, then `vector<Span>`. A span is `u32
 start, u32 end` in source byte offsets. Instruction and span counts must match.
 
@@ -106,7 +106,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 11 readers accept only version 11 with zero flags. Development bytecode from another version
+Version 12 readers accept only version 12 with zero flags. Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
 canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of

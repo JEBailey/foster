@@ -102,6 +102,7 @@ impl Writer {
         for value in &f.mutable_parameters {
             self.u8(*value as u8);
         }
+        self.u8(u8::from(f.returns_reference));
         self.u16(f.captures);
         self.u16(f.registers);
         self.u32(f.instructions.len())?;

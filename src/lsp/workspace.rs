@@ -3,7 +3,8 @@ use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use lsp_server::Connection;
+use crossbeam_channel::Sender;
+use lsp_server::Message;
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, Diagnostic,
     DiagnosticSeverity, DocumentChanges, DocumentSymbol, DocumentSymbolResponse, Documentation,
@@ -13,6 +14,7 @@ use lsp_types::{
     TextDocumentEdit, TextDocumentPositionParams, TextEdit, Uri, WorkspaceEdit,
 };
 
+use super::snapshot::SemanticSnapshot;
 use super::{byte_range_to_lsp, error_diagnostic, publish};
 
 #[derive(Debug, Clone)]
@@ -65,7 +67,9 @@ impl Workspace {
 
     pub(super) fn publish_diagnostics(
         &mut self,
-        connection: &Connection,
+        sender: &Sender<Message>,
+        expected_generation: u64,
+        generation: &std::sync::atomic::AtomicU64,
     ) -> Result<(), Box<dyn Error>> {
         let mut next_by_uri = HashMap::<String, (Uri, Vec<Diagnostic>, Option<i32>)>::new();
         for (focus_uri, document) in &self.documents {
@@ -86,14 +90,20 @@ impl Workspace {
                             .module(&module.name)
                             .and_then(|module| module.source.as_deref())
                             .unwrap_or_default();
-                        let diagnostics = compilation
+                        let mut diagnostics = compilation
                             .diagnostics
                             .iter()
                             .filter(|diagnostic| {
                                 diagnostic.source_module.as_deref() == Some(&module.name)
                             })
                             .map(|diagnostic| compiler_diagnostic(source, diagnostic))
-                            .collect();
+                            .collect::<Vec<_>>();
+                        diagnostics.extend(
+                            self.compilations
+                                .parse_diagnostics(path.as_std_path())
+                                .into_iter()
+                                .map(|error| error_diagnostic(source, error)),
+                        );
                         next_by_uri.insert(
                             uri.as_str().to_owned(),
                             (uri.clone(), diagnostics, self.version(&uri)),
@@ -101,18 +111,25 @@ impl Workspace {
                     }
                 }
                 Err(error) => {
+                    let mut diagnostics = uri_to_path(focus_uri)
+                        .map(|path| self.compilations.parse_diagnostics(&path))
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|error| error_diagnostic(&document.text, error))
+                        .collect::<Vec<_>>();
+                    diagnostics.push(error_diagnostic(&document.text, error));
                     next_by_uri.insert(
                         focus_uri.as_str().to_owned(),
-                        (
-                            focus_uri.clone(),
-                            vec![error_diagnostic(&document.text, error)],
-                            Some(document.version),
-                        ),
+                        (focus_uri.clone(), diagnostics, Some(document.version)),
                     );
                 }
             }
         }
         let next = next_by_uri.into_values().collect::<Vec<_>>();
+
+        if generation.load(std::sync::atomic::Ordering::Acquire) != expected_generation {
+            return Ok(());
+        }
 
         let next_uris = next
             .iter()
@@ -123,10 +140,10 @@ impl Workspace {
             .iter()
             .filter(|uri| !next_uris.contains(uri.as_str()))
         {
-            publish(connection, uri.clone(), Vec::new(), self.version(uri))?;
+            publish(sender, uri.clone(), Vec::new(), self.version(uri))?;
         }
         for (uri, diagnostics, version) in &next {
-            publish(connection, uri.clone(), diagnostics.clone(), *version)?;
+            publish(sender, uri.clone(), diagnostics.clone(), *version)?;
         }
         self.published = next.into_iter().map(|(uri, _, _)| uri).collect();
         Ok(())
@@ -152,6 +169,7 @@ impl Workspace {
             .module(&module.name)?
             .source
             .as_deref()?;
+        let snapshot = self.semantic_snapshot(&compilation, uri)?;
         let mut symbols = Vec::new();
         for (_, constant) in compilation
             .hir
@@ -209,6 +227,18 @@ impl Workspace {
                 function.span.clone(),
             ));
         }
+        symbols.retain_mut(|symbol| {
+            let Some(range) = snapshot.semantic_range_to_current(symbol.range) else {
+                return false;
+            };
+            let Some(selection_range) = snapshot.semantic_range_to_current(symbol.selection_range)
+            else {
+                return false;
+            };
+            symbol.range = range;
+            symbol.selection_range = selection_range;
+            true
+        });
         Some(DocumentSymbolResponse::Nested(symbols))
     }
 
@@ -216,92 +246,77 @@ impl Workspace {
         let compilation = self.semantic_compilation_for(&params.text_document.uri)?;
         let module_id = module_for_uri(&compilation, &params.text_document.uri)?;
         let module = &compilation.hir.modules[module_id];
-        let source = compilation
-            .package
-            .module(&module.name)?
-            .source
-            .as_deref()?;
-        let offset = position_to_offset(source, params.position)?;
-        if let Some(symbol) = symbol_at(&compilation, module_id, source, offset)
-            && let Some(location) = symbol_declaration(&compilation, symbol)
-        {
-            return Some(location);
-        }
-        let (name, name_start) = identifier_at(source, offset)?;
-        let qualifier = qualifier_before(source, name_start);
+        let snapshot = self.semantic_snapshot(&compilation, &params.text_document.uri)?;
+        let source = snapshot.semantic_source();
+        let offset = snapshot.current_position_to_semantic_offset(params.position)?;
+        let location = (|| {
+            if let Some(symbol) = symbol_at(&compilation, module_id, source, offset)
+                && let Some(location) = symbol_declaration(&compilation, symbol)
+            {
+                return Some(location);
+            }
+            let (name, name_start) = identifier_at(source, offset)?;
+            let qualifier = qualifier_before(source, name_start);
 
-        if qualifier.is_none() && name == "CodePoint" {
-            return embedded_module_location("core.code_point");
-        }
+            if qualifier.is_none() && name == "CodePoint" {
+                return embedded_module_location("core.code_point");
+            }
 
-        if qualifier.is_none()
-            && let Some((function_id, function)) =
-                compilation.hir.functions.iter().find(|(_, function)| {
-                    function.module == module_id
-                        && function.span.start <= offset
-                        && offset <= function.span.end
-                })
-            && let Some((_, local)) = compilation
-                .hir
-                .locals
-                .iter()
-                .find(|(_, local)| local.function == function_id && local.name == name)
-        {
-            let span = find_name(source, function.span.clone(), &local.name)
-                .unwrap_or_else(|| local.span.clone());
-            return Some(Location::new(
-                params.text_document.uri.clone(),
-                byte_range_to_lsp(source, span),
-            ));
-        }
+            if qualifier.is_none()
+                && let Some((function_id, function)) =
+                    compilation.hir.functions.iter().find(|(_, function)| {
+                        function.module == module_id
+                            && function.span.start <= offset
+                            && offset <= function.span.end
+                    })
+                && let Some((_, local)) = compilation
+                    .hir
+                    .locals
+                    .iter()
+                    .find(|(_, local)| local.function == function_id && local.name == name)
+            {
+                let span = find_name(source, function.span.clone(), &local.name)
+                    .unwrap_or_else(|| local.span.clone());
+                return Some(Location::new(
+                    params.text_document.uri.clone(),
+                    byte_range_to_lsp(source, span),
+                ));
+            }
 
-        let target_module = qualifier
-            .as_deref()
-            .and_then(|qualifier| module.imports.get(qualifier).copied())
-            .unwrap_or(module_id);
-        if qualifier.is_none()
-            && let Some(import) = module
-                .imports_with_spans
-                .iter()
-                .find(|import| import.name == name)
-        {
-            return module_location(&compilation, import.target);
-        }
-        definition_in_module(&compilation, target_module, name).or_else(|| {
-            module
-                .imports
-                .values()
-                .find_map(|imported| definition_in_module(&compilation, *imported, name))
-        })
+            let target_module = qualifier
+                .as_deref()
+                .and_then(|qualifier| module.imports.get(qualifier).copied())
+                .unwrap_or(module_id);
+            if qualifier.is_none()
+                && let Some(import) = module
+                    .imports_with_spans
+                    .iter()
+                    .find(|import| import.name == name)
+            {
+                return module_location(&compilation, import.target);
+            }
+            definition_in_module(&compilation, target_module, name).or_else(|| {
+                module
+                    .imports
+                    .values()
+                    .find_map(|imported| definition_in_module(&compilation, *imported, name))
+            })
+        })()?;
+        self.remap_semantic_location(&compilation, location)
     }
 
     pub(super) fn hover(&self, params: &TextDocumentPositionParams) -> Option<Hover> {
         let compilation = self.semantic_compilation_for(&params.text_document.uri)?;
         let module_id = module_for_uri(&compilation, &params.text_document.uri)?;
         let module = &compilation.hir.modules[module_id];
-        let semantic_source = compilation
-            .package
-            .module(&module.name)?
-            .source
-            .as_deref()?;
-        let current_source = self
-            .documents
-            .get(&params.text_document.uri)
-            .map_or(semantic_source, |document| document.text.as_str());
+        let snapshot = self.semantic_snapshot(&compilation, &params.text_document.uri)?;
+        let semantic_source = snapshot.semantic_source();
+        let current_source = snapshot.current_source();
         let current_offset = position_to_offset(current_source, params.position)?;
         let (name, start) = identifier_at(current_source, current_offset)?;
         let range = byte_range_to_lsp(current_source, start..start + name.len());
         let qualifier = qualifier_before(current_source, start);
-        let semantic_offset = if current_source == semantic_source {
-            current_offset
-        } else {
-            super::hints::semantic_offset_for_unchanged_function(
-                &compilation,
-                &params.text_document.uri,
-                current_source,
-                current_offset,
-            )?
-        };
+        let semantic_offset = snapshot.current_offset_to_semantic(current_offset)?;
 
         let value = if qualifier.is_none()
             && let Some(function_id) = function_at(&compilation, module_id, semantic_offset)
@@ -343,9 +358,15 @@ impl Workspace {
     }
 
     pub(super) fn signature_help(&self, params: &SignatureHelpParams) -> Option<SignatureHelp> {
-        let compilation =
-            self.semantic_compilation_for(&params.text_document_position_params.text_document.uri)?;
-        super::hints::signature_help(&compilation, params)
+        let uri = &params.text_document_position_params.text_document.uri;
+        let compilation = self.semantic_compilation_for(uri)?;
+        let snapshot = self.semantic_snapshot(&compilation, uri)?;
+        let semantic_offset = snapshot
+            .current_position_to_semantic_offset(params.text_document_position_params.position)?;
+        let mut semantic_params = params.clone();
+        semantic_params.text_document_position_params.position =
+            byte_range_to_lsp(snapshot.semantic_source(), semantic_offset..semantic_offset).start;
+        super::hints::signature_help(&compilation, &semantic_params)
     }
 
     pub(super) fn inlay_hints(&self, params: &InlayHintParams) -> Option<Vec<InlayHint>> {
@@ -376,12 +397,9 @@ impl Workspace {
         };
         let module_id = module_for_uri(&compilation, &position.text_document.uri)?;
         let module = &compilation.hir.modules[module_id];
-        let source = compilation
-            .package
-            .module(&module.name)?
-            .source
-            .as_deref()?;
-        let offset = position_to_offset(source, position.position)?;
+        let snapshot = self.semantic_snapshot(&compilation, &position.text_document.uri)?;
+        let source = snapshot.semantic_source();
+        let offset = snapshot.current_position_to_semantic_offset(position.position)?;
         let start = identifier_at(source, offset).map_or(offset, |(_, start)| start);
         let qualifier = qualifier_before(source, start);
 
@@ -438,19 +456,21 @@ impl Workspace {
         let position = &params.text_document_position;
         let compilation = self.semantic_compilation_for(&position.text_document.uri)?;
         let module = module_for_uri(&compilation, &position.text_document.uri)?;
-        let source = compilation
-            .package
-            .module(&compilation.hir.modules[module].name)?
-            .source
-            .as_deref()?;
-        let offset = position_to_offset(source, position.position)?;
+        let snapshot = self.semantic_snapshot(&compilation, &position.text_document.uri)?;
+        let source = snapshot.semantic_source();
+        let offset = snapshot.current_position_to_semantic_offset(position.position)?;
         let symbol = symbol_at(&compilation, module, source, offset)?;
         let mut locations = symbol_locations(&compilation, symbol);
         if !params.context.include_declaration {
             let declaration = symbol_declaration(&compilation, symbol);
             locations.retain(|location| Some(location) != declaration.as_ref());
         }
-        Some(locations)
+        Some(
+            locations
+                .into_iter()
+                .filter_map(|location| self.remap_semantic_location(&compilation, location))
+                .collect(),
+        )
     }
 
     pub(super) fn rename(&self, params: &RenameParams) -> Option<WorkspaceEdit> {
@@ -460,18 +480,23 @@ impl Workspace {
         let position = &params.text_document_position;
         let compilation = self.semantic_compilation_for(&position.text_document.uri)?;
         let module = module_for_uri(&compilation, &position.text_document.uri)?;
-        let source = compilation
-            .package
-            .module(&compilation.hir.modules[module].name)?
-            .source
-            .as_deref()?;
-        let offset = position_to_offset(source, position.position)?;
+        let snapshot = self.semantic_snapshot(&compilation, &position.text_document.uri)?;
+        let source = snapshot.semantic_source();
+        let offset = snapshot.current_position_to_semantic_offset(position.position)?;
         let symbol = symbol_at(&compilation, module, source, offset)?;
         if matches!(symbol, SymbolIdentity::Builtin(_)) {
             return None;
         }
+        if !matches!(symbol, SymbolIdentity::Local(_))
+            && !self.compilation_sources_are_current(&compilation)
+        {
+            return None;
+        }
         let mut grouped = std::collections::BTreeMap::<String, (Uri, Vec<TextEdit>)>::new();
-        for location in symbol_locations(&compilation, symbol) {
+        for location in symbol_locations(&compilation, symbol)
+            .into_iter()
+            .filter_map(|location| self.remap_semantic_location(&compilation, location))
+        {
             grouped
                 .entry(location.uri.as_str().to_owned())
                 .or_insert_with(|| (location.uri.clone(), Vec::new()))
@@ -498,8 +523,40 @@ impl Workspace {
         })
     }
 
-    fn version(&self, uri: &Uri) -> Option<i32> {
+    pub(super) fn version(&self, uri: &Uri) -> Option<i32> {
         self.documents.get(uri).map(|document| document.version)
+    }
+
+    fn semantic_snapshot<'a>(
+        &'a self,
+        compilation: &'a crate::hir::Compilation,
+        uri: &Uri,
+    ) -> Option<SemanticSnapshot<'a>> {
+        let semantic_source = source_for_uri(compilation, uri)?;
+        let current_source = self
+            .documents
+            .get(uri)
+            .map_or(semantic_source, |document| document.text.as_str());
+        SemanticSnapshot::new(compilation, uri, current_source)
+    }
+
+    fn remap_semantic_location(
+        &self,
+        compilation: &crate::hir::Compilation,
+        mut location: Location,
+    ) -> Option<Location> {
+        let Some(document) = self.documents.get(&location.uri) else {
+            return Some(location);
+        };
+        let snapshot = SemanticSnapshot::new(compilation, &location.uri, &document.text)?;
+        location.range = snapshot.semantic_range_to_current(location.range)?;
+        Some(location)
+    }
+
+    fn compilation_sources_are_current(&self, compilation: &crate::hir::Compilation) -> bool {
+        self.documents.iter().all(|(uri, document)| {
+            source_for_uri(compilation, uri).is_none_or(|source| source == document.text)
+        })
     }
 }
 
@@ -1930,6 +1987,15 @@ pub(super) fn module_for_uri(
             .is_some_and(|source| source.as_std_path() == path)
             .then_some(id)
     })
+}
+
+fn source_for_uri<'a>(compilation: &'a crate::hir::Compilation, uri: &Uri) -> Option<&'a str> {
+    let module = module_for_uri(compilation, uri)?;
+    compilation
+        .package
+        .module(&compilation.hir.modules[module].name)?
+        .source
+        .as_deref()
 }
 
 fn find_name(

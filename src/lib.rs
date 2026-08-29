@@ -31,6 +31,16 @@ pub fn parse(source: &str) -> Result<ast::Program, FosterError> {
     parser::parse(tokens)
 }
 
+/// Error-tolerant parsing for interactive tools.
+///
+/// Lexical errors remain fatal because the lexer cannot reliably identify token boundaries after
+/// an unterminated literal. Syntax errors are accumulated while complete later declarations are
+/// retained in the partial program.
+pub fn parse_recovering(source: &str) -> Result<parser::RecoveringParse, FosterError> {
+    let tokens = lexer::lex(source)?;
+    Ok(parser::parse_recovering(tokens))
+}
+
 pub fn run(source: &str) -> Result<Value, FosterError> {
     vm::run(&compile(source)?)
 }

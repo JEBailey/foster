@@ -948,7 +948,11 @@ impl Machine {
                     write(frame, destination, Value::from_wire(value)?)?;
                 }
                 Instruction::Return { source } => {
-                    let value = read(frame, source)?;
+                    let value = if function.returns_reference {
+                        bind(frame, source)
+                    } else {
+                        read(frame, source)?
+                    };
                     let completed = frames.pop().expect("return has a frame");
                     if let Some(commit) = completed.shared_commit {
                         commit.shared.commit(commit.receiver.read()?.into_wire()?)?;

@@ -1,0 +1,18 @@
+//! Nested, captured, and returned closures with inferred callable types.
+
+func multiplier(factor: Int) {
+    func apply(value: Int) -> Int {
+        factor * value
+    }
+}
+
+func prefixer(prefix: String) {
+    (value: String) -> prefix + value
+}
+
+func main() -> Int {
+    let triple = multiplier(3)
+    let greet = prefixer("Hello, ")
+    println(greet("Foster"))
+    triple(12)
+}

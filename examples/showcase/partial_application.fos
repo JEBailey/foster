@@ -1,0 +1,13 @@
+//! Placeholder-based partial application of an ordinary function.
+
+func sum_three(x: Int, y: Int, z: Int) -> Int {
+    let result = x + y + z
+    println("Partially applied sum:", result)
+    result
+}
+
+func main() -> Int {
+    let add_five = sum_three(2, 3, _)
+    add_five(12)
+    add_five(14)
+}

@@ -31,6 +31,59 @@ fn diagnostics_are_limited_to_workspace_and_explicitly_opened_sources() {
 }
 
 #[test]
+fn malformed_function_does_not_hide_later_function_semantics() {
+    let path = std::env::current_dir()
+        .unwrap()
+        .join("target/lsp-recovery.fos");
+    let uri = path_to_uri(&path).unwrap();
+    let source = "func broken() -> Int { let value = }\nfunc healthy() -> Int { 42 }\n";
+    let mut workspace = Workspace {
+        root: None,
+        documents: HashMap::new(),
+        published: HashSet::new(),
+        compilations: Default::default(),
+    };
+    workspace.open(uri.clone(), source.into(), 1);
+
+    let Some(DocumentSymbolResponse::Nested(symbols)) = workspace.document_symbols(&uri) else {
+        panic!("expected recovered document symbols")
+    };
+    assert!(symbols.iter().any(|symbol| symbol.name == "healthy"));
+    assert!(!symbols.iter().any(|symbol| symbol.name == "broken"));
+    assert_eq!(workspace.compilations.parse_diagnostics(&path).len(), 1);
+}
+
+#[test]
+fn diagnostic_publication_includes_every_recovered_syntax_error() {
+    let path = std::env::current_dir()
+        .unwrap()
+        .join("target/lsp-multiple-errors.fos");
+    let uri = path_to_uri(&path).unwrap();
+    let source = "func first() -> Int { let value = }\ntype Broken = { value: }\nfunc healthy() -> Int { 42 }\n";
+    let mut workspace = Workspace {
+        root: None,
+        documents: HashMap::new(),
+        published: HashSet::new(),
+        compilations: Default::default(),
+    };
+    workspace.open(uri.clone(), source.into(), 7);
+    let (sender, receiver) = crossbeam_channel::unbounded();
+    let generation = std::sync::atomic::AtomicU64::new(0);
+
+    workspace
+        .publish_diagnostics(&sender, 0, &generation)
+        .unwrap();
+    let Message::Notification(notification) = receiver.recv().unwrap() else {
+        panic!("expected diagnostics notification")
+    };
+    let published: lsp_types::PublishDiagnosticsParams =
+        serde_json::from_value(notification.params).unwrap();
+    assert_eq!(published.uri, uri);
+    assert_eq!(published.version, Some(7));
+    assert_eq!(published.diagnostics.len(), 2, "{published:?}");
+}
+
+#[test]
 fn document_symbols_use_open_buffer_overlays() {
     let (mut workspace, uri, root) = fixture_workspace();
     let mut source = std::fs::read_to_string(root.join("main.fos")).unwrap();
@@ -603,6 +656,133 @@ func main() -> Int {
 }
 
 #[test]
+fn semantic_features_reuse_unchanged_function_snapshots_after_an_error() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let valid = r#"func changing() -> Int {
+    let temporary = 1
+    temporary
+}
+
+func add(left: Int, right: Int) -> Int { left + right }
+func main() -> Int {
+    let total = add(1, 2)
+    total
+}
+"#;
+    workspace.open(uri.clone(), valid.into(), 1);
+    workspace.compile_for(&uri).unwrap();
+
+    let invalid = r#"func changing() -> Int {
+    let temporary = 1
+    @
+    temporary
+}
+
+func add(left: Int, right: Int) -> Int { left + right }
+func main() -> Int {
+    let total = add(1, 2)
+    total
+}
+"#;
+    workspace.change(uri.clone(), invalid.into(), 2);
+    assert!(workspace.compile_for(&uri).is_err());
+
+    let total_use = TextDocumentPositionParams::new(
+        lsp_types::TextDocumentIdentifier::new(uri.clone()),
+        Position::new(9, 6),
+    );
+    let hover = workspace.hover(&total_use).unwrap();
+    let HoverContents::Markup(hover) = hover.contents else {
+        panic!("expected markdown hover")
+    };
+    assert!(hover.value.contains("total: Int"));
+
+    let definition = workspace.definition(&total_use).unwrap();
+    assert_eq!(definition.range.start, Position::new(8, 8));
+
+    let signature = workspace
+        .signature_help(&SignatureHelpParams {
+            context: None,
+            text_document_position_params: TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri.clone()),
+                Position::new(8, 24),
+            ),
+            work_done_progress_params: Default::default(),
+        })
+        .unwrap();
+    assert_eq!(signature.active_parameter, Some(1));
+    assert!(
+        signature.signatures[0]
+            .label
+            .contains("add(left: Int, right: Int)")
+    );
+
+    let CompletionResponse::Array(completions) = workspace
+        .completion(&CompletionParams {
+            text_document_position: total_use.clone(),
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: None,
+        })
+        .unwrap()
+    else {
+        panic!("expected completion items")
+    };
+    assert!(completions.iter().any(|item| item.label == "total"));
+
+    let references = workspace
+        .references(&ReferenceParams {
+            text_document_position: total_use.clone(),
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: lsp_types::ReferenceContext {
+                include_declaration: true,
+            },
+        })
+        .unwrap();
+    assert_eq!(references.len(), 2);
+    assert!(
+        references
+            .iter()
+            .all(|location| location.range.start.line >= 8)
+    );
+
+    assert!(
+        workspace
+            .rename(&RenameParams {
+                text_document_position: TextDocumentPositionParams::new(
+                    lsp_types::TextDocumentIdentifier::new(uri.clone()),
+                    Position::new(8, 18),
+                ),
+                new_name: "sum_values".into(),
+                work_done_progress_params: Default::default(),
+            })
+            .is_none()
+    );
+
+    let rename = workspace
+        .rename(&RenameParams {
+            text_document_position: total_use,
+            new_name: "sum".into(),
+            work_done_progress_params: Default::default(),
+        })
+        .unwrap();
+    let Some(DocumentChanges::Edits(edits)) = rename.document_changes else {
+        panic!("expected versioned document edits")
+    };
+    assert_eq!(edits[0].edits.len(), 2);
+    assert_eq!(edits[0].text_document.version, Some(2));
+
+    let Some(DocumentSymbolResponse::Nested(symbols)) = workspace.document_symbols(&uri) else {
+        panic!("expected document symbols")
+    };
+    assert!(symbols.iter().any(|symbol| symbol.name == "add"));
+    assert!(symbols.iter().any(|symbol| symbol.name == "main"));
+    assert!(!symbols.iter().any(|symbol| symbol.name == "changing"));
+    assert!(symbols.iter().all(|symbol| symbol.range.start.line >= 6));
+}
+
+#[test]
 fn signature_help_selects_the_active_argument_and_shows_docs() {
     let (mut workspace, uri, _) = fixture_workspace();
     let source = r#"/// Adds two values.
@@ -868,7 +1048,7 @@ fn code_point_type_definition_opens_its_core_module() {
 #[test]
 fn examples_compile_in_their_own_document_context() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
-    let example = root.join("examples/pima/repository_analyzer.fos");
+    let example = root.join("examples/showcase/remote_analysis.fos");
     let uri = path_to_uri(&example).unwrap();
     let workspace = Workspace {
         root: Some(root.clone()),
@@ -878,7 +1058,7 @@ fn examples_compile_in_their_own_document_context() {
     };
     let position = TextDocumentPositionParams::new(
         lsp_types::TextDocumentIdentifier::new(uri),
-        Position::new(42, 26),
+        Position::new(44, 26),
     );
 
     let hover = workspace.hover(&position).unwrap();
@@ -1165,7 +1345,7 @@ fn recompiling_a_package_only_reparses_the_changed_module() {
 fn failed_compilations_are_cached_until_the_document_changes() {
     let (mut workspace, uri, _) = fixture_workspace();
     let original = workspace.compile_for(&uri).unwrap();
-    workspace.change(uri.clone(), "func main( {\n".into(), 2);
+    workspace.change(uri.clone(), "func main() {\n    @\n}\n".into(), 2);
 
     let first_error = workspace.compile_for(&uri).unwrap_err();
     assert!(workspace.compilations.has_cached_error(&uri));

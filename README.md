@@ -10,7 +10,7 @@ objects running on virtual threads. The bootstrap compiler and register VM are w
 
 ```powershell
 cargo run --bin foster -- run examples/live_inventory_pipeline.fos
-cargo run --bin foster -- check examples/pima/json_parser
+cargo run --bin foster -- check examples/json_parser
 cargo run --bin foster -- check tests/fixtures/modules
 cargo run --bin foster -- fmt examples
 cargo run --bin foster -- fmt examples --check
@@ -18,7 +18,7 @@ cargo run --bin foster -- test tests/fixtures/modules
 cargo run --bin foster -- run tests/fixtures/modules --no-optimize
 cargo run --bin foster -- run examples/arguments.fos -- --about
 cargo run --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.exe
-cargo run --bin foster -- pack examples/pima/json_parser -o json-parser.fpk
+cargo run --bin foster -- pack examples/json_parser -o json-parser.fpk
 cargo run --bin foster -- run json-parser.fpk
 cargo run --bin foster -- docs library
 cargo run --bin foster -- docs library --serve
@@ -291,7 +291,7 @@ consume the same authoritative semantic branch/loop CFG. This keeps branch-test 
 edges consistent between static checking and execution.
 
 ```powershell
-cargo run --bin foster -- build examples/pima/fibonacci.fos -o fibonacci.fbc
+cargo run --bin foster -- build examples/showcase/recursion.fos -o recursion.fbc
 cargo run --bin foster -- run fibonacci.fbc
 ```
 
@@ -367,5 +367,4 @@ function currently fails to compile. It lives in
 - [Optimization and benchmarks](docs/benchmarking.md)
 - [Executable examples](examples/README.md)
 
-Files under `examples/pima/design/` are explicitly historical notes. Executable `.fos` files and
-the documents above describe the current implementation.
+The executable programs under `examples/` demonstrate the current language and library capabilities.

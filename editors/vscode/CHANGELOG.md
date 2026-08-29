@@ -1,5 +1,7 @@
 # Change Log
 
+- Preserve live place handles across reference-typed function returns so runtime behavior matches
+  the ownership specification, and advance compiled-bytecode compatibility to version 12.
 - Resolve overloaded calls in hover, signature help, and Go to Definition so editor information
   follows the declaration selected from the call's argument count and types.
 - Navigate and document `ResourceLocation`, typed `Path` and `Uri` locations, and `File` resource

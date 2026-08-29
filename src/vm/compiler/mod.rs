@@ -256,6 +256,15 @@ impl Compiler<'_> {
                         })
                     })
                     .collect(),
+                returns_reference: self
+                    .types
+                    .function_type(function_id)
+                    .is_some_and(|signature| {
+                        matches!(
+                            self.types.types[signature.result],
+                            crate::types::Type::Reference { .. }
+                        )
+                    }),
                 captures: captures.len() as u16,
                 registers: lower.next_register,
                 instructions: lower.instructions,

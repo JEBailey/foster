@@ -1,0 +1,9 @@
+//! Closure-based iterator traversal and terminal consumers.
+
+import std.iter
+
+func main() -> () {
+    [1, 2, 3, 4, 5].iterator().for_each((value: Int) -> {
+        println("number", value)
+    })
+}

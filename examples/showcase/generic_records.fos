@@ -1,0 +1,25 @@
+//! Generic record construction, mutation, and field access.
+
+pub type Parsed<T> = {
+    pub value: T
+    pub remaining: String
+}
+
+pub type JsonError = {
+    pub message: String
+    pub offset: Int
+}
+
+func parsed_int(value: Int, remaining: String) -> Parsed<Int> {
+    Parsed { value remaining }
+}
+
+func main() -> Int {
+    let result = parsed_int(42, " trailing")
+    let error = JsonError {
+        message: "trailing content"
+        offset: result.remaining.length
+    }
+    println(error.message, error.offset)
+    result.value
+}
