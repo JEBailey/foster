@@ -148,6 +148,27 @@ frame-local value cannot be returned.
 Methods may use `self` as their receiver group. Non-method functions cannot declare effects on
 `self`. Compiler-created closure functions derive group effects from their reference captures.
 
+### Group ownership at a glance
+
+The group name connects a reference to the places it may borrow and connects an effect to the
+places it may access. It is a compile-time relationship, not another runtime owner:
+
+```mermaid
+flowchart LR
+    owner["Owning place<br/><code>people</code>"]
+    member["Projected place<br/><code>people[0]</code>"]
+    reference["Borrowed reference<br/><code>ref[people] Person</code>"]
+    effect["Permitted access<br/><code>mut people.name</code>"]
+
+    owner -->|contains| member
+    member -->|borrowed in group <code>people</code>| reference
+    reference -->|used under| effect
+    effect -.->|updates the same storage| member
+```
+
+In the diagram, `people` owns the storage. The group named `people` describes the relationship
+between the reference and the allowed effect; it does not own or copy the `Person`.
+
 ## Group effects
 
 Access permissions form this ordering:
@@ -166,6 +187,18 @@ read < mut < reshape
 `mut owner` also covers extracting an owned descendant when the operation replaces that part of
 the owner, which is how `Iterator.next()` yields `T` while advancing its cursor. It never covers
 consuming `owner` itself.
+
+The access effects form a ladder. Each step includes the permissions to its left. `consume` sits
+beside the ladder because transferring ownership is different from gaining stronger access:
+
+```mermaid
+flowchart LR
+    read["<code>read group</code><br/>observe"] --> mut["<code>mut group</code><br/>replace values"]
+    mut --> reshape["<code>reshape group</code><br/>change structure"]
+    consume["<code>consume place</code><br/>transfer ownership"]
+
+    consume ~~~ mut
+```
 
 The compiler derives effects from typed HIR. When a function omits an effect clause, its inferred
 effects become the function contract. When a function provides an explicit bracketed clause, the
@@ -195,6 +228,23 @@ first.name // error: the projected reference was invalidated
 
 Consuming the root invalidates all loans from it. The compiler permits structural mutation after a
 loan's last use; it does not require the loan to remain active until the end of the lexical block.
+
+```mermaid
+sequenceDiagram
+    participant Owner as people (owner)
+    participant Loan as first = ref people[0]
+
+    Owner->>Loan: issue projected loan
+    Loan->>Owner: first.name (valid use)
+    Note over Loan: last required use
+    Owner->>Owner: people.push(other) (reshape)
+    Note over Loan: old projected loan is invalid
+    Owner->>Loan: reacquire ref people[0]
+    Loan->>Owner: first.name (valid again)
+```
+
+The reshape is allowed after the old loan's last required use. Code that needs the element again
+must acquire a new reference after the reshape.
 
 Borrow provenance follows values stored in records, lists, and closures. If any such value contains
 a projected reference and its origin is later reshaped, using the aggregate or calling the closure
@@ -388,6 +438,7 @@ AST
   → infer types and derive body effects
   → resolve pending closure capture modes
   → lower canonical places into ownership MIR
+  → infer and substitute direct-call result provenance to a fixed point
   → run control-flow initialization, move, provenance, required-loan, escape, and invalidation analysis
 ```
 
@@ -471,10 +522,11 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   yet correlate predicates across separate branches or prove mutually exclusive index values.
 - Ownership and loan places model field, index, and dereference projections. Different named fields
   are disjoint; index projections conservatively overlap.
-- Provenance flows through the implemented aggregate and closure expressions. Direct calls use the
-  callee's declared result groups as a symbolic provenance summary and substitute only matching
-  grouped reference parameters. Indirect and erased callable results remain conservative until
-  callable types carry equivalent parameter/result provenance metadata.
+- Provenance flows through the implemented aggregate and closure expressions. Direct calls
+  substitute the callee's inferred result provenance at matching receiver and argument places;
+  summaries are propagated to a fixed point across chains of direct calls. Indirect and erased
+  callable results remain conservative until callable types carry equivalent parameter/result
+  provenance metadata.
 - Copy behavior is currently a built-in type classification. User-defined copy types have not been
   designed.
 - Runtime values still use managed host representations in the VM. Records now use shared layouts
@@ -485,6 +537,6 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   cycles. Native layout, arbitrary cyclic owned graphs, resource destructors, and destructor
   ordering remain backend work.
 
-The intended evolution is path-sensitive loan states and more precise result-group substitution
-while preserving the source model: ownership transfer stays explicit, references name groups, and
-API effects remain readable contracts rather than inferred lifetime syntax.
+The intended evolution is path-sensitive loan states and precise provenance through erased
+callables while preserving the source model: ownership transfer stays explicit, references name
+groups, and API effects remain readable contracts rather than inferred lifetime syntax.

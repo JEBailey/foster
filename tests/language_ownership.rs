@@ -1239,7 +1239,7 @@ func main() -> Int {
 }
 
 #[test]
-fn ownership_mir_records_explicit_result_provenance_summaries() {
+fn ownership_mir_records_result_provenance_summaries() {
     let source = r#"
 func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
     ref value
@@ -1719,6 +1719,27 @@ func main() { 0 }
             .parameters,
         vec![0]
     );
+}
+
+#[test]
+fn direct_calls_propagate_inferred_result_provenance_to_a_fixpoint() {
+    let source = r#"
+func constant[g: group Int](value: ref[g] Int) -> func() -> Int [read g] {
+    () -> 1
+}
+
+func relay[g: group Int](value: ref[g] Int) -> func() -> Int [read g] {
+    constant(ref value)
+}
+
+func main() -> Int {
+    let values = [10, 20]
+    let callback = relay(ref values[0])
+    values.push(30)
+    callback()
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(1));
 }
 
 #[test]

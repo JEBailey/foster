@@ -14,7 +14,11 @@ enum Context {
     Call,
 }
 
-pub(super) fn lower(hir: &hir::PackageHir, types: &TypeInformation) -> Program {
+pub(super) fn lower(
+    hir: &hir::PackageHir,
+    types: &TypeInformation,
+    result_provenance: &std::collections::HashMap<FunctionId, super::ResultProvenance>,
+) -> Program {
     let mut program = Program::default();
     let captures = hir
         .expressions
@@ -38,6 +42,7 @@ pub(super) fn lower(hir: &hir::PackageHir, types: &TypeInformation) -> Program {
                 types,
                 function,
                 captures.get(&function).map_or(&[], Vec::as_slice),
+                result_provenance,
             )
             .lower(),
         );
@@ -52,6 +57,7 @@ struct Builder<'a> {
     blocks: Vec<BasicBlock>,
     current: BlockId,
     captures: &'a [hir::LocalId],
+    result_provenance: &'a std::collections::HashMap<FunctionId, super::ResultProvenance>,
     loans: Vec<LoanDefinition>,
     loops: Vec<LoopTargets>,
 }
@@ -68,6 +74,7 @@ impl<'a> Builder<'a> {
         types: &'a TypeInformation,
         function: FunctionId,
         captures: &'a [hir::LocalId],
+        result_provenance: &'a std::collections::HashMap<FunctionId, super::ResultProvenance>,
     ) -> Self {
         Self {
             hir,
@@ -76,6 +83,7 @@ impl<'a> Builder<'a> {
             blocks: vec![BasicBlock::default()],
             current: 0,
             captures,
+            result_provenance,
             loans: Vec::new(),
             loops: Vec::new(),
         }
@@ -115,7 +123,7 @@ impl<'a> Builder<'a> {
             entry: 0,
             blocks: self.blocks,
             loans: self.loans,
-            result_provenance: result_provenance(definition, self.hir),
+            result_provenance: super::ResultProvenance::default(),
         }
     }
 
@@ -595,12 +603,11 @@ impl<'a> Builder<'a> {
             );
             return BorrowValue::Merge(values);
         };
-        let definition = &self.hir.functions[function];
         let offset = usize::from(matches!(
             self.hir.expressions[callee],
             hir::Expr::Member { .. }
         ));
-        let summary = result_provenance(definition, self.hir);
+        let summary = &self.result_provenance[&function];
         let mut values = Vec::new();
         if summary.receiver
             && let hir::Expr::Member { object, .. } = self.hir.expressions[callee]
@@ -757,27 +764,6 @@ impl<'a> Builder<'a> {
         let id = self.blocks.len();
         self.blocks.push(BasicBlock::default());
         id
-    }
-}
-
-fn result_provenance(function: &hir::Function, _hir: &hir::PackageHir) -> super::ResultProvenance {
-    let parameters = function
-        .parameter_types
-        .iter()
-        .enumerate()
-        .filter_map(|(index, annotation)| {
-            let crate::ast::TypeExpr::Reference { group, .. } = annotation.as_ref()? else {
-                return None;
-            };
-            hir::queries::type_exposes_group(function.return_type.as_ref(), group).then_some(index)
-        })
-        .collect::<Vec<_>>();
-    let receiver = function.receiver.is_some()
-        && hir::queries::type_exposes_group(function.return_type.as_ref(), "self");
-    super::ResultProvenance {
-        fresh_owned: parameters.is_empty() && !receiver,
-        parameters,
-        receiver,
     }
 }
 
