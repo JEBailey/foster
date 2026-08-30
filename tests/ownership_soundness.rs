@@ -89,6 +89,24 @@ func main() -> Int {
 "#,
         ),
         (
+            "model-3-stable-boolean-path-correlation",
+            r#"
+func choose(flag: Bool) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch flag {
+        true -> values.push(20)
+        _ -> ()
+    }
+    branch flag {
+        true -> 0
+        _ -> selected
+    }
+}
+func main() -> Int { choose(true) }
+"#,
+        ),
+        (
             "mutable-ref-parameter-writes-through-to-caller",
             r#"
 type Person = { name: Int }
@@ -208,6 +226,25 @@ func main() -> Int {
             values.push(20)
             callback()
         }
+    }
+}
+"#,
+        ),
+        (
+            "model-3-mutated-boolean-path-correlation",
+            r#"
+func main() -> Int {
+    let flag = true
+    let values = [10]
+    let selected = ref values[0]
+    branch flag {
+        true -> values.push(20)
+        _ -> ()
+    }
+    flag = false
+    branch flag {
+        true -> 0
+        _ -> selected
     }
 }
 "#,

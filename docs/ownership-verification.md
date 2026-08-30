@@ -17,6 +17,11 @@ branch results use full-expression temporary roots, and pattern bindings transfe
 the matched subject or enum payload projection. Verification therefore covers provenance both when
 values are assembled and when pattern matching extracts them.
 
+Direct boolean-place branches add true/false facts to ownership-MIR edges. The region checker keeps
+these facts across joins while the place remains unchanged, forgets them on overlapping mutation,
+and widens to shared facts after sixteen alternatives. Tests pair an accepted cross-branch
+correlation with feasible-conflict and predicate-mutation rejection witnesses.
+
 ## Rule witnesses
 
 `tests/ownership_soundness.rs` contains rule-indexed compile-pass and compile-fail programs. New or

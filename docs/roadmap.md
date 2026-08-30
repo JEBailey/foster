@@ -10,7 +10,8 @@ after the compiler, runtime, and tests agree on their behavior.
 The immediate priority is to make the ownership, group, effect, and structural-contract model more
 general without weakening its current guarantees.
 
-- Make loan states more precise across control-flow joins.
+- Extend path-correlated loan states beyond stable boolean places to enum discriminants,
+  comparisons, and dynamic-index facts.
 - Generalize interprocedural `reshape` metadata and projected-reference invalidation.
 - Define method-level generic requirements and default contract implementations.
 - Decide whether public APIs require explicit annotations beyond the checks already performed by

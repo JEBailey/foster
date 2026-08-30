@@ -551,16 +551,33 @@ impl<'a> Builder<'a> {
                     match (&arms[arm].test, unmatched) {
                         (BranchTest::Condition(condition), Some(unmatched)) => {
                             self.expression(*condition, Context::Read);
-                            self.terminate(Terminator::Branch(vec![
-                                blocks[matched.0],
-                                blocks[unmatched.0],
-                            ]));
+                            let targets = [blocks[matched.0], blocks[unmatched.0]];
+                            if let Some(condition) = self.boolean_condition_place(*condition) {
+                                self.terminate(Terminator::BooleanBranch { condition, targets });
+                            } else {
+                                self.terminate(Terminator::Branch(targets.to_vec()));
+                            }
                         }
-                        (BranchTest::Pattern(_), Some(unmatched)) => {
-                            self.terminate(Terminator::Branch(vec![
-                                blocks[matched.0],
-                                blocks[unmatched.0],
-                            ]))
+                        (BranchTest::Pattern(pattern), Some(unmatched)) => {
+                            let matched = blocks[matched.0];
+                            let unmatched = blocks[unmatched.0];
+                            let boolean_pattern = match pattern.unspanned() {
+                                hir::Pattern::Bool(value) => Some(*value),
+                                _ => None,
+                            };
+                            if let Some((condition, expected)) = subject
+                                .and_then(|subject| self.boolean_condition_place(subject))
+                                .zip(boolean_pattern)
+                            {
+                                let targets = if expected {
+                                    [matched, unmatched]
+                                } else {
+                                    [unmatched, matched]
+                                };
+                                self.terminate(Terminator::BooleanBranch { condition, targets });
+                            } else {
+                                self.terminate(Terminator::Branch(vec![matched, unmatched]));
+                            }
                         }
                         (BranchTest::Wildcard, None) => {
                             self.terminate(Terminator::Goto(blocks[matched.0]));
@@ -807,6 +824,13 @@ impl<'a> Builder<'a> {
         self.types
             .expression_type(expression)
             .is_some_and(|ty| self.types.is_copy(ty))
+    }
+
+    fn boolean_condition_place(&self, expression: ExprId) -> Option<Place> {
+        let ty = self.types.expression_type(expression)?;
+        matches!(self.types.types[ty], crate::types::Type::Bool)
+            .then(|| self.owned_place(expression))
+            .flatten()
     }
 
     fn initialize(&mut self, local: hir::LocalId, span: std::ops::Range<usize>) {

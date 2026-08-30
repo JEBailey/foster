@@ -370,6 +370,13 @@ pub enum Terminator {
     Unreachable,
     Goto(BlockId),
     Branch(Vec<BlockId>),
+    /// A two-way branch whose condition is a stable boolean place. The first
+    /// target is reached when the place is true and the second when it is
+    /// false. Region analysis may retain this fact until the place changes.
+    BooleanBranch {
+        condition: Place,
+        targets: [BlockId; 2],
+    },
     Return,
     /// Terminates the current invocation with a runtime failure after its
     /// active ownership scopes have been destroyed.
@@ -381,6 +388,7 @@ impl Terminator {
         match self {
             Self::Goto(target) => std::slice::from_ref(target),
             Self::Branch(targets) => targets,
+            Self::BooleanBranch { targets, .. } => targets,
             Self::Unreachable | Self::Return | Self::Fail => &[],
         }
     }

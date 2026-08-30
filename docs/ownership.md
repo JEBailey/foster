@@ -435,6 +435,12 @@ the matched subject's provenance; enum payload bindings use the corresponding pa
 This preserves loans through nested records, lists, branches, and enum extraction while still
 allowing operations on provably disjoint aggregate components.
 
+Boolean branch edges retain facts about a directly tested boolean place. Forward reachability and
+backward loan demand carry up to sixteen alternative fact sets, allowing a later branch on the same
+unchanged place to remain correlated with an earlier branch. A write, move, destruction, or effect
+that overlaps the boolean place forgets the fact. Unsupported predicates and excess alternatives
+widen to the ordinary conservative union.
+
 An `assert` statement has explicit success and failure successors in ownership MIR. Its failure
 block destroys active expression temporaries followed by owned function storage and terminates with
 `Fail`; its success block performs the ordinary full-expression cleanup and continues. Consumed
@@ -537,9 +543,10 @@ Effect over-declaration is safe and therefore uses the compiler's warning channe
 
 The implemented model is useful but is not yet a general Rust-equivalent borrow checker:
 
-- Move, initialization, provenance, and required-loan analysis are control-flow-aware. CFG joins
-  retain the union of reaching loan identities and successor requirements. The compiler does not
-  yet correlate predicates across separate branches or prove mutually exclusive index values.
+- Move, initialization, provenance, and required-loan analysis are control-flow-aware. Stable
+  boolean-place tests remain correlated across separate branches with bounded widening. Other
+  predicates still join conservatively; the compiler does not yet correlate enum discriminants,
+  comparisons, or mutually exclusive dynamic-index values.
 - Ownership and loan places model field, index, and dereference projections. Different named fields
   and different constant indices are disjoint; dynamic indices conservatively overlap all indices.
 - Provenance flows through the implemented aggregate and closure expressions. Direct calls

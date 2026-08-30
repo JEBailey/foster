@@ -42,6 +42,11 @@ value. Safe source requires no automated migration. A newly rejected program mus
 before invalidation, reacquire it afterward, or move owned data into the aggregate. The bytecode
 format remains version 13 because this change affects ownership MIR and analysis only.
 
+The same model version later gained bounded correlation for repeated tests of an unchanged boolean
+place. This accepts safe programs whose invalidation and later borrower use are guarded by opposite
+values of that place. Mutating the condition between tests discards the correlation. This is a
+precision-only extension, requires no migration, and does not change bytecode format 13.
+
 ## Ownership-model version 2
 
 Ownership-model version 2 gives borrowed non-place expressions explicit full-expression

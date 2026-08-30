@@ -1193,6 +1193,139 @@ func main() -> Int {
 }
 
 #[test]
+fn correlates_stable_boolean_conditions_across_branch_joins() {
+    let source = r#"
+func choose(flag: Bool) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch flag {
+        true -> values.push(20)
+        _ -> ()
+    }
+    branch flag {
+        true -> 0
+        _ -> selected
+    }
+}
+
+func main() -> Int { choose(true) }
+"#;
+    foster::compile(source).unwrap();
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(0));
+}
+
+#[test]
+fn correlates_stable_boolean_condition_arms_across_branch_joins() {
+    let source = r#"
+func choose(flag: Bool) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch {
+        flag -> values.push(20)
+        _ -> ()
+    }
+    branch {
+        flag -> 0
+        _ -> selected
+    }
+}
+
+func main() -> Int { choose(false) }
+"#;
+    foster::compile(source).unwrap();
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+}
+
+#[test]
+fn correlates_false_boolean_patterns_across_branch_joins() {
+    let source = r#"
+func choose(flag: Bool) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch flag {
+        false -> values.push(20)
+        _ -> ()
+    }
+    branch flag {
+        false -> 0
+        _ -> selected
+    }
+}
+
+func main() -> Int { choose(true) }
+"#;
+    foster::compile(source).unwrap();
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+}
+
+#[test]
+fn boolean_path_correlation_propagates_through_reborrow_ancestors() {
+    let source = r#"
+func choose(flag: Bool) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    let nested = ref selected
+    branch flag {
+        true -> values.push(20)
+        _ -> ()
+    }
+    branch flag {
+        true -> 0
+        _ -> nested
+    }
+}
+
+func main() -> Int { choose(false) }
+"#;
+    foster::compile(source).unwrap();
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+}
+
+#[test]
+fn correlated_boolean_conditions_still_reject_a_feasible_invalidation() {
+    let source = r#"
+func choose(flag: Bool) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch flag {
+        true -> values.push(20)
+        _ -> ()
+    }
+    branch flag {
+        true -> selected
+        _ -> 0
+    }
+}
+
+func main() -> Int { choose(true) }
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+}
+
+#[test]
+fn assigning_a_boolean_forgets_earlier_branch_facts() {
+    let source = r#"
+func main() -> Int {
+    let flag = true
+    let values = [10]
+    let selected = ref values[0]
+    branch flag {
+        true -> values.push(20)
+        _ -> ()
+    }
+    flag = false
+    branch flag {
+        true -> 0
+        _ -> selected
+    }
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+}
+
+#[test]
 fn propagates_projected_borrow_invalidation_through_records() {
     let source = r#"
 type Selection = {

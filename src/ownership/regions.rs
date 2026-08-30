@@ -1,11 +1,11 @@
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::error::FosterError;
 use crate::hir::{FunctionId, PackageHir, Projection};
 
 use super::mir::{place_contains, places_overlap};
 use super::{
-    BorrowValue, Function, InvalidationKind, LoanId, Operation, Place, PlaceRoot, Program,
+    BlockId, BorrowValue, Function, InvalidationKind, LoanId, Operation, Place, PlaceRoot, Program,
     ProvenanceAnalysis, ProvenanceState, RequirementAnalysis, RequirementState,
 };
 
@@ -322,6 +322,386 @@ fn join_requirements(existing: &mut RequirementState, incoming: &RequirementStat
     }
 }
 
+const MAX_BOOLEAN_PATHS: usize = 16;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BooleanFact {
+    place: Place,
+    value: bool,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct PathCondition(Vec<BooleanFact>);
+
+impl PathCondition {
+    fn with_fact(&self, place: &Place, value: bool) -> Option<Self> {
+        if let Some(existing) = self.0.iter().find(|fact| fact.place == *place) {
+            return (existing.value == value).then(|| self.clone());
+        }
+        let mut condition = self.clone();
+        condition.0.push(BooleanFact {
+            place: place.clone(),
+            value,
+        });
+        Some(condition)
+    }
+
+    fn forget(&mut self, changed: &Place) {
+        self.0.retain(|fact| !places_overlap(&fact.place, changed));
+    }
+
+    fn compatible_with(&self, other: &Self) -> bool {
+        !self.0.iter().any(|left| {
+            other
+                .0
+                .iter()
+                .any(|right| left.place == right.place && left.value != right.value)
+        })
+    }
+
+    fn subsumes(&self, other: &Self) -> bool {
+        self.0.iter().all(|fact| other.0.contains(fact))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GuardedRequiredUse {
+    condition: PathCondition,
+    required_use: super::RequiredUse,
+}
+
+type GuardedRequirementState = HashMap<LoanId, Vec<GuardedRequiredUse>>;
+
+#[derive(Debug, Default)]
+struct GuardedRequirementAnalysis {
+    points: Vec<Option<Vec<GuardedRequirementState>>>,
+}
+
+#[derive(Debug, Default)]
+struct BooleanReachability {
+    points: Vec<Option<Vec<Vec<PathCondition>>>>,
+}
+
+fn edge_fact(terminator: &super::Terminator, successor: BlockId) -> Option<(&Place, bool)> {
+    match terminator {
+        super::Terminator::BooleanBranch { condition, targets }
+            if targets[0] != targets[1] && targets[0] == successor =>
+        {
+            Some((condition, true))
+        }
+        super::Terminator::BooleanBranch { condition, targets }
+            if targets[0] != targets[1] && targets[1] == successor =>
+        {
+            Some((condition, false))
+        }
+        _ => None,
+    }
+}
+
+fn mutated_place(operation: &Operation) -> Option<&Place> {
+    match operation {
+        Operation::Use {
+            place,
+            mode: super::UseMode::Move | super::UseMode::Write,
+            ..
+        }
+        | Operation::Initialize { place, .. }
+        | Operation::Invalidate { place, .. }
+        | Operation::Destroy { place, .. } => Some(place),
+        Operation::StoreBorrower { destination, .. } => Some(destination),
+        Operation::Use { .. } | Operation::ReturnBorrower { .. } | Operation::Suspend { .. } => {
+            None
+        }
+    }
+}
+
+fn merge_path_conditions(existing: &mut Vec<PathCondition>, incoming: Vec<PathCondition>) -> bool {
+    let before = existing.clone();
+    for condition in incoming {
+        if existing.iter().any(|known| known.subsumes(&condition)) {
+            continue;
+        }
+        existing.retain(|known| !condition.subsumes(known));
+        existing.push(condition);
+    }
+    if existing.len() > MAX_BOOLEAN_PATHS {
+        let common = existing.first().cloned().unwrap_or_default();
+        let common = PathCondition(
+            common
+                .0
+                .into_iter()
+                .filter(|fact| existing.iter().all(|condition| condition.0.contains(fact)))
+                .collect(),
+        );
+        *existing = vec![common];
+    }
+    *existing != before
+}
+
+fn merge_guarded_uses(
+    existing: &mut Vec<GuardedRequiredUse>,
+    incoming: Vec<GuardedRequiredUse>,
+) -> bool {
+    let before = existing.clone();
+    for guarded in incoming {
+        if !existing.contains(&guarded) {
+            existing.push(guarded);
+        }
+    }
+    if existing.len() > MAX_BOOLEAN_PATHS {
+        let mut representative = existing[0].clone();
+        representative.condition.0.retain(|fact| {
+            existing
+                .iter()
+                .all(|guarded| guarded.condition.0.contains(fact))
+        });
+        *existing = vec![representative];
+    }
+    *existing != before
+}
+
+fn merge_guarded_requirements(
+    existing: &mut GuardedRequirementState,
+    incoming: GuardedRequirementState,
+) {
+    for (loan, uses) in incoming {
+        let _ = merge_guarded_uses(existing.entry(loan).or_default(), uses);
+    }
+}
+
+fn constrain_guarded_requirements(
+    state: &GuardedRequirementState,
+    fact: Option<(&Place, bool)>,
+) -> GuardedRequirementState {
+    let Some((place, value)) = fact else {
+        return state.clone();
+    };
+    state
+        .iter()
+        .filter_map(|(loan, uses)| {
+            let constrained =
+                uses.iter()
+                    .filter_map(|guarded| {
+                        guarded.condition.with_fact(place, value).map(|condition| {
+                            GuardedRequiredUse {
+                                condition,
+                                required_use: guarded.required_use.clone(),
+                            }
+                        })
+                    })
+                    .collect::<Vec<_>>();
+            (!constrained.is_empty()).then_some((*loan, constrained))
+        })
+        .collect()
+}
+
+fn analyze_guarded_requirements(
+    function: &Function,
+    provenance: &ProvenanceAnalysis,
+) -> GuardedRequirementAnalysis {
+    let mut entries = vec![Some(GuardedRequirementState::default()); function.blocks.len()];
+    let mut points = vec![None::<Vec<GuardedRequirementState>>; function.blocks.len()];
+    let mut predecessors = vec![Vec::new(); function.blocks.len()];
+    for (block, definition) in function.blocks.iter().enumerate() {
+        for successor in definition.terminator.successors() {
+            predecessors[*successor].push(block);
+        }
+    }
+    let mut work = (0..function.blocks.len()).rev().collect::<VecDeque<_>>();
+
+    while let Some(block) = work.pop_front() {
+        if provenance.entries[block].is_none() {
+            entries[block] = None;
+            points[block] = None;
+            continue;
+        }
+        let mut state = GuardedRequirementState::default();
+        for successor in function.blocks[block].terminator.successors() {
+            if let Some(incoming) = &entries[*successor] {
+                merge_guarded_requirements(
+                    &mut state,
+                    constrain_guarded_requirements(
+                        incoming,
+                        edge_fact(&function.blocks[block].terminator, *successor),
+                    ),
+                );
+            }
+        }
+        let mut reverse_points = Vec::with_capacity(function.blocks[block].operations.len() + 1);
+        reverse_points.push(state.clone());
+        for (operation_index, operation) in
+            function.blocks[block].operations.iter().enumerate().rev()
+        {
+            transfer_guarded_requirement(
+                function,
+                operation,
+                block,
+                operation_index,
+                provenance,
+                &mut state,
+            );
+            reverse_points.push(state.clone());
+        }
+        reverse_points.reverse();
+        points[block] = Some(reverse_points);
+        if entries[block].as_ref() != Some(&state) {
+            entries[block] = Some(state);
+            work.extend(predecessors[block].iter().copied());
+        }
+    }
+
+    GuardedRequirementAnalysis { points }
+}
+
+fn transfer_guarded_requirement(
+    function: &Function,
+    operation: &Operation,
+    block: usize,
+    operation_index: usize,
+    provenance: &ProvenanceAnalysis,
+    state: &mut GuardedRequirementState,
+) {
+    match operation {
+        Operation::Use {
+            place: _,
+            mode: super::UseMode::Write,
+            ..
+        } => {}
+        Operation::Use { place, mode, span } => {
+            let before =
+                &provenance.points[block].as_ref().expect("reachable block")[operation_index];
+            for loan in contents_at(before, place) {
+                let _ = merge_guarded_uses(
+                    state.entry(loan).or_default(),
+                    vec![GuardedRequiredUse {
+                        condition: PathCondition::default(),
+                        required_use: super::RequiredUse {
+                            place: place.clone(),
+                            mode: *mode,
+                            span: span.clone(),
+                        },
+                    }],
+                );
+            }
+        }
+        Operation::ReturnBorrower { value, span, .. } => {
+            let before =
+                &provenance.points[block].as_ref().expect("reachable block")[operation_index];
+            let mut temporary = before.clone();
+            for loan in evaluate(value, &mut temporary) {
+                let _ = merge_guarded_uses(
+                    state.entry(loan).or_default(),
+                    vec![GuardedRequiredUse {
+                        condition: PathCondition::default(),
+                        required_use: super::RequiredUse {
+                            place: function.loans[loan.0].origin.clone(),
+                            mode: super::UseMode::Move,
+                            span: span.clone(),
+                        },
+                    }],
+                );
+            }
+            remove_guarded_issued_at(function, block, operation_index, state);
+        }
+        Operation::StoreBorrower { .. } => {
+            remove_guarded_issued_at(function, block, operation_index, state);
+        }
+        Operation::Initialize { .. }
+        | Operation::Invalidate { .. }
+        | Operation::Suspend { .. }
+        | Operation::Destroy { .. } => {}
+    }
+    require_guarded_ancestors(function, state);
+    if let Some(changed) = mutated_place(operation) {
+        for uses in state.values_mut() {
+            for guarded in uses {
+                guarded.condition.forget(changed);
+            }
+        }
+    }
+}
+
+fn require_guarded_ancestors(function: &Function, state: &mut GuardedRequirementState) {
+    let mut work = state.keys().copied().collect::<Vec<_>>();
+    while let Some(child) = work.pop() {
+        let Some(required_uses) = state.get(&child).cloned() else {
+            continue;
+        };
+        for parent in &function.loans[child.0].parents {
+            if merge_guarded_uses(state.entry(*parent).or_default(), required_uses.clone()) {
+                work.push(*parent);
+            }
+        }
+    }
+}
+
+fn remove_guarded_issued_at(
+    function: &Function,
+    block: usize,
+    operation: usize,
+    state: &mut GuardedRequirementState,
+) {
+    for loan in function
+        .loans
+        .iter()
+        .filter(|loan| loan.issued_at.block == block && loan.issued_at.operation == operation)
+    {
+        state.remove(&loan.id);
+    }
+}
+
+fn analyze_boolean_reachability(function: &Function) -> BooleanReachability {
+    let mut entries = vec![None::<Vec<PathCondition>>; function.blocks.len()];
+    let mut points = vec![None::<Vec<Vec<PathCondition>>>; function.blocks.len()];
+    entries[function.entry] = Some(vec![PathCondition::default()]);
+    let mut work = VecDeque::from([function.entry]);
+
+    while let Some(block) = work.pop_front() {
+        let Some(mut conditions) = entries[block].clone() else {
+            continue;
+        };
+        let mut block_points = Vec::with_capacity(function.blocks[block].operations.len() + 1);
+        for operation in &function.blocks[block].operations {
+            block_points.push(conditions.clone());
+            if let Some(changed) = mutated_place(operation) {
+                for condition in &mut conditions {
+                    condition.forget(changed);
+                }
+                let mut deduplicated = Vec::new();
+                merge_path_conditions(&mut deduplicated, conditions);
+                conditions = deduplicated;
+            }
+        }
+        block_points.push(conditions.clone());
+        points[block] = Some(block_points);
+
+        for successor in function.blocks[block].terminator.successors() {
+            let propagated = if let Some((place, value)) =
+                edge_fact(&function.blocks[block].terminator, *successor)
+            {
+                conditions
+                    .iter()
+                    .filter_map(|condition| condition.with_fact(place, value))
+                    .collect()
+            } else {
+                conditions.clone()
+            };
+            let changed = match &mut entries[*successor] {
+                Some(existing) => merge_path_conditions(existing, propagated),
+                None => {
+                    entries[*successor] = Some(propagated);
+                    true
+                }
+            };
+            if changed {
+                work.push_back(*successor);
+            }
+        }
+    }
+
+    BooleanReachability { points }
+}
+
 pub(super) fn validate(hir: &PackageHir, program: &Program) -> Result<(), FosterError> {
     for (function_id, function) in &program.functions {
         validate_storage_and_escape(
@@ -332,7 +712,9 @@ pub(super) fn validate(hir: &PackageHir, program: &Program) -> Result<(), Foster
         )?;
         let requirements = &program.requirements[function_id];
         validate_suspensions(hir, *function_id, function, requirements)?;
-        if let Some(conflict) = find_conflict(function, requirements) {
+        if let Some(conflict) =
+            find_conflict(function, &program.provenance[function_id], requirements)
+        {
             let definition = &hir.functions[*function_id];
             let origin_name = place_name(hir, &conflict.loan.origin);
             let borrower_name = place_name(hir, &conflict.required_use.place);
@@ -608,12 +990,21 @@ struct InvalidationConflict {
 
 fn find_conflict(
     function: &Function,
+    provenance: &ProvenanceAnalysis,
     requirements: &RequirementAnalysis,
 ) -> Option<InvalidationConflict> {
+    let guarded = analyze_guarded_requirements(function, provenance);
+    let reachability = analyze_boolean_reachability(function);
     for (block, definition) in function.blocks.iter().enumerate() {
         let Some(points) = &requirements.points[block] else {
             continue;
         };
+        let guarded_points = guarded.points[block]
+            .as_ref()
+            .expect("ordinary and guarded requirements share reachability");
+        let reachability_points = reachability.points[block]
+            .as_ref()
+            .expect("provenance-reachable block has boolean reachability");
         for (operation_index, operation) in definition.operations.iter().enumerate() {
             let (place, kind, span) = match operation {
                 Operation::Invalidate { place, kind, span } => (place, *kind, span),
@@ -629,19 +1020,37 @@ fn find_conflict(
                 _ => continue,
             };
             let required_after = &points[operation_index + 1];
+            let guarded_after = &guarded_points[operation_index + 1];
+            let reaching = &reachability_points[operation_index];
             if let Some((loan, required_use)) = required_after
                 .loans
                 .iter()
-                .filter_map(|(id, use_span)| {
+                .filter_map(|(id, conservative_use)| {
                     let loan = &function.loans[id.0];
                     let issued_here = loan.issued_at.block == block
                         && loan.issued_at.operation == operation_index;
                     let replacement_through_parameter =
                         kind == InvalidationKind::Replace && is_parameter_reborrow(function, loan);
-                    (!issued_here
-                        && !replacement_through_parameter
-                        && invalidates(place, kind, &loan.origin))
-                    .then_some((loan, use_span))
+                    if issued_here
+                        || replacement_through_parameter
+                        || !invalidates(place, kind, &loan.origin)
+                    {
+                        return None;
+                    }
+                    let compatible_use = guarded_after.get(id).and_then(|uses| {
+                        uses.iter().find(|guarded| {
+                            let mut condition = guarded.condition.clone();
+                            condition.forget(place);
+                            reaching
+                                .iter()
+                                .any(|reach| reach.compatible_with(&condition))
+                        })
+                    });
+                    compatible_use
+                        .map(|guarded| (loan, &guarded.required_use))
+                        .or_else(|| {
+                            (!guarded_after.contains_key(id)).then_some((loan, conservative_use))
+                        })
                 })
                 .min_by_key(|(loan, _)| loan.id)
             {
@@ -825,6 +1234,24 @@ fn join(existing: &mut ProvenanceState, incoming: &ProvenanceState) -> bool {
 mod tests {
     use super::*;
     use crate::ownership::{BasicBlock, Terminator};
+
+    #[test]
+    fn boolean_path_limit_widens_to_common_facts() {
+        let mut conditions = Vec::new();
+        for index in 0..=MAX_BOOLEAN_PATHS {
+            let local = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(
+                u32::try_from(index).unwrap(),
+            ));
+            merge_path_conditions(
+                &mut conditions,
+                vec![PathCondition(vec![BooleanFact {
+                    place: Place::local(local),
+                    value: true,
+                }])],
+            );
+        }
+        assert_eq!(conditions, vec![PathCondition::default()]);
+    }
 
     #[test]
     fn replacement_kills_old_contents_and_joins_reaching_loans() {
@@ -1016,7 +1443,7 @@ mod tests {
         };
         let provenance = analyze_function(&function);
         let requirements = analyze_function_requirements(&function, &provenance);
-        let conflict = find_conflict(&function, &requirements).unwrap();
+        let conflict = find_conflict(&function, &provenance, &requirements).unwrap();
         assert_eq!(conflict.loan.span, 0..1);
         assert_eq!(conflict.invalidated_at, 2..3);
         assert_eq!(conflict.required_use.span, 4..5);
@@ -1086,7 +1513,7 @@ mod tests {
         };
         let provenance = analyze_function(&function);
         let requirements = analyze_function_requirements(&function, &provenance);
-        assert!(find_conflict(&function, &requirements).is_none());
+        assert!(find_conflict(&function, &provenance, &requirements).is_none());
     }
 
     #[test]
@@ -1149,7 +1576,7 @@ mod tests {
         };
         let provenance = analyze_function(&function);
         let requirements = analyze_function_requirements(&function, &provenance);
-        assert!(find_conflict(&function, &requirements).is_none());
+        assert!(find_conflict(&function, &provenance, &requirements).is_none());
         assert!(requirements.entries[1].as_ref().unwrap().loans.is_empty());
         assert!(
             requirements.entries[2]
@@ -1243,7 +1670,7 @@ mod tests {
             let provenance = analyze_function(&function);
             let requirements = analyze_function_requirements(&function, &provenance);
             assert_eq!(
-                find_conflict(&function, &requirements).is_none(),
+                find_conflict(&function, &provenance, &requirements).is_none(),
                 model::evaluate(&events).accepted,
                 "reference-model disagreement for {events:?}"
             );
@@ -1271,7 +1698,7 @@ mod tests {
         for function in [&linear, &split] {
             let provenance = analyze_function(function);
             let requirements = analyze_function_requirements(function, &provenance);
-            assert!(find_conflict(function, &requirements).is_some());
+            assert!(find_conflict(function, &provenance, &requirements).is_some());
         }
     }
 
@@ -1287,7 +1714,7 @@ mod tests {
             let provenance = analyze_function(&function);
             let requirements = analyze_function_requirements(&function, &provenance);
             assert_eq!(
-                find_conflict(&function, &requirements).is_none(),
+                find_conflict(&function, &provenance, &requirements).is_none(),
                 super::super::model::evaluate(&events).accepted
             );
         }
