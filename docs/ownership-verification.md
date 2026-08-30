@@ -9,18 +9,22 @@ All move and loan checks use the canonical ownership-place relations in `src/own
 Ownership places distinguish named locals from expression temporaries while sharing HIR projection
 metadata. Named sibling fields are disjoint. Integer-literal indices retain their constant key, so
 different constant indices are disjoint; equal constants overlap even when they came from different
-expressions. Dynamic indices conservatively overlap every index. Dereference and mixed projection
-shapes remain conservative.
+expressions. Dynamic indices are disjoint only under a live fact proving their stable operands
+unequal and otherwise overlap every index. Dereference and mixed projection shapes remain
+conservative.
 
 Aggregate constructors keep provenance under their field or constant-index projection. Non-copy
 branch results use full-expression temporary roots, and pattern bindings transfer provenance from
 the matched subject or enum payload projection. Verification therefore covers provenance both when
 values are assembled and when pattern matching extracts them.
 
-Direct boolean-place branches add true/false facts to ownership-MIR edges. The region checker keeps
-these facts across joins while the place remains unchanged, forgets them on overlapping mutation,
-and widens to shared facts after sixteen alternatives. Tests pair an accepted cross-branch
-correlation with feasible-conflict and predicate-mutation rejection witnesses.
+Direct boolean-place branches add true/false facts to ownership-MIR edges, direct enum-pattern
+branches add matching/excluded-variant facts, and direct scalar comparisons add normalized equality
+or ordering facts. The region checker keeps these facts across joins while their operands remain
+unchanged, recognizes distinct matching variants and proven-unequal dynamic indices as disjoint,
+forgets facts on overlapping mutation, and widens to shared facts after sixteen alternatives. Tests
+pair accepted boolean, variant, comparison, and dynamic-index correlations with feasible-conflict
+and predicate-mutation rejection witnesses.
 
 ## Rule witnesses
 

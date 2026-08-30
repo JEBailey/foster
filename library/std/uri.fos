@@ -9,11 +9,12 @@ pub type UriError = {
     pub message: String
 }
 
-/// A parsed URI resource location.
+/// A parsed URI resource identifier.
 ///
-/// `Uri` implements `ResourceLocation` but deliberately provides no resource or I/O capability.
-/// Protocol providers can use it as the location of an appropriate resource implementation.
-pub type Uri = & ResourceLocation & {
+/// `Uri` implements `ResourceIdentifier` but deliberately provides no resource or I/O capability.
+/// Protocol providers convert it into their typed locations—such as `TcpEndpoint`—before creating
+/// an appropriate resource implementation.
+pub type Uri = & ResourceIdentifier & {
     value: String
     scheme_value: String
     path_value: String
@@ -41,6 +42,9 @@ pub func Uri.from_parts(scheme: String, path: String) -> Result<Uri, UriError> {
 
 /// Returns the complete URI text.
 pub func Uri.as_string(self: Uri) -> String { self.value.slice(0, self.value.length) }
+
+/// Returns the stable identifier supplied to a protocol provider.
+pub func Uri.resource_id(self: Uri) -> String { self.as_string() }
 
 /// Returns the scheme spelling supplied to the parser.
 pub func Uri.scheme(self: Uri) -> String { self.scheme_value.slice(0, self.scheme_value.length) }

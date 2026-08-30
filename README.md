@@ -22,8 +22,36 @@ cargo run --bin foster -- pack examples/json_parser -o json-parser.fpk
 cargo run --bin foster -- run json-parser.fpk
 cargo run --bin foster -- docs library
 cargo run --bin foster -- docs library --serve
+cargo run --bin foster -- run service -- 127.0.0.1 8080 artifacts
 cargo test
 ```
+
+## Artifact service example
+
+The `service` project is a working binary artifact directory built in Foster. Each connection runs
+in its own remote object, while a shared remote store actor serializes filesystem publication.
+HTTP bodies move between TCP and disk in bounded 64 KiB chunks; uploads are written to temporary
+sibling files and become visible through an atomic rename.
+
+Start it with an optional host, port, and storage directory:
+
+```powershell
+cargo run --bin foster -- run service -- 127.0.0.1 8080 artifacts
+```
+
+The small API works with ordinary HTTP clients:
+
+```powershell
+curl.exe --upload-file .\release.zip http://127.0.0.1:8080/artifacts/release-1.zip
+curl.exe http://127.0.0.1:8080/artifacts
+curl.exe --output .\download.zip http://127.0.0.1:8080/artifacts/release-1.zip
+curl.exe http://127.0.0.1:8080/health
+```
+
+Artifact IDs are immutable opaque names containing 1-128 ASCII letters, digits, dots, underscores,
+or hyphens. The reserved `.upload` suffix is rejected. Headers are limited to 16 KiB and uploads to
+1 GiB. The store actor rejects overlapping uploads for the same ID so their temporary chunks cannot
+interleave.
 
 ## Projects and `foster.toml`
 

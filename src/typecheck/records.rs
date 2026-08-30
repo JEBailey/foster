@@ -666,6 +666,9 @@ impl Checker<'_> {
                 ),
             ));
         }
+        for method in self.effective_record_methods(record, &arguments)? {
+            self.check_method_implementation(function, record, &arguments, &method)?;
+        }
         Ok(Ty::Record(record, arguments))
     }
 

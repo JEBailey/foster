@@ -15,7 +15,7 @@ use crate::hir::{Builtin, CaptureMode, Function, Local, Pattern, Record, Variant
 use crate::types::{DispatchSlot, NominalTypeId};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 13;
+pub const FORMAT_VERSION: u16 = 14;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -233,6 +233,9 @@ const BUILTINS: &[Builtin] = &[
     Builtin::TcpSetTimeout,
     Builtin::TcpCloseListener,
     Builtin::TcpCloseConnection,
+    Builtin::IoReadRange,
+    Builtin::IoAppendBytes,
+    Builtin::IoFileLength,
 ];
 fn builtin_tag(value: Builtin) -> u8 {
     BUILTINS.iter().position(|item| *item == value).unwrap() as u8

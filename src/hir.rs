@@ -362,6 +362,9 @@ pub enum Builtin {
     TcpSetTimeout,
     TcpCloseListener,
     TcpCloseConnection,
+    IoReadRange,
+    IoAppendBytes,
+    IoFileLength,
 }
 
 #[derive(Debug, Clone)]

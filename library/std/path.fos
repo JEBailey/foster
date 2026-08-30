@@ -22,7 +22,7 @@ func PathHost.canonicalize(path: String) -> Result<String, IoError> = intrinsic(
 ///
 /// `Path` preserves the host spelling supplied by the caller. Use `canonical` when an absolute,
 /// normalized path is required.
-pub type Path = & ResourceLocation & {
+pub type Path = & ResourceIdentifier & {
     value: String
 }
 
@@ -31,6 +31,9 @@ pub func Path.from(value: String) -> Path { Path { value } }
 
 /// Returns the host path text.
 pub func Path.as_string(self: Path) -> String { self.value.slice(0, self.value.length) }
+
+/// Returns the stable identifier supplied to the filesystem provider.
+pub func Path.resource_id(self: Path) -> String { self.as_string() }
 
 /// Joins this path with another typed path.
 pub func Path.join(self: Path, right: Path) -> Path {

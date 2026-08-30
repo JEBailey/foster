@@ -2,8 +2,9 @@ use crate::hir::{self, BranchTest, CaptureMode, ExprId, FunctionId, ResolvedName
 use crate::types::TypeInformation;
 
 use super::{
-    BasicBlock, BlockId, BorrowValue, Function, InvalidationKind, LoanDefinition, LoanId, MirPoint,
-    Operation, Place, Program, TemporaryId, Terminator, UseMode,
+    BasicBlock, BlockId, BorrowValue, Comparison, ComparisonKind, ComparisonOperand, Function,
+    InvalidationKind, LoanDefinition, LoanId, MirPoint, Operation, Place, Program, TemporaryId,
+    Terminator, UseMode,
 };
 
 #[derive(Clone, Copy)]
@@ -554,6 +555,18 @@ impl<'a> Builder<'a> {
                             let targets = [blocks[matched.0], blocks[unmatched.0]];
                             if let Some(condition) = self.boolean_condition_place(*condition) {
                                 self.terminate(Terminator::BooleanBranch { condition, targets });
+                            } else if let Some((comparison, polarity)) =
+                                self.comparison_condition(*condition)
+                            {
+                                let targets = if polarity {
+                                    targets
+                                } else {
+                                    [targets[1], targets[0]]
+                                };
+                                self.terminate(Terminator::ComparisonBranch {
+                                    comparison,
+                                    targets,
+                                });
                             } else {
                                 self.terminate(Terminator::Branch(targets.to_vec()));
                             }
@@ -561,22 +574,56 @@ impl<'a> Builder<'a> {
                         (BranchTest::Pattern(pattern), Some(unmatched)) => {
                             let matched = blocks[matched.0];
                             let unmatched = blocks[unmatched.0];
-                            let boolean_pattern = match pattern.unspanned() {
-                                hir::Pattern::Bool(value) => Some(*value),
-                                _ => None,
-                            };
-                            if let Some((condition, expected)) = subject
-                                .and_then(|subject| self.boolean_condition_place(subject))
-                                .zip(boolean_pattern)
-                            {
-                                let targets = if expected {
-                                    [matched, unmatched]
-                                } else {
-                                    [unmatched, matched]
-                                };
-                                self.terminate(Terminator::BooleanBranch { condition, targets });
-                            } else {
-                                self.terminate(Terminator::Branch(vec![matched, unmatched]));
+                            match pattern.unspanned() {
+                                hir::Pattern::Bool(expected) => {
+                                    if let Some(condition) = subject
+                                        .and_then(|subject| self.boolean_condition_place(subject))
+                                    {
+                                        let targets = if *expected {
+                                            [matched, unmatched]
+                                        } else {
+                                            [unmatched, matched]
+                                        };
+                                        self.terminate(Terminator::BooleanBranch {
+                                            condition,
+                                            targets,
+                                        });
+                                    } else if let Some((comparison, polarity)) = subject
+                                        .and_then(|subject| self.comparison_condition(subject))
+                                    {
+                                        let targets = if *expected == polarity {
+                                            [matched, unmatched]
+                                        } else {
+                                            [unmatched, matched]
+                                        };
+                                        self.terminate(Terminator::ComparisonBranch {
+                                            comparison,
+                                            targets,
+                                        });
+                                    } else {
+                                        self.terminate(Terminator::Branch(vec![
+                                            matched, unmatched,
+                                        ]));
+                                    }
+                                }
+                                hir::Pattern::Variant { variant, .. } => {
+                                    if let Some(subject) =
+                                        subject.and_then(|subject| self.owned_place(subject))
+                                    {
+                                        self.terminate(Terminator::VariantBranch {
+                                            subject,
+                                            variant: *variant,
+                                            targets: [matched, unmatched],
+                                        });
+                                    } else {
+                                        self.terminate(Terminator::Branch(vec![
+                                            matched, unmatched,
+                                        ]));
+                                    }
+                                }
+                                _ => {
+                                    self.terminate(Terminator::Branch(vec![matched, unmatched]));
+                                }
                             }
                         }
                         (BranchTest::Wildcard, None) => {
@@ -831,6 +878,42 @@ impl<'a> Builder<'a> {
         matches!(self.types.types[ty], crate::types::Type::Bool)
             .then(|| self.owned_place(expression))
             .flatten()
+    }
+
+    fn comparison_condition(&self, expression: ExprId) -> Option<(Comparison, bool)> {
+        let hir::Expr::Binary {
+            left,
+            operator,
+            right,
+        } = self.hir.expressions[expression]
+        else {
+            return None;
+        };
+        let mut left = self.comparison_operand(left)?;
+        let mut right = self.comparison_operand(right)?;
+        let (kind, polarity) = match operator {
+            crate::ast::BinaryOp::Equal => (ComparisonKind::Equal, true),
+            crate::ast::BinaryOp::NotEqual => (ComparisonKind::Equal, false),
+            crate::ast::BinaryOp::Less => (ComparisonKind::Less, true),
+            crate::ast::BinaryOp::LessEqual => (ComparisonKind::LessEqual, true),
+            crate::ast::BinaryOp::Greater => {
+                std::mem::swap(&mut left, &mut right);
+                (ComparisonKind::Less, true)
+            }
+            crate::ast::BinaryOp::GreaterEqual => {
+                std::mem::swap(&mut left, &mut right);
+                (ComparisonKind::LessEqual, true)
+            }
+            _ => return None,
+        };
+        Some((Comparison { left, kind, right }, polarity))
+    }
+
+    fn comparison_operand(&self, expression: ExprId) -> Option<ComparisonOperand> {
+        match self.hir.expressions[expression] {
+            hir::Expr::Integer(value) => Some(ComparisonOperand::Integer(value)),
+            _ => self.owned_place(expression).map(ComparisonOperand::Place),
+        }
     }
 
     fn initialize(&mut self, local: hir::LocalId, span: std::ops::Range<usize>) {

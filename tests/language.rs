@@ -2231,16 +2231,48 @@ func main() -> Int { 0 }
 }
 
 #[test]
-fn declared_composition_requires_callable_members() {
+fn composed_contracts_require_callable_members_when_instantiated() {
+    let contracts = r#"
+type Reads = {
+    pub func read(self) -> Int
+}
+
+type Writes = {
+    pub func write(self, value: Int) -> Int
+}
+
+type WithEmptyRecord = & Reads & Writes & {}
+type WithoutRecordBody = & Reads & Writes
+
+type Device = { value: Int }
+
+func Device.read(self: Device) -> Int { self.value }
+func Device.write(self: Device, value: Int) -> Int { self.value + value }
+
+func through_empty(value: WithEmptyRecord) -> Int { value.read() + value.write(1) }
+func through_omitted(value: WithoutRecordBody) -> Int { value.read() + value.write(2) }
+
+func main() -> Int {
+    let device = Device { value: 10 }
+    through_empty(device) + through_omitted(device)
+}
+"#;
+    assert_eq!(foster::run(contracts).unwrap(), Value::Integer(43));
+
     let error = foster::compile(
         r#"
-type Broken = & Sequence<CodePoint> & {}
+type Broken = & Sequence<CodePoint>
 
-func main() { 0 }
+func main() { Broken {} }
 "#,
     )
     .unwrap_err();
-    assert!(error.message.contains("missing required method `empty?`"));
+    assert!(
+        error.message.contains("cannot be instantiated")
+            && error.message.contains("missing required method `empty?`"),
+        "{}",
+        error.message
+    );
 }
 
 #[test]
@@ -3072,13 +3104,13 @@ fn runs_the_generic_recursive_linked_list_example() {
 }
 
 #[test]
-fn resource_locations_do_not_implicitly_gain_read_capability() {
+fn resource_identifiers_do_not_implicitly_gain_read_capability() {
     let source = r#"
 import core.result
 import std.resource
 import std.uri
 
-func require_readable(value: ReadableResource<UriError>) { () }
+func require_readable(value: Readable<UriError>) { () }
 
 func inspect(outcome: Result<Uri, UriError>) [consume outcome] {
     branch move outcome {
@@ -3094,7 +3126,7 @@ func main() {
 
     let error = foster::compile(source).unwrap_err();
     assert!(
-        error.message.contains("ReadableResource") || error.message.contains("method `read`"),
+        error.message.contains("Readable") || error.message.contains("method `read`"),
         "{}",
         error.message
     );
@@ -3171,7 +3203,7 @@ func main() -> String {
 }
 
 #[test]
-fn contract_methods_merge_identical_requirements_and_dispatch_overloads() {
+fn composed_contracts_merge_and_dispatch_overloaded_requirements() {
     let source = r#"
 type IntegerRenderer = {
     pub func render(self, value: Int) -> String [read self]
@@ -3181,9 +3213,7 @@ type CodePointRenderer = {
     pub func render(self, value: CodePoint) -> String [read self]
 }
 
-type Renderer = & IntegerRenderer & CodePointRenderer & {
-    pub func render(self, value: Int) -> String [read self]
-}
+type Renderer = & IntegerRenderer & CodePointRenderer & {}
 
 type Formatter = & Renderer & {}
 

@@ -1,47 +1,72 @@
-//! Resource locations and compile-time read/write capability contracts.
+//! Typed resource identifiers and independent compile-time capability contracts.
 
 import core.bytes
 import core.result
 
-/// A stable, displayable location that identifies a resource.
-pub type ResourceLocation = {
-    /// Returns the complete textual representation of this location.
-    pub func as_string(self) -> String [read self]
-}
-
-/// A value associated with a resource location through its public `location` field.
-pub type Resource = {
-    pub location: ResourceLocation
-}
-
-/// A resource whose complete binary contents can be read.
-pub type ReadableResource<E> = & Resource & {
-    /// Reads the complete resource contents.
-    pub func read(self) -> Result<Bytes, E> [mut self]
-}
-
-/// A resource whose binary contents can be replaced.
-pub type WritableResource<E> = & Resource & {
-    /// Writes bytes and returns the number accepted.
-    pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
-
-    /// Makes buffered output visible to the resource destination.
-    pub func flush(self) -> Result<(), E> [mut self]
-}
-
-/// A resource supporting both binary reads and writes.
+/// An explicit identifier for a resource provider or target.
 ///
-/// This repeats the combined structural surface because it is itself a contract, rather than a
-/// concrete implementation of `ReadableResource` and `WritableResource`.
-pub type ReadWriteResource<E> = {
-    pub location: ResourceLocation
+/// The uncommon `resource_id` member prevents displayable values such as integers from satisfying
+/// this contract accidentally merely because they implement `as_string`.
+pub type ResourceIdentifier = {
+    /// Returns the stable textual identifier supplied to the resource provider.
+    pub func resource_id(self) -> String [read self]
+}
 
-    /// Reads the complete resource contents.
+/// A resource associated with an identifier of the concrete type `L`.
+///
+/// Keeping `L` in the contract prevents a file, socket, or future URI-backed provider from losing
+/// the kind of identifier with which it was created.
+pub type Resource<L> = {
+    pub location: L
+}
+
+/// A value whose complete binary contents can be read.
+pub type Readable<E> = {
+    /// Reads the complete contents.
     pub func read(self) -> Result<Bytes, E> [mut self]
+}
 
+/// A value whose binary contents can be replaced.
+pub type Writable<E> = {
     /// Writes bytes and returns the number accepted.
     pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
 
-    /// Makes buffered output visible to the resource destination.
+    /// Makes buffered output visible to the destination.
     pub func flush(self) -> Result<(), E> [mut self]
 }
+
+/// A value supporting bounded binary reads at explicit offsets.
+///
+/// Position belongs to the operation rather than the resource, so callers can share one stable
+/// identifier without manufacturing separate reader objects.
+pub type PositionedReadable<E> = {
+    /// Reads at most `maximum` bytes beginning at `offset`.
+    pub func read_at(self, offset: Int, maximum: Int) -> Result<Bytes, E> [mut self]
+}
+
+/// A value that accepts bytes at its current logical end.
+pub type Appendable<E> = {
+    /// Appends bytes and returns the number accepted.
+    pub func append(self, contents: Bytes) -> Result<Int, E> [mut self]
+}
+
+/// A value whose current binary length can be queried.
+pub type Sized<E> = {
+    /// Returns the current length in bytes.
+    pub func length(self) -> Result<Int, E> [mut self]
+}
+
+/// An owned value that can release its host or provider state deterministically.
+pub type Closable<E> = {
+    /// Releases the value and consumes its live identity.
+    pub func close(self) -> Result<(), E> [consume self]
+}
+
+/// A value that accepts child values of type `C`.
+pub type Accepting<C, E> = {
+    /// Waits for and returns the next accepted child value.
+    pub func accept(self) -> Result<C, E> [mut self]
+}
+
+/// A value supporting both complete binary reads and writes.
+pub type ReadWrite<E> = & Readable<E> & Writable<E> & {}

@@ -107,6 +107,62 @@ func main() -> Int { choose(true) }
 "#,
         ),
         (
+            "model-3-stable-variant-path-correlation",
+            r#"
+enum Choice = First | Second
+func choose(choice: Choice) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch choice {
+        Choice.First -> values.push(20)
+        _ -> ()
+    }
+    branch choice {
+        Choice.First -> 0
+        _ -> selected
+    }
+}
+func main() -> Int { choose(Choice.Second) }
+"#,
+        ),
+        (
+            "model-3-stable-comparison-path-correlation",
+            r#"
+func choose(index: Int) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch {
+        index < 2 -> values.push(20)
+        _ -> ()
+    }
+    branch {
+        index < 2 -> 0
+        _ -> selected
+    }
+}
+func main() -> Int { choose(3) }
+"#,
+        ),
+        (
+            "model-3-dynamic-index-inequality",
+            r#"
+func main() -> Int {
+    let values = [10, 20]
+    let left = 0
+    let right = 1
+    let selected = ref values[left]
+    branch {
+        left != right -> {
+            values[right] = 30
+            ()
+        }
+        _ -> ()
+    }
+    selected
+}
+"#,
+        ),
+        (
             "mutable-ref-parameter-writes-through-to-caller",
             r#"
 type Person = { name: Int }
@@ -246,6 +302,65 @@ func main() -> Int {
         true -> 0
         _ -> selected
     }
+}
+"#,
+        ),
+        (
+            "model-3-mutated-variant-path-correlation",
+            r#"
+enum Choice = First | Second
+func main() -> Int {
+    let choice = Choice.First
+    let values = [10]
+    let selected = ref values[0]
+    branch choice {
+        Choice.First -> values.push(20)
+        _ -> ()
+    }
+    choice = Choice.Second
+    branch choice {
+        Choice.First -> 0
+        _ -> selected
+    }
+}
+"#,
+        ),
+        (
+            "model-3-mutated-comparison-path-correlation",
+            r#"
+func main() -> Int {
+    let index = 0
+    let values = [10]
+    let selected = ref values[0]
+    branch {
+        index == 0 -> values.push(20)
+        _ -> ()
+    }
+    index = 1
+    branch {
+        index == 0 -> 0
+        _ -> selected
+    }
+}
+"#,
+        ),
+        (
+            "model-3-mutated-dynamic-index-inequality",
+            r#"
+func main() -> Int {
+    let values = [10, 20]
+    let left = 0
+    let right = 1
+    let selected = ref values[left]
+    branch {
+        left != right -> {
+            right = left
+            values[right] = 30
+            ()
+        }
+        _ -> ()
+    }
+    selected
 }
 "#,
         ),

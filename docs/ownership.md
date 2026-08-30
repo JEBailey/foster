@@ -249,8 +249,8 @@ must acquire a new reference after the reshape.
 Borrow provenance follows values stored in records, lists, variants, pattern bindings, closures,
 and nested branch results. If any such value contains a projected reference and its origin is later
 reshaped, using the aggregate or calling the closure is rejected. Named record fields and distinct
-constant list indices are disjoint. A dynamic index conservatively overlaps every element because
-Foster does not attempt to prove its runtime value.
+constant list indices are disjoint. Dynamic indices also become disjoint when a live branch fact
+proves their stable index operands unequal; otherwise they conservatively overlap every element.
 
 Invalidation comes from the callee's typed `reshape` and `consume` effects, including indirect and
 extension calls; it is not inferred from a method's spelling. A guarded return applies effects from
@@ -391,7 +391,7 @@ program outside the implemented model. The current status is:
 
 | Rules | Status | Production requirement |
 | --- | --- | --- |
-| 1-4, 6-7, 9-10, 14, 16 | Enforced, with documented conservative place overlap at dynamic indices and erased callable calls | Maintain compile-pass and compile-fail coverage for every rule and CFG shape. |
+| 1-4, 6-7, 9-10, 14, 16 | Enforced, with bounded comparison-based dynamic-index disjointness and conservative erased callable calls | Maintain compile-pass and compile-fail coverage for every rule and CFG shape. |
 | 5, 8, 11, 13 | Enforced for named locals, consumed parameters, expression temporaries, ordinary and guarded return, assertion failure, `try`, loop transfer, `await`, and cancellation; arbitrary runtime-error MIR edges and resource destructors remain partial | Finish generalized failure-edge lowering and define destructor execution before stable release. |
 | 12 | Partial | Loans remain governed by task ownership and effects; crossing-task storage and exclusivity still require a complete specification. |
 | 15 | Unsupported as a general boundary | Host and foreign interfaces must not retain references until retention contracts are implemented. |
@@ -435,11 +435,13 @@ the matched subject's provenance; enum payload bindings use the corresponding pa
 This preserves loans through nested records, lists, branches, and enum extraction while still
 allowing operations on provably disjoint aggregate components.
 
-Boolean branch edges retain facts about a directly tested boolean place. Forward reachability and
-backward loan demand carry up to sixteen alternative fact sets, allowing a later branch on the same
-unchanged place to remain correlated with an earlier branch. A write, move, destruction, or effect
-that overlaps the boolean place forgets the fact. Unsupported predicates and excess alternatives
-widen to the ordinary conservative union.
+Boolean, enum-pattern, and normalized comparison branch edges retain facts about directly tested
+stable places. Forward reachability and backward loan demand carry up to sixteen alternative fact
+sets, allowing a later branch on the same unchanged predicate to remain correlated with an earlier
+branch. Variant facts record that one case excludes every distinct case. Equality and ordering facts
+can also prove that two stable dynamic-index operands differ. A write, move, destruction, or effect
+that overlaps a fact operand forgets the fact. Unsupported predicates and excess alternatives widen
+to the ordinary conservative union.
 
 An `assert` statement has explicit success and failure successors in ownership MIR. Its failure
 block destroys active expression temporaries followed by owned function storage and terminates with
@@ -499,9 +501,10 @@ Canonical places contain a root local plus field, index, or dereference projecti
 uses those places to distinguish whole-value moves from partial moves of disjoint fields. Loans and
 aggregate provenance retain those complete places. Effect targets are substituted onto call-site
 receiver and argument places, and invalidation uses field-sensitive projection overlap.
-Integer-literal indices are also disjoint when their values differ; dynamic indices remain
-conservatively overlapping. The rule-indexed corpus, executable reference model, differential
-checks, mutation requirements, and bounded fuzzing policy are specified in
+Integer-literal indices are also disjoint when their values differ. Dynamic indices are disjoint
+under a live equality or ordering fact that proves their stable operands unequal and conservatively
+overlap otherwise. The rule-indexed corpus, executable reference model, differential checks,
+mutation requirements, and bounded fuzzing policy are specified in
 `docs/ownership-verification.md`.
 
 At runtime, VM references retain a field/index projection path and the origin's structural
@@ -544,11 +547,12 @@ Effect over-declaration is safe and therefore uses the compiler's warning channe
 The implemented model is useful but is not yet a general Rust-equivalent borrow checker:
 
 - Move, initialization, provenance, and required-loan analysis are control-flow-aware. Stable
-  boolean-place tests remain correlated across separate branches with bounded widening. Other
-  predicates still join conservatively; the compiler does not yet correlate enum discriminants,
-  comparisons, or mutually exclusive dynamic-index values.
+  boolean-place, enum-discriminant, and direct scalar comparisons remain correlated across separate
+  branches with bounded widening. Compound predicates and comparisons of computed values still join
+  conservatively.
 - Ownership and loan places model field, index, and dereference projections. Different named fields
-  and different constant indices are disjoint; dynamic indices conservatively overlap all indices.
+  and different constant indices are disjoint. Stable dynamic indices are disjoint while a live
+  comparison proves them unequal and conservatively overlap otherwise.
 - Provenance flows through the implemented aggregate and closure expressions. Direct calls
   substitute the callee's inferred result provenance at matching receiver and argument places;
   summaries are propagated to a fixed point across chains of direct calls. Indirect and erased

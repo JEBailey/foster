@@ -670,11 +670,12 @@ func locate(value: Named & Located) -> String {
 
 The bootstrap implementation accepts record and `Sequence<T>` contracts in intersections.
 Overlapping fields and methods must have compatible contracts. Declaration-side composition
-contributes requirements once and rejects missing or incompatible implementations. The same
-structural rules apply at calls, returns, and assignments. Structural adaptation never exposes an
-inaccessible private member, so records with private representation remain encapsulated outside
-their defining module. `&` does not add a wrapper or establish a nominal subtype chain; contract
-method calls dispatch against the original runtime record.
+contributes each requirement once. A declaration does not need to provide implementations merely
+to describe that contract; construction rejects a record whose concrete type lacks a required
+method. The same structural rules apply at calls, returns, and assignments. Structural adaptation
+never exposes an inaccessible private member, so records with private representation remain
+encapsulated outside their defining module. `&` does not add a wrapper or establish a nominal
+subtype chain; contract method calls dispatch against the original runtime record.
 
 ## Iteration contracts
 
@@ -752,20 +753,33 @@ decoding.
 
 ## Resource identity and capabilities
 
-Resource location is separate from permission and I/O implementation. `std.resource` defines a
-structural `ResourceLocation` contract with `as_string()` and a `Resource` contract containing a
-`location: ResourceLocation` field. Whole-resource capabilities are represented by
-`ReadableResource<E>`, `WritableResource<E>`, and `ReadWriteResource<E>` rather than Boolean flags,
-so a function can state its requirement in its parameter type and the compiler rejects a resource
-that cannot provide it.
+Resource identity, provider association, and authority are separate structural contracts.
+`ResourceIdentifier` requires the deliberately uncommon `resource_id()` method, avoiding accidental
+conformance by every displayable value. `Resource<L>` requires only `location: L` and retains the
+concrete identifier kind instead of erasing it:
 
-`std.path.Path` and `std.uri.Uri` compose with `ResourceLocation`. Structural adaptation retains
-the concrete value, so calling `as_string()` through the contract dispatches to the original path
-or URI implementation without a wrapper or allocation. `std.fs.File` stores an abstract
-`ResourceLocation` and conforms to both readable and writable resource contracts. Construction is
-side-effect free; each operation can still return `IoError` because a provider may not support the
-location or its permissions and availability may change. A URI remains only a location until a
-protocol provider places it in a resource with the appropriate capability.
+```foster
+pub type ResourceIdentifier = {
+    pub func resource_id(self) -> String [read self]
+}
+
+pub type Resource<L> = {
+    pub location: L
+}
+```
+
+I/O is expressed independently by `Readable<E>`, `Writable<E>`, `PositionedReadable<E>`,
+`Appendable<E>`, `Sized<E>`, `Closable<E>`, and `Accepting<C, E>`. `ReadWrite<E>` combines the first
+two. A parameter that needs only reading therefore accepts any value matching `Readable<E>` and
+does not demand a location field. Conversely, a function can request `Resource<Path>` without
+granting or assuming I/O authority.
+
+`std.path.Path`, `std.uri.Uri`, and `std.net.tcp.TcpEndpoint` implement
+`ResourceIdentifier`. `std.fs.File` is an opaque `Resource<Path>` with file capabilities;
+`tcp::Connection` and `tcp::Listener` are opaque `Resource<TcpEndpoint>` providers with their own
+stream, accepting, and closing capabilities. Construction remains side-effect free. A general URI
+is only an identifier: an explicit protocol provider must validate and convert it before opening a
+file, connection, or listener.
 
 ## Stream contracts
 
@@ -815,9 +829,11 @@ pub type Hashing = {
 values do not need a total order. These are statically checked, structurally dispatched contracts;
 they add no hidden fields or wrappers.
 
-A type declaration containing bodyless method requirements is itself a contract, so it may compose
-other contracts without supplying implementations. A concrete type has no bodyless requirements;
-when it composes a contract, its module must provide all inherited functions.
+Every type declaration describes a contract. Composition imports inherited requirements without
+requiring them to be repeated, and an empty record contributes no additional requirements. Thus
+`type C = & A & B` and `type C = & A & B & {}` have the same effective contract. Adding fields to
+the record body extends that contract. Implementations are checked when a named record is
+instantiated and when values are structurally adapted, rather than when the contract is declared.
 
 Implementations must preserve the usual laws: equality is reflexive, symmetric, and transitive;
 `compare` returns `Ordering.Equal` exactly when `equal?` is true; and equal values produce the same

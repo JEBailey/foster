@@ -16,6 +16,12 @@ func FsHost.write_text(path: String, text: String) -> Result<(), IoError> = intr
 func FsHost.read_bytes(path: String) -> Result<Bytes, IoError> = intrinsic("io.read_bytes")
 /// Writes binary data to the host filesystem.
 func FsHost.write_bytes(path: String, contents: Bytes) -> Result<(), IoError> = intrinsic("io.write_bytes")
+/// Reads one bounded byte range without loading the complete file.
+func FsHost.read_range(path: String, offset: Int, maximum: Int) -> Result<Bytes, IoError> = intrinsic("io.read_range")
+/// Appends bytes to a file, creating it when necessary, and returns the accepted count.
+func FsHost.append_bytes(path: String, contents: Bytes) -> Result<Int, IoError> = intrinsic("io.append_bytes")
+/// Returns the current byte length of a regular file.
+func FsHost.file_length(path: String) -> Result<Int, IoError> = intrinsic("io.file_length")
 /// Lists direct children of a host directory.
 func FsHost.list_directory(path: String) -> Result<List<String>, IoError> = intrinsic("io.list_directory")
 /// Tests whether a host path exists.
@@ -37,21 +43,30 @@ func FsHost.rename(from: String, to: String) -> Result<(), IoError> = intrinsic(
 /// Copies one file and returns the number of bytes copied.
 func FsHost.copy_file(from: String, to: String) -> Result<Int, IoError> = intrinsic("io.copy_file")
 
-/// A located file with whole-resource binary read and write capabilities.
+/// A located file with whole-resource and positioned binary capabilities.
 ///
 /// Constructing a `File` does not touch the filesystem. Reads and writes can still fail if the
 /// location is unavailable, unsupported by the host provider, or its permissions change.
-pub type File = & ReadableResource<IoError> & WritableResource<IoError> & {
-    pub location: ResourceLocation
-}
+pub type File = & Resource<paths::Path>
+    & Readable<IoError>
+    & Writable<IoError>
+    & PositionedReadable<IoError>
+    & Appendable<IoError>
+    & Sized<IoError>
+    & {
+        pub location: paths::Path
+        host_file: ()
+    }
 
-/// Creates a file resource at a location without opening or creating the underlying file.
-pub func File.at(location: ResourceLocation) -> File [consume location] {
-    File { location: move location }
+/// Creates a host-file resource at a typed filesystem path without touching the filesystem.
+pub func File.at(location: paths::Path) -> File [consume location] {
+    File { location: move location, host_file: () }
 }
 
 /// Creates a file resource from host path text.
-pub func File.from(path: String) -> File { File { location: paths::Path.from(move path) } }
+pub func File.from(path: String) -> File {
+    File { location: paths::Path.from(move path), host_file: () }
+}
 
 /// Reads the complete file as immutable bytes.
 pub func File.read(self: File) -> Result<Bytes, IoError> {
@@ -61,6 +76,26 @@ pub func File.read(self: File) -> Result<Bytes, IoError> {
 /// Replaces the complete file and returns the number of bytes written.
 pub func File.write(self: File, contents: Bytes) -> Result<Int, IoError> {
     written_bytes(contents.length, FsHost.write_bytes(self.location.as_string(), contents))
+}
+
+/// Reads at most `maximum` bytes beginning at `offset`.
+pub func File.read_at(self: File, offset: Int, maximum: Int) -> Result<Bytes, IoError> {
+    FsHost.read_range(self.location.as_string(), offset, maximum)
+}
+
+/// Compatibility spelling for positioned reads.
+pub func File.read_range(self: File, offset: Int, maximum: Int) -> Result<Bytes, IoError> {
+    self.read_at(offset, maximum)
+}
+
+/// Appends a binary chunk and returns the number of bytes written.
+pub func File.append(self: File, contents: Bytes) -> Result<Int, IoError> {
+    FsHost.append_bytes(self.location.as_string(), contents)
+}
+
+/// Returns the file's current byte length.
+pub func File.length(self: File) -> Result<Int, IoError> {
+    FsHost.file_length(self.location.as_string())
 }
 
 /// Files written through whole-file operations have no pending userspace buffer.
@@ -92,6 +127,12 @@ pub func write_text(path: String, text: String) -> Result<(), IoError> { FsHost.
 pub func read_bytes(path: String) -> Result<Bytes, IoError> { FsHost.read_bytes(path) }
 /// Replaces a file with raw bytes, creating it when necessary.
 pub func write_bytes(path: String, contents: Bytes) -> Result<(), IoError> { FsHost.write_bytes(path, contents) }
+/// Reads at most `maximum` bytes beginning at `offset` without loading the complete file.
+pub func read_range(path: String, offset: Int, maximum: Int) -> Result<Bytes, IoError> { FsHost.read_range(path, offset, maximum) }
+/// Appends bytes to a file and returns the number written.
+pub func append_bytes(path: String, contents: Bytes) -> Result<Int, IoError> { FsHost.append_bytes(path, contents) }
+/// Returns a file's current byte length.
+pub func file_length(path: String) -> Result<Int, IoError> { FsHost.file_length(path) }
 /// Returns the names directly inside a directory in deterministic order.
 pub func list_directory(path: String) -> Result<List<String>, IoError> { FsHost.list_directory(path) }
 /// Returns whether a filesystem entry exists at `path`.

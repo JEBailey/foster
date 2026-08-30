@@ -1,8 +1,15 @@
-//! Typed TCP listeners, connections, addressing, and network errors.
+//! Endpoint-identified TCP listeners, connections, and network errors.
 
-import core.result
 import core.bytes
+import core.code_point
+import core.int
+import core.list
+import core.option
+import core.result
+import core.string
 import std.io
+import std.resource
+import std.uri
 
 /// Private namespace for TCP host operations.
 type TcpHost = {}
@@ -34,41 +41,110 @@ pub type NetworkError = {
     pub message: String
 }
 
-/// An opaque listening TCP socket.
-pub type Listener = {
+/// A TCP endpoint identifier rendered as a `tcp://host:port` URI.
+///
+/// Endpoint construction does not open a socket. IPv6 addresses are stored without brackets and
+/// rendered with brackets in the URI spelling.
+pub type TcpEndpoint = & ResourceIdentifier & {
+    address_value: String
+    port_value: Int
+}
+
+/// Associates a host address and port with a typed TCP endpoint identifier.
+pub func TcpEndpoint.at(address: String, port: Int) -> TcpEndpoint [consume address] {
+    TcpEndpoint { address_value: move address, port_value: port }
+}
+
+/// Parses a `tcp://host:port` URI into a TCP endpoint.
+pub func TcpEndpoint.from_uri(value: Uri) -> Result<TcpEndpoint, NetworkError> {
+    branch {
+        value.scheme().lower() != "tcp" -> invalid_endpoint(value.as_string(), "URI scheme must be tcp")
+        !value.path().starts_with?("//") -> invalid_endpoint(value.as_string(), "TCP URI must use //host:port")
+        _ -> parse_authority(value.as_string(), value.path().slice(2, value.path().length))
+    }
+}
+
+/// Returns this endpoint's URI spelling.
+pub func TcpEndpoint.as_string(self: TcpEndpoint) -> String {
+    branch {
+        self.address_value.contains?(":") -> "tcp://[" + self.address_value + "]:" + self.port_value.as_string()
+        _ -> "tcp://" + self.address_value + ":" + self.port_value.as_string()
+    }
+}
+
+/// Returns the stable endpoint identifier supplied to the TCP provider.
+pub func TcpEndpoint.resource_id(self: TcpEndpoint) -> String { self.as_string() }
+
+/// Returns the host address without URI brackets.
+pub func TcpEndpoint.address(self: TcpEndpoint) -> String {
+    self.address_value.slice(0, self.address_value.length)
+}
+
+/// Returns the TCP port.
+pub func TcpEndpoint.port(self: TcpEndpoint) -> Int { self.port_value }
+
+/// An opaque connected TCP stream associated with the endpoint that created it.
+pub type Connection = & Resource<TcpEndpoint> & Duplex<NetworkError> & Closable<NetworkError> & {
+    pub location: TcpEndpoint
     handle: Int
 }
 
-/// An opaque connected TCP stream.
-pub type Connection = & Duplex<NetworkError> & {
+/// An opaque listening TCP socket associated with its bound endpoint.
+pub type Listener = & Resource<TcpEndpoint> & Accepting<Connection, NetworkError> & Closable<NetworkError> & {
+    pub location: TcpEndpoint
     handle: Int
 }
 
 /// Binds a TCP listener to an address and port.
 pub func listen(address: String, port: Int) -> Result<Listener, NetworkError> {
-    wrap_listener(TcpHost.listen(address, port))
+    listen_at(TcpEndpoint.at(move address, port))
 }
 
 /// Connects to a TCP server.
 pub func connect(address: String, port: Int) -> Result<Connection, NetworkError> {
-    wrap_connection(TcpHost.connect(address, port))
+    connect_to(TcpEndpoint.at(move address, port))
+}
+
+/// Binds a listener identified by `endpoint`.
+pub func listen_at(endpoint: TcpEndpoint) -> Result<Listener, NetworkError> [consume endpoint] {
+    let outcome = TcpHost.listen(endpoint.address(), endpoint.port())
+    wrap_listener(move endpoint, move outcome)
+}
+
+/// Connects a stream identified by `endpoint`.
+pub func connect_to(endpoint: TcpEndpoint) -> Result<Connection, NetworkError> [consume endpoint] {
+    let outcome = TcpHost.connect(endpoint.address(), endpoint.port())
+    wrap_connection(move endpoint, move outcome)
+}
+
+/// Parses and binds a `tcp://host:port` URI.
+pub func listen_uri(value: Uri) -> Result<Listener, NetworkError> [consume value] {
+    let endpoint = try TcpEndpoint.from_uri(move value)
+    listen_at(move endpoint)
+}
+
+/// Parses and connects to a `tcp://host:port` URI.
+pub func connect_uri(value: Uri) -> Result<Connection, NetworkError> [consume value] {
+    let endpoint = try TcpEndpoint.from_uri(move value)
+    connect_to(move endpoint)
 }
 
 /// Converts a successful listener handle into an opaque `Listener`.
-func wrap_listener(outcome: Result<Int, NetworkError>) -> Result<Listener, NetworkError> [consume outcome] {
+func wrap_listener(endpoint: TcpEndpoint, outcome: Result<Int, NetworkError>) -> Result<Listener, NetworkError> [consume endpoint, consume outcome] {
     let handle = try move outcome
-    Ok(Listener { handle })
+    Ok(Listener { location: move endpoint, handle })
 }
 
 /// Waits for and accepts one incoming connection.
-pub func Listener.accept(self: Listener) -> Result<Connection, NetworkError> [mut self.handle] {
-    wrap_connection(TcpHost.accept(self.handle))
+pub func Listener.accept(self: Listener) -> Result<Connection, NetworkError> [mut self.handle, read self.location] {
+    let endpoint = TcpEndpoint.at(self.location.address(), self.location.port())
+    wrap_connection(move endpoint, TcpHost.accept(self.handle))
 }
 
 /// Converts a successful connection handle into an opaque `Connection`.
-func wrap_connection(outcome: Result<Int, NetworkError>) -> Result<Connection, NetworkError> [consume outcome] {
+func wrap_connection(endpoint: TcpEndpoint, outcome: Result<Int, NetworkError>) -> Result<Connection, NetworkError> [consume endpoint, consume outcome] {
     let handle = try move outcome
-    Ok(Connection { handle })
+    Ok(Connection { location: move endpoint, handle })
 }
 
 /// Reads at most `maximum` bytes, returning empty bytes after an orderly peer shutdown.
@@ -125,4 +201,84 @@ pub func Connection.close(self: Connection) -> Result<(), NetworkError> [consume
 func written_bytes(outcome: Result<(), NetworkError>, length: Int) -> Result<Int, NetworkError> [consume outcome] {
     try move outcome
     Result.Ok(length)
+}
+
+/// Parses a bracketed or unbracketed TCP authority.
+func parse_authority(value: String, authority: String) -> Result<TcpEndpoint, NetworkError> {
+    branch {
+        authority.empty? -> invalid_endpoint(move value, "TCP URI host must not be empty")
+        authority.starts_with?("[") -> parse_bracketed_authority(move value, authority)
+        _ -> parse_unbracketed_authority(move value, authority)
+    }
+}
+
+/// Parses a DNS name or IPv4 authority using its final colon as the port separator.
+func parse_unbracketed_authority(value: String, authority: String) -> Result<TcpEndpoint, NetworkError> {
+    let separator = final_colon(authority.code_points(), 0, -1)
+    branch {
+        separator <= 0 -> invalid_endpoint(move value, "TCP URI must include a host and port")
+        separator + 1 >= authority.length -> invalid_endpoint(move value, "TCP URI port must not be empty")
+        authority.slice(0, separator).contains?(":") -> invalid_endpoint(move value, "IPv6 TCP URI hosts must be enclosed in brackets")
+        _ -> endpoint_with_port(move value, authority.slice(0, separator), authority.slice(separator + 1, authority.length))
+    }
+}
+
+/// Parses a bracketed IPv6 authority followed by a port.
+func parse_bracketed_authority(value: String, authority: String) -> Result<TcpEndpoint, NetworkError> {
+    let closing = first_closing_bracket(authority.code_points(), 0)
+    branch {
+        closing <= 1 -> invalid_endpoint(move value, "TCP URI contains an invalid bracketed host")
+        closing + 2 >= authority.length -> invalid_endpoint(move value, "TCP URI must include a port after its host")
+        authority.slice(closing + 1, closing + 2) != ":" -> invalid_endpoint(move value, "TCP URI must separate its host and port with a colon")
+        _ -> endpoint_with_port(move value, authority.slice(1, closing), authority.slice(closing + 2, authority.length))
+    }
+}
+
+/// Validates a decimal port and constructs the endpoint.
+func endpoint_with_port(value: String, address: String, port_text: String) -> Result<TcpEndpoint, NetworkError> [consume value, consume address] {
+    branch parse_port(port_text.code_points(), 0) {
+        Option.None -> invalid_endpoint(move value, "TCP URI port must be a decimal integer from 0 through 65535")
+        Option.Some(port) -> Result.Ok(TcpEndpoint.at(move address, port))
+    }
+}
+
+/// Returns the final colon index or `found` when none remains.
+func final_colon(characters: List<CodePoint>, index: Int, found: Int) -> Int {
+    branch {
+        characters.empty? -> found
+        characters.head == ':' -> final_colon(characters.rest, index + 1, index)
+        _ -> final_colon(characters.rest, index + 1, found)
+    }
+}
+
+/// Returns the first closing-bracket index or `-1` when absent.
+func first_closing_bracket(characters: List<CodePoint>, index: Int) -> Int {
+    branch {
+        characters.empty? -> -1
+        characters.head == ']' -> index
+        _ -> first_closing_bracket(characters.rest, index + 1)
+    }
+}
+
+/// Parses a bounded decimal TCP port without overflowing Foster's integer representation.
+func parse_port(characters: List<CodePoint>, value: Int) -> Option<Int> {
+    branch {
+        characters.empty? -> Option.Some(value)
+        characters.head < '0' || characters.head > '9' -> Option.None
+        _ -> append_port_digit(characters, value, characters.head.as_int() - 48)
+    }
+}
+
+/// Appends one port digit when the result remains at most 65535.
+func append_port_digit(characters: List<CodePoint>, value: Int, digit: Int) -> Option<Int> {
+    branch {
+        value > 6553 -> Option.None
+        value == 6553 && digit > 5 -> Option.None
+        _ -> parse_port(characters.rest, value * 10 + digit)
+    }
+}
+
+/// Constructs a typed endpoint validation failure.
+func invalid_endpoint(value: String, message: String) -> Result<TcpEndpoint, NetworkError> {
+    Result.Error(NetworkError { operation: "tcp.endpoint", message: value + ": " + message })
 }

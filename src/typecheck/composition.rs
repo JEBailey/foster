@@ -18,7 +18,6 @@ pub(super) struct EffectiveMethod {
     pub(super) result: Ty,
     pub(super) effects: Vec<crate::ast::Effect>,
     pub(super) suspends: bool,
-    pub(super) required_by_composition: bool,
     pub(super) requirement: Option<(RecordId, usize)>,
 }
 
@@ -61,7 +60,6 @@ impl Checker<'_> {
                     definition.module,
                     requirement,
                     &generics,
-                    false,
                     None,
                 )?;
                 Self::merge_variant_method(&definition.name, &mut methods, method)?;
@@ -93,9 +91,8 @@ impl Checker<'_> {
                         self.hir.records[record].name
                     )));
                 }
-                for mut method in self.effective_record_methods(record, &arguments)? {
+                for method in self.effective_record_methods(record, &arguments)? {
                     if method.public {
-                        method.required_by_composition = true;
                         Self::merge_variant_method(&owner.name, methods, method)?;
                     }
                 }
@@ -267,7 +264,7 @@ impl Checker<'_> {
                 .map(|parameter| Ty::Generic(parameter.clone()))
                 .collect::<Vec<_>>();
             self.effective_record_fields(record, &arguments)?;
-            let methods = self.effective_record_methods(record, &arguments)?;
+            self.effective_record_methods(record, &arguments)?;
 
             let generics = definition
                 .parameters
@@ -284,17 +281,6 @@ impl Checker<'_> {
                         "public type `{}` composes private type `{private}`",
                         definition.name
                     )));
-                }
-            }
-            // A declaration with bodyless methods is itself a contract. It inherits
-            // composed requirements without implementing them; concrete composing
-            // records have no such declarations and must provide every method.
-            if definition.methods.is_empty() {
-                for method in methods
-                    .iter()
-                    .filter(|method| method.required_by_composition)
-                {
-                    self.check_method_implementation(record, &arguments, method)?;
                 }
             }
         }
@@ -314,7 +300,7 @@ impl Checker<'_> {
         record: RecordId,
         arguments: &[Ty],
     ) -> Result<Vec<EffectiveMethod>, FosterError> {
-        self.collect_record_methods(record, arguments, &mut HashSet::new(), false)
+        self.collect_record_methods(record, arguments, &mut HashSet::new())
     }
 
     fn collect_record_fields(
@@ -384,7 +370,6 @@ impl Checker<'_> {
         record: RecordId,
         arguments: &[Ty],
         visiting: &mut HashSet<RecordId>,
-        inherited: bool,
     ) -> Result<Vec<EffectiveMethod>, FosterError> {
         self.enter_composition(record, visiting)?;
         let definition = self.hir.records[record].clone();
@@ -401,7 +386,6 @@ impl Checker<'_> {
                 definition.module,
                 requirement,
                 &generics,
-                inherited,
                 Some((record, method_index)),
             )?;
             self.merge_effective_method(record, &mut methods, method)?;
@@ -422,9 +406,8 @@ impl Checker<'_> {
                 if record == owner {
                     return self.self_composition_error(owner);
                 }
-                for mut method in self.collect_record_methods(record, &arguments, visiting, true)? {
+                for method in self.collect_record_methods(record, &arguments, visiting)? {
                     if method.public {
-                        method.required_by_composition = true;
                         self.merge_effective_method(owner, methods, method)?;
                     }
                 }
@@ -449,7 +432,6 @@ impl Checker<'_> {
                             result,
                             effects: Vec::new(),
                             suspends: false,
-                            required_by_composition: true,
                             requirement: None,
                         },
                     )?;
@@ -472,7 +454,6 @@ impl Checker<'_> {
         owner_module: hir::ModuleId,
         requirement: &crate::ast::MethodRequirement,
         record_generics: &HashMap<String, Ty>,
-        inherited: bool,
         origin: Option<(RecordId, usize)>,
     ) -> Result<EffectiveMethod, FosterError> {
         if !requirement.type_parameters.is_empty() || !requirement.groups.is_empty() {
@@ -536,13 +517,13 @@ impl Checker<'_> {
             result,
             effects: requirement.effects.clone(),
             suspends: requirement.suspends,
-            required_by_composition: inherited,
             requirement: origin,
         })
     }
 
-    fn check_method_implementation(
+    pub(super) fn check_method_implementation(
         &mut self,
+        site: FunctionId,
         owner: RecordId,
         arguments: &[Ty],
         required: &EffectiveMethod,
@@ -557,10 +538,13 @@ impl Checker<'_> {
             &required.parameter_modes,
         )?
         else {
-            return Err(FosterError::runtime(format!(
-                "type `{}` is missing required method `{}`",
-                definition.name, required.name
-            )));
+            return Err(self.error(
+                site,
+                format!(
+                    "record `{}` cannot be instantiated because it is missing required method `{}`",
+                    definition.name, required.name
+                ),
+            ));
         };
         let implementation = &self.hir.functions[function];
         if definition.public && required.public && !implementation.public {
@@ -583,7 +567,17 @@ impl Checker<'_> {
         }
         let implementation_effects = implementation.effects.clone();
         let implementation_suspends = implementation.suspends;
-        let signature = self.functions[&function].clone();
+        let raw_signature = self.functions[&function].clone();
+        let mut generics = HashMap::new();
+        let signature = Signature {
+            parameters: raw_signature
+                .parameters
+                .into_iter()
+                .map(|ty| self.instantiate(ty, &mut generics))
+                .collect(),
+            parameter_modes: raw_signature.parameter_modes,
+            result: self.instantiate(raw_signature.result, &mut generics),
+        };
         if signature.parameters.len() != required.parameters.len() + 1 {
             return Err(self.error(
                 function,
@@ -704,7 +698,6 @@ impl Checker<'_> {
             )));
         }
         existing.public |= incoming.public;
-        existing.required_by_composition |= incoming.required_by_composition;
         Ok(())
     }
 
@@ -720,7 +713,17 @@ impl Checker<'_> {
         let initial_next_variable = self.next_variable;
         let mut found = Vec::new();
         for function in self.hir.functions_named(module, qualified_name) {
-            let signature = self.functions[function].clone();
+            let raw_signature = self.functions[function].clone();
+            let mut generics = HashMap::new();
+            let signature = Signature {
+                parameters: raw_signature
+                    .parameters
+                    .into_iter()
+                    .map(|ty| self.instantiate(ty, &mut generics))
+                    .collect(),
+                parameter_modes: raw_signature.parameter_modes,
+                result: self.instantiate(raw_signature.result, &mut generics),
+            };
             if self.hir.functions[*function].receiver.is_none()
                 || signature.parameters.len() != required_parameters.len() + 1
                 || signature.parameter_modes[1..] != *required_modes

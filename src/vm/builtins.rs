@@ -1,3 +1,4 @@
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::{Arc, OnceLock};
 
 use crate::error::RuntimeError;
@@ -236,6 +237,68 @@ impl HostServices for NativeHost {
                     std::fs::write(path, bytes.bytes_value().unwrap()).map(|()| Value::Unit),
                     string_record,
                 ))
+            }
+            (Builtin::IoReadRange, [path, Value::Integer(offset), Value::Integer(maximum)])
+                if path.string_bytes().is_some() =>
+            {
+                let path = path.string_text()?;
+                let result = (|| {
+                    let offset = u64::try_from(*offset).map_err(|_| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "file offset cannot be negative",
+                        )
+                    })?;
+                    let maximum = usize::try_from(*maximum)
+                        .ok()
+                        .filter(|maximum| (1..=1024 * 1024).contains(maximum))
+                        .ok_or_else(|| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidInput,
+                                "read maximum must be between 1 and 1048576",
+                            )
+                        })?;
+                    let mut file = std::fs::File::open(path)?;
+                    file.seek(SeekFrom::Start(offset))?;
+                    let mut bytes = vec![0; maximum];
+                    let read = file.read(&mut bytes)?;
+                    bytes.truncate(read);
+                    Ok(Value::bytes(bytes))
+                })();
+                Ok(io_result("read_range", path, result, string_record))
+            }
+            (Builtin::IoAppendBytes, [path, bytes])
+                if path.string_bytes().is_some() && bytes.bytes_value().is_some() =>
+            {
+                let path = path.string_text()?;
+                let bytes = bytes.bytes_value().unwrap();
+                let result = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(path)
+                    .and_then(|mut file| file.write_all(bytes))
+                    .map(|()| Value::Integer(i64::try_from(bytes.len()).unwrap_or(i64::MAX)));
+                Ok(io_result("append_bytes", path, result, string_record))
+            }
+            (Builtin::IoFileLength, [path]) if path.string_bytes().is_some() => {
+                let path = path.string_text()?;
+                let result = std::fs::metadata(path).and_then(|metadata| {
+                    if !metadata.is_file() {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::InvalidInput,
+                            "path is not a regular file",
+                        ));
+                    }
+                    i64::try_from(metadata.len())
+                        .map(Value::Integer)
+                        .map_err(|_| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "file length exceeds Foster Int",
+                            )
+                        })
+                });
+                Ok(io_result("file_length", path, result, string_record))
             }
             (Builtin::IoListDirectory, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;

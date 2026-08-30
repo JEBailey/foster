@@ -51,14 +51,7 @@ pub type TextWriter<E> = {
 }
 
 /// A bidirectional binary stream combining the `Reader<E>` and `Writer<E>` contracts.
-pub type Duplex<E> = {
-    /// Reads up to `maximum` bytes, returning empty bytes at end-of-stream.
-    pub func read(self, maximum: Int) -> Result<Bytes, E> [mut self]
-    /// Writes a non-empty prefix of `contents` and returns the accepted byte count.
-    pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
-    /// Makes buffered output visible to the destination.
-    pub func flush(self) -> Result<(), E> [mut self]
-}
+pub type Duplex<E> = & Reader<E> & Writer<E> & {}
 
 /// Reads a stream through EOF into compact immutable bytes.
 pub func read_all<E>(reader: Reader<E>) -> Result<Bytes, E> [mut reader] {

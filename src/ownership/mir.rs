@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use crate::hir::{FunctionId, LocalId, Projection};
+use crate::hir::{FunctionId, LocalId, Projection, VariantId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct TemporaryId(pub usize);
@@ -377,6 +377,18 @@ pub enum Terminator {
         condition: Place,
         targets: [BlockId; 2],
     },
+    /// A two-way branch testing the discriminant of a stable variant place.
+    /// The first target matches `variant`; the second excludes it.
+    VariantBranch {
+        subject: Place,
+        variant: VariantId,
+        targets: [BlockId; 2],
+    },
+    /// A two-way branch testing a normalized comparison of stable operands.
+    ComparisonBranch {
+        comparison: Comparison,
+        targets: [BlockId; 2],
+    },
     Return,
     /// Terminates the current invocation with a runtime failure after its
     /// active ownership scopes have been destroyed.
@@ -388,8 +400,30 @@ impl Terminator {
         match self {
             Self::Goto(target) => std::slice::from_ref(target),
             Self::Branch(targets) => targets,
-            Self::BooleanBranch { targets, .. } => targets,
+            Self::BooleanBranch { targets, .. }
+            | Self::VariantBranch { targets, .. }
+            | Self::ComparisonBranch { targets, .. } => targets,
             Self::Unreachable | Self::Return | Self::Fail => &[],
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Comparison {
+    pub left: ComparisonOperand,
+    pub kind: ComparisonKind,
+    pub right: ComparisonOperand,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ComparisonOperand {
+    Place(Place),
+    Integer(i64),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComparisonKind {
+    Equal,
+    Less,
+    LessEqual,
 }

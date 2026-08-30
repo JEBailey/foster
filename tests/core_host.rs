@@ -35,7 +35,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 560);
+    assert_eq!(checked, 591);
 
     let mut modules = 0;
     let mut types = 0;
@@ -604,6 +604,59 @@ func main() -> String {{
 }
 
 #[test]
+fn filesystem_positioned_reads_and_appends_stream_binary_chunks() {
+    let directory = std::env::temp_dir().join(format!(
+        "foster-core-streaming-{}-{}",
+        std::process::id(),
+        std::thread::current().name().unwrap_or("test")
+    ));
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("payload.bin");
+    let path_literal = serde_json::to_string(&path.to_string_lossy()).unwrap();
+    let source = format!(
+        r#"
+import core.bytes
+import core.result
+import std.fs
+import std.io
+
+func decoded(value: String) -> Bytes {{
+    branch Bytes.from_hex(value) {{
+        Result.Ok(contents) -> contents
+        Result.Error(_) -> Bytes.empty()
+    }}
+}}
+
+func count(outcome: Result<Int, IoError>) -> Int {{
+    branch outcome {{
+        Result.Ok(value) -> value
+        Result.Error(_) -> -1
+    }}
+}}
+
+func chunk(outcome: Result<Bytes, IoError>) -> String {{
+    branch outcome {{
+        Result.Ok(value) -> value.hex()
+        Result.Error(error) -> error.message
+    }}
+}}
+
+func main() -> String {{
+    let file = File.from({path_literal})
+    let replaced = count(file.write(decoded("000102")))
+    let appended = count(file.append(decoded("03040506")))
+    let length = count(file.length())
+    replaced.as_string() + ":" + length.as_string() + ":" + appended.as_string() + ":" + chunk(file.read_at(2, 3))
+}}
+"#
+    );
+
+    assert_string(foster::run(&source).unwrap(), "3:7:4:020304");
+    assert_eq!(std::fs::read(&path).unwrap(), [0, 1, 2, 3, 4, 5, 6]);
+    std::fs::remove_dir_all(&directory).unwrap();
+}
+
+#[test]
 fn standard_path_and_environment_modules_share_io_errors() {
     let source = r#"
 import core.result
@@ -632,7 +685,7 @@ func main() -> String {
 }
 
 #[test]
-fn typed_files_implement_resource_read_and_write_capabilities() {
+fn typed_files_implement_location_based_resource_capabilities() {
     let directory = std::env::temp_dir().join(format!(
         "foster-resource-{}-{}",
         std::process::id(),
@@ -651,26 +704,32 @@ import std.io
 import std.path as paths
 import std.resource
 
-func location_text(value: ResourceLocation) -> String {{ value.as_string() }}
+func identifier_text(value: ResourceIdentifier) -> String {{ value.resource_id() }}
 
-func resource_location_text(value: Resource) -> String {{ value.location.as_string() }}
+func resource_location_text(value: Resource<paths::Path>) -> String {{ value.location.as_string() }}
 
-func read_write_location_text(value: ReadWriteResource<IoError>) -> String {{ value.location.as_string() }}
+func require_read_write(value: ReadWrite<IoError>) {{ () }}
 
-func replace(value: WritableResource<IoError>, contents: Bytes) -> Result<Int, IoError> [mut value] {{
+func require_streaming(positioned: PositionedReadable<IoError>, appendable: Appendable<IoError>, sized: Sized<IoError>) {{
+    ()
+}}
+
+func replace(value: Writable<IoError>, contents: Bytes) -> Result<Int, IoError> [mut value] {{
     value.write(contents)
 }}
 
-func load(value: ReadableResource<IoError>) -> Result<Bytes, IoError> [mut value] {{
+func load(value: Readable<IoError>) -> Result<Bytes, IoError> [mut value] {{
     value.read()
 }}
 
 func render(file: File, outcome: Result<Int, IoError>) -> String [mut file, consume outcome] {{
+    require_read_write(file)
+    require_streaming(file, file, file)
     branch move outcome {{
         Result.Error(error) -> error.message
         Result.Ok(written) -> branch load(file) {{
             Result.Error(error) -> error.message
-            Result.Ok(contents) -> location_text(file.location) + ":" + resource_location_text(file) + ":" + read_write_location_text(file) + ":" + written.as_string() + ":" + contents.hex()
+            Result.Ok(contents) -> identifier_text(file.location) + ":" + resource_location_text(file) + ":" + written.as_string() + ":" + contents.hex()
         }}
     }}
 }}
@@ -688,8 +747,7 @@ func main() -> String {{
     );
 
     let expected = format!(
-        "{}:{}:{}:3:00ff41",
-        path.to_string_lossy(),
+        "{}:{}:3:00ff41",
         path.to_string_lossy(),
         path.to_string_lossy()
     );
@@ -699,20 +757,18 @@ func main() -> String {{
 }
 
 #[test]
-fn uri_is_a_parsed_resource_location_without_implicit_io() {
+fn uri_is_a_parsed_resource_identifier_without_implicit_io() {
     let source = r#"
 import core.result
-import std.fs
 import std.resource
 import std.uri
+
+func identifier_text(value: ResourceIdentifier) -> String { value.resource_id() }
 
 func render(outcome: Result<Uri, UriError>) -> String [consume outcome] {
     branch move outcome {
         Result.Error(error) -> error.message
-        Result.Ok(value) -> {
-            let file = File.at(move value)
-            file.location.as_string()
-        }
+        Result.Ok(value) -> identifier_text(value)
     }
 }
 
@@ -737,6 +793,85 @@ func main() -> String {
 }
 
 #[test]
+fn resource_identifiers_preserve_provider_kinds_and_reject_accidental_matches() {
+    let uri_as_file = r#"
+import core.result
+import std.fs
+import std.uri
+
+func open(outcome: Result<Uri, UriError>) [consume outcome] {
+    branch move outcome {
+        Result.Error(_) -> ()
+        Result.Ok(value) -> {
+            File.at(move value)
+            ()
+        }
+    }
+}
+
+func main() { open(Uri.parse("https://example.com/artifact")) }
+"#;
+    let error = foster::compile(uri_as_file).unwrap_err();
+    assert!(
+        error.message.contains("Path") || error.message.contains("File.at"),
+        "{}",
+        error.message
+    );
+
+    let displayable_integer = r#"
+import std.resource
+
+func identify(value: ResourceIdentifier) -> String { value.resource_id() }
+func main() -> String { identify(42) }
+"#;
+    let error = foster::compile(displayable_integer).unwrap_err();
+    assert!(
+        error.message.contains("ResourceIdentifier") || error.message.contains("resource_id"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn tcp_endpoints_are_uri_shaped_resource_identifiers() {
+    let source = r#"
+import core.result
+import std.net.tcp
+import std.resource
+import std.uri
+
+func identifier_text(value: ResourceIdentifier) -> String { value.resource_id() }
+
+func endpoint_text(outcome: Result<TcpEndpoint, NetworkError>) -> String [consume outcome] {
+    branch move outcome {
+        Result.Error(error) -> error.message
+        Result.Ok(endpoint) -> identifier_text(endpoint)
+    }
+}
+
+func parse_endpoint(outcome: Result<Uri, UriError>) -> String [consume outcome] {
+    branch move outcome {
+        Result.Error(error) -> error.message
+        Result.Ok(location) -> endpoint_text(TcpEndpoint.from_uri(move location))
+    }
+}
+
+func main() -> String {
+    let dns = parse_endpoint(Uri.parse("tcp://example.com:443"))
+    let ipv6 = parse_endpoint(Uri.parse("tcp://[::1]:8080"))
+    let scheme = parse_endpoint(Uri.parse("http://example.com:80"))
+    let port = parse_endpoint(Uri.parse("tcp://example.com:65536"))
+    dns + "|" + ipv6 + "|" + scheme + "|" + port
+}
+"#;
+
+    assert_string(
+        foster::run(source).unwrap(),
+        "tcp://example.com:443|tcp://[::1]:8080|http://example.com:80: URI scheme must be tcp|tcp://example.com:65536: TCP URI port must be a decimal integer from 0 through 65535",
+    );
+}
+
+#[test]
 fn core_tcp_accepts_reads_and_writes_a_connection() {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -752,11 +887,29 @@ fn core_tcp_accepts_reads_and_writes_a_connection() {
         r#"
 import std.net.tcp
 import core.result
+import std.resource
+import std.uri
+
+func open(outcome: Result<Uri, UriError>) -> String [consume outcome] {{
+    branch move outcome {{
+        Result.Error(error) -> error.message
+        Result.Ok(location) -> start(tcp::connect_uri(move location))
+    }}
+}}
+
+func connection_location(value: Resource<TcpEndpoint>) -> String {{
+    value.location.as_string()
+}}
+
+func require_closeable(value: Closable<NetworkError>) {{ () }}
 
 func start(outcome: Result<Connection, NetworkError>) -> String {{
     branch outcome {{
         Result.Error(error) -> error.message
-        Result.Ok(connection) -> write(move connection)
+        Result.Ok(connection) -> {{
+            require_closeable(connection)
+            connection_location(connection) + ":" + write(move connection)
+        }}
     }}
 }}
 
@@ -790,10 +943,13 @@ func finish(connection: Connection, text: String) -> String [consume connection,
 }}
 
 func main() -> String {{
-    start(tcp::connect("127.0.0.1", {port}))
+    open(Uri.parse("tcp://127.0.0.1:{port}"))
 }}
 "#
     );
-    assert_string(foster::run(&source).unwrap(), "pong");
+    assert_string(
+        foster::run(&source).unwrap(),
+        &format!("tcp://127.0.0.1:{port}:pong"),
+    );
     assert_eq!(&server.join().unwrap(), b"ping");
 }

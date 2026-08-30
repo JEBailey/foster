@@ -1326,6 +1326,259 @@ func main() -> Int {
 }
 
 #[test]
+fn correlates_stable_variant_patterns_across_branch_joins() {
+    let source = r#"
+enum Choice = First | Second
+
+func choose(choice: Choice) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch choice {
+        Choice.First -> values.push(20)
+        _ -> ()
+    }
+    branch choice {
+        Choice.First -> 0
+        _ -> selected
+    }
+}
+
+func main() -> Int { choose(Choice.Second) }
+"#;
+    foster::compile(source).unwrap();
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+}
+
+#[test]
+fn distinct_variant_patterns_are_mutually_exclusive() {
+    let source = r#"
+enum Choice = First | Second | Third
+
+func choose(choice: Choice) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch choice {
+        Choice.First -> values.push(20)
+        _ -> ()
+    }
+    branch choice {
+        Choice.Second -> selected
+        _ -> 0
+    }
+}
+
+func main() -> Int { choose(Choice.Second) }
+"#;
+    foster::compile(source).unwrap();
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+}
+
+#[test]
+fn correlates_payload_variant_patterns_across_branch_joins() {
+    let source = r#"
+enum Choice = First(Int) | Second
+
+func choose(choice: Choice) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch choice {
+        Choice.First(_) -> values.push(20)
+        _ -> ()
+    }
+    branch choice {
+        Choice.First(_) -> 0
+        _ -> selected
+    }
+}
+
+func main() -> Int { choose(Choice.Second) }
+"#;
+    foster::compile(source).unwrap();
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+}
+
+#[test]
+fn correlated_variant_patterns_still_reject_a_feasible_invalidation() {
+    let source = r#"
+enum Choice = First | Second
+
+func choose(choice: Choice) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch choice {
+        Choice.First -> values.push(20)
+        _ -> ()
+    }
+    branch choice {
+        Choice.First -> selected
+        _ -> 0
+    }
+}
+
+func main() -> Int { choose(Choice.First) }
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+}
+
+#[test]
+fn assigning_a_variant_forgets_earlier_branch_facts() {
+    let source = r#"
+enum Choice = First | Second
+
+func main() -> Int {
+    let choice = Choice.First
+    let values = [10]
+    let selected = ref values[0]
+    branch choice {
+        Choice.First -> values.push(20)
+        _ -> ()
+    }
+    choice = Choice.Second
+    branch choice {
+        Choice.First -> 0
+        _ -> selected
+    }
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+}
+
+#[test]
+fn correlates_stable_comparisons_across_branch_joins() {
+    let source = r#"
+func choose(index: Int) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch {
+        index < 2 -> values.push(20)
+        _ -> ()
+    }
+    branch {
+        index < 2 -> 0
+        _ -> selected
+    }
+}
+
+func main() -> Int { choose(3) }
+"#;
+    foster::compile(source).unwrap();
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+}
+
+#[test]
+fn equal_and_not_equal_comparisons_share_one_path_fact() {
+    let source = r#"
+func choose(index: Int) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch {
+        index == 0 -> values.push(20)
+        _ -> ()
+    }
+    branch {
+        index != 0 -> selected
+        _ -> 0
+    }
+}
+
+func main() -> Int { choose(1) }
+"#;
+    foster::compile(source).unwrap();
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+}
+
+#[test]
+fn comparison_correlation_still_rejects_a_feasible_invalidation() {
+    let source = r#"
+func choose(index: Int) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch {
+        index < 2 -> values.push(20)
+        _ -> ()
+    }
+    branch {
+        index < 2 -> selected
+        _ -> 0
+    }
+}
+
+func main() -> Int { choose(0) }
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+}
+
+#[test]
+fn assigning_a_comparison_operand_forgets_earlier_facts() {
+    let source = r#"
+func main() -> Int {
+    let index = 0
+    let values = [10]
+    let selected = ref values[0]
+    branch {
+        index == 0 -> values.push(20)
+        _ -> ()
+    }
+    index = 1
+    branch {
+        index == 0 -> 0
+        _ -> selected
+    }
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+}
+
+#[test]
+fn inequality_facts_distinguish_dynamic_indices() {
+    let source = r#"
+func main() -> Int {
+    let values = [10, 20]
+    let left = 0
+    let right = 1
+    let selected = ref values[left]
+    branch {
+        left != right -> {
+            values[right] = 30
+            ()
+        }
+        _ -> ()
+    }
+    selected
+}
+"#;
+    foster::compile(source).unwrap();
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+}
+
+#[test]
+fn dynamic_indices_still_overlap_without_a_live_inequality_fact() {
+    let source = r#"
+func main() -> Int {
+    let values = [10, 20]
+    let left = 0
+    let right = 1
+    let selected = ref values[left]
+    branch {
+        left != right -> {
+            right = left
+            values[right] = 30
+            ()
+        }
+        _ -> ()
+    }
+    selected
+}
+"#;
+    let error = foster::compile(source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+}
+
+#[test]
 fn propagates_projected_borrow_invalidation_through_records() {
     let source = r#"
 type Selection = {

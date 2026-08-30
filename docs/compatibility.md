@@ -29,11 +29,19 @@ changes receive review.
 Foster is currently pre-1.0, so compatibility may change deliberately. It must nevertheless change
 through these gates rather than silently.
 
+## Bytecode format version 14
+
+Bytecode format version 14 appends the `io.read_range`, `io.append_bytes`, and `io.file_length`
+builtins used by bounded binary streaming. Existing builtin tags and instruction opcodes are
+unchanged. Source code requires no migration, but serialized development bytecode from version 13
+must be rebuilt.
+
 ## Ownership-model version 3
 
 Ownership-model version 3 preserves loan provenance at record fields, constant list indices,
 non-copy branch-result temporaries, and enum pattern payload bindings. Different constant list
-indices are now disjoint, while dynamic indices still conservatively overlap every element.
+indices are disjoint. Dynamic indices remain conservative unless a live comparison fact proves
+their stable operands unequal.
 
 This precision accepts programs that invalidate a borrower stored at one constant list index and
 later use only a different index. It also rejects formerly accepted programs that extract a
@@ -42,10 +50,11 @@ value. Safe source requires no automated migration. A newly rejected program mus
 before invalidation, reacquire it afterward, or move owned data into the aggregate. The bytecode
 format remains version 13 because this change affects ownership MIR and analysis only.
 
-The same model version later gained bounded correlation for repeated tests of an unchanged boolean
-place. This accepts safe programs whose invalidation and later borrower use are guarded by opposite
-values of that place. Mutating the condition between tests discards the correlation. This is a
-precision-only extension, requires no migration, and does not change bytecode format 13.
+The same model version later gained bounded correlation for repeated tests of unchanged boolean and
+enum places and direct scalar comparisons. This accepts safe programs whose invalidation and later
+borrower use are guarded by contradictory facts, and lets a live inequality distinguish stable
+dynamic indices. Mutating any predicate operand discards the correlation. This is a precision-only
+extension, requires no migration, and does not change bytecode format 13.
 
 ## Ownership-model version 2
 
@@ -160,10 +169,25 @@ dispatch. The ownership-model version remains unchanged. Type checking assigns p
 dispatch slots and emits finalized concrete implementation tables; while Foster remains unreleased,
 only the current bytecode format is accepted.
 
-## Resource-location library API
+Composition now validates implementation availability when a record is instantiated rather than
+when its contract is declared. `type C = & A & B` and `type C = & A & B & {}` therefore describe
+the same effective contract without repeating inherited methods. An uninstantiated contract may
+remain abstract, while constructing a named record still requires compatible implementations for
+its complete composed surface. This corrects declaration-time validation and does not change the
+source-language, ownership-model, or bytecode versions.
 
-The pre-1.0 standard library separates resource identity from authority. `std.resource` defines
-the structural `ResourceLocation`, `Resource`, `ReadableResource<E>`, `WritableResource<E>`, and
-`ReadWriteResource<E>` contracts. `Path` and `Uri` are locations only; `File` stores an abstract
-`ResourceLocation` and supplies whole-resource read and write capabilities. This additive library
-API does not change the language, ownership-model, or bytecode versions.
+## Typed-resource library API
+
+The pre-1.0 standard library separates resource identity, provider association, and authority.
+`std.resource` now defines the explicit `ResourceIdentifier` contract, the generic `Resource<L>`
+association, and independent capability contracts such as `Readable<E>`, `Writable<E>`,
+`PositionedReadable<E>`, `Appendable<E>`, `Sized<E>`, `Closable<E>`, and `Accepting<C, E>`.
+`ReadWrite<E>` is the combined whole-resource read/write contract.
+
+This replaces the earlier erased resource contracts. Migrate `ResourceLocation` to
+`ResourceIdentifier`, `Resource` to `Resource<L>`, and each `*Resource<E>` capability to its
+shorter independent spelling. Implement `resource_id()` rather than relying on a ubiquitous
+`as_string()` member for structural identification. `File.at` now accepts `Path`, while TCP
+connections and listeners expose `Resource<TcpEndpoint>`; a parsed `Uri` remains an identifier and
+cannot silently become either provider. These pre-1.0 library changes do not advance the language,
+ownership-model, or bytecode versions.

@@ -196,6 +196,24 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
             &["path", "contents"],
             "Writes raw bytes through the host filesystem boundary.",
         ),
+        Builtin::IoReadRange => builtin(
+            "IoHost.read_range",
+            "IoHost.read_range(path: String, offset: Int, maximum: Int) -> Result<Bytes, IoError>",
+            &["path", "offset", "maximum"],
+            "Reads one bounded byte range through the host filesystem boundary.",
+        ),
+        Builtin::IoAppendBytes => builtin(
+            "IoHost.append_bytes",
+            "IoHost.append_bytes(path: String, contents: Bytes) -> Result<Int, IoError>",
+            &["path", "contents"],
+            "Appends raw bytes through the host filesystem boundary.",
+        ),
+        Builtin::IoFileLength => builtin(
+            "IoHost.file_length",
+            "IoHost.file_length(path: String) -> Result<Int, IoError>",
+            &["path"],
+            "Returns a file's byte length through the host filesystem boundary.",
+        ),
         Builtin::IoListDirectory => builtin(
             "IoHost.list_directory",
             "IoHost.list_directory(path: String) -> Result<List<String>, IoError>",

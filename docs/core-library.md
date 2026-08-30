@@ -37,7 +37,7 @@ being added accidentally.
 | `core.bytes` | Immutable compact bytes, hexadecimal conversion, and UTF-8 decoding |
 | `core.bytes.buffer` | Mutable growable byte storage |
 | `std.io` | Generic binary/text stream contracts and binary transfer algorithms |
-| `std.resource` | Resource identity and whole-resource readable/writable capability contracts |
+| `std.resource` | Typed resource association and independent I/O capability contracts |
 | `std.collections.set` | Insertion-ordered `Set<T>` |
 | `std.collections.queue` | First-in, first-out `Queue<T>` |
 | `std.collections.deque` | Double-ended `Deque<T>` |
@@ -156,7 +156,8 @@ zero-conversion view: generic sequence functions operate on the original string 
 Foster's settled declaration syntax composes the same contract into a user type as
 `type Foo = & Sequence<CodePoint> & { }`. Sequence members are required accessor functions rather than
 implied storage, so constructors do not initialize `empty?`, `length`, `head`, or `rest`. A user
-type supplies compatible instance functions. Declared receiver functions always use call syntax,
+type supplies compatible instance functions before such a record is instantiated. Declared
+receiver functions always use call syntax,
 so a sequence contract method is invoked as `value.head()`. Conformance is statically duck typed,
 so matching readable fields can
 also satisfy those accessor requirements without an `&` clause. Composition adds no wrapper or
@@ -240,14 +241,20 @@ structural contracts. Binary reads return at most the requested number of bytes 
 successful non-empty operations must make progress. `read_all`, `write_all`, and `copy` implement
 the retry and accumulation policy in Foster. `Duplex<E>` is the combined binary contract.
 
-`std.resource` separates location from authority. `ResourceLocation` requires a stable textual
-`as_string()` representation, while `Resource` associates a value with a `ResourceLocation`.
-`ReadableResource<E>`, `WritableResource<E>`, and `ReadWriteResource<E>` describe whole-resource
-binary capabilities. `std.path.Path` and `std.uri.Uri` implement `ResourceLocation`; neither gains
-I/O authority merely by identifying something. `std.fs.File` stores an abstract
-`ResourceLocation` and implements both binary capabilities. Constructing a file does not access
-its provider, so unsupported locations, permission changes, and availability failures remain typed
-`IoError` results at the operation.
+`std.resource` separates identity, provider association, and authority. `ResourceIdentifier`
+requires a stable `resource_id()` representation, while `Resource<L>` associates a provider value
+with a concrete identifier kind. Independent contracts describe `Readable<E>`, `Writable<E>`,
+`PositionedReadable<E>`, `Appendable<E>`, `Sized<E>`, `Closable<E>`, and `Accepting<C, E>`
+capabilities; `ReadWrite<E>` combines whole-resource reading and writing. Because these are
+structural contracts, any value with the required public signatures conforms without a nominal
+declaration or wrapper.
+
+`std.path.Path`, `std.uri.Uri`, and `std.net.tcp.TcpEndpoint` implement
+`ResourceIdentifier`, but identifiers gain no I/O authority merely by naming something.
+`std.fs.File` is an opaque `Resource<Path>` with file capabilities. Constructing one does not
+access the provider, so permission changes and availability failures remain typed `IoError`
+results at each operation. `tcp::Connection` and `tcp::Listener` similarly retain
+`Resource<TcpEndpoint>` rather than erasing their endpoint kind.
 
 `tcp::Connection` implements `Duplex<NetworkError>`. Its `read` and `write` methods are the
 contract operations, while `read_text`, `write_text`, `read_bytes`, and `write_bytes` are explicit

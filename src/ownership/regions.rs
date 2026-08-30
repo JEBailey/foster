@@ -1,12 +1,13 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::error::FosterError;
-use crate::hir::{FunctionId, PackageHir, Projection};
+use crate::hir::{FunctionId, PackageHir, Projection, VariantId};
 
 use super::mir::{place_contains, places_overlap};
 use super::{
-    BlockId, BorrowValue, Function, InvalidationKind, LoanId, Operation, Place, PlaceRoot, Program,
-    ProvenanceAnalysis, ProvenanceState, RequirementAnalysis, RequirementState,
+    BlockId, BorrowValue, Comparison, ComparisonKind, ComparisonOperand, Function,
+    InvalidationKind, LoanId, Operation, Place, PlaceRoot, Program, ProvenanceAnalysis,
+    ProvenanceState, RequirementAnalysis, RequirementState,
 };
 
 fn place_name(hir: &PackageHir, place: &Place) -> String {
@@ -322,7 +323,7 @@ fn join_requirements(existing: &mut RequirementState, incoming: &RequirementStat
     }
 }
 
-const MAX_BOOLEAN_PATHS: usize = 16;
+const MAX_PATH_ALTERNATIVES: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct BooleanFact {
@@ -330,38 +331,172 @@ struct BooleanFact {
     value: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VariantFact {
+    place: Place,
+    variant: VariantId,
+    matches: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ComparisonFact {
+    comparison: Comparison,
+    result: bool,
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct PathCondition(Vec<BooleanFact>);
+struct PathCondition {
+    booleans: Vec<BooleanFact>,
+    variants: Vec<VariantFact>,
+    comparisons: Vec<ComparisonFact>,
+}
 
 impl PathCondition {
-    fn with_fact(&self, place: &Place, value: bool) -> Option<Self> {
-        if let Some(existing) = self.0.iter().find(|fact| fact.place == *place) {
+    fn with_boolean_fact(&self, place: &Place, value: bool) -> Option<Self> {
+        if let Some(existing) = self.booleans.iter().find(|fact| fact.place == *place) {
             return (existing.value == value).then(|| self.clone());
         }
         let mut condition = self.clone();
-        condition.0.push(BooleanFact {
+        condition.booleans.push(BooleanFact {
             place: place.clone(),
             value,
         });
         Some(condition)
     }
 
+    fn with_variant_fact(&self, place: &Place, variant: VariantId, matches: bool) -> Option<Self> {
+        for existing in self.variants.iter().filter(|fact| fact.place == *place) {
+            if existing.variant == variant {
+                return if existing.matches == matches {
+                    Some(self.clone())
+                } else {
+                    None
+                };
+            }
+            if existing.matches && matches {
+                return None;
+            }
+            if existing.matches && !matches {
+                return Some(self.clone());
+            }
+        }
+        let mut condition = self.clone();
+        condition.variants.push(VariantFact {
+            place: place.clone(),
+            variant,
+            matches,
+        });
+        Some(condition)
+    }
+
+    fn with_edge_fact(&self, fact: EdgeFact<'_>) -> Option<Self> {
+        match fact {
+            EdgeFact::Boolean { place, value } => self.with_boolean_fact(place, value),
+            EdgeFact::Variant {
+                place,
+                variant,
+                matches,
+            } => self.with_variant_fact(place, variant, matches),
+            EdgeFact::Comparison { comparison, result } => {
+                self.with_comparison_fact(comparison, result)
+            }
+        }
+    }
+
+    fn with_comparison_fact(&self, comparison: &Comparison, result: bool) -> Option<Self> {
+        if comparison.left == comparison.right {
+            let actual = match comparison.kind {
+                ComparisonKind::Equal | ComparisonKind::LessEqual => true,
+                ComparisonKind::Less => false,
+            };
+            return (actual == result).then(|| self.clone());
+        }
+        if let Some(existing) = self
+            .comparisons
+            .iter()
+            .find(|fact| fact.comparison == *comparison)
+        {
+            return (existing.result == result).then(|| self.clone());
+        }
+        let mut condition = self.clone();
+        condition.comparisons.push(ComparisonFact {
+            comparison: comparison.clone(),
+            result,
+        });
+        Some(condition)
+    }
+
     fn forget(&mut self, changed: &Place) {
-        self.0.retain(|fact| !places_overlap(&fact.place, changed));
+        self.booleans
+            .retain(|fact| !places_overlap(&fact.place, changed));
+        self.variants
+            .retain(|fact| !places_overlap(&fact.place, changed));
+        self.comparisons.retain(|fact| {
+            comparison_places(&fact.comparison).all(|place| !places_overlap(place, changed))
+        });
     }
 
     fn compatible_with(&self, other: &Self) -> bool {
-        !self.0.iter().any(|left| {
+        let incompatible_boolean = self.booleans.iter().any(|left| {
             other
-                .0
+                .booleans
                 .iter()
                 .any(|right| left.place == right.place && left.value != right.value)
-        })
+        });
+        let incompatible_variant = self.variants.iter().any(|left| {
+            other.variants.iter().any(|right| {
+                left.place == right.place
+                    && ((left.matches && right.matches && left.variant != right.variant)
+                        || (left.variant == right.variant && left.matches != right.matches))
+            })
+        });
+        let incompatible_comparison = self.comparisons.iter().any(|left| {
+            other
+                .comparisons
+                .iter()
+                .any(|right| left.comparison == right.comparison && left.result != right.result)
+        });
+        !incompatible_boolean && !incompatible_variant && !incompatible_comparison
     }
 
     fn subsumes(&self, other: &Self) -> bool {
-        self.0.iter().all(|fact| other.0.contains(fact))
+        self.booleans
+            .iter()
+            .all(|fact| other.booleans.contains(fact))
+            && self
+                .variants
+                .iter()
+                .all(|fact| other.variants.contains(fact))
+            && self
+                .comparisons
+                .iter()
+                .all(|fact| other.comparisons.contains(fact))
     }
+
+    fn proves_unequal(&self, left: &ComparisonOperand, right: &ComparisonOperand) -> bool {
+        if left == right {
+            return false;
+        }
+        self.comparisons.iter().any(|fact| {
+            let operands_match = (fact.comparison.left == *left && fact.comparison.right == *right)
+                || (fact.comparison.left == *right && fact.comparison.right == *left);
+            operands_match
+                && match fact.comparison.kind {
+                    ComparisonKind::Equal => !fact.result,
+                    ComparisonKind::Less => fact.result,
+                    ComparisonKind::LessEqual => !fact.result,
+                }
+        })
+    }
+}
+
+fn comparison_places(comparison: &Comparison) -> impl Iterator<Item = &Place> {
+    [&comparison.left, &comparison.right]
+        .into_iter()
+        .filter_map(|operand| match operand {
+            ComparisonOperand::Place(place) => Some(place),
+            ComparisonOperand::Integer(_) => None,
+        })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -378,22 +513,77 @@ struct GuardedRequirementAnalysis {
 }
 
 #[derive(Debug, Default)]
-struct BooleanReachability {
+struct PathReachability {
     points: Vec<Option<Vec<Vec<PathCondition>>>>,
 }
 
-fn edge_fact(terminator: &super::Terminator, successor: BlockId) -> Option<(&Place, bool)> {
+#[derive(Debug, Clone, Copy)]
+enum EdgeFact<'a> {
+    Boolean {
+        place: &'a Place,
+        value: bool,
+    },
+    Variant {
+        place: &'a Place,
+        variant: VariantId,
+        matches: bool,
+    },
+    Comparison {
+        comparison: &'a Comparison,
+        result: bool,
+    },
+}
+
+fn edge_fact(terminator: &super::Terminator, successor: BlockId) -> Option<EdgeFact<'_>> {
     match terminator {
         super::Terminator::BooleanBranch { condition, targets }
             if targets[0] != targets[1] && targets[0] == successor =>
         {
-            Some((condition, true))
+            Some(EdgeFact::Boolean {
+                place: condition,
+                value: true,
+            })
         }
         super::Terminator::BooleanBranch { condition, targets }
             if targets[0] != targets[1] && targets[1] == successor =>
         {
-            Some((condition, false))
+            Some(EdgeFact::Boolean {
+                place: condition,
+                value: false,
+            })
         }
+        super::Terminator::VariantBranch {
+            subject,
+            variant,
+            targets,
+        } if targets[0] != targets[1] && targets[0] == successor => Some(EdgeFact::Variant {
+            place: subject,
+            variant: *variant,
+            matches: true,
+        }),
+        super::Terminator::VariantBranch {
+            subject,
+            variant,
+            targets,
+        } if targets[0] != targets[1] && targets[1] == successor => Some(EdgeFact::Variant {
+            place: subject,
+            variant: *variant,
+            matches: false,
+        }),
+        super::Terminator::ComparisonBranch {
+            comparison,
+            targets,
+        } if targets[0] != targets[1] && targets[0] == successor => Some(EdgeFact::Comparison {
+            comparison,
+            result: true,
+        }),
+        super::Terminator::ComparisonBranch {
+            comparison,
+            targets,
+        } if targets[0] != targets[1] && targets[1] == successor => Some(EdgeFact::Comparison {
+            comparison,
+            result: false,
+        }),
         _ => None,
     }
 }
@@ -424,15 +614,37 @@ fn merge_path_conditions(existing: &mut Vec<PathCondition>, incoming: Vec<PathCo
         existing.retain(|known| !condition.subsumes(known));
         existing.push(condition);
     }
-    if existing.len() > MAX_BOOLEAN_PATHS {
+    if existing.len() > MAX_PATH_ALTERNATIVES {
         let common = existing.first().cloned().unwrap_or_default();
-        let common = PathCondition(
-            common
-                .0
+        let common = PathCondition {
+            booleans: common
+                .booleans
                 .into_iter()
-                .filter(|fact| existing.iter().all(|condition| condition.0.contains(fact)))
+                .filter(|fact| {
+                    existing
+                        .iter()
+                        .all(|condition| condition.booleans.contains(fact))
+                })
                 .collect(),
-        );
+            variants: common
+                .variants
+                .into_iter()
+                .filter(|fact| {
+                    existing
+                        .iter()
+                        .all(|condition| condition.variants.contains(fact))
+                })
+                .collect(),
+            comparisons: common
+                .comparisons
+                .into_iter()
+                .filter(|fact| {
+                    existing
+                        .iter()
+                        .all(|condition| condition.comparisons.contains(fact))
+                })
+                .collect(),
+        };
         *existing = vec![common];
     }
     *existing != before
@@ -448,12 +660,22 @@ fn merge_guarded_uses(
             existing.push(guarded);
         }
     }
-    if existing.len() > MAX_BOOLEAN_PATHS {
+    if existing.len() > MAX_PATH_ALTERNATIVES {
         let mut representative = existing[0].clone();
-        representative.condition.0.retain(|fact| {
+        representative.condition.booleans.retain(|fact| {
             existing
                 .iter()
-                .all(|guarded| guarded.condition.0.contains(fact))
+                .all(|guarded| guarded.condition.booleans.contains(fact))
+        });
+        representative.condition.variants.retain(|fact| {
+            existing
+                .iter()
+                .all(|guarded| guarded.condition.variants.contains(fact))
+        });
+        representative.condition.comparisons.retain(|fact| {
+            existing
+                .iter()
+                .all(|guarded| guarded.condition.comparisons.contains(fact))
         });
         *existing = vec![representative];
     }
@@ -471,25 +693,26 @@ fn merge_guarded_requirements(
 
 fn constrain_guarded_requirements(
     state: &GuardedRequirementState,
-    fact: Option<(&Place, bool)>,
+    fact: Option<EdgeFact<'_>>,
 ) -> GuardedRequirementState {
-    let Some((place, value)) = fact else {
+    let Some(fact) = fact else {
         return state.clone();
     };
     state
         .iter()
         .filter_map(|(loan, uses)| {
-            let constrained =
-                uses.iter()
-                    .filter_map(|guarded| {
-                        guarded.condition.with_fact(place, value).map(|condition| {
-                            GuardedRequiredUse {
-                                condition,
-                                required_use: guarded.required_use.clone(),
-                            }
+            let constrained = uses
+                .iter()
+                .filter_map(|guarded| {
+                    guarded
+                        .condition
+                        .with_edge_fact(fact)
+                        .map(|condition| GuardedRequiredUse {
+                            condition,
+                            required_use: guarded.required_use.clone(),
                         })
-                    })
-                    .collect::<Vec<_>>();
+                })
+                .collect::<Vec<_>>();
             (!constrained.is_empty()).then_some((*loan, constrained))
         })
         .collect()
@@ -650,7 +873,7 @@ fn remove_guarded_issued_at(
     }
 }
 
-fn analyze_boolean_reachability(function: &Function) -> BooleanReachability {
+fn analyze_path_reachability(function: &Function) -> PathReachability {
     let mut entries = vec![None::<Vec<PathCondition>>; function.blocks.len()];
     let mut points = vec![None::<Vec<Vec<PathCondition>>>; function.blocks.len()];
     entries[function.entry] = Some(vec![PathCondition::default()]);
@@ -676,16 +899,15 @@ fn analyze_boolean_reachability(function: &Function) -> BooleanReachability {
         points[block] = Some(block_points);
 
         for successor in function.blocks[block].terminator.successors() {
-            let propagated = if let Some((place, value)) =
-                edge_fact(&function.blocks[block].terminator, *successor)
-            {
-                conditions
-                    .iter()
-                    .filter_map(|condition| condition.with_fact(place, value))
-                    .collect()
-            } else {
-                conditions.clone()
-            };
+            let propagated =
+                if let Some(fact) = edge_fact(&function.blocks[block].terminator, *successor) {
+                    conditions
+                        .iter()
+                        .filter_map(|condition| condition.with_edge_fact(fact))
+                        .collect()
+                } else {
+                    conditions.clone()
+                };
             let changed = match &mut entries[*successor] {
                 Some(existing) => merge_path_conditions(existing, propagated),
                 None => {
@@ -699,7 +921,7 @@ fn analyze_boolean_reachability(function: &Function) -> BooleanReachability {
         }
     }
 
-    BooleanReachability { points }
+    PathReachability { points }
 }
 
 pub(super) fn validate(hir: &PackageHir, program: &Program) -> Result<(), FosterError> {
@@ -712,9 +934,12 @@ pub(super) fn validate(hir: &PackageHir, program: &Program) -> Result<(), Foster
         )?;
         let requirements = &program.requirements[function_id];
         validate_suspensions(hir, *function_id, function, requirements)?;
-        if let Some(conflict) =
-            find_conflict(function, &program.provenance[function_id], requirements)
-        {
+        if let Some(conflict) = find_conflict_with_hir(
+            hir,
+            function,
+            &program.provenance[function_id],
+            requirements,
+        ) {
             let definition = &hir.functions[*function_id];
             let origin_name = place_name(hir, &conflict.loan.origin);
             let borrower_name = place_name(hir, &conflict.required_use.place);
@@ -988,13 +1213,32 @@ struct InvalidationConflict {
     required_use: super::RequiredUse,
 }
 
+#[cfg(test)]
 fn find_conflict(
     function: &Function,
     provenance: &ProvenanceAnalysis,
     requirements: &RequirementAnalysis,
 ) -> Option<InvalidationConflict> {
+    find_conflict_inner(None, function, provenance, requirements)
+}
+
+fn find_conflict_with_hir(
+    hir: &PackageHir,
+    function: &Function,
+    provenance: &ProvenanceAnalysis,
+    requirements: &RequirementAnalysis,
+) -> Option<InvalidationConflict> {
+    find_conflict_inner(Some(hir), function, provenance, requirements)
+}
+
+fn find_conflict_inner(
+    hir: Option<&PackageHir>,
+    function: &Function,
+    provenance: &ProvenanceAnalysis,
+    requirements: &RequirementAnalysis,
+) -> Option<InvalidationConflict> {
     let guarded = analyze_guarded_requirements(function, provenance);
-    let reachability = analyze_boolean_reachability(function);
+    let reachability = analyze_path_reachability(function);
     for (block, definition) in function.blocks.iter().enumerate() {
         let Some(points) = &requirements.points[block] else {
             continue;
@@ -1004,7 +1248,7 @@ fn find_conflict(
             .expect("ordinary and guarded requirements share reachability");
         let reachability_points = reachability.points[block]
             .as_ref()
-            .expect("provenance-reachable block has boolean reachability");
+            .expect("provenance-reachable block has path reachability");
         for (operation_index, operation) in definition.operations.iter().enumerate() {
             let (place, kind, span) = match operation {
                 Operation::Invalidate { place, kind, span } => (place, *kind, span),
@@ -1041,9 +1285,16 @@ fn find_conflict(
                         uses.iter().find(|guarded| {
                             let mut condition = guarded.condition.clone();
                             condition.forget(place);
-                            reaching
-                                .iter()
-                                .any(|reach| reach.compatible_with(&condition))
+                            reaching.iter().any(|reach| {
+                                reach.compatible_with(&condition)
+                                    && !places_proven_disjoint(
+                                        hir,
+                                        place,
+                                        &loan.origin,
+                                        reach,
+                                        &condition,
+                                    )
+                            })
                         })
                     });
                     compatible_use
@@ -1064,6 +1315,58 @@ fn find_conflict(
         }
     }
     None
+}
+
+fn places_proven_disjoint(
+    hir: Option<&PackageHir>,
+    left: &Place,
+    right: &Place,
+    reaching: &PathCondition,
+    required: &PathCondition,
+) -> bool {
+    let Some(hir) = hir else {
+        return false;
+    };
+    if left.root != right.root {
+        return true;
+    }
+    for (left_projection, right_projection) in left.projections.iter().zip(&right.projections) {
+        match (left_projection, right_projection) {
+            (Projection::Field(left), Projection::Field(right)) if left != right => return true,
+            (Projection::Index { .. }, Projection::Index { .. }) => {
+                let Some(left) = index_operand(hir, left_projection) else {
+                    continue;
+                };
+                let Some(right) = index_operand(hir, right_projection) else {
+                    continue;
+                };
+                if reaching.proves_unequal(&left, &right) || required.proves_unequal(&left, &right)
+                {
+                    return true;
+                }
+            }
+            (Projection::Field(_), Projection::Field(_))
+            | (Projection::Dereference, Projection::Dereference) => {}
+            _ => return false,
+        }
+    }
+    false
+}
+
+fn index_operand(hir: &PackageHir, projection: &Projection) -> Option<ComparisonOperand> {
+    let Projection::Index {
+        expression,
+        constant,
+    } = projection
+    else {
+        return None;
+    };
+    if let Some(constant) = constant {
+        return Some(ComparisonOperand::Integer(*constant));
+    }
+    crate::hir::queries::expression_place(hir, *expression)
+        .map(Place::from_hir)
+        .map(ComparisonOperand::Place)
 }
 
 fn is_parameter_reborrow(function: &Function, loan: &super::LoanDefinition) -> bool {
@@ -1236,18 +1539,22 @@ mod tests {
     use crate::ownership::{BasicBlock, Terminator};
 
     #[test]
-    fn boolean_path_limit_widens_to_common_facts() {
+    fn path_limit_widens_to_common_facts() {
         let mut conditions = Vec::new();
-        for index in 0..=MAX_BOOLEAN_PATHS {
+        for index in 0..=MAX_PATH_ALTERNATIVES {
             let local = crate::hir::LocalId::from_raw(la_arena::RawIdx::from_u32(
                 u32::try_from(index).unwrap(),
             ));
             merge_path_conditions(
                 &mut conditions,
-                vec![PathCondition(vec![BooleanFact {
-                    place: Place::local(local),
-                    value: true,
-                }])],
+                vec![PathCondition {
+                    booleans: vec![BooleanFact {
+                        place: Place::local(local),
+                        value: true,
+                    }],
+                    variants: Vec::new(),
+                    comparisons: Vec::new(),
+                }],
             );
         }
         assert_eq!(conditions, vec![PathCondition::default()]);
