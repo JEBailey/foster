@@ -1,0 +1,98 @@
+//! Records, enums, overloads, aliases, and structural contracts.
+
+type Person = {
+    name: String
+    age: Int
+}
+
+type Parsed<T> = {
+    value: T
+    remaining: String
+}
+
+enum Outcome = Accepted(Int)
+    | Rejected(String)
+
+type Identified = {
+    pub func id(self) -> Int [read self]
+    pub func offset(self, amount: Int) -> Int [read self]
+}
+
+type User = & Identified & {
+    value: Int
+}
+
+type Formatter = {}
+
+type Number = Int
+
+func User.id(self: User) -> Int {
+    self.value
+}
+
+func User.offset(self: User, amount: Int) -> Int {
+    self.value + amount
+}
+
+func identify(value: Identified) -> Int {
+    value.id() + value.offset(2)
+}
+
+func number() -> Number {
+    42
+}
+
+func Formatter.render(self: Formatter, value: Int) -> String {
+    "int"
+}
+
+func Formatter.render(self: Formatter, value: CodePoint) -> String {
+    "code point"
+}
+
+func Formatter.render(self: Formatter, left: Int, right: Int) -> String {
+    "pair"
+}
+
+test "records support construction access and mutation" {
+    let person = Person { name: "Ada", age: 37 }
+    person.age = person.age + 5
+    assert(person.name == "Ada")
+    assert(person.age == 42)
+}
+
+test "generic record arguments are inferred" {
+    let parsed = Parsed { value: 42, remaining: "" }
+    assert(parsed.value == 42)
+    assert(parsed.remaining.empty?)
+}
+
+test "enum payloads are constructed and matched" {
+    let outcome = Outcome.Accepted(42)
+    branch outcome {
+        Outcome.Accepted(value) -> {
+            assert(value == 42)
+            ()
+        }
+        Outcome.Rejected(_) -> {
+            assert(false, "accepted outcome was rejected")
+            ()
+        }
+    }
+}
+
+test "structural contracts dispatch required methods" {
+    assert(identify(User { value: 20 }) == 42)
+}
+
+test "methods overload by arity and parameter type" {
+    let formatter = Formatter {}
+    assert(formatter.render(42) == "int")
+    assert(formatter.render('x') == "code point")
+    assert(formatter.render(20, 22) == "pair")
+}
+
+test "transparent aliases preserve their underlying values" {
+    let value = number()
+    assert(value == 42)
+}

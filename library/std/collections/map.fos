@@ -57,8 +57,8 @@ pub func Map.put<K, V>(self: Map<K, V>, key: K, value: V) -> Map<K, V> {
 func put_entries<K, V>(entries: List<Entry<K, V>>, key: K, value: V) -> List<Entry<K, V>> {
     branch {
         entries.empty? -> [Entry { key, value }]
-        entries.head.key == key -> entries.rest.append(Entry { key, value })
-        _ -> put_entries(entries.rest, move key, move value).append(entries.head)
+        entries.head.key == key -> [Entry { key, value }].concat(entries.rest)
+        _ -> [entries.head].concat(put_entries(entries.rest, move key, move value))
     }
 }
 
@@ -103,6 +103,17 @@ test "maps replace values without duplicating keys" {
     }
     assert(found)
     assert(values.length() == 1)
+    assert(not values.empty?())
+    assert(values.contains_key?("a"))
+    assert(not values.contains_key?("missing"))
+    let keys = Map.empty().put("a", 2).put("b", 3).keys()
+    assert(keys.length == 2)
+    assert(keys[0] == "a")
+    assert(keys[1] == "b")
+    let stored = Map.empty().put("a", 2).put("b", 3).values()
+    assert(stored.length == 2)
+    assert(stored[0] == 2)
+    assert(stored[1] == 3)
 }
 
 /// Extracts values from owned entries into the result accumulator.

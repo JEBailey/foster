@@ -1671,3 +1671,127 @@ func hex_character(value: Int) -> String {
 func render_error(message: String) -> TomlError {
     TomlError { message: move message, line: 0, column: 0 }
 }
+
+test "TOML parses queries renders and reports positioned errors" {
+    branch parse("title = \"Foster\"\n[package]\nenabled = true\n") {
+        Result.Error(_) -> {
+            assert(false, "valid TOML was rejected")
+            ()
+        }
+        Result.Ok(document) -> branch (move document).get("package") {
+            Option.None -> {
+                assert(false, "package table was missing")
+                ()
+            }
+            Option.Some(value) -> branch (move value).get("enabled") {
+                Option.Some(TomlValue.Bool(enabled)) -> {
+                    assert(enabled)
+                    ()
+                }
+                _ -> {
+                    assert(false, "nested boolean was missing")
+                    ()
+                }
+            }
+        }
+    }
+
+    let document = TomlDocument { entries: [TomlEntry { key: "count", value: TomlValue.Int(3) }, TomlEntry { key: "title", value: TomlValue.String("Foster") }] }
+    branch (move document).render() {
+        Result.Ok(source) -> {
+            assert(source == "count = 3\ntitle = \"Foster\"\n")
+            ()
+        }
+        Result.Error(_) -> {
+            assert(false, "typed TOML failed to render")
+            ()
+        }
+    }
+
+    branch parse("title = \"ok\"\nbroken = [\n") {
+        Result.Error(error) -> {
+            assert(error.line == 2)
+            assert(error.column > 0)
+            ()
+        }
+        Result.Ok(_) -> {
+            assert(false, "malformed TOML was accepted")
+            ()
+        }
+    }
+}
+
+func test_score_value(value: TomlValue) -> Int {
+    branch value {
+        TomlValue.String(_) -> 1
+        TomlValue.Int(_) -> 2
+        TomlValue.Float(_) -> 4
+        TomlValue.Bool(_) -> 8
+        TomlValue.DateTime(_) -> 16
+        TomlValue.Array(values) -> 32 + values.length
+        TomlValue.Table(entries) -> 64 + test_score_entries(move entries)
+    }
+}
+
+func test_score_entries(entries: List<TomlEntry>) -> Int {
+    return 0 if entries.empty?
+    test_score_value(entries.head.value) + test_score_entries(entries.rest)
+}
+
+func test_error_score(outcome: Result<TomlDocument, TomlError>) -> Int {
+    branch outcome {
+        Result.Ok(_) -> 0
+        Result.Error(error) -> branch {
+            error.message.empty? -> 0
+            error.line <= 0 -> 0
+            error.column <= 0 -> 0
+            _ -> 1
+        }
+    }
+}
+
+func test_require(condition: Bool, message: String) -> () {
+    assert(condition, message)
+    ()
+}
+
+test "TOML round trips every value category" {
+    let source = "array = [1, 2]\nboolean = true\ndatetime = 1979-05-27T07:32:00Z\nfloat = 1.5\ninteger = 3\nstring = \"x\"\n[table]\nnested = false\n"
+    branch parse(move source) {
+        Result.Error(_) -> test_require(false, "valid TOML was rejected")
+        Result.Ok(document) -> branch (move document).render() {
+            Result.Error(_) -> test_require(false, "valid document did not render")
+            Result.Ok(rendered) -> branch parse(move rendered) {
+                Result.Error(_) -> test_require(false, "rendered TOML did not parse")
+                Result.Ok(round_trip) -> test_require(test_score_entries(move round_trip.entries) == 137, "round trip changed TOML value categories")
+            }
+        }
+    }
+}
+
+test "TOML renderer rejects invalid date-time values" {
+    let document = TomlDocument { entries: [TomlEntry { key: "when", value: TomlValue.DateTime("not-a-date") }] }
+    branch (move document).render() {
+        Result.Ok(_) -> test_require(false, "invalid date-time rendered successfully")
+        Result.Error(error) -> {
+            assert(error.line == 0)
+            assert(error.column == 0)
+            ()
+        }
+    }
+}
+
+test "TOML rejects common malformed inputs with positions" {
+    let score = 0
+    score = score + test_error_score(parse("value = 1\nvalue = 2\n"))
+    score = score + test_error_score(parse("value = 1__0\n"))
+    score = score + test_error_score(parse("value = +0x10\n"))
+    score = score + test_error_score(parse("value = 01.2\n"))
+    score = score + test_error_score(parse("value = 2025-02-30\n"))
+    score = score + test_error_score(parse("value = \"\\q\"\n"))
+    score = score + test_error_score(parse("[table]\n[table]\n"))
+    score = score + test_error_score(parse("value = 1\n[value.child]\n"))
+    score = score + test_error_score(parse("value = { key = 1, key = 2 }\n"))
+    score = score + test_error_score(parse("value = [1, 2\n"))
+    assert(score == 10)
+}

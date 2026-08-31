@@ -34,6 +34,12 @@ Library implementations use `not`, `&&`, and `||` for Boolean logic and short-ci
 `String` is an opaque Foster record backed by valid UTF-8 `Bytes`; literals and host decoding are
 its trusted construction paths, while its library algorithms are ordinary Foster functions.
 
+Portable library behavior is tested with Foster `test` declarations beside the implementation.
+Run the complete library suite with `foster test library`; the Rust integration harness executes it
+with and without bytecode optimization during `cargo test`. Host-dependent filesystem, process, and
+network behavior remains in Rust integration tests so those tests can create and clean up isolated
+operating-system resources.
+
 Current modules:
 
 - `core.functions`: reusable `Predicate<T>`, consuming `Consumer<T>`, and `Supplier<T>` callable aliases

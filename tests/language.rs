@@ -932,12 +932,6 @@ fn postfix_guards_only_apply_to_control_statements() {
 }
 
 #[test]
-fn branch_and_recursion() {
-    let source = include_str!("../examples/whitespace.fos");
-    assert_string(foster::run(source).unwrap(), "Foster");
-}
-
-#[test]
 fn symbols_and_arithmetic() {
     let source = r#"
 func choose(value: Int) {
@@ -1008,24 +1002,6 @@ fn conditional_branches_require_a_wildcard_arm() {
 
     let legacy = foster::compile("func main() { branch { true -> 1 else -> 0 } }").unwrap_err();
     assert!(legacy.message.contains("expected expression"));
-}
-
-#[test]
-fn runs_closure_and_numeric_showcase_examples() {
-    assert_eq!(
-        foster::run(include_str!("../examples/showcase/partial_application.fos")).unwrap(),
-        Value::Integer(19)
-    );
-    let Value::Float(root) =
-        foster::run(include_str!("../examples/showcase/nested_functions.fos")).unwrap()
-    else {
-        panic!("nested-functions example should return Float")
-    };
-    assert!((root - 4.0).abs() < 0.001);
-    assert_eq!(
-        foster::run(include_str!("../examples/showcase/float_recursion.fos")).unwrap(),
-        Value::Float(23.0)
-    );
 }
 
 #[test]
@@ -1446,53 +1422,6 @@ func main() { 0 }
         "{}",
         payload.message
     );
-}
-
-fn json_parser_with_main(expression: &str) -> String {
-    let parser = include_str!("../examples/json_parser/parser.fos");
-    format!("{parser}\nfunc main() {{ {expression} }}")
-}
-
-#[test]
-fn runs_the_foster_json_parser() {
-    let value = foster::run(&json_parser_with_main(
-        r#"parse_json("{\"text\":\"\\uD83D\\uDE00\",\"values\":[true,null,2.5e1]}")"#,
-    ))
-    .unwrap();
-    assert!(
-        matches!(value, Value::Variant { ref type_name, ref alternative, .. } if type_name.as_ref() == "ParseResult" && alternative.as_ref() == "ParseOk")
-    );
-    assert!(value.to_string().contains("Json.JsonString("));
-    assert!(value.to_string().contains("Json.Number(25)"));
-}
-
-#[test]
-fn runs_the_json_actor_pipeline() {
-    let value = foster::run_package("examples/json_parser").unwrap();
-    let Value::Record { name, fields, .. } = value else {
-        panic!("pipeline should return a report record")
-    };
-    assert_eq!(name, "PipelineReport");
-    assert_eq!(fields.get("processed"), Some(&Value::Integer(2)));
-    assert_eq!(fields.get("failed"), Some(&Value::Integer(1)));
-}
-
-#[test]
-fn json_parser_returns_typed_errors_for_malformed_input() {
-    for document in [
-        r#"[1,2,]"#,
-        r#"{\"a\":1,}"#,
-        r#"01"#,
-        r#"-"#,
-        r#"\"\\uDE00\""#,
-    ] {
-        let expression = format!("parse_json({document:?})");
-        let value = foster::run(&json_parser_with_main(&expression)).unwrap();
-        assert!(
-            matches!(value, Value::Variant { ref type_name, ref alternative, .. } if type_name.as_ref() == "ParseResult" && alternative.as_ref() == "ParseError"),
-            "expected typed error for {document}, got {value}"
-        );
-    }
 }
 
 #[test]
@@ -2456,14 +2385,6 @@ func main() -> () { println() }
 }
 
 #[test]
-fn runs_the_live_inventory_pipeline() {
-    assert_eq!(
-        foster::run(include_str!("../examples/live_inventory_pipeline.fos")).unwrap(),
-        Value::Integer(1242)
-    );
-}
-
-#[test]
 fn supports_line_block_and_documentation_comments() {
     let source = r#"
 //! Public values and documentation-comment behavior used by this test.
@@ -2999,108 +2920,6 @@ func main() -> Int {
 
     let error = foster::compile(source).unwrap_err();
     assert!(error.message.contains("invalidated"), "{}", error.message);
-}
-
-#[test]
-fn generic_stream_contracts_handle_partial_io_and_eof() {
-    let source = r#"
-import core.bytes.buffer as byte_buffer
-import core.bytes
-import core.int
-import core.result
-import std.io as stream
-
-type StreamError = {
-    message: String
-}
-
-type ChunkReader = & Reader<StreamError> & {
-    remaining: Bytes
-    chunk_size: Int
-}
-
-type CollectWriter = & Writer<StreamError> & {
-    contents: Bytes
-    chunk_size: Int
-}
-
-func ChunkReader.read(self: ChunkReader, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining, read self.chunk_size] {
-    let limit = smaller(maximum, self.chunk_size)
-    let amount = smaller(limit, self.remaining.length)
-    let chunk = self.remaining.slice(0, amount)
-    self.remaining = self.remaining.slice(amount, self.remaining.length)
-    Result.Ok(chunk)
-}
-
-func CollectWriter.write(self: CollectWriter, contents: Bytes) -> Result<Int, StreamError> [mut self.contents, read self.chunk_size] {
-    let amount = smaller(self.chunk_size, contents.length)
-    self.contents = self.contents.concat(contents.slice(0, amount))
-    Result.Ok(amount)
-}
-
-func CollectWriter.flush(self: CollectWriter) -> Result<(), StreamError> {
-    let scratch = ByteBuffer.empty()
-    Result.Ok(scratch.reserve(0))
-}
-
-func smaller(left: Int, right: Int) -> Int {
-    branch {
-        left < right -> left
-        _ -> right
-    }
-}
-
-func decoded(outcome: Result<Bytes, HexError>) -> Bytes {
-    branch outcome {
-        Result.Error(_) -> Bytes.empty()
-        Result.Ok(contents) -> contents
-    }
-}
-
-func rendered(outcome: Result<Bytes, StreamError>) -> String {
-    branch outcome {
-        Result.Error(error) -> error.message
-        Result.Ok(contents) -> contents.hex()
-    }
-}
-
-func copied(outcome: Result<Int, StreamError>) -> String {
-    branch outcome {
-        Result.Error(error) -> error.message
-        Result.Ok(count) -> count.as_string()
-    }
-}
-
-func main() -> String {
-    let all_contents = decoded(Bytes.from_hex("00010203040506"))
-    let all_reader = ChunkReader { remaining: all_contents, chunk_size: 2 }
-    let all = rendered(read_all(all_reader))
-
-    let copy_contents = decoded(Bytes.from_hex("00010203040506"))
-    let copy_reader = ChunkReader { remaining: copy_contents, chunk_size: 2 }
-    let writer = CollectWriter { contents: Bytes.empty(), chunk_size: 3 }
-    let count = copied(stream::copy(copy_reader, writer))
-    all + ":" + writer.contents.hex() + ":" + count
-}
-"#;
-
-    for optimize in [false, true] {
-        assert_string(
-            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),
-            "00010203040506:00010203040506:7",
-        );
-    }
-}
-
-#[test]
-fn runs_the_generic_recursive_linked_list_example() {
-    let source = include_str!("../examples/linked_list.fos");
-    for optimize in [false, true] {
-        assert_eq!(
-            foster::run_with_options(source, foster::vm::CompileOptions { optimize }).unwrap(),
-            Value::Integer(13)
-        );
-    }
 }
 
 #[test]

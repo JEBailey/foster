@@ -1,0 +1,16 @@
+func multiplier(factor: Int) {
+    func apply(value: Int) -> Int {
+        factor * value
+    }
+}
+
+func prefixer(prefix: String) {
+    (value: String) -> prefix + value
+}
+
+func main() -> Int {
+    let triple = multiplier(3)
+    let greet = prefixer("Hello, ")
+    greet("Foster")
+    triple(12)
+}

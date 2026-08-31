@@ -11,7 +11,7 @@ fn benchmark_source() -> PathBuf {
 }
 
 fn arguments_source() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/arguments.fos")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/programs/arguments.fos")
 }
 
 fn temporary_directory(label: &str) -> PathBuf {

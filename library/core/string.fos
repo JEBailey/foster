@@ -256,7 +256,7 @@ func upper_character(value: CodePoint) -> String {
 
 /// Returns the number of bytes required by the string's UTF-8 encoding.
 pub func String.byte_length(self: String) -> Int {
-    self.length
+    self.value.length
 }
 
 test "string algorithms preserve Unicode text" {

@@ -1,0 +1,105 @@
+//! Branches, guarded transfers, loops, assertions, and Result propagation.
+
+import core.result
+
+enum Choice = First
+    | Second
+
+func operation(fail: Bool) -> Result<Int, Int> {
+    branch fail {
+        true -> Result.Error(7)
+        _ -> Result.Ok(21)
+    }
+}
+
+func propagate(fail: Bool) -> Result<Bool, Int> {
+    let value = try operation(fail)
+    Result.Ok(value == 21)
+}
+
+func must_not_run() -> Bool {
+    assert(false, "an expression after a wildcard arm ran")
+    true
+}
+
+func guarded(value: Int) -> Int {
+    return 0 if value < 0
+    value
+}
+
+test "try unwraps success and propagates errors" {
+    branch propagate(false) {
+        Result.Ok(value) -> {
+            assert(value)
+            ()
+        }
+        Result.Error(_) -> {
+            assert(false, "success became an error")
+            ()
+        }
+    }
+    branch propagate(true) {
+        Result.Error(value) -> {
+            assert(value == 7)
+            ()
+        }
+        Result.Ok(_) -> {
+            assert(false, "error became a success")
+            ()
+        }
+    }
+}
+
+test "statement branch arms produce values" {
+    let conditional = branch {
+        true -> {
+            let increment = 10
+            increment + 11
+        }
+        _ -> 0
+    }
+    let matched = branch Choice.First {
+        Choice.First -> {
+            let increment = 20
+            increment + 1
+        }
+        Choice.Second -> 0
+        _ -> 0
+    }
+    assert(conditional + matched == 42)
+}
+
+test "wildcard arms stop later tests" {
+    let conditional = branch {
+        _ -> 20
+        must_not_run() -> 0
+    }
+    let matched = branch Choice.First {
+        _ -> 22
+        Choice.First -> 0
+    }
+    assert(conditional + matched == 42)
+}
+
+test "nested loops target the nearest transfer" {
+    let outer = 0
+    let score = 0
+    loop {
+        outer = outer + 1
+        continue if outer < 3
+        let inner = 0
+        loop {
+            inner = inner + 1
+            continue if inner < 2
+            score = score + outer + inner
+            break
+        }
+        break if outer == 4
+    }
+    assert(score == 11)
+}
+
+test "guarded returns fall through when false" {
+    assert(guarded(-1) == 0)
+    assert(guarded(42) == 42)
+}

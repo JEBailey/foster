@@ -1,0 +1,87 @@
+//! Functions, recursion, generics, closures, and callable ownership.
+
+import core.functions
+
+func fibonacci(value: Int) -> Int {
+    return value if value < 2
+    fibonacci(value - 1) + fibonacci(value - 2)
+}
+
+func identity<T>(value: T) -> T [consume value] {
+    value
+}
+
+func combine(a: Int, b: Int, c: Int) -> Int {
+    a * 100 + b * 10 + c
+}
+
+func make_multiplier(factor: Int) {
+    (value: Int) -> factor * value
+}
+
+func consume_text(value: String) -> Int [consume value] {
+    value.length
+}
+
+func invoke(action: func(consume String) -> Int, value: String) -> Int [consume value] {
+    action(move value)
+}
+
+type FunctionTestPayload = { value: Int }
+
+func matches<T>(value: T, predicate: Predicate<T>) -> Bool {
+    predicate(value)
+}
+
+func accept<T>(value: T, consumer: Consumer<T>) -> () [consume value] {
+    consumer(move value)
+}
+
+func provide<T>(supplier: Supplier<T>) -> T {
+    supplier()
+}
+
+func discard(value: FunctionTestPayload) -> () [consume value] {
+    ()
+}
+
+test "recursive functions return stable results" {
+    assert(fibonacci(10) == 55)
+}
+
+test "generic functions instantiate independently" {
+    assert(identity(42) == 42)
+    assert(identity("Foster") == "Foster")
+}
+
+test "closures infer captures and callable types" {
+    let triple = make_multiplier(3)
+    assert(triple(14) == 42)
+}
+
+test "placeholder partial application preserves argument order" {
+    let with_middle = combine(_, 2, _)
+    assert(with_middle(4, 7) == 427)
+}
+
+test "mutable captures update their original places" {
+    let count = 0
+    let increment = [ref count] () -> {
+        count = count + 1
+    }
+    increment()
+    increment()
+    assert(count == 2)
+}
+
+test "consuming callable contracts transfer ownership" {
+    let value = "owned"
+    assert(invoke(consume_text, move value) == 5)
+}
+
+test "callable aliases preserve borrowing consuming and supplying modes" {
+    let payload = FunctionTestPayload { value: 42 }
+    accept(move payload, discard)
+    assert(matches(42, (value: Int) -> value > 40))
+    assert(provide(() -> 42) == 42)
+}

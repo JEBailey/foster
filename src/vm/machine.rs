@@ -168,15 +168,28 @@ struct SharedCommit {
 
 pub struct Machine {
     program: Arc<Program>,
-    host: Arc<dyn super::builtins::HostServices>,
+    host: Arc<super::host::HostContext>,
 }
 
 impl Machine {
     pub fn new(program: &Program) -> Self {
+        let host = super::host::HostContext::current()
+            .unwrap_or_else(|_| super::host::HostContext::new("."));
+        Self::with_host_context(program, host)
+    }
+
+    pub fn with_host_context(
+        program: &Program,
+        host: impl Into<Arc<super::host::HostContext>>,
+    ) -> Self {
         Self {
             program: Arc::new(program.clone()),
-            host: super::builtins::native_host(),
+            host: host.into(),
         }
+    }
+
+    pub fn host_context(&self) -> &super::host::HostContext {
+        &self.host
     }
 
     pub fn run_main(&self) -> Result<Value, FosterError> {

@@ -1,0 +1,64 @@
+//! Collection adaptation, stateful iterators, consumers, and lazy pipelines.
+
+import core.option
+import std.collections
+import std.iter
+import std.iter.filter as filtering
+import std.iter.map as mapping
+import std.iter.skip as skipping
+import std.iter.take as taking
+import std.sequence
+
+func option_or(value: Option<Int>, fallback: Int) -> Int {
+    branch value {
+        Option.Some(item) -> item
+        Option.None -> fallback
+    }
+}
+
+func collection_size<T>(values: Collection<T>) -> Int {
+    values.length()
+}
+
+func double(value: Int) -> Int [consume value] {
+    value * 2
+}
+
+func greater_than_four?(value: Int) -> Bool {
+    value > 4
+}
+
+func add(total: Int, value: Int) -> Int [consume total, consume value] {
+    total + value
+}
+
+test "built-in sequences adapt to collection and iterator contracts" {
+    let values = [4, 5]
+    let cursor = values.iterator()
+    assert(collection_size(values) == 2)
+    assert(collection_size("abc") == 3)
+    assert(option_or(cursor.next(), -1) == 4)
+    assert(option_or(cursor.next(), -1) == 5)
+    assert(option_or(cursor.next(), -1) == -1)
+}
+
+test "iterator consumers preserve state and exhaustion" {
+    let cursor = [1, 2, 3, 4].iterator()
+    assert(cursor.fold(0, add) == 10)
+    assert(cursor.count() == 0)
+    assert([1, 2, 3].iterator().any?((value: Int) -> value == 2))
+    assert([1, 2, 3].iterator().all?((value: Int) -> value > 0))
+}
+
+test "lazy iterator adaptors compose" {
+    let result = [1, 2, 3, 4, 5].iterator().map(double).filter(greater_than_four?).skip(1).take(2).collect()
+    assert(result.length == 2)
+    assert(result[0] == 8)
+    assert(result[1] == 10)
+}
+
+test "sequence algorithms operate without conversion" {
+    let letters = sequence::count("banana", (value: CodePoint) -> value == 'a')
+    let evens = sequence::count([1, 2, 3, 4], (value: Int) -> value / 2 * 2 == value)
+    assert(letters * 10 + evens == 32)
+}

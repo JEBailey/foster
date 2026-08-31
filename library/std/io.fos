@@ -116,3 +116,61 @@ func finish_copy<E>(total: Int, outcome: Result<(), E>) -> Result<Int, E> [consu
     try move outcome
     Result.Ok(total)
 }
+
+type IoTestError = { message: String }
+
+type IoTestReader = & Reader<IoTestError> & {
+    remaining: Bytes
+    chunk_size: Int
+}
+
+type IoTestWriter = & Writer<IoTestError> & {
+    contents: Bytes
+    chunk_size: Int
+}
+
+func IoTestReader.read(self: IoTestReader, maximum: Int) -> Result<Bytes, IoTestError> [mut self.remaining, read self.chunk_size] {
+    let limit = branch { maximum < self.chunk_size -> maximum _ -> self.chunk_size }
+    let amount = branch { limit < self.remaining.length -> limit _ -> self.remaining.length }
+    let chunk = self.remaining.slice(0, amount)
+    self.remaining = self.remaining.slice(amount, self.remaining.length)
+    Result.Ok(chunk)
+}
+
+func IoTestWriter.write(self: IoTestWriter, contents: Bytes) -> Result<Int, IoTestError> [mut self.contents, read self.chunk_size] {
+    let amount = branch { self.chunk_size < contents.length -> self.chunk_size _ -> contents.length }
+    self.contents = self.contents.concat(contents.slice(0, amount))
+    Result.Ok(amount)
+}
+
+func IoTestWriter.flush(self: IoTestWriter) -> Result<(), IoTestError> {
+    Result.Ok(())
+}
+
+func io_test_bytes(outcome: Result<Bytes, bytes::HexError>) -> Bytes {
+    branch outcome {
+        Result.Ok(contents) -> contents
+        Result.Error(_) -> Bytes.empty()
+    }
+}
+
+func io_test_require(condition: Bool, message: String) -> () {
+    assert(condition, message)
+    ()
+}
+
+test "generic streams handle partial IO and EOF" {
+    let all_reader = IoTestReader { remaining: io_test_bytes(Bytes.from_hex("00010203040506")), chunk_size: 2 }
+    branch read_all(all_reader) {
+        Result.Ok(contents) -> io_test_require(contents.hex() == "00010203040506", "read_all changed stream contents")
+        Result.Error(_) -> io_test_require(false, "read_all returned an error")
+    }
+
+    let copy_reader = IoTestReader { remaining: io_test_bytes(Bytes.from_hex("00010203040506")), chunk_size: 2 }
+    let writer = IoTestWriter { contents: Bytes.empty(), chunk_size: 3 }
+    branch copy_remaining(copy_reader, writer, 0) {
+        Result.Ok(count) -> io_test_require(count == 7, "copy returned the wrong byte count")
+        Result.Error(_) -> io_test_require(false, "copy returned an error")
+    }
+    assert(writer.contents.hex() == "00010203040506")
+}

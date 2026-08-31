@@ -501,11 +501,11 @@ fn run_archive(
     let program = foster::vm::decode_program(&package.bytecode)?;
     let working_directory = PackageWorkingDirectory::create()?;
     working_directory.write_resources(&package.resources)?;
-    let previous_directory = std::env::current_dir()?;
-    std::env::set_current_dir(working_directory.path())?;
-    let result = foster::vm::Machine::new(&program).run_main_with_arguments(arguments);
-    std::env::set_current_dir(previous_directory)?;
-    Ok(result?)
+    let host = foster::vm::HostContext::new(working_directory.path());
+    Ok(
+        foster::vm::Machine::with_host_context(&program, host)
+            .run_main_with_arguments(arguments)?,
+    )
 }
 
 struct PackageWorkingDirectory {

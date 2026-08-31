@@ -1,0 +1,15 @@
+//! Public declarations used to verify ordinary module imports.
+
+pub const EXPORTED = 40
+
+pub type Box = {
+    pub value: Int
+}
+
+pub func increment(value: Int) -> Int {
+    value + 1
+}
+
+test "module-local tests access their declarations" {
+    assert(increment(EXPORTED) == 41)
+}

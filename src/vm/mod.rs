@@ -18,6 +18,7 @@ mod verifier;
 
 pub use binary::{BinaryError, FORMAT_VERSION, decode_program, encode_program};
 pub use compiler::{CompileOptions, compile, compile_with_options};
+pub use host::HostContext;
 pub use ir::{
     BytecodeFunction, Constant, Instruction, Program, ProgramMetrics, Register, RuntimeRecord,
     RuntimeVariant,

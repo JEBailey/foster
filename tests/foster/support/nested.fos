@@ -1,0 +1,11 @@
+//! Nested module declarations used by the language suite.
+
+pub const OFFSET = 2
+
+pub func offset(value: Int) -> Int {
+    value + OFFSET
+}
+
+test "nested modules access their own declarations" {
+    assert(offset(40) == 42)
+}

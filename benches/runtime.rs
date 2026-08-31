@@ -17,7 +17,7 @@ func repeat(value: String, count: Int, result: String) -> String [consume result
 }
 
 func main() -> Int {
-    string.upper(string.reverse(repeat("Foster λ ", 32, ""))).length
+    repeat("Foster λ ", 32, "").reverse().upper().length
 }
 "#;
 

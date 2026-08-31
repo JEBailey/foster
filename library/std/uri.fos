@@ -83,3 +83,40 @@ func scheme_character?(character: CodePoint) -> Bool {
 func invalid_uri(value: String, message: String) -> Result<Uri, UriError> {
     Result.Error(UriError { value, message })
 }
+
+test "URIs parse schemes paths and invalid inputs" {
+    branch Uri.parse("https://example.com/path") {
+        Result.Ok(uri) -> {
+            assert(uri.as_string() == "https://example.com/path")
+            assert(uri.scheme() == "https")
+            assert(uri.path() == "//example.com/path")
+            assert(uri.resource_id() == "https://example.com/path")
+            ()
+        }
+        Result.Error(_) -> {
+            assert(false, "valid URI was rejected")
+            ()
+        }
+    }
+    branch Uri.from_parts("tcp", "//localhost:8080") {
+        Result.Ok(uri) -> {
+            assert(uri.as_string() == "tcp://localhost:8080")
+            ()
+        }
+        Result.Error(_) -> {
+            assert(false, "URI parts were rejected")
+            ()
+        }
+    }
+    branch Uri.parse("1invalid") {
+        Result.Error(error) -> {
+            assert(error.value == "1invalid")
+            assert(not error.message.empty?)
+            ()
+        }
+        Result.Ok(_) -> {
+            assert(false, "invalid URI was accepted")
+            ()
+        }
+    }
+}

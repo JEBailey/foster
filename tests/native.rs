@@ -56,7 +56,7 @@ fn rejects_unsupported_reachable_types_with_actionable_guidance() {
 
 #[test]
 fn compiles_the_command_arguments_entry_abi() {
-    let compilation = foster::compile(include_str!("../examples/arguments.fos")).unwrap();
+    let compilation = foster::compile(include_str!("fixtures/programs/arguments.fos")).unwrap();
     let artifact = compile_object(&compilation, CompileOptions::default()).unwrap();
     assert!(!artifact.bytes.is_empty());
     assert_eq!(artifact.result, NativeType::String);

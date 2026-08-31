@@ -1,0 +1,75 @@
+//! Portable coverage for core library APIs.
+
+import core.option
+import core.range
+import core.result
+import core.symbol
+
+func absent_value() -> Option<Int> { Option.None }
+func option_fallback() -> Int { 20 }
+func option_recovery() -> Option<Int> { Option.Some(3) }
+func nested_option() -> Option<Option<Int>> { Option.Some(Option.Some(2)) }
+
+func failed_value(message: String) -> Result<Int, String> { Result.Error(message) }
+func successful_value() -> Result<Int, String> { Result.Ok(20) }
+func result_fallback(error: String) -> Int { error.length }
+func result_recovery(error: String) -> Result<Int, Int> { Result.Ok(error.length) }
+func nested_result() -> Result<Result<Int, String>, String> { Result.Ok(Result.Ok(5)) }
+
+test "integer helpers cover signs predicates and conversions" {
+    assert((-4).sign() == -1)
+    assert(0.sign() == 0)
+    assert(4.sign() == 1)
+    assert(3.minimum(5) == 3)
+    assert(3.maximum(5) == 5)
+    assert(5.between?(0, 10))
+    assert(4.even?())
+    assert(5.odd?())
+    assert(42.modulo(5) == 2)
+    assert((-42).as_string() == "-42")
+}
+
+test "option helpers cover presence fallback recovery and flattening" {
+    assert(Option.Some(1).present?())
+    assert(absent_value().absent?())
+    assert(absent_value().unwrap_or(7) == 7)
+    assert(absent_value().unwrap_or_else(option_fallback) == 20)
+    assert(absent_value().or_else(option_recovery).unwrap_or(0) == 3)
+    assert(nested_option().flatten().unwrap_or(0) == 2)
+    assert(Option.Some(20).and_then((value: Int) -> Option.Some(value + 1)).unwrap_or(0) == 21)
+}
+
+test "result helpers cover status fallback recovery and mapping" {
+    assert(successful_value().success?())
+    assert(failed_value("failure").error?())
+    assert(failed_value("failure").unwrap_or(7) == 7)
+    assert(failed_value("four").unwrap_or_else(result_fallback) == 4)
+    assert(failed_value("six").or_else(result_recovery).unwrap_or(0) == 3)
+    assert(nested_result().flatten().unwrap_or(0) == 5)
+    assert(successful_value().and_then((value: Int) -> Result.Ok(value + 1)).unwrap_or(0) == 21)
+    assert(failed_value("error").map_error((error: String) -> error.length).error?())
+}
+
+test "string algorithms cover slicing casing splitting and UTF-8 bytes" {
+    assert("one,two,three".split(",").join("-") == "one-two-three")
+    assert("Foster λ".slice(0, 6) == "Foster")
+    assert("Foster".lower() == "foster")
+    assert("Foster".upper() == "FOSTER")
+    assert("λ".byte_length() == 2)
+}
+
+test "ranges expose repeatable sequence and collection views" {
+    let values = Range.from([10, 20, 30])
+    assert(not values.empty?())
+    assert(values.length() == 3)
+    assert(values.head() == 10)
+    assert(values.rest().length() == 2)
+    let first = values.iterator()
+    let second = values.iterator()
+    assert(first.next() == second.next())
+}
+
+test "symbol literals preserve identity" {
+    assert(:foster == :foster)
+    assert(:foster != :other)
+}

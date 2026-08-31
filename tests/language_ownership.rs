@@ -850,7 +850,7 @@ fn checks_qualified_call_arguments() {
 #[test]
 fn executes_nested_and_anonymous_closures() {
     assert_eq!(
-        foster::run(include_str!("../examples/showcase/closures.fos")).unwrap(),
+        foster::run(include_str!("fixtures/programs/closures.fos")).unwrap(),
         Value::Integer(36)
     );
 }
@@ -859,7 +859,7 @@ fn executes_nested_and_anonymous_closures() {
 fn classifies_copy_and_move_captures() {
     use foster::hir::{CaptureMode, Expr};
 
-    let compilation = foster::compile(include_str!("../examples/showcase/closures.fos")).unwrap();
+    let compilation = foster::compile(include_str!("fixtures/programs/closures.fos")).unwrap();
     let mut modes = compilation
         .hir
         .expressions

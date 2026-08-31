@@ -117,3 +117,9 @@ func path_result(outcome: Result<String, IoError>) -> Result<Path, IoError> [con
 
 /// Resolves `path` to an absolute canonical path.
 pub func canonicalize(path: String) -> Result<String, IoError> { PathHost.canonicalize(path) }
+
+test "typed paths preserve their resource identity" {
+    let path = Path.from("relative/resource.txt")
+    assert(path.as_string() == "relative/resource.txt")
+    assert(path.resource_id() == "relative/resource.txt")
+}

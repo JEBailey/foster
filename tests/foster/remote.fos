@@ -1,0 +1,50 @@
+//! Remote objects, futures, borrowed messages, and persistent read loans.
+
+type Counter = {
+    value: Int
+}
+
+type Inspector = {}
+
+func Counter.increment(self: Counter, amount: Int) -> Int [mut self] {
+    self.value = self.value + amount
+    self.value
+}
+
+func Counter.snapshot(self: Counter) -> Int [read self.value] {
+    self.value
+}
+
+func Counter.assign(self: Counter, value: Int) -> Int [mut self] {
+    self.value = value
+    self.value
+}
+
+func Inspector.inspect(self: Inspector, counter: Counter) -> Int [read counter.value] {
+    counter.value
+}
+
+test "remote objects process messages in FIFO order" {
+    let counter = remote Counter { value: 0 }
+    let first = counter.increment(2)
+    let second = counter.increment(3)
+    assert(await first + await second == 7)
+}
+
+test "persistent remote read loans observe owner mutation" {
+    let counter = Counter { value: 0 }
+    let reader = remote ref counter
+    let before = await reader.snapshot()
+    counter.assign(42)
+    let after = await reader.snapshot()
+    assert(before + after == 42)
+}
+
+test "remote borrowed arguments remain live read-only loans" {
+    let counter = Counter { value: 0 }
+    let inspector = remote Inspector {}
+    let before = await inspector.inspect(counter)
+    counter.assign(42)
+    let after = await inspector.inspect(counter)
+    assert(before + after == 42)
+}

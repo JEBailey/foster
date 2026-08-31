@@ -1,0 +1,14 @@
+//! Imports, aliases, qualification, public constants, and nested modules.
+
+import support
+import support.nested as nested
+
+test "imports expose public declarations directly and by qualifier" {
+    assert(EXPORTED + nested::OFFSET == 42)
+    assert(support::increment(41) == 42)
+}
+
+test "nested modules preserve public record identities" {
+    let box = support::Box { value: nested::offset(40) }
+    assert(box.value == 42)
+}

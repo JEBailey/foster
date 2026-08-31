@@ -1,0 +1,36 @@
+//! Portable language behavior exercised through Foster's own test runner.
+
+test "integer arithmetic and comparisons compose" {
+    assert(6 * 7 == 42)
+    assert(42 / 6 == 7)
+    assert(41 < 42 && 42 <= 42 && 43 > 42 && 42 >= 42)
+}
+
+test "logical operators short circuit" {
+    let calls = 0
+    let observe = [ref calls] () -> {
+        calls = calls + 1
+        true
+    }
+    assert((false && observe()) == false)
+    assert(true || observe())
+    assert(calls == 0, "short-circuited operands were evaluated")
+    assert(not false)
+    assert(!false)
+}
+
+test "strings lists and code points retain their values" {
+    let text = "Foster"
+    let values = [text.length, 'A' + 1, 40]
+    values.push(2)
+    assert(text == "Foster")
+    assert(values.length == 4)
+    assert(values[1] == 66)
+    assert(values[2] + values[3] == 42)
+}
+
+test "locals can be reassigned" {
+    let value = 1
+    value = 42
+    assert(value == 42)
+}

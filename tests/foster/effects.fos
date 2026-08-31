@@ -1,0 +1,40 @@
+//! Group-parameterized references and explicit callable effect contracts.
+
+func replace[g: group Int](value: ref[g] Int) -> Int [mut g] {
+    value = 2
+    value
+}
+
+func incrementer[g: group Int](value: ref[g] Int) -> func() -> Int [mut g] {
+    [ref value] () -> [mut g] {
+        value = value + 1
+        value
+    }
+}
+
+func transfer[source: group Int, destination: group Int](from: ref[source] Int, to: ref[destination] Int) -> Int [read source, mut destination] {
+    to = from
+    to
+}
+
+test "group mutation effects write through references" {
+    let value = 1
+    assert(replace(ref value) == 2)
+    assert(value == 2)
+}
+
+test "returned closures retain projected group effects" {
+    let values = [40]
+    let increment = incrementer(ref values[0])
+    increment()
+    increment()
+    assert(values[0] == 42)
+}
+
+test "multiple groups instantiate independently" {
+    let left = 42
+    let right = 0
+    assert(transfer(ref left, ref right) == 42)
+    assert(left == 42)
+    assert(right == 42)
+}

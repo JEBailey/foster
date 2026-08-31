@@ -1,0 +1,74 @@
+//! Floats, code points, bytes, widening, and binary buffers.
+
+import core.byte
+import core.bytes
+import core.bytes.buffer as byte_buffer
+import core.result
+
+func byte_or(value: Result<Byte, ByteError>, fallback: Byte) -> Byte {
+    branch value {
+        Result.Ok(item) -> item
+        Result.Error(_) -> fallback
+    }
+}
+
+func text_or(value: Result<String, Utf8Error>) -> String {
+    branch value {
+        Result.Ok(text) -> text
+        Result.Error(_) -> "invalid"
+    }
+}
+
+func accept_int(value: Int) -> Int {
+    value
+}
+
+func require(condition: Bool, message: String) -> () {
+    assert(condition, message)
+    ()
+}
+
+test "floating point arithmetic flows through closures" {
+    let halve = (value: Float) -> value / 2.0
+    assert(halve(1.25e1 * 2.0) == 12.5)
+}
+
+test "code points and bytes widen to integers in context" {
+    assert(accept_int('A') == 65)
+    assert(accept_int(Byte.unchecked(2)) == 2)
+    assert('9' - '0' == 9)
+}
+
+test "byte bitwise operators preserve byte values" {
+    let high = Byte.unchecked(240)
+    let low = Byte.unchecked(15)
+    let mixed = (high & ~low) | (low ^ Byte.unchecked(3))
+    assert((mixed >> 2).int + (Byte.unchecked(1) << 7).int == 191)
+}
+
+test "byte buffers round trip UTF-8 and hexadecimal data" {
+    let zero = Byte.unchecked(0)
+    let capital_a = byte_or(Byte.from(65), zero)
+    let lower_x = byte_or(Byte.from(120), zero)
+    let buffer = ByteBuffer.with_capacity(4)
+    buffer.push(capital_a)
+    buffer.extend("BC".utf8)
+    buffer[1] = lower_x
+    let data = buffer.snapshot()
+    assert(text_or(String.from_utf8(data)) == "AxC")
+    assert(data.hex() == "417843")
+}
+
+test "invalid byte construction and UTF-8 return typed errors" {
+    branch Byte.from(256) {
+        Result.Error(error) -> require(error.value == 256, "byte error lost its input")
+        Result.Ok(_) -> require(false, "out-of-range byte was accepted")
+    }
+    branch Bytes.from_hex("ff") {
+        Result.Error(_) -> require(false, "valid hexadecimal was rejected")
+        Result.Ok(data) -> branch String.from_utf8(data) {
+            Result.Error(_) -> ()
+            Result.Ok(_) -> require(false, "invalid UTF-8 was accepted")
+        }
+    }
+}

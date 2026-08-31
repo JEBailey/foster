@@ -1,0 +1,7 @@
+import std.process
+
+func main(arguments: Arguments) -> String {
+    return arguments.executable if arguments.values.empty?
+    return "Foster command arguments" if arguments.values[0] == "--about"
+    arguments.values[0]
+}

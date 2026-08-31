@@ -1,0 +1,71 @@
+//! Runtime witnesses for valid ownership, borrowing, and path-sensitive programs.
+
+type Pair = {
+    left: String
+    right: String
+}
+
+type MutablePair = {
+    left: List<Int>
+    right: List<Int>
+}
+
+func take(value: String) -> () [consume value] {
+    ()
+}
+
+func remaining(pair: Pair) -> String [consume pair] {
+    take(move pair.left)
+    pair.right
+}
+
+func choose(flag: Bool) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch flag {
+        true -> values.push(20)
+        _ -> ()
+    }
+    branch flag {
+        true -> 0
+        _ -> selected
+    }
+}
+
+test "assignment reinitializes a moved local" {
+    let value = "first"
+    take(move value)
+    value = "second"
+    assert(value == "second")
+}
+
+test "partial moves preserve disjoint fields" {
+    assert(remaining(Pair { left: "moved", right: "retained" }) == "retained")
+}
+
+test "constant list indices have disjoint ownership" {
+    let values = [10, 20]
+    let first = ref values[0]
+    let second = move values[1]
+    assert(first + second == 30)
+}
+
+test "disjoint record fields can mutate independently" {
+    let pair = MutablePair { left: [10], right: [20] }
+    let selected = ref pair.left[0]
+    pair.right.push(30)
+    assert(selected == 10, "disjoint mutation changed the borrowed field")
+}
+
+test "stable boolean paths preserve mutually exclusive loans" {
+    assert(choose(true) == 0)
+    assert(choose(false) == 10)
+}
+
+test "mutable list captures reshape the original list" {
+    let values = [1]
+    let append = [ref values] (value: Int) -> values.push(value)
+    append(2)
+    append(3)
+    assert(values.length == 3)
+}

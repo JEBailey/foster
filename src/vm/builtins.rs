@@ -7,10 +7,6 @@ use crate::hir::Builtin;
 use super::Value;
 use super::value::RecordFields;
 
-pub(super) fn native_host() -> Arc<dyn HostServices> {
-    Arc::new(NativeHost)
-}
-
 pub(super) fn dispatch(
     host: &dyn HostServices,
     builtin: Builtin,
@@ -188,9 +184,7 @@ pub(super) trait HostServices: Send + Sync {
     ) -> Result<Value, RuntimeError>;
 }
 
-struct NativeHost;
-
-impl HostServices for NativeHost {
+impl HostServices for super::host::HostContext {
     fn dispatch(
         &self,
         builtin: Builtin,
@@ -200,10 +194,11 @@ impl HostServices for NativeHost {
         match (builtin, arguments) {
             (Builtin::IoReadText, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;
+                let resolved = self.resolve_path(path);
                 Ok(io_result(
                     "read_text",
                     path,
-                    std::fs::read(path).map(|bytes| Value::string(string_record, bytes)),
+                    std::fs::read(resolved).map(|bytes| Value::string(string_record, bytes)),
                     string_record,
                 ))
             }
@@ -211,19 +206,21 @@ impl HostServices for NativeHost {
                 if path.string_bytes().is_some() && text.string_bytes().is_some() =>
             {
                 let path = path.string_text()?;
+                let resolved = self.resolve_path(path);
                 Ok(io_result(
                     "write_text",
                     path,
-                    std::fs::write(path, text.string_bytes().unwrap()).map(|()| Value::Unit),
+                    std::fs::write(resolved, text.string_bytes().unwrap()).map(|()| Value::Unit),
                     string_record,
                 ))
             }
             (Builtin::IoReadBytes, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;
+                let resolved = self.resolve_path(path);
                 Ok(io_result(
                     "read_bytes",
                     path,
-                    std::fs::read(path).map(Value::bytes),
+                    std::fs::read(resolved).map(Value::bytes),
                     string_record,
                 ))
             }
@@ -231,10 +228,11 @@ impl HostServices for NativeHost {
                 if path.string_bytes().is_some() && bytes.bytes_value().is_some() =>
             {
                 let path = path.string_text()?;
+                let resolved = self.resolve_path(path);
                 Ok(io_result(
                     "write_bytes",
                     path,
-                    std::fs::write(path, bytes.bytes_value().unwrap()).map(|()| Value::Unit),
+                    std::fs::write(resolved, bytes.bytes_value().unwrap()).map(|()| Value::Unit),
                     string_record,
                 ))
             }
@@ -242,6 +240,7 @@ impl HostServices for NativeHost {
                 if path.string_bytes().is_some() =>
             {
                 let path = path.string_text()?;
+                let resolved = self.resolve_path(path);
                 let result = (|| {
                     let offset = u64::try_from(*offset).map_err(|_| {
                         std::io::Error::new(
@@ -258,7 +257,7 @@ impl HostServices for NativeHost {
                                 "read maximum must be between 1 and 1048576",
                             )
                         })?;
-                    let mut file = std::fs::File::open(path)?;
+                    let mut file = std::fs::File::open(resolved)?;
                     file.seek(SeekFrom::Start(offset))?;
                     let mut bytes = vec![0; maximum];
                     let read = file.read(&mut bytes)?;
@@ -271,18 +270,20 @@ impl HostServices for NativeHost {
                 if path.string_bytes().is_some() && bytes.bytes_value().is_some() =>
             {
                 let path = path.string_text()?;
+                let resolved = self.resolve_path(path);
                 let bytes = bytes.bytes_value().unwrap();
                 let result = std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open(path)
+                    .open(resolved)
                     .and_then(|mut file| file.write_all(bytes))
                     .map(|()| Value::Integer(i64::try_from(bytes.len()).unwrap_or(i64::MAX)));
                 Ok(io_result("append_bytes", path, result, string_record))
             }
             (Builtin::IoFileLength, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;
-                let result = std::fs::metadata(path).and_then(|metadata| {
+                let resolved = self.resolve_path(path);
+                let result = std::fs::metadata(resolved).and_then(|metadata| {
                     if !metadata.is_file() {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
@@ -302,7 +303,8 @@ impl HostServices for NativeHost {
             }
             (Builtin::IoListDirectory, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;
-                let entries = std::fs::read_dir(path).and_then(|entries| {
+                let resolved = self.resolve_path(path);
+                let entries = std::fs::read_dir(resolved).and_then(|entries| {
                     let mut names = Vec::new();
                     for entry in entries {
                         let name = entry?.file_name().into_string().map_err(|_| {
@@ -318,48 +320,52 @@ impl HostServices for NativeHost {
                 });
                 Ok(io_result("list_directory", path, entries, string_record))
             }
-            (Builtin::IoExists, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
-                std::path::Path::new(path.string_text()?).exists(),
-            )),
+            (Builtin::IoExists, [path]) if path.string_bytes().is_some() => {
+                Ok(Value::Bool(self.resolve_path(path.string_text()?).exists()))
+            }
             (Builtin::IoIsFile, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
-                std::path::Path::new(path.string_text()?).is_file(),
+                self.resolve_path(path.string_text()?).is_file(),
             )),
-            (Builtin::IoIsDirectory, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
-                std::path::Path::new(path.string_text()?).is_dir(),
-            )),
+            (Builtin::IoIsDirectory, [path]) if path.string_bytes().is_some() => {
+                Ok(Value::Bool(self.resolve_path(path.string_text()?).is_dir()))
+            }
             (Builtin::IoCreateDirectory, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;
+                let resolved = self.resolve_path(path);
                 Ok(io_result(
                     "create_directory",
                     path,
-                    std::fs::create_dir(path).map(|()| Value::Unit),
+                    std::fs::create_dir(resolved).map(|()| Value::Unit),
                     string_record,
                 ))
             }
             (Builtin::IoCreateDirectoryAll, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;
+                let resolved = self.resolve_path(path);
                 Ok(io_result(
                     "create_directory_all",
                     path,
-                    std::fs::create_dir_all(path).map(|()| Value::Unit),
+                    std::fs::create_dir_all(resolved).map(|()| Value::Unit),
                     string_record,
                 ))
             }
             (Builtin::IoRemoveFile, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;
+                let resolved = self.resolve_path(path);
                 Ok(io_result(
                     "remove_file",
                     path,
-                    std::fs::remove_file(path).map(|()| Value::Unit),
+                    std::fs::remove_file(resolved).map(|()| Value::Unit),
                     string_record,
                 ))
             }
             (Builtin::IoRemoveDirectory, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;
+                let resolved = self.resolve_path(path);
                 Ok(io_result(
                     "remove_directory",
                     path,
-                    std::fs::remove_dir(path).map(|()| Value::Unit),
+                    std::fs::remove_dir(resolved).map(|()| Value::Unit),
                     string_record,
                 ))
             }
@@ -368,10 +374,12 @@ impl HostServices for NativeHost {
             {
                 let from = from.string_text()?;
                 let to = to.string_text()?;
+                let resolved_from = self.resolve_path(from);
+                let resolved_to = self.resolve_path(to);
                 Ok(io_result(
                     "rename",
                     from,
-                    std::fs::rename(from, to).map(|()| Value::Unit),
+                    std::fs::rename(resolved_from, resolved_to).map(|()| Value::Unit),
                     string_record,
                 ))
             }
@@ -380,10 +388,12 @@ impl HostServices for NativeHost {
             {
                 let from = from.string_text()?;
                 let to = to.string_text()?;
+                let resolved_from = self.resolve_path(from);
+                let resolved_to = self.resolve_path(to);
                 Ok(io_result(
                     "copy_file",
                     from,
-                    std::fs::copy(from, to).and_then(|bytes| {
+                    std::fs::copy(resolved_from, resolved_to).and_then(|bytes| {
                         i64::try_from(bytes)
                             .map(Value::Integer)
                             .map_err(|_| std::io::Error::other("copied byte count exceeds Int"))
@@ -421,17 +431,19 @@ impl HostServices for NativeHost {
             }
             (Builtin::IoCanonicalize, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;
+                let resolved = self.resolve_path(path);
                 Ok(io_result(
                     "canonicalize",
                     path,
-                    std::fs::canonicalize(path).and_then(|path| path_value_io(path, string_record)),
+                    std::fs::canonicalize(resolved)
+                        .and_then(|path| path_value_io(path, string_record)),
                     string_record,
                 ))
             }
             (Builtin::IoCurrentDirectory, []) => Ok(io_result(
                 "current_directory",
                 "",
-                std::env::current_dir().and_then(|path| path_value_io(path, string_record)),
+                path_value_io(self.working_directory().to_path_buf(), string_record),
                 string_record,
             )),
             (Builtin::TcpListen, [address, Value::Integer(port)])
@@ -439,7 +451,8 @@ impl HostServices for NativeHost {
             {
                 Ok(tcp_result(
                     "listen",
-                    super::host::listen(address.string_text()?, *port).map(Value::Integer),
+                    self.listen(address.string_text()?, *port)
+                        .map(Value::Integer),
                     string_record,
                 ))
             }
@@ -448,19 +461,20 @@ impl HostServices for NativeHost {
             {
                 Ok(tcp_result(
                     "connect",
-                    super::host::connect(address.string_text()?, *port).map(Value::Integer),
+                    self.connect(address.string_text()?, *port)
+                        .map(Value::Integer),
                     string_record,
                 ))
             }
             (Builtin::TcpAccept, [Value::Integer(listener)]) => Ok(tcp_result(
                 "accept",
-                super::host::accept(*listener).map(Value::Integer),
+                self.accept(*listener).map(Value::Integer),
                 string_record,
             )),
             (Builtin::TcpRead, [Value::Integer(connection), Value::Integer(maximum)]) => {
                 Ok(tcp_result(
                     "read",
-                    super::host::read(*connection, *maximum)
+                    self.read(*connection, *maximum)
                         .map(|value| Value::string(string_record, value.into_bytes())),
                     string_record,
                 ))
@@ -470,14 +484,15 @@ impl HostServices for NativeHost {
             {
                 Ok(tcp_result(
                     "write",
-                    super::host::write(*connection, text.string_text()?).map(|()| Value::Unit),
+                    self.write(*connection, text.string_text()?)
+                        .map(|()| Value::Unit),
                     string_record,
                 ))
             }
             (Builtin::TcpReadBytes, [Value::Integer(connection), Value::Integer(maximum)]) => {
                 Ok(tcp_result(
                     "read_bytes",
-                    super::host::read_bytes(*connection, *maximum).map(Value::bytes),
+                    self.read_bytes(*connection, *maximum).map(Value::bytes),
                     string_record,
                 ))
             }
@@ -486,7 +501,7 @@ impl HostServices for NativeHost {
             {
                 Ok(tcp_result(
                     "write_bytes",
-                    super::host::write_bytes(*connection, bytes.bytes_value().unwrap())
+                    self.write_bytes(*connection, bytes.bytes_value().unwrap())
                         .map(|()| Value::Unit),
                     string_record,
                 ))
@@ -496,17 +511,18 @@ impl HostServices for NativeHost {
                 [Value::Integer(connection), Value::Integer(milliseconds)],
             ) => Ok(tcp_result(
                 "set_timeout",
-                super::host::set_timeout(*connection, *milliseconds).map(|()| Value::Unit),
+                self.set_timeout(*connection, *milliseconds)
+                    .map(|()| Value::Unit),
                 string_record,
             )),
             (Builtin::TcpCloseListener, [Value::Integer(listener)]) => Ok(tcp_result(
                 "close_listener",
-                super::host::close_listener(*listener).map(|()| Value::Unit),
+                self.close_listener(*listener).map(|()| Value::Unit),
                 string_record,
             )),
             (Builtin::TcpCloseConnection, [Value::Integer(connection)]) => Ok(tcp_result(
                 "close_connection",
-                super::host::close_connection(*connection).map(|()| Value::Unit),
+                self.close_connection(*connection).map(|()| Value::Unit),
                 string_record,
             )),
             _ => Err(RuntimeError::runtime("invalid builtin arguments")),

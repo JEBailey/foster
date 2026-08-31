@@ -43,3 +43,26 @@ test "parsed values retain their name" {
 Compiled `.fbc` files currently omit discovery metadata, so `foster test` operates on Foster source
 files and packages. Equality-aware assertion rendering, filtering, and captured test output are the
 next testing-layer features.
+
+## Repository test architecture
+
+Portable runtime behavior belongs in Foster `test` declarations. The repository keeps the main
+language suite under `tests/foster/`, while standard-library tests live beside their implementation
+under `library/`. Run both suites directly with:
+
+```text
+foster test tests/foster
+foster test tests/foster --no-optimize
+foster test library
+foster test library --no-optimize
+```
+
+`cargo test` also runs both Foster suites in optimized and unoptimized modes, so they remain part of
+the ordinary Rust and CI quality gates. Rust tests are reserved for behavior that Foster tests
+cannot express reliably: rejected programs and diagnostic structure, HIR/MIR and bytecode
+invariants, malformed artifacts, host filesystem and network setup, native compilation, and CLI
+process behavior.
+
+Files under `examples/` demonstrate programs for readers and are intentionally not used as test
+fixtures. A behavior needed by a test belongs in `tests/foster/`, `library/`, or a dedicated file
+under `tests/fixtures/`.

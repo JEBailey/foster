@@ -1,0 +1,62 @@
+//! Unions, enum contracts, intersections, and structural record adaptation.
+
+type Scalar = String | Int
+
+type Named = {
+    pub name: String
+}
+
+type Located = {
+    pub location: String
+}
+
+type Profile = {
+    pub name: String
+    pub location: String
+    pub email: String
+}
+
+type Scored = {
+    pub func score(self) -> Int
+}
+
+enum ScoredChoice = Number(Int)
+    | Empty
+    & Scored
+
+func scalar_size(value: Scalar) -> Int {
+    1
+}
+
+func label_size(value: Named & Located) -> Int {
+    value.name.length + value.location.length
+}
+
+func name_size(value: Named) -> Int {
+    value.name.length
+}
+
+func ScoredChoice.score(self: ScoredChoice) -> Int {
+    branch self {
+        ScoredChoice.Number(value) -> value
+        ScoredChoice.Empty -> 0
+    }
+}
+
+func score_of(value: Scored) -> Int {
+    value.score()
+}
+
+test "union contracts accept every member without construction" {
+    assert(scalar_size("Foster") + scalar_size(42) == 2)
+}
+
+test "records adapt structurally to public field contracts" {
+    let profile = Profile { name: "Jason", location: "Boston", email: "jason@example.com" }
+    assert(name_size(profile) * 100 + label_size(profile) == 511)
+}
+
+test "enum shared contracts dispatch instance methods" {
+    assert(score_of(ScoredChoice.Number(42)) == 42)
+    assert(score_of(ScoredChoice.Empty) == 0)
+}
