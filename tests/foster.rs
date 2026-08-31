@@ -43,7 +43,7 @@ fn portable_language_suite_passes_with_and_without_optimization() {
 #[test]
 fn standard_library_suite_passes_with_and_without_optimization() {
     for optimize in [false, true] {
-        run_suite("library", optimize, 30);
+        run_suite("library", optimize, 48);
     }
 }
 

@@ -260,10 +260,11 @@ qualifier. Modules are public; declarations and record fields are private unless
 
 Foster has no prelude. Programs explicitly import embedded Foster-written modules such as
 `core.functions`, `core.option`, `std.iter`, `core.result`, `std.sequence`, `core.list`,
-`std.collections.map`, `std.resource`, `std.fs`, `std.path`, `std.uri`, `std.env`, `std.toml`, and
-`std.net.tcp`. Resource capabilities, URI parsing, the TOML 1.1 parser, validator, table builder,
-and renderer are Foster code; only general scalar conversion and host-dependent filesystem and
-socket operations cross the VM boundary. See
+`std.collections.map`, `std.resource`, `std.fs`, `std.path`, `std.uri`, `std.env`, `std.toml`,
+`std.net.tcp`, and the `std.time` module family. Resource capabilities, URI parsing, the TOML 1.1
+parser, time arithmetic, fixed-zone resolution, ISO/RFC formatting, validation, table building,
+and rendering are Foster code; only general scalar conversion and host-dependent filesystem,
+socket, and clock operations cross the VM boundary. See
 [the standard library reference](docs/core-library.md).
 
 ## Compiler and VM

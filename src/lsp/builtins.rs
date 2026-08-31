@@ -310,6 +310,18 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
             &[],
             "Returns the host process's current directory.",
         ),
+        Builtin::TimeWallNow => builtin(
+            "TimeHost.wall_now",
+            "TimeHost.wall_now() -> List<Int>",
+            &[],
+            "Returns canonical Unix seconds and nanoseconds from the host wall clock.",
+        ),
+        Builtin::TimeMonotonicNow => builtin(
+            "TimeHost.monotonic_now",
+            "TimeHost.monotonic_now() -> Int",
+            &[],
+            "Returns host-context-relative monotonic nanoseconds.",
+        ),
         Builtin::TcpListen => builtin(
             "TcpHost.listen",
             "TcpHost.listen(host: String, port: Int) -> Result<Int, NetworkError>",

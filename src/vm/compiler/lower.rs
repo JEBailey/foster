@@ -725,6 +725,8 @@ impl FunctionCompiler<'_> {
             "io.extension" => Some(Builtin::IoExtension),
             "io.canonicalize" => Some(Builtin::IoCanonicalize),
             "io.current_directory" => Some(Builtin::IoCurrentDirectory),
+            "time.wall_now" => Some(Builtin::TimeWallNow),
+            "time.monotonic_now" => Some(Builtin::TimeMonotonicNow),
             "tcp.listen" => Some(Builtin::TcpListen),
             "tcp.connect" => Some(Builtin::TcpConnect),
             "tcp.accept" => Some(Builtin::TcpAccept),

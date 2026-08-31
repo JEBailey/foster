@@ -60,6 +60,10 @@ being added accidentally.
 | `std.process` | Typed executable name and command arguments supplied to `main` |
 | `std.toml` | Typed TOML parsing, table lookup, rendering, and source-positioned errors |
 | `std.net.tcp` | Typed TCP listeners and connections |
+| `std.time` | Exact instants and durations, intervals, and generic wall/monotonic clocks |
+| `std.time.civil` | ISO civil dates and times, calendar spans, partial dates, and civil intervals |
+| `std.time.zone` | UTC offsets, time-zone contracts, explicit local resolution, and zoned values |
+| `std.time.format` | ISO-8601 and RFC-3339 parsing and formatting |
 
 Primitive `CodePoint` operations are owner-qualified in `core.code_point`. After importing the
 module, `character.as_int()` and `character.as_string()` call the corresponding `CodePoint`
@@ -78,6 +82,7 @@ runtime supplies representation-level primitives and capabilities that must cros
 - printing and remote-object runtime operations;
 - filesystem, platform path, environment, and entry operations used by `std.fs`, `std.path`,
   `std.env`, and `std.process`;
+- wall-clock and monotonic readings used by `std.time`;
 - TCP socket operations used by `std.net.tcp`.
 
 The host-facing intrinsics are private implementation details. Public APIs, opaque resource records,
@@ -114,6 +119,37 @@ this table for an intrinsic because it has no Foster implementation body.
 | `TcpHost.read`, `TcpHost.write`, `TcpHost.read_bytes`, `TcpHost.write_bytes` | Operate on TCP connections |
 | `TcpHost.set_timeout` | Configure TCP connection timeouts |
 | `TcpHost.close_listener`, `TcpHost.close_connection` | Close TCP resources |
+| `TimeHost.wall_now` | Read canonical Unix seconds and fractional nanoseconds from the wall clock |
+| `TimeHost.monotonic_now` | Read host-context-relative monotonic nanoseconds for elapsed measurement |
+
+## Time values
+
+The time library separates representations that have different semantics instead of allowing a
+date, offset, or zone to be inferred implicitly:
+
+| Layer | Principal types | Meaning |
+| --- | --- | --- |
+| `std.time` | `Instant`, exact `Duration`, `Interval`, `Clock<T>` | Points and elapsed lengths on an exact or monotonic time line |
+| `std.time.civil` | `Date`, `TimeOfDay`, `DateTime`, `YearMonth`, `MonthDay`, `Span`/`Period` | Calendar and clock values with no implied offset or time zone |
+| `std.time.zone` | `Offset`, `OffsetDateTime`, `TimeZone`, `ZonedDateTime` | Exact values interpreted through fixed displacement or named-zone rules |
+| `std.time.format` | `FormatError` and parse/format functions | Portable ISO-8601 and RFC-3339 text |
+
+This adapts Temporal's exact/plain/zoned separation to Foster's structural contracts. It also keeps
+Noda Time's `Interval`, `DateInterval`, `OffsetDateTime`, `Period`, clock, and zone-provider concepts,
+and Jiff's distinction between an exact signed duration and a calendar-aware span. A `Duration`
+therefore never contains months or days; those units belong to `Span` and acquire an elapsed length
+only when applied to a civil or zoned value.
+
+`LocalResolution` exposes `Unique`, `Ambiguous`, and `Skipped` outcomes. Converting a local value to
+a zoned value requires a `Disambiguation` policy, so daylight-saving overlaps and gaps cannot be
+silently discarded. `FixedOffsetZone` supplies the complete `TimeZone` contract now; regional IANA
+rule data is a provider-layer roadmap item. `Calendar` and `TimeZoneDatabase` are structural
+contracts so additional calendars and versioned zone databases do not require changing the value
+taxonomy.
+
+Wall-clock access produces serializable Unix `Instant` values. The monotonic `ContinuousClock`
+uses an opaque `MonotonicInstant` domain and is the appropriate clock for elapsed measurements and
+deadlines. Its readings are intentionally not convertible to civil time or Unix timestamps.
 
 ## TOML documents
 

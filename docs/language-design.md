@@ -583,7 +583,7 @@ either category twice or reuse one name across both categories.
 
 Foster has no prelude. The compiler embeds Foster-written modules under two roots: `core` contains
 foundational language types, while `std` contains general-purpose collections, I/O, filesystem,
-path, environment, and networking facilities. Tools can resolve both roots consistently, but no
+path, environment, networking, and exact/civil/zoned time facilities. Tools can resolve both roots consistently, but no
 declaration is injected into user scope. Programs import every module they use. The supported
 surface and runtime boundary are documented in `docs/core-library.md`.
 
@@ -982,7 +982,8 @@ the same; `try` does not perform error conversion. The operation is evaluated ex
 `Ok(value)` produces `value`, while an `Error(error)` immediately returns `Result.Error(error)`
 from the enclosing function. Consequently, `try` is only valid inside a Result-returning function.
 
-The VM host boundary follows the same rule for `std.fs`, `std.path`, `std.env`, and `std.net.tcp`.
+The VM host boundary follows the same rule for `std.fs`, `std.path`, `std.env`, `std.net.tcp`, and
+the wall and monotonic clocks in `std.time`.
 The language does not provide dedicated `throw` or typed error-effect syntax.
 `try` is control-flow sugar over ordinary `Result` values, not an exception mechanism.
 
@@ -995,7 +996,7 @@ initialization cycles.
 Because modules contain no runtime initialization, declarations in different modules may refer to
 one another when name and signature resolution can settle the cycle.
 
-## Filesystem and network access
+## Filesystem, network, and clock access
 
 `std.fs` exposes `File` resources along with compatible string-based UTF-8, binary, and directory
 operations. `std.path` provides typed `Path` values and platform path operations; `std.uri` provides
@@ -1004,8 +1005,11 @@ queries. Fallible filesystem operations return `Result<..., IoError>`, using the
 from `std.io`.
 `std.net.tcp` exposes opaque listeners and connections with typed `NetworkError` results. Their
 public records and wrappers are Foster code; private VM intrinsics perform the host operations.
+`std.time` keeps exact durations, instants, civil values, fixed-zone resolution, and ISO/RFC text
+in Foster. Private VM intrinsics provide only canonical wall-clock and host-context-relative
+monotonic readings.
 
-These modules use process-wide host capabilities.
+These modules use the current machine's isolated host context.
 
 ## Compiler pipeline
 

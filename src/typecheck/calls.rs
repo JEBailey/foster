@@ -402,6 +402,8 @@ impl Checker<'_> {
                 (vec![string.clone()], string.clone())
             }
             Builtin::IoCurrentDirectory => (Vec::new(), io_result(string.clone())?),
+            Builtin::TimeWallNow => (Vec::new(), self.list_type(Ty::Int)),
+            Builtin::TimeMonotonicNow => (Vec::new(), Ty::Int),
             Builtin::TcpListen => (vec![string.clone(), Ty::Int], tcp_result(Ty::Int)?),
             Builtin::TcpConnect => (vec![string.clone(), Ty::Int], tcp_result(Ty::Int)?),
             Builtin::TcpAccept => (vec![Ty::Int], tcp_result(Ty::Int)?),

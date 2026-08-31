@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Host-owned state shared by a Foster machine and the remote objects it creates.
 ///
@@ -14,6 +14,7 @@ use std::time::Duration;
 pub struct HostContext {
     working_directory: PathBuf,
     network: Mutex<NetworkHost>,
+    monotonic_origin: Instant,
 }
 
 impl HostContext {
@@ -30,6 +31,7 @@ impl HostContext {
         Self {
             working_directory,
             network: Mutex::new(NetworkHost::default()),
+            monotonic_origin: Instant::now(),
         }
     }
 
@@ -49,6 +51,11 @@ impl HostContext {
         } else {
             self.working_directory.join(path)
         }
+    }
+
+    pub(super) fn monotonic_nanoseconds(&self) -> Result<i64, String> {
+        i64::try_from(self.monotonic_origin.elapsed().as_nanos())
+            .map_err(|_| "monotonic clock reading exceeds Int".to_owned())
     }
 
     pub(super) fn listen(&self, address: &str, port: i64) -> Result<i64, String> {

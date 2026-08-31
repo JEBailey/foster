@@ -854,6 +854,7 @@ impl Package {
                         "core.list" => key.starts_with("list."),
                         "core.float" => key.starts_with("float."),
                         "std.fs" | "std.path" | "std.env" => key.starts_with("io."),
+                        "std.time" => key.starts_with("time."),
                         "std.net.tcp" => key.starts_with("tcp."),
                         _ => false,
                     } && intrinsic_key_registered(key);
@@ -1034,6 +1035,19 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
     ("std.process", include_str!("../library/std/process.fos")),
     ("std.toml", include_str!("../library/std/toml.fos")),
     ("std.net.tcp", include_str!("../library/std/net/tcp.fos")),
+    ("std.time", include_str!("../library/std/time.fos")),
+    (
+        "std.time.civil",
+        include_str!("../library/std/time/civil.fos"),
+    ),
+    (
+        "std.time.zone",
+        include_str!("../library/std/time/zone.fos"),
+    ),
+    (
+        "std.time.format",
+        include_str!("../library/std/time/format.fos"),
+    ),
 ];
 
 fn intrinsic_key_registered(key: &str) -> bool {
@@ -1085,6 +1099,8 @@ fn intrinsic_key_registered(key: &str) -> bool {
             | "io.extension"
             | "io.canonicalize"
             | "io.current_directory"
+            | "time.wall_now"
+            | "time.monotonic_now"
             | "tcp.listen"
             | "tcp.connect"
             | "tcp.accept"

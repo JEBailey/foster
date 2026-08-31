@@ -36,8 +36,8 @@ its trusted construction paths, while its library algorithms are ordinary Foster
 
 Portable library behavior is tested with Foster `test` declarations beside the implementation.
 Run the complete library suite with `foster test library`; the Rust integration harness executes it
-with and without bytecode optimization during `cargo test`. Host-dependent filesystem, process, and
-network behavior remains in Rust integration tests so those tests can create and clean up isolated
+with and without bytecode optimization during `cargo test`. Host-dependent filesystem, process,
+network, and clock behavior remains in Rust integration tests so those tests can control or inspect
 operating-system resources.
 
 Current modules:
@@ -67,10 +67,18 @@ Current modules:
 - `std.env`: process environment queries
 - `std.toml`: a Foster-written TOML 1.1 parser, typed documents, table lookup, rendering, and positioned errors
 - `std.net.tcp`: typed TCP listeners and `Duplex<NetworkError>` connections
+- `std.time`: exact `Instant` and `Duration` values, half-open `Interval` values, and generic wall
+  and monotonic `Clock<T>` implementations
+- `std.time.civil`: ISO `Date`, `TimeOfDay`, `DateTime`, `YearMonth`, `MonthDay`, calendar-aware
+  `Span`/`Period`, civil intervals, and the structural `Calendar` contract
+- `std.time.zone`: offsets, fixed and structural time zones, explicit unique/ambiguous/skipped local
+  resolution, `OffsetDateTime`, and `ZonedDateTime`
+- `std.time.format`: portable ISO-8601 and RFC-3339 parsing and formatting
 
 The register VM executes imported core code and calls across modules after the normal checked-HIR
-pipeline. Filesystem and TCP operations cross into the Rust runtime. TOML grammar, validation,
-document construction, and rendering remain Foster source and use only general scalar primitives.
+pipeline. Filesystem, TCP, and clock readings cross into the Rust runtime. Exact and civil time
+arithmetic, fixed-zone resolution, ISO/RFC formatting, TOML grammar, validation, document
+construction, and rendering remain Foster source and use only general scalar primitives.
 
 Fallible APIs return the Foster-written `Result<T, E>` type. Library implementations use `try`
 only to forward the same error type; recovery, error mapping, and conversion remain explicit

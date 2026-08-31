@@ -83,3 +83,25 @@ func main() -> Int {
         crate::vm::Value::Integer(42)
     );
 }
+
+#[test]
+fn time_clock_builtins_survive_bytecode_round_trips() {
+    let source = r#"
+import std.time
+
+func main() -> Bool {
+    let wall = now()
+    let first = ContinuousClock.new().now()
+    let second = ContinuousClock.new().now()
+    wall.nanosecond() >= 0 && wall.nanosecond() < 1000000000 && first.until(second).total_nanoseconds() >= 0
+}
+"#;
+    let compilation = crate::compile(source).unwrap();
+    let program = compile(&compilation).unwrap();
+    let decoded = decode_program(&encode_program(&program).unwrap()).unwrap();
+    assert_eq!(program, decoded);
+    assert_eq!(
+        Machine::new(&decoded).run_main().unwrap(),
+        crate::vm::Value::Bool(true)
+    );
+}

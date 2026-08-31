@@ -365,6 +365,8 @@ pub enum Builtin {
     IoReadRange,
     IoAppendBytes,
     IoFileLength,
+    TimeWallNow,
+    TimeMonotonicNow,
 }
 
 #[derive(Debug, Clone)]

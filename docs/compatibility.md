@@ -29,6 +29,12 @@ changes receive review.
 Foster is currently pre-1.0, so compatibility may change deliberately. It must nevertheless change
 through these gates rather than silently.
 
+## Bytecode format version 15
+
+Bytecode format version 15 appends the `time.wall_now` and `time.monotonic_now` builtins used by
+`std.time` clocks. Existing builtin tags and instruction opcodes are unchanged. Source code
+requires no migration, but serialized development bytecode from version 14 must be rebuilt.
+
 ## Bytecode format version 14
 
 Bytecode format version 14 appends the `io.read_range`, `io.append_bytes`, and `io.file_length`

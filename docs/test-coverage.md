@@ -31,6 +31,7 @@ boundaries, and tooling protocols. Examples are documentation and are not test f
 | Generic binary and text stream contracts | `library/std/io.fos` | Host file/socket adapters and invalid capability matches |
 | Resource identifiers, capabilities, URI, and Path identity | `library/std/uri.fos` and `library/std/path.fos` | Filesystem provider behavior, capability separation, path host operations, and typed resource integration |
 | Filesystem, environment, and TCP | None: these require operating-system resources | `tests/core_host.rs` creates isolated files, environment contexts, listeners, and connections |
+| Exact, civil, offset, and zoned time taxonomy; arithmetic; local resolution; ISO/RFC parsing and formatting | `library/std/time.fos` and `library/std/time/*` | `tests/core_host.rs` verifies wall and monotonic clock integration through the generic clock contract |
 | TOML 1.1 parsing, typed values, rendering, and errors | `library/std/toml.fos` | Large TOML 1.1 structure integration remains in `tests/core_host.rs` |
 | Formatter, generated documentation, and diagnostics | Parser/formatter behavior exercised while loading Foster suites | Rust unit/integration tests verify recovery, spans, rendering, Markdown, escaping, and CLI output |
 | LSP diagnostics, navigation, references, rename, hover, completion, signatures, hints, and caching | Compiles the same source and library contracts as the language suite | Dedicated LSP unit/workspace tests own protocol positions, overlays, cancellation, and incremental state |

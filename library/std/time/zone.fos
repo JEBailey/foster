@@ -1,0 +1,368 @@
+//! UTC offsets, time-zone contracts, local-time resolution, and zoned values.
+
+import core.ordering
+import core.result
+import std.time as exact
+import std.time.civil as civil
+
+/// Describes an invalid offset, unknown zone, or rejected local-time resolution.
+pub type ZoneError = {
+    pub zone: String
+    pub message: String
+}
+
+/// Controls how an ambiguous or skipped local time maps to an exact instant.
+pub enum Disambiguation = Compatible
+    | Earlier
+    | Later
+    | Reject
+
+/// A fixed displacement east of UTC, measured in seconds.
+pub type Offset = & Ordered<Offset> & {
+    seconds_value: Int
+}
+
+/// Validates and constructs an offset less than 24 hours from UTC.
+pub func Offset.from_seconds(seconds: Int) -> Result<Offset, ZoneError> {
+    branch {
+        seconds <= -86400 || seconds >= 86400 -> Result.Error(ZoneError { zone: "", message: "offset must be less than 24 hours from UTC" })
+        _ -> Result.Ok(Offset { seconds_value: seconds })
+    }
+}
+
+/// Returns UTC's zero offset.
+pub func Offset.utc() -> Offset { Offset { seconds_value: 0 } }
+
+/// Returns seconds east of UTC.
+pub func Offset.seconds(self: Offset) -> Int { self.seconds_value }
+
+/// Compares two offsets.
+pub func Offset.compare(self: Offset, other: Offset) -> Ordering {
+    branch { self.seconds_value < other.seconds_value -> Ordering.Less self.seconds_value > other.seconds_value -> Ordering.Greater _ -> Ordering.Equal }
+}
+
+/// Returns whether two offsets are equal.
+pub func Offset.equal?(self: Offset, other: Offset) -> Bool { self.seconds_value == other.seconds_value }
+
+/// The two possible instants for an overlapping local time.
+pub type AmbiguousLocalTime = {
+    earlier_value: Instant
+    later_value: Instant
+}
+
+/// Constructs an ambiguous local-time result.
+pub func AmbiguousLocalTime.from(earlier: Instant, later: Instant) -> AmbiguousLocalTime {
+    AmbiguousLocalTime { earlier_value: earlier, later_value: later }
+}
+
+/// Returns the earlier possible instant.
+pub func AmbiguousLocalTime.earlier(self: AmbiguousLocalTime) -> Instant { clone_instant(self.earlier_value) }
+/// Returns the later possible instant.
+pub func AmbiguousLocalTime.later(self: AmbiguousLocalTime) -> Instant { clone_instant(self.later_value) }
+
+/// The neighboring instants around a skipped local time.
+pub type SkippedLocalTime = {
+    before_value: Instant
+    after_value: Instant
+}
+
+/// Constructs a skipped local-time result.
+pub func SkippedLocalTime.from(before: Instant, after: Instant) -> SkippedLocalTime {
+    SkippedLocalTime { before_value: before, after_value: after }
+}
+
+/// Returns the last representable instant before the gap.
+pub func SkippedLocalTime.before(self: SkippedLocalTime) -> Instant { clone_instant(self.before_value) }
+/// Returns the first representable instant after the gap.
+pub func SkippedLocalTime.after(self: SkippedLocalTime) -> Instant { clone_instant(self.after_value) }
+
+/// The exact mapping cardinality for one local date-time in a time zone.
+pub enum LocalResolution = Unique(Instant)
+    | Ambiguous(AmbiguousLocalTime)
+    | Skipped(SkippedLocalTime)
+
+/// A named rule set mapping exact instants to offsets and civil values back to
+/// zero, one, or two exact instants.
+pub type TimeZone = {
+    /// Returns the stable zone identifier.
+    pub func id(self) -> String
+    /// Returns the offset active at an exact instant.
+    pub func offset_at(self, instant: Instant) -> Offset
+    /// Resolves a civil date-time without silently discarding gaps or overlaps.
+    pub func resolve(self, local: DateTime) -> LocalResolution
+}
+
+/// A provider of named time-zone rule sets, normally backed by the IANA database.
+pub type TimeZoneDatabase = {
+    /// Looks up a time zone by stable identifier.
+    pub func find(self, identifier: String) -> Result<TimeZone, ZoneError>
+}
+
+/// A time zone whose offset never changes.
+pub type FixedOffsetZone = & TimeZone & {
+    identifier_value: String
+    offset_value: Offset
+}
+
+/// Constructs a fixed-offset zone with an explicit identifier.
+pub func FixedOffsetZone.from(identifier: String, offset: Offset) -> FixedOffsetZone {
+    FixedOffsetZone { identifier_value: identifier, offset_value: offset }
+}
+
+/// Constructs the UTC fixed-offset zone.
+pub func FixedOffsetZone.utc() -> FixedOffsetZone {
+    FixedOffsetZone { identifier_value: "UTC", offset_value: Offset.utc() }
+}
+
+/// Returns the fixed zone identifier.
+pub func FixedOffsetZone.id(self: FixedOffsetZone) -> String {
+    self.identifier_value.slice(0, self.identifier_value.length)
+}
+
+/// Returns the zone's constant offset.
+pub func FixedOffsetZone.offset_at(self: FixedOffsetZone, instant: Instant) -> Offset {
+    offset_from_valid_seconds(self.offset_value.seconds())
+}
+
+/// Resolves every valid civil value uniquely under the constant offset.
+pub func FixedOffsetZone.resolve(self: FixedOffsetZone, local: DateTime) -> LocalResolution {
+    LocalResolution.Unique(instant_from_local(local, self.offset_value))
+}
+
+/// An exact instant paired with a fixed offset but no regional transition rules.
+pub type OffsetDateTime = & Ordered<OffsetDateTime> & {
+    instant_value: Instant
+    offset_value: Offset
+}
+
+/// Pairs an exact instant with a fixed offset.
+pub func OffsetDateTime.from_instant(instant: Instant, offset: Offset) -> OffsetDateTime {
+    OffsetDateTime { instant_value: instant, offset_value: offset }
+}
+
+/// Interprets a civil date-time under a fixed offset.
+pub func OffsetDateTime.from_local(local: DateTime, offset: Offset) -> OffsetDateTime {
+    OffsetDateTime { instant_value: instant_from_local(local, offset), offset_value: offset }
+}
+
+/// Returns the exact instant.
+pub func OffsetDateTime.instant(self: OffsetDateTime) -> Instant { clone_instant(self.instant_value) }
+/// Returns the fixed offset.
+pub func OffsetDateTime.offset(self: OffsetDateTime) -> Offset { offset_from_valid_seconds(self.offset_value.seconds()) }
+/// Returns the corresponding civil date-time.
+pub func OffsetDateTime.local(self: OffsetDateTime) -> DateTime {
+    local_from_instant(self.instant_value, self.offset_value)
+}
+
+/// Advances the exact instant while preserving the offset.
+pub func OffsetDateTime.add(self: OffsetDateTime, duration: Duration) -> OffsetDateTime {
+    OffsetDateTime { instant_value: self.instant_value.add(duration), offset_value: self.offset_value }
+}
+
+/// Compares offset date-times by exact instant.
+pub func OffsetDateTime.compare(self: OffsetDateTime, other: OffsetDateTime) -> Ordering {
+    self.instant_value.compare(other.instant_value)
+}
+
+/// Returns whether two offset date-times identify the same exact instant.
+pub func OffsetDateTime.equal?(self: OffsetDateTime, other: OffsetDateTime) -> Bool {
+    self.instant_value.equal?(other.instant_value)
+}
+
+/// An exact instant interpreted through a named time-zone rule set.
+pub type ZonedDateTime = & Ordered<ZonedDateTime> & {
+    instant_value: Instant
+    zone_value: TimeZone
+}
+
+/// Interprets an exact instant in a time zone; this direction is always unambiguous.
+pub func ZonedDateTime.from_instant(instant: Instant, zone: TimeZone) -> ZonedDateTime {
+    ZonedDateTime { instant_value: instant, zone_value: zone }
+}
+
+/// Resolves a civil date-time using an explicit gap/overlap policy.
+pub func ZonedDateTime.from_local(local: DateTime, zone: TimeZone, disambiguation: Disambiguation) -> Result<ZonedDateTime, ZoneError> {
+    select_resolution(zone.resolve(local), move zone, disambiguation)
+}
+
+/// Returns the exact instant.
+pub func ZonedDateTime.instant(self: ZonedDateTime) -> Instant { clone_instant(self.instant_value) }
+
+/// Returns the time-zone identifier.
+pub func ZonedDateTime.zone_id(self: ZonedDateTime) -> String { self.zone_value.id() }
+
+/// Returns the offset active at this instant.
+pub func ZonedDateTime.offset(self: ZonedDateTime) -> Offset { self.zone_value.offset_at(self.instant_value) }
+
+/// Returns the corresponding civil date-time.
+pub func ZonedDateTime.local(self: ZonedDateTime) -> DateTime {
+    local_from_instant(self.instant_value, self.offset())
+}
+
+/// Reinterprets the same exact instant in another time zone.
+pub func ZonedDateTime.with_zone(self: ZonedDateTime, zone: TimeZone) -> ZonedDateTime {
+    ZonedDateTime { instant_value: self.instant_value, zone_value: zone }
+}
+
+/// Returns a fixed-offset view at the offset active for this instant.
+pub func ZonedDateTime.as_offset(self: ZonedDateTime) -> OffsetDateTime {
+    let offset = self.offset()
+    OffsetDateTime.from_instant(move self.instant_value, move offset)
+}
+
+/// Adds an exact elapsed duration on the time line.
+pub func ZonedDateTime.add_duration(self: ZonedDateTime, duration: Duration) -> ZonedDateTime {
+    ZonedDateTime { instant_value: self.instant_value.add(duration), zone_value: self.zone_value }
+}
+
+/// Adds a calendar-aware span in local time, then resolves the result explicitly.
+pub func ZonedDateTime.add_span(self: ZonedDateTime, span: Span, overflow: Overflow, disambiguation: Disambiguation) -> Result<ZonedDateTime, ZoneError> {
+    branch self.local().add(span, overflow) {
+        Result.Error(error) -> Result.Error(ZoneError { zone: self.zone_value.id(), message: error.message })
+        Result.Ok(local) -> ZonedDateTime.from_local(local, move self.zone_value, disambiguation)
+    }
+}
+
+/// Compares zoned values by exact instant.
+pub func ZonedDateTime.compare(self: ZonedDateTime, other: ZonedDateTime) -> Ordering {
+    self.instant_value.compare(other.instant_value)
+}
+
+/// Returns whether two zoned values identify the same exact instant.
+pub func ZonedDateTime.equal?(self: ZonedDateTime, other: ZonedDateTime) -> Bool {
+    self.instant_value.equal?(other.instant_value)
+}
+
+/// Selects one instant from an explicit local-time resolution.
+func select_resolution(resolution: LocalResolution, zone: TimeZone, disambiguation: Disambiguation) -> Result<ZonedDateTime, ZoneError> {
+    branch resolution {
+        LocalResolution.Unique(instant) -> Result.Ok(ZonedDateTime { instant_value: instant, zone_value: zone })
+        LocalResolution.Ambiguous(options) -> branch disambiguation {
+            Disambiguation.Compatible -> Result.Ok(ZonedDateTime { instant_value: options.earlier(), zone_value: zone })
+            Disambiguation.Earlier -> Result.Ok(ZonedDateTime { instant_value: options.earlier(), zone_value: zone })
+            Disambiguation.Later -> Result.Ok(ZonedDateTime { instant_value: options.later(), zone_value: zone })
+            Disambiguation.Reject -> Result.Error(ZoneError { zone: zone.id(), message: "local time is ambiguous in this zone" })
+        }
+        LocalResolution.Skipped(options) -> branch disambiguation {
+            Disambiguation.Compatible -> Result.Ok(ZonedDateTime { instant_value: options.after(), zone_value: zone })
+            Disambiguation.Earlier -> Result.Ok(ZonedDateTime { instant_value: options.before(), zone_value: zone })
+            Disambiguation.Later -> Result.Ok(ZonedDateTime { instant_value: options.after(), zone_value: zone })
+            Disambiguation.Reject -> Result.Error(ZoneError { zone: zone.id(), message: "local time does not exist in this zone" })
+        }
+    }
+}
+
+/// Converts a civil date-time under a fixed offset into an exact instant.
+func instant_from_local(local: DateTime, offset: Offset) -> Instant {
+    instant_from_parts(local.epoch_seconds() - offset.seconds(), local.nanosecond())
+}
+
+/// Extracts an instant from already validated canonical parts.
+func instant_from_parts(seconds: Int, nanosecond: Int) -> Instant {
+    branch Instant.from_parts(seconds, nanosecond) {
+        Result.Ok(instant) -> instant
+        Result.Error(_) -> Instant.epoch()
+    }
+}
+
+/// Reconstructs an instant whose fields have already passed validation.
+func clone_instant(value: Instant) -> Instant {
+    instant_from_parts(value.epoch_seconds(), value.nanosecond())
+}
+
+/// Reconstructs an offset whose seconds have already passed public validation.
+func offset_from_valid_seconds(seconds: Int) -> Offset {
+    branch Offset.from_seconds(seconds) {
+        Result.Ok(offset) -> offset
+        Result.Error(_) -> Offset.utc()
+    }
+}
+
+/// Converts an exact instant and offset into a civil date-time.
+func local_from_instant(instant: Instant, offset: Offset) -> DateTime {
+    DateTime.from_epoch_parts(instant.epoch_seconds() + offset.seconds(), instant.nanosecond())
+}
+
+test "fixed offsets preserve exact and civil representations" {
+    let local = DateTime.from(Date.from_epoch_day(0), TimeOfDay.midnight())
+    let offset = branch Offset.from_seconds(7200) {
+        Result.Ok(value) -> value
+        Result.Error(_) -> Offset.utc()
+    }
+    let value = OffsetDateTime.from_local(local, move offset)
+    assert(value.instant().epoch_seconds() == -7200)
+    assert(value.local().equal?(local))
+}
+
+test "fixed zones implement the complete time-zone contract" {
+    let local = DateTime.from(Date.from_epoch_day(0), TimeOfDay.midnight())
+    let zone = FixedOffsetZone.utc()
+    branch ZonedDateTime.from_local(local, move zone, Disambiguation.Reject) {
+        Result.Error(_) -> {
+            assert(false, "fixed zone rejected a valid local time")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.zone_id() == "UTC")
+            assert(value.instant().equal?(Instant.epoch()))
+            assert(value.local().equal?(local))
+            ()
+        }
+    }
+}
+
+test "offsets validate compare and convert both directions" {
+    assert(Offset.from_seconds(86400).error?())
+    assert(Offset.from_seconds(-86400).error?())
+    let positive = branch Offset.from_seconds(3661) { Result.Ok(value) -> value Result.Error(_) -> Offset.utc() }
+    branch positive.compare(Offset.utc()) {
+        Ordering.Greater -> ()
+        _ -> {
+            assert(false, "positive offset ordering was incorrect")
+            ()
+        }
+    }
+    let value = OffsetDateTime.from_instant(Instant.epoch(), move positive)
+    assert(value.local().epoch_seconds() == 3661)
+    assert(value.add(Duration.from_seconds(1)).instant().epoch_seconds() == 1)
+}
+
+test "local resolution policies expose overlaps and gaps explicitly" {
+    let earlier = Instant.from_epoch_seconds(10)
+    let later = Instant.from_epoch_seconds(20)
+    let compatible = select_resolution(LocalResolution.Ambiguous(AmbiguousLocalTime.from(move earlier, move later)), FixedOffsetZone.utc(), Disambiguation.Compatible)
+    branch compatible {
+        Result.Error(_) -> {
+            assert(false, "compatible overlap resolution failed")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.instant().epoch_seconds() == 10)
+            ()
+        }
+    }
+    let rejected = select_resolution(LocalResolution.Ambiguous(AmbiguousLocalTime.from(Instant.from_epoch_seconds(10), Instant.from_epoch_seconds(20))), FixedOffsetZone.utc(), Disambiguation.Reject)
+    assert(rejected.error?())
+    let gap_earlier = select_resolution(LocalResolution.Skipped(SkippedLocalTime.from(Instant.from_epoch_seconds(30), Instant.from_epoch_seconds(40))), FixedOffsetZone.utc(), Disambiguation.Earlier)
+    branch gap_earlier {
+        Result.Error(_) -> {
+            assert(false, "earlier gap resolution failed")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.instant().epoch_seconds() == 30)
+            ()
+        }
+    }
+    let gap_later = select_resolution(LocalResolution.Skipped(SkippedLocalTime.from(Instant.from_epoch_seconds(30), Instant.from_epoch_seconds(40))), FixedOffsetZone.utc(), Disambiguation.Later)
+    branch gap_later {
+        Result.Error(_) -> {
+            assert(false, "later gap resolution failed")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.instant().epoch_seconds() == 40)
+            ()
+        }
+    }
+}

@@ -446,6 +446,11 @@ impl HostServices for super::host::HostContext {
                 path_value_io(self.working_directory().to_path_buf(), string_record),
                 string_record,
             )),
+            (Builtin::TimeWallNow, []) => wall_now(),
+            (Builtin::TimeMonotonicNow, []) => self
+                .monotonic_nanoseconds()
+                .map(Value::Integer)
+                .map_err(RuntimeError::runtime),
             (Builtin::TcpListen, [address, Value::Integer(port)])
                 if address.string_bytes().is_some() =>
             {
@@ -528,6 +533,33 @@ impl HostServices for super::host::HostContext {
             _ => Err(RuntimeError::runtime("invalid builtin arguments")),
         }
     }
+}
+
+fn wall_now() -> Result<Value, RuntimeError> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let (seconds, nanosecond) = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => (
+            i64::try_from(duration.as_secs())
+                .map_err(|_| RuntimeError::runtime("wall clock seconds exceed Int"))?,
+            i64::from(duration.subsec_nanos()),
+        ),
+        Err(error) => {
+            let duration = error.duration();
+            let seconds = i64::try_from(duration.as_secs())
+                .map_err(|_| RuntimeError::runtime("wall clock seconds exceed Int"))?;
+            let nanosecond = i64::from(duration.subsec_nanos());
+            if nanosecond == 0 {
+                (-seconds, 0)
+            } else {
+                (-seconds - 1, 1_000_000_000 - nanosecond)
+            }
+        }
+    };
+    Ok(Value::list(vec![
+        Value::Integer(seconds),
+        Value::Integer(nanosecond),
+    ]))
 }
 
 fn decode_hex(value: &str) -> Result<Vec<u8>, (usize, String)> {
@@ -732,6 +764,10 @@ mod tests {
     fn host_builtins_cross_the_capability_boundary() {
         let path = Value::string(None, b"ignored".to_vec());
         let error = dispatch(&DeniedHost, Builtin::IoExists, &[path], None).unwrap_err();
+        assert_eq!(error.message, "host access denied");
+        let error = dispatch(&DeniedHost, Builtin::TimeWallNow, &[], None).unwrap_err();
+        assert_eq!(error.message, "host access denied");
+        let error = dispatch(&DeniedHost, Builtin::TimeMonotonicNow, &[], None).unwrap_err();
         assert_eq!(error.message, "host access denied");
     }
 }

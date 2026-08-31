@@ -8,6 +8,45 @@ fn assert_string(value: Value, expected: &str) {
 }
 
 #[test]
+fn standard_time_clocks_cross_the_host_boundary_with_canonical_readings() {
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let value = foster::run(
+        r#"
+import std.time
+
+func clock_read<T>(clock: Clock<T>) -> T { clock.now() }
+
+func main() -> List<Int> {
+    let wall = clock_read(SystemClock.new())
+    let first = clock_read(ContinuousClock.new())
+    let second = clock_read(ContinuousClock.new())
+    [wall.epoch_seconds(), wall.nanosecond(), first.until(second).total_nanoseconds()]
+}
+"#,
+    )
+    .unwrap();
+    let after = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    let values = value.as_list().unwrap();
+    let [
+        Value::Integer(seconds),
+        Value::Integer(nanosecond),
+        Value::Integer(elapsed),
+    ] = values
+    else {
+        panic!("time clocks returned an unexpected representation: {values:?}");
+    };
+    assert!((*seconds >= before) && (*seconds <= after));
+    assert!((0..1_000_000_000).contains(nanosecond));
+    assert!(*elapsed >= 0);
+}
+
+#[test]
 fn every_standard_library_function_has_attached_documentation() {
     let compilation = foster::compile(
         r#"
@@ -35,7 +74,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 600);
+    assert_eq!(checked, 803);
 
     let mut modules = 0;
     let mut types = 0;

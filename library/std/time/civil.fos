@@ -1,0 +1,607 @@
+//! ISO civil dates and times without an implied time zone or exact instant.
+
+import core.ordering
+import core.result
+
+/// Describes an invalid civil date, time, or calendar operation.
+pub type CivilError = {
+    pub field: String
+    pub value: Int
+    pub message: String
+}
+
+/// Controls how calendar arithmetic handles an invalid resulting day.
+pub enum Overflow = Constrain
+    | Reject
+
+/// A day of the ISO week, numbered Monday through Sunday.
+pub enum Weekday = Monday
+    | Tuesday
+    | Wednesday
+    | Thursday
+    | Friday
+    | Saturday
+    | Sunday
+
+/// Calendar operations required by civil date construction and arithmetic.
+pub type Calendar = {
+    /// Returns the stable calendar identifier.
+    pub func id(self) -> String
+    /// Returns whether `year` contains a leap day.
+    pub func leap_year?(self, year: Int) -> Bool
+    /// Returns the number of days in one validated month.
+    pub func days_in_month(self, year: Int, month: Int) -> Int
+}
+
+/// The proleptic ISO-8601 Gregorian calendar.
+pub type IsoCalendar = & Calendar & {
+    marker: Symbol
+}
+
+/// Constructs the ISO calendar capability.
+pub func IsoCalendar.new() -> IsoCalendar { IsoCalendar { marker: :iso8601 } }
+
+/// Returns the ISO calendar identifier.
+pub func IsoCalendar.id(self: IsoCalendar) -> String { "iso8601" }
+
+/// Returns whether an ISO year contains February 29.
+pub func IsoCalendar.leap_year?(self: IsoCalendar, year: Int) -> Bool {
+    leap_year?(year)
+}
+
+/// Returns the number of days in an ISO month, or zero for an invalid month.
+pub func IsoCalendar.days_in_month(self: IsoCalendar, year: Int, month: Int) -> Int {
+    days_in_month(year, month)
+}
+
+/// A calendar-aware amount. Unlike an exact duration, days and larger units
+/// require a civil date or zoned date-time before they have an elapsed length.
+pub type Span = {
+    years_value: Int
+    months_value: Int
+    weeks_value: Int
+    days_value: Int
+    hours_value: Int
+    minutes_value: Int
+    seconds_value: Int
+    nanoseconds_value: Int
+}
+
+/// Noda-style spelling for a calendar-aware span.
+pub type Period = Span
+
+/// Constructs a calendar-aware span.
+pub func Span.from(years: Int, months: Int, weeks: Int, days: Int, hours: Int, minutes: Int, seconds: Int, nanoseconds: Int) -> Span {
+    Span { years_value: years, months_value: months, weeks_value: weeks, days_value: days, hours_value: hours, minutes_value: minutes, seconds_value: seconds, nanoseconds_value: nanoseconds }
+}
+
+/// Returns a zero calendar span.
+pub func Span.zero() -> Span { Span.from(0, 0, 0, 0, 0, 0, 0, 0) }
+
+/// Constructs a whole-day span.
+pub func Span.from_days(days: Int) -> Span { Span.from(0, 0, 0, days, 0, 0, 0, 0) }
+
+/// Constructs a whole-month span.
+pub func Span.from_months(months: Int) -> Span { Span.from(0, months, 0, 0, 0, 0, 0, 0) }
+
+/// Returns the year component.
+pub func Span.years(self: Span) -> Int { self.years_value }
+/// Returns the month component.
+pub func Span.months(self: Span) -> Int { self.months_value }
+/// Returns the week component.
+pub func Span.weeks(self: Span) -> Int { self.weeks_value }
+/// Returns the day component.
+pub func Span.days(self: Span) -> Int { self.days_value }
+/// Returns the hour component.
+pub func Span.hours(self: Span) -> Int { self.hours_value }
+/// Returns the minute component.
+pub func Span.minutes(self: Span) -> Int { self.minutes_value }
+/// Returns the second component.
+pub func Span.seconds(self: Span) -> Int { self.seconds_value }
+/// Returns the nanosecond component.
+pub func Span.nanoseconds(self: Span) -> Int { self.nanoseconds_value }
+
+/// Adds two calendar-aware spans component by component.
+pub func Span.add(self: Span, other: Span) -> Span {
+    Span.from(self.years_value + other.years_value, self.months_value + other.months_value, self.weeks_value + other.weeks_value, self.days_value + other.days_value, self.hours_value + other.hours_value, self.minutes_value + other.minutes_value, self.seconds_value + other.seconds_value, self.nanoseconds_value + other.nanoseconds_value)
+}
+
+/// Returns the component-wise inverse of this span.
+pub func Span.negated(self: Span) -> Span {
+    Span.from(-self.years_value, -self.months_value, -self.weeks_value, -self.days_value, -self.hours_value, -self.minutes_value, -self.seconds_value, -self.nanoseconds_value)
+}
+
+/// An ISO calendar date without a time or time zone.
+pub type Date = & Ordered<Date> & {
+    year_value: Int
+    month_value: Int
+    day_value: Int
+}
+
+/// Validates and constructs an ISO civil date.
+pub func Date.from(year: Int, month: Int, day: Int) -> Result<Date, CivilError> {
+    branch {
+        month < 1 -> invalid_date("month", month, "month must be between 1 and 12")
+        month > 12 -> invalid_date("month", month, "month must be between 1 and 12")
+        day < 1 -> invalid_date("day", day, "day must be positive")
+        day > days_in_month(year, month) -> invalid_date("day", day, "day exceeds the selected month")
+        _ -> Result.Ok(Date { year_value: year, month_value: month, day_value: day })
+    }
+}
+
+/// Constructs the date corresponding to a signed day count from 1970-01-01.
+pub func Date.from_epoch_day(epoch_day: Int) -> Date {
+    civil_from_days(epoch_day)
+}
+
+/// Returns the ISO year.
+pub func Date.year(self: Date) -> Int { self.year_value }
+/// Returns the ISO month from 1 through 12.
+pub func Date.month(self: Date) -> Int { self.month_value }
+/// Returns the one-based day of the month.
+pub func Date.day(self: Date) -> Int { self.day_value }
+
+/// Returns the signed day count from 1970-01-01.
+pub func Date.epoch_day(self: Date) -> Int { days_from_civil(self.year_value, self.month_value, self.day_value) }
+
+/// Returns the ISO weekday.
+pub func Date.weekday(self: Date) -> Weekday {
+    weekday_from_number(floor_mod(self.epoch_day() + 3, 7) + 1)
+}
+
+/// Returns the one-based day within the year.
+pub func Date.day_of_year(self: Date) -> Int {
+    self.epoch_day() - days_from_civil(self.year_value, 1, 1) + 1
+}
+
+/// Adds a signed number of civil days.
+pub func Date.add_days(self: Date, days: Int) -> Date {
+    Date.from_epoch_day(self.epoch_day() + days)
+}
+
+/// Adds a calendar-aware span using explicit overflow behavior.
+///
+/// Time components are rejected because a date has no clock time.
+pub func Date.add(self: Date, span: Span, overflow: Overflow) -> Result<Date, CivilError> {
+    branch {
+        span.hours() != 0 || span.minutes() != 0 || span.seconds() != 0 || span.nanoseconds() != 0 -> invalid_date("span", 0, "time units cannot be added to a date")
+        _ -> add_date_parts(self, span, overflow)
+    }
+}
+
+/// Compares two civil dates.
+pub func Date.compare(self: Date, other: Date) -> Ordering {
+    compare_int(self.epoch_day(), other.epoch_day())
+}
+
+/// Returns whether two civil dates are equal.
+pub func Date.equal?(self: Date, other: Date) -> Bool {
+    self.year_value == other.year_value && self.month_value == other.month_value && self.day_value == other.day_value
+}
+
+/// Combines this date with a civil clock time.
+pub func Date.at(self: Date, time: TimeOfDay) -> DateTime { DateTime { date_value: self, time_value: time } }
+
+/// A civil clock time without a date, offset, or time zone.
+pub type TimeOfDay = & Ordered<TimeOfDay> & {
+    hour_value: Int
+    minute_value: Int
+    second_value: Int
+    nanosecond_value: Int
+}
+
+/// Validates and constructs a civil clock time.
+pub func TimeOfDay.from(hour: Int, minute: Int, second: Int, nanosecond: Int) -> Result<TimeOfDay, CivilError> {
+    branch {
+        hour < 0 || hour > 23 -> invalid_time("hour", hour, "hour must be between 0 and 23")
+        minute < 0 || minute > 59 -> invalid_time("minute", minute, "minute must be between 0 and 59")
+        second < 0 || second > 59 -> invalid_time("second", second, "second must be between 0 and 59")
+        nanosecond < 0 || nanosecond >= 1000000000 -> invalid_time("nanosecond", nanosecond, "nanosecond must be between zero and one billion")
+        _ -> Result.Ok(TimeOfDay { hour_value: hour, minute_value: minute, second_value: second, nanosecond_value: nanosecond })
+    }
+}
+
+/// Returns midnight.
+pub func TimeOfDay.midnight() -> TimeOfDay { TimeOfDay { hour_value: 0, minute_value: 0, second_value: 0, nanosecond_value: 0 } }
+
+/// Returns the hour from 0 through 23.
+pub func TimeOfDay.hour(self: TimeOfDay) -> Int { self.hour_value }
+/// Returns the minute from 0 through 59.
+pub func TimeOfDay.minute(self: TimeOfDay) -> Int { self.minute_value }
+/// Returns the second from 0 through 59.
+pub func TimeOfDay.second(self: TimeOfDay) -> Int { self.second_value }
+/// Returns the fractional nanosecond component.
+pub func TimeOfDay.nanosecond(self: TimeOfDay) -> Int { self.nanosecond_value }
+
+/// Returns nanoseconds elapsed since local midnight.
+pub func TimeOfDay.nanosecond_of_day(self: TimeOfDay) -> Int {
+    ((self.hour_value * 60 + self.minute_value) * 60 + self.second_value) * 1000000000 + self.nanosecond_value
+}
+
+/// Constructs a time from a validated nanosecond count within one day.
+pub func TimeOfDay.from_nanosecond_of_day(value: Int) -> TimeOfDay {
+    let seconds = value / 1000000000
+    let nanosecond = value - seconds * 1000000000
+    let hour = seconds / 3600
+    let after_hour = seconds - hour * 3600
+    let minute = after_hour / 60
+    TimeOfDay { hour_value: hour, minute_value: minute, second_value: after_hour - minute * 60, nanosecond_value: nanosecond }
+}
+
+/// Compares two civil clock times.
+pub func TimeOfDay.compare(self: TimeOfDay, other: TimeOfDay) -> Ordering {
+    compare_int(self.nanosecond_of_day(), other.nanosecond_of_day())
+}
+
+/// Returns whether two civil clock times are equal.
+pub func TimeOfDay.equal?(self: TimeOfDay, other: TimeOfDay) -> Bool {
+    self.nanosecond_of_day() == other.nanosecond_of_day()
+}
+
+/// An ISO calendar date and clock time without an offset or time zone.
+pub type DateTime = & Ordered<DateTime> & {
+    date_value: Date
+    time_value: TimeOfDay
+}
+
+/// Combines a civil date and time.
+pub func DateTime.from(date: Date, time: TimeOfDay) -> DateTime { DateTime { date_value: date, time_value: time } }
+
+/// Constructs a civil date-time from Unix parts interpreted in UTC.
+pub func DateTime.from_epoch_parts(epoch_seconds: Int, nanosecond: Int) -> DateTime {
+    let day = floor_div(epoch_seconds, 86400)
+    let second_of_day = epoch_seconds - day * 86400
+    DateTime {
+        date_value: Date.from_epoch_day(day)
+        time_value: TimeOfDay.from_nanosecond_of_day(second_of_day * 1000000000 + nanosecond)
+    }
+}
+
+/// Returns the civil date.
+pub func DateTime.date(self: DateTime) -> Date { Date.from_epoch_day(self.date_value.epoch_day()) }
+/// Returns the civil clock time.
+pub func DateTime.time(self: DateTime) -> TimeOfDay { TimeOfDay.from_nanosecond_of_day(self.time_value.nanosecond_of_day()) }
+
+/// Returns Unix seconds when this civil value is interpreted as UTC.
+pub func DateTime.epoch_seconds(self: DateTime) -> Int {
+    self.date_value.epoch_day() * 86400 + self.time_value.nanosecond_of_day() / 1000000000
+}
+
+/// Returns the fractional nanosecond component.
+pub func DateTime.nanosecond(self: DateTime) -> Int { self.time_value.nanosecond() }
+
+/// Adds a calendar-aware span with date overflow handled explicitly.
+pub func DateTime.add(self: DateTime, span: Span, overflow: Overflow) -> Result<DateTime, CivilError> {
+    let date_span = Span.from(span.years(), span.months(), span.weeks(), span.days(), 0, 0, 0, 0)
+    let adjusted_date = try self.date_value.add(date_span, overflow)
+    let clock_delta = (((span.hours() * 60 + span.minutes()) * 60 + span.seconds()) * 1000000000) + span.nanoseconds()
+    let total = self.time_value.nanosecond_of_day() + clock_delta
+    let carry = floor_div(total, 86400000000000)
+    let within_day = total - carry * 86400000000000
+    Result.Ok(DateTime { date_value: adjusted_date.add_days(carry), time_value: TimeOfDay.from_nanosecond_of_day(within_day) })
+}
+
+/// Compares two civil date-times lexicographically.
+pub func DateTime.compare(self: DateTime, other: DateTime) -> Ordering {
+    branch self.date_value.compare(other.date_value) {
+        Ordering.Equal -> self.time_value.compare(other.time_value)
+        Ordering.Less -> Ordering.Less
+        Ordering.Greater -> Ordering.Greater
+    }
+}
+
+/// Returns whether two civil date-times are equal.
+pub func DateTime.equal?(self: DateTime, other: DateTime) -> Bool {
+    self.date_value.equal?(other.date_value) && self.time_value.equal?(other.time_value)
+}
+
+/// A year and month without a day or time.
+pub type YearMonth = & Ordered<YearMonth> & {
+    year_value: Int
+    month_value: Int
+}
+
+/// Validates and constructs a year-month.
+pub func YearMonth.from(year: Int, month: Int) -> Result<YearMonth, CivilError> {
+    branch {
+        month < 1 || month > 12 -> invalid_year_month(month)
+        _ -> Result.Ok(YearMonth { year_value: year, month_value: month })
+    }
+}
+
+/// Returns the year.
+pub func YearMonth.year(self: YearMonth) -> Int { self.year_value }
+/// Returns the month.
+pub func YearMonth.month(self: YearMonth) -> Int { self.month_value }
+/// Returns the number of days in this month.
+pub func YearMonth.days(self: YearMonth) -> Int { days_in_month(self.year_value, self.month_value) }
+
+/// Combines this year-month with a day.
+pub func YearMonth.on_day(self: YearMonth, day: Int) -> Result<Date, CivilError> {
+    Date.from(self.year_value, self.month_value, day)
+}
+
+/// Compares two year-month values.
+pub func YearMonth.compare(self: YearMonth, other: YearMonth) -> Ordering {
+    compare_int(self.year_value * 12 + self.month_value, other.year_value * 12 + other.month_value)
+}
+
+/// Returns whether two year-month values are equal.
+pub func YearMonth.equal?(self: YearMonth, other: YearMonth) -> Bool {
+    self.year_value == other.year_value && self.month_value == other.month_value
+}
+
+/// A recurring month and day without a year.
+pub type MonthDay = {
+    month_value: Int
+    day_value: Int
+}
+
+/// Validates a month-day against leap year 2000 so February 29 is representable.
+pub func MonthDay.from(month: Int, day: Int) -> Result<MonthDay, CivilError> {
+    branch Date.from(2000, month, day) {
+        Result.Error(error) -> Result.Error(error)
+        Result.Ok(_) -> Result.Ok(MonthDay { month_value: month, day_value: day })
+    }
+}
+
+/// Returns the month.
+pub func MonthDay.month(self: MonthDay) -> Int { self.month_value }
+/// Returns the day of the month.
+pub func MonthDay.day(self: MonthDay) -> Int { self.day_value }
+
+/// Places this month-day in a year, rejecting February 29 in a non-leap year.
+pub func MonthDay.in_year(self: MonthDay, year: Int) -> Result<Date, CivilError> {
+    Date.from(year, self.month_value, self.day_value)
+}
+
+/// A half-open interval of civil dates.
+pub type DateInterval = {
+    start_value: Date
+    end_value: Date
+}
+
+/// Constructs `[start, end)`, rejecting an end before the start.
+pub func DateInterval.from(start: Date, end: Date) -> Result<DateInterval, CivilError> {
+    branch end.compare(start) {
+        Ordering.Less -> Result.Error(CivilError { field: "end", value: end.epoch_day(), message: "date interval end must not precede its start" })
+        _ -> Result.Ok(DateInterval { start_value: start, end_value: end })
+    }
+}
+
+/// Returns the inclusive start date.
+pub func DateInterval.start(self: DateInterval) -> Date { Date.from_epoch_day(self.start_value.epoch_day()) }
+/// Returns the exclusive end date.
+pub func DateInterval.end(self: DateInterval) -> Date { Date.from_epoch_day(self.end_value.epoch_day()) }
+/// Returns the interval length in civil days.
+pub func DateInterval.days(self: DateInterval) -> Int { self.end_value.epoch_day() - self.start_value.epoch_day() }
+/// Returns whether the interval contains a date.
+pub func DateInterval.contains?(self: DateInterval, date: Date) -> Bool {
+    date.epoch_day() >= self.start_value.epoch_day() && date.epoch_day() < self.end_value.epoch_day()
+}
+
+/// Adds the date-bearing portion of a span.
+func add_date_parts(date: Date, span: Span, overflow: Overflow) -> Result<Date, CivilError> {
+    let month_index = date.year_value * 12 + date.month_value - 1 + span.years() * 12 + span.months()
+    let year = floor_div(month_index, 12)
+    let month = month_index - year * 12 + 1
+    let maximum = days_in_month(year, month)
+    branch {
+        date.day_value <= maximum -> Result.Ok(Date { year_value: year, month_value: month, day_value: date.day_value }.add_days(span.weeks() * 7 + span.days()))
+        _ -> branch overflow {
+            Overflow.Constrain -> Result.Ok(Date { year_value: year, month_value: month, day_value: maximum }.add_days(span.weeks() * 7 + span.days()))
+            Overflow.Reject -> invalid_date("day", date.day_value, "calendar addition produced an invalid day")
+        }
+    }
+}
+
+/// Returns whether an ISO year is a leap year.
+func leap_year?(year: Int) -> Bool {
+    floor_mod(year, 4) == 0 && (floor_mod(year, 100) != 0 || floor_mod(year, 400) == 0)
+}
+
+/// Returns the number of days in an ISO month, or zero for an invalid month.
+func days_in_month(year: Int, month: Int) -> Int {
+    branch {
+        month == 2 -> branch { leap_year?(year) -> 29 _ -> 28 }
+        month == 4 || month == 6 || month == 9 || month == 11 -> 30
+        month >= 1 && month <= 12 -> 31
+        _ -> 0
+    }
+}
+
+/// Converts an ISO civil date to a Unix epoch day.
+func days_from_civil(year: Int, month: Int, day: Int) -> Int {
+    let adjusted_year = branch { month <= 2 -> year - 1 _ -> year }
+    let era = floor_div(adjusted_year, 400)
+    let year_of_era = adjusted_year - era * 400
+    let shifted_month = branch { month > 2 -> month - 3 _ -> month + 9 }
+    let day_of_year = (153 * shifted_month + 2) / 5 + day - 1
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year
+    era * 146097 + day_of_era - 719468
+}
+
+/// Converts a Unix epoch day to an ISO civil date.
+func civil_from_days(epoch_day: Int) -> Date {
+    let shifted = epoch_day + 719468
+    let era = floor_div(shifted, 146097)
+    let day_of_era = shifted - era * 146097
+    let year_of_era = (day_of_era - day_of_era / 1460 + day_of_era / 36524 - day_of_era / 146096) / 365
+    let base_year = year_of_era + era * 400
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100)
+    let shifted_month = (5 * day_of_year + 2) / 153
+    let day = day_of_year - (153 * shifted_month + 2) / 5 + 1
+    let month = branch { shifted_month < 10 -> shifted_month + 3 _ -> shifted_month - 9 }
+    let year = branch { month <= 2 -> base_year + 1 _ -> base_year }
+    Date { year_value: year, month_value: month, day_value: day }
+}
+
+/// Maps an ISO weekday number to its case.
+func weekday_from_number(value: Int) -> Weekday {
+    branch {
+        value == 1 -> Weekday.Monday
+        value == 2 -> Weekday.Tuesday
+        value == 3 -> Weekday.Wednesday
+        value == 4 -> Weekday.Thursday
+        value == 5 -> Weekday.Friday
+        value == 6 -> Weekday.Saturday
+        _ -> Weekday.Sunday
+    }
+}
+
+/// Divides integers with a result rounded toward negative infinity.
+func floor_div(value: Int, divisor: Int) -> Int {
+    let quotient = value / divisor
+    let remainder = value - quotient * divisor
+    branch { remainder < 0 -> quotient - 1 _ -> quotient }
+}
+
+/// Returns a nonnegative mathematical remainder.
+func floor_mod(value: Int, divisor: Int) -> Int { value - floor_div(value, divisor) * divisor }
+
+/// Compares two integers.
+func compare_int(left: Int, right: Int) -> Ordering {
+    branch { left < right -> Ordering.Less left > right -> Ordering.Greater _ -> Ordering.Equal }
+}
+
+/// Constructs a date-shaped validation error.
+func invalid_date(field: String, value: Int, message: String) -> Result<Date, CivilError> {
+    Result.Error(CivilError { field, value, message })
+}
+
+/// Constructs a time-shaped validation error.
+func invalid_time(field: String, value: Int, message: String) -> Result<TimeOfDay, CivilError> {
+    Result.Error(CivilError { field, value, message })
+}
+
+/// Constructs an invalid year-month result.
+func invalid_year_month(value: Int) -> Result<YearMonth, CivilError> {
+    Result.Error(CivilError { field: "month", value, message: "month must be between 1 and 12" })
+}
+
+test "civil dates round trip epoch days and expose ISO calendar facts" {
+    branch Date.from(2000, 2, 29) {
+        Result.Error(_) -> {
+            assert(false, "valid leap day was rejected")
+            ()
+        }
+        Result.Ok(date) -> {
+            assert(Date.from_epoch_day(date.epoch_day()).equal?(date))
+            assert(date.day_of_year() == 60)
+            branch date.weekday() {
+                Weekday.Tuesday -> ()
+                _ -> {
+                    assert(false, "leap-day weekday was incorrect")
+                    ()
+                }
+            }
+            ()
+        }
+    }
+    assert(Date.from_epoch_day(0).year() == 1970)
+    assert(Date.from_epoch_day(-1).day() == 31)
+}
+
+test "calendar spans distinguish constraining and rejecting month arithmetic" {
+    branch Date.from(2024, 1, 31) {
+        Result.Error(_) -> {
+            assert(false, "valid date was rejected")
+            ()
+        }
+        Result.Ok(date) -> {
+            branch date.add(Span.from_months(1), Overflow.Constrain) {
+                Result.Error(_) -> {
+                    assert(false, "constrained month addition failed")
+                    ()
+                }
+                Result.Ok(adjusted) -> {
+                    assert(adjusted.day() == 29)
+                    ()
+                }
+            }
+            assert(date.add(Span.from_months(1), Overflow.Reject).error?())
+            ()
+        }
+    }
+}
+
+test "civil date-times carry clock overflow into their date" {
+    let date = Date.from_epoch_day(0)
+    let time = TimeOfDay.from_nanosecond_of_day(23 * 3600 * 1000000000)
+    branch DateTime.from(move date, move time).add(Span.from(0, 0, 0, 0, 2, 0, 0, 0), Overflow.Reject) {
+        Result.Error(_) -> {
+            assert(false, "valid clock addition failed")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.date().epoch_day() == 1)
+            assert(value.time().hour() == 1)
+            ()
+        }
+    }
+}
+
+test "ISO calendar time fields and partial dates validate their domains" {
+    let calendar = IsoCalendar.new()
+    assert(calendar.id() == "iso8601")
+    assert(calendar.leap_year?(2000))
+    assert(not calendar.leap_year?(1900))
+    assert(calendar.days_in_month(2024, 2) == 29)
+    assert(TimeOfDay.from(24, 0, 0, 0).error?())
+    branch TimeOfDay.from(12, 34, 56, 789) {
+        Result.Error(_) -> {
+            assert(false, "valid civil time was rejected")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.hour() == 12 && value.minute() == 34)
+            assert(value.second() == 56 && value.nanosecond() == 789)
+            assert(TimeOfDay.from_nanosecond_of_day(value.nanosecond_of_day()).equal?(value))
+            ()
+        }
+    }
+    branch YearMonth.from(2024, 2) {
+        Result.Error(_) -> {
+            assert(false, "valid year-month was rejected")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.year() == 2024 && value.month() == 2 && value.days() == 29)
+            assert(value.on_day(29).success?())
+            ()
+        }
+    }
+    assert(YearMonth.from(2024, 13).error?())
+    branch MonthDay.from(2, 29) {
+        Result.Error(_) -> {
+            assert(false, "valid recurring leap day was rejected")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.month() == 2 && value.day() == 29)
+            assert(value.in_year(2023).error?())
+            ()
+        }
+    }
+}
+
+test "calendar spans and civil intervals keep non-exact units explicit" {
+    let span = Span.from(1, 2, 3, 4, 5, 6, 7, 8)
+    assert(span.years() == 1 && span.months() == 2 && span.weeks() == 3 && span.days() == 4)
+    assert(span.hours() == 5 && span.minutes() == 6 && span.seconds() == 7 && span.nanoseconds() == 8)
+    assert(span.add(span.negated()).years() == 0)
+    assert(Date.from_epoch_day(0).add(Span.from(0, 0, 0, 0, 1, 0, 0, 0), Overflow.Reject).error?())
+    assert(DateInterval.from(Date.from_epoch_day(2), Date.from_epoch_day(1)).error?())
+    branch DateInterval.from(Date.from_epoch_day(-1), Date.from_epoch_day(2)) {
+        Result.Error(_) -> {
+            assert(false, "ordered civil interval was rejected")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.days() == 3)
+            assert(value.contains?(Date.from_epoch_day(0)))
+            assert(not value.contains?(Date.from_epoch_day(2)))
+            ()
+        }
+    }
+}

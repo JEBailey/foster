@@ -6,9 +6,10 @@ compatibility promises or a release schedule. Items move into the language desig
 after the compiler, runtime, and tests agree on their behavior.
 
 The implemented baseline already includes transparent type aliases, compile-time module constants,
-enum and literal patterns, a per-machine host context, and the initial Cranelift backend for scalar
-values, strings, and read-only command arguments. The items below describe the remaining extensions
-to those facilities rather than proposing them from scratch.
+enum and literal patterns, a per-machine host context, the exact/civil/zoned `std.time` taxonomy,
+and the initial Cranelift backend for scalar values, strings, and read-only command arguments. The
+items below describe the remaining extensions to those facilities rather than proposing them from
+scratch.
 
 ## Strengthen the existing model
 
@@ -53,8 +54,17 @@ work.
 ## Runtime and platform
 
 - Generalize the implemented per-machine `HostContext` into a pluggable host-provider boundary and
-  expose explicit filesystem and network capability tokens suitable for production, sandboxed, and
-  in-memory hosts. These would complement the existing structural resource contracts.
+  expose explicit filesystem, network, wall-clock, and monotonic-clock capability tokens suitable
+  for production, sandboxed, deterministic, and in-memory hosts. These would complement the
+  existing structural resource and `Clock<T>` contracts.
+- Supply a versioned IANA time-zone database behind `TimeZoneDatabase`, including aliases,
+  transition lookup, a deliberate system-zone API, and reproducible tzdata selection. The current
+  `TimeZone` contract, fixed-offset implementation, and explicit unique/ambiguous/skipped local
+  resolution are already implemented.
+- Extend the time modules with unit-selected `until`/`since`, rounding and balancing, calendar-span
+  difference, transition introspection, reusable format patterns, and locale providers. Add
+  non-ISO calendar implementations behind `Calendar` only when their era and month semantics have
+  explicit contracts; the ISO calendar remains the portable baseline.
 - Add socket readiness and TLS support to the I/O boundary, and extend resource providers beyond
   the current whole-file and TCP implementations.
 - Stabilize a backend-neutral lowered IR.

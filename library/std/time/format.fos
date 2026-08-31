@@ -1,0 +1,292 @@
+//! ISO-8601 and RFC-3339 parsing and formatting for Foster time values.
+
+import core.code_point
+import core.int
+import core.result
+import std.time as exact
+import std.time.civil as civil
+import std.time.zone as zones
+
+/// Describes invalid portable date-time text.
+pub type FormatError = {
+    pub value: String
+    pub message: String
+}
+
+/// Formats an ISO civil date.
+pub func date(value: Date) -> String {
+    format_year(value.year()) + "-" + pad(value.month(), 2) + "-" + pad(value.day(), 2)
+}
+
+/// Formats an ISO civil clock time, omitting insignificant fractional zeros.
+pub func time(value: TimeOfDay) -> String {
+    let base = pad(value.hour(), 2) + ":" + pad(value.minute(), 2) + ":" + pad(value.second(), 2)
+    branch {
+        value.nanosecond() == 0 -> base
+        _ -> base + "." + trim_fraction(pad(value.nanosecond(), 9))
+    }
+}
+
+/// Formats an ISO civil date-time without an offset.
+pub func date_time(value: DateTime) -> String { date(value.date()) + "T" + time(value.time()) }
+
+/// Formats an ISO UTC offset, using `Z` for zero.
+pub func offset(value: Offset) -> String {
+    let seconds = value.seconds()
+    return "Z" if seconds == 0
+    let sign = branch { seconds < 0 -> "-" _ -> "+" }
+    let absolute = seconds.absolute()
+    let hour = absolute / 3600
+    let after_hour = absolute - hour * 3600
+    let minute = after_hour / 60
+    let second = after_hour - minute * 60
+    branch {
+        second == 0 -> sign + pad(hour, 2) + ":" + pad(minute, 2)
+        _ -> sign + pad(hour, 2) + ":" + pad(minute, 2) + ":" + pad(second, 2)
+    }
+}
+
+/// Formats an exact instant as an RFC-3339 UTC timestamp.
+pub func instant(value: Instant) -> String {
+    date_time(DateTime.from_epoch_parts(value.epoch_seconds(), value.nanosecond())) + "Z"
+}
+
+/// Formats a fixed-offset date-time with its numeric offset.
+pub func offset_date_time(value: OffsetDateTime) -> String {
+    date_time(value.local()) + offset(value.offset())
+}
+
+/// Formats a zoned date-time losslessly with its numeric offset and zone identifier.
+pub func zoned_date_time(value: ZonedDateTime) -> String {
+    date_time(value.local()) + offset(value.offset()) + "[" + value.zone_id() + "]"
+}
+
+/// Parses an ISO date in `YYYY-MM-DD` form.
+pub func parse_date(source: String) -> Result<Date, FormatError> {
+    let year = parse_digits(source, 0, 4)
+    let month = parse_digits(source, 5, 7)
+    let day = parse_digits(source, 8, 10)
+    branch {
+        source.length != 10 -> invalid_date(move source, "date must use YYYY-MM-DD")
+        source.slice(4, 5) != "-" || source.slice(7, 8) != "-" -> invalid_date(move source, "date separators must use YYYY-MM-DD")
+        _ -> parsed_date(move source, year, month, day)
+    }
+}
+
+/// Parses an ISO clock time in `HH:MM:SS` form with an optional fractional second.
+pub func parse_time(source: String) -> Result<TimeOfDay, FormatError> {
+    let hour = parse_digits(source, 0, 2)
+    let minute = parse_digits(source, 3, 5)
+    let second = parse_digits(source, 6, 8)
+    let fraction = fractional_nanoseconds(source, 9, source.length)
+    branch {
+        source.length < 8 -> invalid_time(move source, "time must include HH:MM:SS")
+        source.slice(2, 3) != ":" || source.slice(5, 6) != ":" -> invalid_time(move source, "time separators must use HH:MM:SS")
+        source.length == 8 -> parsed_time(move source, hour, minute, second, 0)
+        source.slice(8, 9) != "." -> invalid_time(move source, "fractional seconds must follow a decimal point")
+        source.length > 18 -> invalid_time(move source, "fractional seconds support at most nine digits")
+        _ -> parsed_time(move source, hour, minute, second, fraction)
+    }
+}
+
+/// Parses an ISO civil date-time separated by `T`.
+pub func parse_date_time(source: String) -> Result<DateTime, FormatError> {
+    let parsed_date_value = parse_date(source.slice(0, 10))
+    let parsed_time_value = parse_time(source.slice(11, source.length))
+    branch {
+        source.length < 19 -> invalid_date_time(move source, "date-time must include a date, T, and clock time")
+        source.slice(10, 11) != "T" -> invalid_date_time(move source, "date and time must be separated by T")
+        _ -> combine_date_time(move source, move parsed_date_value, move parsed_time_value)
+    }
+}
+
+/// Parses `Z` or a signed `HH:MM[:SS]` UTC offset.
+pub func parse_offset(source: String) -> Result<Offset, FormatError> {
+    return Result.Ok(Offset.utc()) if source == "Z"
+    let hour = parse_digits(source, 1, 3)
+    let minute = parse_digits(source, 4, 6)
+    let second = branch { source.length == 9 -> parse_digits(source, 7, 9) _ -> 0 }
+    branch {
+        source.length != 6 && source.length != 9 -> invalid_offset(move source, "offset must use Z or signed HH:MM[:SS]")
+        source.slice(0, 1) != "+" && source.slice(0, 1) != "-" -> invalid_offset(move source, "offset must begin with + or -")
+        source.slice(3, 4) != ":" -> invalid_offset(move source, "offset must separate hours and minutes with a colon")
+        source.length == 9 && source.slice(6, 7) != ":" -> invalid_offset(move source, "offset seconds must follow a colon")
+        _ -> parsed_offset(move source, hour, minute, second)
+    }
+}
+
+/// Parses an RFC-3339 instant with `Z` or a numeric UTC offset.
+pub func parse_instant(source: String) -> Result<Instant, FormatError> {
+    branch {
+        source.length < 20 -> invalid_instant(move source, "instant must include a date, time, and UTC offset")
+        source.slice(source.length - 1, source.length) == "Z" -> instant_from_parts(source.slice(0, source.length - 1), "Z", move source)
+        source.length >= 25 && offset_sign_at?(source, source.length - 6) -> instant_from_parts(source.slice(0, source.length - 6), source.slice(source.length - 6, source.length), move source)
+        source.length >= 28 && offset_sign_at?(source, source.length - 9) -> instant_from_parts(source.slice(0, source.length - 9), source.slice(source.length - 9, source.length), move source)
+        _ -> invalid_instant(move source, "instant must end in Z or a numeric UTC offset")
+    }
+}
+
+/// Returns whether the indexed character begins a numeric UTC offset.
+func offset_sign_at?(source: String, index: Int) -> Bool {
+    source.slice(index, index + 1) == "+" || source.slice(index, index + 1) == "-"
+}
+
+/// Converts validated date fields into a typed date result.
+func parsed_date(source: String, year: Int, month: Int, day: Int) -> Result<Date, FormatError> {
+    return invalid_date(move source, "date contains a non-decimal field") if year < 0 || month < 0 || day < 0
+    branch Date.from(year, month, day) {
+        Result.Ok(value) -> Result.Ok(value)
+        Result.Error(error) -> invalid_date(move source, move error.message)
+    }
+}
+
+/// Converts validated time fields into a typed clock result.
+func parsed_time(source: String, hour: Int, minute: Int, second: Int, nanosecond: Int) -> Result<TimeOfDay, FormatError> {
+    return invalid_time(move source, "time contains a non-decimal field") if hour < 0 || minute < 0 || second < 0 || nanosecond < 0
+    branch TimeOfDay.from(hour, minute, second, nanosecond) {
+        Result.Ok(value) -> Result.Ok(value)
+        Result.Error(error) -> invalid_time(move source, move error.message)
+    }
+}
+
+/// Combines independently parsed date and time results.
+func combine_date_time(source: String, parsed_date: Result<Date, FormatError>, parsed_time: Result<TimeOfDay, FormatError>) -> Result<DateTime, FormatError> [consume parsed_date, consume parsed_time] {
+    let date = try move parsed_date
+    let time = try move parsed_time
+    Result.Ok(DateTime.from(move date, move time))
+}
+
+/// Converts validated offset fields into a typed offset result.
+func parsed_offset(source: String, hour: Int, minute: Int, second: Int) -> Result<Offset, FormatError> {
+    return invalid_offset(move source, "offset contains a non-decimal field") if hour < 0 || minute < 0 || second < 0
+    return invalid_offset(move source, "offset minute and second fields must be below 60") if minute > 59 || second > 59
+    let magnitude = hour * 3600 + minute * 60 + second
+    let signed = branch { source.slice(0, 1) == "-" -> -magnitude _ -> magnitude }
+    branch Offset.from_seconds(signed) {
+        Result.Ok(value) -> Result.Ok(value)
+        Result.Error(error) -> invalid_offset(move source, move error.message)
+    }
+}
+
+/// Combines a parsed civil value and offset into an exact instant.
+func instant_from_parts(local_source: String, offset_source: String, source: String) -> Result<Instant, FormatError> {
+    let local = try parse_date_time(move local_source)
+    let offset = try parse_offset(move offset_source)
+    Result.Ok(OffsetDateTime.from_local(local, move offset).instant())
+}
+
+/// Parses decimal digits in one half-open source range, returning -1 on failure.
+func parse_digits(source: String, start: Int, end: Int) -> Int {
+    parse_digits_into(source, start, end, 0)
+}
+
+/// Accumulates decimal digits in one source range.
+func parse_digits_into(source: String, index: Int, end: Int, value: Int) -> Int {
+    return value if index >= end
+    let character = source.slice(index, index + 1)
+    return -1 if character.empty?
+    let digit = character.head.as_int() - 48
+    return -1 if digit < 0 || digit > 9
+    parse_digits_into(source, index + 1, end, value * 10 + digit)
+}
+
+/// Scales one to nine decimal fraction digits to nanoseconds.
+func fractional_nanoseconds(source: String, start: Int, end: Int) -> Int {
+    let parsed = parse_digits(source, start, end)
+    branch {
+        parsed < 0 -> -1
+        _ -> parsed * 10.power(9 - (end - start))
+    }
+}
+
+/// Pads a nonnegative number to a minimum decimal width.
+func pad(value: Int, width: Int) -> String { pad_text(value.as_string(), width) }
+
+/// Prepends zeroes until text reaches a minimum width.
+func pad_text(value: String, width: Int) -> String {
+    branch { value.length >= width -> value _ -> pad_text("0" + value, width) }
+}
+
+/// Formats an ISO year with at least four digits.
+func format_year(year: Int) -> String {
+    branch { year < 0 -> "-" + pad((-year), 4) _ -> pad(year, 4) }
+}
+
+/// Removes insignificant zeroes from a nine-digit fractional second.
+func trim_fraction(value: String) -> String {
+    branch {
+        value.empty? -> value
+        value.ends_with?("0") -> trim_fraction(value.slice(0, value.length - 1))
+        _ -> value
+    }
+}
+
+/// Constructs a date parse error.
+func invalid_date(value: String, message: String) -> Result<Date, FormatError> {
+    Result.Error(FormatError { value, message })
+}
+
+/// Constructs a time parse error.
+func invalid_time(value: String, message: String) -> Result<TimeOfDay, FormatError> {
+    Result.Error(FormatError { value, message })
+}
+
+/// Constructs a date-time parse error.
+func invalid_date_time(value: String, message: String) -> Result<DateTime, FormatError> {
+    Result.Error(FormatError { value, message })
+}
+
+/// Constructs an offset parse error.
+func invalid_offset(value: String, message: String) -> Result<Offset, FormatError> {
+    Result.Error(FormatError { value, message })
+}
+
+/// Constructs an instant parse error.
+func invalid_instant(value: String, message: String) -> Result<Instant, FormatError> {
+    Result.Error(FormatError { value, message })
+}
+
+test "ISO civil values parse and format without losing precision" {
+    branch parse_date_time("2024-02-29T23:59:58.123400") {
+        Result.Error(_) -> {
+            assert(false, "valid ISO date-time was rejected")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(date_time(move value) == "2024-02-29T23:59:58.1234")
+            ()
+        }
+    }
+}
+
+test "RFC-3339 instants normalize numeric offsets" {
+    branch parse_instant("1970-01-01T02:00:00+02:00") {
+        Result.Error(_) -> {
+            assert(false, "valid offset instant was rejected")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.equal?(Instant.epoch()))
+            assert(instant(move value) == "1970-01-01T00:00:00Z")
+            ()
+        }
+    }
+}
+
+test "portable parsers reject invalid calendar and offset fields" {
+    assert(parse_date("2023-02-29").error?())
+    assert(parse_time("24:00:00").error?())
+    assert(parse_offset("+25:00").error?())
+}
+
+test "ISO formatters cover partial offsets and zoned annotations" {
+    assert(date(Date.from_epoch_day(0)) == "1970-01-01")
+    assert(time(TimeOfDay.midnight()) == "00:00:00")
+    let offset_value = branch parse_offset("-05:30:15") { Result.Ok(value) -> value Result.Error(_) -> Offset.utc() }
+    assert(offset(offset_value) == "-05:30:15")
+    let local = DateTime.from(Date.from_epoch_day(0), TimeOfDay.midnight())
+    let fixed = OffsetDateTime.from_local(local, move offset_value)
+    assert(offset_date_time(move fixed) == "1970-01-01T00:00:00-05:30:15")
+    let zoned = ZonedDateTime.from_instant(Instant.epoch(), FixedOffsetZone.utc())
+    assert(zoned_date_time(move zoned) == "1970-01-01T00:00:00Z[UTC]")
+}
