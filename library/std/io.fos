@@ -129,6 +129,7 @@ type IoTestWriter = & Writer<IoTestError> & {
     chunk_size: Int
 }
 
+/// Reads a bounded chunk for the generic stream contract test.
 func IoTestReader.read(self: IoTestReader, maximum: Int) -> Result<Bytes, IoTestError> [mut self.remaining, read self.chunk_size] {
     let limit = branch { maximum < self.chunk_size -> maximum _ -> self.chunk_size }
     let amount = branch { limit < self.remaining.length -> limit _ -> self.remaining.length }
@@ -137,16 +138,19 @@ func IoTestReader.read(self: IoTestReader, maximum: Int) -> Result<Bytes, IoTest
     Result.Ok(chunk)
 }
 
+/// Accepts a bounded chunk for the generic stream contract test.
 func IoTestWriter.write(self: IoTestWriter, contents: Bytes) -> Result<Int, IoTestError> [mut self.contents, read self.chunk_size] {
     let amount = branch { self.chunk_size < contents.length -> self.chunk_size _ -> contents.length }
     self.contents = self.contents.concat(contents.slice(0, amount))
     Result.Ok(amount)
 }
 
+/// Completes a test writer flush.
 func IoTestWriter.flush(self: IoTestWriter) -> Result<(), IoTestError> {
     Result.Ok(())
 }
 
+/// Extracts valid hexadecimal bytes for stream fixtures.
 func io_test_bytes(outcome: Result<Bytes, bytes::HexError>) -> Bytes {
     branch outcome {
         Result.Ok(contents) -> contents
@@ -154,6 +158,7 @@ func io_test_bytes(outcome: Result<Bytes, bytes::HexError>) -> Bytes {
     }
 }
 
+/// Asserts one stream-test condition while keeping branch result types uniform.
 func io_test_require(condition: Bool, message: String) -> () {
     assert(condition, message)
     ()

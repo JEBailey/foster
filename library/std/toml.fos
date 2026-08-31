@@ -1721,6 +1721,7 @@ test "TOML parses queries renders and reports positioned errors" {
     }
 }
 
+/// Scores one TOML value category for round-trip test coverage.
 func test_score_value(value: TomlValue) -> Int {
     branch value {
         TomlValue.String(_) -> 1
@@ -1733,11 +1734,13 @@ func test_score_value(value: TomlValue) -> Int {
     }
 }
 
+/// Accumulates TOML value-category scores across test entries.
 func test_score_entries(entries: List<TomlEntry>) -> Int {
     return 0 if entries.empty?
     test_score_value(entries.head.value) + test_score_entries(entries.rest)
 }
 
+/// Confirms that a failed parse retains a positioned diagnostic.
 func test_error_score(outcome: Result<TomlDocument, TomlError>) -> Int {
     branch outcome {
         Result.Ok(_) -> 0
@@ -1750,6 +1753,7 @@ func test_error_score(outcome: Result<TomlDocument, TomlError>) -> Int {
     }
 }
 
+/// Asserts one TOML test condition while keeping branch result types uniform.
 func test_require(condition: Bool, message: String) -> () {
     assert(condition, message)
     ()

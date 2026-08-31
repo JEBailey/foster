@@ -5,19 +5,30 @@ This document collects work that is not part of the implemented language describ
 compatibility promises or a release schedule. Items move into the language design document only
 after the compiler, runtime, and tests agree on their behavior.
 
+The implemented baseline already includes transparent type aliases, compile-time module constants,
+enum and literal patterns, a per-machine host context, and the initial Cranelift backend for scalar
+values, strings, and read-only command arguments. The items below describe the remaining extensions
+to those facilities rather than proposing them from scratch.
+
 ## Strengthen the existing model
 
 The immediate priority is to make the ownership, group, effect, and structural-contract model more
 general without weakening its current guarantees.
 
 - Generalize path-correlated loan states beyond direct stable predicates to compound conditions,
-  computed values, and richer range facts.
-- Generalize interprocedural `reshape` metadata and projected-reference invalidation.
-- Define method-level generic requirements and default contract implementations.
+  computed values, and richer range facts. Stable Boolean places, enum discriminants, and direct
+  scalar comparisons are already correlated.
+- Generalize interprocedural `reshape` metadata and projected-reference invalidation beyond the
+  implemented fixed-point summaries for direct calls, including equivalent provenance through
+  erased callable contracts.
+- Define method-level generic requirements, default contract implementations, and
+  effect-polymorphic callable contracts.
 - Decide whether public APIs require explicit annotations beyond the checks already performed by
   inference.
 - Define explicit re-exports while preserving the filesystem-derived module model and declarations
   that are private by default.
+- Finish explicit ownership-MIR failure edges for dynamic runtime errors, then define resource
+  destructors, destruction order, and unwinding behavior before a stable release.
 
 The focused [ownership](ownership.md), [closure](closures.md), and
 [effect derivation](effect-derivation.md) documents contain the detailed constraints behind this
@@ -26,11 +37,13 @@ work.
 ## Complete everyday language facilities
 
 - Add record and list patterns, branch guards, and more precise exhaustiveness checking for literal
-  domains.
+  domains. Enum cases, nested enum payloads, bindings, wildcards, and scalar literal patterns are
+  already implemented.
 - Design functional record updates.
-- Decide on transparent aliases and distinct wrapper declarations.
-- Improve compile-time constants while retaining declaration-only module bodies and avoiding
-  observable module initialization order.
+- Design distinct nominal wrapper declarations beyond the implemented transparent aliases.
+- Extend compile-time constant expressions beyond primitive literals, constant references,
+  unary-negative numeric literals, and recursively constant homogeneous lists while retaining
+  declaration-only module bodies and avoiding observable module initialization order.
 - Decide whether typed error effects or explicit error-conversion protocols should complement the
   implemented `try` propagation over `Result<T, E>` values.
 - Define aggregate copy/clone contracts; today copy behavior is limited to built-in copy values.
@@ -39,15 +52,15 @@ work.
 
 ## Runtime and platform
 
-- Introduce explicit host-provider filesystem and network capability tokens suitable for
-  production, sandboxed, and in-memory hosts; these would complement the existing structural
-  resource contracts.
+- Generalize the implemented per-machine `HostContext` into a pluggable host-provider boundary and
+  expose explicit filesystem and network capability tokens suitable for production, sandboxed, and
+  in-memory hosts. These would complement the existing structural resource contracts.
 - Add socket readiness and TLS support to the I/O boundary, and extend resource providers beyond
   the current whole-file and TCP implementations.
 - Stabilize a backend-neutral lowered IR.
-- Extend the initial Cranelift AOT backend from primitive values to aggregates, closures, native
-  runtime services, and cross-target object output while retaining the register VM as the semantic
-  reference.
+- Extend the Cranelift AOT backend beyond its current scalar, string-constant, and read-only command
+  argument subset to general strings and lists, records, enums, references, closures, native runtime
+  services, and cross-target object output while retaining the register VM as the semantic reference.
 - Compact the bytecode encoding after its instruction model is stable.
 
 ## Longer-horizon questions

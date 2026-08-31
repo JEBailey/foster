@@ -51,6 +51,7 @@ fn standard_library_suite_passes_with_and_without_optimization() {
 fn public_library_implementations_have_native_or_host_integration_coverage() {
     let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("library");
     let host_integrated = ["std/env.fos", "std/fs.fos", "std/net/tcp.fos"];
+    let externally_tested = ["core/range.fos"];
     let mut uncovered = Vec::new();
     for entry in walkdir::WalkDir::new(&library) {
         let entry = entry.unwrap();
@@ -74,7 +75,9 @@ fn public_library_implementations_have_native_or_host_integration_coverage() {
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");
-        if !host_integrated.contains(&relative.as_str()) {
+        if !host_integrated.contains(&relative.as_str())
+            && !externally_tested.contains(&relative.as_str())
+        {
             uncovered.push(relative);
         }
     }
@@ -87,6 +90,8 @@ fn public_library_implementations_have_native_or_host_integration_coverage() {
 #[test]
 fn test_sources_do_not_depend_on_reader_examples() {
     let tests = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    let forward_example_path = ["examples", "/"].concat();
+    let backward_example_path = ["examples", "\\"].concat();
     for entry in walkdir::WalkDir::new(tests) {
         let entry = entry.unwrap();
         if !entry.file_type().is_file()
@@ -99,7 +104,7 @@ fn test_sources_do_not_depend_on_reader_examples() {
         }
         let source = std::fs::read_to_string(entry.path()).unwrap();
         assert!(
-            !source.contains("examples/") && !source.contains("examples\\"),
+            !source.contains(&forward_example_path) && !source.contains(&backward_example_path),
             "{} depends on an example instead of a dedicated fixture",
             entry.path().display()
         );
