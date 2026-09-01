@@ -11,7 +11,8 @@ use super::{
     verify,
 };
 use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
-use crate::hir::{Builtin, CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
+use crate::hir::{CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
+use crate::intrinsics::Builtin;
 use crate::types::{DispatchSlot, NominalTypeId};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
@@ -174,76 +175,6 @@ fn raw<T>(id: Idx<T>) -> u32 {
 }
 fn id<T>(value: u32) -> Idx<T> {
     Idx::from_raw(RawIdx::from_u32(value))
-}
-
-const BUILTINS: &[Builtin] = &[
-    Builtin::Print,
-    Builtin::Println,
-    Builtin::FromCodePoint,
-    Builtin::ParseFloat,
-    Builtin::FormatFloat,
-    Builtin::ByteValid,
-    Builtin::ByteUnchecked,
-    Builtin::BytesEmpty,
-    Builtin::BytesFromList,
-    Builtin::BytesConcat,
-    Builtin::BytesSlice,
-    Builtin::BytesToList,
-    Builtin::BytesHex,
-    Builtin::BytesFromHex,
-    Builtin::StringUtf8,
-    Builtin::BytesUtf8Valid,
-    Builtin::BytesDecodeUtf8,
-    Builtin::ByteBufferEmpty,
-    Builtin::ByteBufferWithCapacity,
-    Builtin::ByteBufferPush,
-    Builtin::ByteBufferExtend,
-    Builtin::ByteBufferClear,
-    Builtin::ByteBufferTruncate,
-    Builtin::ByteBufferReserve,
-    Builtin::ByteBufferFreeze,
-    Builtin::ByteBufferSnapshot,
-    Builtin::IoReadText,
-    Builtin::IoWriteText,
-    Builtin::IoReadBytes,
-    Builtin::IoWriteBytes,
-    Builtin::IoListDirectory,
-    Builtin::IoExists,
-    Builtin::IoIsFile,
-    Builtin::IoIsDirectory,
-    Builtin::IoCreateDirectory,
-    Builtin::IoCreateDirectoryAll,
-    Builtin::IoRemoveFile,
-    Builtin::IoRemoveDirectory,
-    Builtin::IoRename,
-    Builtin::IoCopyFile,
-    Builtin::IoJoin,
-    Builtin::IoParent,
-    Builtin::IoFileName,
-    Builtin::IoExtension,
-    Builtin::IoCanonicalize,
-    Builtin::IoCurrentDirectory,
-    Builtin::TcpListen,
-    Builtin::TcpConnect,
-    Builtin::TcpAccept,
-    Builtin::TcpRead,
-    Builtin::TcpWrite,
-    Builtin::TcpReadBytes,
-    Builtin::TcpWriteBytes,
-    Builtin::TcpSetTimeout,
-    Builtin::TcpCloseListener,
-    Builtin::TcpCloseConnection,
-    Builtin::IoReadRange,
-    Builtin::IoAppendBytes,
-    Builtin::IoFileLength,
-    Builtin::TimeWallNow,
-    Builtin::TimeMonotonicNow,
-];
-fn builtin_tag(value: Builtin) -> u8 {
-    BUILTINS.iter().position(|item| *item == value).unwrap() as u8
-}
-fn builtin_from_tag(tag: u8) -> Option<Builtin> {
-    BUILTINS.get(tag as usize).copied()
 }
 
 mod read;

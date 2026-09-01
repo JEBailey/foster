@@ -4,6 +4,7 @@
 pub mod archive;
 pub mod ast;
 pub mod block;
+pub mod compiler;
 mod control_flow;
 pub mod diagnostic;
 pub mod documentation;
@@ -11,6 +12,7 @@ pub mod entry;
 pub mod error;
 pub mod formatter;
 pub mod hir;
+pub mod intrinsics;
 pub mod lexer;
 pub mod lsp;
 pub mod native;
@@ -56,19 +58,19 @@ pub fn run_with_arguments(
     vm::run_with_arguments(&compile(source)?, vm::CompileOptions::default(), arguments)
 }
 
-pub fn compile(source: &str) -> Result<hir::Compilation, FosterError> {
+pub fn compile(source: &str) -> Result<compiler::Compilation, FosterError> {
     let program = parse(source)?;
-    hir::Compilation::new(package::Package::from_program_with_core("main", program)?)
+    compiler::check(package::Package::from_program_with_core("main", program)?)
 }
 
-pub fn check_package(source_root: impl AsRef<Path>) -> Result<hir::Compilation, FosterError> {
+pub fn check_package(source_root: impl AsRef<Path>) -> Result<compiler::Compilation, FosterError> {
     let package = package::Package::load(source_root)?;
-    hir::Compilation::new(package)
+    compiler::check(package)
 }
 
-pub fn check_project(project: &project::Project) -> Result<hir::Compilation, FosterError> {
+pub fn check_project(project: &project::Project) -> Result<compiler::Compilation, FosterError> {
     let package = package::Package::load_project(project)?;
-    hir::Compilation::new(package)
+    compiler::check(package)
 }
 
 pub fn run_package(source_root: impl AsRef<Path>) -> Result<Value, FosterError> {

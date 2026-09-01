@@ -1,7 +1,7 @@
 use super::queries::expression_uses_local;
 use super::*;
 
-pub(super) fn check_closure_ownership(hir: &PackageHir) -> Result<(), FosterError> {
+pub(crate) fn check_closure_ownership(hir: &PackageHir) -> Result<(), FosterError> {
     for (function_id, function) in hir.functions.iter() {
         let mut moved = std::collections::HashSet::<LocalId>::new();
         check_closure_statement_block(
@@ -75,7 +75,7 @@ fn check_closure_statement_block(
     Ok(())
 }
 
-pub(super) fn validate_groups_and_effects(hir: &PackageHir) -> Result<(), FosterError> {
+pub(crate) fn validate_groups_and_effects(hir: &PackageHir) -> Result<(), FosterError> {
     for (_, function) in hir.functions.iter() {
         let is_method = function.receiver.is_some();
         let parameter_names = function
@@ -221,7 +221,7 @@ fn validate_type_groups(
     Ok(())
 }
 
-pub(super) fn infer_ref_capture_effects(hir: &mut PackageHir) {
+pub(crate) fn infer_ref_capture_effects(hir: &mut PackageHir) {
     let closures = hir
         .expressions
         .iter()
@@ -335,7 +335,7 @@ fn statement_expressions(statement: &Stmt) -> Vec<ExprId> {
     }
 }
 
-pub(super) fn infer_capture_modes(
+pub(crate) fn infer_capture_modes(
     hir: &mut PackageHir,
     types: &crate::types::TypeInformation,
 ) -> Result<(), FosterError> {

@@ -2,7 +2,8 @@ use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 
 use crate::error::{FosterError, RuntimeError};
-use crate::hir::{Builtin, CaptureMode, FunctionId};
+use crate::hir::{CaptureMode, FunctionId};
+use crate::intrinsics::Builtin;
 
 use super::operations::{binary, constant_value, unary};
 use super::patterns::matches as match_pattern;

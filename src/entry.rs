@@ -1,8 +1,8 @@
 //! Command-entry conventions shared by the VM and native backend.
 
 use crate::error::FosterError;
-use crate::hir::{Compilation, FunctionId};
-use crate::types::Type;
+use crate::hir::{FunctionId, PackageHir};
+use crate::types::{Type, TypeInformation};
 
 pub const ARGUMENTS_MODULE: &str = "std.process";
 pub const ARGUMENTS_TYPE: &str = "Arguments";
@@ -30,17 +30,17 @@ impl CommandArguments {
 
 /// Validate the language-level entry signature and report whether it accepts command arguments.
 pub(crate) fn accepts_arguments(
-    compilation: &Compilation,
+    hir: &PackageHir,
+    types: &TypeInformation,
     main: FunctionId,
 ) -> Result<bool, FosterError> {
-    let definition = &compilation.hir.functions[main];
-    let signature = compilation
-        .types
+    let definition = &hir.functions[main];
+    let signature = types
         .function_type(main)
         .ok_or_else(|| FosterError::runtime("`main` is missing type information"))?;
     match signature.parameters.as_slice() {
         [] => Ok(false),
-        [parameter] if is_arguments_type(compilation, *parameter) => Ok(true),
+        [parameter] if is_arguments_type(hir, types, *parameter) => Ok(true),
         _ => Err(FosterError::new(
             "`main` must take no parameters or one `std.process.Arguments` parameter",
             0,
@@ -55,11 +55,15 @@ pub(crate) fn accepts_arguments(
     }
 }
 
-pub(crate) fn is_arguments_type(compilation: &Compilation, ty: crate::types::TypeId) -> bool {
-    let Type::Record { record, arguments } = &compilation.types.types[ty] else {
+pub(crate) fn is_arguments_type(
+    hir: &PackageHir,
+    types: &TypeInformation,
+    ty: crate::types::TypeId,
+) -> bool {
+    let Type::Record { record, arguments } = &types.types[ty] else {
         return false;
     };
     arguments.is_empty()
-        && compilation.hir.records[*record].name == ARGUMENTS_TYPE
-        && compilation.hir.modules[compilation.hir.records[*record].module].name == ARGUMENTS_MODULE
+        && hir.records[*record].name == ARGUMENTS_TYPE
+        && hir.modules[hir.records[*record].module].name == ARGUMENTS_MODULE
 }

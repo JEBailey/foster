@@ -4,7 +4,8 @@ use lsp_types::{
     ParameterInformation, ParameterLabel, SignatureHelp, SignatureHelpParams, SignatureInformation,
 };
 
-use crate::hir::{Compilation, Expr, ExprId, LocalKind};
+use crate::compiler::Compilation;
+use crate::hir::{Expr, ExprId, LocalKind};
 
 use super::byte_range_to_lsp;
 use super::snapshot::SemanticSnapshot;

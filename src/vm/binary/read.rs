@@ -364,7 +364,8 @@ impl<'a> Reader<'a> {
         self.vec(|r| Ok((r.capture_mode()?, r.reg()?)))
     }
     pub(super) fn builtin(&mut self) -> Result<Builtin, BinaryError> {
-        builtin_from_tag(self.u8()?).ok_or_else(|| BinaryError::new("unknown builtin tag"))
+        Builtin::from_bytecode_tag(self.u8()?)
+            .ok_or_else(|| BinaryError::new("unknown builtin tag"))
     }
     pub(super) fn pattern(&mut self) -> Result<Pattern, BinaryError> {
         Ok(match self.u8()? {

@@ -4,16 +4,13 @@ use la_arena::{Arena, Idx};
 
 use crate::ast;
 use crate::error::FosterError;
+use crate::intrinsics::Builtin;
 use crate::package::Package;
 
 mod lower;
-mod ownership;
+pub(crate) mod ownership;
 pub(crate) mod queries;
 pub(crate) mod visit;
-use ownership::{
-    check_closure_ownership, infer_capture_modes, infer_ref_capture_effects,
-    validate_groups_and_effects,
-};
 
 pub type ModuleId = Idx<Module>;
 pub type FunctionId = Idx<Function>;
@@ -23,15 +20,6 @@ pub type VariantTypeId = Idx<VariantType>;
 pub type VariantId = Idx<Variant>;
 pub type LocalId = Idx<Local>;
 pub type ExprId = Idx<Expr>;
-
-#[derive(Debug)]
-pub struct Compilation {
-    pub package: Package,
-    pub hir: PackageHir,
-    pub types: crate::types::TypeInformation,
-    pub diagnostics: Vec<crate::diagnostic::Diagnostic>,
-    pub ownership: crate::ownership::Program,
-}
 
 #[derive(Debug, Default)]
 pub struct PackageHir {
@@ -304,71 +292,6 @@ pub enum ResolvedName {
     Variant(VariantId),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Builtin {
-    Print,
-    Println,
-    FromCodePoint,
-    ParseFloat,
-    FormatFloat,
-    ByteValid,
-    ByteUnchecked,
-    BytesEmpty,
-    BytesFromList,
-    BytesConcat,
-    BytesSlice,
-    BytesToList,
-    BytesHex,
-    BytesFromHex,
-    StringUtf8,
-    BytesUtf8Valid,
-    BytesDecodeUtf8,
-    ByteBufferEmpty,
-    ByteBufferWithCapacity,
-    ByteBufferPush,
-    ByteBufferExtend,
-    ByteBufferClear,
-    ByteBufferTruncate,
-    ByteBufferReserve,
-    ByteBufferFreeze,
-    ByteBufferSnapshot,
-    IoReadText,
-    IoWriteText,
-    IoReadBytes,
-    IoWriteBytes,
-    IoListDirectory,
-    IoExists,
-    IoIsFile,
-    IoIsDirectory,
-    IoCreateDirectory,
-    IoCreateDirectoryAll,
-    IoRemoveFile,
-    IoRemoveDirectory,
-    IoRename,
-    IoCopyFile,
-    IoJoin,
-    IoParent,
-    IoFileName,
-    IoExtension,
-    IoCanonicalize,
-    IoCurrentDirectory,
-    TcpListen,
-    TcpConnect,
-    TcpAccept,
-    TcpRead,
-    TcpWrite,
-    TcpReadBytes,
-    TcpWriteBytes,
-    TcpSetTimeout,
-    TcpCloseListener,
-    TcpCloseConnection,
-    IoReadRange,
-    IoAppendBytes,
-    IoFileLength,
-    TimeWallNow,
-    TimeMonotonicNow,
-}
-
 #[derive(Debug, Clone)]
 pub struct BranchArm {
     pub test: BranchTest,
@@ -415,44 +338,5 @@ impl Pattern {
             Self::Spanned { span, .. } => Some(span.clone()),
             _ => None,
         }
-    }
-}
-
-impl Compilation {
-    pub fn new(package: Package) -> Result<Self, FosterError> {
-        let diagnostic_package = package.clone();
-        Self::build(package)
-            .map_err(|error| diagnostic_package.locate_compiler_error(FosterError::from(error)))
-    }
-
-    fn build(package: Package) -> Result<Self, crate::error::CompileError> {
-        use crate::error::CompileError;
-
-        let mut hir = PackageHir::lower(&package).map_err(CompileError::lowering)?;
-        infer_ref_capture_effects(&mut hir);
-        validate_groups_and_effects(&hir).map_err(CompileError::effects)?;
-        let (initial_types, _) = crate::typecheck::check(&mut hir).map_err(CompileError::types)?;
-        infer_capture_modes(&mut hir, &initial_types).map_err(CompileError::ownership)?;
-        let (types, diagnostics) =
-            crate::typecheck::check(&mut hir).map_err(CompileError::types)?;
-        validate_groups_and_effects(&hir).map_err(CompileError::effects)?;
-        check_closure_ownership(&hir).map_err(CompileError::ownership)?;
-        let ownership =
-            crate::ownership::build_and_check(&hir, &types).map_err(CompileError::ownership)?;
-        let compilation = Self {
-            package,
-            hir,
-            types,
-            diagnostics,
-            ownership,
-        };
-        if let Some(main) = compilation
-            .hir
-            .module_named("main")
-            .and_then(|module| compilation.hir.function_named(module, "main"))
-        {
-            crate::entry::accepts_arguments(&compilation, main).map_err(CompileError::types)?;
-        }
-        Ok(compilation)
     }
 }

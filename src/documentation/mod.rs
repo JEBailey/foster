@@ -7,7 +7,7 @@ use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use crate::hir::Compilation;
+use crate::compiler::Compilation;
 
 pub use server::{ServeOptions, serve};
 

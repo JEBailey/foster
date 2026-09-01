@@ -2,7 +2,7 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::{Arc, OnceLock};
 
 use crate::error::RuntimeError;
-use crate::hir::Builtin;
+use crate::intrinsics::Builtin;
 
 use super::Value;
 use super::value::RecordFields;
@@ -171,7 +171,8 @@ pub(super) fn dispatch(
             Builtin::ByteBufferFreeze | Builtin::ByteBufferSnapshot,
             [Value::RawByteBuffer(value)],
         ) => Ok(Value::bytes(value.clone())),
-        _ => host.dispatch(builtin, arguments, string_record),
+        _ if builtin.is_host() => host.dispatch(builtin, arguments, string_record),
+        _ => Err(RuntimeError::runtime("invalid builtin arguments")),
     }
 }
 

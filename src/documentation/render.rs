@@ -1,7 +1,8 @@
 use std::fmt::Write;
 
 use crate::ast::{Effect, EffectKind, ParameterMode, TypeExpr};
-use crate::hir::{Compilation, ConstantId, FunctionId, ModuleId};
+use crate::compiler::Compilation;
+use crate::hir::{ConstantId, FunctionId, ModuleId};
 
 pub(super) const STYLE: &str = r#":root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; line-height: 1.55; }
 * { box-sizing: border-box; }

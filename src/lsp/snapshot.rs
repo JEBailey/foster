@@ -2,7 +2,7 @@ use std::ops::Range as ByteRange;
 
 use lsp_types::{Position, Range, Uri};
 
-use crate::hir::Compilation;
+use crate::compiler::Compilation;
 
 use super::byte_range_to_lsp;
 use super::workspace::{module_for_uri, position_to_offset};

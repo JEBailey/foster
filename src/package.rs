@@ -7,6 +7,7 @@ use walkdir::{DirEntry, WalkDir};
 
 use crate::ast::Program;
 use crate::error::FosterError;
+use crate::intrinsics::Intrinsic;
 
 #[derive(Debug, Clone)]
 struct CachedModule {
@@ -847,18 +848,7 @@ impl Package {
             }
             for function in &program.functions {
                 if let Some(key) = &function.intrinsic {
-                    let registered = match module.name.as_str() {
-                        "core.byte" => matches!(key.as_str(), "byte.valid" | "byte.unchecked"),
-                        "core.bytes" => key.starts_with("bytes."),
-                        "core.bytes.buffer" => key.starts_with("byte_buffer."),
-                        "core.list" => key.starts_with("list."),
-                        "core.float" => key.starts_with("float."),
-                        "std.fs" | "std.path" | "std.env" => key.starts_with("io."),
-                        "std.time" => key.starts_with("time."),
-                        "std.net.tcp" => key.starts_with("tcp."),
-                        _ => false,
-                    } && intrinsic_key_registered(key);
-                    if !registered {
+                    if Intrinsic::for_module(&module.name, key).is_none() {
                         return Err(FosterError::runtime(format!(
                             "intrinsic key `{key}` has no registered runtime implementation"
                         )));
@@ -1049,71 +1039,6 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
         include_str!("../library/std/time/format.fos"),
     ),
 ];
-
-fn intrinsic_key_registered(key: &str) -> bool {
-    matches!(
-        key,
-        "byte.valid"
-            | "byte.unchecked"
-            | "bytes.empty"
-            | "bytes.from_list"
-            | "bytes.from_hex"
-            | "bytes.concat"
-            | "bytes.slice"
-            | "bytes.to_list"
-            | "bytes.hex"
-            | "bytes.encode_utf8"
-            | "bytes.utf8_valid"
-            | "bytes.decode_utf8"
-            | "list.push"
-            | "list.append"
-            | "byte_buffer.empty"
-            | "byte_buffer.with_capacity"
-            | "byte_buffer.push"
-            | "byte_buffer.extend"
-            | "byte_buffer.clear"
-            | "byte_buffer.truncate"
-            | "byte_buffer.reserve"
-            | "byte_buffer.freeze"
-            | "byte_buffer.snapshot"
-            | "io.read_text"
-            | "io.write_text"
-            | "io.read_bytes"
-            | "io.write_bytes"
-            | "io.read_range"
-            | "io.append_bytes"
-            | "io.file_length"
-            | "io.list_directory"
-            | "io.exists"
-            | "io.is_file"
-            | "io.is_directory"
-            | "io.create_directory"
-            | "io.create_directory_all"
-            | "io.remove_file"
-            | "io.remove_directory"
-            | "io.rename"
-            | "io.copy_file"
-            | "io.join"
-            | "io.parent"
-            | "io.file_name"
-            | "io.extension"
-            | "io.canonicalize"
-            | "io.current_directory"
-            | "time.wall_now"
-            | "time.monotonic_now"
-            | "tcp.listen"
-            | "tcp.connect"
-            | "tcp.accept"
-            | "tcp.read"
-            | "tcp.write"
-            | "tcp.read_bytes"
-            | "tcp.write_bytes"
-            | "tcp.set_timeout"
-            | "tcp.close_listener"
-            | "tcp.close_connection"
-            | "float.format"
-    )
-}
 
 fn utf8_source_root(root: &Path) -> Result<Utf8PathBuf, FosterError> {
     if !root.is_dir() {

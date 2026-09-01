@@ -29,12 +29,12 @@ pub use runtime::Capture;
 pub use value::Value;
 pub use verifier::verify;
 
-pub fn run(compilation: &crate::hir::Compilation) -> Result<Value, crate::error::FosterError> {
+pub fn run(compilation: &crate::compiler::Compilation) -> Result<Value, crate::error::FosterError> {
     run_with_options(compilation, CompileOptions::default())
 }
 
 pub fn run_with_options(
-    compilation: &crate::hir::Compilation,
+    compilation: &crate::compiler::Compilation,
     options: CompileOptions,
 ) -> Result<Value, crate::error::FosterError> {
     let program = compile_with_options(compilation, options)?;
@@ -43,7 +43,7 @@ pub fn run_with_options(
 }
 
 pub fn run_with_arguments(
-    compilation: &crate::hir::Compilation,
+    compilation: &crate::compiler::Compilation,
     options: CompileOptions,
     arguments: &crate::entry::CommandArguments,
 ) -> Result<Value, crate::error::FosterError> {

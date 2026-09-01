@@ -3,7 +3,8 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::hir::{Builtin, FunctionId, RecordId, VariantId, VariantTypeId};
+use crate::hir::{FunctionId, RecordId, VariantId, VariantTypeId};
+use crate::intrinsics::Builtin;
 use crate::types::{DispatchSlot, NominalTypeId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

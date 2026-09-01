@@ -334,13 +334,9 @@ impl FunctionLowerer<'_> {
             [_, _, ..] => Err(self.error(format!(
                 "imported name `{name}` is ambiguous; qualify it with its module"
             ))),
-            [] => match name {
-                "print" => Ok(ResolvedName::Builtin(Builtin::Print)),
-                "println" => Ok(ResolvedName::Builtin(Builtin::Println)),
-                "from_code_point" => Ok(ResolvedName::Builtin(Builtin::FromCodePoint)),
-                "parse_float" => Ok(ResolvedName::Builtin(Builtin::ParseFloat)),
-                _ => Err(self.error(format!("unknown name `{name}`"))),
-            },
+            [] => Builtin::from_source_name(name)
+                .map(ResolvedName::Builtin)
+                .ok_or_else(|| self.error(format!("unknown name `{name}`"))),
         }
     }
 

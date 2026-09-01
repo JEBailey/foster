@@ -23,8 +23,9 @@ use predicates::{
 use crate::ast::{BinaryOp, UnaryOp};
 use crate::error::FosterError;
 use crate::hir::{
-    self, Builtin, ConstantId, ExprId, FunctionId, LocalId, RecordId, ResolvedName, VariantTypeId,
+    self, ConstantId, ExprId, FunctionId, LocalId, RecordId, ResolvedName, VariantTypeId,
 };
+use crate::intrinsics::{Builtin, Intrinsic};
 use crate::types::{
     DispatchSlot, DispatchTypeKey, FunctionType, MethodKey, NominalTypeId, ResolvedCall, Type,
     TypeId, TypeInformation,

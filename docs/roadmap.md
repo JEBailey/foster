@@ -35,6 +35,23 @@ The focused [ownership](ownership.md), [closure](closures.md), and
 [effect derivation](effect-derivation.md) documents contain the detailed constraints behind this
 work.
 
+## Compiler architecture
+
+Checked phase orchestration now lives behind `compiler::Compiler` rather than inside HIR, and one
+intrinsic registry owns builtin identities, source keys, declaring modules, host classification,
+and stable bytecode tags. The remaining structural work should preserve that dependency direction:
+
+- Introduce a reusable compiler session and source database so the language server can request
+  checked snapshots without owning a parallel whole-package compilation policy.
+- Extract shared source-signature, type, and effect presentation used by generated documentation
+  and language-server features.
+- Separate package discovery, module graphs, bootstrap-library selection, validation, caching, and
+  source diagnostics into focused modules.
+- Split the ownership region analyses, VM value/place machinery, interpreter, and native backend by
+  phase and state ownership while retaining their current tested semantics.
+- Narrow the public crate surface into supported compiler, tooling, and runtime APIs before the
+  bootstrap implementation reaches a stable release.
+
 ## Complete everyday language facilities
 
 - Add record and list patterns, branch guards, and more precise exhaustiveness checking for literal

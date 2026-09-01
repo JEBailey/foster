@@ -19,8 +19,9 @@ use cranelift_module::{FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 
 use crate::ast::{BinaryOp, UnaryOp};
+use crate::compiler::Compilation;
 use crate::error::FosterError;
-use crate::hir::{Compilation, FunctionId};
+use crate::hir::FunctionId;
 use crate::types::{Type, TypeId};
 use crate::vm::{self, BytecodeFunction, Constant, Instruction, Program, Register};
 
@@ -291,7 +292,9 @@ fn native_type(
         {
             Ok(NativeType::String)
         }
-        Type::Record { .. } if crate::entry::is_arguments_type(compilation, ty) => {
+        Type::Record { .. }
+            if crate::entry::is_arguments_type(&compilation.hir, &compilation.types, ty) =>
+        {
             Ok(NativeType::Arguments)
         }
         Type::Record {

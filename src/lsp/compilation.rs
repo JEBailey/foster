@@ -7,8 +7,8 @@ use camino::Utf8PathBuf;
 use lsp_types::Uri;
 
 use super::workspace::{Workspace, path_to_uri, uri_to_path};
+use crate::compiler::Compilation;
 use crate::error::FosterError;
-use crate::hir::Compilation;
 
 #[derive(Default)]
 pub(super) struct CompilationCache {
@@ -148,7 +148,7 @@ impl Workspace {
                     .as_ref()
                     .is_some_and(|source| source.as_std_path() == path)
             }) {
-                return Compilation::new(package);
+                return crate::compiler::check(package);
             }
         }
 
@@ -176,7 +176,7 @@ impl Workspace {
                     .as_ref()
                     .is_some_and(|source| source.as_std_path() == path)
             }) {
-                return Compilation::new(package);
+                return crate::compiler::check(package);
             }
             if self
                 .root
@@ -228,6 +228,6 @@ impl Workspace {
             .expect("standalone package contains its source module");
         module.source_path = Some(source_path);
         module.source = Some(source);
-        Compilation::new(package)
+        crate::compiler::check(package)
     }
 }

@@ -513,7 +513,7 @@ impl Writer {
         Ok(())
     }
     pub(super) fn builtin(&mut self, value: Builtin) {
-        self.u8(builtin_tag(value));
+        self.u8(value.bytecode_tag());
     }
     pub(super) fn pattern(&mut self, value: &Pattern) -> Result<(), BinaryError> {
         match value {

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
+use crate::compiler::Compilation;
 use crate::error::FosterError;
 use crate::hir::{self, ExprId, FunctionId, LocalId, ResolvedName};
+use crate::intrinsics::Intrinsic;
 use crate::types::TypeInformation;
 
 use super::{
@@ -10,7 +12,7 @@ use super::{
 
 mod lower;
 
-pub fn compile(compilation: &hir::Compilation) -> Result<Program, FosterError> {
+pub fn compile(compilation: &Compilation) -> Result<Program, FosterError> {
     compile_with_options(compilation, CompileOptions::default())
 }
 
@@ -26,7 +28,7 @@ impl Default for CompileOptions {
 }
 
 pub fn compile_with_options(
-    compilation: &hir::Compilation,
+    compilation: &Compilation,
     options: CompileOptions,
 ) -> Result<Program, FosterError> {
     let closure_captures = compilation
@@ -116,7 +118,7 @@ pub fn compile_with_options(
     compiler.program.main_arguments = compiler
         .program
         .main
-        .map(|main| crate::entry::accepts_arguments(compilation, main))
+        .map(|main| crate::entry::accepts_arguments(&compilation.hir, &compilation.types, main))
         .transpose()?
         .unwrap_or(false);
     if options.optimize {
@@ -179,8 +181,9 @@ impl Compiler<'_> {
             let register = lower.allocate();
             lower.locals.insert(*parameter, register);
         }
-        let result = match function.intrinsic.as_deref() {
-            Some("list.push" | "list.append") => {
+        let intrinsic = function.intrinsic.as_deref().and_then(Intrinsic::from_key);
+        let result = match intrinsic {
+            Some(Intrinsic::ListPush | Intrinsic::ListAppend) => {
                 let [receiver, value] = function.parameters.as_slice() else {
                     return Err(FosterError::runtime(format!(
                         "intrinsic `{}` requires a receiver and one value",
@@ -188,13 +191,13 @@ impl Compiler<'_> {
                     )));
                 };
                 let destination = lower.allocate();
-                let instruction = match function.intrinsic.as_deref() {
-                    Some("list.push") => Instruction::Push {
+                let instruction = match intrinsic {
+                    Some(Intrinsic::ListPush) => Instruction::Push {
                         destination,
                         object: lower.locals[receiver],
                         value: lower.locals[value],
                     },
-                    Some("list.append") => Instruction::Append {
+                    Some(Intrinsic::ListAppend) => Instruction::Append {
                         destination,
                         object: lower.locals[receiver],
                         value: lower.locals[value],

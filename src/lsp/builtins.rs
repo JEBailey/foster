@@ -2,7 +2,7 @@ use std::fs;
 
 use lsp_types::Location;
 
-use crate::hir::Builtin;
+use crate::intrinsics::Builtin;
 
 use super::byte_range_to_lsp;
 use super::workspace::path_to_uri;

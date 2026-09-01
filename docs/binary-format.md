@@ -60,7 +60,7 @@ Integer(u64 bits)`, `5 Float(u64 bits)`, `6 String(string)`, `7 CodePoint(string
 Capture modes: `0 Copy`, `1 Move`, `2 Ref`. Parameter modes: `0 Borrow`, `1 Consume`. Unary
 operators: `0 Negate`, `1 Not`, `2 BitNot`. Binary tags in order are Add, Subtract, Multiply,
 Divide, BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight, Equal, NotEqual, Less, LessEqual, Greater,
-GreaterEqual. Builtin tags use `hir::Builtin` declaration order, from `Print = 0` through
+GreaterEqual. Builtin tags use the explicit stable values in the intrinsic registry, from `Print = 0` through
 `TimeMonotonicNow = 60`. Version 14 appended `IoReadRange = 56`, `IoAppendBytes = 57`, and
 `IoFileLength = 58`. Version 15 appends `TimeWallNow = 59` and `TimeMonotonicNow = 60`; all
 earlier tags retain their version 14 values.

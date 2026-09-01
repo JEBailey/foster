@@ -1,5 +1,5 @@
 use super::*;
-use crate::hir::Builtin;
+use crate::intrinsics::{Builtin, Intrinsic};
 
 impl FunctionCompiler<'_> {
     pub(super) fn expression(&mut self, id: ExprId) -> Result<Register, FosterError> {
@@ -209,10 +209,9 @@ impl FunctionCompiler<'_> {
                         let function = *function;
                         let remote = *remote;
                         let receiver = if remote
-                            || matches!(
-                                self.hir.functions[function].intrinsic.as_deref(),
-                                Some("list.push" | "list.append")
-                            )
+                            || self
+                                .intrinsic(function)
+                                .is_some_and(Intrinsic::is_list_operation)
                             || self.read_only_method(function)
                         {
                             self.expression(*object)?
@@ -646,13 +645,17 @@ impl FunctionCompiler<'_> {
         span: std::ops::Range<usize>,
     ) -> Result<bool, FosterError> {
         let [value] = arguments else {
-            return match self.hir.functions[function].intrinsic.as_deref() {
-                Some("list.push" | "list.append") => Err(self.unsupported("list intrinsic arity")),
-                _ => Ok(false),
+            return if self
+                .intrinsic(function)
+                .is_some_and(Intrinsic::is_list_operation)
+            {
+                Err(self.unsupported("list intrinsic arity"))
+            } else {
+                Ok(false)
             };
         };
-        match self.hir.functions[function].intrinsic.as_deref() {
-            Some("list.push") => {
+        match self.intrinsic(function) {
+            Some(Intrinsic::ListPush) => {
                 self.emit(
                     Instruction::Push {
                         destination,
@@ -662,7 +665,7 @@ impl FunctionCompiler<'_> {
                     span,
                 );
             }
-            Some("list.append") => {
+            Some(Intrinsic::ListAppend) => {
                 self.emit(
                     Instruction::Append {
                         destination,
@@ -677,69 +680,15 @@ impl FunctionCompiler<'_> {
         Ok(true)
     }
 
+    fn intrinsic(&self, function: hir::FunctionId) -> Option<Intrinsic> {
+        self.hir.functions[function]
+            .intrinsic
+            .as_deref()
+            .and_then(Intrinsic::from_key)
+    }
+
     fn intrinsic_builtin(&self, function: hir::FunctionId) -> Option<Builtin> {
-        let function = &self.hir.functions[function];
-        let key = function.intrinsic.as_deref()?;
-        match key {
-            "byte.valid" => Some(Builtin::ByteValid),
-            "byte.unchecked" => Some(Builtin::ByteUnchecked),
-            "bytes.empty" => Some(Builtin::BytesEmpty),
-            "bytes.from_list" => Some(Builtin::BytesFromList),
-            "bytes.from_hex" => Some(Builtin::BytesFromHex),
-            "bytes.concat" => Some(Builtin::BytesConcat),
-            "bytes.slice" => Some(Builtin::BytesSlice),
-            "bytes.to_list" => Some(Builtin::BytesToList),
-            "bytes.hex" => Some(Builtin::BytesHex),
-            "bytes.encode_utf8" => Some(Builtin::StringUtf8),
-            "bytes.utf8_valid" => Some(Builtin::BytesUtf8Valid),
-            "bytes.decode_utf8" => Some(Builtin::BytesDecodeUtf8),
-            "byte_buffer.empty" => Some(Builtin::ByteBufferEmpty),
-            "byte_buffer.with_capacity" => Some(Builtin::ByteBufferWithCapacity),
-            "byte_buffer.push" => Some(Builtin::ByteBufferPush),
-            "byte_buffer.extend" => Some(Builtin::ByteBufferExtend),
-            "byte_buffer.clear" => Some(Builtin::ByteBufferClear),
-            "byte_buffer.truncate" => Some(Builtin::ByteBufferTruncate),
-            "byte_buffer.reserve" => Some(Builtin::ByteBufferReserve),
-            "byte_buffer.freeze" => Some(Builtin::ByteBufferFreeze),
-            "byte_buffer.snapshot" => Some(Builtin::ByteBufferSnapshot),
-            "io.read_text" => Some(Builtin::IoReadText),
-            "io.write_text" => Some(Builtin::IoWriteText),
-            "io.read_bytes" => Some(Builtin::IoReadBytes),
-            "io.write_bytes" => Some(Builtin::IoWriteBytes),
-            "io.read_range" => Some(Builtin::IoReadRange),
-            "io.append_bytes" => Some(Builtin::IoAppendBytes),
-            "io.file_length" => Some(Builtin::IoFileLength),
-            "io.list_directory" => Some(Builtin::IoListDirectory),
-            "io.exists" => Some(Builtin::IoExists),
-            "io.is_file" => Some(Builtin::IoIsFile),
-            "io.is_directory" => Some(Builtin::IoIsDirectory),
-            "io.create_directory" => Some(Builtin::IoCreateDirectory),
-            "io.create_directory_all" => Some(Builtin::IoCreateDirectoryAll),
-            "io.remove_file" => Some(Builtin::IoRemoveFile),
-            "io.remove_directory" => Some(Builtin::IoRemoveDirectory),
-            "io.rename" => Some(Builtin::IoRename),
-            "io.copy_file" => Some(Builtin::IoCopyFile),
-            "io.join" => Some(Builtin::IoJoin),
-            "io.parent" => Some(Builtin::IoParent),
-            "io.file_name" => Some(Builtin::IoFileName),
-            "io.extension" => Some(Builtin::IoExtension),
-            "io.canonicalize" => Some(Builtin::IoCanonicalize),
-            "io.current_directory" => Some(Builtin::IoCurrentDirectory),
-            "time.wall_now" => Some(Builtin::TimeWallNow),
-            "time.monotonic_now" => Some(Builtin::TimeMonotonicNow),
-            "tcp.listen" => Some(Builtin::TcpListen),
-            "tcp.connect" => Some(Builtin::TcpConnect),
-            "tcp.accept" => Some(Builtin::TcpAccept),
-            "tcp.read" => Some(Builtin::TcpRead),
-            "tcp.write" => Some(Builtin::TcpWrite),
-            "tcp.read_bytes" => Some(Builtin::TcpReadBytes),
-            "tcp.write_bytes" => Some(Builtin::TcpWriteBytes),
-            "tcp.set_timeout" => Some(Builtin::TcpSetTimeout),
-            "tcp.close_listener" => Some(Builtin::TcpCloseListener),
-            "tcp.close_connection" => Some(Builtin::TcpCloseConnection),
-            "float.format" => Some(Builtin::FormatFloat),
-            _ => None,
-        }
+        self.intrinsic(function).and_then(Intrinsic::builtin)
     }
 
     fn sequence_type(&self, expression: ExprId) -> bool {

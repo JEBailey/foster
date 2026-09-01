@@ -260,10 +260,11 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             hir::Expr::Call { callee, arguments } => {
                 self.walk_call(*callee, arguments);
                 if self.call_target(*callee).is_some_and(|function| {
-                    matches!(
-                        self.checker.hir.functions[function].intrinsic.as_deref(),
-                        Some("list.push" | "list.append")
-                    )
+                    self.checker.hir.functions[function]
+                        .intrinsic
+                        .as_deref()
+                        .and_then(Intrinsic::from_key)
+                        .is_some_and(Intrinsic::is_list_operation)
                 }) {
                     arguments
                         .iter()

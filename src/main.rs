@@ -754,7 +754,7 @@ fn default_documentation_directory(source: &Path) -> PathBuf {
     }
 }
 
-fn compile_path(path: &Path) -> Result<foster::hir::Compilation, Box<dyn Error>> {
+fn compile_path(path: &Path) -> Result<foster::compiler::Compilation, Box<dyn Error>> {
     if path.is_dir() {
         return compile_package(path);
     }
@@ -763,7 +763,7 @@ fn compile_path(path: &Path) -> Result<foster::hir::Compilation, Box<dyn Error>>
     compile_single_file(path, &source, program)
 }
 
-fn compile_target(target: &SourceTarget) -> Result<foster::hir::Compilation, Box<dyn Error>> {
+fn compile_target(target: &SourceTarget) -> Result<foster::compiler::Compilation, Box<dyn Error>> {
     target.project.as_ref().map_or_else(
         || compile_path(&target.source),
         |project| {
@@ -773,7 +773,7 @@ fn compile_target(target: &SourceTarget) -> Result<foster::hir::Compilation, Box
     )
 }
 
-fn compile_package(path: &Path) -> Result<foster::hir::Compilation, Box<dyn Error>> {
+fn compile_package(path: &Path) -> Result<foster::compiler::Compilation, Box<dyn Error>> {
     foster::check_package(path).map_err(|error| report_project_error(path, &error))
 }
 
@@ -842,9 +842,9 @@ fn compile_single_file(
     path: &Path,
     source: &str,
     program: foster::ast::Program,
-) -> Result<foster::hir::Compilation, Box<dyn Error>> {
+) -> Result<foster::compiler::Compilation, Box<dyn Error>> {
     let package = foster::package::Package::from_program_with_core("main", program)?;
-    foster::hir::Compilation::new(package).map_err(|error| {
+    foster::compiler::check(package).map_err(|error| {
         if error
             .source_module
             .as_deref()
@@ -864,7 +864,7 @@ fn compile_single_file(
 }
 
 fn report_warnings(
-    compilation: &foster::hir::Compilation,
+    compilation: &foster::compiler::Compilation,
     path: Option<&Path>,
     source: Option<&str>,
 ) -> Result<(), Box<dyn Error>> {
