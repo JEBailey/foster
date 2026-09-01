@@ -1038,6 +1038,23 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
         "std.time.format",
         include_str!("../library/std/time/format.fos"),
     ),
+    ("std.random", include_str!("../library/std/random.fos")),
+    (
+        "std.random.generator",
+        include_str!("../library/std/random/generator.fos"),
+    ),
+    (
+        "std.random.distribution",
+        include_str!("../library/std/random/distribution.fos"),
+    ),
+    (
+        "std.random.secure",
+        include_str!("../library/std/random/secure.fos"),
+    ),
+    (
+        "std.random.sequence",
+        include_str!("../library/std/random/sequence.fos"),
+    ),
 ];
 
 fn utf8_source_root(root: &Path) -> Result<Utf8PathBuf, FosterError> {

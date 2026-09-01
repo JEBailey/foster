@@ -29,6 +29,12 @@ changes receive review.
 Foster is currently pre-1.0, so compatibility may change deliberately. It must nevertheless change
 through these gates rather than silently.
 
+## Bytecode format version 16
+
+Bytecode format version 16 appends the `random.bytes` builtin used by `std.random.SystemRandom`
+and `std.random.secure`. Existing builtin tags and instruction opcodes are unchanged. Source code
+requires no migration, but serialized development bytecode from version 15 must be rebuilt.
+
 ## Bytecode format version 15
 
 Bytecode format version 15 appends the `time.wall_now` and `time.monotonic_now` builtins used by

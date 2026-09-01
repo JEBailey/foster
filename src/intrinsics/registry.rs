@@ -468,6 +468,14 @@ builtin_descriptors!(
         Some("std.time"),
         true
     ),
+    (
+        RandomBytes,
+        61,
+        None,
+        Some("random.bytes"),
+        Some("std.random"),
+        true
+    ),
 );
 
 impl Builtin {

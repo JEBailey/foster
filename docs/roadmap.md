@@ -7,7 +7,8 @@ after the compiler, runtime, and tests agree on their behavior.
 
 The implemented baseline already includes transparent type aliases, compile-time module constants,
 enum and literal patterns, a per-machine host context, the exact/civil/zoned `std.time` taxonomy,
-and the initial Cranelift backend for scalar values, strings, and read-only command arguments. The
+the source/generator/distribution/secure/sequence `std.random` taxonomy, and the initial Cranelift
+backend for scalar values, strings, and read-only command arguments. The
 items below describe the remaining extensions to those facilities rather than proposing them from
 scratch.
 
@@ -82,6 +83,10 @@ and stable bytecode tags. The remaining structural work should preserve that dep
   difference, transition introspection, reusable format patterns, and locale providers. Add
   non-ISO calendar implementations behind `Calendar` only when their era and month semantics have
   explicit contracts; the ISO calendar remains the portable baseline.
+- Extend the implemented random distributions beyond uniform integers/floats, Bernoulli, and
+  weighted indices when concrete use cases justify normal, exponential, or other models. Add a
+  stronger named portable generator only with a frozen algorithm, seed mapping, output sequence,
+  and cross-target compatibility suite; `LehmerRandom` remains the current portable baseline.
 - Add socket readiness and TLS support to the I/O boundary, and extend resource providers beyond
   the current whole-file and TCP implementations.
 - Stabilize a backend-neutral lowered IR.

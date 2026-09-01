@@ -47,6 +47,48 @@ func main() -> List<Int> {
 }
 
 #[test]
+fn standard_randomness_crosses_the_host_boundary_through_public_contracts() {
+    let value = foster::run(
+        r#"
+import core.bytes
+import core.result
+import std.random
+import std.random.secure
+
+func draw(source: RandomSource) -> Result<Int, RandomError> [mut source] {
+    random::below_with(source, 20)
+}
+
+func integer(outcome: Result<Int, RandomError>) -> Int [consume outcome] {
+    branch move outcome {
+        Result.Error(_) -> -1
+        Result.Ok(value) -> value
+    }
+}
+
+func byte_length(outcome: Result<Bytes, RandomError>) -> Int [consume outcome] {
+    branch move outcome {
+        Result.Error(_) -> -1
+        Result.Ok(value) -> value.length
+    }
+}
+
+func main() -> List<Int> {
+    let source = SystemRandom.new()
+    [integer(draw(source)), byte_length(random_bytes(32))]
+}
+"#,
+    )
+    .unwrap();
+    let values = value.as_list().unwrap();
+    let [Value::Integer(number), Value::Integer(byte_count)] = values else {
+        panic!("random APIs returned an unexpected representation: {values:?}");
+    };
+    assert!((0..20).contains(number));
+    assert_eq!(*byte_count, 32);
+}
+
+#[test]
 fn every_standard_library_function_has_attached_documentation() {
     let compilation = foster::compile(
         r#"
@@ -74,7 +116,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 803);
+    assert_eq!(checked, 877);
 
     let mut modules = 0;
     let mut types = 0;

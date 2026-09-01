@@ -338,6 +338,7 @@ impl Checker<'_> {
     pub(super) fn builtin_signature(&self, builtin: Builtin) -> Result<(Vec<Ty>, Ty), FosterError> {
         let io_result = |ok| self.host_result(ok, "std.io", "IoError");
         let tcp_result = |ok| self.host_result(ok, "std.net.tcp", "NetworkError");
+        let random_result = |ok| self.host_result(ok, "std.random", "RandomError");
         let string = self.string_type();
         let bytes = self.bytes_type();
         Ok(match builtin {
@@ -404,6 +405,7 @@ impl Checker<'_> {
             Builtin::IoCurrentDirectory => (Vec::new(), io_result(string.clone())?),
             Builtin::TimeWallNow => (Vec::new(), self.list_type(Ty::Int)),
             Builtin::TimeMonotonicNow => (Vec::new(), Ty::Int),
+            Builtin::RandomBytes => (vec![Ty::Int], random_result(bytes.clone())?),
             Builtin::TcpListen => (vec![string.clone(), Ty::Int], tcp_result(Ty::Int)?),
             Builtin::TcpConnect => (vec![string.clone(), Ty::Int], tcp_result(Ty::Int)?),
             Builtin::TcpAccept => (vec![Ty::Int], tcp_result(Ty::Int)?),

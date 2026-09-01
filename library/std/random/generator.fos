@@ -1,0 +1,154 @@
+//! Deterministic seeded random generators with explicit reproducibility guarantees.
+
+import core.result
+import std.random
+
+/// Prime modulus used by the portable Lehmer generator.
+const LEHMER_MODULUS = 2147483647
+
+/// Multiplier used by the portable Lehmer generator.
+const LEHMER_MULTIPLIER = 48271
+
+/// Largest zero-based value emitted by the portable Lehmer generator.
+const LEHMER_MAXIMUM = 2147483645
+
+/// A named portable Lehmer generator using the `minstd_rand` multiplier.
+///
+/// The same seed and sequence of calls produce the same values on every Foster target. This
+/// generator is suitable for tests, procedural generation, and modest simulations, but not for
+/// cryptographic or adversarial use.
+pub type LehmerRandom = & SeedableRandom & SplittableRandom & {
+    state: Int
+}
+
+/// Constructs the portable generator from any integer seed.
+pub func LehmerRandom.from_seed(seed: Int) -> LehmerRandom {
+    LehmerRandom { state: normalized_seed(seed) }
+}
+
+/// Returns the next portable zero-based generator value.
+pub func LehmerRandom.next(self: LehmerRandom) -> Result<Int, RandomError> [mut self.state] {
+    self.state = lehmer_step(self.state)
+    Result.Ok(self.state - 1)
+}
+
+/// Returns the inclusive maximum portable generator value.
+pub func LehmerRandom.maximum(self: LehmerRandom) -> Int { LEHMER_MAXIMUM }
+
+/// Resets the portable sequence from any integer seed.
+pub func LehmerRandom.reseed(self: LehmerRandom, seed: Int) -> () [mut self.state] {
+    self.state = normalized_seed(seed)
+    ()
+}
+
+/// Derives another owned portable stream while advancing this generator.
+pub func LehmerRandom.split(self: LehmerRandom) -> RandomSource [mut self.state] {
+    self.state = lehmer_step(self.state)
+    LehmerRandom.from_seed(self.state + 104729)
+}
+
+/// The standard fast deterministic generator.
+///
+/// Its algorithm may change between Foster releases. Use `LehmerRandom` when a serialized seed
+/// must reproduce the same sequence across releases.
+pub type FastRandom = & SeedableRandom & SplittableRandom & {
+    state: Int
+}
+
+/// Constructs the default fast generator from a deterministic seed.
+pub func FastRandom.from_seed(seed: Int) -> FastRandom {
+    FastRandom { state: normalized_seed(seed) }
+}
+
+/// Seeds the default fast generator from operating-system randomness.
+pub func FastRandom.from_system() -> Result<FastRandom, RandomError> {
+    let seed = try SystemRandom.new().next()
+    Result.Ok(FastRandom.from_seed(seed))
+}
+
+/// Returns the next default-generator value.
+pub func FastRandom.next(self: FastRandom) -> Result<Int, RandomError> [mut self.state] {
+    self.state = lehmer_step(self.state)
+    Result.Ok(self.state - 1)
+}
+
+/// Returns the inclusive maximum default-generator value.
+pub func FastRandom.maximum(self: FastRandom) -> Int { LEHMER_MAXIMUM }
+
+/// Resets the default generator from any integer seed.
+pub func FastRandom.reseed(self: FastRandom, seed: Int) -> () [mut self.state] {
+    self.state = normalized_seed(seed)
+    ()
+}
+
+/// Derives another owned default stream while advancing this generator.
+pub func FastRandom.split(self: FastRandom) -> RandomSource [mut self.state] {
+    self.state = lehmer_step(self.state)
+    FastRandom.from_seed(self.state + 104729)
+}
+
+/// Advances one Lehmer state without overflowing Foster's checked `Int` arithmetic.
+func lehmer_step(state: Int) -> Int {
+    (state * LEHMER_MULTIPLIER).modulo(LEHMER_MODULUS)
+}
+
+/// Maps every signed Foster integer into the valid nonzero Lehmer state range.
+func normalized_seed(seed: Int) -> Int {
+    let remainder = seed.modulo(LEHMER_MODULUS)
+    let normalized = branch { remainder < 0 -> remainder + LEHMER_MODULUS _ -> remainder }
+    branch { normalized == 0 -> 1 _ -> normalized }
+}
+
+/// Extracts a successful deterministic value for tests.
+func generated(outcome: Result<Int, RandomError>) -> Int {
+    branch outcome { Result.Ok(value) -> value Result.Error(_) -> -1 }
+}
+
+/// Exercises the seedable contract and returns its first reset value.
+func seeded_value(source: SeedableRandom, seed: Int) -> Int [mut source] {
+    source.reseed(seed)
+    generated(source.next())
+}
+
+/// Exercises the splittable contract and returns one value from the child stream.
+func split_value(source: SplittableRandom) -> Int [mut source] {
+    let child = source.split()
+    generated(child.next())
+}
+
+test "named portable generators reproduce their sequence and can be reseeded" {
+    let left = LehmerRandom.from_seed(42)
+    let right = LehmerRandom.from_seed(42)
+    assert(generated(left.next()) == 2027381)
+    assert(generated(right.next()) == 2027381)
+    assert(generated(left.next()) == 1226992406)
+    assert(generated(right.next()) == 1226992406)
+    left.reseed(42)
+    right.reseed(42)
+    assert(generated(left.next()) == generated(right.next()))
+    assert(generated(left.next()) >= 0)
+    assert(generated(LehmerRandom.from_seed(0).next()) == 48270)
+    assert(generated(LehmerRandom.from_seed(-1).next()) == 2147435375)
+    assert(left.maximum() == LEHMER_MAXIMUM)
+    ()
+}
+
+test "fast generators satisfy seeded and splittable contracts" {
+    let parent_value = generated(FastRandom.from_seed(7).next())
+    let child_value = split_value(FastRandom.from_seed(7))
+    assert(parent_value >= 0 && parent_value <= LEHMER_MAXIMUM)
+    assert(child_value >= 0 && child_value <= LEHMER_MAXIMUM)
+    assert(seeded_value(FastRandom.from_seed(99), 7) == parent_value)
+    branch FastRandom.from_system() {
+        Result.Error(_) -> {
+            assert(false, "system seeding failed")
+            ()
+        }
+        Result.Ok(source) -> {
+            let value = generated(source.next())
+            assert(value >= 0 && value <= LEHMER_MAXIMUM)
+            ()
+        }
+    }
+    ()
+}

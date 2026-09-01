@@ -982,8 +982,8 @@ the same; `try` does not perform error conversion. The operation is evaluated ex
 `Ok(value)` produces `value`, while an `Error(error)` immediately returns `Result.Error(error)`
 from the enclosing function. Consequently, `try` is only valid inside a Result-returning function.
 
-The VM host boundary follows the same rule for `std.fs`, `std.path`, `std.env`, `std.net.tcp`, and
-the wall and monotonic clocks in `std.time`.
+The VM host boundary follows the same rule for `std.fs`, `std.path`, `std.env`, `std.net.tcp`, the
+wall and monotonic clocks in `std.time`, and operating-system entropy in `std.random`.
 The language does not provide dedicated `throw` or typed error-effect syntax.
 `try` is control-flow sugar over ordinary `Result` values, not an exception mechanism.
 
@@ -996,7 +996,7 @@ initialization cycles.
 Because modules contain no runtime initialization, declarations in different modules may refer to
 one another when name and signature resolution can settle the cycle.
 
-## Filesystem, network, and clock access
+## Filesystem, network, clock, and entropy access
 
 `std.fs` exposes `File` resources along with compatible string-based UTF-8, binary, and directory
 operations. `std.path` provides typed `Path` values and platform path operations; `std.uri` provides
@@ -1008,6 +1008,10 @@ public records and wrappers are Foster code; private VM intrinsics perform the h
 `std.time` keeps exact durations, instants, civil values, fixed-zone resolution, and ISO/RFC text
 in Foster. Private VM intrinsics provide only canonical wall-clock and host-context-relative
 monotonic readings.
+`std.random` defines structural source contracts, deterministic generators, unbiased range
+reduction, probability distributions, sequence operations, and secure helpers in Foster. Its only
+private host intrinsic obtains bytes from the operating system's secure entropy source through a
+dependency-free platform shim.
 
 These modules use the current machine's isolated host context.
 

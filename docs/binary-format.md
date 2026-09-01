@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 15, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 16, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after lowering and optimization. It contains everything needed to verify and
@@ -25,7 +25,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `15` |
+| version | `u16` | `16` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -61,9 +61,9 @@ Capture modes: `0 Copy`, `1 Move`, `2 Ref`. Parameter modes: `0 Borrow`, `1 Cons
 operators: `0 Negate`, `1 Not`, `2 BitNot`. Binary tags in order are Add, Subtract, Multiply,
 Divide, BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight, Equal, NotEqual, Less, LessEqual, Greater,
 GreaterEqual. Builtin tags use the explicit stable values in the intrinsic registry, from `Print = 0` through
-`TimeMonotonicNow = 60`. Version 14 appended `IoReadRange = 56`, `IoAppendBytes = 57`, and
-`IoFileLength = 58`. Version 15 appends `TimeWallNow = 59` and `TimeMonotonicNow = 60`; all
-earlier tags retain their version 14 values.
+`RandomBytes = 61`. Version 14 appended `IoReadRange = 56`, `IoAppendBytes = 57`, and
+`IoFileLength = 58`. Version 15 appended `TimeWallNow = 59` and `TimeMonotonicNow = 60`.
+Version 16 appends `RandomBytes = 61`; all earlier tags retain their previous values.
 
 ## Instructions
 
@@ -109,7 +109,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 15 readers accept only version 15 with zero flags. Development bytecode from another version
+Version 16 readers accept only version 16 with zero flags. Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
 canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of

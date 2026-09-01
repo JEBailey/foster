@@ -1,0 +1,152 @@
+//! Random choice, shuffling, and sampling over owned Foster lists.
+
+import core.list
+import core.option
+import core.result
+import std.random
+import std.random.generator
+
+/// Chooses one list element with `source`, returning `None` for an empty list.
+pub func choose_with<T>(source: RandomSource, values: List<T>) -> Result<Option<T>, RandomError> [mut source] {
+    return Result.Ok(Option.None) if values.empty?
+    let index = try random::below_with(source, values.length)
+    Result.Ok(values.get(index))
+}
+
+/// Chooses one list element using operating-system randomness.
+pub func choose<T>(values: List<T>) -> Result<Option<T>, RandomError> {
+    choose_with(SystemRandom.new(), values)
+}
+
+/// Returns a uniformly shuffled list using `source`.
+pub func shuffle_with<T>(source: RandomSource, values: List<T>) -> Result<List<T>, RandomError> [mut source, consume values] {
+    shuffle_remaining(source, move values, [])
+}
+
+/// Returns a uniformly shuffled list using operating-system randomness.
+pub func shuffle<T>(values: List<T>) -> Result<List<T>, RandomError> [consume values] {
+    shuffle_with(SystemRandom.new(), move values)
+}
+
+/// Selects `count` elements without replacement using `source`.
+pub func sample_with<T>(source: RandomSource, values: List<T>, count: Int) -> Result<List<T>, RandomError> [mut source, consume values] {
+    return failure("sample", count, "sample count must not be negative") if count < 0
+    return failure("sample", count, "sample count must not exceed the list length") if count > values.length
+    sample_remaining(source, move values, count, [])
+}
+
+/// Selects `count` elements without replacement using operating-system randomness.
+pub func sample<T>(values: List<T>, count: Int) -> Result<List<T>, RandomError> [consume values] {
+    sample_with(SystemRandom.new(), move values, count)
+}
+
+/// One extracted list value and the remaining owned values.
+type Selection<T> = {
+    value: T
+    remaining: List<T>
+}
+
+/// Repeatedly extracts a uniformly chosen value into the shuffled result.
+func shuffle_remaining<T>(source: RandomSource, values: List<T>, output: List<T>) -> Result<List<T>, RandomError> [mut source, consume values, consume output] {
+    return Result.Ok(move output) if values.empty?
+    let index = try random::below_with(source, values.length)
+    let selected = select_at(move values, index, [])
+    shuffle_remaining(source, move selected.remaining, (move output).append(move selected.value))
+}
+
+/// Extracts at most the requested number of uniformly chosen values.
+func sample_remaining<T>(source: RandomSource, values: List<T>, count: Int, output: List<T>) -> Result<List<T>, RandomError> [mut source, consume values, consume output] {
+    return Result.Ok(move output) if count == 0
+    let index = try random::below_with(source, values.length)
+    let selected = select_at(move values, index, [])
+    sample_remaining(source, move selected.remaining, count - 1, (move output).append(move selected.value))
+}
+
+/// Removes one valid index while rebuilding the unselected list in original order.
+func select_at<T>(values: List<T>, index: Int, prefix: List<T>) -> Selection<T> [consume values, consume prefix] {
+    return Selection {
+        value: move values.head
+        remaining: (move prefix).concat(move values.rest)
+    } if index == 0
+    select_at(move values.rest, index - 1, (move prefix).append(move values.head))
+}
+
+/// Constructs a typed sequence-randomization error.
+func failure<T>(operation: String, value: Int, message: String) -> Result<T, RandomError> {
+    Result.Error(RandomError { operation, value, message })
+}
+
+/// Returns a typed empty integer list for generic choice tests.
+func empty_integers() -> List<Int> { [] }
+
+test "choice reports empty input and returns a present list member" {
+    let source = LehmerRandom.from_seed(42)
+    branch choose_with(source, [10, 20, 30]) {
+        Result.Error(_) -> {
+            assert(false, "choice failed")
+            ()
+        }
+        Result.Ok(choice) -> branch choice {
+            Option.None -> {
+                assert(false, "nonempty choice returned none")
+                ()
+            }
+            Option.Some(value) -> {
+                assert(value == 10 || value == 20 || value == 30)
+                ()
+            }
+        }
+    }
+    branch choose_with(source, empty_integers()) {
+        Result.Error(_) -> {
+            assert(false, "empty choice failed")
+            ()
+        }
+        Result.Ok(choice) -> branch choice {
+            Option.None -> ()
+            Option.Some(_) -> {
+                assert(false, "empty choice did not return none")
+                ()
+            }
+        }
+    }
+}
+
+test "shuffle and sample preserve membership without replacement" {
+    let source = LehmerRandom.from_seed(7)
+    branch shuffle_with(source, [1, 2, 3, 4]) {
+        Result.Error(_) -> {
+            assert(false, "shuffle failed")
+            ()
+        }
+        Result.Ok(values) -> {
+            assert(values.length == 4)
+            assert(values.contains?(1) && values.contains?(2) && values.contains?(3) && values.contains?(4))
+            ()
+        }
+    }
+    branch sample_with(source, [1, 2, 3, 4], 3) {
+        Result.Error(_) -> {
+            assert(false, "sample failed")
+            ()
+        }
+        Result.Ok(values) -> {
+            assert(values.length == 3)
+            assert(values[0] != values[1] && values[0] != values[2] && values[1] != values[2])
+            ()
+        }
+    }
+    assert(sample_with(source, [1], 2).error?())
+    assert(sample_with(source, [1], -1).error?())
+    branch sample_with(source, [1, 2], 0) {
+        Result.Error(_) -> {
+            assert(false)
+            ()
+        }
+        Result.Ok(values) -> {
+            assert(values.empty?)
+            ()
+        }
+    }
+    ()
+}

@@ -322,6 +322,12 @@ pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
             &[],
             "Returns host-context-relative monotonic nanoseconds.",
         ),
+        Builtin::RandomBytes => builtin(
+            "RandomHost.bytes",
+            "RandomHost.bytes(count: Int) -> Result<Bytes, RandomError>",
+            &["count"],
+            "Returns bytes from the operating system's secure entropy source.",
+        ),
         Builtin::TcpListen => builtin(
             "TcpHost.listen",
             "TcpHost.listen(host: String, port: Int) -> Result<Int, NetworkError>",

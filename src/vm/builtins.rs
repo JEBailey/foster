@@ -452,6 +452,12 @@ impl HostServices for super::host::HostContext {
                 .monotonic_nanoseconds()
                 .map(Value::Integer)
                 .map_err(RuntimeError::runtime),
+            (Builtin::RandomBytes, [Value::Integer(count)]) => Ok(random_result(
+                "bytes",
+                *count,
+                system_random_bytes(*count).map(Value::bytes),
+                string_record,
+            )),
             (Builtin::TcpListen, [address, Value::Integer(port)])
                 if address.string_bytes().is_some() =>
             {
@@ -563,6 +569,16 @@ fn wall_now() -> Result<Value, RuntimeError> {
     ]))
 }
 
+fn system_random_bytes(count: i64) -> Result<Vec<u8>, String> {
+    let count = usize::try_from(count)
+        .ok()
+        .filter(|count| *count <= 1_048_576)
+        .ok_or_else(|| "random byte count must be between 0 and 1048576".to_owned())?;
+    let mut bytes = vec![0; count];
+    super::entropy::fill(&mut bytes)?;
+    Ok(bytes)
+}
+
 fn decode_hex(value: &str) -> Result<Vec<u8>, (usize, String)> {
     if !value.len().is_multiple_of(2) {
         return Err((
@@ -643,6 +659,32 @@ fn tcp_result(
                     "operation".into(),
                     Value::string(string_record, operation.as_bytes().to_vec()),
                 ),
+                (
+                    "message".into(),
+                    Value::string(string_record, message.into_bytes()),
+                ),
+            ]),
+        }),
+    }
+}
+
+fn random_result(
+    operation: &str,
+    value: i64,
+    result: Result<Value, String>,
+    string_record: Option<crate::hir::RecordId>,
+) -> Value {
+    match result {
+        Ok(value) => result_ok(value),
+        Err(message) => result_error(Value::Record {
+            record: None,
+            name: "RandomError".into(),
+            fields: RecordFields::from_pairs([
+                (
+                    "operation".into(),
+                    Value::string(string_record, operation.as_bytes().to_vec()),
+                ),
+                ("value".into(), Value::Integer(value)),
                 (
                     "message".into(),
                     Value::string(string_record, message.into_bytes()),
@@ -769,6 +811,14 @@ mod tests {
         let error = dispatch(&DeniedHost, Builtin::TimeWallNow, &[], None).unwrap_err();
         assert_eq!(error.message, "host access denied");
         let error = dispatch(&DeniedHost, Builtin::TimeMonotonicNow, &[], None).unwrap_err();
+        assert_eq!(error.message, "host access denied");
+        let error = dispatch(
+            &DeniedHost,
+            Builtin::RandomBytes,
+            &[Value::Integer(8)],
+            None,
+        )
+        .unwrap_err();
         assert_eq!(error.message, "host access denied");
     }
 }

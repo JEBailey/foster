@@ -64,6 +64,11 @@ being added accidentally.
 | `std.time.civil` | ISO civil dates and times, calendar spans, partial dates, and civil intervals |
 | `std.time.zone` | UTC offsets, time-zone contracts, explicit local resolution, and zoned values |
 | `std.time.format` | ISO-8601 and RFC-3339 parsing and formatting |
+| `std.random` | Random-source contracts, operating-system randomness, and unbiased uniform integers |
+| `std.random.generator` | Portable seeded and default fast deterministic generators |
+| `std.random.distribution` | Uniform, Bernoulli, and weighted probability distributions |
+| `std.random.secure` | Operating-system entropy, random bytes, and security tokens |
+| `std.random.sequence` | Random choice, shuffling, and sampling without replacement |
 
 Primitive `CodePoint` operations are owner-qualified in `core.code_point`. After importing the
 module, `character.as_int()` and `character.as_string()` call the corresponding `CodePoint`
@@ -83,6 +88,7 @@ runtime supplies representation-level primitives and capabilities that must cros
 - filesystem, platform path, environment, and entry operations used by `std.fs`, `std.path`,
   `std.env`, and `std.process`;
 - wall-clock and monotonic readings used by `std.time`;
+- operating-system entropy used by `std.random` and `std.random.secure`;
 - TCP socket operations used by `std.net.tcp`.
 
 The host-facing intrinsics are private implementation details. Public APIs, opaque resource records,
@@ -90,6 +96,10 @@ and conversion into `Result` values are defined in Foster. `IoError` includes th
 and host message; `NetworkError` includes the operation and host message. TCP resources expose no
 public handle field, so user code obtains them only through `listen`, `connect`, and
 `listener.accept()`.
+
+The entropy intrinsic is a dependency-free platform shim: Windows uses the system-preferred CNG
+generator and Unix reads `/dev/urandom`. All bounded sampling, deterministic generators,
+distributions, sequence algorithms, token encoding, validation, and typed errors are Foster code.
 
 Foster-written library code uses `try` when it forwards an unchanged error type, including the
 `std.io` transfer algorithms, TCP adapters, and TOML rendering helpers. It keeps an explicit
@@ -121,6 +131,7 @@ this table for an intrinsic because it has no Foster implementation body.
 | `TcpHost.close_listener`, `TcpHost.close_connection` | Close TCP resources |
 | `TimeHost.wall_now` | Read canonical Unix seconds and fractional nanoseconds from the wall clock |
 | `TimeHost.monotonic_now` | Read host-context-relative monotonic nanoseconds for elapsed measurement |
+| `RandomHost.bytes` | Read a bounded number of bytes from the operating system's secure entropy source |
 
 ## Time values
 
@@ -150,6 +161,25 @@ taxonomy.
 Wall-clock access produces serializable Unix `Instant` values. The monotonic `ContinuousClock`
 uses an opaque `MonotonicInstant` domain and is the appropriate clock for elapsed measurements and
 deadlines. Its readings are intentionally not convertible to civil time or Unix timestamps.
+
+See [Time in Foster](time.md) for the complete type-selection guide, arithmetic semantics, clock
+guidance, parsing and formatting examples, and the current time-zone limitations.
+
+## Random values
+
+The random library separates the source of uniform bits from transformations that consume them.
+`RandomSource` is the shared fallible stateful contract; `SystemRandom` implements it with operating-
+system entropy, while `LehmerRandom` and `FastRandom` provide deterministic streams. Uniform range
+reduction uses rejection sampling, so ranges which do not evenly divide a source's capacity do not
+receive modulo bias.
+
+Distribution values hold validated probability models. Sequence algorithms accept an explicit
+source for reproducible work and have operating-system-backed convenience forms. Security APIs are
+kept in `std.random.secure`: `SecureRandom`, `random_bytes`, `token_hex`, and URL-safe `token`.
+Deterministic generators must never be used for secrets.
+
+See [Randomness in Foster](random.md) for the full taxonomy, reproducibility guarantees, range
+semantics, examples, and extension contract.
 
 ## TOML documents
 

@@ -1,0 +1,224 @@
+//! Random-source contracts, operating-system randomness, and unbiased uniform integer operations.
+
+import core.bytes
+import core.result
+
+/// Describes invalid random requests or unavailable host entropy.
+pub type RandomError = {
+    pub operation: String
+    pub value: Int
+    pub message: String
+}
+
+/// A stateful source of uniformly distributed nonnegative integers.
+///
+/// `next` must return a value in the inclusive range from zero through `maximum`. Every value in
+/// that range must be equally likely. Source failure is explicit so host entropy and deterministic
+/// generators share one contract without hiding environmental errors.
+pub type RandomSource = {
+    /// Returns the next uniformly distributed source value.
+    pub func next(self) -> Result<Int, RandomError> [mut self]
+    /// Returns the inclusive maximum value produced by `next`.
+    pub func maximum(self) -> Int
+}
+
+/// A random source whose deterministic state can be reset from an integer seed.
+pub type SeedableRandom = & RandomSource & {
+    /// Resets this source to the sequence selected by `seed`.
+    pub func reseed(self, seed: Int) -> () [mut self]
+}
+
+/// A random source which can derive another deterministic stream.
+pub type SplittableRandom = & RandomSource & {
+    /// Advances this source and returns a separately owned derived stream.
+    pub func split(self) -> RandomSource [mut self]
+}
+
+/// Private namespace for operating-system entropy.
+type RandomHost = {}
+
+/// Reads bytes from the operating system's secure entropy source.
+func RandomHost.bytes(count: Int) -> Result<Bytes, RandomError> = intrinsic("random.bytes")
+
+/// A stateless view of the operating system's secure random source.
+pub type SystemRandom = & RandomSource & {
+    marker: Symbol
+}
+
+/// Constructs an operating-system-backed random source.
+pub func SystemRandom.new() -> SystemRandom {
+    SystemRandom { marker: :system_random }
+}
+
+/// Returns up to 1,048,576 bytes from the operating system's secure entropy source.
+pub func SystemRandom.bytes(self: SystemRandom, count: Int) -> Result<Bytes, RandomError> [mut self] {
+    return failure("bytes", count, "random byte count must not be negative") if count < 0
+    return failure("bytes", count, "random byte count must not exceed 1048576") if count > 1048576
+    RandomHost.bytes(count)
+}
+
+/// Returns a uniformly distributed 31-bit nonnegative integer from operating-system entropy.
+pub func SystemRandom.next(self: SystemRandom) -> Result<Int, RandomError> [mut self] {
+    let entropy = try self.bytes(4)
+    let first = entropy[0].int.modulo(128)
+    Result.Ok(((first * 256 + entropy[1].int) * 256 + entropy[2].int) * 256 + entropy[3].int)
+}
+
+/// Returns the largest value produced by `SystemRandom.next`.
+pub func SystemRandom.maximum(self: SystemRandom) -> Int { 2147483647 }
+
+/// Returns an unbiased value from `source` in the half-open range `[0, count)`.
+pub func below_with(source: RandomSource, count: Int) -> Result<Int, RandomError> [mut source] {
+    return failure("below", count, "random count must be positive") if count <= 0
+    let maximum = source.maximum()
+    return failure("below", maximum, "random source maximum must be between zero and 9223372036854775806") if maximum < 0 || maximum == 9223372036854775807
+    let capacity = maximum + 1
+    return failure("below", count, "random count exceeds the source range") if count > capacity
+    sample_below(source, count, capacity - capacity.modulo(count), maximum)
+}
+
+/// Returns an unbiased value from `source` in the half-open range `[start, end)`.
+pub func between_with(source: RandomSource, start: Int, end: Int) -> Result<Int, RandomError> [mut source] {
+    let width = range_width(start, end, source.maximum() + 1)
+    return failure("between", end, "random range must be nonempty and fit the source") if width <= 0
+    Result.Ok(start + try below_with(source, width))
+}
+
+/// Returns an unbiased operating-system-backed value in `[0, count)`.
+pub func below(count: Int) -> Result<Int, RandomError> {
+    below_with(SystemRandom.new(), count)
+}
+
+/// Returns an unbiased operating-system-backed value in `[start, end)`.
+pub func between(start: Int, end: Int) -> Result<Int, RandomError> {
+    between_with(SystemRandom.new(), start, end)
+}
+
+/// Repeats a source draw when reducing it modulo `count` would introduce bias.
+func sample_below(source: RandomSource, count: Int, limit: Int, maximum: Int) -> Result<Int, RandomError> [mut source] {
+    let value = try source.next()
+    return failure("next", value, "random source returned a value outside its advertised range") if value < 0 || value > maximum
+    return sample_below(source, count, limit, maximum) if value >= limit
+    Result.Ok(value.modulo(count))
+}
+
+/// Computes a safe positive range width, or minus one when the range is invalid or too wide.
+func range_width(start: Int, end: Int, capacity: Int) -> Int {
+    return -1 if start >= end
+    branch {
+        start >= 0 -> bounded_width(end - start, capacity)
+        end <= 0 -> branch {
+            start == (-9223372036854775807 - 1) && end == 0 -> -1
+            _ -> bounded_width(end - start, capacity)
+        }
+        start < -capacity -> -1
+        end > capacity -> -1
+        (-start) > capacity - end -> -1
+        _ -> (-start) + end
+    }
+}
+
+/// Returns `width` when it fits the source capacity, or minus one otherwise.
+func bounded_width(width: Int, capacity: Int) -> Int {
+    branch { width <= capacity -> width _ -> -1 }
+}
+
+/// Constructs a typed random error for any failed result shape.
+func failure<T>(operation: String, value: Int, message: String) -> Result<T, RandomError> {
+    Result.Error(RandomError { operation, value, message })
+}
+
+/// Deterministic source used to exercise generic random operations.
+type RandomTestSource = & RandomSource & {
+    value: Int
+    maximum_value: Int
+}
+
+/// Returns the current test value and advances cyclically.
+func RandomTestSource.next(self: RandomTestSource) -> Result<Int, RandomError> [mut self.value, read self.maximum_value] {
+    let value = self.value
+    self.value = branch { value >= self.maximum_value -> 0 _ -> value + 1 }
+    Result.Ok(value)
+}
+
+/// Returns the configured test-source maximum.
+func RandomTestSource.maximum(self: RandomTestSource) -> Int { self.maximum_value }
+
+test "uniform integer operations use half-open bounds and validate requests" {
+    // Six and seven are rejected for a count of three, proving modulo bias is avoided.
+    let source = RandomTestSource { value: 6, maximum_value: 7 }
+    branch below_with(source, 3) {
+        Result.Error(_) -> {
+            assert(false, "valid bounded draw failed")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value == 0)
+            ()
+        }
+    }
+    branch between_with(source, -2, 2) {
+        Result.Error(_) -> {
+            assert(false, "valid signed range failed")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value >= -2 && value < 2)
+            ()
+        }
+    }
+    assert(below_with(source, 0).error?())
+    assert(between_with(source, 3, 3).error?())
+    assert(between_with(source, -10, 10).error?())
+    assert(below_with(RandomTestSource { value: 0, maximum_value: -1 }, 1).error?())
+    assert(below_with(RandomTestSource { value: 0, maximum_value: 9223372036854775807 }, 1).error?())
+    assert(below_with(RandomTestSource { value: 8, maximum_value: 7 }, 3).error?())
+    ()
+}
+
+test "system randomness returns bounded values and requested bytes" {
+    let source = SystemRandom.new()
+    branch source.bytes(16) {
+        Result.Error(_) -> {
+            assert(false, "system entropy was unavailable")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.length == 16)
+            ()
+        }
+    }
+    branch below_with(source, 20) {
+        Result.Error(_) -> {
+            assert(false, "system bounded draw failed")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value >= 0 && value < 20)
+            ()
+        }
+    }
+    branch below(1) {
+        Result.Error(_) -> {
+            assert(false, "system convenience draw failed")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value == 0)
+            ()
+        }
+    }
+    branch between(-3, -2) {
+        Result.Error(_) -> {
+            assert(false, "system signed convenience draw failed")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value == -3)
+            ()
+        }
+    }
+    assert(source.bytes(-1).error?())
+    assert(source.bytes(1048577).error?())
+    ()
+}

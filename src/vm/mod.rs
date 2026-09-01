@@ -6,6 +6,7 @@
 mod binary;
 mod builtins;
 mod compiler;
+mod entropy;
 mod host;
 mod ir;
 mod machine;

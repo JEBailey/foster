@@ -1,0 +1,133 @@
+//! Security-oriented entropy, random bytes, and token generation.
+
+import core.bytes
+import core.result
+import core.string
+import std.random
+
+/// A fallible source of bytes drawn from external entropy.
+pub type EntropySource = {
+    /// Returns exactly `count` entropy bytes or a typed failure.
+    pub func bytes(self, count: Int) -> Result<Bytes, RandomError> [mut self]
+}
+
+/// An operating-system-backed source implementing both integer and entropy contracts.
+pub type SecureRandom = & RandomSource & EntropySource & {
+    source_value: SystemRandom
+}
+
+/// Constructs a secure source backed by the operating system.
+pub func SecureRandom.new() -> SecureRandom {
+    SecureRandom { source_value: SystemRandom.new() }
+}
+
+/// Returns the next uniformly distributed secure 31-bit integer.
+pub func SecureRandom.next(self: SecureRandom) -> Result<Int, RandomError> [mut self.source_value] {
+    self.source_value.next()
+}
+
+/// Returns the inclusive maximum secure integer value.
+pub func SecureRandom.maximum(self: SecureRandom) -> Int { self.source_value.maximum() }
+
+/// Returns exactly `count` operating-system entropy bytes.
+pub func SecureRandom.bytes(self: SecureRandom, count: Int) -> Result<Bytes, RandomError> [mut self.source_value] {
+    self.source_value.bytes(count)
+}
+
+/// Returns exactly `count` operating-system entropy bytes.
+pub func random_bytes(count: Int) -> Result<Bytes, RandomError> {
+    SecureRandom.new().bytes(count)
+}
+
+/// Returns a lowercase hexadecimal security token containing `byte_count` random bytes.
+pub func token_hex(byte_count: Int) -> Result<String, RandomError> {
+    let entropy = try random_bytes(byte_count)
+    Result.Ok(entropy.hex())
+}
+
+/// Returns a URL-safe token with exactly `length` uniformly selected ASCII characters.
+pub func token(length: Int) -> Result<String, RandomError> {
+    return failure("token", length, "token length must not be negative") if length < 0
+    return failure("token", length, "token length must not exceed 4096") if length > 4096
+    token_remaining(SecureRandom.new(), length, "")
+}
+
+/// Appends URL-safe alphabet characters until the requested token length is reached.
+func token_remaining(source: SecureRandom, remaining: Int, output: String) -> Result<String, RandomError> [mut source, consume output] {
+    return Result.Ok(move output) if remaining == 0
+    let index = try random::below_with(source, 64)
+    let alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    token_remaining(source, remaining - 1, move output + alphabet.slice(index, index + 1))
+}
+
+/// Constructs a typed secure-randomness error.
+func failure<T>(operation: String, value: Int, message: String) -> Result<T, RandomError> {
+    Result.Error(RandomError { operation, value, message })
+}
+
+/// Exercises the byte-oriented entropy contract for tests.
+func entropy_length(source: EntropySource, count: Int) -> Int [mut source] {
+    branch source.bytes(count) {
+        Result.Error(_) -> -1
+        Result.Ok(value) -> value.length
+    }
+}
+
+test "secure entropy produces exact byte and token lengths" {
+    assert(entropy_length(SecureRandom.new(), 8) == 8)
+    branch random_bytes(24) {
+        Result.Error(_) -> {
+            assert(false, "secure bytes were unavailable")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.length == 24)
+            ()
+        }
+    }
+    branch token(32) {
+        Result.Error(_) -> {
+            assert(false, "secure token generation failed")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.length == 32)
+            ()
+        }
+    }
+    branch token_hex(12) {
+        Result.Error(_) -> {
+            assert(false, "hex token generation failed")
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.length == 24)
+            ()
+        }
+    }
+    assert(token(-1).error?())
+    assert(token(4097).error?())
+    assert(random_bytes(-1).error?())
+    assert(random_bytes(1048577).error?())
+    branch token(0) {
+        Result.Error(_) -> {
+            assert(false)
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.empty?)
+            ()
+        }
+    }
+    branch token_hex(0) {
+        Result.Error(_) -> {
+            assert(false)
+            ()
+        }
+        Result.Ok(value) -> {
+            assert(value.empty?)
+            ()
+        }
+    }
+    ()
+}
