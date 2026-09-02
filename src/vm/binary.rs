@@ -8,7 +8,7 @@ use la_arena::{Idx, RawIdx};
 
 use super::{
     BytecodeFunction, Constant, Instruction, Program, Register, RuntimeRecord, RuntimeVariant,
-    VerificationType, verify,
+    Specialization, VerificationType, verify,
 };
 use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::hir::{CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
@@ -16,7 +16,7 @@ use crate::intrinsics::Builtin;
 use crate::types::{DispatchSlot, NominalTypeId};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 18;
+pub const FORMAT_VERSION: u16 = 19;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -71,6 +71,10 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
     for (id, record) in records {
         w.id(*id);
         w.string(&record.name)?;
+        w.u32(record.parameters.len())?;
+        for parameter in &record.parameters {
+            w.string(parameter)?;
+        }
         w.u32(record.layout.names().len())?;
         for (field, ty) in record.layout.names().iter().zip(&record.field_types) {
             w.string(field)?;
@@ -94,6 +98,10 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
         w.id(*id);
         w.id(variant.parent);
         w.string(&variant.type_name)?;
+        w.u32(variant.parameters.len())?;
+        for parameter in &variant.parameters {
+            w.string(parameter)?;
+        }
         w.string(&variant.alternative)?;
         w.u32(variant.payload.len())?;
         for ty in &variant.payload {
@@ -130,12 +138,14 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
     let records = r.map(|r| {
         let id = r.id::<Record>()?;
         let name = r.string()?;
+        let parameters = r.vec(|r| r.string())?;
         let fields = r.vec(|r| Ok((r.string()?, r.verification_type(0)?)))?;
         let (names, field_types) = fields.into_iter().unzip();
         Ok((
             id,
             RuntimeRecord {
                 name,
+                parameters,
                 layout: std::sync::Arc::new(super::value::RecordLayout::new(names)),
                 field_types,
             },
@@ -153,6 +163,7 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
             RuntimeVariant {
                 parent: r.id::<VariantType>()?,
                 type_name: std::sync::Arc::from(r.string()?),
+                parameters: r.vec(|r| r.string())?,
                 alternative: std::sync::Arc::from(r.string()?),
                 payload: r.vec(|r| r.verification_type(0))?,
             },

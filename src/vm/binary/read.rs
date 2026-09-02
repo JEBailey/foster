@@ -96,6 +96,9 @@ impl<'a> Reader<'a> {
     pub(super) fn regs(&mut self) -> Result<Vec<Register>, BinaryError> {
         self.vec(|r| r.reg())
     }
+    pub(super) fn specialization(&mut self) -> Result<Specialization, BinaryError> {
+        self.vec(|reader| Ok((reader.string()?, reader.verification_type(0)?)))
+    }
     pub(super) fn constant(&mut self) -> Result<Constant, BinaryError> {
         Ok(match self.u8()? {
             0 => Constant::Unit,
@@ -221,11 +224,13 @@ impl<'a> Reader<'a> {
             7 => Instruction::MakeRecord {
                 destination: r!(),
                 record: id!(Record),
+                type_arguments: self.vec(|r| r.verification_type(0))?,
                 fields: self.vec(|r| Ok((r.string()?, r.reg()?)))?,
             },
             8 => Instruction::MakeVariant {
                 destination: r!(),
                 variant: id!(Variant),
+                type_arguments: self.vec(|r| r.verification_type(0))?,
                 payload: self.regs()?,
             },
             9 => Instruction::LoadField {
@@ -307,12 +312,14 @@ impl<'a> Reader<'a> {
             25 => Instruction::Call {
                 destination: r!(),
                 function: id!(Function),
+                specialization: self.specialization()?,
                 arguments: self.regs()?,
             },
             26 => Instruction::CallMethod {
                 destination: r!(),
                 receiver: r!(),
                 function: id!(Function),
+                specialization: self.specialization()?,
                 arguments: self.regs()?,
             },
             27 => Instruction::CallContractMethod {

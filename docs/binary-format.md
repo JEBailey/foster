@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 18, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 19, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -26,7 +26,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `18` |
+| version | `u16` | `19` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -34,9 +34,9 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | main arguments | `bool` | whether `main` receives `std.process.Arguments` |
 | string record | optional `RecordId` | String wrapper |
 | symbol record | optional `RecordId` | Symbol wrapper |
-| records | `vector<(RecordId, string, vector<(string, VerificationType)>)>` | runtime name and typed indexed field layout |
+| records | `vector<(RecordId, string, vector<string> parameters, vector<(string, VerificationType)>)>` | runtime name, generic parameters, and typed indexed field layout |
 | dispatch | `vector<(NominalTypeId, u32 slot, FunctionId)>` | record and enum dispatch |
-| enum cases | `vector<(VariantId, VariantTypeId, string, string, vector<VerificationType>)>` | parent enum, case label, and declared payload layout |
+| enum cases | `vector<(VariantId, VariantTypeId, string, vector<string> parameters, string, vector<VerificationType>)>` | parent enum, generic parameters, case label, and declared payload layout |
 
 Dispatch slots are program-local `u32` identifiers assigned to the contract signatures selected by
 type checking. The type checker also resolves every concrete record and enum implementation for
@@ -69,8 +69,9 @@ GreaterEqual. Builtin tags use the explicit stable values in the intrinsic regis
 `RandomBytes = 61`. Version 14 appended `IoReadRange = 56`, `IoAppendBytes = 57`, and
 `IoFileLength = 58`. Version 15 appended `TimeWallNow = 59` and `TimeMonotonicNow = 60`.
 Version 16 appends `RandomBytes = 61`; all earlier tags retain their previous values. Version 18
-adds declared record-field and enum-payload types to aggregate metadata; instruction and type tags
-remain unchanged.
+adds declared record-field and enum-payload types to aggregate metadata. Version 19 adds declared
+nominal parameter names, concrete construction arguments, and deterministic generic substitutions
+on statically resolved calls; instruction and type tags remain unchanged.
 
 Verification type tags are `0 Unknown`, `1 Unit`, `2 Bool`, `3 Integer`, `4 Float`, `5 CodePoint`,
 `6 Byte`, `7 Bytes`, `8 ByteBuffer`, `9 List(VerificationType)`,
@@ -80,8 +81,8 @@ Verification type tags are `0 Unknown`, `1 Unit`, `2 Bool`, `3 Integer`, `4 Floa
 `15 Variant(VariantTypeId, vector<VerificationType> arguments)`,
 `16 Union(vector<VerificationType>)`, and `17 Generic(string identity)`. Union members are sorted,
 unique, and contain at least two types. Readers reject verification types nested more than 64
-levels deep. Generic identities are retained so target-specific layout selection can distinguish
-them; the initial native ABI stores an unsubstituted generic field as an opaque pointer slot.
+levels deep. Generic identities are retained so target-specific layout selection can materialize a
+concrete nominal layout for each reachable native specialization.
 
 ## Instructions
 
@@ -96,8 +97,8 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 4 | Binary | `R destination, BinaryOp, R left, R right` |
 | 5 | MakeList | `R destination, regs` |
 | 6 | Index | `R destination, R object, R index` |
-| 7 | MakeRecord | `R destination, RecordId, vector<(string, R)>` |
-| 8 | MakeVariant | `R destination, VariantId, regs` |
+| 7 | MakeRecord | `R destination, RecordId, vector<VerificationType> arguments, vector<(string, R)>` |
+| 8 | MakeVariant | `R destination, VariantId, vector<VerificationType> arguments, regs` |
 | 9 | LoadField | `R destination, R object, string, bool by_reference` |
 | 10 | StoreField | `R object, string, R source` |
 | 11 | StoreIndex | `R object, R index, R source` |
@@ -114,8 +115,8 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 22 | MatchPattern | `R destination, R subject, Pattern, regs bindings` |
 | 23 | Jump | `u32 target` |
 | 24 | JumpIfFalse | `R condition, u32 target` |
-| 25 | Call | `R destination, F, regs` |
-| 26 | CallMethod | `R destination, R receiver, F, regs` |
+| 25 | Call | `R destination, F, vector<(string, VerificationType)> substitutions, regs` |
+| 26 | CallMethod | `R destination, R receiver, F, vector<(string, VerificationType)> substitutions, regs` |
 | 27 | CallContractMethod | `R destination, R receiver, u32 slot, string name, regs` |
 | 28 | MakeClosure | `R destination, F, vector<(CaptureMode, R)>` |
 | 29 | CallValue | `R destination, R callee, regs` |
@@ -127,7 +128,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 18 readers accept only version 18 with zero flags. Development bytecode from another version
+Version 19 readers accept only version 19 with zero flags. Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
 canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of

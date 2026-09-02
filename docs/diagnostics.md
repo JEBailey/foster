@@ -39,12 +39,17 @@ Ranges are UTF-8 byte offsets internally. Terminal rendering resolves them again
 the LSP boundary converts them to UTF-16 line and column positions. Tests cover both structured
 fields and rendered output so changing prose or losing a label is intentional and reviewable.
 
-The language server enters through `compiler::check`, the same checked frontend used by the CLI
-`check` command. It does not require executable lowering for hover, navigation, or diagnostics, so
-library and incomplete editor packages do not need a `main`. Shared-SSA sealing, final bytecode
-verification, and native supported-subset errors are reported by build/run commands. LSP tests keep
-source-builtin names and parameter metadata synchronized with the authoritative intrinsic registry;
-intrinsic-backed library functions otherwise use their ordinary Foster declarations for tooling.
+The language server uses the same checked frontend phases as the CLI `check` command, with
+interactive recovery enabled. When a semantic error is confined to a function body, tooling keeps
+the declaration and signature, substitutes an empty body, and restarts checking so unrelated
+functions receive current type information. The original error remains a published diagnostic;
+strict compiler entry points still reject the source. Errors outside a recoverable input function
+fall back to the last-good semantic snapshot. The LSP does not require executable lowering for
+hover, navigation, or diagnostics, so library and incomplete editor packages do not need a `main`.
+Shared-SSA sealing, final bytecode verification, and native supported-subset errors are reported by
+build/run commands. LSP tests keep source-builtin names and parameter metadata synchronized with the
+authoritative intrinsic registry; intrinsic-backed library functions otherwise use their ordinary
+Foster declarations for tooling.
 
 The remaining compiler phases should migrate incrementally to this representation. Parser errors
 already retain line and column positions and are adapted into a primary label; type, group, effect,

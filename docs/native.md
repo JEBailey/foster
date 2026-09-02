@@ -38,6 +38,8 @@ use the target pointer type. It supports:
 - user-record construction and field reads, nested records, copy-on-write field assignment, and
   record values passed through borrowed function parameters;
 - enum-case allocation, deterministic tags, scalar payloads, and enum pattern tests/bindings;
+- closed-world monomorphization of reachable generic functions, records, and tagged variants, with
+  concrete signatures, layouts, destructors, and call targets cached per substitution;
 - descriptor-addressed allocation, strong retain/release, ownership transfer at calls and returns,
   and generated tag-aware recursive destructors;
 - assertions, guarded returns, `loop`, guarded `break`/`continue`, jumps, conditional control
@@ -49,8 +51,8 @@ Only functions statically reachable from `main` are compiled. An unused function
 the complete VM language without preventing native compilation.
 
 General lists and buffers, String concatenation and library algorithms, symbols, references,
-closures, dynamic calls, intrinsics, aggregate payload bindings that require erased generic
-representation, remote objects, futures, and host I/O do not yet have a complete native lowering.
+closures, dynamic calls, intrinsics, dynamically erased aggregate payloads, remote objects,
+futures, and host I/O do not yet have a complete native lowering.
 If one is reachable, compilation stops
 before object emission and reports the unsupported type or instruction. The diagnostic recommends
 ordinary `foster build`, which emits portable `.fbc` for the complete language.
@@ -89,9 +91,11 @@ function is sealed into SSA; that unsealed form is never optimized, serialized, 
 Before backend-specific emission, logical layout legalization reduces values to scalars or pointers
 and builds deterministic descriptions for record field slots and declared types, enum alternative
 tags and payloads, closure environments and capture ownership, reference place handles, and
-runtime-backed structural values. Portable bytecode version 18 retains generic identities and
-nominal arguments. Generic fields currently use an explicit opaque pointer slot, so their physical
-ABI remains concrete without prematurely coupling portable bytecode to monomorphization.
+runtime-backed structural values. Portable bytecode version 19 retains generic identities, nominal
+parameters and arguments, and sorted substitutions at statically resolved calls. Native
+reachability is keyed by function plus substitutions; it materializes concrete signatures and
+record/enum layouts before target-specific physical layout calculation. Explicit opaque slots
+remain only for values whose representation is genuinely dynamic.
 
 After target selection, the physical layout calculator derives checked sizes, alignments, byte
 offsets, and ownership-aware drop plans. Heap objects have a common descriptor-pointer, strong

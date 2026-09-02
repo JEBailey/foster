@@ -84,6 +84,81 @@ fn diagnostic_publication_includes_every_recovered_syntax_error() {
 }
 
 #[test]
+fn semantic_error_in_one_function_does_not_hide_later_function_types() {
+    let path = std::env::current_dir()
+        .unwrap()
+        .join("target/lsp-semantic-recovery.fos");
+    let uri = path_to_uri(&path).unwrap();
+    let source = "func broken() -> Int { \"wrong\" }\n\
+                  func healthy() -> Int {\n\
+                      let answer = broken()\n\
+                      answer\n\
+                  }\n";
+    assert!(crate::compile(source).is_err());
+    let mut workspace = Workspace {
+        root: None,
+        documents: HashMap::new(),
+        published: HashSet::new(),
+        compilations: Default::default(),
+    };
+    workspace.open(uri.clone(), source.into(), 1);
+
+    let compilation = workspace.compile_for(&uri).unwrap();
+    assert_eq!(compilation.diagnostics.len(), 1);
+    assert_eq!(
+        compilation.diagnostics[0].severity,
+        crate::diagnostic::Severity::Error
+    );
+    assert!(compilation.diagnostics[0].labels.iter().any(|label| {
+        source[label.range.clone()].contains("\"wrong\"")
+            || source[label.range.clone()].contains("broken")
+    }));
+
+    let answer = TextDocumentPositionParams::new(
+        lsp_types::TextDocumentIdentifier::new(uri),
+        Position::new(3, 6),
+    );
+    let HoverContents::Markup(hover) = workspace.hover(&answer).unwrap().contents else {
+        panic!("expected markdown hover")
+    };
+    assert!(hover.value.contains("answer: Int"), "{hover:?}");
+}
+
+#[test]
+fn semantic_recovery_reports_multiple_failing_functions() {
+    let path = std::env::current_dir()
+        .unwrap()
+        .join("target/lsp-multiple-semantic-errors.fos");
+    let uri = path_to_uri(&path).unwrap();
+    let source = "func first() -> Int { \"wrong\" }\n\
+                  func second() -> Bool { 42 }\n\
+                  func healthy() -> Int { 7 }\n";
+    let mut workspace = Workspace {
+        root: None,
+        documents: HashMap::new(),
+        published: HashSet::new(),
+        compilations: Default::default(),
+    };
+    workspace.open(uri.clone(), source.into(), 1);
+
+    let compilation = workspace.compile_for(&uri).unwrap();
+    assert_eq!(
+        compilation.diagnostics.len(),
+        2,
+        "{:#?}",
+        compilation.diagnostics
+    );
+    let module = module_for_uri(&compilation, &uri).unwrap();
+    assert!(
+        compilation
+            .hir
+            .function_named(module, "healthy")
+            .and_then(|function| compilation.types.function_type(function))
+            .is_some()
+    );
+}
+
+#[test]
 fn document_symbols_use_open_buffer_overlays() {
     let (mut workspace, uri, root) = fixture_workspace();
     let mut source = std::fs::read_to_string(root.join("main.fos")).unwrap();
@@ -349,7 +424,15 @@ fn method_hover_survives_an_error_in_another_function() {
 
     let invalid = "import core.string\n\nfunc broken() -> Int {\n    \"wrong\"\n}\n\nfunc main() -> String {\n    \"hello\".slice(1, 4)\n}\n";
     workspace.change(uri.clone(), invalid.into(), 2);
-    assert!(workspace.compile_for(&uri).is_err());
+    let compilation = workspace.compile_for(&uri).unwrap();
+    assert_eq!(
+        compilation
+            .diagnostics
+            .iter()
+            .filter(|diagnostic| diagnostic.severity == crate::diagnostic::Severity::Error)
+            .count(),
+        1
+    );
 
     let hover = workspace
         .hover(&TextDocumentPositionParams::new(

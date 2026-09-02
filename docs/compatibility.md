@@ -29,6 +29,15 @@ changes receive review.
 Foster is currently pre-1.0, so compatibility may change deliberately. It must nevertheless change
 through these gates rather than silently.
 
+## Bytecode format version 19
+
+Bytecode format version 19 adds generic parameter identities to nominal runtime schemas, concrete
+type arguments to record and enum construction, and sorted generic substitutions to direct and
+statically resolved method calls. Native reachability can therefore key code generation by
+function plus substitutions and materialize concrete signatures and layouts without guessing from
+pointer representations. Instruction tags are unchanged. Source code requires no migration, but
+serialized development bytecode from version 18 must be rebuilt.
+
 ## Bytecode format version 18
 
 Bytecode format version 18 adds generic-aware declared types to record fields and enum payloads.

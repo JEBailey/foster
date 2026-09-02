@@ -10,6 +10,11 @@ use crate::types::{DispatchSlot, NominalTypeId};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Register(pub u16);
 
+/// Concrete generic substitutions attached to a statically resolved call.
+///
+/// Names are sorted so the same instantiation has one stable bytecode and native-code identity.
+pub type Specialization = Vec<(String, VerificationType)>;
+
 /// Runtime-visible type information retained solely for bytecode verification.
 ///
 /// Groups and effects have already served their purpose by this stage. Generic identities and
@@ -101,11 +106,13 @@ pub enum Instruction {
     MakeRecord {
         destination: Register,
         record: RecordId,
+        type_arguments: Vec<VerificationType>,
         fields: Vec<(String, Register)>,
     },
     MakeVariant {
         destination: Register,
         variant: VariantId,
+        type_arguments: Vec<VerificationType>,
         payload: Vec<Register>,
     },
     LoadField {
@@ -200,12 +207,14 @@ pub enum Instruction {
     Call {
         destination: Register,
         function: FunctionId,
+        specialization: Specialization,
         arguments: Vec<Register>,
     },
     CallMethod {
         destination: Register,
         receiver: Register,
         function: FunctionId,
+        specialization: Specialization,
         arguments: Vec<Register>,
     },
     CallContractMethod {
@@ -517,6 +526,8 @@ pub struct Program {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeRecord {
     pub name: String,
+    /// Generic parameters in declaration order.
+    pub parameters: Vec<String>,
     pub layout: Arc<super::value::RecordLayout>,
     /// Declared field types in the same canonical order as `layout`.
     pub field_types: Vec<VerificationType>,
@@ -526,6 +537,8 @@ pub struct RuntimeRecord {
 pub struct RuntimeVariant {
     pub parent: VariantTypeId,
     pub type_name: Arc<str>,
+    /// Generic parameters of the parent enum in declaration order.
+    pub parameters: Vec<String>,
     pub alternative: Arc<str>,
     /// Enum cases currently have zero or one declared payload value.
     pub payload: Vec<VerificationType>,

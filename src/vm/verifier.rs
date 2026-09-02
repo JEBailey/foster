@@ -167,6 +167,25 @@ fn verify_metadata_type(
     }
 }
 
+fn verify_specialization(
+    program: &Program,
+    function: &BytecodeFunction,
+    instruction: usize,
+    specialization: &crate::vm::Specialization,
+) -> Result<(), FosterError> {
+    if specialization.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
+        return invalid_instruction(
+            function,
+            instruction,
+            "has unsorted or duplicate generic substitutions",
+        );
+    }
+    for (_, ty) in specialization {
+        verify_metadata_type(program, ty, 0)?;
+    }
+    Ok(())
+}
+
 fn verify_function_structure(
     program: &Program,
     _id: FunctionId,
@@ -256,9 +275,11 @@ fn verify_function_structure(
             }
             Instruction::Call {
                 function: target,
+                specialization,
                 arguments,
                 ..
             } => {
+                verify_specialization(program, function, index, specialization)?;
                 let target = target_function(program, function, index, *target)?;
                 if target.intrinsic_stub
                     || target.captures != 0
@@ -273,9 +294,11 @@ fn verify_function_structure(
             }
             Instruction::CallMethod {
                 function: target,
+                specialization,
                 arguments,
                 ..
             } => {
+                verify_specialization(program, function, index, specialization)?;
                 let target = target_function(program, function, index, *target)?;
                 if target.intrinsic_stub
                     || target.captures != 0
@@ -346,10 +369,25 @@ fn verify_function_structure(
                     format!("has invalid jump target {target}"),
                 );
             }
-            Instruction::MakeRecord { record, fields, .. } => {
+            Instruction::MakeRecord {
+                record,
+                type_arguments,
+                fields,
+                ..
+            } => {
                 let Some(metadata) = program.records.get(record) else {
                     return invalid_instruction(function, index, "references a missing record");
                 };
+                if type_arguments.len() != metadata.parameters.len() {
+                    return invalid_instruction(
+                        function,
+                        index,
+                        "has the wrong number of record type arguments",
+                    );
+                }
+                for ty in type_arguments {
+                    verify_metadata_type(program, ty, 0)?;
+                }
                 let expected = metadata.layout.names();
                 if fields.len() != expected.len()
                     || fields.iter().map(|(name, _)| name).ne(expected.iter())
@@ -362,19 +400,29 @@ fn verify_function_structure(
                 }
             }
             Instruction::MakeVariant {
-                variant, payload, ..
+                variant,
+                type_arguments,
+                payload,
+                ..
             } => match program.variants.get(variant) {
                 None => {
                     return invalid_instruction(function, index, "references a missing variant");
                 }
-                Some(metadata) if metadata.payload.len() != payload.len() => {
+                Some(metadata)
+                    if metadata.payload.len() != payload.len()
+                        || metadata.parameters.len() != type_arguments.len() =>
+                {
                     return invalid_instruction(
                         function,
                         index,
-                        "constructs an enum case with an invalid payload layout",
+                        "constructs an enum case with an invalid type or payload layout",
                     );
                 }
-                Some(_) => {}
+                Some(_) => {
+                    for ty in type_arguments {
+                        verify_metadata_type(program, ty, 0)?;
+                    }
+                }
             },
             Instruction::MatchPattern {
                 pattern, bindings, ..
@@ -648,6 +696,7 @@ fn transfer(
             destination,
             record,
             fields,
+            ..
         } => {
             for (_, register) in fields {
                 read_type(function, index, &state, *register)?;
@@ -664,6 +713,7 @@ fn transfer(
             destination,
             variant,
             payload,
+            ..
         } => {
             for register in payload {
                 read_type(function, index, &state, *register)?;
@@ -1069,6 +1119,7 @@ fn transfer(
             destination,
             function: target,
             arguments,
+            ..
         } => {
             let target = &program.functions[target];
             verify_arguments(
@@ -1096,6 +1147,7 @@ fn transfer(
             receiver,
             function: target,
             arguments,
+            ..
         } => {
             let target = &program.functions[target];
             let receiver = read_type(function, index, &state, *receiver)?;

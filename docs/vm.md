@@ -41,8 +41,8 @@ registry. The verifier and execution machine consume that metadata instead of ma
 builtin matches. Compiler-only intrinsics use the same registry model with opcode lowering
 metadata, including an explicit read/mutate/consume receiver mode; `list.push` and `list.append`
 lower directly to `Push` and `Append` and deliberately have no builtin tag. Adding or changing one
-of those lowering-only entries therefore does not change the version-18 bytecode ABI. Builtin tags
-retired from source remain registered for decoding and executing existing version-18 artifacts.
+of those lowering-only entries therefore does not change the version-19 bytecode ABI. Builtin tags
+retired from source remain registered for decoding and executing existing version-19 artifacts.
 
 The verifier performs a fixed-point dataflow analysis over instruction-index control flow. Each
 reachable edge carries the definite availability and runtime verification type of every register.

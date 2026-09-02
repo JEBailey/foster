@@ -145,6 +145,7 @@ pub enum Instruction {
     Call {
         destination: Value,
         function: FunctionId,
+        specialization: crate::vm::Specialization,
         arguments: Vec<Value>,
     },
     RuntimeCall {
@@ -202,11 +203,13 @@ pub enum PortableInstruction {
     MakeRecord {
         destination: Value,
         record: RecordId,
+        type_arguments: Vec<crate::vm::VerificationType>,
         fields: Vec<(String, Value)>,
     },
     MakeVariant {
         destination: Value,
         variant: VariantId,
+        type_arguments: Vec<crate::vm::VerificationType>,
         payload: Vec<Value>,
     },
     LoadField {
@@ -294,12 +297,14 @@ pub enum PortableInstruction {
     Call {
         destination: Value,
         function: FunctionId,
+        specialization: crate::vm::Specialization,
         arguments: Vec<Value>,
     },
     CallMethod {
         destination: Value,
         receiver: Value,
         function: FunctionId,
+        specialization: crate::vm::Specialization,
         arguments: Vec<Value>,
     },
     CallContractMethod {
@@ -893,6 +898,7 @@ impl<'a> Verifier<'a> {
                 destination,
                 function,
                 arguments,
+                ..
             } => {
                 let signature = self.signatures.get(function).ok_or_else(|| {
                     VerifyError::new(format!("call references missing function {function:?}"))

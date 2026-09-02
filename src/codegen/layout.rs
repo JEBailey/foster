@@ -93,6 +93,10 @@ pub struct Registry {
     layouts: Vec<Layout>,
     records: HashMap<RecordId, LayoutId>,
     variants: HashMap<VariantTypeId, LayoutId>,
+    record_parameters: HashMap<RecordId, Vec<String>>,
+    variant_parameters: HashMap<VariantTypeId, Vec<String>>,
+    record_instances: BTreeMap<(RecordId, Vec<VerificationType>), LayoutId>,
+    variant_instances: BTreeMap<(VariantTypeId, Vec<VerificationType>), LayoutId>,
     closures: HashMap<FunctionId, LayoutId>,
     pointers: BTreeMap<(VerificationType, Ownership), LayoutId>,
     builtins: BTreeMap<VerificationType, LayoutId>,
@@ -112,8 +116,178 @@ impl Registry {
         self.records.get(&id).copied()
     }
 
+    pub fn record_instance(
+        &self,
+        id: RecordId,
+        arguments: &[VerificationType],
+    ) -> Option<LayoutId> {
+        self.record_instances
+            .get(&(id, arguments.to_vec()))
+            .copied()
+            .or_else(|| self.record(id))
+    }
+
     pub fn variant(&self, id: VariantTypeId) -> Option<LayoutId> {
         self.variants.get(&id).copied()
+    }
+
+    pub fn variant_instance(
+        &self,
+        id: VariantTypeId,
+        arguments: &[VerificationType],
+    ) -> Option<LayoutId> {
+        self.variant_instances
+            .get(&(id, arguments.to_vec()))
+            .copied()
+            .or_else(|| self.variant(id))
+    }
+
+    /// Materialize concrete nominal layouts reachable by one native specialization.
+    pub fn instantiate_type(&mut self, ty: &VerificationType) -> Result<(), FosterError> {
+        match ty {
+            VerificationType::Record { record, arguments } => {
+                for argument in arguments {
+                    self.instantiate_type(argument)?;
+                }
+                self.instantiate_record(*record, arguments)?;
+            }
+            VerificationType::Variant { variant, arguments } => {
+                for argument in arguments {
+                    self.instantiate_type(argument)?;
+                }
+                self.instantiate_variant(*variant, arguments)?;
+            }
+            VerificationType::List(value)
+            | VerificationType::Reference(value)
+            | VerificationType::Remote(value)
+            | VerificationType::Future(value) => self.instantiate_type(value)?,
+            VerificationType::Function {
+                parameters, result, ..
+            } => {
+                for parameter in parameters {
+                    self.instantiate_type(parameter)?;
+                }
+                self.instantiate_type(result)?;
+            }
+            VerificationType::Union(members) => {
+                for member in members {
+                    self.instantiate_type(member)?;
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn instantiate_record(
+        &mut self,
+        record: RecordId,
+        arguments: &[VerificationType],
+    ) -> Result<LayoutId, FosterError> {
+        let key = (record, arguments.to_vec());
+        if let Some(layout) = self.record_instances.get(&key) {
+            return Ok(*layout);
+        }
+        let parameters = self
+            .record_parameters
+            .get(&record)
+            .cloned()
+            .unwrap_or_default();
+        if parameters.len() != arguments.len() {
+            return self.record(record).ok_or_else(|| {
+                FosterError::runtime("record specialization has no logical layout")
+            });
+        }
+        let base = self
+            .record(record)
+            .ok_or_else(|| FosterError::runtime("record specialization has no logical layout"))?;
+        if parameters.is_empty() {
+            return Ok(base);
+        }
+        let LayoutKind::Record { fields, .. } = self.get(base).kind.clone() else {
+            unreachable!()
+        };
+        let substitutions = parameters
+            .into_iter()
+            .zip(arguments.iter().cloned())
+            .collect::<HashMap<_, _>>();
+        let fields = fields
+            .into_iter()
+            .map(|mut field| {
+                field.ty = substitute_type(&field.ty, &substitutions);
+                field
+            })
+            .collect::<Vec<_>>();
+        let layout = self.push(LayoutKind::Record {
+            record,
+            fields: Vec::new(),
+        });
+        self.record_instances.insert(key, layout);
+        for field in &fields {
+            self.instantiate_type(&field.ty)?;
+        }
+        self.layouts[layout.0 as usize].kind = LayoutKind::Record { record, fields };
+        Ok(layout)
+    }
+
+    fn instantiate_variant(
+        &mut self,
+        variant_type: VariantTypeId,
+        arguments: &[VerificationType],
+    ) -> Result<LayoutId, FosterError> {
+        let key = (variant_type, arguments.to_vec());
+        if let Some(layout) = self.variant_instances.get(&key) {
+            return Ok(*layout);
+        }
+        let parameters = self
+            .variant_parameters
+            .get(&variant_type)
+            .cloned()
+            .unwrap_or_default();
+        if parameters.len() != arguments.len() {
+            return self.variant(variant_type).ok_or_else(|| {
+                FosterError::runtime("variant specialization has no logical layout")
+            });
+        }
+        let base = self
+            .variant(variant_type)
+            .ok_or_else(|| FosterError::runtime("variant specialization has no logical layout"))?;
+        if parameters.is_empty() {
+            return Ok(base);
+        }
+        let LayoutKind::Variant { alternatives, .. } = self.get(base).kind.clone() else {
+            unreachable!()
+        };
+        let substitutions = parameters
+            .into_iter()
+            .zip(arguments.iter().cloned())
+            .collect::<HashMap<_, _>>();
+        let alternatives = alternatives
+            .into_iter()
+            .map(|mut alternative| {
+                alternative.payload = alternative
+                    .payload
+                    .iter()
+                    .map(|ty| substitute_type(ty, &substitutions))
+                    .collect();
+                alternative
+            })
+            .collect::<Vec<_>>();
+        let layout = self.push(LayoutKind::Variant {
+            variant_type,
+            alternatives: Vec::new(),
+        });
+        self.variant_instances.insert(key, layout);
+        for alternative in &alternatives {
+            for ty in &alternative.payload {
+                self.instantiate_type(ty)?;
+            }
+        }
+        self.layouts[layout.0 as usize].kind = LayoutKind::Variant {
+            variant_type,
+            alternatives,
+        };
+        Ok(layout)
     }
 
     pub fn closure(&self, id: FunctionId) -> Option<LayoutId> {
@@ -142,11 +316,21 @@ impl Registry {
             VerificationType::Integer => LegalType::I64,
             VerificationType::Float => LegalType::F64,
             VerificationType::Record { record, .. } => LegalType::Pointer {
-                layout: self.record(*record),
+                layout: match ty {
+                    VerificationType::Record { arguments, .. } => {
+                        self.record_instance(*record, arguments)
+                    }
+                    _ => unreachable!(),
+                },
                 ownership: Ownership::Owned,
             },
             VerificationType::Variant { variant, .. } => LegalType::Pointer {
-                layout: self.variant(*variant),
+                layout: match ty {
+                    VerificationType::Variant { arguments, .. } => {
+                        self.variant_instance(*variant, arguments)
+                    }
+                    _ => unreachable!(),
+                },
                 ownership: Ownership::Owned,
             },
             VerificationType::Reference(pointee) => LegalType::Pointer {
@@ -179,6 +363,63 @@ impl Registry {
     }
 }
 
+fn substitute_type(
+    ty: &VerificationType,
+    substitutions: &HashMap<String, VerificationType>,
+) -> VerificationType {
+    match ty {
+        VerificationType::Generic(name) => substitutions
+            .get(name)
+            .cloned()
+            .unwrap_or_else(|| ty.clone()),
+        VerificationType::List(value) => {
+            VerificationType::List(Box::new(substitute_type(value, substitutions)))
+        }
+        VerificationType::Reference(value) => {
+            VerificationType::Reference(Box::new(substitute_type(value, substitutions)))
+        }
+        VerificationType::Remote(value) => {
+            VerificationType::Remote(Box::new(substitute_type(value, substitutions)))
+        }
+        VerificationType::Future(value) => {
+            VerificationType::Future(Box::new(substitute_type(value, substitutions)))
+        }
+        VerificationType::Function {
+            parameters,
+            parameter_modes,
+            result,
+        } => VerificationType::Function {
+            parameters: parameters
+                .iter()
+                .map(|ty| substitute_type(ty, substitutions))
+                .collect(),
+            parameter_modes: parameter_modes.clone(),
+            result: Box::new(substitute_type(result, substitutions)),
+        },
+        VerificationType::Record { record, arguments } => VerificationType::Record {
+            record: *record,
+            arguments: arguments
+                .iter()
+                .map(|ty| substitute_type(ty, substitutions))
+                .collect(),
+        },
+        VerificationType::Variant { variant, arguments } => VerificationType::Variant {
+            variant: *variant,
+            arguments: arguments
+                .iter()
+                .map(|ty| substitute_type(ty, substitutions))
+                .collect(),
+        },
+        VerificationType::Union(members) => VerificationType::Union(
+            members
+                .iter()
+                .map(|ty| substitute_type(ty, substitutions))
+                .collect(),
+        ),
+        _ => ty.clone(),
+    }
+}
+
 /// Canonicalize aggregate operands and construct the complete logical layout table.
 ///
 /// This is deliberately run before optimization.  Consequently field order and variant tags are
@@ -190,6 +431,9 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
     let mut records = program.records.iter().collect::<Vec<_>>();
     records.sort_unstable_by_key(|(id, _)| id.into_raw().into_u32());
     for (record, runtime) in records {
+        registry
+            .record_parameters
+            .insert(*record, runtime.parameters.clone());
         if runtime.layout.names().len() != runtime.field_types.len() {
             return Err(FosterError::runtime(format!(
                 "record `{}` has inconsistent typed layout metadata",
@@ -225,6 +469,11 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
             .push((*variant, runtime.alternative.to_string()));
     }
     for (_, (variant_type, mut entries)) in by_parent {
+        if let Some((variant, _)) = entries.first() {
+            registry
+                .variant_parameters
+                .insert(variant_type, program.variants[variant].parameters.clone());
+        }
         entries.sort_unstable_by_key(|(id, _)| id.into_raw().into_u32());
         let alternatives = entries
             .into_iter()
@@ -533,6 +782,7 @@ mod tests {
             record,
             RuntimeRecord {
                 name: "Pair".into(),
+                parameters: Vec::new(),
                 layout: Arc::new(crate::vm::RecordLayout::new(vec!["a".into(), "b".into()])),
                 field_types: vec![VerificationType::Integer, VerificationType::Bool],
             },
@@ -557,6 +807,7 @@ mod tests {
                 instructions: vec![Instruction::MakeRecord {
                     destination: Register(2),
                     record,
+                    type_arguments: Vec::new(),
                     fields: vec![("b".into(), Register(1)), ("a".into(), Register(0))],
                 }],
                 instruction_spans: std::iter::once(0..0).collect(),
@@ -592,6 +843,7 @@ mod tests {
         let second: RecordId = Idx::<Record>::from_raw(RawIdx::from_u32(1));
         let runtime = |name: &str| RuntimeRecord {
             name: name.into(),
+            parameters: Vec::new(),
             layout: Arc::new(crate::vm::RecordLayout::new(vec!["value".into()])),
             field_types: vec![VerificationType::Integer],
         };

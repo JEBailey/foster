@@ -600,10 +600,12 @@ fn portable_instruction(
         vm::Instruction::MakeRecord {
             destination: output,
             record,
+            type_arguments,
             fields,
         } => ir::PortableInstruction::MakeRecord {
             destination: destination(output),
             record: *record,
+            type_arguments: type_arguments.clone(),
             fields: fields
                 .iter()
                 .map(|(name, register)| (name.clone(), source(register)))
@@ -612,10 +614,12 @@ fn portable_instruction(
         vm::Instruction::MakeVariant {
             destination: output,
             variant,
+            type_arguments,
             payload,
         } => ir::PortableInstruction::MakeVariant {
             destination: destination(output),
             variant: *variant,
+            type_arguments: type_arguments.clone(),
             payload: payload.iter().map(source).collect(),
         },
         vm::Instruction::LoadField {
@@ -768,21 +772,25 @@ fn portable_instruction(
         vm::Instruction::Call {
             destination: output,
             function,
+            specialization,
             arguments,
         } => ir::PortableInstruction::Call {
             destination: destination(output),
             function: *function,
+            specialization: specialization.clone(),
             arguments: arguments.iter().map(source).collect(),
         },
         vm::Instruction::CallMethod {
             destination: output,
             receiver,
             function,
+            specialization,
             arguments,
         } => ir::PortableInstruction::CallMethod {
             destination: destination(output),
             receiver: source(receiver),
             function: *function,
+            specialization: specialization.clone(),
             arguments: arguments.iter().map(source).collect(),
         },
         vm::Instruction::CallContractMethod {
@@ -1210,10 +1218,12 @@ fn lower_instruction(
         ir::Instruction::Call {
             destination,
             function,
+            specialization,
             arguments,
         } => vm::Instruction::Call {
             destination: reg(registers, *destination),
             function: *function,
+            specialization: specialization.clone(),
             arguments: arguments
                 .iter()
                 .map(|value| reg(registers, *value))
@@ -1300,10 +1310,12 @@ fn lower_portable(
         ir::PortableInstruction::MakeRecord {
             destination,
             record,
+            type_arguments,
             fields,
         } => vm::Instruction::MakeRecord {
             destination: get(destination),
             record: *record,
+            type_arguments: type_arguments.clone(),
             fields: fields
                 .iter()
                 .map(|(name, value)| (name.clone(), get(value)))
@@ -1312,10 +1324,12 @@ fn lower_portable(
         ir::PortableInstruction::MakeVariant {
             destination,
             variant,
+            type_arguments,
             payload,
         } => vm::Instruction::MakeVariant {
             destination: get(destination),
             variant: *variant,
+            type_arguments: type_arguments.clone(),
             payload: payload.iter().map(get).collect(),
         },
         ir::PortableInstruction::LoadField {
@@ -1467,21 +1481,25 @@ fn lower_portable(
         ir::PortableInstruction::Call {
             destination,
             function,
+            specialization,
             arguments,
         } => vm::Instruction::Call {
             destination: get(destination),
             function: *function,
+            specialization: specialization.clone(),
             arguments: arguments.iter().map(get).collect(),
         },
         ir::PortableInstruction::CallMethod {
             destination,
             receiver,
             function,
+            specialization,
             arguments,
         } => vm::Instruction::CallMethod {
             destination: get(destination),
             receiver: get(receiver),
             function: *function,
+            specialization: specialization.clone(),
             arguments: arguments.iter().map(get).collect(),
         },
         ir::PortableInstruction::CallContractMethod {

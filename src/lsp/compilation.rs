@@ -151,7 +151,7 @@ impl Workspace {
                     .as_ref()
                     .is_some_and(|source| source.as_std_path() == path)
             }) {
-                return crate::compiler::check(package);
+                return crate::compiler::check_recovering(package);
             }
         }
 
@@ -179,7 +179,7 @@ impl Workspace {
                     .as_ref()
                     .is_some_and(|source| source.as_std_path() == path)
             }) {
-                return crate::compiler::check(package);
+                return crate::compiler::check_recovering(package);
             }
             if self
                 .root
@@ -231,6 +231,6 @@ impl Workspace {
             .expect("standalone package contains its source module");
         module.source_path = Some(source_path);
         module.source = Some(source);
-        crate::compiler::check(package)
+        crate::compiler::check_recovering(package)
     }
 }

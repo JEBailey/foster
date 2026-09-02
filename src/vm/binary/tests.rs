@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::vm::{Machine, compile};
+use crate::vm::{CompileOptions, Machine, compile, compile_with_options};
 
 #[test]
 fn round_trips_and_executes_compiled_program() {
@@ -8,7 +8,7 @@ fn round_trips_and_executes_compiled_program() {
             func unwrap(value: Choice) -> Int { branch value { Choice.Left(number) -> number _ -> 0 } }\n\
             func main() -> Int {\n assert(true, \"round-trip assertion\")\n let values = [20, 22]\n unwrap(Choice.Left(values[0] + values[1]))\n }";
     let compilation = crate::compile(source).unwrap();
-    let program = compile(&compilation).unwrap();
+    let program = compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
     let bytes = encode_program(&program).unwrap();
     let decoded = decode_program(&bytes).unwrap();
     assert_eq!(program, decoded);
@@ -54,7 +54,7 @@ func make<T>(value: T) -> Box<T> { Box { value } }
 func main() -> Int { make(42).value }
 "#;
     let compilation = crate::compile(source).unwrap();
-    let program = compile(&compilation).unwrap();
+    let program = compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
     let record = program
         .records
         .values()
@@ -64,12 +64,45 @@ func main() -> Int { make(42).value }
         record.field_types,
         vec![VerificationType::Generic("T".into())]
     );
+    assert_eq!(record.parameters, vec!["T"]);
     let some = program
         .variants
         .values()
         .find(|variant| variant.alternative.as_ref() == "Some")
         .unwrap();
     assert_eq!(some.payload, vec![VerificationType::Generic("T".into())]);
+    assert_eq!(some.parameters, vec!["T"]);
+    let make = program
+        .functions
+        .iter()
+        .find_map(|(id, function)| (function.name == "make").then_some(*id))
+        .unwrap();
+    assert!(program.functions.values().any(|function| {
+        function.instructions.iter().any(|instruction| {
+            matches!(
+                instruction,
+                Instruction::Call {
+                    function,
+                    specialization,
+                    ..
+                } if *function == make
+                    && specialization
+                        == &vec![("T".into(), VerificationType::Integer)]
+            )
+        })
+    }));
+    assert!(
+        program.functions[&make]
+            .instructions
+            .iter()
+            .any(|instruction| {
+                matches!(
+                    instruction,
+                    Instruction::MakeRecord { type_arguments, .. }
+                        if type_arguments == &vec![VerificationType::Generic("T".into())]
+                )
+            })
+    );
     let decoded = decode_program(&encode_program(&program).unwrap()).unwrap();
     assert_eq!(program, decoded);
     assert_eq!(

@@ -144,3 +144,43 @@ func main() -> Int {
     );
     assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
 }
+
+#[test]
+fn monomorphizes_generic_functions_and_record_layouts() {
+    let compilation = foster::compile(
+        r#"
+type Boxed<T> = { value: T }
+enum Maybe<T> = Some(T) | None
+
+func identity<T>(value: T) -> T [consume value] { value }
+func boxed<T>(value: T) -> Boxed<T> [consume value] { Boxed { value } }
+func Boxed.unbox<T>(self: Boxed<T>) -> T [consume self] { self.value }
+func value_or<T>(value: Maybe<T>, fallback: T) -> T [consume value, consume fallback] {
+    branch value {
+        Some(found) -> found
+        None -> fallback
+    }
+}
+
+func main() -> Int {
+    assert(identity(1.5) == 1.5)
+    boxed(identity(40)).unbox() + value_or(Some(2), 0)
+}
+"#,
+    )
+    .unwrap();
+    let executable = std::env::temp_dir().join(format!(
+        "foster-native-generic-test-{}{}",
+        std::process::id(),
+        std::env::consts::EXE_SUFFIX
+    ));
+    build_executable(&compilation, &executable, CompileOptions::default()).unwrap();
+    let output = std::process::Command::new(&executable).output().unwrap();
+    let _ = std::fs::remove_file(&executable);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+}

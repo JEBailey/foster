@@ -61,6 +61,14 @@ impl Writer {
         }
         Ok(())
     }
+    pub(super) fn specialization(&mut self, values: &Specialization) -> Result<(), BinaryError> {
+        self.u32(values.len())?;
+        for (name, ty) in values {
+            self.string(name)?;
+            self.verification_type(ty)?;
+        }
+        Ok(())
+    }
     pub(super) fn constant(&mut self, value: &Constant) -> Result<(), BinaryError> {
         match value {
             Constant::Unit => self.u8(0),
@@ -267,11 +275,16 @@ impl Writer {
             Instruction::MakeRecord {
                 destination,
                 record,
+                type_arguments,
                 fields,
             } => {
                 self.u8(7);
                 self.reg(*destination);
                 self.id(*record);
+                self.u32(type_arguments.len())?;
+                for ty in type_arguments {
+                    self.verification_type(ty)?;
+                }
                 self.u32(fields.len())?;
                 for (name, value) in fields {
                     self.string(name)?;
@@ -281,11 +294,16 @@ impl Writer {
             Instruction::MakeVariant {
                 destination,
                 variant,
+                type_arguments,
                 payload,
             } => {
                 self.u8(8);
                 self.reg(*destination);
                 self.id(*variant);
+                self.u32(type_arguments.len())?;
+                for ty in type_arguments {
+                    self.verification_type(ty)?;
+                }
                 self.regs(payload)?;
             }
             Instruction::LoadField {
@@ -457,23 +475,27 @@ impl Writer {
             Instruction::Call {
                 destination,
                 function,
+                specialization,
                 arguments,
             } => {
                 self.u8(25);
                 self.reg(*destination);
                 self.id(*function);
+                self.specialization(specialization)?;
                 self.regs(arguments)?;
             }
             Instruction::CallMethod {
                 destination,
                 receiver,
                 function,
+                specialization,
                 arguments,
             } => {
                 self.u8(26);
                 self.reg(*destination);
                 self.reg(*receiver);
                 self.id(*function);
+                self.specialization(specialization)?;
                 self.regs(arguments)?;
             }
             Instruction::CallContractMethod {

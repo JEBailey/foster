@@ -4,7 +4,7 @@
 //! operations are diagnosed before an object is emitted, which keeps the portable bytecode VM as
 //! the reference implementation while native support grows.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,6 +18,7 @@ use cranelift_codegen::settings::{self, Configurable};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
+use la_arena::RawIdx;
 
 use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::codegen::ir;
@@ -121,11 +122,20 @@ impl ObjectRuntime<'_> {
     }
 }
 
-/// Shared immutable state for lowering one module's functions to Cranelift.
-struct NativeBackend<'a> {
+/// Inputs shared while rebuilding specialized portable bytecode as native SSA.
+#[derive(Clone, Copy)]
+struct NativeIrEnvironment<'a> {
     program: &'a Program,
     function_types: &'a HashMap<FunctionId, ir::Signature>,
     runtime_string_indices: &'a HashMap<u16, u64>,
+    layouts: &'a LayoutRegistry,
+    physical_layouts: &'a PhysicalRegistry,
+    instances: &'a HashMap<SpecializationKey, FunctionId>,
+}
+
+/// Shared immutable state for lowering one module's functions to Cranelift.
+struct NativeBackend<'a> {
+    ir: NativeIrEnvironment<'a>,
     functions: &'a HashMap<FunctionId, FuncId>,
     objects: ObjectRuntime<'a>,
 }
@@ -137,43 +147,66 @@ struct PatternSubject {
     may_bind_object: bool,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct SpecializationKey {
+    function: FunctionId,
+    substitutions: crate::vm::Specialization,
+}
+
+#[derive(Debug, Clone)]
+struct NativeInstance {
+    key: SpecializationKey,
+    ir_function: FunctionId,
+}
+
 /// Lower the reachable native subset and render deterministic typed SSA IR.
 pub fn emit_ir(compilation: &Compilation) -> Result<String, FosterError> {
     let mut program =
         vm::compile_with_options(compilation, vm::CompileOptions { optimize: false })?;
-    let layouts = crate::codegen::layout::legalize(&mut program)?;
+    let mut layouts = crate::codegen::layout::legalize(&mut program)?;
+    let main = program.main.ok_or_else(|| {
+        FosterError::runtime("native compilation requires a `main` function").with_code("E0900")
+    })?;
+    let instances = reachable_instances(&program, main)?;
+    let instance_ids = instances
+        .iter()
+        .map(|instance| (instance.key.clone(), instance.ir_function))
+        .collect::<HashMap<_, _>>();
+    let function_types = collect_function_types(compilation, &instances, &mut layouts)?;
     let physical_layouts =
         PhysicalRegistry::build(&layouts, TargetLayout::host()).map_err(|error| {
             native_error(format!("cannot calculate native object layouts: {error}"))
         })?;
-    let main = program.main.ok_or_else(|| {
-        FosterError::runtime("native compilation requires a `main` function").with_code("E0900")
-    })?;
-    let reachable = reachable_functions(&program, main)?;
-    let function_types = collect_function_types(compilation, &reachable, &layouts)?;
+    let main_instance = instances
+        .iter()
+        .find(|instance| instance.key.function == main && instance.key.substitutions.is_empty())
+        .expect("main specialization is reachable");
     if matches!(
-        function_types[&main].result,
+        function_types[&main_instance.ir_function].result,
         NativeType::Arguments | NativeType::StringList | NativeType::Object(_)
     ) {
         return Err(native_error(
             "native `main` cannot return Arguments or List<String>",
         ));
     }
-    validate_program(compilation, &program, &reachable, &function_types, &layouts)?;
+    validate_program(compilation, &program, &instances, &function_types, &layouts)?;
     let (_, runtime_string_indices) = runtime_strings(&program);
-    let mut ordered = reachable.into_iter().collect::<Vec<_>>();
-    ordered.sort_unstable_by_key(|function| function.into_raw().into_u32());
+    let environment = NativeIrEnvironment {
+        program: &program,
+        function_types: &function_types,
+        runtime_string_indices: &runtime_string_indices,
+        layouts: &layouts,
+        physical_layouts: &physical_layouts,
+        instances: &instance_ids,
+    };
     let mut output = String::from("foster-codegen-ir 1\n\n");
-    for function_id in ordered {
-        let function = &program.functions[&function_id];
+    for instance in &instances {
+        let function = &program.functions[&instance.key.function];
         let lowered = lower_to_native_ir(
-            &program,
             function,
-            &function_types[&function_id],
-            &function_types,
-            &runtime_string_indices,
-            &layouts,
-            &physical_layouts,
+            &function_types[&instance.ir_function],
+            &instance.key,
+            environment,
         )?;
         lowered.verify(&function_types).map_err(|error| {
             native_error(format!(
@@ -182,8 +215,9 @@ pub fn emit_ir(compilation: &Compilation) -> Result<String, FosterError> {
             ))
         })?;
         output.push_str(&format!(
-            "; function #{}\n{lowered}\n",
-            function_id.into_raw().into_u32()
+            "; function #{} {:?}\n{lowered}\n",
+            instance.key.function.into_raw().into_u32(),
+            instance.key.substitutions
         ));
     }
     Ok(output)
@@ -199,14 +233,22 @@ pub fn compile_object(
     // performs the requested machine-level optimization.
     let mut program =
         vm::compile_with_options(compilation, vm::CompileOptions { optimize: false })?;
-    let layouts = crate::codegen::layout::legalize(&mut program)?;
+    let mut layouts = crate::codegen::layout::legalize(&mut program)?;
     let main = program.main.ok_or_else(|| {
         FosterError::runtime("native compilation requires a `main` function").with_code("E0900")
     })?;
-    let reachable = reachable_functions(&program, main)?;
-    let function_types = collect_function_types(compilation, &reachable, &layouts)?;
+    let instances = reachable_instances(&program, main)?;
+    let instance_ids = instances
+        .iter()
+        .map(|instance| (instance.key.clone(), instance.ir_function))
+        .collect::<HashMap<_, _>>();
+    let function_types = collect_function_types(compilation, &instances, &mut layouts)?;
+    let main_instance = instances
+        .iter()
+        .find(|instance| instance.key.function == main && instance.key.substitutions.is_empty())
+        .expect("main specialization is reachable");
     if matches!(
-        function_types[&main].result,
+        function_types[&main_instance.ir_function].result,
         NativeType::Arguments | NativeType::StringList | NativeType::Object(_)
     ) {
         return Err(native_error(
@@ -242,31 +284,29 @@ pub fn compile_object(
         native_error(format!("cannot calculate native object layouts: {error}"))
     })?;
     let layout_descriptors = emit_layout_descriptors(&mut module, &physical_layouts)?;
-    validate_program(compilation, &program, &reachable, &function_types, &layouts)?;
+    validate_program(compilation, &program, &instances, &function_types, &layouts)?;
     let (runtime_strings, runtime_string_indices) = runtime_strings(&program);
 
     let mut native_ids = HashMap::new();
-    let mut ordered = reachable.iter().copied().collect::<Vec<_>>();
-    ordered.sort_unstable_by_key(|function| function.into_raw().into_u32());
-    for function in &ordered {
-        let bytecode = &program.functions[function];
-        let signature = signature(&mut module, &function_types[function]);
-        let linkage = if *function == main {
+    for instance in &instances {
+        let bytecode = &program.functions[&instance.key.function];
+        let signature = signature(&mut module, &function_types[&instance.ir_function]);
+        let linkage = if instance.key.function == main && instance.key.substitutions.is_empty() {
             Linkage::Export
         } else {
             Linkage::Local
         };
-        let symbol = if *function == main {
+        let symbol = if instance.key.function == main && instance.key.substitutions.is_empty() {
             "foster_native_entry".to_owned()
         } else {
-            format!("foster_fn_{}", function.into_raw().into_u32())
+            format!("foster_fn_{}", instance.ir_function.into_raw().into_u32())
         };
         let id = module
             .declare_function(&symbol, linkage, &signature)
             .map_err(|error| {
                 native_error(format!("cannot declare `{}`: {error}", bytecode.name))
             })?;
-        native_ids.insert(*function, id);
+        native_ids.insert(instance.ir_function, id);
     }
 
     let drop_ids = declare_layout_destructors(&mut module, &physical_layouts)?;
@@ -278,9 +318,14 @@ pub fn compile_object(
     define_layout_destructors(&mut module, native_layouts, &drop_ids)?;
 
     let backend = NativeBackend {
-        program: &program,
-        function_types: &function_types,
-        runtime_string_indices: &runtime_string_indices,
+        ir: NativeIrEnvironment {
+            program: &program,
+            function_types: &function_types,
+            runtime_string_indices: &runtime_string_indices,
+            layouts: &layouts,
+            physical_layouts: &physical_layouts,
+            instances: &instance_ids,
+        },
         functions: &native_ids,
         objects: ObjectRuntime {
             layouts: native_layouts,
@@ -289,8 +334,13 @@ pub fn compile_object(
         },
     };
 
-    for function in ordered {
-        define_function(&mut module, function, native_ids[&function], &backend)?;
+    for instance in &instances {
+        define_function(
+            &mut module,
+            instance,
+            native_ids[&instance.ir_function],
+            &backend,
+        )?;
     }
 
     let bytes = module
@@ -299,7 +349,7 @@ pub fn compile_object(
         .map_err(|error| native_error(format!("cannot encode the native object: {error}")))?;
     Ok(ObjectArtifact {
         bytes,
-        result: function_types[&main].result,
+        result: function_types[&main_instance.ir_function].result,
         accepts_arguments: program.main_arguments,
         runtime_strings,
     })
@@ -400,44 +450,193 @@ pub fn build_executable(
     Ok(())
 }
 
-fn reachable_functions(
+fn reachable_instances(
     program: &Program,
     main: FunctionId,
-) -> Result<HashSet<FunctionId>, FosterError> {
-    let mut reachable = HashSet::new();
-    let mut pending = vec![main];
-    while let Some(function) = pending.pop() {
-        if !reachable.insert(function) {
+) -> Result<Vec<NativeInstance>, FosterError> {
+    let mut reachable = BTreeSet::new();
+    let mut pending = vec![SpecializationKey {
+        function: main,
+        substitutions: Vec::new(),
+    }];
+    while let Some(instance) = pending.pop() {
+        if instance
+            .substitutions
+            .iter()
+            .any(|(_, ty)| verification_type_depth(ty) > 64)
+        {
+            return Err(native_error(
+                "native monomorphization encountered expanding polymorphic recursion",
+            )
+            .with_help(
+                "use a non-expanding recursive type argument or an explicit boxed boundary",
+            ));
+        }
+        if !reachable.insert(instance.clone()) {
             continue;
         }
-        let body = program.functions.get(&function).ok_or_else(|| {
+        if reachable.len() > 16_384 {
+            return Err(native_error(
+                "native monomorphization exceeds 16384 reachable function instances",
+            ));
+        }
+        let body = program.functions.get(&instance.function).ok_or_else(|| {
             native_error(format!(
                 "native call references missing function #{}",
-                function.into_raw().into_u32()
+                instance.function.into_raw().into_u32()
             ))
         })?;
         for instruction in &body.instructions {
             match instruction {
-                Instruction::Call { function, .. } | Instruction::CallMethod { function, .. } => {
-                    pending.push(*function);
+                Instruction::Call {
+                    function,
+                    specialization,
+                    ..
                 }
+                | Instruction::CallMethod {
+                    function,
+                    specialization,
+                    ..
+                } => pending.push(SpecializationKey {
+                    function: *function,
+                    substitutions: resolve_specialization(specialization, &instance.substitutions),
+                }),
                 _ => {}
             }
         }
     }
-    Ok(reachable)
+    let first_synthetic = program
+        .functions
+        .keys()
+        .map(|function| function.into_raw().into_u32())
+        .max()
+        .unwrap_or(0)
+        .checked_add(1)
+        .ok_or_else(|| native_error("native function identity space is exhausted"))?;
+    reachable
+        .into_iter()
+        .enumerate()
+        .map(|(index, key)| {
+            let raw = first_synthetic
+                .checked_add(index as u32)
+                .ok_or_else(|| native_error("native function identity space is exhausted"))?;
+            Ok(NativeInstance {
+                key,
+                ir_function: FunctionId::from_raw(RawIdx::from_u32(raw)),
+            })
+        })
+        .collect()
+}
+
+fn verification_type_depth(ty: &crate::vm::VerificationType) -> usize {
+    use crate::vm::VerificationType;
+    match ty {
+        VerificationType::List(value)
+        | VerificationType::Reference(value)
+        | VerificationType::Remote(value)
+        | VerificationType::Future(value) => 1 + verification_type_depth(value),
+        VerificationType::Function {
+            parameters, result, ..
+        } => {
+            1 + parameters
+                .iter()
+                .chain(std::iter::once(result.as_ref()))
+                .map(verification_type_depth)
+                .max()
+                .unwrap_or(0)
+        }
+        VerificationType::Record { arguments, .. }
+        | VerificationType::Variant { arguments, .. }
+        | VerificationType::Union(arguments) => {
+            1 + arguments
+                .iter()
+                .map(verification_type_depth)
+                .max()
+                .unwrap_or(0)
+        }
+        _ => 1,
+    }
+}
+
+fn resolve_specialization(
+    specialization: &crate::vm::Specialization,
+    outer: &crate::vm::Specialization,
+) -> crate::vm::Specialization {
+    specialization
+        .iter()
+        .map(|(name, ty)| (name.clone(), substitute_verification_type(ty, outer)))
+        .collect()
+}
+
+fn substitute_verification_type(
+    ty: &crate::vm::VerificationType,
+    substitutions: &crate::vm::Specialization,
+) -> crate::vm::VerificationType {
+    use crate::vm::VerificationType;
+    match ty {
+        VerificationType::Generic(name) => substitutions
+            .iter()
+            .find_map(|(candidate, ty)| (candidate == name).then(|| ty.clone()))
+            .unwrap_or_else(|| ty.clone()),
+        VerificationType::List(value) => {
+            VerificationType::List(Box::new(substitute_verification_type(value, substitutions)))
+        }
+        VerificationType::Reference(value) => VerificationType::Reference(Box::new(
+            substitute_verification_type(value, substitutions),
+        )),
+        VerificationType::Remote(value) => {
+            VerificationType::Remote(Box::new(substitute_verification_type(value, substitutions)))
+        }
+        VerificationType::Future(value) => {
+            VerificationType::Future(Box::new(substitute_verification_type(value, substitutions)))
+        }
+        VerificationType::Function {
+            parameters,
+            parameter_modes,
+            result,
+        } => VerificationType::Function {
+            parameters: parameters
+                .iter()
+                .map(|ty| substitute_verification_type(ty, substitutions))
+                .collect(),
+            parameter_modes: parameter_modes.clone(),
+            result: Box::new(substitute_verification_type(result, substitutions)),
+        },
+        VerificationType::Record { record, arguments } => VerificationType::Record {
+            record: *record,
+            arguments: arguments
+                .iter()
+                .map(|ty| substitute_verification_type(ty, substitutions))
+                .collect(),
+        },
+        VerificationType::Variant { variant, arguments } => VerificationType::Variant {
+            variant: *variant,
+            arguments: arguments
+                .iter()
+                .map(|ty| substitute_verification_type(ty, substitutions))
+                .collect(),
+        },
+        VerificationType::Union(members) => VerificationType::Union(
+            members
+                .iter()
+                .map(|ty| substitute_verification_type(ty, substitutions))
+                .collect(),
+        ),
+        _ => ty.clone(),
+    }
 }
 
 fn collect_function_types(
     compilation: &Compilation,
-    reachable: &HashSet<FunctionId>,
-    layouts: &LayoutRegistry,
+    instances: &[NativeInstance],
+    layouts: &mut LayoutRegistry,
 ) -> Result<HashMap<FunctionId, ir::Signature>, FosterError> {
-    reachable
+    instances
         .iter()
-        .map(|function| {
-            let definition = &compilation.hir.functions[*function];
-            let signature = compilation.types.function_type(*function).ok_or_else(|| {
+        .map(|instance| {
+            let function = instance.key.function;
+            let definition = &compilation.hir.functions[function];
+            let signature = compilation.types.function_type(function).ok_or_else(|| {
                 native_error(format!(
                     "missing type information for `{}`",
                     definition.name
@@ -446,20 +645,47 @@ fn collect_function_types(
             let parameters = signature
                 .parameters
                 .iter()
-                .map(|ty| native_type(compilation, layouts, *ty, &definition.name))
+                .map(|ty| {
+                    native_type(
+                        compilation,
+                        layouts,
+                        *ty,
+                        &instance.key.substitutions,
+                        &definition.name,
+                    )
+                })
                 .collect::<Result<Vec<_>, _>>()?;
-            let result = native_type(compilation, layouts, signature.result, &definition.name)?;
-            Ok((*function, ir::Signature { parameters, result }))
+            let result = native_type(
+                compilation,
+                layouts,
+                signature.result,
+                &instance.key.substitutions,
+                &definition.name,
+            )?;
+            Ok((instance.ir_function, ir::Signature { parameters, result }))
         })
         .collect()
 }
 
 fn native_type(
     compilation: &Compilation,
-    layouts: &LayoutRegistry,
+    layouts: &mut LayoutRegistry,
     ty: TypeId,
+    substitutions: &crate::vm::Specialization,
     function: &str,
 ) -> Result<NativeType, FosterError> {
+    if let Type::Generic(name) = &compilation.types.types[ty] {
+        let concrete = substitutions
+            .iter()
+            .find_map(|(candidate, ty)| (candidate == name).then_some(ty))
+            .ok_or_else(|| {
+                native_error(format!(
+                    "native specialization of `{function}` does not resolve generic `{name}`"
+                ))
+            })?;
+        layouts.instantiate_type(concrete)?;
+        return concrete_native_type(compilation, layouts, concrete, function);
+    }
     match compilation.types.types[ty] {
         Type::Unit => Ok(NativeType::Unit),
         Type::Bool => Ok(NativeType::Bool),
@@ -488,7 +714,8 @@ fn native_type(
             && compilation.hir.modules[compilation.hir.records[record].module].name
                 == "core.list"
             && arguments.len() == 1
-            && native_type(compilation, layouts, arguments[0], function)? == NativeType::String =>
+            && native_type(compilation, layouts, arguments[0], substitutions, function)?
+                == NativeType::String =>
         {
             Ok(NativeType::StringList)
         }
@@ -499,14 +726,42 @@ fn native_type(
             ))
             .with_help("use `foster build` without `--native` for the complete VM language"))
         }
-        Type::Record { record, .. } => layouts
-            .record(record)
-            .map(NativeType::Object)
-            .ok_or_else(|| native_error(format!("record type in `{function}` has no layout"))),
-        Type::Variant { variant, .. } => layouts
-            .variant(variant)
-            .map(NativeType::Object)
-            .ok_or_else(|| native_error(format!("variant type in `{function}` has no layout"))),
+        Type::Record {
+            record,
+            ref arguments,
+        } => {
+            let arguments = arguments
+                .iter()
+                .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 0))
+                .collect::<Result<Vec<_>, _>>()?;
+            let concrete = crate::vm::VerificationType::Record {
+                record,
+                arguments: arguments.clone(),
+            };
+            layouts.instantiate_type(&concrete)?;
+            layouts
+                .record_instance(record, &arguments)
+                .map(NativeType::Object)
+                .ok_or_else(|| native_error(format!("record type in `{function}` has no layout")))
+        }
+        Type::Variant {
+            variant,
+            ref arguments,
+        } => {
+            let arguments = arguments
+                .iter()
+                .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 0))
+                .collect::<Result<Vec<_>, _>>()?;
+            let concrete = crate::vm::VerificationType::Variant {
+                variant,
+                arguments: arguments.clone(),
+            };
+            layouts.instantiate_type(&concrete)?;
+            layouts
+                .variant_instance(variant, &arguments)
+                .map(NativeType::Object)
+                .ok_or_else(|| native_error(format!("variant type in `{function}` has no layout")))
+        }
         ref unsupported => Err(native_error(format!(
             "native compilation of `{function}` does not yet support type `{}` ({unsupported:?})",
             compilation.types.display(ty)
@@ -515,10 +770,118 @@ fn native_type(
     }
 }
 
+fn specialized_verification_type(
+    compilation: &Compilation,
+    ty: TypeId,
+    substitutions: &crate::vm::Specialization,
+    depth: usize,
+) -> Result<crate::vm::VerificationType, FosterError> {
+    use crate::vm::VerificationType;
+    if depth >= 64 {
+        return Err(native_error(
+            "native specialization type nesting exceeds 64 levels",
+        ));
+    }
+    let nested = |ty| specialized_verification_type(compilation, ty, substitutions, depth + 1);
+    Ok(match &compilation.types.types[ty] {
+        Type::Generic(name) => substitutions
+            .iter()
+            .find_map(|(candidate, ty)| (candidate == name).then(|| ty.clone()))
+            .unwrap_or_else(|| VerificationType::Generic(name.clone())),
+        Type::Unit => VerificationType::Unit,
+        Type::Bool => VerificationType::Bool,
+        Type::Int => VerificationType::Integer,
+        Type::Float => VerificationType::Float,
+        Type::CodePoint => VerificationType::CodePoint,
+        Type::Byte => VerificationType::Byte,
+        Type::RawBytes => VerificationType::Bytes,
+        Type::RawByteBuffer => VerificationType::ByteBuffer,
+        Type::Reference { value, .. } => VerificationType::Reference(Box::new(nested(*value)?)),
+        Type::RawList(value) | Type::Sequence(value) => {
+            VerificationType::List(Box::new(nested(*value)?))
+        }
+        Type::Remote(value) => VerificationType::Remote(Box::new(nested(*value)?)),
+        Type::Future(value) => VerificationType::Future(Box::new(nested(*value)?)),
+        Type::Function(function) => VerificationType::Function {
+            parameters: function
+                .parameters
+                .iter()
+                .map(|ty| nested(*ty))
+                .collect::<Result<_, _>>()?,
+            parameter_modes: function.parameter_modes.clone(),
+            result: Box::new(nested(function.result)?),
+        },
+        Type::Record { record, arguments } => VerificationType::Record {
+            record: *record,
+            arguments: arguments
+                .iter()
+                .map(|ty| nested(*ty))
+                .collect::<Result<_, _>>()?,
+        },
+        Type::Variant { variant, arguments } => VerificationType::Variant {
+            variant: *variant,
+            arguments: arguments
+                .iter()
+                .map(|ty| nested(*ty))
+                .collect::<Result<_, _>>()?,
+        },
+        Type::Intersection(members) => VerificationType::Union(
+            members
+                .iter()
+                .map(|ty| nested(*ty))
+                .collect::<Result<_, _>>()?,
+        ),
+        Type::Module(_) => VerificationType::Unknown,
+    })
+}
+
+fn concrete_native_type(
+    compilation: &Compilation,
+    layouts: &mut LayoutRegistry,
+    ty: &crate::vm::VerificationType,
+    function: &str,
+) -> Result<NativeType, FosterError> {
+    use crate::vm::VerificationType;
+    match ty {
+        VerificationType::Unit => Ok(NativeType::Unit),
+        VerificationType::Bool => Ok(NativeType::Bool),
+        VerificationType::Integer => Ok(NativeType::Int),
+        VerificationType::Float => Ok(NativeType::Float),
+        VerificationType::CodePoint => Ok(NativeType::CodePoint),
+        VerificationType::Byte => Ok(NativeType::Byte),
+        VerificationType::Record { record, .. }
+            if compilation
+                .types
+                .record_names
+                .get(record)
+                .is_some_and(|name| name == "String") =>
+        {
+            Ok(NativeType::String)
+        }
+        VerificationType::Record { record, arguments } => {
+            layouts.instantiate_type(ty)?;
+            layouts
+                .record_instance(*record, arguments)
+                .map(NativeType::Object)
+                .ok_or_else(|| native_error(format!("record type in `{function}` has no layout")))
+        }
+        VerificationType::Variant { variant, arguments } => {
+            layouts.instantiate_type(ty)?;
+            layouts
+                .variant_instance(*variant, arguments)
+                .map(NativeType::Object)
+                .ok_or_else(|| native_error(format!("variant type in `{function}` has no layout")))
+        }
+        unsupported => Err(native_error(format!(
+            "native specialization of `{function}` does not yet support `{unsupported:?}`"
+        ))),
+    }
+}
+
 fn validate_program(
     compilation: &Compilation,
     program: &Program,
-    reachable: &HashSet<FunctionId>,
+    instances: &[NativeInstance],
     function_types: &HashMap<FunctionId, ir::Signature>,
     layouts: &LayoutRegistry,
 ) -> Result<(), FosterError> {
@@ -530,15 +893,15 @@ fn validate_program(
             "native `main` must take no parameters or one `std.process.Arguments` parameter",
         ));
     }
-    for function in reachable {
-        let body = &program.functions[function];
+    for instance in instances {
+        let body = &program.functions[&instance.key.function];
         if body.captures != 0 {
             return Err(native_error(format!(
                 "native compilation does not yet support captures in `{}`",
                 body.name
             )));
         }
-        if usize::from(body.parameters) != function_types[function].parameters.len() {
+        if usize::from(body.parameters) != function_types[&instance.ir_function].parameters.len() {
             return Err(native_error(format!(
                 "parameter metadata for `{}` is inconsistent",
                 body.name
@@ -767,22 +1130,19 @@ fn lower_drop_fields(
 
 fn define_function(
     module: &mut ObjectModule,
-    function_id: FunctionId,
+    instance: &NativeInstance,
     native_id: FuncId,
     backend: &NativeBackend<'_>,
 ) -> Result<(), FosterError> {
-    let function = &backend.program.functions[&function_id];
+    let function = &backend.ir.program.functions[&instance.key.function];
     let native_function = lower_to_native_ir(
-        backend.program,
         function,
-        &backend.function_types[&function_id],
-        backend.function_types,
-        backend.runtime_string_indices,
-        backend.objects.layouts.logical,
-        backend.objects.layouts.physical,
+        &backend.ir.function_types[&instance.ir_function],
+        &instance.key,
+        backend.ir,
     )?;
     native_function
-        .verify(backend.function_types)
+        .verify(backend.ir.function_types)
         .map_err(|error| {
             native_error(format!(
                 "invalid native IR for `{}`: {error}",
@@ -791,7 +1151,7 @@ fn define_function(
         })?;
     let frontend_config = module.target_config();
     let mut context = module.make_context();
-    context.func.signature = signature(module, &backend.function_types[&function_id]);
+    context.func.signature = signature(module, &backend.ir.function_types[&instance.ir_function]);
     let mut builder_context = FunctionBuilderContext::new();
     {
         let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
@@ -830,12 +1190,10 @@ fn cranelift_type(ty: NativeType, pointer_type: ClifType) -> ClifType {
 }
 
 fn infer_register_types(
-    program: &Program,
     function: &BytecodeFunction,
     parameter_types: &[NativeType],
-    function_types: &HashMap<FunctionId, ir::Signature>,
-    layouts: &LayoutRegistry,
-    physical_layouts: &PhysicalRegistry,
+    instance: &SpecializationKey,
+    environment: NativeIrEnvironment<'_>,
 ) -> Result<Vec<Option<NativeType>>, FosterError> {
     let mut result = vec![None; usize::from(function.registers)];
     for (index, ty) in parameter_types.iter().enumerate() {
@@ -847,8 +1205,8 @@ fn infer_register_types(
                 destination,
                 constant,
             } => {
-                result[usize::from(destination.0)] =
-                    Some(match program.constants[usize::from(*constant)] {
+                result[usize::from(destination.0)] = Some(
+                    match environment.program.constants[usize::from(*constant)] {
                         Constant::Unit => NativeType::Unit,
                         Constant::Bool(_) => NativeType::Bool,
                         Constant::Integer(_) => NativeType::Int,
@@ -856,7 +1214,8 @@ fn infer_register_types(
                         Constant::CodePoint(_) => NativeType::CodePoint,
                         Constant::String(_) => NativeType::String,
                         Constant::Symbol(_) => unreachable!("validated above"),
-                    });
+                    },
+                );
             }
             Instruction::Move {
                 destination,
@@ -899,42 +1258,65 @@ fn infer_register_types(
             Instruction::Call {
                 destination,
                 function: callee,
+                specialization,
                 ..
             }
             | Instruction::CallMethod {
                 destination,
                 function: callee,
+                specialization,
                 ..
             } => {
-                result[usize::from(destination.0)] = Some(function_types[callee].result);
+                let callee = environment.instances[&SpecializationKey {
+                    function: *callee,
+                    substitutions: resolve_specialization(specialization, &instance.substitutions),
+                }];
+                result[usize::from(destination.0)] =
+                    Some(environment.function_types[&callee].result);
             }
             Instruction::MakeRecord {
                 destination,
                 record,
+                type_arguments,
                 ..
             } => {
+                let arguments = type_arguments
+                    .iter()
+                    .map(|ty| substitute_verification_type(ty, &instance.substitutions))
+                    .collect::<Vec<_>>();
                 result[usize::from(destination.0)] = Some(NativeType::Object(
-                    layouts.record(*record).ok_or_else(|| {
-                        native_error(format!(
-                            "record in `{}` has no native layout",
-                            function.name
-                        ))
-                    })?,
+                    environment
+                        .layouts
+                        .record_instance(*record, &arguments)
+                        .ok_or_else(|| {
+                            native_error(format!(
+                                "record in `{}` has no native layout",
+                                function.name
+                            ))
+                        })?,
                 ));
             }
             Instruction::MakeVariant {
                 destination,
                 variant,
+                type_arguments,
                 ..
             } => {
-                let parent = program.variants[variant].parent;
+                let parent = environment.program.variants[variant].parent;
+                let arguments = type_arguments
+                    .iter()
+                    .map(|ty| substitute_verification_type(ty, &instance.substitutions))
+                    .collect::<Vec<_>>();
                 result[usize::from(destination.0)] = Some(NativeType::Object(
-                    layouts.variant(parent).ok_or_else(|| {
-                        native_error(format!(
-                            "variant in `{}` has no native layout",
-                            function.name
-                        ))
-                    })?,
+                    environment
+                        .layouts
+                        .variant_instance(parent, &arguments)
+                        .ok_or_else(|| {
+                            native_error(format!(
+                                "variant in `{}` has no native layout",
+                                function.name
+                            ))
+                        })?,
                 ));
             }
             Instruction::LoadField {
@@ -945,9 +1327,9 @@ fn infer_register_types(
             } => {
                 let object = register_type(&result, *object, function)?;
                 result[usize::from(destination.0)] = Some(field_type(
-                    program,
-                    layouts,
-                    physical_layouts,
+                    environment.program,
+                    environment.layouts,
+                    environment.physical_layouts,
                     object,
                     field,
                 )?);
@@ -984,9 +1366,9 @@ fn infer_register_types(
                 }
                 let receiver = register_type(&result, *receiver, function)?;
                 result[usize::from(destination.0)] = Some(field_type(
-                    program,
-                    layouts,
-                    physical_layouts,
+                    environment.program,
+                    environment.layouts,
+                    environment.physical_layouts,
                     receiver,
                     name,
                 )?);
@@ -1001,9 +1383,9 @@ fn infer_register_types(
                 let subject = register_type(&result, *subject, function)?;
                 let mut types = Vec::new();
                 native_pattern_binding_types(
-                    program,
-                    layouts,
-                    physical_layouts,
+                    environment.program,
+                    environment.layouts,
+                    environment.physical_layouts,
                     pattern,
                     subject,
                     &mut types,
@@ -1036,15 +1418,21 @@ fn native_pattern_binding_types(
         Pattern::Binding(_) => bindings.push(subject),
         Pattern::Variant { variant, fields } => {
             let parent = program.variants[variant].parent;
-            let layout = layouts
-                .variant(parent)
-                .ok_or_else(|| native_error("pattern variant has no native layout"))?;
-            if subject != NativeType::Object(layout) {
+            let NativeType::Object(layout) = subject else {
                 return Err(native_error("pattern subject uses the wrong native layout"));
-            }
-            let LayoutKind::Variant { alternatives, .. } = &layouts.get(layout).kind else {
+            };
+            let LayoutKind::Variant {
+                variant_type,
+                alternatives,
+            } = &layouts.get(layout).kind
+            else {
                 unreachable!()
             };
+            if *variant_type != parent {
+                return Err(native_error(
+                    "pattern subject uses the wrong nominal layout",
+                ));
+            }
             let alternative = alternatives
                 .iter()
                 .find(|alternative| alternative.variant == *variant)
@@ -1308,21 +1696,16 @@ fn native_instruction_uses(instruction: &Instruction) -> Vec<Register> {
 }
 
 fn lower_to_native_ir(
-    program: &Program,
     function: &BytecodeFunction,
     function_signature: &ir::Signature,
-    function_types: &HashMap<FunctionId, ir::Signature>,
-    runtime_string_indices: &HashMap<u16, u64>,
-    layouts: &LayoutRegistry,
-    physical_layouts: &PhysicalRegistry,
+    instance: &SpecializationKey,
+    environment: NativeIrEnvironment<'_>,
 ) -> Result<ir::Function, FosterError> {
     let inferred = infer_register_types(
-        program,
         function,
         &function_signature.parameters,
-        function_types,
-        layouts,
-        physical_layouts,
+        instance,
+        environment,
     )?;
     let register_types = inferred
         .iter()
@@ -1413,15 +1796,15 @@ fn lower_to_native_ir(
                     destination,
                     constant,
                 } => {
-                    let constant = match program.constants[usize::from(*constant)] {
+                    let constant = match environment.program.constants[usize::from(*constant)] {
                         Constant::Unit => ir::Constant::Unit,
                         Constant::Bool(value) => ir::Constant::Bool(value),
                         Constant::Integer(value) => ir::Constant::Integer(value),
                         Constant::Float(value) => ir::Constant::Float(value),
                         Constant::CodePoint(value) => ir::Constant::CodePoint(value),
-                        Constant::String(_) => {
-                            ir::Constant::RuntimeString(runtime_string_indices[constant])
-                        }
+                        Constant::String(_) => ir::Constant::RuntimeString(
+                            environment.runtime_string_indices[constant],
+                        ),
                         Constant::Symbol(_) => unreachable!("validated above"),
                     };
                     let destination = define_native_register(
@@ -1512,6 +1895,7 @@ fn lower_to_native_ir(
                 Instruction::MakeRecord {
                     destination,
                     record,
+                    type_arguments,
                     fields,
                 } => {
                     let destination = define_native_register(
@@ -1531,6 +1915,10 @@ fn lower_to_native_ir(
                         ir::PortableInstruction::MakeRecord {
                             destination,
                             record: *record,
+                            type_arguments: type_arguments
+                                .iter()
+                                .map(|ty| substitute_verification_type(ty, &instance.substitutions))
+                                .collect(),
                             fields,
                         },
                     ));
@@ -1539,6 +1927,7 @@ fn lower_to_native_ir(
                 Instruction::MakeVariant {
                     destination,
                     variant,
+                    type_arguments,
                     payload,
                 } => {
                     let destination = define_native_register(
@@ -1556,6 +1945,10 @@ fn lower_to_native_ir(
                         ir::PortableInstruction::MakeVariant {
                             destination,
                             variant: *variant,
+                            type_arguments: type_arguments
+                                .iter()
+                                .map(|ty| substitute_verification_type(ty, &instance.substitutions))
+                                .collect(),
                             payload,
                         },
                     ));
@@ -1783,11 +2176,12 @@ fn lower_to_native_ir(
                 Instruction::Call {
                     destination,
                     function: callee,
+                    specialization,
                     arguments,
                 } => {
                     let lowered_arguments = lower_call_arguments(
                         arguments,
-                        &program.functions[callee].parameter_modes,
+                        &environment.program.functions[callee].parameter_modes,
                         function,
                         &inferred,
                         &mut state,
@@ -1803,7 +2197,14 @@ fn lower_to_native_ir(
                     );
                     instructions.push(ir::Instruction::Call {
                         destination,
-                        function: *callee,
+                        function: environment.instances[&SpecializationKey {
+                            function: *callee,
+                            substitutions: resolve_specialization(
+                                specialization,
+                                &instance.substitutions,
+                            ),
+                        }],
+                        specialization: Vec::new(),
                         arguments: lowered_arguments,
                     });
                 }
@@ -1811,13 +2212,14 @@ fn lower_to_native_ir(
                     destination,
                     receiver,
                     function: callee,
+                    specialization,
                     arguments,
                 } => {
                     let mut registers = vec![*receiver];
                     registers.extend(arguments);
                     let lowered_arguments = lower_call_arguments(
                         &registers,
-                        &program.functions[callee].parameter_modes,
+                        &environment.program.functions[callee].parameter_modes,
                         function,
                         &inferred,
                         &mut state,
@@ -1833,7 +2235,14 @@ fn lower_to_native_ir(
                     );
                     instructions.push(ir::Instruction::Call {
                         destination,
-                        function: *callee,
+                        function: environment.instances[&SpecializationKey {
+                            function: *callee,
+                            substitutions: resolve_specialization(
+                                specialization,
+                                &instance.substitutions,
+                            ),
+                        }],
+                        specialization: Vec::new(),
                         arguments: lowered_arguments,
                     });
                 }
@@ -2455,15 +2864,21 @@ fn lower_portable_native(
         ir::PortableInstruction::MakeRecord {
             destination,
             record,
+            type_arguments: _,
             fields: values_to_store,
         } => {
-            let layout = objects
-                .layouts
-                .logical
-                .record(*record)
-                .ok_or_else(|| native_error("record construction has no native layout"))?;
-            if function.value_type(*destination) != NativeType::Object(layout) {
+            let NativeType::Object(layout) = function.value_type(*destination) else {
                 return Err(native_error("record result uses the wrong native layout"));
+            };
+            let LayoutKind::Record {
+                record: layout_record,
+                ..
+            } = objects.layouts.logical.get(layout).kind
+            else {
+                return Err(native_error("record has a non-record logical layout"));
+            };
+            if layout_record != *record {
+                return Err(native_error("record result uses the wrong nominal layout"));
             }
             let physical = objects.layouts.physical.get(layout);
             let PhysicalKind::Record { fields } = &physical.kind else {
@@ -2487,25 +2902,22 @@ fn lower_portable_native(
         ir::PortableInstruction::MakeVariant {
             destination,
             variant,
+            type_arguments: _,
             payload,
         } => {
-            let runtime = &objects
-                .layouts
-                .logical
-                .layouts()
-                .iter()
-                .find_map(|logical| match &logical.kind {
-                    LayoutKind::Variant { alternatives, .. } => alternatives
-                        .iter()
-                        .find(|alternative| alternative.variant == *variant)
-                        .map(|alternative| (logical.id, alternative.tag)),
-                    _ => None,
-                })
-                .ok_or_else(|| native_error("variant construction has no native layout"))?;
-            let (layout, tag) = *runtime;
-            if function.value_type(*destination) != NativeType::Object(layout) {
+            let NativeType::Object(layout) = function.value_type(*destination) else {
                 return Err(native_error("variant result uses the wrong native layout"));
-            }
+            };
+            let LayoutKind::Variant { alternatives, .. } =
+                &objects.layouts.logical.get(layout).kind
+            else {
+                return Err(native_error("variant has a non-variant logical layout"));
+            };
+            let tag = alternatives
+                .iter()
+                .find(|alternative| alternative.variant == *variant)
+                .map(|alternative| alternative.tag)
+                .ok_or_else(|| native_error("variant construction has no native alternative"))?;
             let physical = objects.layouts.physical.get(layout);
             let PhysicalKind::Variant {
                 tag_offset,
@@ -3286,24 +3698,37 @@ func main() -> Int {
         .unwrap();
         let mut program =
             vm::compile_with_options(&compilation, vm::CompileOptions { optimize: false }).unwrap();
-        let layouts = crate::codegen::layout::legalize(&mut program).unwrap();
+        let mut layouts = crate::codegen::layout::legalize(&mut program).unwrap();
+        let main = program.main.unwrap();
+        let instances = reachable_instances(&program, main).unwrap();
+        let instance_ids = instances
+            .iter()
+            .map(|instance| (instance.key.clone(), instance.ir_function))
+            .collect::<HashMap<_, _>>();
+        let function_types =
+            collect_function_types(&compilation, &instances, &mut layouts).unwrap();
         let physical_layouts = crate::codegen::layout::physical::PhysicalRegistry::build(
             &layouts,
             crate::codegen::layout::physical::TargetLayout::host(),
         )
         .unwrap();
-        let main = program.main.unwrap();
-        let reachable = reachable_functions(&program, main).unwrap();
-        let function_types = collect_function_types(&compilation, &reachable, &layouts).unwrap();
+        let instance = instances
+            .iter()
+            .find(|instance| instance.key.function == main)
+            .unwrap();
         let (_, runtime_string_indices) = runtime_strings(&program);
         let function = lower_to_native_ir(
-            &program,
             &program.functions[&main],
-            &function_types[&main],
-            &function_types,
-            &runtime_string_indices,
-            &layouts,
-            &physical_layouts,
+            &function_types[&instance.ir_function],
+            &instance.key,
+            NativeIrEnvironment {
+                program: &program,
+                function_types: &function_types,
+                runtime_string_indices: &runtime_string_indices,
+                layouts: &layouts,
+                physical_layouts: &physical_layouts,
+                instances: &instance_ids,
+            },
         )
         .unwrap();
 

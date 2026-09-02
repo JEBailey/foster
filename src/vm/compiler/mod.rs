@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::compiler::Compilation;
 use crate::error::FosterError;
@@ -45,6 +45,105 @@ fn opcode_intrinsic_instruction(
             object: receiver,
             value,
         },
+    }
+}
+
+fn collect_generic_names(
+    information: &TypeInformation,
+    ty: crate::types::TypeId,
+    names: &mut BTreeSet<String>,
+) {
+    use crate::types::Type;
+    match &information.types[ty] {
+        Type::Generic(name) => {
+            names.insert(name.clone());
+        }
+        Type::Reference { value, .. }
+        | Type::RawList(value)
+        | Type::Sequence(value)
+        | Type::Remote(value)
+        | Type::Future(value) => collect_generic_names(information, *value, names),
+        Type::Function(function) => {
+            for parameter in &function.parameters {
+                collect_generic_names(information, *parameter, names);
+            }
+            collect_generic_names(information, function.result, names);
+        }
+        Type::Record { arguments, .. } | Type::Variant { arguments, .. } => {
+            for argument in arguments {
+                collect_generic_names(information, *argument, names);
+            }
+        }
+        Type::Intersection(members) => {
+            for member in members {
+                collect_generic_names(information, *member, names);
+            }
+        }
+        Type::Unit
+        | Type::Bool
+        | Type::Int
+        | Type::Float
+        | Type::CodePoint
+        | Type::Byte
+        | Type::RawBytes
+        | Type::RawByteBuffer
+        | Type::Module(_) => {}
+    }
+}
+
+fn match_generic_types(
+    information: &TypeInformation,
+    schema: crate::types::TypeId,
+    actual: crate::types::TypeId,
+    substitutions: &mut BTreeMap<String, crate::types::TypeId>,
+) {
+    use crate::types::Type;
+    match (&information.types[schema], &information.types[actual]) {
+        (Type::Generic(name), _) => {
+            substitutions.entry(name.clone()).or_insert(actual);
+        }
+        (Type::Reference { value: left, .. }, Type::Reference { value: right, .. })
+        | (Type::RawList(left), Type::RawList(right))
+        | (Type::Sequence(left), Type::Sequence(right))
+        | (Type::Remote(left), Type::Remote(right))
+        | (Type::Future(left), Type::Future(right)) => {
+            match_generic_types(information, *left, *right, substitutions);
+        }
+        (
+            Type::Record {
+                record: left,
+                arguments: left_arguments,
+            },
+            Type::Record {
+                record: right,
+                arguments: right_arguments,
+            },
+        ) if left == right => {
+            for (left, right) in left_arguments.iter().zip(right_arguments) {
+                match_generic_types(information, *left, *right, substitutions);
+            }
+        }
+        (
+            Type::Variant {
+                variant: left,
+                arguments: left_arguments,
+            },
+            Type::Variant {
+                variant: right,
+                arguments: right_arguments,
+            },
+        ) if left == right => {
+            for (left, right) in left_arguments.iter().zip(right_arguments) {
+                match_generic_types(information, *left, *right, substitutions);
+            }
+        }
+        (Type::Function(left), Type::Function(right)) => {
+            for (left, right) in left.parameters.iter().zip(&right.parameters) {
+                match_generic_types(information, *left, *right, substitutions);
+            }
+            match_generic_types(information, left.result, right.result, substitutions);
+        }
+        _ => {}
     }
 }
 
@@ -108,6 +207,7 @@ pub fn compile_with_options(
                 id,
                 RuntimeRecord {
                     name: value.name.clone(),
+                    parameters: value.parameters.clone(),
                     layout: std::sync::Arc::new(super::value::RecordLayout::new(names)),
                     field_types,
                 },
@@ -142,6 +242,9 @@ pub fn compile_with_options(
                 RuntimeVariant {
                     parent: value.parent,
                     type_name: variant_type_names[&value.parent].clone(),
+                    parameters: compilation.hir.variant_types[value.parent]
+                        .parameters
+                        .clone(),
                     alternative: std::sync::Arc::from(value.name.as_str()),
                     payload: compilation
                         .types

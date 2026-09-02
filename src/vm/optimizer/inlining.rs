@@ -67,6 +67,7 @@ fn inline_calls(
             destination,
             function,
             arguments,
+            ..
         } = &instruction
         else {
             instructions.push(instruction);

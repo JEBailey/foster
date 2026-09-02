@@ -89,13 +89,13 @@ and stable bytecode tags. The remaining structural work should preserve that dep
   and cross-target compatibility suite; `LehmerRandom` remains the current portable baseline.
 - Add socket readiness and TLS support to the I/O boundary, and extend resource providers beyond
   the current whole-file and TCP implementations.
-- Refine scalar inference for erased generic values in the shared SSA verifier. The complete VM
+- Refine scalar inference for dynamically erased values in the shared SSA verifier. The complete VM
   instruction surface now seals through shared SSA and de-SSA with deterministic record, enum,
   closure, and reference layouts; erased heterogeneous joins retain an explicit opaque type until
   the bytecode ownership/type verifier resolves their concrete flow state.
-- Extend the implemented descriptor-driven Cranelift record/enum allocation, memory access,
-  retain/release, copy-on-write, scalar pattern, and generated destruction lowering to general
-  strings, lists/buffers, erased generic payloads, references, and closures. Then extend native
+- Extend the implemented descriptor-driven Cranelift record/enum allocation, monomorphization,
+  memory access, retain/release, copy-on-write, scalar pattern, and generated destruction lowering
+  to general strings, lists/buffers, dynamically erased payloads, references, and closures. Then extend native
   runtime services and cross-target object output while retaining the register VM as the semantic
   reference.
 - Compact the bytecode encoding after its instruction model is stable.

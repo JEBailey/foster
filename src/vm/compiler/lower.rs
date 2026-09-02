@@ -96,6 +96,7 @@ impl FunctionCompiler<'_> {
                     Instruction::MakeVariant {
                         destination,
                         variant: *variant,
+                        type_arguments: self.nominal_type_arguments(id),
                         payload: Vec::new(),
                     },
                     span,
@@ -147,6 +148,7 @@ impl FunctionCompiler<'_> {
                         Instruction::MakeVariant {
                             destination,
                             variant,
+                            type_arguments: self.nominal_type_arguments(id),
                             payload,
                         },
                         span,
@@ -197,6 +199,7 @@ impl FunctionCompiler<'_> {
                             Instruction::Call {
                                 destination,
                                 function,
+                                specialization: self.specialization(function, &[*object], id),
                                 arguments: vec![snapshot],
                             },
                             span,
@@ -221,6 +224,10 @@ impl FunctionCompiler<'_> {
                         } else {
                             self.method_receiver(*object)?
                         };
+                        let mut specialization_arguments = vec![*object];
+                        specialization_arguments.extend(arguments.iter().copied());
+                        let specialization =
+                            self.specialization(function, &specialization_arguments, id);
                         let mut arguments = arguments
                             .iter()
                             .map(|argument| self.expression(*argument))
@@ -269,6 +276,7 @@ impl FunctionCompiler<'_> {
                                 destination,
                                 receiver,
                                 function,
+                                specialization,
                                 arguments,
                             }
                         };
@@ -297,6 +305,7 @@ impl FunctionCompiler<'_> {
                         return Ok(destination);
                     }
                 }
+                let argument_expressions = arguments.clone();
                 let arguments = arguments
                     .iter()
                     .map(|argument| self.expression(*argument))
@@ -335,6 +344,11 @@ impl FunctionCompiler<'_> {
                             Instruction::Call {
                                 destination,
                                 function,
+                                specialization: self.specialization(
+                                    function,
+                                    &argument_expressions,
+                                    id,
+                                ),
                                 arguments,
                             },
                             span,
@@ -546,6 +560,7 @@ impl FunctionCompiler<'_> {
                     Instruction::MakeRecord {
                         destination,
                         record: *record,
+                        type_arguments: self.nominal_type_arguments(id),
                         fields,
                     },
                     span,
@@ -797,6 +812,56 @@ impl FunctionCompiler<'_> {
             .checked_add(1)
             .expect("VM register limit exceeded");
         register
+    }
+
+    fn specialization(
+        &self,
+        function: FunctionId,
+        arguments: &[ExprId],
+        result: ExprId,
+    ) -> crate::vm::Specialization {
+        let Some(signature) = self.types.function_type(function) else {
+            return Vec::new();
+        };
+        let mut substitutions = std::collections::BTreeMap::new();
+        for (schema, argument) in signature.parameters.iter().zip(arguments) {
+            if let Some(actual) = self.types.expression_type(*argument) {
+                match_generic_types(self.types, *schema, actual, &mut substitutions);
+            }
+        }
+        if let Some(actual) = self.types.expression_type(result) {
+            match_generic_types(self.types, signature.result, actual, &mut substitutions);
+        }
+        let mut names = std::collections::BTreeSet::new();
+        for parameter in &signature.parameters {
+            collect_generic_names(self.types, *parameter, &mut names);
+        }
+        collect_generic_names(self.types, signature.result, &mut names);
+        names
+            .into_iter()
+            .map(|name| {
+                let ty = substitutions.get(&name).map_or_else(
+                    || VerificationType::Generic(name.clone()),
+                    |ty| layout_verification_type(self.hir, self.types, *ty, 0),
+                );
+                (name, ty)
+            })
+            .collect()
+    }
+
+    fn nominal_type_arguments(&self, expression: ExprId) -> Vec<VerificationType> {
+        let Some(ty) = self.types.expression_type(expression) else {
+            return Vec::new();
+        };
+        let arguments = match &self.types.types[ty] {
+            crate::types::Type::Record { arguments, .. }
+            | crate::types::Type::Variant { arguments, .. } => arguments,
+            _ => return Vec::new(),
+        };
+        arguments
+            .iter()
+            .map(|ty| layout_verification_type(self.hir, self.types, *ty, 0))
+            .collect()
     }
 
     pub(super) fn emit(&mut self, instruction: Instruction, span: std::ops::Range<usize>) -> usize {

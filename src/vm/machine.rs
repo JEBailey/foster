@@ -381,6 +381,7 @@ impl Machine {
                     destination,
                     record,
                     fields,
+                    ..
                 } => {
                     let values = fields
                         .iter()
@@ -402,6 +403,7 @@ impl Machine {
                     destination,
                     variant,
                     payload,
+                    ..
                 } => {
                     let metadata = &self.program.variants[variant];
                     let payload = payload
@@ -700,6 +702,7 @@ impl Machine {
                     destination,
                     function,
                     arguments,
+                    ..
                 } => {
                     let next = self.call_frame(
                         *function,
@@ -715,6 +718,7 @@ impl Machine {
                     receiver,
                     function,
                     arguments,
+                    ..
                 } => {
                     let receiver = place(frame, *receiver);
                     if let Some(shared) = receiver.shared() {

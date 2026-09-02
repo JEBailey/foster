@@ -142,7 +142,8 @@ The current implementation includes:
 - first-class `test "description" { ... }` declarations with a package-aware test runner;
 - an optional optimizing register-bytecode pipeline with a verifier and iterative VM call frames;
   and
-- a Cranelift AOT backend for standalone scalar, record, and tagged-variant executables.
+- a Cranelift AOT backend for standalone scalar, record, and tagged-variant executables, including
+  closed-world specialization of reachable generic functions and nominal aggregates.
 
 Module qualification uses `::`; type accessors and runtime value access use `.`. Imports keep their
 canonical dotted module names:
