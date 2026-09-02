@@ -142,6 +142,10 @@ pub fn compile_with_options(
         .map(|main| crate::entry::accepts_arguments(&compilation.hir, &compilation.types, main))
         .transpose()?
         .unwrap_or(false);
+    // Freeze all aggregate field/tag/capture/place layouts before any backend rewrite.  The VM
+    // consumes the canonical operand order; native compilation consumes the same registry when
+    // deciding whether a representation has been legalized for Cranelift.
+    crate::codegen::layout::legalize(&mut compiler.program)?;
     if options.optimize {
         super::optimizer::optimize(&mut compiler.program);
     }

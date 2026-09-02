@@ -50,7 +50,9 @@ pub struct ObjectArtifact {
 
 /// Lower the reachable native subset and render deterministic typed SSA IR.
 pub fn emit_ir(compilation: &Compilation) -> Result<String, FosterError> {
-    let program = vm::compile_with_options(compilation, vm::CompileOptions { optimize: false })?;
+    let mut program =
+        vm::compile_with_options(compilation, vm::CompileOptions { optimize: false })?;
+    let layouts = crate::codegen::layout::legalize(&mut program)?;
     let main = program.main.ok_or_else(|| {
         FosterError::runtime("native compilation requires a `main` function").with_code("E0900")
     })?;
@@ -64,7 +66,7 @@ pub fn emit_ir(compilation: &Compilation) -> Result<String, FosterError> {
             "native `main` cannot return Arguments or List<String>",
         ));
     }
-    validate_program(compilation, &program, &reachable, &function_types)?;
+    validate_program(compilation, &program, &reachable, &function_types, &layouts)?;
     let (_, runtime_string_indices) = runtime_strings(&program);
     let mut ordered = reachable.into_iter().collect::<Vec<_>>();
     ordered.sort_unstable_by_key(|function| function.into_raw().into_u32());
@@ -99,7 +101,9 @@ pub fn compile_object(
 ) -> Result<ObjectArtifact, FosterError> {
     // The non-optimized register program preserves one stable static type per register. Cranelift
     // still performs the requested machine-level optimization below.
-    let program = vm::compile_with_options(compilation, vm::CompileOptions { optimize: false })?;
+    let mut program =
+        vm::compile_with_options(compilation, vm::CompileOptions { optimize: false })?;
+    let layouts = crate::codegen::layout::legalize(&mut program)?;
     let main = program.main.ok_or_else(|| {
         FosterError::runtime("native compilation requires a `main` function").with_code("E0900")
     })?;
@@ -113,7 +117,7 @@ pub fn compile_object(
             "native `main` cannot return Arguments or List<String>",
         ));
     }
-    validate_program(compilation, &program, &reachable, &function_types)?;
+    validate_program(compilation, &program, &reachable, &function_types, &layouts)?;
 
     let mut flag_builder = settings::builder();
     flag_builder
@@ -353,6 +357,7 @@ fn validate_program(
     program: &Program,
     reachable: &HashSet<FunctionId>,
     function_types: &HashMap<FunctionId, ir::Signature>,
+    layouts: &crate::codegen::layout::Registry,
 ) -> Result<(), FosterError> {
     let main = program.main.expect("validated above");
     let main_function = &program.functions[&main];
@@ -395,10 +400,28 @@ fn validate_program(
                     | Instruction::Return { .. }
             );
             if !supported {
+                let layout_note = match instruction {
+                    Instruction::MakeRecord { record, .. } => layouts
+                        .record(*record)
+                        .map(|layout| format!(" (legalized as boxed layout l{})", layout.0))
+                        .unwrap_or_default(),
+                    Instruction::MakeVariant { variant, .. } => program
+                        .variants
+                        .get(variant)
+                        .and_then(|variant| layouts.variant(variant.parent))
+                        .map(|layout| format!(" (legalized as boxed layout l{})", layout.0))
+                        .unwrap_or_default(),
+                    Instruction::MakeClosure { function, .. } => layouts
+                        .closure(*function)
+                        .map(|layout| format!(" (legalized as boxed layout l{})", layout.0))
+                        .unwrap_or_default(),
+                    _ => String::new(),
+                };
                 let mut error = native_error(format!(
-                    "native compilation of `{}` does not yet support instruction `{}`",
+                    "native compilation of `{}` does not yet support instruction `{}`{}",
                     body.name,
-                    instruction_name(instruction)
+                    instruction_name(instruction),
+                    layout_note
                 ))
                 .with_help("use `foster build` without `--native` for the complete VM language");
                 if let Some(span) = body.instruction_spans.get(index) {

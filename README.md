@@ -279,9 +279,11 @@ source
   -> type, structural-contract, and fixed-point effect inference
   -> loan, capture, group, and ownership checks
   -> ownership MIR validation
-  -> structured register bytecode
-       -> optional optimizer -> liveness-driven drops -> verifier -> register VM
-       -> typed SSA native IR -> Cranelift object -> host linker -> executable
+  -> structured executable lowering and legalized scalar/pointer layouts
+       -> bytecode -> optional optimizer -> verifier -> register VM
+       -> shared typed SSA
+            -> de-SSA edge copies + register assignment -> bytecode
+            -> Cranelift instructions -> object -> host linker -> executable
 ```
 
 The VM remains the complete executable semantic reference; there is no AST interpreter fallback.
@@ -311,6 +313,12 @@ Native compilation currently supports reachable functions over `()`, `Bool`, `In
 control flow. A reachable aggregate, closure, intrinsic, remote operation, or other VM-only
 instruction is rejected with an actionable compile error. See [native compilation](docs/native.md)
 for the exact boundary.
+
+The de-SSA VM emitter owns critical-edge splitting, cycle-safe parallel copies, and deterministic
+register assignment. Aggregate legalization separately freezes record slots, enum tags and payload
+shapes, closure capture slots, and reference place-handle layouts. The existing complete HIR-to-VM
+lowering is being migrated operation-by-operation to that shared SSA entry; aggregate bytecode is
+already canonicalized through the layout pass before optimization.
 
 ## Executable packages
 

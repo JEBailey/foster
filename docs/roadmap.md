@@ -89,8 +89,10 @@ and stable bytecode tags. The remaining structural work should preserve that dep
   and cross-target compatibility suite; `LehmerRandom` remains the current portable baseline.
 - Add socket readiness and TLS support to the I/O boundary, and extend resource providers beyond
   the current whole-file and TCP implementations.
-- Extend the verified shared code-generation IR beyond its typed scalar SSA subset with aggregate
-  layouts and explicit ownership operations, then lower VM bytecode from the same boundary.
+- Continue migrating the complete HIR-to-VM instruction surface onto the implemented shared SSA
+  de-SSA backend. Deterministic record, enum, closure, and reference layouts now legalize to the
+  common scalar/pointer boundary; ownership-sensitive aggregate operations still need first-class
+  shared SSA instructions before the legacy register lowering can be removed completely.
 - Extend the Cranelift AOT backend beyond its current scalar, string-constant, and read-only command
   argument subset to general strings and lists, records, enums, references, closures, native runtime
   services, and cross-target object output while retaining the register VM as the semantic reference.

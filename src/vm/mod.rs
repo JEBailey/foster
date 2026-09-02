@@ -27,6 +27,8 @@ pub use ir::{
 pub use machine::Machine;
 pub use optimizer::optimize;
 pub use runtime::Capture;
+#[cfg(test)]
+pub(crate) use value::RecordLayout;
 pub use value::Value;
 pub use verifier::verify;
 

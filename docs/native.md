@@ -64,6 +64,18 @@ the VM and other native code generators without exposing Cranelift types to the 
 Foster scalar types map to Cranelift types only in the Cranelift emitter. All reachable functions
 are declared before any is defined, allowing direct recursion and mutual recursion.
 
+The shared boundary also has a VM de-SSA emitter. It assigns registers to immutable definitions,
+splits conditional edges when their block arguments differ, and resolves parallel-copy cycles with
+one temporary register. Its output is ordinary versioned bytecode and passes through the existing
+ownership-aware bytecode verifier and VM.
+
+Before either backend is selected, layout legalization reduces values to scalars or pointers and
+builds deterministic descriptions for record field slots, enum alternative tags and payloads,
+closure environments, and reference place handles. The VM implements these boxed layouts today.
+The native backend receives the same layout identities, but rejects aggregate operations before
+Cranelift until allocation, tracing/destruction, and the native runtime ABI for each boxed layout
+are implemented.
+
 The object exports a C-ABI `foster_native_entry` symbol. A generated, temporary Rust entry shim
 collects Unicode command arguments, supplies the supported String/List runtime operations, calls
 that symbol, formats its result, and supplies the platform startup pieces to the system linker.
