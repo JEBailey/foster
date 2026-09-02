@@ -3,11 +3,12 @@ use std::collections::HashMap;
 use crate::compiler::Compilation;
 use crate::error::FosterError;
 use crate::hir::{self, ExprId, FunctionId, LocalId, ResolvedName};
-use crate::intrinsics::Intrinsic;
+use crate::intrinsics::{Intrinsic, OpcodeIntrinsic};
 use crate::types::TypeInformation;
 
 use super::{
     BytecodeFunction, Constant, Instruction, Program, Register, RuntimeRecord, RuntimeVariant,
+    VerificationType,
 };
 
 mod lower;
@@ -24,6 +25,26 @@ pub struct CompileOptions {
 impl Default for CompileOptions {
     fn default() -> Self {
         Self { optimize: true }
+    }
+}
+
+fn opcode_intrinsic_instruction(
+    intrinsic: OpcodeIntrinsic,
+    destination: Register,
+    receiver: Register,
+    value: Register,
+) -> Instruction {
+    match intrinsic {
+        OpcodeIntrinsic::ListPush => Instruction::Push {
+            destination,
+            object: receiver,
+            value,
+        },
+        OpcodeIntrinsic::ListAppend => Instruction::Append {
+            destination,
+            object: receiver,
+            value,
+        },
     }
 }
 
@@ -173,6 +194,23 @@ impl Compiler<'_> {
             .get(&function_id)
             .cloned()
             .unwrap_or_default();
+        let capture_types = captures
+            .iter()
+            .map(|capture| {
+                let ty = self
+                    .types
+                    .local_type(capture.local)
+                    .map(|ty| verification_type(self.hir, self.types, ty, 0))
+                    .unwrap_or(VerificationType::Unknown);
+                if capture.mode == crate::hir::CaptureMode::Ref
+                    && !matches!(ty, VerificationType::Reference(_))
+                {
+                    VerificationType::Reference(Box::new(ty))
+                } else {
+                    ty
+                }
+            })
+            .collect::<Vec<_>>();
         for capture in &captures {
             let register = lower.allocate();
             lower.locals.insert(capture.local, register);
@@ -182,8 +220,8 @@ impl Compiler<'_> {
             lower.locals.insert(*parameter, register);
         }
         let intrinsic = function.intrinsic.as_deref().and_then(Intrinsic::from_key);
-        let result = match intrinsic {
-            Some(Intrinsic::ListPush | Intrinsic::ListAppend) => {
+        let result = match intrinsic.and_then(Intrinsic::opcode) {
+            Some(opcode) => {
                 let [receiver, value] = function.parameters.as_slice() else {
                     return Err(FosterError::runtime(format!(
                         "intrinsic `{}` requires a receiver and one value",
@@ -191,19 +229,12 @@ impl Compiler<'_> {
                     )));
                 };
                 let destination = lower.allocate();
-                let instruction = match intrinsic {
-                    Some(Intrinsic::ListPush) => Instruction::Push {
-                        destination,
-                        object: lower.locals[receiver],
-                        value: lower.locals[value],
-                    },
-                    Some(Intrinsic::ListAppend) => Instruction::Append {
-                        destination,
-                        object: lower.locals[receiver],
-                        value: lower.locals[value],
-                    },
-                    _ => unreachable!(),
-                };
+                let instruction = opcode_intrinsic_instruction(
+                    opcode,
+                    destination,
+                    lower.locals[receiver],
+                    lower.locals[value],
+                );
                 lower.emit(instruction, function.span.clone());
                 destination
             }
@@ -227,7 +258,19 @@ impl Compiler<'_> {
             function_id,
             BytecodeFunction {
                 name: function.name.clone(),
+                intrinsic_stub: matches!(intrinsic, Some(Intrinsic::Builtin(_))),
                 parameters: function.parameters.len() as u16,
+                parameter_types: self
+                    .types
+                    .function_type(function_id)
+                    .map(|signature| {
+                        signature
+                            .parameters
+                            .iter()
+                            .map(|ty| verification_type(self.hir, self.types, *ty, 0))
+                            .collect()
+                    })
+                    .unwrap_or_else(|| vec![VerificationType::Unknown; function.parameters.len()]),
                 parameter_modes: self
                     .types
                     .function_type(function_id)
@@ -269,12 +312,80 @@ impl Compiler<'_> {
                         )
                     }),
                 captures: captures.len() as u16,
+                capture_types,
+                result_type: self
+                    .types
+                    .function_type(function_id)
+                    .map(|signature| verification_type(self.hir, self.types, signature.result, 0))
+                    .unwrap_or(VerificationType::Unknown),
                 registers: lower.next_register,
                 instructions: lower.instructions,
                 instruction_spans: lower.spans,
             },
         );
         Ok(())
+    }
+}
+
+fn verification_type(
+    hir: &hir::PackageHir,
+    information: &TypeInformation,
+    ty: crate::types::TypeId,
+    depth: usize,
+) -> VerificationType {
+    if depth >= 64 {
+        return VerificationType::Unknown;
+    }
+    let nested = |ty| verification_type(hir, information, ty, depth + 1);
+    match &information.types[ty] {
+        crate::types::Type::Generic(_)
+        | crate::types::Type::Intersection(_)
+        | crate::types::Type::Module(_) => VerificationType::Unknown,
+        crate::types::Type::Unit => VerificationType::Unit,
+        crate::types::Type::Bool => VerificationType::Bool,
+        crate::types::Type::Int => VerificationType::Integer,
+        crate::types::Type::Float => VerificationType::Float,
+        crate::types::Type::CodePoint => VerificationType::CodePoint,
+        crate::types::Type::Byte => VerificationType::Byte,
+        crate::types::Type::RawBytes => VerificationType::Bytes,
+        crate::types::Type::RawByteBuffer => VerificationType::ByteBuffer,
+        crate::types::Type::Reference { value, .. } => {
+            VerificationType::Reference(Box::new(nested(*value)))
+        }
+        crate::types::Type::RawList(value) => VerificationType::List(Box::new(nested(*value))),
+        // Sequence is a structural view implemented by multiple runtime representations.
+        crate::types::Type::Sequence(_) => VerificationType::Unknown,
+        crate::types::Type::Remote(value) => VerificationType::Remote(Box::new(nested(*value))),
+        crate::types::Type::Future(value) => VerificationType::Future(Box::new(nested(*value))),
+        crate::types::Type::Function(function) => VerificationType::Function {
+            parameters: function.parameters.iter().map(|ty| nested(*ty)).collect(),
+            parameter_modes: function.parameter_modes.clone(),
+            result: Box::new(nested(function.result)),
+        },
+        crate::types::Type::Record { record, arguments } => {
+            match information.record_names.get(record).map(String::as_str) {
+                Some("List") => VerificationType::List(Box::new(
+                    arguments
+                        .first()
+                        .copied()
+                        .map(nested)
+                        .unwrap_or(VerificationType::Unknown),
+                )),
+                Some("Bytes") => VerificationType::Bytes,
+                Some("ByteBuffer") => VerificationType::ByteBuffer,
+                // Method-only records are structural contracts and carry no unique runtime
+                // representation. Their conformance proof has already been checked.
+                _ if hir.records[*record].fields.is_empty() => VerificationType::Unknown,
+                _ => VerificationType::Record(*record),
+            }
+        }
+        crate::types::Type::Variant { variant, .. }
+            if hir.variant_types[*variant].kind == crate::ast::VariantKind::Union =>
+        {
+            // Unions are erased structural views; their value keeps its member representation.
+            VerificationType::Unknown
+        }
+        crate::types::Type::Variant { variant, .. } => VerificationType::Variant(*variant),
     }
 }
 

@@ -26,15 +26,37 @@ is observable. The structured program has a deterministic, versioned
 [compiled bytecode format](binary-format.md) for caching and distribution. Bytecode is verified
 before execution and again after deserialization.
 
+Builtin identity, stable bytecode tag, source key and owning module, verifier signature, argument
+ownership mode, execution policy, and direct VM handler are declared together in the intrinsic
+registry. The verifier and interpreter consume that metadata instead of maintaining parallel
+builtin matches. Compiler-only intrinsics use the same registry model with opcode lowering
+metadata, including an explicit read/mutate/consume receiver mode; `list.push` and `list.append`
+lower directly to `Push` and `Append` and deliberately have no builtin tag. Adding or changing one
+of those lowering-only entries therefore does not change the version-17 bytecode ABI. Builtin tags
+retired from source remain registered for decoding and executing existing version-17 artifacts.
+
+The verifier performs a fixed-point dataflow analysis over instruction-index control flow. Each
+reachable edge carries the definite availability and runtime verification type of every register.
+It rejects reads after move or consuming calls, incompatible operand/call/return types, invalid
+capture modes and layouts, and uses before initialization at branch joins. Pattern bindings become
+available only on the matching edge; exhaustive enum alternatives remove impossible fallthrough
+edges. Joins require availability on every predecessor and preserve different live runtime
+representations as canonical verifier unions, so later operations must be valid for every
+alternative while register coloring can still reuse dead physical registers.
+
 Frames store ordinary register values inline. A register is promoted to a stable reference-counted
 slot only when it is borrowed, captured by reference, shared remotely, or used as an observable
 method receiver. Consuming call parameters transfer values out of caller registers; read-only
 borrowed parameters observe a promoted caller slot but detach if the parameter local is reassigned.
+The dispatch loop borrows instructions and their operand tables directly from the program, so
+executing an instruction does not clone its strings, patterns, captures, or argument vectors.
 
 Record instances use dense indexed value arrays. Field names and their index table live once in a
 shared record layout, including fields contributed by composed contracts. Variants similarly share
 their enum and case names through program metadata rather than allocating those strings per
-value. Wire conversion restores names only at the remote serialization boundary.
+value. Record-backed aggregates—including List, Bytes, and ByteBuffer—share their dense value
+storage across ordinary VM reads and detach with copy-on-write only when value semantics require a
+mutation. Wire conversion restores names only at the remote serialization boundary.
 
 After all optional representational rewrites, the compiler inserts explicit `Drop` instructions
 at register last-use points. A drop clears an inline value or detaches a promoted register from its
@@ -85,7 +107,7 @@ function ID. Calls execute on an explicit VM frame vector rather than recursivel
 - use stable semantic IDs for direct calls instead of resolving names at runtime;
 - retain a readable structured instruction representation until semantics stabilize;
 - keep instruction and source-span tables aligned;
-- verify register bounds, constant references, and function references;
+- verify metadata, references, operand and call types, ownership transfers, and CFG availability;
 - add compiler passes only through an explicit pipeline once there is a demonstrated need.
 
 Foster resolves type, ownership, group, effect, namespace, and callable questions before bytecode

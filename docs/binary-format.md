@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 16, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 17, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after lowering and optimization. It contains everything needed to verify and
@@ -25,7 +25,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `16` |
+| version | `u16` | `17` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -43,10 +43,14 @@ each used slot. Runtime lookup is therefore a direct `(concrete type, slot)` tab
 not repeat signature matching. A `NominalTypeId` is tag `0` followed by a `RecordId`, or tag `1`
 followed by a `VariantTypeId`.
 
-A function is `string name`, `u16 parameter_count`, `vector<ParameterMode> parameter_modes`,
-`vector<bool> mutable_parameters`, `bool returns_reference`, `u16 capture_count`, `u16 register_count`,
-`vector<Instruction>`, then `vector<Span>`. A span is `u32
-start, u32 end` in source byte offsets. Instruction and span counts must match.
+A function is `string name`, `bool intrinsic_stub`, `u16 parameter_count`,
+`vector<VerificationType> parameter_types`, `vector<ParameterMode> parameter_modes`,
+`vector<bool> mutable_parameters`, `bool returns_reference`, `u16 capture_count`,
+`vector<VerificationType> capture_types`, `VerificationType result_type`, `u16 register_count`,
+`vector<Instruction>`, then `vector<Span>`. A span is `u32 start, u32 end` in source byte offsets.
+Instruction and span counts must match. An intrinsic stub describes a source-level intrinsic whose
+executable calls have already lowered to `Builtin`; it is retained for identity but is not an
+executable call target.
 
 ## Tagged values
 
@@ -64,6 +68,14 @@ GreaterEqual. Builtin tags use the explicit stable values in the intrinsic regis
 `RandomBytes = 61`. Version 14 appended `IoReadRange = 56`, `IoAppendBytes = 57`, and
 `IoFileLength = 58`. Version 15 appended `TimeWallNow = 59` and `TimeMonotonicNow = 60`.
 Version 16 appends `RandomBytes = 61`; all earlier tags retain their previous values.
+
+Verification type tags are `0 Unknown`, `1 Unit`, `2 Bool`, `3 Integer`, `4 Float`, `5 CodePoint`,
+`6 Byte`, `7 Bytes`, `8 ByteBuffer`, `9 List(VerificationType)`,
+`10 Reference(VerificationType)`, `11 Remote(VerificationType)`, `12 Future(VerificationType)`,
+`13 Function(vector<VerificationType>, vector<ParameterMode>, VerificationType)`,
+`14 Record(RecordId)`, `15 Variant(VariantTypeId)`, and
+`16 Union(vector<VerificationType>)`. Union members are sorted, unique, and contain at least two
+types. Readers reject verification types nested more than 64 levels deep.
 
 ## Instructions
 
@@ -109,7 +121,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 16 readers accept only version 16 with zero flags. Development bytecode from another version
+Version 17 readers accept only version 17 with zero flags. Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
 canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of

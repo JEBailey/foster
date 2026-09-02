@@ -548,20 +548,17 @@ does not lift through containers, and does not change unconstrained generic infe
 `Int` to `Byte` or `CodePoint` remains explicit and checked because not every integer is valid.
 `String`, `Symbol`, `Bytes`, `ByteBuffer`, and `List<T>` are instead always-available opaque Foster
 types declared in their respective core modules. `String` contains private `Bytes`, `Symbol`
-contains private `String`, and the collection types contain private implementation-only storage:
-`RawBytes`, `RawByteBuffer`, and `RawList<T>`. Literals and trusted constructors lower to the
-nominal Foster types; the raw storage types cannot be named by user modules.
-`ByteBuffer` construction and mutation are ordinary Foster record operations. Its private core
-implementation declares its host boundary explicitly with signatures such as
-`func RawByteBuffer.empty() -> RawByteBuffer = intrinsic("byte_buffer.empty")`, then calls those
-operations through ordinary associated-function and method syntax. Stable intrinsic keys decouple
-source names from VM dispatch. Intrinsic declarations have registered VM implementations, no
-Foster body, and neither construct nor recognize the public wrapper. Host-backed storage is
-declared explicitly, for example `intrinsic type RawByteBuffer`; it is opaque and cannot be
-constructed with record syntax.
+contains private `String`, `Bytes` contains private compact `RawBytes`, `List<T>` contains private
+`RawList<T>`, and `ByteBuffer` contains a private `List<Byte>`. Literals and trusted constructors
+lower to the nominal Foster types; raw storage types cannot be named by user modules.
+`ByteBuffer` construction, mutation, snapshotting, and freezing are ordinary Foster functions over
+that list. Capacity is only an allocation hint and is not observable: the list-backed implementation
+may accept `with_capacity` and `reserve` without retaining spare capacity.
 Representation-level operations such as `List.push` and functional `List.append` are declared as
 owner-qualified intrinsics. Calls resolve their `List` owner before the stable intrinsic key selects
-the VM operation, so unrelated types remain free to define `push` or `append`. Checked
+the VM operation, so unrelated types remain free to define `push` or `append`. Their registry
+entries declare whether the receiver is read, mutated in place, or consumed, allowing projected
+receivers such as `buffer.value.push(byte)` to update their original aggregate. Checked
 `from_code_point(Int)` and `parse_float(String)` complete the narrow primitive boundary beneath the
 Foster-written core library. Code points convert to integers through `as_int()` and also widen in
 expected `Int` contexts.
@@ -741,8 +738,8 @@ let finished = (move buffer).freeze()
 and ordinary arithmetic also produces `Int`; bitwise and shift operators retain `Byte`. `Bytes` is
 an opaque Foster type over immutable
 contiguous raw storage, implementing
-the read-only `Sequence<Byte>` and `Collection<Byte>` behavior. `ByteBuffer` is mutable and
-growable, but deliberately has no implicit position or limit; stateful reading can be introduced
+the read-only `Sequence<Byte>` and `Collection<Byte>` behavior. `ByteBuffer` is mutable list-backed
+storage, but deliberately has no implicit position or limit; stateful reading can be introduced
 separately as a cursor contract.
 
 Passing all three types borrows by default. A buffer mutation requires `mut` access, indexed loans

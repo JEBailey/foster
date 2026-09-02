@@ -473,7 +473,7 @@ impl Package {
             BootstrapModule::types_only(
                 "core.bytes.buffer",
                 include_str!("../library/core/bytes/buffer.fos"),
-                &["RawByteBuffer", "ByteBuffer"],
+                &["ByteBuffer"],
             ),
             cache,
         )
@@ -821,9 +821,7 @@ impl Package {
                 if record.intrinsic
                     && !matches!(
                         (module.name.as_str(), record.name.as_str()),
-                        ("core.bytes", "RawBytes")
-                            | ("core.bytes.buffer", "RawByteBuffer")
-                            | ("core.list", "RawList")
+                        ("core.bytes", "RawBytes") | ("core.list", "RawList")
                     )
                 {
                     return Err(FosterError::runtime(format!(

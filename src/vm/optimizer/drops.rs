@@ -235,16 +235,21 @@ fn emit_drops(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::vm::VerificationType;
 
     #[test]
     fn drops_a_condition_on_both_branch_edges() {
         let mut function = BytecodeFunction {
             name: "branch".to_owned(),
+            intrinsic_stub: false,
             parameters: 1,
+            parameter_types: vec![VerificationType::Bool],
             parameter_modes: vec![crate::ast::ParameterMode::Borrow],
             mutable_parameters: vec![false],
             returns_reference: false,
             captures: 0,
+            capture_types: Vec::new(),
+            result_type: VerificationType::Unknown,
             registers: 2,
             instructions: vec![
                 Instruction::JumpIfFalse {
@@ -285,11 +290,15 @@ mod tests {
     fn retains_the_origin_of_a_field_loaded_by_reference() {
         let mut function = BytecodeFunction {
             name: "field receiver".to_owned(),
+            intrinsic_stub: false,
             parameters: 1,
+            parameter_types: vec![VerificationType::Unknown],
             parameter_modes: vec![crate::ast::ParameterMode::Borrow],
             mutable_parameters: vec![false],
             returns_reference: false,
             captures: 0,
+            capture_types: Vec::new(),
+            result_type: VerificationType::Unknown,
             registers: 2,
             instructions: vec![
                 Instruction::LoadField {

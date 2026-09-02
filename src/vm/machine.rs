@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::error::{FosterError, RuntimeError};
 use crate::hir::{CaptureMode, FunctionId};
-use crate::intrinsics::Builtin;
+use crate::intrinsics::BuiltinHandler;
 
 use super::operations::{binary, constant_value, unary};
 use super::patterns::matches as match_pattern;
@@ -274,17 +274,16 @@ impl Machine {
             let instruction = function
                 .instructions
                 .get(frame.instruction)
-                .cloned()
                 .ok_or_else(|| {
                     RuntimeError::runtime(format!("VM function `{}` did not return", function.name))
                 })?;
             frame.instruction += 1;
 
             match instruction {
-                Instruction::Drop { register } => {
+                &Instruction::Drop { register } => {
                     drop_register(frame, register);
                 }
-                Instruction::LoadConstant {
+                &Instruction::LoadConstant {
                     destination,
                     constant,
                 } => write(
@@ -296,16 +295,16 @@ impl Machine {
                         self.program.symbol_record,
                     ),
                 )?,
-                Instruction::Move {
+                &Instruction::Move {
                     destination,
                     source,
                 } => write(frame, destination, bind(frame, source))?,
-                Instruction::Unary {
+                &Instruction::Unary {
                     destination,
                     operator,
                     operand,
                 } => write(frame, destination, unary(operator, &read(frame, operand)?)?)?,
-                Instruction::Binary {
+                &Instruction::Binary {
                     destination,
                     operator,
                     left,
@@ -326,12 +325,13 @@ impl Machine {
                     elements,
                 } => {
                     let values = elements
-                        .into_iter()
+                        .iter()
+                        .copied()
                         .map(|register| read(frame, register))
                         .collect::<Result<_, _>>()?;
-                    write(frame, destination, Value::list(values))?;
+                    write(frame, *destination, Value::list(values))?;
                 }
-                Instruction::Index {
+                &Instruction::Index {
                     destination,
                     object,
                     index,
@@ -352,6 +352,9 @@ impl Machine {
                             .get(index)
                             .copied()
                             .map(Value::Byte),
+                        value if value.byte_buffer_list_value().is_some() => {
+                            value.byte_buffer_list_value().unwrap().get(index).cloned()
+                        }
                         value if value.bytes_value().is_some() => value
                             .bytes_value()
                             .unwrap()
@@ -369,16 +372,16 @@ impl Machine {
                     fields,
                 } => {
                     let values = fields
-                        .into_iter()
-                        .map(|(_, register)| read(frame, register))
+                        .iter()
+                        .map(|(_, register)| read(frame, *register))
                         .collect::<Result<Vec<_>, RuntimeError>>()?;
-                    let metadata = &self.program.records[&record];
+                    let metadata = &self.program.records[record];
                     let fields = RecordFields::new(metadata.layout.clone(), values)?;
                     write(
                         frame,
-                        destination,
+                        *destination,
                         Value::Record {
-                            record: Some(record),
+                            record: Some(*record),
                             name: metadata.name.clone(),
                             fields,
                         },
@@ -391,12 +394,13 @@ impl Machine {
                 } => {
                     let metadata = &self.program.variants[&variant];
                     let payload = payload
-                        .into_iter()
+                        .iter()
+                        .copied()
                         .map(|register| read(frame, register))
                         .collect::<Result<_, _>>()?;
                     write(
                         frame,
-                        destination,
+                        *destination,
                         Value::Variant {
                             variant: Some(metadata.parent),
                             type_name: metadata.type_name.clone(),
@@ -411,15 +415,15 @@ impl Machine {
                     field,
                     by_reference,
                 } => {
-                    let value = read(frame, object)?;
-                    if by_reference
-                        && matches!(&value, Value::Record { fields, .. } if fields.contains_key(&field))
+                    let value = read(frame, *object)?;
+                    if *by_reference
+                        && matches!(&value, Value::Record { fields, .. } if fields.contains_key(field))
                     {
-                        let reference = PlaceHandle::field(place(frame, object), field)?;
-                        write(frame, destination, Value::Reference(reference))?;
+                        let reference = PlaceHandle::field(place(frame, *object), field.clone())?;
+                        write(frame, *destination, Value::Reference(reference))?;
                     } else {
-                        let value = member(value, &field, self.program.string_record)?;
-                        write(frame, destination, value)?;
+                        let value = member(value, field, self.program.string_record)?;
+                        write(frame, *destination, value)?;
                     }
                 }
                 Instruction::StoreField {
@@ -427,16 +431,16 @@ impl Machine {
                     field,
                     source,
                 } => {
-                    let mut value = read(frame, object)?;
+                    let mut value = read(frame, *object)?;
                     let Value::Record { fields, .. } = &mut value else {
                         return Err(RuntimeError::runtime("field assignment requires a record"));
                     };
-                    *fields.get_mut(&field).ok_or_else(|| {
+                    *fields.get_mut(field).ok_or_else(|| {
                         RuntimeError::runtime(format!("record has no field `{field}`"))
-                    })? = read(frame, source)?;
-                    write(frame, object, value)?;
+                    })? = read(frame, *source)?;
+                    write(frame, *object, value)?;
                 }
-                Instruction::StoreIndex {
+                &Instruction::StoreIndex {
                     object,
                     index,
                     source,
@@ -468,6 +472,18 @@ impl Machine {
                                 .ok_or_else(|| RuntimeError::runtime("index is out of bounds"))? =
                                 source;
                         }
+                        receiver if receiver.byte_buffer_list_value().is_some() => {
+                            let values = receiver.byte_buffer_list_value_mut().unwrap();
+                            if !matches!(&source, Value::Byte(_)) {
+                                return Err(RuntimeError::runtime(
+                                    "byte-buffer elements require Byte values",
+                                ));
+                            }
+                            *values
+                                .get_mut(index)
+                                .ok_or_else(|| RuntimeError::runtime("index is out of bounds"))? =
+                                source;
+                        }
                         _ => {
                             return Err(RuntimeError::runtime(
                                 "indexed assignment requires mutable indexed storage",
@@ -476,7 +492,7 @@ impl Machine {
                     }
                     write(frame, object, value)?;
                 }
-                Instruction::MakeReference {
+                &Instruction::MakeReference {
                     destination,
                     object,
                     index,
@@ -489,7 +505,7 @@ impl Machine {
                     let reference = PlaceHandle::indexed(place(frame, object), index)?;
                     write(frame, destination, Value::Reference(reference))?;
                 }
-                Instruction::MakeWholeReference {
+                &Instruction::MakeWholeReference {
                     destination,
                     object,
                 } => {
@@ -501,17 +517,17 @@ impl Machine {
                     object,
                     field,
                 } => {
-                    let reference = PlaceHandle::field(place(frame, object), field)?;
-                    write(frame, destination, Value::Reference(reference))?;
+                    let reference = PlaceHandle::field(place(frame, *object), field.clone())?;
+                    write(frame, *destination, Value::Reference(reference))?;
                 }
-                Instruction::MoveOut {
+                &Instruction::MoveOut {
                     destination,
                     source,
                 } => {
                     let value = frame.registers[source.0 as usize].replace(Value::Unit);
                     write(frame, destination, value)?;
                 }
-                Instruction::Push {
+                &Instruction::Push {
                     destination,
                     object,
                     value,
@@ -539,7 +555,7 @@ impl Machine {
                     })?;
                     write(frame, destination, Value::Unit)?;
                 }
-                Instruction::Append {
+                &Instruction::Append {
                     destination,
                     object,
                     value,
@@ -558,52 +574,59 @@ impl Machine {
                     value,
                     candidates,
                 } => {
-                    let value = read(frame, value)?;
+                    let value = read(frame, *value)?;
                     let found = candidates
-                        .into_iter()
+                        .iter()
+                        .copied()
                         .map(|candidate| read(frame, candidate))
                         .collect::<Result<Vec<_>, _>>()?
                         .contains(&value);
-                    write(frame, destination, Value::Bool(found))?;
+                    write(frame, *destination, Value::Bool(found))?;
                 }
                 Instruction::Builtin {
                     destination,
                     builtin,
                     arguments,
                 } => {
-                    if builtin == Builtin::ByteBufferFreeze {
-                        let [buffer] = arguments.as_slice() else {
-                            return Err(RuntimeError::runtime(
-                                "ByteBuffer.freeze requires one ByteBuffer",
-                            ));
-                        };
-                        let value = frame.registers[buffer.0 as usize].replace(Value::Unit);
-                        let Value::RawByteBuffer(values) = value else {
-                            return Err(RuntimeError::runtime(
-                                "ByteBuffer.freeze requires a ByteBuffer",
-                            ));
-                        };
-                        write(frame, destination, Value::bytes(values))?;
-                        continue;
-                    }
-                    if let Some(value) = transform_raw_byte_buffer(frame, builtin, &arguments)? {
-                        write(frame, destination, value)?;
-                        continue;
-                    }
-                    let arguments = arguments
-                        .into_iter()
-                        .map(|argument| read(frame, argument))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    write(
-                        frame,
-                        destination,
-                        super::builtins::dispatch(
-                            self.host.as_ref(),
-                            builtin,
-                            &arguments,
-                            self.program.string_record,
-                        )?,
-                    )?;
+                    let value = match builtin.descriptor().handler {
+                        Some(BuiltinHandler::Direct(handler)) => {
+                            let arguments = arguments
+                                .iter()
+                                .copied()
+                                .map(|argument| read(frame, argument))
+                                .collect::<Result<Vec<_>, _>>()?;
+                            handler(&arguments, self.program.string_record)?
+                        }
+                        Some(BuiltinHandler::ConsumeFirst(handler)) => {
+                            let Some((receiver, arguments)) = arguments.split_first() else {
+                                return Err(RuntimeError::runtime(
+                                    "consuming builtin requires a receiver",
+                                ));
+                            };
+                            let arguments = arguments
+                                .iter()
+                                .copied()
+                                .map(|argument| read(frame, argument))
+                                .collect::<Result<Vec<_>, _>>()?;
+                            let receiver =
+                                frame.registers[receiver.0 as usize].replace(Value::Unit);
+                            handler(receiver, &arguments, self.program.string_record)?
+                        }
+                        None => {
+                            let arguments = arguments
+                                .iter()
+                                .copied()
+                                .map(|argument| read(frame, argument))
+                                .collect::<Result<Vec<_>, _>>()?;
+                            super::builtins::dispatch(
+                                self.host.as_ref(),
+                                *builtin,
+                                &arguments,
+                                self.program.string_record,
+                            )?
+                        }
+                    };
+                    write(frame, *destination, value)?;
                 }
                 Instruction::MatchPattern {
                     destination,
@@ -613,21 +636,21 @@ impl Machine {
                 } => {
                     let mut values = Vec::new();
                     let matched =
-                        match_pattern(&self.program, &pattern, &read(frame, subject)?, &mut values);
+                        match_pattern(&self.program, pattern, &read(frame, *subject)?, &mut values);
                     if matched {
-                        for (register, value) in bindings.into_iter().zip(values) {
+                        for (register, value) in bindings.iter().copied().zip(values) {
                             write(frame, register, value)?;
                         }
                     }
-                    write(frame, destination, Value::Bool(matched))?;
+                    write(frame, *destination, Value::Bool(matched))?;
                 }
-                Instruction::Jump { target } => frame.instruction = target,
-                Instruction::JumpIfFalse { condition, target } => {
+                &Instruction::Jump { target } => frame.instruction = target,
+                &Instruction::JumpIfFalse { condition, target } => {
                     if read(frame, condition)? == Value::Bool(false) {
                         frame.instruction = target;
                     }
                 }
-                Instruction::Assert { condition, message } => {
+                &Instruction::Assert { condition, message } => {
                     let Value::Bool(condition) = read(frame, condition)? else {
                         return Err(RuntimeError::runtime("VM assertion condition is not Bool"));
                     };
@@ -653,7 +676,14 @@ impl Machine {
                     captures,
                 } => {
                     let captures = capture(frame, captures)?;
-                    write(frame, destination, Value::VmClosure { function, captures })?;
+                    write(
+                        frame,
+                        *destination,
+                        Value::VmClosure {
+                            function: *function,
+                            captures,
+                        },
+                    )?;
                 }
                 Instruction::Call {
                     destination,
@@ -661,11 +691,11 @@ impl Machine {
                     arguments,
                 } => {
                     let next = self.call_frame(
-                        function,
+                        *function,
                         Vec::new(),
                         frame,
-                        &arguments,
-                        Some(destination),
+                        arguments,
+                        Some(*destination),
                     )?;
                     frames.push(next);
                 }
@@ -675,16 +705,16 @@ impl Machine {
                     function,
                     arguments,
                 } => {
-                    let receiver = place(frame, receiver);
+                    let receiver = place(frame, *receiver);
                     if let Some(shared) = receiver.shared() {
                         let (lease, state) = shared.write_snapshot()?;
                         let local = Slot::new(Value::from_wire(state)?);
                         let mut method = self.method_call_frame(
-                            function,
+                            *function,
                             local.clone(),
                             frame,
-                            &arguments,
-                            Some(destination),
+                            arguments,
+                            Some(*destination),
                         )?;
                         method.shared_commit = Some(SharedCommit {
                             shared,
@@ -694,11 +724,11 @@ impl Machine {
                         frames.push(method);
                     } else {
                         let next = self.method_call_frame(
-                            function,
+                            *function,
                             receiver,
                             frame,
-                            &arguments,
-                            Some(destination),
+                            arguments,
+                            Some(*destination),
                         )?;
                         frames.push(next);
                     }
@@ -710,14 +740,14 @@ impl Machine {
                     name,
                     arguments,
                 } => {
-                    let receiver = place(frame, receiver);
+                    let receiver = place(frame, *receiver);
                     let value = receiver.read()?;
                     if let Value::Record { fields, .. } = &value
                         && arguments.is_empty()
-                        && let Some(field) = fields.get(&name)
+                        && let Some(field) = fields.get(name)
                         && value.string_bytes().is_none()
                     {
-                        write(frame, destination, field.clone())?;
+                        write(frame, *destination, field.clone())?;
                         continue;
                     }
                     if value.string_bytes().is_some() {
@@ -729,8 +759,8 @@ impl Machine {
                         }
                         write(
                             frame,
-                            destination,
-                            member(value, &name, self.program.string_record)?,
+                            *destination,
+                            member(value, name, self.program.string_record)?,
                         )?;
                         continue;
                     }
@@ -743,8 +773,8 @@ impl Machine {
                         }
                         write(
                             frame,
-                            destination,
-                            member(value, &name, self.program.string_record)?,
+                            *destination,
+                            member(value, name, self.program.string_record)?,
                         )?;
                         continue;
                     }
@@ -757,8 +787,8 @@ impl Machine {
                         }
                         write(
                             frame,
-                            destination,
-                            member(value, &name, self.program.string_record)?,
+                            *destination,
+                            member(value, name, self.program.string_record)?,
                         )?;
                         continue;
                     }
@@ -778,8 +808,8 @@ impl Machine {
                         }
                         write(
                             frame,
-                            destination,
-                            member(value, &name, self.program.string_record)?,
+                            *destination,
+                            member(value, name, self.program.string_record)?,
                         )?;
                         continue;
                     }
@@ -790,7 +820,7 @@ impl Machine {
                         } => self
                             .program
                             .dispatch
-                            .get(&(crate::types::NominalTypeId::Record(*record), slot))
+                            .get(&(crate::types::NominalTypeId::Record(*record), *slot))
                             .copied(),
                         Value::Variant {
                             variant: Some(variant),
@@ -798,7 +828,7 @@ impl Machine {
                         } => self
                             .program
                             .dispatch
-                            .get(&(crate::types::NominalTypeId::Variant(*variant), slot))
+                            .get(&(crate::types::NominalTypeId::Variant(*variant), *slot))
                             .copied(),
                         _ => None,
                     };
@@ -815,8 +845,8 @@ impl Machine {
                             function,
                             local.clone(),
                             frame,
-                            &arguments,
-                            Some(destination),
+                            arguments,
+                            Some(*destination),
                         )?;
                         method.shared_commit = Some(SharedCommit {
                             shared,
@@ -829,8 +859,8 @@ impl Machine {
                             function,
                             receiver,
                             frame,
-                            &arguments,
-                            Some(destination),
+                            arguments,
+                            Some(*destination),
                         )?;
                         frames.push(next);
                     }
@@ -840,11 +870,11 @@ impl Machine {
                     callee,
                     arguments,
                 } => {
-                    let Value::VmClosure { function, captures } = read(frame, callee)? else {
+                    let Value::VmClosure { function, captures } = read(frame, *callee)? else {
                         return Err(RuntimeError::runtime("VM dynamic call requires a closure"));
                     };
                     let next =
-                        self.call_frame(function, captures, frame, &arguments, Some(destination))?;
+                        self.call_frame(function, captures, frame, arguments, Some(*destination))?;
                     frames.push(next);
                 }
                 Instruction::CallClosure {
@@ -855,10 +885,10 @@ impl Machine {
                 } => {
                     let captures = capture(frame, captures)?;
                     let next =
-                        self.call_frame(function, captures, frame, &arguments, Some(destination))?;
+                        self.call_frame(*function, captures, frame, arguments, Some(*destination))?;
                     frames.push(next);
                 }
-                Instruction::SpawnRemote { destination, value } => {
+                &Instruction::SpawnRemote { destination, value } => {
                     let state = read(frame, value)?.into_wire()?;
                     let (sender, inbox) = may::sync::mpsc::channel::<RemoteMessage>();
                     let program = self.program.clone();
@@ -900,7 +930,7 @@ impl Machine {
                         Value::Remote(RemoteValue { id, sender }),
                     )?;
                 }
-                Instruction::SpawnRemoteBorrow {
+                &Instruction::SpawnRemoteBorrow {
                     destination,
                     source,
                 } => {
@@ -947,13 +977,14 @@ impl Machine {
                     function,
                     arguments,
                 } => {
-                    let Value::Remote(remote) = read(frame, remote)? else {
+                    let Value::Remote(remote) = read(frame, *remote)? else {
                         return Err(RuntimeError::runtime(
                             "remote call requires a remote object",
                         ));
                     };
                     let arguments = arguments
-                        .into_iter()
+                        .iter()
+                        .copied()
                         .map(|(mode, register)| match mode {
                             crate::ast::ParameterMode::Borrow => frame.registers
                                 [register.0 as usize]
@@ -970,21 +1001,21 @@ impl Machine {
                     remote
                         .sender
                         .send(RemoteMessage {
-                            function,
+                            function: *function,
                             arguments,
                             response: sender,
                         })
                         .map_err(|_| RuntimeError::runtime("remote object is closed"))?;
                     write(
                         frame,
-                        destination,
+                        *destination,
                         Value::Future(FutureValue {
                             id: next_future_id(),
                             receiver: Arc::new(Mutex::new(Some(receiver))),
                         }),
                     )?;
                 }
-                Instruction::Await {
+                &Instruction::Await {
                     destination,
                     future,
                 } => {
@@ -1005,7 +1036,7 @@ impl Machine {
                         .map_err(RuntimeError::runtime)?;
                     write(frame, destination, Value::from_wire(value)?)?;
                 }
-                Instruction::Return { source } => {
+                &Instruction::Return { source } => {
                     let value = if function.returns_reference {
                         bind(frame, source)
                     } else {
@@ -1176,10 +1207,11 @@ fn materialize_remote_arguments(
 
 fn capture(
     frame: &mut Frame,
-    captures: Vec<(CaptureMode, Register)>,
+    captures: &[(CaptureMode, Register)],
 ) -> Result<Vec<Capture>, RuntimeError> {
     captures
-        .into_iter()
+        .iter()
+        .copied()
         .map(|(mode, register)| {
             Ok(match mode {
                 CaptureMode::Ref => Capture::Place(Slot::place(&place(frame, register))),
@@ -1271,6 +1303,16 @@ fn member(
             ))),
         };
     }
+    if let Some(values) = value.byte_buffer_list_value() {
+        return match field {
+            "empty?" => Ok(Value::Bool(values.is_empty())),
+            "length" | "capacity" => Ok(Value::Integer(values.len() as i64)),
+            "value" => Ok(Value::list(values.clone())),
+            _ => Err(RuntimeError::runtime(format!(
+                "value has no field `{field}`"
+            ))),
+        };
+    }
     if let Some(values) = value.list_value() {
         return match field {
             "empty?" => Ok(Value::Bool(values.is_empty())),
@@ -1299,70 +1341,6 @@ fn member(
             "value {value:?} has no field `{field}`"
         ))),
     }
-}
-
-fn transform_raw_byte_buffer(
-    frame: &mut Frame,
-    builtin: Builtin,
-    arguments: &[Register],
-) -> Result<Option<Value>, RuntimeError> {
-    if !matches!(
-        builtin,
-        Builtin::ByteBufferPush
-            | Builtin::ByteBufferExtend
-            | Builtin::ByteBufferClear
-            | Builtin::ByteBufferTruncate
-            | Builtin::ByteBufferReserve
-    ) {
-        return Ok(None);
-    }
-    let Some(buffer) = arguments.first() else {
-        return Err(RuntimeError::runtime(
-            "raw byte-buffer transform requires storage",
-        ));
-    };
-    let Value::RawByteBuffer(mut values) = frame.registers[buffer.0 as usize].replace(Value::Unit)
-    else {
-        return Err(RuntimeError::runtime(
-            "raw byte-buffer transform requires RawByteBuffer",
-        ));
-    };
-    match (builtin, &arguments[1..]) {
-        (Builtin::ByteBufferPush, [value]) => {
-            let Value::Byte(value) = read(frame, *value)? else {
-                return Err(RuntimeError::runtime("ByteBuffer.push requires a Byte"));
-            };
-            values.push(value);
-        }
-        (Builtin::ByteBufferExtend, [value]) => {
-            let value = read(frame, *value)?;
-            let Some(value) = value.bytes_value() else {
-                return Err(RuntimeError::runtime("ByteBuffer.extend requires Bytes"));
-            };
-            values.extend_from_slice(value);
-        }
-        (Builtin::ByteBufferClear, []) => values.clear(),
-        (Builtin::ByteBufferTruncate, [length]) => {
-            let Value::Integer(length) = read(frame, *length)? else {
-                return Err(RuntimeError::runtime("ByteBuffer.truncate requires Int"));
-            };
-            values.truncate(
-                usize::try_from(length)
-                    .map_err(|_| RuntimeError::runtime("truncate length cannot be negative"))?,
-            );
-        }
-        (Builtin::ByteBufferReserve, [additional]) => {
-            let Value::Integer(additional) = read(frame, *additional)? else {
-                return Err(RuntimeError::runtime("ByteBuffer.reserve requires Int"));
-            };
-            values.reserve(
-                usize::try_from(additional)
-                    .map_err(|_| RuntimeError::runtime("reserve amount cannot be negative"))?,
-            );
-        }
-        _ => return Err(RuntimeError::runtime("invalid raw byte-buffer arguments")),
-    }
-    Ok(Some(Value::RawByteBuffer(values)))
 }
 
 #[cfg(test)]

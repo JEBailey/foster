@@ -117,14 +117,54 @@ impl<'a> Reader<'a> {
     pub(super) fn function(&mut self) -> Result<BytecodeFunction, BinaryError> {
         Ok(BytecodeFunction {
             name: self.string()?,
+            intrinsic_stub: self.bool()?,
             parameters: self.u16()?,
+            parameter_types: self.vec(|r| r.verification_type(0))?,
             parameter_modes: self.vec(|r| r.parameter_mode())?,
             mutable_parameters: self.vec(|r| r.bool())?,
             returns_reference: self.bool()?,
             captures: self.u16()?,
+            capture_types: self.vec(|r| r.verification_type(0))?,
+            result_type: self.verification_type(0)?,
             registers: self.u16()?,
             instructions: self.vec(|r| r.instruction())?,
             instruction_spans: self.vec(|r| r.range())?,
+        })
+    }
+    fn verification_type(&mut self, depth: usize) -> Result<VerificationType, BinaryError> {
+        if depth >= 64 {
+            return Err(BinaryError::new(
+                "verification type nesting exceeds 64 levels",
+            ));
+        }
+        let nested = |reader: &mut Self| reader.verification_type(depth + 1);
+        Ok(match self.u8()? {
+            0 => VerificationType::Unknown,
+            1 => VerificationType::Unit,
+            2 => VerificationType::Bool,
+            3 => VerificationType::Integer,
+            4 => VerificationType::Float,
+            5 => VerificationType::CodePoint,
+            6 => VerificationType::Byte,
+            7 => VerificationType::Bytes,
+            8 => VerificationType::ByteBuffer,
+            9 => VerificationType::List(Box::new(nested(self)?)),
+            10 => VerificationType::Reference(Box::new(nested(self)?)),
+            11 => VerificationType::Remote(Box::new(nested(self)?)),
+            12 => VerificationType::Future(Box::new(nested(self)?)),
+            13 => VerificationType::Function {
+                parameters: self.vec(|reader| nested(reader))?,
+                parameter_modes: self.vec(|reader| reader.parameter_mode())?,
+                result: Box::new(nested(self)?),
+            },
+            14 => VerificationType::Record(self.id::<Record>()?),
+            15 => VerificationType::Variant(self.id::<VariantType>()?),
+            16 => VerificationType::Union(self.vec(|reader| nested(reader))?),
+            tag => {
+                return Err(BinaryError::new(format!(
+                    "unknown verification type tag {tag}"
+                )));
+            }
         })
     }
     pub(super) fn instruction(&mut self) -> Result<Instruction, BinaryError> {

@@ -29,6 +29,15 @@ changes receive review.
 Foster is currently pre-1.0, so compatibility may change deliberately. It must nevertheless change
 through these gates rather than silently.
 
+## Bytecode format version 17
+
+Bytecode format version 17 adds verifier-only parameter, capture, result, and callable types plus
+an intrinsic-stub marker to each function. The decoder now runs a fixed-point control-flow verifier
+that checks definite register availability, operand and result types, consuming calls, move and
+reference captures, branch joins, and pattern-binding edges before execution. Instruction opcodes
+and builtin tags are unchanged. Source code requires no migration, but serialized development
+bytecode from version 16 must be rebuilt.
+
 ## Bytecode format version 16
 
 Bytecode format version 16 appends the `random.bytes` builtin used by `std.random.SystemRandom`

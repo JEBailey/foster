@@ -10,6 +10,38 @@ use crate::types::{DispatchSlot, NominalTypeId};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Register(pub u16);
 
+/// Runtime-visible type information retained solely for bytecode verification.
+///
+/// Groups, effects, and generic identities have already served their purpose by this stage.
+/// `Unknown` is used for erased generic and structural types. It acts as the verifier's top type:
+/// availability and ownership are still checked, while representation-specific checks are deferred
+/// to the already type-checked compiler boundary.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum VerificationType {
+    Unknown,
+    Unit,
+    Bool,
+    Integer,
+    Float,
+    CodePoint,
+    Byte,
+    Bytes,
+    ByteBuffer,
+    List(Box<VerificationType>),
+    Reference(Box<VerificationType>),
+    Remote(Box<VerificationType>),
+    Future(Box<VerificationType>),
+    Function {
+        parameters: Vec<VerificationType>,
+        parameter_modes: Vec<crate::ast::ParameterMode>,
+        result: Box<VerificationType>,
+    },
+    Record(RecordId),
+    Variant(VariantTypeId),
+    /// A control-flow join whose alternatives retain different runtime representations.
+    Union(Vec<VerificationType>),
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Constant {
     Unit,
@@ -444,12 +476,17 @@ impl Instruction {
 #[derive(Debug, Clone, PartialEq)]
 pub struct BytecodeFunction {
     pub name: String,
+    /// A source intrinsic declaration whose executable call sites lower to `Builtin`.
+    pub intrinsic_stub: bool,
     pub parameters: u16,
+    pub parameter_types: Vec<VerificationType>,
     pub parameter_modes: Vec<crate::ast::ParameterMode>,
     pub mutable_parameters: Vec<bool>,
     /// Whether `Return` transfers a live place handle instead of reading its current value.
     pub returns_reference: bool,
     pub captures: u16,
+    pub capture_types: Vec<VerificationType>,
+    pub result_type: VerificationType,
     pub registers: u16,
     pub instructions: Vec<Instruction>,
     pub instruction_spans: Vec<Range<usize>>,

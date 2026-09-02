@@ -2,13 +2,171 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::{Arc, OnceLock};
 
 use crate::error::RuntimeError;
-use crate::intrinsics::Builtin;
+use crate::intrinsics::{Builtin, BuiltinHandler};
 
 use super::Value;
 use super::value::RecordFields;
 
 pub(super) fn dispatch(
     host: &dyn HostServices,
+    builtin: Builtin,
+    arguments: &[Value],
+    string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, RuntimeError> {
+    let descriptor = builtin.descriptor();
+    if let Some(BuiltinHandler::Direct(handler)) = descriptor.handler {
+        return handler(arguments, string_record);
+    }
+    if builtin.is_host() {
+        return host.dispatch(builtin, arguments, string_record);
+    }
+    Err(RuntimeError::runtime(
+        "builtin requires ownership-aware VM dispatch",
+    ))
+}
+
+macro_rules! direct_builtin_handlers {
+    ($($builtin:ident),+ $(,)?) => {
+        $(
+            #[allow(non_snake_case)]
+            pub(crate) fn $builtin(
+                arguments: &[Value],
+                string_record: Option<crate::hir::RecordId>,
+            ) -> Result<Value, RuntimeError> {
+                dispatch_core(Builtin::$builtin, arguments, string_record)
+            }
+        )+
+    };
+}
+
+direct_builtin_handlers!(
+    Print,
+    Println,
+    FromCodePoint,
+    ParseFloat,
+    FormatFloat,
+    ByteValid,
+    ByteUnchecked,
+    BytesEmpty,
+    BytesFromList,
+    BytesConcat,
+    BytesSlice,
+    BytesToList,
+    BytesHex,
+    BytesFromHex,
+    StringUtf8,
+    BytesUtf8Valid,
+    BytesDecodeUtf8,
+    ByteBufferEmpty,
+    ByteBufferWithCapacity,
+    ByteBufferSnapshot,
+);
+
+#[allow(non_snake_case)]
+pub(crate) fn ByteBufferPush(
+    receiver: Value,
+    arguments: &[Value],
+    _string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, RuntimeError> {
+    let (Value::RawByteBuffer(mut values), [Value::Byte(value)]) = (receiver, arguments) else {
+        return Err(RuntimeError::runtime(
+            "ByteBuffer.push requires a ByteBuffer and Byte",
+        ));
+    };
+    values.push(*value);
+    Ok(Value::RawByteBuffer(values))
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn ByteBufferExtend(
+    receiver: Value,
+    arguments: &[Value],
+    _string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, RuntimeError> {
+    let Value::RawByteBuffer(mut values) = receiver else {
+        return Err(RuntimeError::runtime(
+            "ByteBuffer.extend requires a ByteBuffer",
+        ));
+    };
+    let [extension] = arguments else {
+        return Err(RuntimeError::runtime(
+            "ByteBuffer.extend requires one Bytes argument",
+        ));
+    };
+    let Some(extension) = extension.bytes_value() else {
+        return Err(RuntimeError::runtime("ByteBuffer.extend requires Bytes"));
+    };
+    values.extend_from_slice(extension);
+    Ok(Value::RawByteBuffer(values))
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn ByteBufferClear(
+    receiver: Value,
+    arguments: &[Value],
+    _string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, RuntimeError> {
+    let (Value::RawByteBuffer(mut values), []) = (receiver, arguments) else {
+        return Err(RuntimeError::runtime(
+            "ByteBuffer.clear requires a ByteBuffer",
+        ));
+    };
+    values.clear();
+    Ok(Value::RawByteBuffer(values))
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn ByteBufferTruncate(
+    receiver: Value,
+    arguments: &[Value],
+    _string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, RuntimeError> {
+    let (Value::RawByteBuffer(mut values), [Value::Integer(length)]) = (receiver, arguments) else {
+        return Err(RuntimeError::runtime(
+            "ByteBuffer.truncate requires a ByteBuffer and Int",
+        ));
+    };
+    values.truncate(
+        usize::try_from(*length)
+            .map_err(|_| RuntimeError::runtime("truncate length cannot be negative"))?,
+    );
+    Ok(Value::RawByteBuffer(values))
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn ByteBufferReserve(
+    receiver: Value,
+    arguments: &[Value],
+    _string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, RuntimeError> {
+    let (Value::RawByteBuffer(mut values), [Value::Integer(additional)]) = (receiver, arguments)
+    else {
+        return Err(RuntimeError::runtime(
+            "ByteBuffer.reserve requires a ByteBuffer and Int",
+        ));
+    };
+    values.reserve(
+        usize::try_from(*additional)
+            .map_err(|_| RuntimeError::runtime("reserve amount cannot be negative"))?,
+    );
+    Ok(Value::RawByteBuffer(values))
+}
+
+#[allow(non_snake_case)]
+pub(crate) fn ByteBufferFreeze(
+    receiver: Value,
+    arguments: &[Value],
+    _string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, RuntimeError> {
+    let (Value::RawByteBuffer(values), []) = (receiver, arguments) else {
+        return Err(RuntimeError::runtime(
+            "ByteBuffer.freeze requires a ByteBuffer",
+        ));
+    };
+    Ok(Value::bytes(values))
+}
+
+fn dispatch_core(
     builtin: Builtin,
     arguments: &[Value],
     string_record: Option<crate::hir::RecordId>,
@@ -133,45 +291,9 @@ pub(super) fn dispatch(
                 .map_err(|_| RuntimeError::runtime("ByteBuffer capacity cannot be negative"))?;
             Ok(Value::RawByteBuffer(Vec::with_capacity(capacity)))
         }
-        (Builtin::ByteBufferPush, [Value::RawByteBuffer(buffer), Value::Byte(value)]) => {
-            let mut buffer = buffer.clone();
-            buffer.push(*value);
-            Ok(Value::RawByteBuffer(buffer))
+        (Builtin::ByteBufferSnapshot, [Value::RawByteBuffer(value)]) => {
+            Ok(Value::bytes(value.clone()))
         }
-        (Builtin::ByteBufferExtend, [Value::RawByteBuffer(buffer), values])
-            if values.bytes_value().is_some() =>
-        {
-            let mut buffer = buffer.clone();
-            buffer.extend_from_slice(values.bytes_value().unwrap());
-            Ok(Value::RawByteBuffer(buffer))
-        }
-        (Builtin::ByteBufferClear, [Value::RawByteBuffer(buffer)]) => {
-            let mut buffer = buffer.clone();
-            buffer.clear();
-            Ok(Value::RawByteBuffer(buffer))
-        }
-        (Builtin::ByteBufferTruncate, [Value::RawByteBuffer(buffer), Value::Integer(length)]) => {
-            let length = usize::try_from(*length)
-                .map_err(|_| RuntimeError::runtime("truncate length cannot be negative"))?;
-            let mut buffer = buffer.clone();
-            buffer.truncate(length);
-            Ok(Value::RawByteBuffer(buffer))
-        }
-        (
-            Builtin::ByteBufferReserve,
-            [Value::RawByteBuffer(buffer), Value::Integer(additional)],
-        ) => {
-            let additional = usize::try_from(*additional)
-                .map_err(|_| RuntimeError::runtime("reserve amount cannot be negative"))?;
-            let mut buffer = buffer.clone();
-            buffer.reserve(additional);
-            Ok(Value::RawByteBuffer(buffer))
-        }
-        (
-            Builtin::ByteBufferFreeze | Builtin::ByteBufferSnapshot,
-            [Value::RawByteBuffer(value)],
-        ) => Ok(Value::bytes(value.clone())),
-        _ if builtin.is_host() => host.dispatch(builtin, arguments, string_record),
         _ => Err(RuntimeError::runtime("invalid builtin arguments")),
     }
 }

@@ -3,7 +3,9 @@
 import core.result
 
 /// Returns whether an integer fits in a byte.
-pub func Byte.valid(value: Int) -> Bool = intrinsic("byte.valid")
+pub func Byte.valid(value: Int) -> Bool {
+    value >= 0 && value <= 255
+}
 
 /// Constructs a byte without repeating range validation.
 pub func Byte.unchecked(value: Int) -> Byte = intrinsic("byte.unchecked")

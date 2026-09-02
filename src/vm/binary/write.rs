@@ -93,7 +93,12 @@ impl Writer {
     }
     pub(super) fn function(&mut self, f: &BytecodeFunction) -> Result<(), BinaryError> {
         self.string(&f.name)?;
+        self.u8(u8::from(f.intrinsic_stub));
         self.u16(f.parameters);
+        self.u32(f.parameter_types.len())?;
+        for ty in &f.parameter_types {
+            self.verification_type(ty)?;
+        }
         self.u32(f.parameter_modes.len())?;
         for mode in &f.parameter_modes {
             self.parameter_mode(*mode);
@@ -104,6 +109,11 @@ impl Writer {
         }
         self.u8(u8::from(f.returns_reference));
         self.u16(f.captures);
+        self.u32(f.capture_types.len())?;
+        for ty in &f.capture_types {
+            self.verification_type(ty)?;
+        }
+        self.verification_type(&f.result_type)?;
         self.u16(f.registers);
         self.u32(f.instructions.len())?;
         for instruction in &f.instructions {
@@ -112,6 +122,67 @@ impl Writer {
         self.u32(f.instruction_spans.len())?;
         for span in &f.instruction_spans {
             self.range(span)?;
+        }
+        Ok(())
+    }
+    fn verification_type(&mut self, ty: &VerificationType) -> Result<(), BinaryError> {
+        match ty {
+            VerificationType::Unknown => self.u8(0),
+            VerificationType::Unit => self.u8(1),
+            VerificationType::Bool => self.u8(2),
+            VerificationType::Integer => self.u8(3),
+            VerificationType::Float => self.u8(4),
+            VerificationType::CodePoint => self.u8(5),
+            VerificationType::Byte => self.u8(6),
+            VerificationType::Bytes => self.u8(7),
+            VerificationType::ByteBuffer => self.u8(8),
+            VerificationType::List(element) => {
+                self.u8(9);
+                self.verification_type(element)?;
+            }
+            VerificationType::Reference(value) => {
+                self.u8(10);
+                self.verification_type(value)?;
+            }
+            VerificationType::Remote(value) => {
+                self.u8(11);
+                self.verification_type(value)?;
+            }
+            VerificationType::Future(value) => {
+                self.u8(12);
+                self.verification_type(value)?;
+            }
+            VerificationType::Function {
+                parameters,
+                parameter_modes,
+                result,
+            } => {
+                self.u8(13);
+                self.u32(parameters.len())?;
+                for parameter in parameters {
+                    self.verification_type(parameter)?;
+                }
+                self.u32(parameter_modes.len())?;
+                for mode in parameter_modes {
+                    self.parameter_mode(*mode);
+                }
+                self.verification_type(result)?;
+            }
+            VerificationType::Record(record) => {
+                self.u8(14);
+                self.id(*record);
+            }
+            VerificationType::Variant(variant) => {
+                self.u8(15);
+                self.id(*variant);
+            }
+            VerificationType::Union(members) => {
+                self.u8(16);
+                self.u32(members.len())?;
+                for member in members {
+                    self.verification_type(member)?;
+                }
+            }
         }
         Ok(())
     }

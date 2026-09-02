@@ -2,4 +2,10 @@
 
 mod registry;
 
-pub use registry::{BUILTINS, Builtin, BuiltinDescriptor, Intrinsic};
+pub(crate) use registry::BuiltinHandler;
+
+pub use registry::{
+    BUILTINS, Builtin, BuiltinDescriptor, BuiltinExecution, Intrinsic, IntrinsicArgumentMode,
+    IntrinsicParameter, IntrinsicParameters, IntrinsicReceiverMode, IntrinsicSignature,
+    IntrinsicType, OPCODE_INTRINSICS, OpcodeIntrinsic, OpcodeIntrinsicDescriptor,
+};

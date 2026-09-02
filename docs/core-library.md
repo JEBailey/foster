@@ -116,7 +116,7 @@ this table for an intrinsic because it has no Foster implementation body.
 | `code_point`, `from_code_point` | Legacy explicit widening and checked construction of `CodePoint`; ordinary widening applies in `Int` contexts and integer operators |
 | `parse_float` | Parse a binary64 floating-point value from text |
 | `FloatHost.format` | Format a binary64 value as round-trippable scalar text |
-| `FsHost.read_text`, `FsHost.write_text`, `FsHost.read_bytes`, `FsHost.write_bytes` | Perform whole-file text and binary operations |
+| `FsHost.read_bytes`, `FsHost.write_bytes` | Perform whole-file binary operations; Foster wrappers implement UTF-8 text reads and writes |
 | `FsHost.list_directory` | List directory entries |
 | `FsHost.exists`, `FsHost.is_file`, `FsHost.is_directory` | Query host filesystem paths |
 | `FsHost.create_directory`, `FsHost.create_directory_all` | Create one directory or a directory tree |
@@ -126,7 +126,7 @@ this table for an intrinsic because it has no Foster implementation body.
 | `PathHost.canonicalize` | Resolve a host filesystem location |
 | `EnvHost.current_directory` | Read the process working directory |
 | `TcpHost.listen`, `TcpHost.connect`, `TcpHost.accept` | Establish TCP resources |
-| `TcpHost.read`, `TcpHost.write`, `TcpHost.read_bytes`, `TcpHost.write_bytes` | Operate on TCP connections |
+| `TcpHost.read_bytes`, `TcpHost.write_bytes` | Operate on TCP connections; Foster wrappers implement UTF-8 text reads and writes |
 | `TcpHost.set_timeout` | Configure TCP connection timeouts |
 | `TcpHost.close_listener`, `TcpHost.close_connection` | Close TCP resources |
 | `TimeHost.wall_now` | Read canonical Unix seconds and fractional nanoseconds from the wall clock |
@@ -292,10 +292,11 @@ and arithmetic with a byte produces `Int`, while
 lowercase hexadecimal encoding, and checked hexadecimal decoding. The VM stores it as shared
 contiguous byte storage rather than `List<Byte>`.
 
-`ByteBuffer` is mutable growable storage with direct indexing, indexed replacement, `push`,
+`ByteBuffer` is mutable Foster list-backed storage with direct indexing, indexed replacement, `push`,
 `extend`, `clear`, `truncate`, and `reserve`. `buffer.snapshot()` borrows the buffer and copies its
 current contents. `(move buffer).freeze()` consumes it and transfers the contents into immutable
-`Bytes`. Structural mutations invalidate outstanding element loans.
+`Bytes`. Capacity is a non-observable allocation hint. Structural mutations invalidate outstanding
+element loans.
 
 Text conversion is explicit: `text.utf8` encodes a string, while `String.from_utf8(bytes)` returns
 `Result<String, Utf8Error>`. Filesystem and TCP modules provide parallel `read_bytes` and

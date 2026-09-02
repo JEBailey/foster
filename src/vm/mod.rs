@@ -4,7 +4,7 @@
 //! executable format while the language semantics are still evolving.
 
 mod binary;
-mod builtins;
+pub(crate) mod builtins;
 mod compiler;
 mod entropy;
 mod host;
@@ -22,7 +22,7 @@ pub use compiler::{CompileOptions, compile, compile_with_options};
 pub use host::HostContext;
 pub use ir::{
     BytecodeFunction, Constant, Instruction, Program, ProgramMetrics, Register, RuntimeRecord,
-    RuntimeVariant,
+    RuntimeVariant, VerificationType,
 };
 pub use machine::Machine;
 pub use optimizer::optimize;
@@ -299,6 +299,166 @@ func main() -> Int {
             constant: 0,
         };
         assert!(verify(&program).is_err());
+    }
+
+    #[test]
+    fn verifier_rejects_a_return_with_the_wrong_type() {
+        let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
+        let mut program = compile(&compilation).unwrap();
+        let main = program.main.unwrap();
+        let bool_constant = u16::try_from(program.constants.len()).unwrap();
+        program.constants.push(Constant::Bool(true));
+        let function = program.functions.get_mut(&main).unwrap();
+        let return_index = function
+            .instructions
+            .iter()
+            .position(|instruction| matches!(instruction, Instruction::Return { .. }))
+            .unwrap();
+        let register = Register(function.registers);
+        function.registers += 1;
+        function.instructions.insert(
+            return_index,
+            Instruction::LoadConstant {
+                destination: register,
+                constant: bool_constant,
+            },
+        );
+        function.instruction_spans.insert(return_index, 0..0);
+        function.instructions[return_index + 1] = Instruction::Return { source: register };
+
+        let error = verify(&program).unwrap_err();
+        assert!(error.message.contains("return value type"));
+    }
+
+    #[test]
+    fn verifier_rejects_a_read_after_drop() {
+        let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
+        let mut program = compile(&compilation).unwrap();
+        let main = program.main.unwrap();
+        let function = program.functions.get_mut(&main).unwrap();
+        let return_index = function
+            .instructions
+            .iter()
+            .position(|instruction| matches!(instruction, Instruction::Return { .. }))
+            .unwrap();
+        let Instruction::Return { source } = function.instructions[return_index] else {
+            unreachable!()
+        };
+        function
+            .instructions
+            .insert(return_index, Instruction::Drop { register: source });
+        function.instruction_spans.insert(return_index, 0..0);
+
+        let error = verify(&program).unwrap_err();
+        assert!(error.message.contains("reads unavailable"));
+    }
+
+    #[test]
+    fn verifier_rejects_a_register_initialized_on_only_one_cfg_edge() {
+        let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
+        let mut program = compile(&compilation).unwrap();
+        let main = program.main.unwrap();
+        let integer = program
+            .constants
+            .iter()
+            .position(|constant| matches!(constant, Constant::Integer(42)))
+            .unwrap() as u16;
+        let boolean = u16::try_from(program.constants.len()).unwrap();
+        program.constants.push(Constant::Bool(true));
+        let function = program.functions.get_mut(&main).unwrap();
+        function.registers = 2;
+        function.instructions = vec![
+            Instruction::LoadConstant {
+                destination: Register(0),
+                constant: boolean,
+            },
+            Instruction::JumpIfFalse {
+                condition: Register(0),
+                target: 3,
+            },
+            Instruction::LoadConstant {
+                destination: Register(1),
+                constant: integer,
+            },
+            Instruction::Return {
+                source: Register(1),
+            },
+        ];
+        function.instruction_spans = vec![0..0; function.instructions.len()];
+
+        let error = verify(&program).unwrap_err();
+        assert!(error.message.contains("reads unavailable"));
+    }
+
+    #[test]
+    fn verifier_rejects_a_read_after_a_consuming_call() {
+        let compilation = crate::compile(
+            "func identity(value: Int) -> Int { value }\nfunc main() -> Int { identity(42) }",
+        )
+        .unwrap();
+        let mut program =
+            compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
+        let main = program.main.unwrap();
+        let (target, argument) = program.functions[&main]
+            .instructions
+            .iter()
+            .find_map(|instruction| match instruction {
+                Instruction::Call {
+                    function,
+                    arguments,
+                    ..
+                } => Some((*function, arguments[0])),
+                _ => None,
+            })
+            .unwrap();
+        program.functions.get_mut(&target).unwrap().parameter_modes[0] =
+            crate::ast::ParameterMode::Consume;
+        let function = program.functions.get_mut(&main).unwrap();
+        let return_instruction = function
+            .instructions
+            .iter_mut()
+            .find(|instruction| matches!(instruction, Instruction::Return { .. }))
+            .unwrap();
+        *return_instruction = Instruction::Return { source: argument };
+
+        let error = verify(&program).unwrap_err();
+        assert!(error.message.contains("reads unavailable"));
+    }
+
+    #[test]
+    fn verifier_rejects_a_call_argument_with_the_wrong_type() {
+        let compilation = crate::compile(
+            "func identity(value: Int) -> Int { value }\nfunc main() -> Int { identity(42) }",
+        )
+        .unwrap();
+        let mut program =
+            compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
+        let main = program.main.unwrap();
+        let bool_constant = u16::try_from(program.constants.len()).unwrap();
+        program.constants.push(Constant::Bool(true));
+        let function = program.functions.get_mut(&main).unwrap();
+        let call_index = function
+            .instructions
+            .iter()
+            .position(|instruction| matches!(instruction, Instruction::Call { .. }))
+            .unwrap();
+        let register = Register(function.registers);
+        function.registers += 1;
+        function.instructions.insert(
+            call_index,
+            Instruction::LoadConstant {
+                destination: register,
+                constant: bool_constant,
+            },
+        );
+        function.instruction_spans.insert(call_index, 0..0);
+        let Instruction::Call { arguments, .. } = &mut function.instructions[call_index + 1] else {
+            unreachable!()
+        };
+        arguments[0] = register;
+
+        let error = verify(&program).unwrap_err();
+        assert!(error.message.contains("call argument type"));
     }
 
     #[test]

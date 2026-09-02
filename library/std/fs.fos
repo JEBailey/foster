@@ -9,9 +9,16 @@ import std.resource
 type FsHost = {}
 
 /// Reads UTF-8 text from the host filesystem.
-func FsHost.read_text(path: String) -> Result<String, IoError> = intrinsic("io.read_text")
+func FsHost.read_text(path: String) -> Result<String, IoError> {
+    branch FsHost.read_bytes(path) {
+        Result.Error(error) -> Result.Error(error)
+        Result.Ok(contents) -> decode_text(path, move contents)
+    }
+}
 /// Writes UTF-8 text to the host filesystem.
-func FsHost.write_text(path: String, text: String) -> Result<(), IoError> = intrinsic("io.write_text")
+func FsHost.write_text(path: String, text: String) -> Result<(), IoError> {
+    FsHost.write_bytes(path, text.utf8)
+}
 /// Reads binary data from the host filesystem.
 func FsHost.read_bytes(path: String) -> Result<Bytes, IoError> = intrinsic("io.read_bytes")
 /// Writes binary data to the host filesystem.
@@ -42,6 +49,18 @@ func FsHost.remove_directory(path: String) -> Result<(), IoError> = intrinsic("i
 func FsHost.rename(from: String, to: String) -> Result<(), IoError> = intrinsic("io.rename")
 /// Copies one file and returns the number of bytes copied.
 func FsHost.copy_file(from: String, to: String) -> Result<Int, IoError> = intrinsic("io.copy_file")
+
+/// Validates binary file contents before exposing them as text.
+func decode_text(path: String, contents: Bytes) -> Result<String, IoError> [consume contents] {
+    branch String.from_utf8(move contents) {
+        Result.Ok(text) -> Result.Ok(text)
+        Result.Error(error) -> Result.Error(IoError {
+            operation: "read_text"
+            path: path.slice(0, path.length)
+            message: error.message
+        })
+    }
+}
 
 /// A located file with whole-resource and positioned binary capabilities.
 ///

@@ -1,5 +1,5 @@
 use super::*;
-use crate::intrinsics::{Builtin, Intrinsic};
+use crate::intrinsics::{Builtin, Intrinsic, IntrinsicReceiverMode};
 
 impl FunctionCompiler<'_> {
     pub(super) fn expression(&mut self, id: ExprId) -> Result<Register, FosterError> {
@@ -208,10 +208,13 @@ impl FunctionCompiler<'_> {
                     {
                         let function = *function;
                         let remote = *remote;
+                        let receiver_mode =
+                            self.intrinsic(function).and_then(Intrinsic::receiver_mode);
                         let receiver = if remote
-                            || self
-                                .intrinsic(function)
-                                .is_some_and(Intrinsic::is_list_operation)
+                            || matches!(
+                                receiver_mode,
+                                Some(IntrinsicReceiverMode::Read | IntrinsicReceiverMode::Consume)
+                            )
                             || self.read_only_method(function)
                         {
                             self.expression(*object)?
@@ -654,29 +657,13 @@ impl FunctionCompiler<'_> {
                 Ok(false)
             };
         };
-        match self.intrinsic(function) {
-            Some(Intrinsic::ListPush) => {
-                self.emit(
-                    Instruction::Push {
-                        destination,
-                        object: receiver,
-                        value: *value,
-                    },
-                    span,
-                );
-            }
-            Some(Intrinsic::ListAppend) => {
-                self.emit(
-                    Instruction::Append {
-                        destination,
-                        object: receiver,
-                        value: *value,
-                    },
-                    span,
-                );
-            }
-            _ => return Ok(false),
-        }
+        let Some(intrinsic) = self.intrinsic(function).and_then(Intrinsic::opcode) else {
+            return Ok(false);
+        };
+        self.emit(
+            super::opcode_intrinsic_instruction(intrinsic, destination, receiver, *value),
+            span,
+        );
         Ok(true)
     }
 

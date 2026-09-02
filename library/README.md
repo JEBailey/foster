@@ -33,6 +33,9 @@ owner-qualified intrinsic declarations, so their source identity is resolved bef
 Library implementations use `not`, `&&`, and `||` for Boolean logic and short-circuiting.
 `String` is an opaque Foster record backed by valid UTF-8 `Bytes`; literals and host decoding are
 its trusted construction paths, while its library algorithms are ordinary Foster functions.
+Hexadecimal conversion, UTF-8 validation, text-I/O adaptation, and the list-backed `ByteBuffer`
+implementation are Foster code; only compact byte packing/unpacking and trusted string construction
+remain at that representation boundary.
 
 Portable library behavior is tested with Foster `test` declarations beside the implementation.
 Run the complete library suite with `foster test library`; the Rust integration harness executes it

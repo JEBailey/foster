@@ -8,7 +8,7 @@ use la_arena::{Idx, RawIdx};
 
 use super::{
     BytecodeFunction, Constant, Instruction, Program, Register, RuntimeRecord, RuntimeVariant,
-    verify,
+    VerificationType, verify,
 };
 use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::hir::{CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
@@ -16,7 +16,7 @@ use crate::intrinsics::Builtin;
 use crate::types::{DispatchSlot, NominalTypeId};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 16;
+pub const FORMAT_VERSION: u16 = 17;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 

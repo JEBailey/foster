@@ -43,7 +43,7 @@ pub enum Value {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecordFields {
     layout: Arc<RecordLayout>,
-    values: Vec<Value>,
+    values: Rc<Vec<Value>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -74,14 +74,17 @@ impl RecordFields {
                 "record layout does not match its values",
             ));
         }
-        Ok(Self { layout, values })
+        Ok(Self {
+            layout,
+            values: Rc::new(values),
+        })
     }
 
     pub(crate) fn from_pairs(fields: impl IntoIterator<Item = (String, Value)>) -> Self {
         let (names, values) = fields.into_iter().unzip();
         Self {
             layout: Arc::new(RecordLayout::new(names)),
-            values,
+            values: Rc::new(values),
         }
     }
 
@@ -91,7 +94,7 @@ impl RecordFields {
 
     pub(crate) fn get_mut(&mut self, name: &str) -> Option<&mut Value> {
         let index = self.index(name)?;
-        self.values.get_mut(index)
+        Rc::make_mut(&mut self.values).get_mut(index)
     }
 
     pub(crate) fn contains_key(&self, name: &str) -> bool {
@@ -99,16 +102,22 @@ impl RecordFields {
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&String, &Value)> {
-        self.layout.names.iter().zip(&self.values)
+        self.layout.names.iter().zip(self.values.iter())
     }
 
     pub(crate) fn into_pairs(self) -> impl Iterator<Item = (String, Value)> {
-        self.layout.names.clone().into_iter().zip(self.values)
+        let values = Rc::try_unwrap(self.values).unwrap_or_else(|values| (*values).clone());
+        self.layout.names.clone().into_iter().zip(values)
     }
 
     #[cfg(test)]
     pub(crate) fn shares_layout_with(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.layout, &other.layout)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn shares_values_with(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.values, &other.values)
     }
 
     fn index(&self, name: &str) -> Option<usize> {
@@ -130,7 +139,7 @@ impl<'a> IntoIterator for &'a RecordFields {
     type IntoIter = std::iter::Zip<std::slice::Iter<'a, String>, std::slice::Iter<'a, Value>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.layout.names.iter().zip(&self.values)
+        self.layout.names.iter().zip(self.values.iter())
     }
 }
 
@@ -144,7 +153,7 @@ fn value_layout() -> Arc<RecordLayout> {
 fn value_fields(value: Value) -> RecordFields {
     RecordFields {
         layout: value_layout(),
-        values: vec![value],
+        values: Rc::new(vec![value]),
     }
 }
 
@@ -152,6 +161,7 @@ fn value_fields(value: Value) -> RecordFields {
 pub struct Slot {
     storage: RefCell<SlotStorage>,
     generation: Cell<u64>,
+    projected_generations: RefCell<BTreeMap<Vec<ProjectionPath>, u64>>,
 }
 
 #[derive(Debug)]
@@ -258,6 +268,7 @@ impl Slot {
         Rc::new(Self {
             storage: RefCell::new(SlotStorage::Local(value)),
             generation: Cell::new(0),
+            projected_generations: RefCell::new(BTreeMap::new()),
         })
     }
 
@@ -382,6 +393,28 @@ impl Slot {
         }
     }
 
+    fn projected_generation(&self, path: &[ProjectionPath]) -> u64 {
+        *self
+            .projected_generations
+            .borrow_mut()
+            .entry(path.to_vec())
+            .or_insert(0)
+    }
+
+    fn invalidate_projected(&self, path: &[ProjectionPath]) {
+        let mut generations = self.projected_generations.borrow_mut();
+        let mut found = false;
+        for (candidate, generation) in generations.iter_mut() {
+            if candidate.starts_with(path) {
+                *generation += 1;
+                found |= candidate.as_slice() == path;
+            }
+        }
+        if !found {
+            generations.insert(path.to_vec(), 1);
+        }
+    }
+
     /// Creates a non-owning handle to the place represented by this slot.
     /// Reference wrapper slots are flattened to their original place.
     pub(crate) fn place(slot: &Rc<Self>) -> PlaceHandle {
@@ -392,10 +425,23 @@ impl Slot {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum ProjectionPath {
+    Index(usize),
+    Field(String),
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum PlaceProjection {
-    Index { index: usize, generation: u64 },
-    Field { name: String },
+    Index {
+        index: usize,
+        root_generation: u64,
+        path: Vec<ProjectionPath>,
+        generation: u64,
+    },
+    Field {
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -421,6 +467,8 @@ impl PlaceHandle {
     pub(crate) fn indexed(origin: Rc<Slot>, index: usize) -> Result<Self, RuntimeError> {
         let mut place = Slot::place(&origin);
         let value = place.read()?;
+        let byte_buffer_wrapper =
+            value.byte_buffer_value().is_some() || value.byte_buffer_list_value().is_some();
         let exists = match value {
             Value::RawByteBuffer(values) => index < values.len(),
             value => {
@@ -431,6 +479,9 @@ impl PlaceHandle {
                         .byte_buffer_value()
                         .is_some_and(|values| index < values.len())
                     || value
+                        .byte_buffer_list_value()
+                        .is_some_and(|values| index < values.len())
+                    || value
                         .bytes_value()
                         .is_some_and(|values| index < values.len())
             }
@@ -439,10 +490,18 @@ impl PlaceHandle {
             return Err(RuntimeError::runtime("reference index is out of bounds"));
         }
         let root = place.origin()?;
-        let generation = root.generation.get();
-        place
-            .projections
-            .push(PlaceProjection::Index { index, generation });
+        let mut path = projection_path(&place.projections);
+        if byte_buffer_wrapper {
+            path.push(ProjectionPath::Field("value".into()));
+        }
+        let root_generation = root.generation.get();
+        let generation = root.projected_generation(&path);
+        place.projections.push(PlaceProjection::Index {
+            index,
+            root_generation,
+            path,
+            generation,
+        });
         Ok(place)
     }
 
@@ -483,7 +542,9 @@ impl PlaceHandle {
         }
         let mut current = origin.read()?;
         replace_projected(&mut current, &self.projections, &origin, value)?;
-        origin.write(current)
+        origin.write(current)?;
+        origin.invalidate_projected(&projection_path(&self.projections));
+        Ok(())
     }
 
     pub(crate) fn reshape(
@@ -497,9 +558,19 @@ impl PlaceHandle {
         let mut current = origin.read()?;
         update_projected(&mut current, &self.projections, &origin, update)?;
         origin.write(current)?;
-        origin.generation.set(origin.generation.get() + 1);
+        origin.invalidate_projected(&projection_path(&self.projections));
         Ok(())
     }
+}
+
+fn projection_path(projections: &[PlaceProjection]) -> Vec<ProjectionPath> {
+    projections
+        .iter()
+        .map(|projection| match projection {
+            PlaceProjection::Index { index, .. } => ProjectionPath::Index(*index),
+            PlaceProjection::Field { name } => ProjectionPath::Field(name.clone()),
+        })
+        .collect()
 }
 
 fn project_value(
@@ -517,8 +588,13 @@ fn project_value(
                 .cloned()
                 .ok_or_else(|| RuntimeError::runtime(format!("record has no field `{name}`")))
         }
-        PlaceProjection::Index { index, generation } => {
-            ensure_generation(origin, *generation)?;
+        PlaceProjection::Index {
+            index,
+            root_generation,
+            path,
+            generation,
+        } => {
+            ensure_generation(origin, *root_generation, path, *generation)?;
             indexed_value(value, *index)
         }
     }
@@ -534,6 +610,9 @@ fn indexed_value(value: Value, index: usize) -> Result<Value, RuntimeError> {
             .get(index)
             .copied()
             .map(Value::Byte),
+        value if value.byte_buffer_list_value().is_some() => {
+            value.byte_buffer_list_value().unwrap().get(index).cloned()
+        }
         value => value
             .bytes_value()
             .and_then(|values| values.get(index).copied())
@@ -573,8 +652,13 @@ fn update_projected(
                 .ok_or_else(|| RuntimeError::runtime(format!("record has no field `{name}`")))?;
             update_projected(field, remaining, origin, update)
         }
-        PlaceProjection::Index { index, generation } => {
-            ensure_generation(origin, *generation)?;
+        PlaceProjection::Index {
+            index,
+            root_generation,
+            path,
+            generation,
+        } => {
+            ensure_generation(origin, *root_generation, path, *generation)?;
             if let Some(values) = current.list_value_mut() {
                 let item = values.get_mut(*index).ok_or_else(|| {
                     RuntimeError::runtime("referenced list element no longer exists")
@@ -598,6 +682,12 @@ fn update_projected(
                 *byte = updated;
                 return Ok(());
             }
+            if let Some(values) = current.byte_buffer_list_value_mut() {
+                let item = values
+                    .get_mut(*index)
+                    .ok_or_else(|| RuntimeError::runtime("referenced byte no longer exists"))?;
+                return update_projected(item, remaining, origin, update);
+            }
             Err(RuntimeError::runtime(
                 "reference origin is not mutable indexed storage",
             ))
@@ -605,8 +695,14 @@ fn update_projected(
     }
 }
 
-fn ensure_generation(origin: &Slot, generation: u64) -> Result<(), RuntimeError> {
-    if origin.generation.get() == generation {
+fn ensure_generation(
+    origin: &Slot,
+    root_generation: u64,
+    path: &[ProjectionPath],
+    generation: u64,
+) -> Result<(), RuntimeError> {
+    if origin.generation.get() == root_generation && origin.projected_generation(path) == generation
+    {
         Ok(())
     } else {
         Err(RuntimeError::runtime(
@@ -772,6 +868,26 @@ impl Value {
             Some(Self::RawByteBuffer(value)) => Some(value),
             _ => None,
         }
+    }
+
+    pub(crate) fn byte_buffer_list_value(&self) -> Option<&Vec<Value>> {
+        let Self::Record { name, fields, .. } = self else {
+            return None;
+        };
+        if name != "ByteBuffer" {
+            return None;
+        }
+        fields.get("value")?.list_value()
+    }
+
+    pub(crate) fn byte_buffer_list_value_mut(&mut self) -> Option<&mut Vec<Value>> {
+        let Self::Record { name, fields, .. } = self else {
+            return None;
+        };
+        if name != "ByteBuffer" {
+            return None;
+        }
+        fields.get_mut("value")?.list_value_mut()
     }
 
     pub(crate) fn list(values: Vec<Value>) -> Self {
@@ -993,6 +1109,13 @@ impl fmt::Display for Value {
                     value.byte_buffer_value().unwrap().len()
                 )
             }
+            value if value.byte_buffer_list_value().is_some() => {
+                write!(
+                    formatter,
+                    "ByteBuffer(len={})",
+                    value.byte_buffer_list_value().unwrap().len()
+                )
+            }
             Self::RawByteBuffer(value) => write!(formatter, "RawByteBuffer(len={})", value.len()),
             value if value.symbol_bytes().is_some() => write!(
                 formatter,
@@ -1159,6 +1282,21 @@ mod tests {
     }
 
     #[test]
+    fn record_clones_share_aggregate_storage_until_mutation() {
+        let original = RecordFields::from_pairs([
+            ("left".into(), Value::list(vec![Value::Integer(1)])),
+            ("right".into(), Value::Integer(2)),
+        ]);
+        let mut cloned = original.clone();
+
+        assert!(original.shares_values_with(&cloned));
+        *cloned.get_mut("right").unwrap() = Value::Integer(3);
+        assert!(!original.shares_values_with(&cloned));
+        assert_eq!(original.get("right"), Some(&Value::Integer(2)));
+        assert_eq!(cloned.get("right"), Some(&Value::Integer(3)));
+    }
+
+    #[test]
     fn nested_reshape_invalidates_an_older_index_projection() {
         let origin = Slot::new(Value::Record {
             record: None,
@@ -1175,6 +1313,51 @@ mod tests {
         items
             .reshape(|value| {
                 value.list_value_mut().unwrap().push(Value::Integer(2));
+                Ok(())
+            })
+            .unwrap();
+
+        assert!(first.read().unwrap_err().message.contains("invalidated"));
+    }
+
+    #[test]
+    fn projected_reshape_preserves_disjoint_field_references() {
+        let origin = Slot::new(Value::Record {
+            record: None,
+            name: "Pair".into(),
+            fields: RecordFields::from_pairs([
+                ("left".into(), Value::list(vec![Value::Integer(1)])),
+                ("right".into(), Value::list(vec![Value::Integer(2)])),
+            ]),
+        });
+        let left = PlaceHandle::field(origin.clone(), "left".into()).unwrap();
+        let first = PlaceHandle::indexed(Slot::new(Value::Reference(left)), 0).unwrap();
+        let right = PlaceHandle::field(origin.clone(), "right".into()).unwrap();
+
+        right
+            .reshape(|value| {
+                value.list_value_mut().unwrap().push(Value::Integer(3));
+                Ok(())
+            })
+            .unwrap();
+
+        assert_eq!(first.read().unwrap(), Value::Integer(1));
+        assert_eq!(right.read().unwrap().list_value().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn byte_buffer_index_tracks_its_foster_storage_field() {
+        let origin = Slot::new(Value::Record {
+            record: None,
+            name: "ByteBuffer".into(),
+            fields: RecordFields::from_pairs([("value".into(), Value::list(vec![Value::Byte(1)]))]),
+        });
+        let first = PlaceHandle::indexed(origin.clone(), 0).unwrap();
+        let storage = PlaceHandle::field(origin.clone(), "value".into()).unwrap();
+
+        storage
+            .reshape(|value| {
+                value.list_value_mut().unwrap().push(Value::Byte(2));
                 Ok(())
             })
             .unwrap();

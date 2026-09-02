@@ -21,9 +21,16 @@ func TcpHost.connect(address: String, port: Int) -> Result<Int, NetworkError> = 
 /// Accepts a host TCP connection.
 func TcpHost.accept(listener: Int) -> Result<Int, NetworkError> = intrinsic("tcp.accept")
 /// Reads UTF-8 text from a host TCP connection.
-func TcpHost.read(connection: Int, maximum: Int) -> Result<String, NetworkError> = intrinsic("tcp.read")
+func TcpHost.read(connection: Int, maximum: Int) -> Result<String, NetworkError> {
+    branch TcpHost.read_bytes(connection, maximum) {
+        Result.Error(error) -> Result.Error(error)
+        Result.Ok(contents) -> decode_text(move contents)
+    }
+}
 /// Writes UTF-8 text to a host TCP connection.
-func TcpHost.write(connection: Int, contents: String) -> Result<(), NetworkError> = intrinsic("tcp.write")
+func TcpHost.write(connection: Int, contents: String) -> Result<(), NetworkError> {
+    TcpHost.write_bytes(connection, contents.utf8)
+}
 /// Reads bytes from a host TCP connection.
 func TcpHost.read_bytes(connection: Int, maximum: Int) -> Result<Bytes, NetworkError> = intrinsic("tcp.read_bytes")
 /// Writes bytes to a host TCP connection.
@@ -34,6 +41,17 @@ func TcpHost.set_timeout(connection: Int, milliseconds: Int) -> Result<(), Netwo
 func TcpHost.close_listener(listener: Int) -> Result<(), NetworkError> = intrinsic("tcp.close_listener")
 /// Closes a host TCP connection.
 func TcpHost.close_connection(connection: Int) -> Result<(), NetworkError> = intrinsic("tcp.close_connection")
+
+/// Validates received bytes before exposing them as text.
+func decode_text(contents: Bytes) -> Result<String, NetworkError> [consume contents] {
+    branch String.from_utf8(move contents) {
+        Result.Ok(text) -> Result.Ok(text)
+        Result.Error(error) -> Result.Error(NetworkError {
+            operation: "tcp.read"
+            message: error.message
+        })
+    }
+}
 
 /// Describes a failed TCP operation at the host boundary.
 pub type NetworkError = {
