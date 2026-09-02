@@ -13,8 +13,9 @@ use super::value::{
 };
 use super::{Capture, Instruction, Program, Register, Value};
 
-struct Frame {
-    function: FunctionId,
+struct Frame<'program> {
+    /// Resolved once when the frame is created; the dispatch loop never hashes the function ID.
+    function: &'program super::BytecodeFunction,
     registers: Vec<RegisterCell>,
     instruction: usize,
     return_destination: Option<Register>,
@@ -22,7 +23,7 @@ struct Frame {
     argument_leases: Vec<AccessLease>,
 }
 
-impl Drop for Frame {
+impl Drop for Frame<'_> {
     fn drop(&mut self) {
         // Register numbers follow allocation order. Tear the frame down in the
         // opposite order so borrower wrappers and later temporaries release
@@ -35,23 +36,23 @@ impl Drop for Frame {
     }
 }
 
-struct FrameStack(Vec<Frame>);
+struct FrameStack<'program>(Vec<Frame<'program>>);
 
-impl std::ops::Deref for FrameStack {
-    type Target = Vec<Frame>;
+impl<'program> std::ops::Deref for FrameStack<'program> {
+    type Target = Vec<Frame<'program>>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
 
-impl std::ops::DerefMut for FrameStack {
+impl std::ops::DerefMut for FrameStack<'_> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
 
-impl Drop for FrameStack {
+impl Drop for FrameStack<'_> {
     fn drop(&mut self) {
         // Runtime failures leave the active call stack intact. Pop explicitly
         // so invocation frames unwind from callee to caller.
@@ -270,7 +271,7 @@ impl Machine {
 
         loop {
             let frame = frames.last_mut().expect("the VM retains its entry frame");
-            let function = &self.program.functions[&frame.function];
+            let function = frame.function;
             let instruction = function
                 .instructions
                 .get(frame.instruction)
@@ -298,7 +299,17 @@ impl Machine {
                 &Instruction::Move {
                     destination,
                     source,
-                } => write(frame, destination, bind(frame, source))?,
+                } => {
+                    let value = if frame.registers[usize::from(destination.0)]
+                        .reference()
+                        .is_some()
+                    {
+                        read(frame, source)?
+                    } else {
+                        bind(frame, source)
+                    };
+                    write(frame, destination, value)?;
+                }
                 &Instruction::Unary {
                     destination,
                     operator,
@@ -1064,13 +1075,13 @@ impl Machine {
         }
     }
 
-    fn frame(
-        &self,
+    fn frame<'program>(
+        &'program self,
         function: FunctionId,
         captures: Vec<Capture>,
         arguments: Vec<Value>,
         return_destination: Option<Register>,
-    ) -> Result<Frame, RuntimeError> {
+    ) -> Result<Frame<'program>, RuntimeError> {
         let bytecode = &self.program.functions[&function];
         if captures.len() != usize::from(bytecode.captures)
             || arguments.len() != usize::from(bytecode.parameters)
@@ -1098,7 +1109,7 @@ impl Machine {
             registers[offset + index] = RegisterCell::Inline(argument);
         }
         Ok(Frame {
-            function,
+            function: bytecode,
             registers,
             instruction: 0,
             return_destination,
@@ -1107,39 +1118,39 @@ impl Machine {
         })
     }
 
-    fn method_frame(
-        &self,
+    fn method_frame<'program>(
+        &'program self,
         function: FunctionId,
         receiver: Rc<Slot>,
         arguments: Vec<Value>,
         return_destination: Option<Register>,
-    ) -> Result<Frame, RuntimeError> {
+    ) -> Result<Frame<'program>, RuntimeError> {
         let mut frame = self.frame(
             function,
             Vec::new(),
             std::iter::once(Value::Unit).chain(arguments).collect(),
             return_destination,
         )?;
-        let offset = usize::from(self.program.functions[&function].captures);
+        let offset = usize::from(frame.function.captures);
         frame.registers[offset] = RegisterCell::Place(receiver);
         Ok(frame)
     }
 
-    fn call_frame(
-        &self,
+    fn call_frame<'program>(
+        &'program self,
         function: FunctionId,
         captures: Vec<Capture>,
-        caller: &mut Frame,
+        caller: &mut Frame<'program>,
         arguments: &[Register],
         return_destination: Option<Register>,
-    ) -> Result<Frame, RuntimeError> {
-        let bytecode = &self.program.functions[&function];
+    ) -> Result<Frame<'program>, RuntimeError> {
         let mut frame = self.frame(
             function,
             captures,
             vec![Value::Unit; arguments.len()],
             return_destination,
         )?;
+        let bytecode = frame.function;
         let offset = usize::from(bytecode.captures);
         for (index, argument) in arguments.iter().copied().enumerate() {
             frame.registers[offset + index] = match bytecode.parameter_modes[index] {
@@ -1153,21 +1164,21 @@ impl Machine {
         Ok(frame)
     }
 
-    fn method_call_frame(
-        &self,
+    fn method_call_frame<'program>(
+        &'program self,
         function: FunctionId,
         receiver: Rc<Slot>,
-        caller: &mut Frame,
+        caller: &mut Frame<'program>,
         arguments: &[Register],
         return_destination: Option<Register>,
-    ) -> Result<Frame, RuntimeError> {
-        let bytecode = &self.program.functions[&function];
+    ) -> Result<Frame<'program>, RuntimeError> {
         let mut frame = self.method_frame(
             function,
             receiver,
             vec![Value::Unit; arguments.len()],
             return_destination,
         )?;
+        let bytecode = frame.function;
         let offset = usize::from(bytecode.captures);
         for (index, argument) in arguments.iter().copied().enumerate() {
             let parameter = index + 1;
@@ -1183,7 +1194,7 @@ impl Machine {
     }
 }
 
-fn drop_register(frame: &mut Frame, register: Register) {
+fn drop_register(frame: &mut Frame<'_>, register: Register) {
     frame.registers[register.0 as usize].detach();
 }
 
@@ -1206,7 +1217,7 @@ fn materialize_remote_arguments(
 }
 
 fn capture(
-    frame: &mut Frame,
+    frame: &mut Frame<'_>,
     captures: &[(CaptureMode, Register)],
 ) -> Result<Vec<Capture>, RuntimeError> {
     captures
@@ -1222,27 +1233,27 @@ fn capture(
         .collect()
 }
 
-fn read(frame: &Frame, register: Register) -> Result<Value, RuntimeError> {
+fn read(frame: &Frame<'_>, register: Register) -> Result<Value, RuntimeError> {
     frame.registers[register.0 as usize].read()
 }
 
-fn bind(frame: &Frame, register: Register) -> Value {
+fn bind(frame: &Frame<'_>, register: Register) -> Value {
     frame.registers[register.0 as usize].bind()
 }
 
-fn write(frame: &mut Frame, register: Register, value: Value) -> Result<(), RuntimeError> {
+fn write(frame: &mut Frame<'_>, register: Register, value: Value) -> Result<(), RuntimeError> {
     frame.registers[register.0 as usize].write(value)
 }
 
-fn place(frame: &mut Frame, register: Register) -> Rc<Slot> {
+fn place(frame: &mut Frame<'_>, register: Register) -> Rc<Slot> {
     frame.registers[register.0 as usize].promote()
 }
 
-fn take(frame: &mut Frame, register: Register) -> Value {
+fn take(frame: &mut Frame<'_>, register: Register) -> Value {
     frame.registers[register.0 as usize].take()
 }
 
-fn borrow_parameter(frame: &mut Frame, register: Register) -> RegisterCell {
+fn borrow_parameter(frame: &mut Frame<'_>, register: Register) -> RegisterCell {
     if let Some(reference) = frame.registers[register.0 as usize].reference() {
         RegisterCell::Inline(Value::Reference(reference))
     } else {

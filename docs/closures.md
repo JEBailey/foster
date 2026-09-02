@@ -428,8 +428,8 @@ The exact `Send`, `Share`, task, and synchronization model is deferred to the co
 3. Resolve free names lexically and compute minimal local capture sets. **Complete.**
 4. Infer copy/move capture modes and explicit borrow effects; diagnose escaping local borrows.
    **Complete for the executable type/place foundation.**
-5. Lower concrete capture layouts and call functions to VM bytecode. **Complete.** Ownership MIR
-   records capture uses; VM closure frames materialize the environment.
+5. Lower concrete capture layouts and calls through shared SSA to VM bytecode. **Complete.**
+   Ownership MIR records capture uses; VM closure frames materialize the environment.
 6. Extend place/group validity analysis across closure construction, storage, and calls.
    **Complete for local and projected list places, with conservative control-flow joins.**
 7. Execute concrete closure environments in the VM. **Complete for copy, move, mutable-reference,

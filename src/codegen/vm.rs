@@ -1,4 +1,4 @@
-//! De-SSA lowering from shared executable IR to portable VM bytecode.
+//! Sealing from VM construction form into shared SSA and de-SSA lowering to portable bytecode.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -19,6 +19,57 @@ impl fmt::Display for LowerError {
 
 impl std::error::Error for LowerError {}
 
+/// Make shared SSA the mandatory backend boundary for every executable VM function.
+pub fn lower_program_through_shared_ir(program: &mut vm::Program) -> Result<(), LowerError> {
+    // Own the table during the transaction instead of cloning every instruction payload. Any
+    // sealing/lowering failure restores the original functions before returning.
+    let originals = std::mem::take(&mut program.functions);
+    let result_types = originals
+        .iter()
+        .map(|(id, function)| (*id, shared_type(&function.result_type)))
+        .collect::<HashMap<_, _>>();
+    let mut sealed = HashMap::with_capacity(originals.len());
+    for (id, function) in &originals {
+        if function.intrinsic_stub {
+            continue;
+        }
+        match seal_function_with_types(&program.constants, &result_types, function) {
+            Ok(function) => {
+                sealed.insert(*id, function);
+            }
+            Err(error) => {
+                program.functions = originals;
+                return Err(error);
+            }
+        }
+    }
+    let signatures = sealed
+        .iter()
+        .map(|(id, function)| (*id, function.signature.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut lowered = HashMap::with_capacity(originals.len());
+    for (id, function) in sealed {
+        let original = &originals[&id];
+        let metadata = FunctionMetadata::from_bytecode(original);
+        match lower_function(&function, &signatures, &mut program.constants, metadata) {
+            Ok(function) => {
+                lowered.insert(id, function);
+            }
+            Err(error) => {
+                program.functions = originals;
+                return Err(error);
+            }
+        }
+    }
+    for (id, function) in originals {
+        if function.intrinsic_stub {
+            lowered.insert(id, function);
+        }
+    }
+    program.functions = lowered;
+    Ok(())
+}
+
 /// Non-executable metadata which is intentionally not part of SSA.
 #[derive(Debug, Clone, Default)]
 pub struct FunctionMetadata {
@@ -26,12 +77,777 @@ pub struct FunctionMetadata {
     pub parameter_modes: Vec<crate::ast::ParameterMode>,
     pub mutable_parameters: Vec<bool>,
     pub returns_reference: bool,
+    pub parameter_types: Vec<VerificationType>,
+    pub capture_types: Vec<VerificationType>,
+    pub result_type: Option<VerificationType>,
+}
+
+impl FunctionMetadata {
+    fn from_bytecode(function: &vm::BytecodeFunction) -> Self {
+        Self {
+            intrinsic_stub: function.intrinsic_stub,
+            parameter_modes: function.parameter_modes.clone(),
+            mutable_parameters: function.mutable_parameters.clone(),
+            returns_reference: function.returns_reference,
+            parameter_types: function.parameter_types.clone(),
+            capture_types: function.capture_types.clone(),
+            result_type: Some(function.result_type.clone()),
+        }
+    }
+}
+
+/// Seal the HIR compiler's unstructured virtual-register construction into block-argument SSA
+/// while retaining observable VM storage homes.
+pub fn seal_function(
+    program: &vm::Program,
+    function: &vm::BytecodeFunction,
+) -> Result<ir::Function, LowerError> {
+    let result_types = program
+        .functions
+        .iter()
+        .map(|(id, function)| (*id, shared_type(&function.result_type)))
+        .collect::<HashMap<_, _>>();
+    seal_function_with_types(&program.constants, &result_types, function)
+}
+
+fn seal_function_with_types(
+    constants: &[vm::Constant],
+    result_types: &HashMap<FunctionId, Type>,
+    function: &vm::BytecodeFunction,
+) -> Result<ir::Function, LowerError> {
+    if function.instructions.is_empty() {
+        return Err(LowerError(
+            "cannot seal an empty executable function into shared SSA".into(),
+        ));
+    }
+    let hints = register_type_hints(constants, result_types, function);
+    let leaders = block_leaders(function)?;
+    let mut leader_blocks = vec![None; function.instructions.len()];
+    for (index, leader) in leaders.iter().copied().enumerate() {
+        leader_blocks[leader] = Some(Block(index as u32));
+    }
+    let liveness = crate::vm::optimizer::analysis::liveness(function);
+    let mut value_types = Vec::new();
+    let mut storage_hints = Vec::new();
+    let mut externals = Vec::new();
+    for (register, ty) in hints
+        .iter()
+        .copied()
+        .enumerate()
+        .take(usize::from(function.captures + function.parameters))
+    {
+        externals.push(allocate_lifted_value(
+            &mut value_types,
+            &mut storage_hints,
+            ty,
+            Register(register as u16),
+        ));
+    }
+    let capture_count = usize::from(function.captures);
+    let captures = externals[..capture_count].to_vec();
+    let parameters = externals[capture_count..].to_vec();
+    let mut parameter_registers: Vec<Vec<Register>> = Vec::new();
+    let mut block_parameters: Vec<Vec<Value>> = Vec::new();
+    for leader in &leaders {
+        let mut registers = liveness.live_in[*leader]
+            .iter()
+            .copied()
+            .collect::<Vec<_>>();
+        registers.sort_unstable_by_key(|register| register.0);
+        let values = registers
+            .iter()
+            .map(|register| {
+                allocate_lifted_value(
+                    &mut value_types,
+                    &mut storage_hints,
+                    hints[usize::from(register.0)],
+                    *register,
+                )
+            })
+            .collect::<Vec<_>>();
+        parameter_registers.push(registers);
+        block_parameters.push(values);
+    }
+    let mut entry_seeds = Vec::new();
+    let entry_arguments = parameter_registers[0]
+        .iter()
+        .map(|register| {
+            externals
+                .get(usize::from(register.0))
+                .copied()
+                .unwrap_or_else(|| {
+                    let seed = allocate_lifted_value(
+                        &mut value_types,
+                        &mut storage_hints,
+                        hints[usize::from(register.0)],
+                        *register,
+                    );
+                    entry_seeds.push(seed);
+                    seed
+                })
+        })
+        .collect::<Vec<_>>();
+
+    let mut blocks = Vec::new();
+    for (block_index, start) in leaders.iter().copied().enumerate() {
+        let end = leaders
+            .get(block_index + 1)
+            .copied()
+            .unwrap_or(function.instructions.len());
+        let mut state = vec![None; usize::from(function.registers)];
+        for (register, value) in parameter_registers[block_index]
+            .iter()
+            .zip(&block_parameters[block_index])
+        {
+            state[usize::from(register.0)] = Some(*value);
+        }
+        let mut instructions = Vec::new();
+        let mut instruction_spans = Vec::new();
+        let mut terminator = None;
+        let mut terminator_span = Range::default();
+        for source_index in start..end {
+            let operation = &function.instructions[source_index];
+            let source_span = function
+                .instruction_spans
+                .get(source_index)
+                .cloned()
+                .unwrap_or_default();
+            match operation {
+                vm::Instruction::Jump { target } => {
+                    terminator_span = source_span;
+                    let target =
+                        leader_blocks[*target].expect("validated jump targets are block leaders");
+                    terminator = Some(ir::Terminator::Jump {
+                        target,
+                        arguments: lifted_edge_arguments(
+                            target,
+                            &parameter_registers,
+                            &state,
+                            function,
+                        )?,
+                    });
+                    break;
+                }
+                vm::Instruction::JumpIfFalse { condition, target } => {
+                    terminator_span = source_span;
+                    let then_target = leader_blocks[source_index + 1].ok_or_else(|| {
+                        LowerError(format!(
+                            "conditional jump in `{}` has no fallthrough block",
+                            function.name
+                        ))
+                    })?;
+                    let else_target =
+                        leader_blocks[*target].expect("validated jump targets are block leaders");
+                    terminator = Some(ir::Terminator::Branch {
+                        condition: lifted_register(&state, *condition, function)?,
+                        then_target,
+                        then_arguments: lifted_edge_arguments(
+                            then_target,
+                            &parameter_registers,
+                            &state,
+                            function,
+                        )?,
+                        else_target,
+                        else_arguments: lifted_edge_arguments(
+                            else_target,
+                            &parameter_registers,
+                            &state,
+                            function,
+                        )?,
+                    });
+                    break;
+                }
+                vm::Instruction::Return { source } => {
+                    terminator_span = source_span;
+                    terminator = Some(ir::Terminator::Return(lifted_register(
+                        &state, *source, function,
+                    )?));
+                    break;
+                }
+                vm::Instruction::Drop { register } => {
+                    let value = lifted_register(&state, *register, function)?;
+                    instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Drop {
+                        value,
+                    }));
+                    instruction_spans.push(source_span);
+                    state[usize::from(register.0)] = None;
+                }
+                operation => {
+                    for register in crate::vm::optimizer::analysis::uses(operation) {
+                        lifted_register(&state, register, function)?;
+                    }
+                    let definitions = crate::vm::optimizer::analysis::definitions(operation);
+                    let mut destinations = Vec::with_capacity(definitions.len());
+                    for register in definitions {
+                        let value = allocate_lifted_value(
+                            &mut value_types,
+                            &mut storage_hints,
+                            hints[usize::from(register.0)],
+                            register,
+                        );
+                        destinations.push((register, value));
+                    }
+                    instructions.push(ir::Instruction::Portable(portable_instruction(
+                        operation,
+                        &state,
+                        &destinations,
+                    )));
+                    instruction_spans.push(source_span);
+                    for (register, value) in destinations {
+                        state[usize::from(register.0)] = Some(value);
+                    }
+                }
+            }
+        }
+        let terminator = match terminator {
+            Some(terminator) => terminator,
+            None if block_index + 1 < leaders.len() => {
+                let target = Block((block_index + 1) as u32);
+                ir::Terminator::Jump {
+                    target,
+                    arguments: lifted_edge_arguments(
+                        target,
+                        &parameter_registers,
+                        &state,
+                        function,
+                    )?,
+                }
+            }
+            None => {
+                return Err(LowerError(format!(
+                    "reachable block in `{}` falls off the end",
+                    function.name
+                )));
+            }
+        };
+        blocks.push(ir::BlockData {
+            parameters: block_parameters[block_index].clone(),
+            instructions,
+            instruction_spans,
+            terminator,
+            terminator_span,
+        });
+    }
+    Ok(ir::Function {
+        name: function.name.clone(),
+        signature: ir::Signature {
+            parameters: (capture_count..capture_count + usize::from(function.parameters))
+                .map(|register| hints[register])
+                .collect(),
+            result: shared_type(&function.result_type),
+        },
+        parameters,
+        captures,
+        capture_types: (0..capture_count).map(|register| hints[register]).collect(),
+        entry_seeds,
+        entry: Block(0),
+        entry_arguments,
+        value_types,
+        storage_hints,
+        blocks,
+    })
+}
+
+fn allocate_lifted_value(
+    types: &mut Vec<Type>,
+    homes: &mut Vec<Option<u16>>,
+    ty: Type,
+    register: Register,
+) -> Value {
+    let value = Value(types.len() as u32);
+    types.push(ty);
+    homes.push(Some(register.0));
+    value
+}
+
+fn lifted_register(
+    state: &[Option<Value>],
+    register: Register,
+    function: &vm::BytecodeFunction,
+) -> Result<Value, LowerError> {
+    state[usize::from(register.0)].ok_or_else(|| {
+        LowerError(format!(
+            "shared SSA lift reads uninitialized r{} in `{}`",
+            register.0, function.name
+        ))
+    })
+}
+
+fn lifted_edge_arguments(
+    target: Block,
+    parameter_registers: &[Vec<Register>],
+    state: &[Option<Value>],
+    function: &vm::BytecodeFunction,
+) -> Result<Vec<Value>, LowerError> {
+    parameter_registers[target.0 as usize]
+        .iter()
+        .map(|register| lifted_register(state, *register, function))
+        .collect()
+}
+
+fn block_leaders(function: &vm::BytecodeFunction) -> Result<Vec<usize>, LowerError> {
+    let mut leaders = vec![false; function.instructions.len()];
+    leaders[0] = true;
+    for (index, instruction) in function.instructions.iter().enumerate() {
+        match instruction {
+            vm::Instruction::Jump { target } | vm::Instruction::JumpIfFalse { target, .. } => {
+                if *target >= function.instructions.len() {
+                    return Err(LowerError(format!("invalid jump target {target}")));
+                }
+                leaders[*target] = true;
+                if index + 1 < function.instructions.len() {
+                    leaders[index + 1] = true;
+                }
+            }
+            vm::Instruction::Return { .. } if index + 1 < function.instructions.len() => {
+                leaders[index + 1] = true;
+            }
+            _ => {}
+        }
+    }
+    Ok(leaders
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, leader)| leader.then_some(index))
+        .collect())
+}
+
+fn shared_type(ty: &VerificationType) -> Type {
+    match ty {
+        VerificationType::Unit => Type::Unit,
+        VerificationType::Bool => Type::Bool,
+        VerificationType::Integer => Type::Int,
+        VerificationType::Float => Type::Float,
+        VerificationType::CodePoint => Type::CodePoint,
+        VerificationType::Byte => Type::Byte,
+        _ => Type::Opaque,
+    }
+}
+
+fn register_type_hints(
+    constants: &[vm::Constant],
+    result_types: &HashMap<FunctionId, Type>,
+    function: &vm::BytecodeFunction,
+) -> Vec<Type> {
+    let mut hints = vec![Type::Opaque; usize::from(function.registers)];
+    for (index, ty) in function
+        .capture_types
+        .iter()
+        .chain(&function.parameter_types)
+        .enumerate()
+    {
+        hints[index] = shared_type(ty);
+    }
+    for instruction in &function.instructions {
+        let (destination, ty) = match instruction {
+            vm::Instruction::LoadConstant {
+                destination,
+                constant,
+            } => (
+                Some(*destination),
+                match &constants[usize::from(*constant)] {
+                    vm::Constant::Unit => Type::Unit,
+                    vm::Constant::Bool(_) => Type::Bool,
+                    vm::Constant::Integer(_) => Type::Int,
+                    vm::Constant::Float(_) => Type::Float,
+                    vm::Constant::CodePoint(_) => Type::CodePoint,
+                    vm::Constant::String(_) => Type::String,
+                    vm::Constant::Symbol(_) => Type::Opaque,
+                },
+            ),
+            vm::Instruction::Unary {
+                destination,
+                operator,
+                operand,
+            } => (
+                Some(*destination),
+                match operator {
+                    crate::ast::UnaryOp::Not => Type::Bool,
+                    crate::ast::UnaryOp::BitNot => Type::Byte,
+                    crate::ast::UnaryOp::Negate => hints[usize::from(operand.0)],
+                },
+            ),
+            vm::Instruction::Binary {
+                destination,
+                operator,
+                left,
+                ..
+            } => (
+                Some(*destination),
+                if matches!(
+                    operator,
+                    crate::ast::BinaryOp::Equal
+                        | crate::ast::BinaryOp::NotEqual
+                        | crate::ast::BinaryOp::Less
+                        | crate::ast::BinaryOp::LessEqual
+                        | crate::ast::BinaryOp::Greater
+                        | crate::ast::BinaryOp::GreaterEqual
+                ) {
+                    Type::Bool
+                } else {
+                    hints[usize::from(left.0)]
+                },
+            ),
+            vm::Instruction::Move {
+                destination,
+                source,
+            } => (Some(*destination), hints[usize::from(source.0)]),
+            vm::Instruction::Contains { destination, .. }
+            | vm::Instruction::MatchPattern { destination, .. } => (Some(*destination), Type::Bool),
+            vm::Instruction::Call {
+                destination,
+                function,
+                ..
+            }
+            | vm::Instruction::CallMethod {
+                destination,
+                function,
+                ..
+            }
+            | vm::Instruction::CallClosure {
+                destination,
+                function,
+                ..
+            } => (
+                Some(*destination),
+                result_types.get(function).copied().unwrap_or(Type::Opaque),
+            ),
+            _ => (None, Type::Opaque),
+        };
+        if let Some(destination) = destination {
+            hints[usize::from(destination.0)] = ty;
+        }
+        match instruction {
+            vm::Instruction::JumpIfFalse { condition, .. }
+            | vm::Instruction::Assert {
+                condition,
+                message: _,
+            } => hints[usize::from(condition.0)] = Type::Bool,
+            vm::Instruction::Return { source } => {
+                hints[usize::from(source.0)] = shared_type(&function.result_type);
+            }
+            _ => {}
+        }
+    }
+    hints
+}
+
+fn portable_instruction(
+    instruction: &vm::Instruction,
+    sources: &[Option<Value>],
+    destinations: &[(Register, Value)],
+) -> ir::PortableInstruction {
+    let source = |register: &Register| {
+        sources[usize::from(register.0)].expect("instruction operands were validated above")
+    };
+    let destination = |register: &Register| {
+        destinations
+            .iter()
+            .find_map(|(candidate, value)| (candidate == register).then_some(*value))
+            .expect("instruction destinations were allocated above")
+    };
+    match instruction {
+        vm::Instruction::LoadConstant {
+            destination: output,
+            constant,
+        } => ir::PortableInstruction::LoadConstant {
+            destination: destination(output),
+            constant: *constant,
+        },
+        vm::Instruction::Move {
+            destination: output,
+            source: input,
+        } => ir::PortableInstruction::Move {
+            destination: destination(output),
+            source: source(input),
+        },
+        vm::Instruction::Unary {
+            destination: output,
+            operator,
+            operand,
+        } => ir::PortableInstruction::Unary {
+            destination: destination(output),
+            operator: *operator,
+            operand: source(operand),
+        },
+        vm::Instruction::Binary {
+            destination: output,
+            operator,
+            left,
+            right,
+        } => ir::PortableInstruction::Binary {
+            destination: destination(output),
+            operator: *operator,
+            left: source(left),
+            right: source(right),
+        },
+        vm::Instruction::MakeList {
+            destination: output,
+            elements,
+        } => ir::PortableInstruction::MakeList {
+            destination: destination(output),
+            elements: elements.iter().map(source).collect(),
+        },
+        vm::Instruction::Index {
+            destination: output,
+            object,
+            index,
+        } => ir::PortableInstruction::Index {
+            destination: destination(output),
+            object: source(object),
+            index: source(index),
+        },
+        vm::Instruction::MakeRecord {
+            destination: output,
+            record,
+            fields,
+        } => ir::PortableInstruction::MakeRecord {
+            destination: destination(output),
+            record: *record,
+            fields: fields
+                .iter()
+                .map(|(name, register)| (name.clone(), source(register)))
+                .collect(),
+        },
+        vm::Instruction::MakeVariant {
+            destination: output,
+            variant,
+            payload,
+        } => ir::PortableInstruction::MakeVariant {
+            destination: destination(output),
+            variant: *variant,
+            payload: payload.iter().map(source).collect(),
+        },
+        vm::Instruction::LoadField {
+            destination: output,
+            object,
+            field,
+            by_reference,
+        } => ir::PortableInstruction::LoadField {
+            destination: destination(output),
+            object: source(object),
+            field: field.clone(),
+            by_reference: *by_reference,
+        },
+        vm::Instruction::StoreField {
+            object,
+            field,
+            source: input,
+        } => ir::PortableInstruction::StoreField {
+            object: source(object),
+            field: field.clone(),
+            source: source(input),
+        },
+        vm::Instruction::StoreIndex {
+            object,
+            index,
+            source: input,
+        } => ir::PortableInstruction::StoreIndex {
+            object: source(object),
+            index: source(index),
+            source: source(input),
+        },
+        vm::Instruction::MakeReference {
+            destination: output,
+            object,
+            index,
+        } => ir::PortableInstruction::MakeReference {
+            destination: destination(output),
+            object: source(object),
+            index: source(index),
+        },
+        vm::Instruction::MakeWholeReference {
+            destination: output,
+            object,
+        } => ir::PortableInstruction::MakeWholeReference {
+            destination: destination(output),
+            object: source(object),
+        },
+        vm::Instruction::MakeFieldReference {
+            destination: output,
+            object,
+            field,
+        } => ir::PortableInstruction::MakeFieldReference {
+            destination: destination(output),
+            object: source(object),
+            field: field.clone(),
+        },
+        vm::Instruction::MoveOut {
+            destination: output,
+            source: input,
+        } => ir::PortableInstruction::MoveOut {
+            destination: destination(output),
+            source: source(input),
+        },
+        vm::Instruction::Push {
+            destination: output,
+            object,
+            value,
+        } => ir::PortableInstruction::Push {
+            destination: destination(output),
+            object: source(object),
+            value: source(value),
+        },
+        vm::Instruction::Append {
+            destination: output,
+            object,
+            value,
+        } => ir::PortableInstruction::Append {
+            destination: destination(output),
+            object: source(object),
+            value: source(value),
+        },
+        vm::Instruction::Contains {
+            destination: output,
+            value,
+            candidates,
+        } => ir::PortableInstruction::Contains {
+            destination: destination(output),
+            value: source(value),
+            candidates: candidates.iter().map(source).collect(),
+        },
+        vm::Instruction::Builtin {
+            destination: output,
+            builtin,
+            arguments,
+        } => ir::PortableInstruction::Builtin {
+            destination: destination(output),
+            builtin: *builtin,
+            arguments: arguments.iter().map(source).collect(),
+        },
+        vm::Instruction::SpawnRemote {
+            destination: output,
+            value,
+        } => ir::PortableInstruction::SpawnRemote {
+            destination: destination(output),
+            value: source(value),
+        },
+        vm::Instruction::SpawnRemoteBorrow {
+            destination: output,
+            source: input,
+        } => ir::PortableInstruction::SpawnRemoteBorrow {
+            destination: destination(output),
+            source: source(input),
+        },
+        vm::Instruction::RemoteCall {
+            destination: output,
+            remote,
+            function,
+            arguments,
+        } => ir::PortableInstruction::RemoteCall {
+            destination: destination(output),
+            remote: source(remote),
+            function: *function,
+            arguments: arguments
+                .iter()
+                .map(|(mode, register)| (*mode, source(register)))
+                .collect(),
+        },
+        vm::Instruction::Await {
+            destination: output,
+            future,
+        } => ir::PortableInstruction::Await {
+            destination: destination(output),
+            future: source(future),
+        },
+        vm::Instruction::MatchPattern {
+            destination: output,
+            subject,
+            pattern,
+            bindings,
+        } => ir::PortableInstruction::MatchPattern {
+            destination: destination(output),
+            subject: source(subject),
+            pattern: pattern.clone(),
+            bindings: bindings.iter().map(destination).collect(),
+        },
+        vm::Instruction::Assert { condition, message } => ir::PortableInstruction::Assert {
+            condition: source(condition),
+            message: message.as_ref().map(source),
+        },
+        vm::Instruction::Call {
+            destination: output,
+            function,
+            arguments,
+        } => ir::PortableInstruction::Call {
+            destination: destination(output),
+            function: *function,
+            arguments: arguments.iter().map(source).collect(),
+        },
+        vm::Instruction::CallMethod {
+            destination: output,
+            receiver,
+            function,
+            arguments,
+        } => ir::PortableInstruction::CallMethod {
+            destination: destination(output),
+            receiver: source(receiver),
+            function: *function,
+            arguments: arguments.iter().map(source).collect(),
+        },
+        vm::Instruction::CallContractMethod {
+            destination: output,
+            receiver,
+            slot,
+            name,
+            arguments,
+        } => ir::PortableInstruction::CallContractMethod {
+            destination: destination(output),
+            receiver: source(receiver),
+            slot: *slot,
+            name: name.clone(),
+            arguments: arguments.iter().map(source).collect(),
+        },
+        vm::Instruction::MakeClosure {
+            destination: output,
+            function,
+            captures,
+        } => ir::PortableInstruction::MakeClosure {
+            destination: destination(output),
+            function: *function,
+            captures: captures
+                .iter()
+                .map(|(mode, register)| (*mode, source(register)))
+                .collect(),
+        },
+        vm::Instruction::CallValue {
+            destination: output,
+            callee,
+            arguments,
+        } => ir::PortableInstruction::CallValue {
+            destination: destination(output),
+            callee: source(callee),
+            arguments: arguments.iter().map(source).collect(),
+        },
+        vm::Instruction::CallClosure {
+            destination: output,
+            function,
+            captures,
+            arguments,
+        } => ir::PortableInstruction::CallClosure {
+            destination: destination(output),
+            function: *function,
+            captures: captures
+                .iter()
+                .map(|(mode, register)| (*mode, source(register)))
+                .collect(),
+            arguments: arguments.iter().map(source).collect(),
+        },
+        vm::Instruction::Drop { .. }
+        | vm::Instruction::Jump { .. }
+        | vm::Instruction::JumpIfFalse { .. }
+        | vm::Instruction::Return { .. } => unreachable!("handled while sealing control flow"),
+    }
 }
 
 enum Emission {
-    Instruction(vm::Instruction),
-    Jump(Block),
-    JumpIfFalse { condition: Register, target: Block },
+    Instruction(vm::Instruction, Range<usize>),
+    Jump(Block, Range<usize>),
+    JumpIfFalse {
+        condition: Register,
+        target: Block,
+        span: Range<usize>,
+    },
 }
 
 /// Assign every SSA definition a register and materialize block arguments as parallel edge copies.
@@ -48,9 +864,19 @@ pub fn lower_function(
         .verify(signatures)
         .map_err(|error| LowerError(format!("invalid shared IR: {error}")))?;
 
-    let mut registers = vec![None; function.value_types.len()];
-    let mut next = 0_u16;
-    for parameter in &function.parameters {
+    let mut registers = function
+        .storage_hints
+        .iter()
+        .map(|home| home.map(Register))
+        .collect::<Vec<_>>();
+    let mut next = function
+        .storage_hints
+        .iter()
+        .flatten()
+        .copied()
+        .max()
+        .map_or(0, |register| register.saturating_add(1));
+    for parameter in function.captures.iter().chain(&function.parameters) {
         assign(&mut registers, *parameter, &mut next)?;
     }
     for index in 0..function.value_types.len() {
@@ -65,13 +891,22 @@ pub fn lower_function(
         &registers,
         &function.blocks[function.entry.0 as usize].parameters,
         &function.entry_arguments,
+        Range::default(),
     )?;
-    emissions.push(Emission::Jump(function.entry));
+    if !emissions.is_empty() || function.entry != Block(0) {
+        emissions.push(Emission::Jump(function.entry, Range::default()));
+    }
 
     for (block_index, block) in function.blocks.iter().enumerate() {
         labels[block_index] = Some(emissions.len());
-        for instruction in &block.instructions {
-            lower_instruction(instruction, &registers, constants, &mut emissions)?;
+        for (instruction, span) in block.instructions.iter().zip(&block.instruction_spans) {
+            lower_instruction(
+                instruction,
+                &registers,
+                constants,
+                &mut emissions,
+                span.clone(),
+            )?;
         }
         match &block.terminator {
             ir::Terminator::Jump { target, arguments } => {
@@ -81,8 +916,9 @@ pub fn lower_function(
                     &registers,
                     &function.blocks[target.0 as usize].parameters,
                     arguments,
+                    block.terminator_span.clone(),
                 )?;
-                emissions.push(Emission::Jump(*target));
+                emissions.push(Emission::Jump(*target, block.terminator_span.clone()));
             }
             ir::Terminator::Branch {
                 condition,
@@ -91,12 +927,32 @@ pub fn lower_function(
                 else_target,
                 else_arguments,
             } => {
+                if *then_target == Block((block_index + 1) as u32)
+                    && !copies_needed(
+                        &registers,
+                        &function.blocks[then_target.0 as usize].parameters,
+                        then_arguments,
+                    )
+                    && !copies_needed(
+                        &registers,
+                        &function.blocks[else_target.0 as usize].parameters,
+                        else_arguments,
+                    )
+                {
+                    emissions.push(Emission::JumpIfFalse {
+                        condition: reg(&registers, *condition),
+                        target: *else_target,
+                        span: block.terminator_span.clone(),
+                    });
+                    continue;
+                }
                 // The false edge gets a private label after the true-edge copies.
                 let false_label = Block(labels.len() as u32);
                 labels.push(None);
                 emissions.push(Emission::JumpIfFalse {
                     condition: reg(&registers, *condition),
                     target: false_label,
+                    span: block.terminator_span.clone(),
                 });
                 emit_copies(
                     &mut emissions,
@@ -104,8 +960,9 @@ pub fn lower_function(
                     &registers,
                     &function.blocks[then_target.0 as usize].parameters,
                     then_arguments,
+                    block.terminator_span.clone(),
                 )?;
-                emissions.push(Emission::Jump(*then_target));
+                emissions.push(Emission::Jump(*then_target, block.terminator_span.clone()));
                 labels[false_label.0 as usize] = Some(emissions.len());
                 emit_copies(
                     &mut emissions,
@@ -113,38 +970,56 @@ pub fn lower_function(
                     &registers,
                     &function.blocks[else_target.0 as usize].parameters,
                     else_arguments,
+                    block.terminator_span.clone(),
                 )?;
-                emissions.push(Emission::Jump(*else_target));
+                emissions.push(Emission::Jump(*else_target, block.terminator_span.clone()));
             }
             ir::Terminator::Return(value) => {
-                emissions.push(Emission::Instruction(vm::Instruction::Return {
-                    source: reg(&registers, *value),
-                }));
+                emissions.push(Emission::Instruction(
+                    vm::Instruction::Return {
+                        source: reg(&registers, *value),
+                    },
+                    block.terminator_span.clone(),
+                ));
             }
         }
     }
 
-    let instructions = emissions
+    let lowered = emissions
         .into_iter()
         .map(|emission| match emission {
-            Emission::Instruction(instruction) => Ok(instruction),
-            Emission::Jump(target) => Ok(vm::Instruction::Jump {
-                target: label(&labels, target)?,
-            }),
-            Emission::JumpIfFalse { condition, target } => Ok(vm::Instruction::JumpIfFalse {
+            Emission::Instruction(instruction, span) => Ok((instruction, span)),
+            Emission::Jump(target, span) => Ok((
+                vm::Instruction::Jump {
+                    target: label(&labels, target)?,
+                },
+                span,
+            )),
+            Emission::JumpIfFalse {
                 condition,
-                target: label(&labels, target)?,
-            }),
+                target,
+                span,
+            } => Ok((
+                vm::Instruction::JumpIfFalse {
+                    condition,
+                    target: label(&labels, target)?,
+                },
+                span,
+            )),
         })
         .collect::<Result<Vec<_>, LowerError>>()?;
-    let spans = vec![Range::default(); instructions.len()];
-    let parameter_types = function
-        .signature
-        .parameters
-        .iter()
-        .copied()
-        .map(verification_type)
-        .collect::<Vec<_>>();
+    let (instructions, spans) = lowered.into_iter().unzip();
+    let parameter_types = if metadata.parameter_types.is_empty() {
+        function
+            .signature
+            .parameters
+            .iter()
+            .copied()
+            .map(verification_type)
+            .collect::<Vec<_>>()
+    } else {
+        metadata.parameter_types
+    };
     let parameter_count = parameter_types.len();
     Ok(vm::BytecodeFunction {
         name: function.name.clone(),
@@ -163,13 +1038,36 @@ pub fn lower_function(
             metadata.mutable_parameters
         },
         returns_reference: metadata.returns_reference,
-        captures: 0,
-        capture_types: Vec::new(),
-        result_type: verification_type(function.signature.result),
+        captures: u16::try_from(function.captures.len())
+            .map_err(|_| LowerError("too many function captures".into()))?,
+        capture_types: if metadata.capture_types.is_empty() {
+            function
+                .capture_types
+                .iter()
+                .copied()
+                .map(verification_type)
+                .collect()
+        } else {
+            metadata.capture_types
+        },
+        result_type: metadata
+            .result_type
+            .unwrap_or_else(|| verification_type(function.signature.result)),
         registers: next,
         instructions,
         instruction_spans: spans,
     })
+}
+
+fn copies_needed(
+    registers: &[Option<Register>],
+    destinations: &[Value],
+    sources: &[Value],
+) -> bool {
+    destinations
+        .iter()
+        .zip(sources)
+        .any(|(destination, source)| reg(registers, *destination) != reg(registers, *source))
 }
 
 fn assign(
@@ -204,6 +1102,7 @@ fn emit_copies(
     registers: &[Option<Register>],
     destinations: &[Value],
     sources: &[Value],
+    span: Range<usize>,
 ) -> Result<(), LowerError> {
     let mut copies = destinations
         .iter()
@@ -217,10 +1116,13 @@ fn emit_copies(
             .position(|(destination, _)| !copies.iter().any(|(_, source)| source == destination))
         {
             let (destination, source) = copies.remove(index);
-            emissions.push(Emission::Instruction(vm::Instruction::Move {
-                destination,
-                source,
-            }));
+            emissions.push(Emission::Instruction(
+                vm::Instruction::Move {
+                    destination,
+                    source,
+                },
+                span.clone(),
+            ));
             continue;
         }
         let preserved = copies[0].0;
@@ -228,10 +1130,13 @@ fn emit_copies(
         *next = next
             .checked_add(1)
             .ok_or_else(|| LowerError("parallel copy needs a register past r65535".into()))?;
-        emissions.push(Emission::Instruction(vm::Instruction::Move {
-            destination: temporary,
-            source: preserved,
-        }));
+        emissions.push(Emission::Instruction(
+            vm::Instruction::Move {
+                destination: temporary,
+                source: preserved,
+            },
+            span.clone(),
+        ));
         for (_, source) in &mut copies {
             if *source == preserved {
                 *source = temporary;
@@ -246,6 +1151,7 @@ fn lower_instruction(
     registers: &[Option<Register>],
     constants: &mut Vec<vm::Constant>,
     emissions: &mut Vec<Emission>,
+    span: Range<usize>,
 ) -> Result<(), LowerError> {
     let instruction = match instruction {
         ir::Instruction::Constant { destination, value } => {
@@ -322,9 +1228,307 @@ fn lower_instruction(
             condition: reg(registers, *condition),
             message: message.map(|value| reg(registers, value)),
         },
+        ir::Instruction::Portable(instruction) => lower_portable(instruction, registers),
     };
-    emissions.push(Emission::Instruction(instruction));
+    emissions.push(Emission::Instruction(instruction, span));
     Ok(())
+}
+
+fn lower_portable(
+    instruction: &ir::PortableInstruction,
+    registers: &[Option<Register>],
+) -> vm::Instruction {
+    let get = |value: &Value| reg(registers, *value);
+    match instruction {
+        ir::PortableInstruction::Drop { value } => vm::Instruction::Drop {
+            register: get(value),
+        },
+        ir::PortableInstruction::LoadConstant {
+            destination,
+            constant,
+        } => vm::Instruction::LoadConstant {
+            destination: get(destination),
+            constant: *constant,
+        },
+        ir::PortableInstruction::Move {
+            destination,
+            source,
+        } => vm::Instruction::Move {
+            destination: get(destination),
+            source: get(source),
+        },
+        ir::PortableInstruction::Unary {
+            destination,
+            operator,
+            operand,
+        } => vm::Instruction::Unary {
+            destination: get(destination),
+            operator: *operator,
+            operand: get(operand),
+        },
+        ir::PortableInstruction::Binary {
+            destination,
+            operator,
+            left,
+            right,
+        } => vm::Instruction::Binary {
+            destination: get(destination),
+            operator: *operator,
+            left: get(left),
+            right: get(right),
+        },
+        ir::PortableInstruction::MakeList {
+            destination,
+            elements,
+        } => vm::Instruction::MakeList {
+            destination: get(destination),
+            elements: elements.iter().map(get).collect(),
+        },
+        ir::PortableInstruction::Index {
+            destination,
+            object,
+            index,
+        } => vm::Instruction::Index {
+            destination: get(destination),
+            object: get(object),
+            index: get(index),
+        },
+        ir::PortableInstruction::MakeRecord {
+            destination,
+            record,
+            fields,
+        } => vm::Instruction::MakeRecord {
+            destination: get(destination),
+            record: *record,
+            fields: fields
+                .iter()
+                .map(|(name, value)| (name.clone(), get(value)))
+                .collect(),
+        },
+        ir::PortableInstruction::MakeVariant {
+            destination,
+            variant,
+            payload,
+        } => vm::Instruction::MakeVariant {
+            destination: get(destination),
+            variant: *variant,
+            payload: payload.iter().map(get).collect(),
+        },
+        ir::PortableInstruction::LoadField {
+            destination,
+            object,
+            field,
+            by_reference,
+        } => vm::Instruction::LoadField {
+            destination: get(destination),
+            object: get(object),
+            field: field.clone(),
+            by_reference: *by_reference,
+        },
+        ir::PortableInstruction::StoreField {
+            object,
+            field,
+            source,
+        } => vm::Instruction::StoreField {
+            object: get(object),
+            field: field.clone(),
+            source: get(source),
+        },
+        ir::PortableInstruction::StoreIndex {
+            object,
+            index,
+            source,
+        } => vm::Instruction::StoreIndex {
+            object: get(object),
+            index: get(index),
+            source: get(source),
+        },
+        ir::PortableInstruction::MakeReference {
+            destination,
+            object,
+            index,
+        } => vm::Instruction::MakeReference {
+            destination: get(destination),
+            object: get(object),
+            index: get(index),
+        },
+        ir::PortableInstruction::MakeWholeReference {
+            destination,
+            object,
+        } => vm::Instruction::MakeWholeReference {
+            destination: get(destination),
+            object: get(object),
+        },
+        ir::PortableInstruction::MakeFieldReference {
+            destination,
+            object,
+            field,
+        } => vm::Instruction::MakeFieldReference {
+            destination: get(destination),
+            object: get(object),
+            field: field.clone(),
+        },
+        ir::PortableInstruction::MoveOut {
+            destination,
+            source,
+        } => vm::Instruction::MoveOut {
+            destination: get(destination),
+            source: get(source),
+        },
+        ir::PortableInstruction::Push {
+            destination,
+            object,
+            value,
+        } => vm::Instruction::Push {
+            destination: get(destination),
+            object: get(object),
+            value: get(value),
+        },
+        ir::PortableInstruction::Append {
+            destination,
+            object,
+            value,
+        } => vm::Instruction::Append {
+            destination: get(destination),
+            object: get(object),
+            value: get(value),
+        },
+        ir::PortableInstruction::Contains {
+            destination,
+            value,
+            candidates,
+        } => vm::Instruction::Contains {
+            destination: get(destination),
+            value: get(value),
+            candidates: candidates.iter().map(get).collect(),
+        },
+        ir::PortableInstruction::Builtin {
+            destination,
+            builtin,
+            arguments,
+        } => vm::Instruction::Builtin {
+            destination: get(destination),
+            builtin: *builtin,
+            arguments: arguments.iter().map(get).collect(),
+        },
+        ir::PortableInstruction::SpawnRemote { destination, value } => {
+            vm::Instruction::SpawnRemote {
+                destination: get(destination),
+                value: get(value),
+            }
+        }
+        ir::PortableInstruction::SpawnRemoteBorrow {
+            destination,
+            source,
+        } => vm::Instruction::SpawnRemoteBorrow {
+            destination: get(destination),
+            source: get(source),
+        },
+        ir::PortableInstruction::RemoteCall {
+            destination,
+            remote,
+            function,
+            arguments,
+        } => vm::Instruction::RemoteCall {
+            destination: get(destination),
+            remote: get(remote),
+            function: *function,
+            arguments: arguments
+                .iter()
+                .map(|(mode, value)| (*mode, get(value)))
+                .collect(),
+        },
+        ir::PortableInstruction::Await {
+            destination,
+            future,
+        } => vm::Instruction::Await {
+            destination: get(destination),
+            future: get(future),
+        },
+        ir::PortableInstruction::MatchPattern {
+            destination,
+            subject,
+            pattern,
+            bindings,
+        } => vm::Instruction::MatchPattern {
+            destination: get(destination),
+            subject: get(subject),
+            pattern: pattern.clone(),
+            bindings: bindings.iter().map(get).collect(),
+        },
+        ir::PortableInstruction::Assert { condition, message } => vm::Instruction::Assert {
+            condition: get(condition),
+            message: message.as_ref().map(get),
+        },
+        ir::PortableInstruction::Call {
+            destination,
+            function,
+            arguments,
+        } => vm::Instruction::Call {
+            destination: get(destination),
+            function: *function,
+            arguments: arguments.iter().map(get).collect(),
+        },
+        ir::PortableInstruction::CallMethod {
+            destination,
+            receiver,
+            function,
+            arguments,
+        } => vm::Instruction::CallMethod {
+            destination: get(destination),
+            receiver: get(receiver),
+            function: *function,
+            arguments: arguments.iter().map(get).collect(),
+        },
+        ir::PortableInstruction::CallContractMethod {
+            destination,
+            receiver,
+            slot,
+            name,
+            arguments,
+        } => vm::Instruction::CallContractMethod {
+            destination: get(destination),
+            receiver: get(receiver),
+            slot: *slot,
+            name: name.clone(),
+            arguments: arguments.iter().map(get).collect(),
+        },
+        ir::PortableInstruction::MakeClosure {
+            destination,
+            function,
+            captures,
+        } => vm::Instruction::MakeClosure {
+            destination: get(destination),
+            function: *function,
+            captures: captures
+                .iter()
+                .map(|(mode, value)| (*mode, get(value)))
+                .collect(),
+        },
+        ir::PortableInstruction::CallValue {
+            destination,
+            callee,
+            arguments,
+        } => vm::Instruction::CallValue {
+            destination: get(destination),
+            callee: get(callee),
+            arguments: arguments.iter().map(get).collect(),
+        },
+        ir::PortableInstruction::CallClosure {
+            destination,
+            function,
+            captures,
+            arguments,
+        } => vm::Instruction::CallClosure {
+            destination: get(destination),
+            function: *function,
+            captures: captures
+                .iter()
+                .map(|(mode, value)| (*mode, get(value)))
+                .collect(),
+            arguments: arguments.iter().map(get).collect(),
+        },
+    }
 }
 
 fn verification_type(ty: Type) -> VerificationType {
@@ -335,7 +1539,9 @@ fn verification_type(ty: Type) -> VerificationType {
         Type::Float => VerificationType::Float,
         Type::CodePoint => VerificationType::CodePoint,
         Type::Byte => VerificationType::Byte,
-        Type::String | Type::Arguments | Type::StringList => VerificationType::Unknown,
+        Type::Opaque | Type::String | Type::Arguments | Type::StringList => {
+            VerificationType::Unknown
+        }
     }
 }
 
@@ -346,6 +1552,35 @@ mod tests {
     use la_arena::{Idx, RawIdx};
 
     #[test]
+    fn program_sealing_restores_functions_after_an_error() {
+        let id = Idx::from_raw(RawIdx::from_u32(0));
+        let mut program = Program::default();
+        let span = 0..0;
+        program.functions.insert(
+            id,
+            vm::BytecodeFunction {
+                name: "invalid".into(),
+                intrinsic_stub: false,
+                parameters: 0,
+                parameter_types: vec![],
+                parameter_modes: vec![],
+                mutable_parameters: vec![],
+                returns_reference: false,
+                captures: 0,
+                capture_types: vec![],
+                result_type: VerificationType::Unit,
+                registers: 0,
+                instructions: vec![vm::Instruction::Jump { target: 1 }],
+                instruction_spans: vec![span],
+            },
+        );
+        let original = program.functions.clone();
+
+        assert!(lower_program_through_shared_ir(&mut program).is_err());
+        assert_eq!(program.functions, original);
+    }
+
+    #[test]
     fn branch_edges_receive_distinct_parallel_copies() {
         let function = ir::Function {
             name: "choose".into(),
@@ -354,6 +1589,9 @@ mod tests {
                 result: Type::Int,
             },
             parameters: vec![Value(0), Value(1), Value(2)],
+            captures: vec![],
+            capture_types: vec![],
+            entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: vec![Value(0), Value(1), Value(2)],
             value_types: vec![
@@ -365,10 +1603,12 @@ mod tests {
                 Type::Int,
                 Type::Int,
             ],
+            storage_hints: vec![None; 7],
             blocks: vec![
                 ir::BlockData {
                     parameters: vec![Value(3), Value(4), Value(5)],
                     instructions: vec![],
+                    instruction_spans: vec![],
                     terminator: ir::Terminator::Branch {
                         condition: Value(3),
                         then_target: Block(1),
@@ -376,11 +1616,14 @@ mod tests {
                         else_target: Block(1),
                         else_arguments: vec![Value(5)],
                     },
+                    terminator_span: 0..0,
                 },
                 ir::BlockData {
                     parameters: vec![Value(6)],
                     instructions: vec![],
+                    instruction_spans: vec![],
                     terminator: ir::Terminator::Return(Value(6)),
+                    terminator_span: 0..0,
                 },
             ],
         };
@@ -412,16 +1655,20 @@ mod tests {
             &registers,
             &[Value(0), Value(1)],
             &[Value(1), Value(0)],
+            0..0,
         )
         .unwrap();
         assert_eq!(next, 3);
         let moves = emissions
             .into_iter()
             .map(|emission| match emission {
-                Emission::Instruction(vm::Instruction::Move {
-                    destination,
-                    source,
-                }) => (destination, source),
+                Emission::Instruction(
+                    vm::Instruction::Move {
+                        destination,
+                        source,
+                    },
+                    _,
+                ) => (destination, source),
                 _ => panic!("parallel copies must contain only moves"),
             })
             .collect::<Vec<_>>();
@@ -444,9 +1691,13 @@ mod tests {
                 result: Type::Int,
             },
             parameters: vec![],
+            captures: vec![],
+            capture_types: vec![],
+            entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: vec![],
             value_types: vec![Type::Bool, Type::Int, Type::Int, Type::Int],
+            storage_hints: vec![None; 4],
             blocks: vec![
                 ir::BlockData {
                     parameters: vec![],
@@ -464,6 +1715,7 @@ mod tests {
                             value: ir::Constant::Integer(99),
                         },
                     ],
+                    instruction_spans: vec![0..0, 0..0, 0..0],
                     terminator: ir::Terminator::Branch {
                         condition: Value(0),
                         then_target: Block(1),
@@ -471,11 +1723,14 @@ mod tests {
                         else_target: Block(1),
                         else_arguments: vec![Value(2)],
                     },
+                    terminator_span: 0..0,
                 },
                 ir::BlockData {
                     parameters: vec![Value(3)],
                     instructions: vec![],
+                    instruction_spans: vec![],
                     terminator: ir::Terminator::Return(Value(3)),
+                    terminator_span: 0..0,
                 },
             ],
         };

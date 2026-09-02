@@ -2,7 +2,7 @@
 
 use super::{Instruction, Program};
 
-mod analysis;
+pub(crate) mod analysis;
 mod closures;
 mod constants;
 mod control_flow;

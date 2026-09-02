@@ -122,6 +122,9 @@ impl Workspace {
     }
 
     fn compile_uncached(&self, uri: &Uri) -> Result<Compilation, FosterError> {
+        // Editor features intentionally use the same checked frontend as `foster check`. Executable
+        // SSA sealing, bytecode optimization, and native subset validation belong to build/run and
+        // do not require an editor document to declare an executable entry point.
         let path = uri_to_path(uri)
             .ok_or_else(|| FosterError::runtime("language server document is not a file URI"))?;
         let overlays = self

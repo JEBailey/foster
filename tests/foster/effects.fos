@@ -37,4 +37,6 @@ test "multiple groups instantiate independently" {
     assert(transfer(ref left, ref right) == 42)
     assert(left == 42)
     assert(right == 42)
+    left = 7
+    assert(right == 42)
 }

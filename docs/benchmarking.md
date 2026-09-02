@@ -12,11 +12,11 @@ Library users select the same behavior with `vm::CompileOptions { optimize }` an
 
 ## Correctness gates
 
-The VM test suite compiles a representative language corpus both ways, verifies both bytecode
-programs, executes them, and requires identical results. A separate structural test requires the
-optimizer to reduce instruction and register counts for a representative program. These are stable
-CI gates; elapsed-time assertions are deliberately excluded because scheduler load and machine
-differences make them unreliable.
+The VM test suite seals a representative language corpus through shared SSA, compiles it to
+bytecode both ways, verifies both programs, executes them, and requires identical results. A
+separate structural test requires the optimizer to reduce instruction and register counts for a
+representative program. These are stable CI gates; elapsed-time assertions are deliberately
+excluded because scheduler load and machine differences make them unreliable.
 
 ## Criterion benchmarks
 

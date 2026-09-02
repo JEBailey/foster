@@ -1019,14 +1019,15 @@ The implemented pipeline is:
 ```text
 source -> tokens -> AST -> resolved HIR -> type/effect inference
        -> loan/group/capture checks -> ownership MIR validation
-       -> structured register bytecode
-            -> optional optimizer -> verifier -> VM
+       -> temporary register construction -> layout legalization -> shared typed SSA
+            -> de-SSA bytecode -> optional optimizer -> drops -> verifier -> VM
             -> supported-subset validation -> Cranelift AOT -> host executable
 ```
 
 The register VM is the complete executable semantic reference. The initial native backend compiles
-the reachable primitive-value subset described in [Native compilation](native.md). Bytecode is
-lowered from checked HIR after ownership MIR validation.
+the reachable primitive-value subset described in [Native compilation](native.md). Temporary
+register construction is sealed into shared SSA before any executable bytecode is optimized,
+serialized, or run.
 
 Group information is normally erased before bytecode execution, but its consequences—moves,
 storage identity, and valid optimization facts—are represented by checked HIR, ownership MIR, and

@@ -39,6 +39,13 @@ Ranges are UTF-8 byte offsets internally. Terminal rendering resolves them again
 the LSP boundary converts them to UTF-16 line and column positions. Tests cover both structured
 fields and rendered output so changing prose or losing a label is intentional and reviewable.
 
+The language server enters through `compiler::check`, the same checked frontend used by the CLI
+`check` command. It does not require executable lowering for hover, navigation, or diagnostics, so
+library and incomplete editor packages do not need a `main`. Shared-SSA sealing, final bytecode
+verification, and native supported-subset errors are reported by build/run commands. LSP tests keep
+source-builtin names and parameter metadata synchronized with the authoritative intrinsic registry;
+intrinsic-backed library functions otherwise use their ordinary Foster declarations for tooling.
+
 The remaining compiler phases should migrate incrementally to this representation. Parser errors
 already retain line and column positions and are adapted into a primary label; type, group, effect,
 package, and VM-verifier errors still contain cases that need richer phase-specific spans and

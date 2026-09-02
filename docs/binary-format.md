@@ -3,8 +3,9 @@
 Status: version 17, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
-VM `Program` produced after lowering and optimization. It contains everything needed to verify and
-execute a compiled codebase. It does not preserve typed HIR, documentation, source, or diagnostics.
+VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
+verification. It contains everything needed to verify and execute a compiled codebase. It does not
+preserve typed HIR, shared SSA, documentation, source, or diagnostics.
 
 ## Conventions
 

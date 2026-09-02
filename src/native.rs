@@ -99,8 +99,9 @@ pub fn compile_object(
     compilation: &Compilation,
     options: CompileOptions,
 ) -> Result<ObjectArtifact, FosterError> {
-    // The non-optimized register program preserves one stable static type per register. Cranelift
-    // still performs the requested machine-level optimization below.
+    // Request verified bytecode without bytecode optimization. Its storage homes retain the
+    // stable types needed while the native subset is rebuilt as shared SSA below; Cranelift still
+    // performs the requested machine-level optimization.
     let mut program =
         vm::compile_with_options(compilation, vm::CompileOptions { optimize: false })?;
     let layouts = crate::codegen::layout::legalize(&mut program)?;
@@ -861,10 +862,17 @@ fn lower_to_native_ir(
             state[usize::from(register.0)] = Some(*value);
         }
         let mut instructions = Vec::new();
+        let mut instruction_spans = Vec::new();
         let mut terminator = None;
+        let mut terminator_span = std::ops::Range::default();
 
         for (index, instruction) in function.instructions[start..end].iter().enumerate() {
             let source_index = start + index;
+            let source_span = function
+                .instruction_spans
+                .get(source_index)
+                .cloned()
+                .unwrap_or_default();
             match instruction {
                 Instruction::Drop { register } => {
                     state[usize::from(register.0)] = None;
@@ -894,6 +902,7 @@ fn lower_to_native_ir(
                         destination,
                         value: constant,
                     });
+                    instruction_spans.push(source_span);
                 }
                 Instruction::Move {
                     destination,
@@ -919,6 +928,7 @@ fn lower_to_native_ir(
                         operator: *operator,
                         operand,
                     });
+                    instruction_spans.push(source_span);
                 }
                 Instruction::Binary {
                     destination,
@@ -951,6 +961,7 @@ fn lower_to_native_ir(
                         left,
                         right,
                     });
+                    instruction_spans.push(source_span);
                 }
                 Instruction::LoadField {
                     destination,
@@ -1040,6 +1051,7 @@ fn lower_to_native_ir(
                     });
                 }
                 Instruction::Jump { target } => {
+                    terminator_span = source_span;
                     terminator = Some(ir::Terminator::Jump {
                         target: block_for_leader[target],
                         arguments: native_edge_arguments(
@@ -1052,6 +1064,7 @@ fn lower_to_native_ir(
                     break;
                 }
                 Instruction::JumpIfFalse { condition, target } => {
+                    terminator_span = source_span;
                     let fallthrough =
                         block_for_leader.get(&(source_index + 1)).ok_or_else(|| {
                             native_error(format!(
@@ -1133,6 +1146,7 @@ fn lower_to_native_ir(
                     });
                 }
                 Instruction::Return { source } => {
+                    terminator_span = source_span;
                     terminator = Some(ir::Terminator::Return(native_register(
                         &state, *source, function,
                     )?));
@@ -1162,10 +1176,13 @@ fn lower_to_native_ir(
                 ir::Terminator::Return(unit)
             }
         };
+        instruction_spans.resize(instructions.len(), std::ops::Range::default());
         blocks.push(ir::BlockData {
             parameters: block_parameters[block_index].clone(),
             instructions,
+            instruction_spans,
             terminator,
+            terminator_span,
         });
     }
 
@@ -1173,8 +1190,12 @@ fn lower_to_native_ir(
         name: function.name.clone(),
         signature: function_signature.clone(),
         parameters: function_parameters,
+        captures: Vec::new(),
+        capture_types: Vec::new(),
+        entry_seeds: Vec::new(),
         entry: ir::Block(0),
         entry_arguments,
+        storage_hints: vec![None; value_types.len()],
         value_types,
         blocks,
     })
@@ -1332,9 +1353,10 @@ fn lower_native_ir(
                 &values,
                 native_ids,
             )?;
-            if let Some(destination) = instruction.destination() {
+            let destinations = instruction.destinations();
+            if let Some(destination) = destinations.first() {
                 values.insert(
-                    destination,
+                    *destination,
                     result.expect("value-producing native instruction"),
                 );
             }
@@ -1454,6 +1476,11 @@ fn lower_native_instruction(
                 &[condition, message],
             )?;
             return Ok(None);
+        }
+        ir::Instruction::Portable(_) => {
+            return Err(native_error(
+                "portable ownership operation reached Cranelift without native legalization",
+            ));
         }
     };
     Ok(Some(result))
@@ -1734,7 +1761,9 @@ fn entry_source(result: NativeType, accepts_arguments: bool, runtime_strings: &[
         }
         NativeType::Byte => "println!(\"{value}\");".to_owned(),
         NativeType::String => "println!(\"{}\", unsafe { &*(value as *const String) });".to_owned(),
-        NativeType::Arguments | NativeType::StringList => unreachable!("rejected above"),
+        NativeType::Opaque | NativeType::Arguments | NativeType::StringList => {
+            unreachable!("rejected above")
+        }
     };
     let constants = runtime_strings
         .iter()
@@ -1747,7 +1776,9 @@ fn entry_source(result: NativeType, accepts_arguments: bool, runtime_strings: &[
         NativeType::Int => "i64",
         NativeType::String => "usize",
         NativeType::Float => "f64",
-        NativeType::Arguments | NativeType::StringList => unreachable!("rejected above"),
+        NativeType::Opaque | NativeType::Arguments | NativeType::StringList => {
+            unreachable!("rejected above")
+        }
     };
     let declaration = if accepts_arguments {
         format!(
@@ -1985,7 +2016,7 @@ func main() -> Int {
                 assert!(definitions.insert(*parameter));
             }
             for instruction in &block.instructions {
-                if let Some(destination) = instruction.destination() {
+                for destination in instruction.destinations() {
                     assert!(definitions.insert(destination));
                 }
             }

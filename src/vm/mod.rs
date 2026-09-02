@@ -1,7 +1,7 @@
 //! Foster's typed register-bytecode backend.
 //!
-//! The structured instruction representation intentionally doubles as the
-//! executable format while the language semantics are still evolving.
+//! Functions are sealed through shared SSA before this structured instruction representation is
+//! optimized, verified, serialized, or executed.
 
 mod binary;
 pub(crate) mod builtins;
@@ -11,7 +11,7 @@ mod host;
 mod ir;
 mod machine;
 mod operations;
-mod optimizer;
+pub(crate) mod optimizer;
 mod patterns;
 mod runtime;
 mod value;
@@ -61,7 +61,7 @@ mod tests {
     use crate::vm::Value;
 
     #[test]
-    fn executes_typed_hir_through_register_bytecode() {
+    fn executes_typed_hir_through_shared_ssa_and_register_bytecode() {
         let compilation = crate::compile(
             "func add(left: Int, right: Int) -> Int { left + right }\n\
              func main() -> Int { add(20, 22) }",

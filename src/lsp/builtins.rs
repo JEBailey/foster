@@ -14,8 +14,8 @@ pub(super) struct BuiltinInfo {
     pub documentation: &'static str,
 }
 
-pub(super) fn info(intrinsic: Builtin) -> BuiltinInfo {
-    match intrinsic {
+pub(super) fn info(id: Builtin) -> BuiltinInfo {
+    match id {
         Builtin::Print => builtin(
             "print",
             "print(values...) -> ()",
@@ -416,5 +416,36 @@ fn builtin(
         signature,
         parameters,
         documentation,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::intrinsics::{BUILTINS, IntrinsicParameters};
+
+    use super::*;
+
+    #[test]
+    fn source_builtin_tooling_metadata_matches_the_intrinsic_registry() {
+        for descriptor in BUILTINS
+            .iter()
+            .filter(|descriptor| descriptor.source_name.is_some())
+        {
+            let tooling = info(descriptor.builtin);
+            assert_eq!(Some(tooling.name), descriptor.source_name);
+            match descriptor.signature.parameters {
+                IntrinsicParameters::Fixed(parameters) => {
+                    assert_eq!(tooling.parameters.len(), parameters.len());
+                }
+                IntrinsicParameters::Variadic(_) => {
+                    assert_eq!(tooling.parameters.len(), 1);
+                }
+            }
+            assert!(
+                definition_location(descriptor.builtin).is_some(),
+                "source builtin `{}` has no documentation target",
+                tooling.name
+            );
+        }
     }
 }

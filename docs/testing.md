@@ -15,8 +15,8 @@ the module's callable namespace.
 
 Internally, each test is compiled through the ordinary function pipeline as an isolated,
 zero-argument function returning `()`. Its body receives normal name resolution, type and effect
-inference, ownership checking, optimization, bytecode verification, and VM execution. A final
-expression whose type is not `()` is a type error.
+inference, ownership checking, shared-SSA sealing/de-SSA, optimization, bytecode verification, and
+VM execution. A final expression whose type is not `()` is a type error.
 
 Run every test in a file or package with:
 
@@ -59,9 +59,9 @@ foster test library --no-optimize
 
 `cargo test` also runs both Foster suites in optimized and unoptimized modes, so they remain part of
 the ordinary Rust and CI quality gates. Rust tests are reserved for behavior that Foster tests
-cannot express reliably: rejected programs and diagnostic structure, HIR/MIR and bytecode
-invariants, malformed artifacts, host filesystem and network setup, native compilation, and CLI
-process behavior.
+cannot express reliably: rejected programs and diagnostic structure, HIR/MIR, shared-SSA/de-SSA,
+and bytecode invariants, malformed artifacts, host filesystem and network setup, native
+compilation, and CLI process behavior.
 
 Files under `examples/` demonstrate programs for readers and are intentionally not used as test
 fixtures. A behavior needed by a test belongs in `tests/foster/`, `library/`, or a dedicated file

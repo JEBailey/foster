@@ -2,12 +2,12 @@ use std::collections::HashSet;
 
 use super::super::{BytecodeFunction, Instruction, Register};
 
-pub(super) struct Liveness {
-    pub(super) live_in: Vec<HashSet<Register>>,
-    pub(super) live_out: Vec<HashSet<Register>>,
+pub(crate) struct Liveness {
+    pub(crate) live_in: Vec<HashSet<Register>>,
+    pub(crate) live_out: Vec<HashSet<Register>>,
 }
 
-pub(super) fn successors(instructions: &[Instruction], index: usize) -> Vec<usize> {
+pub(crate) fn successors(instructions: &[Instruction], index: usize) -> Vec<usize> {
     match &instructions[index] {
         Instruction::Jump { target } => vec![*target],
         Instruction::JumpIfFalse { target, .. } => {
@@ -23,7 +23,7 @@ pub(super) fn successors(instructions: &[Instruction], index: usize) -> Vec<usiz
     }
 }
 
-pub(super) fn definitions(instruction: &Instruction) -> Vec<Register> {
+pub(crate) fn definitions(instruction: &Instruction) -> Vec<Register> {
     match instruction {
         Instruction::Drop {
             register: destination,
@@ -74,7 +74,7 @@ pub(super) fn definitions(instruction: &Instruction) -> Vec<Register> {
     }
 }
 
-pub(super) fn uses(instruction: &Instruction) -> Vec<Register> {
+pub(crate) fn uses(instruction: &Instruction) -> Vec<Register> {
     let mut uses = Vec::new();
     match instruction {
         Instruction::Drop { .. } => {}
@@ -177,7 +177,7 @@ pub(super) fn uses(instruction: &Instruction) -> Vec<Register> {
     uses
 }
 
-pub(super) fn liveness(function: &BytecodeFunction) -> Liveness {
+pub(crate) fn liveness(function: &BytecodeFunction) -> Liveness {
     let count = function.instructions.len();
     let mut live_in = vec![HashSet::new(); count];
     let mut live_out = vec![HashSet::new(); count];

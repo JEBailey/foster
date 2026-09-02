@@ -49,14 +49,17 @@ ordinary `foster build`, which emits portable `.fbc` for the complete language.
 
 ## Architecture
 
-The frontend, type/effect/ownership checks, ownership MIR, and structured register lowering are
-shared with the VM. Native compilation intentionally consumes non-optimized register bytecode so
-each register retains a stable static type. A separate lowering builds the shared code-generation
-IR: typed basic blocks in SSA form where instructions define immutable values and jumps carry only
-the values live at the target block. Foster moves become SSA aliases instead of machine
-instructions. The IR has an independent verifier for definitions, dominance, types, call
-signatures, block arguments, and terminators. Cranelift consumes this IR directly, so ordinary
-values no longer round-trip through a VM-style register stack array before machine optimization.
+The frontend, type/effect/ownership checks, ownership MIR, layout legalization, and shared SSA
+contract are common to the executable backends. HIR lowering temporarily constructs virtual
+registers and jumps, seals them into typed basic blocks where instructions define immutable values,
+and verifies definitions, dominance, types, call signatures, block arguments, and terminators.
+
+The current bootstrap native path asks the VM backend for verified, non-optimized bytecode so each
+storage home retains a stable static type, then rebuilds the reachable native subset as the same
+shared SSA shape. Foster moves become SSA aliases instead of Cranelift instructions, and ordinary
+values are emitted as Cranelift SSA values rather than accesses to a VM register array. This second
+sealing step is an implementation detail while native coverage grows; it does not make register
+bytecode the native code-generation contract.
 
 The portable, versioned bytecode remains the VM's execution and distribution format. The native
 IR is a shared internal backend boundary rather than a replacement for bytecode, leaving room for
@@ -69,7 +72,12 @@ splits conditional edges when their block arguments differ, and resolves paralle
 one temporary register. Its output is ordinary versioned bytecode and passes through the existing
 ownership-aware bytecode verifier and VM.
 
-Before either backend is selected, layout legalization reduces values to scalars or pointers and
+The complete VM instruction surface is represented at this boundary: aggregates, mutation,
+references, move-out, closures and capture modes, pattern bindings, dynamic calls, remote calls,
+suspension, and destruction. HIR construction uses temporary virtual registers only until the
+function is sealed into SSA; that unsealed form is never optimized, serialized, or executed.
+
+Before backend-specific emission, layout legalization reduces values to scalars or pointers and
 builds deterministic descriptions for record field slots, enum alternative tags and payloads,
 closure environments, and reference place handles. The VM implements these boxed layouts today.
 The native backend receives the same layout identities, but rejects aggregate operations before

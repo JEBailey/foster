@@ -279,11 +279,10 @@ source
   -> type, structural-contract, and fixed-point effect inference
   -> loan, capture, group, and ownership checks
   -> ownership MIR validation
-  -> structured executable lowering and legalized scalar/pointer layouts
-       -> bytecode -> optional optimizer -> verifier -> register VM
-       -> shared typed SSA
-            -> de-SSA edge copies + register assignment -> bytecode
-            -> Cranelift instructions -> object -> host linker -> executable
+  -> unsealed executable construction and legalized scalar/pointer layouts
+  -> shared typed SSA
+       -> de-SSA edge copies + register assignment -> bytecode -> optimizer -> verifier -> VM
+       -> Cranelift instructions -> object -> host linker -> executable
 ```
 
 The VM remains the complete executable semantic reference; there is no AST interpreter fallback.
@@ -316,9 +315,11 @@ for the exact boundary.
 
 The de-SSA VM emitter owns critical-edge splitting, cycle-safe parallel copies, and deterministic
 register assignment. Aggregate legalization separately freezes record slots, enum tags and payload
-shapes, closure capture slots, and reference place-handle layouts. The existing complete HIR-to-VM
-lowering is being migrated operation-by-operation to that shared SSA entry; aggregate bytecode is
-already canonicalized through the layout pass before optimization.
+shapes, closure capture slots, and reference place-handle layouts. HIR lowering now seals its
+temporary virtual registers into shared SSA, verifies dominance and block arguments, de-SSAs back
+to portable bytecode, and runs the ownership/type verifier after optimization and drop insertion,
+before the bytecode can be returned or executed. There is no direct executable bypass around the
+shared IR.
 
 ## Executable packages
 
@@ -355,7 +356,9 @@ scope-aware completion. Diagnostics wait for a short typing pause before recompi
 interactive requests still compile the latest open-buffer state on demand. Package recompilation
 reuses cached parsed modules and reparses only sources whose contents changed. The development VS
 Code extension keeps correctly positioned inlay hints in unchanged functions even when another
-function currently fails to compile. It lives in
+function currently fails to compile. The server uses the same `compiler::check` frontend as the
+CLI `check` command; executable SSA sealing, bytecode verification, and native-subset diagnostics
+remain build/run concerns, so ordinary library documents do not need a `main`. The extension lives in
 [`editors/vscode`](editors/vscode/README.md).
 
 ## Documentation map

@@ -1,10 +1,13 @@
-//! Typed, block-structured SSA IR shared by native code-generation stages.
+//! Typed, block-structured SSA IR shared by executable backends.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
+use std::ops::Range;
 
 use crate::ast::{BinaryOp, UnaryOp};
-use crate::hir::FunctionId;
+use crate::hir::{CaptureMode, FunctionId, RecordId, VariantId};
+use crate::intrinsics::Builtin;
+use crate::types::DispatchSlot;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Representation {
@@ -30,6 +33,8 @@ impl fmt::Display for Representation {
 /// A Foster scalar type retained until target-specific representation lowering.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Type {
+    /// A fully verified VM value whose scalar representation is not yet known to native codegen.
+    Opaque,
     Unit,
     Bool,
     Int,
@@ -44,6 +49,7 @@ pub enum Type {
 impl Type {
     pub fn representation(self) -> Representation {
         match self {
+            Self::Opaque => Representation::Pointer,
             Self::Unit | Self::Bool | Self::Byte => Representation::I8,
             Self::CodePoint => Representation::I32,
             Self::Int => Representation::I64,
@@ -77,9 +83,16 @@ pub struct Function {
     pub signature: Signature,
     /// SSA definitions supplied by the caller before the implicit entry edge.
     pub parameters: Vec<Value>,
+    /// Closure environment values supplied before ordinary parameters.
+    pub captures: Vec<Value>,
+    pub capture_types: Vec<Type>,
+    /// Maybe-uninitialized storage tokens used while sealing conditional pattern bindings.
+    pub entry_seeds: Vec<Value>,
     pub entry: Block,
     pub entry_arguments: Vec<Value>,
     pub value_types: Vec<Type>,
+    /// Optional VM storage identity used when references make register placement observable.
+    pub storage_hints: Vec<Option<u16>>,
     pub blocks: Vec<BlockData>,
 }
 
@@ -97,7 +110,9 @@ impl Function {
 pub struct BlockData {
     pub parameters: Vec<Value>,
     pub instructions: Vec<Instruction>,
+    pub instruction_spans: Vec<Range<usize>>,
     pub terminator: Terminator,
+    pub terminator_span: Range<usize>,
 }
 
 #[derive(Debug)]
@@ -136,18 +151,315 @@ pub enum Instruction {
         condition: Value,
         message: Option<Value>,
     },
+    Portable(PortableInstruction),
+}
+
+/// Ownership-sensitive operations shared by portable bytecode and future native runtime lowering.
+#[derive(Debug, Clone)]
+pub enum PortableInstruction {
+    Drop {
+        value: Value,
+    },
+    LoadConstant {
+        destination: Value,
+        constant: u16,
+    },
+    Move {
+        destination: Value,
+        source: Value,
+    },
+    Unary {
+        destination: Value,
+        operator: UnaryOp,
+        operand: Value,
+    },
+    Binary {
+        destination: Value,
+        operator: BinaryOp,
+        left: Value,
+        right: Value,
+    },
+    MakeList {
+        destination: Value,
+        elements: Vec<Value>,
+    },
+    Index {
+        destination: Value,
+        object: Value,
+        index: Value,
+    },
+    MakeRecord {
+        destination: Value,
+        record: RecordId,
+        fields: Vec<(String, Value)>,
+    },
+    MakeVariant {
+        destination: Value,
+        variant: VariantId,
+        payload: Vec<Value>,
+    },
+    LoadField {
+        destination: Value,
+        object: Value,
+        field: String,
+        by_reference: bool,
+    },
+    StoreField {
+        object: Value,
+        field: String,
+        source: Value,
+    },
+    StoreIndex {
+        object: Value,
+        index: Value,
+        source: Value,
+    },
+    MakeReference {
+        destination: Value,
+        object: Value,
+        index: Value,
+    },
+    MakeWholeReference {
+        destination: Value,
+        object: Value,
+    },
+    MakeFieldReference {
+        destination: Value,
+        object: Value,
+        field: String,
+    },
+    MoveOut {
+        destination: Value,
+        source: Value,
+    },
+    Push {
+        destination: Value,
+        object: Value,
+        value: Value,
+    },
+    Append {
+        destination: Value,
+        object: Value,
+        value: Value,
+    },
+    Contains {
+        destination: Value,
+        value: Value,
+        candidates: Vec<Value>,
+    },
+    Builtin {
+        destination: Value,
+        builtin: Builtin,
+        arguments: Vec<Value>,
+    },
+    SpawnRemote {
+        destination: Value,
+        value: Value,
+    },
+    SpawnRemoteBorrow {
+        destination: Value,
+        source: Value,
+    },
+    RemoteCall {
+        destination: Value,
+        remote: Value,
+        function: FunctionId,
+        arguments: Vec<(crate::ast::ParameterMode, Value)>,
+    },
+    Await {
+        destination: Value,
+        future: Value,
+    },
+    MatchPattern {
+        destination: Value,
+        subject: Value,
+        pattern: crate::hir::Pattern,
+        bindings: Vec<Value>,
+    },
+    Assert {
+        condition: Value,
+        message: Option<Value>,
+    },
+    Call {
+        destination: Value,
+        function: FunctionId,
+        arguments: Vec<Value>,
+    },
+    CallMethod {
+        destination: Value,
+        receiver: Value,
+        function: FunctionId,
+        arguments: Vec<Value>,
+    },
+    CallContractMethod {
+        destination: Value,
+        receiver: Value,
+        slot: DispatchSlot,
+        name: String,
+        arguments: Vec<Value>,
+    },
+    MakeClosure {
+        destination: Value,
+        function: FunctionId,
+        captures: Vec<(CaptureMode, Value)>,
+    },
+    CallValue {
+        destination: Value,
+        callee: Value,
+        arguments: Vec<Value>,
+    },
+    CallClosure {
+        destination: Value,
+        function: FunctionId,
+        captures: Vec<(CaptureMode, Value)>,
+        arguments: Vec<Value>,
+    },
+}
+
+impl PortableInstruction {
+    fn destinations(&self) -> Vec<Value> {
+        match self {
+            Self::Drop { .. }
+            | Self::StoreField { .. }
+            | Self::StoreIndex { .. }
+            | Self::Assert { .. } => Vec::new(),
+            Self::MatchPattern {
+                destination,
+                bindings,
+                ..
+            } => {
+                let mut values = vec![*destination];
+                values.extend(bindings);
+                values
+            }
+            Self::LoadConstant { destination, .. }
+            | Self::Move { destination, .. }
+            | Self::Unary { destination, .. }
+            | Self::Binary { destination, .. }
+            | Self::MakeList { destination, .. }
+            | Self::Index { destination, .. }
+            | Self::MakeRecord { destination, .. }
+            | Self::MakeVariant { destination, .. }
+            | Self::LoadField { destination, .. }
+            | Self::MakeReference { destination, .. }
+            | Self::MakeWholeReference { destination, .. }
+            | Self::MakeFieldReference { destination, .. }
+            | Self::MoveOut { destination, .. }
+            | Self::Push { destination, .. }
+            | Self::Append { destination, .. }
+            | Self::Contains { destination, .. }
+            | Self::Builtin { destination, .. }
+            | Self::SpawnRemote { destination, .. }
+            | Self::SpawnRemoteBorrow { destination, .. }
+            | Self::RemoteCall { destination, .. }
+            | Self::Await { destination, .. }
+            | Self::Call { destination, .. }
+            | Self::CallMethod { destination, .. }
+            | Self::CallContractMethod { destination, .. }
+            | Self::MakeClosure { destination, .. }
+            | Self::CallValue { destination, .. }
+            | Self::CallClosure { destination, .. } => vec![*destination],
+        }
+    }
+
+    fn operands(&self) -> Vec<Value> {
+        match self {
+            Self::Drop { value } => vec![*value],
+            Self::LoadConstant { .. } => Vec::new(),
+            Self::Move { source, .. }
+            | Self::MoveOut { source, .. }
+            | Self::SpawnRemoteBorrow { source, .. } => vec![*source],
+            Self::Unary { operand, .. } => vec![*operand],
+            Self::Binary { left, right, .. } => vec![*left, *right],
+            Self::MakeList { elements, .. } => elements.clone(),
+            Self::Index { object, index, .. } | Self::MakeReference { object, index, .. } => {
+                vec![*object, *index]
+            }
+            Self::MakeRecord { fields, .. } => fields.iter().map(|(_, value)| *value).collect(),
+            Self::MakeVariant { payload, .. } => payload.clone(),
+            Self::LoadField { object, .. }
+            | Self::MakeWholeReference { object, .. }
+            | Self::MakeFieldReference { object, .. } => vec![*object],
+            Self::StoreField { object, source, .. } => vec![*object, *source],
+            Self::StoreIndex {
+                object,
+                index,
+                source,
+            } => vec![*object, *index, *source],
+            Self::Push { object, value, .. } | Self::Append { object, value, .. } => {
+                vec![*object, *value]
+            }
+            Self::Contains {
+                value, candidates, ..
+            } => {
+                let mut values = vec![*value];
+                values.extend(candidates);
+                values
+            }
+            Self::Builtin { arguments, .. } | Self::Call { arguments, .. } => arguments.clone(),
+            Self::SpawnRemote { value, .. } => vec![*value],
+            Self::RemoteCall {
+                remote, arguments, ..
+            } => {
+                let mut values = vec![*remote];
+                values.extend(arguments.iter().map(|(_, value)| *value));
+                values
+            }
+            Self::Await { future, .. } => vec![*future],
+            Self::MatchPattern { subject, .. } => vec![*subject],
+            Self::Assert { condition, message } => {
+                let mut values = vec![*condition];
+                values.extend(message);
+                values
+            }
+            Self::CallMethod {
+                receiver,
+                arguments,
+                ..
+            }
+            | Self::CallContractMethod {
+                receiver,
+                arguments,
+                ..
+            } => {
+                let mut values = vec![*receiver];
+                values.extend(arguments);
+                values
+            }
+            Self::MakeClosure { captures, .. } => {
+                captures.iter().map(|(_, value)| *value).collect()
+            }
+            Self::CallValue {
+                callee, arguments, ..
+            } => {
+                let mut values = vec![*callee];
+                values.extend(arguments);
+                values
+            }
+            Self::CallClosure {
+                captures,
+                arguments,
+                ..
+            } => {
+                let mut values = captures.iter().map(|(_, value)| *value).collect::<Vec<_>>();
+                values.extend(arguments);
+                values
+            }
+        }
+    }
 }
 
 impl Instruction {
-    pub fn destination(&self) -> Option<Value> {
+    pub fn destinations(&self) -> Vec<Value> {
         match self {
             Self::Constant { destination, .. }
             | Self::Unary { destination, .. }
             | Self::IntegerExtend { destination, .. }
             | Self::Binary { destination, .. }
             | Self::Call { destination, .. }
-            | Self::RuntimeCall { destination, .. } => Some(*destination),
-            Self::Assert { .. } => None,
+            | Self::RuntimeCall { destination, .. } => vec![*destination],
+            Self::Assert { .. } => Vec::new(),
+            Self::Portable(instruction) => instruction.destinations(),
         }
     }
 
@@ -162,6 +474,7 @@ impl Instruction {
                 operands.extend(message);
                 operands
             }
+            Self::Portable(instruction) => instruction.operands(),
         }
     }
 }
@@ -266,6 +579,30 @@ impl<'a> Verifier<'a> {
                 self.function.signature.parameters.len()
             )));
         }
+        if self.function.captures.len() != self.function.capture_types.len() {
+            return Err(VerifyError::new(format!(
+                "function capture count {} does not match capture type count {}",
+                self.function.captures.len(),
+                self.function.capture_types.len()
+            )));
+        }
+        if self.function.storage_hints.len() != self.function.value_types.len() {
+            return Err(VerifyError::new(
+                "storage hint count does not match typed value count",
+            ));
+        }
+        for (value, ty) in self
+            .function
+            .captures
+            .iter()
+            .zip(&self.function.capture_types)
+        {
+            self.define(*value, Definition::Parameter)?;
+            self.require_type(*value, *ty, "function capture")?;
+        }
+        for value in &self.function.entry_seeds {
+            self.define(*value, Definition::Parameter)?;
+        }
         for (value, ty) in self
             .function
             .parameters
@@ -277,11 +614,19 @@ impl<'a> Verifier<'a> {
         }
         for (block_index, block) in self.function.blocks.iter().enumerate() {
             let block_id = Block(block_index as u32);
+            if block.instructions.len() != block.instruction_spans.len() {
+                return Err(VerifyError::new(format!(
+                    "block b{} has {} instructions but {} source spans",
+                    block_id.0,
+                    block.instructions.len(),
+                    block.instruction_spans.len()
+                )));
+            }
             for parameter in &block.parameters {
                 self.define(*parameter, Definition::BlockParameter(block_id))?;
             }
             for (instruction_index, instruction) in block.instructions.iter().enumerate() {
-                if let Some(destination) = instruction.destination() {
+                for destination in instruction.destinations() {
                     self.define(
                         destination,
                         Definition::Instruction(block_id, instruction_index),
@@ -558,6 +903,7 @@ impl<'a> Verifier<'a> {
                 }
                 Ok(())
             }
+            Instruction::Portable(_) => Ok(()),
         }
     }
 
@@ -657,8 +1003,25 @@ fn terminator_targets(terminator: &Terminator) -> Vec<Block> {
 impl fmt::Display for Function {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "function {}(", self.name)?;
-        for (index, parameter) in self.parameters.iter().enumerate() {
+        for (index, capture) in self.captures.iter().enumerate() {
             if index != 0 {
+                formatter.write_str(", ")?;
+            }
+            write!(
+                formatter,
+                "capture v{}: {}",
+                capture.0,
+                self.value_type(*capture)
+            )?;
+        }
+        for (index, seed) in self.entry_seeds.iter().enumerate() {
+            if index != 0 || !self.captures.is_empty() {
+                formatter.write_str(", ")?;
+            }
+            write!(formatter, "seed v{}: {}", seed.0, self.value_type(*seed))?;
+        }
+        for (index, parameter) in self.parameters.iter().enumerate() {
+            if index != 0 || !self.captures.is_empty() || !self.entry_seeds.is_empty() {
                 formatter.write_str(", ")?;
             }
             write!(
@@ -704,7 +1067,9 @@ fn display_instruction(
     instruction: &Instruction,
     formatter: &mut fmt::Formatter<'_>,
 ) -> fmt::Result {
-    if let Some(destination) = instruction.destination() {
+    let destinations = instruction.destinations();
+    if destinations.len() == 1 {
+        let destination = destinations[0];
         write!(
             formatter,
             "v{}: {} = ",
@@ -746,6 +1111,7 @@ fn display_instruction(
             Some(message) => write!(formatter, "assert v{}, v{}", condition.0, message.0),
             None => write!(formatter, "assert v{}", condition.0),
         },
+        Instruction::Portable(instruction) => write!(formatter, "portable {instruction:?}"),
     }
 }
 
@@ -796,13 +1162,19 @@ mod tests {
                 result: Type::Int,
             },
             parameters: vec![Value(0)],
+            captures: vec![],
+            capture_types: vec![],
+            entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: vec![Value(0)],
             value_types: vec![Type::Bool, Type::Int],
+            storage_hints: vec![None; 2],
             blocks: vec![BlockData {
                 parameters: vec![Value(1)],
                 instructions: Vec::new(),
+                instruction_spans: Vec::new(),
                 terminator: Terminator::Return(Value(1)),
+                terminator_span: 0..0,
             }],
         };
         let error = function.verify(&HashMap::new()).unwrap_err();
@@ -818,14 +1190,20 @@ mod tests {
                 result: Type::Int,
             },
             parameters: Vec::new(),
+            captures: vec![],
+            capture_types: vec![],
+            entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: Vec::new(),
             value_types: vec![Type::Int],
+            storage_hints: vec![None; 1],
             blocks: vec![
                 BlockData {
                     parameters: Vec::new(),
                     instructions: Vec::new(),
+                    instruction_spans: Vec::new(),
                     terminator: Terminator::Return(Value(0)),
+                    terminator_span: 0..0,
                 },
                 BlockData {
                     parameters: Vec::new(),
@@ -833,7 +1211,9 @@ mod tests {
                         destination: Value(0),
                         value: Constant::Integer(1),
                     }],
+                    instruction_spans: std::iter::once(0..0).collect(),
                     terminator: Terminator::Return(Value(0)),
+                    terminator_span: 0..0,
                 },
             ],
         };

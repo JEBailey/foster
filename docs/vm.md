@@ -1,14 +1,16 @@
 # Foster register VM
 
-Status: typed-HIR lowering, optimizing register IR, verifier, and reference execution core
-implemented. A strict subset of this register IR also feeds the Cranelift AOT backend.
+Status: typed-HIR construction, mandatory shared-SSA sealing, optimizing portable bytecode,
+CFG-aware verifier, and reference execution core implemented. A strict subset of the shared SSA
+also feeds the Cranelift AOT backend.
 
 Foster uses a custom register VM as its executable semantic reference. The pipeline is:
 
 ```text
 source -> AST -> resolved HIR -> type/effect/loan/ownership checks
-       -> ownership MIR validation -> structured register bytecode
-       -> optional optimizer -> liveness-driven drops -> verifier -> machine
+       -> ownership MIR validation -> temporary register construction -> layout legalization
+       -> shared typed SSA -> de-SSA register assignment and edge copies
+       -> optional bytecode optimizer -> liveness-driven drops -> verifier -> machine
 ```
 
 Ownership-MIR and bytecode lowering consume the authoritative semantic branch/loop CFG in
@@ -17,18 +19,25 @@ Conditional arm tests are evaluated in sequence, matched arms complete the branc
 is exclusively a loop transfer. Branch result decisions use the same reachability-aware arm-flow
 summary.
 
-The structured instruction enum is both the optimizer-facing IR and executable form while the
-language evolves. The explicit optimizer pipeline performs typed constant and branch folding,
-control-flow cleanup, CFG-aware copy propagation, liveness-based dead-write elimination and
-register reuse, and constant-pool deduplication. Rewrites preserve the parallel instruction
-source-span table. Capture/parameter frame prefixes and reference origins are pinned where identity
-is observable. The structured program has a deterministic, versioned
+HIR lowering first constructs temporary virtual registers and explicit jumps. Layout legalization
+canonicalizes record slots, enum tags and payloads, closure captures, and reference place handles;
+the function is then sealed into typed basic-block SSA. The SSA verifier checks unique definitions,
+dominance, block arguments, signatures, and terminators. The unsealed construction form is never
+optimized, serialized, or executed.
+
+The VM de-SSA backend splits critical edges, resolves parallel-copy cycles, and assigns storage
+homes. Its structured bytecode is both the optimizer-facing IR and executable form. The explicit
+optimizer pipeline performs typed constant and branch folding, control-flow cleanup, CFG-aware copy
+propagation, liveness-based dead-write elimination and register reuse, and constant-pool
+deduplication. Rewrites preserve the parallel instruction source-span table. Capture/parameter
+frame prefixes and reference origins are pinned where identity is observable. The structured
+program has a deterministic, versioned
 [compiled bytecode format](binary-format.md) for caching and distribution. Bytecode is verified
 before execution and again after deserialization.
 
 Builtin identity, stable bytecode tag, source key and owning module, verifier signature, argument
 ownership mode, execution policy, and direct VM handler are declared together in the intrinsic
-registry. The verifier and interpreter consume that metadata instead of maintaining parallel
+registry. The verifier and execution machine consume that metadata instead of maintaining parallel
 builtin matches. Compiler-only intrinsics use the same registry model with opcode lowering
 metadata, including an explicit read/mutate/consume receiver mode; `list.push` and `list.append`
 lower directly to `Push` and `Append` and deliberately have no builtin tag. Adding or changing one
@@ -49,7 +58,9 @@ slot only when it is borrowed, captured by reference, shared remotely, or used a
 method receiver. Consuming call parameters transfer values out of caller registers; read-only
 borrowed parameters observe a promoted caller slot but detach if the parameter local is reassigned.
 The dispatch loop borrows instructions and their operand tables directly from the program, so
-executing an instruction does not clone its strings, patterns, captures, or argument vectors.
+executing an instruction does not clone its strings, patterns, captures, or argument vectors. A
+frame retains its resolved bytecode-function reference, avoiding a function-table lookup on every
+instruction dispatch.
 
 Record instances use dense indexed value arrays. Field names and their index table live once in a
 shared record layout, including fields contributed by composed contracts. Variants similarly share
@@ -128,7 +139,8 @@ analysis.
 ## Related native backend
 
 The initial [native backend](native.md) finds functions reachable from `main`, validates its
-supported primitive subset, and lowers unoptimized structured bytecode to Cranelift machine code.
-Cranelift performs machine-level optimization independently. Keeping this route downstream of the
-same checked compiler IR lets native execution reuse the language's type, effect, and ownership
-decisions without weakening the VM's role as the complete reference implementation.
+supported primitive subset, rebuilds that subset as shared SSA from verified unoptimized bytecode,
+and lowers it to Cranelift machine code. Cranelift performs machine-level optimization
+independently. Keeping this route downstream of the same checked frontend, layouts, and shared IR
+contract lets native execution reuse the language's type, effect, and ownership decisions without
+weakening the VM's role as the complete reference implementation.

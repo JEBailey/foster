@@ -146,10 +146,13 @@ pub fn compile_with_options(
     // consumes the canonical operand order; native compilation consumes the same registry when
     // deciding whether a representation has been legalized for Cranelift.
     crate::codegen::layout::legalize(&mut compiler.program)?;
+    crate::codegen::vm::lower_program_through_shared_ir(&mut compiler.program)
+        .map_err(|error| FosterError::runtime(format!("shared VM lowering failed: {error}")))?;
     if options.optimize {
         super::optimizer::optimize(&mut compiler.program);
     }
     super::optimizer::insert_drops(&mut compiler.program);
+    super::verifier::verify(&compiler.program)?;
     Ok(compiler.program)
 }
 

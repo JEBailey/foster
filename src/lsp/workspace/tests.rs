@@ -1077,7 +1077,7 @@ fn examples_compile_in_their_own_document_context() {
 }
 
 #[test]
-fn intrinsics_provide_docs_navigation_and_parameter_hints() {
+fn source_builtins_provide_docs_navigation_and_parameter_hints() {
     let (mut workspace, uri, _) = fixture_workspace();
     let source = "func main() -> CodePoint {\n    from_code_point(65)\n}\n";
     workspace.open(uri.clone(), source.into(), 1);

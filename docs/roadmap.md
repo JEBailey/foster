@@ -48,7 +48,7 @@ and stable bytecode tags. The remaining structural work should preserve that dep
   and language-server features.
 - Separate package discovery, module graphs, bootstrap-library selection, validation, caching, and
   source diagnostics into focused modules.
-- Split the ownership region analyses, VM value/place machinery, interpreter, and native backend by
+- Split the ownership region analyses, VM value/place machinery, execution machine, and native backend by
   phase and state ownership while retaining their current tested semantics.
 - Narrow the public crate surface into supported compiler, tooling, and runtime APIs before the
   bootstrap implementation reaches a stable release.
@@ -89,10 +89,10 @@ and stable bytecode tags. The remaining structural work should preserve that dep
   and cross-target compatibility suite; `LehmerRandom` remains the current portable baseline.
 - Add socket readiness and TLS support to the I/O boundary, and extend resource providers beyond
   the current whole-file and TCP implementations.
-- Continue migrating the complete HIR-to-VM instruction surface onto the implemented shared SSA
-  de-SSA backend. Deterministic record, enum, closure, and reference layouts now legalize to the
-  common scalar/pointer boundary; ownership-sensitive aggregate operations still need first-class
-  shared SSA instructions before the legacy register lowering can be removed completely.
+- Refine scalar inference for erased generic values in the shared SSA verifier. The complete VM
+  instruction surface now seals through shared SSA and de-SSA with deterministic record, enum,
+  closure, and reference layouts; erased heterogeneous joins retain an explicit opaque type until
+  the bytecode ownership/type verifier resolves their concrete flow state.
 - Extend the Cranelift AOT backend beyond its current scalar, string-constant, and read-only command
   argument subset to general strings and lists, records, enums, references, closures, native runtime
   services, and cross-target object output while retaining the register VM as the semantic reference.

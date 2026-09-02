@@ -459,7 +459,14 @@ fn transfer(
             destination,
             source,
         } => {
-            let ty = bound_type(function, index, &state, *source)?;
+            let ty = if matches!(
+                state.registers[usize::from(destination.0)],
+                Some(VerificationType::Reference(_))
+            ) {
+                read_type(function, index, &state, *source)?
+            } else {
+                bound_type(function, index, &state, *source)?
+            };
             write_type(function, index, &mut state, *destination, ty)?;
         }
         Instruction::Unary {
