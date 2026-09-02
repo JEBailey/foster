@@ -392,7 +392,7 @@ impl Machine {
                     variant,
                     payload,
                 } => {
-                    let metadata = &self.program.variants[&variant];
+                    let metadata = &self.program.variants[variant];
                     let payload = payload
                         .iter()
                         .copied()

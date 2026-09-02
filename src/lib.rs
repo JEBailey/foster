@@ -4,6 +4,7 @@
 pub mod archive;
 pub mod ast;
 pub mod block;
+pub mod codegen;
 pub mod compiler;
 mod control_flow;
 pub mod diagnostic;

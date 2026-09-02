@@ -1380,8 +1380,8 @@ fn merge_state(
 }
 
 fn merge_types(
-    function: &BytecodeFunction,
-    index: usize,
+    _function: &BytecodeFunction,
+    _index: usize,
     left: &VerificationType,
     right: &VerificationType,
 ) -> Result<VerificationType, FosterError> {
@@ -1393,16 +1393,16 @@ fn merge_types(
     }
     match (left, right) {
         (VerificationType::List(left), VerificationType::List(right)) => Ok(
-            VerificationType::List(Box::new(merge_types(function, index, left, right)?)),
+            VerificationType::List(Box::new(merge_types(_function, _index, left, right)?)),
         ),
         (VerificationType::Reference(left), VerificationType::Reference(right)) => Ok(
-            VerificationType::Reference(Box::new(merge_types(function, index, left, right)?)),
+            VerificationType::Reference(Box::new(merge_types(_function, _index, left, right)?)),
         ),
         (VerificationType::Remote(left), VerificationType::Remote(right)) => Ok(
-            VerificationType::Remote(Box::new(merge_types(function, index, left, right)?)),
+            VerificationType::Remote(Box::new(merge_types(_function, _index, left, right)?)),
         ),
         (VerificationType::Future(left), VerificationType::Future(right)) => Ok(
-            VerificationType::Future(Box::new(merge_types(function, index, left, right)?)),
+            VerificationType::Future(Box::new(merge_types(_function, _index, left, right)?)),
         ),
         _ => {
             let mut members = Vec::new();

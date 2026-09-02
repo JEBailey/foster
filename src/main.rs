@@ -129,6 +129,15 @@ fn cli() -> Command {
                         .action(ArgAction::SetTrue),
                 )
                 .arg(
+                    Arg::new("emit")
+                        .long("emit")
+                        .value_name("FORMAT")
+                        .value_parser(["native-ir"])
+                        .requires("native")
+                        .conflicts_with("output")
+                        .help("Print an intermediate representation instead of writing an artifact"),
+                )
+                .arg(
                     Arg::new("output")
                         .short('o')
                         .long("output")
@@ -404,6 +413,13 @@ fn build(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
         });
     let compilation = compile_target(&target)?;
     report_warnings(&compilation, None, None)?;
+    if arguments
+        .get_one::<String>("emit")
+        .is_some_and(|emit| emit == "native-ir")
+    {
+        print!("{}", foster::native::emit_ir(&compilation)?);
+        return Ok(());
+    }
     if native {
         foster::native::build_executable(
             &compilation,

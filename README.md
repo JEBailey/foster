@@ -19,6 +19,7 @@ cargo run --bin foster -- test library
 cargo run --bin foster -- run tests/fixtures/modules --no-optimize
 cargo run --bin foster -- run examples/arguments.fos -- --about
 cargo run --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.exe
+cargo run --bin foster -- build benchmarks/fibonacci.fos --native --emit native-ir
 cargo run --bin foster -- pack examples/json_parser -o json-parser.fpk
 cargo run --bin foster -- run json-parser.fpk
 cargo run --bin foster -- docs library
@@ -280,7 +281,7 @@ source
   -> ownership MIR validation
   -> structured register bytecode
        -> optional optimizer -> liveness-driven drops -> verifier -> register VM
-       -> reachable primitive lowering -> Cranelift object -> host linker -> executable
+       -> typed SSA native IR -> Cranelift object -> host linker -> executable
 ```
 
 The VM remains the complete executable semantic reference; there is no AST interpreter fallback.

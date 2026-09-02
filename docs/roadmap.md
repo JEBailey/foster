@@ -89,7 +89,8 @@ and stable bytecode tags. The remaining structural work should preserve that dep
   and cross-target compatibility suite; `LehmerRandom` remains the current portable baseline.
 - Add socket readiness and TLS support to the I/O boundary, and extend resource providers beyond
   the current whole-file and TCP implementations.
-- Stabilize a backend-neutral lowered IR.
+- Extend the verified shared code-generation IR beyond its typed scalar SSA subset with aggregate
+  layouts and explicit ownership operations, then lower VM bytecode from the same boundary.
 - Extend the Cranelift AOT backend beyond its current scalar, string-constant, and read-only command
   argument subset to general strings and lists, records, enums, references, closures, native runtime
   services, and cross-target object output while retaining the register VM as the semantic reference.

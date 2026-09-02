@@ -14,6 +14,10 @@ fn arguments_source() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/programs/arguments.fos")
 }
 
+fn native_float_source() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/programs/native_float.fos")
+}
+
 fn temporary_directory(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!(
         "foster-cli-{label}-{}-{}",
@@ -329,6 +333,34 @@ fn check_can_dump_deterministic_ownership_state() {
 }
 
 #[test]
+fn build_can_emit_deterministic_typed_native_ir() {
+    let first = foster()
+        .args(["build", "--native", "--emit", "native-ir"])
+        .arg(benchmark_source())
+        .output()
+        .unwrap();
+    let second = foster()
+        .args(["build", "--native", "--emit", "native-ir"])
+        .arg(benchmark_source())
+        .output()
+        .unwrap();
+    assert!(
+        first.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first.stderr)
+    );
+    assert_eq!(first.stdout, second.stdout);
+    let output = String::from_utf8(first.stdout).unwrap();
+    assert!(output.starts_with("foster-codegen-ir 1\n"), "{output}");
+    assert!(
+        output.contains("function fibonacci(v0: Int/i64)"),
+        "{output}"
+    );
+    assert!(output.contains("Bool/i8 = binary Less"), "{output}");
+    assert!(output.contains("entry -> b0(v0)"), "{output}");
+}
+
+#[test]
 fn build_writes_runnable_compiled_bytecode() {
     let output_path = std::env::temp_dir().join(format!(
         "foster-bytecode-{}-{}.fbc",
@@ -396,6 +428,42 @@ fn build_native_writes_runnable_host_executable() {
         String::from_utf8_lossy(&run.stderr)
     );
     assert_eq!(String::from_utf8(run.stdout).unwrap().trim(), "6765");
+    fs::remove_file(output_path).unwrap();
+}
+
+#[test]
+fn native_float_uses_a_typed_entry_abi() {
+    let mut output_path = std::env::temp_dir().join(format!(
+        "foster-native-float-{}-{}",
+        std::process::id(),
+        time::SystemTime::now()
+            .duration_since(time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    if cfg!(windows) {
+        output_path.set_extension("exe");
+    }
+    let build = foster()
+        .arg("build")
+        .arg(native_float_source())
+        .arg("--native")
+        .arg("--output")
+        .arg(&output_path)
+        .output()
+        .unwrap();
+    assert!(
+        build.status.success(),
+        "{}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(&output_path).output().unwrap();
+    assert!(
+        run.status.success(),
+        "{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    assert_eq!(String::from_utf8(run.stdout).unwrap().trim(), "42.5");
     fs::remove_file(output_path).unwrap();
 }
 

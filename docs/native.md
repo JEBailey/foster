@@ -15,9 +15,17 @@ Without `-o`, a source file produces a sibling executable with the source extens
 directory package produces `main` (or `main.exe` on Windows) inside that directory. `--optimize`
 is the default; `--no-optimize` disables both Cranelift and linker optimization.
 
+Use `--emit native-ir` to print the deterministic, verified code-generation IR without linking:
+
+```powershell
+foster build benchmarks/fibonacci.fos --native --emit native-ir
+```
+
 ## Implemented subset
 
-The native ABI stores each currently supported Foster value in one 64-bit word. It supports:
+The internal native ABI uses target-independent scalar representations: `Bool`, `Byte`, and `()`
+use `i8`; `CodePoint` uses `i32`; `Int` uses `i64`; `Float` uses `f64`; and runtime-backed values
+use the target pointer type. It supports:
 
 - `()`, `Bool`, `Int`, binary64 `Float`, `CodePoint`, and `Byte` parameters and results;
 - String constants, equality, command-argument strings, and String results;
@@ -43,9 +51,18 @@ ordinary `foster build`, which emits portable `.fbc` for the complete language.
 
 The frontend, type/effect/ownership checks, ownership MIR, and structured register lowering are
 shared with the VM. Native compilation intentionally consumes non-optimized register bytecode so
-each register retains a stable static type, then performs its own Cranelift machine optimization.
-It declares all reachable functions before defining any of them, allowing direct recursion and
-mutual recursion.
+each register retains a stable static type. A separate lowering builds the shared code-generation
+IR: typed basic blocks in SSA form where instructions define immutable values and jumps carry only
+the values live at the target block. Foster moves become SSA aliases instead of machine
+instructions. The IR has an independent verifier for definitions, dominance, types, call
+signatures, block arguments, and terminators. Cranelift consumes this IR directly, so ordinary
+values no longer round-trip through a VM-style register stack array before machine optimization.
+
+The portable, versioned bytecode remains the VM's execution and distribution format. The native
+IR is a shared internal backend boundary rather than a replacement for bytecode, leaving room for
+the VM and other native code generators without exposing Cranelift types to the frontend. Its
+Foster scalar types map to Cranelift types only in the Cranelift emitter. All reachable functions
+are declared before any is defined, allowing direct recursion and mutual recursion.
 
 The object exports a C-ABI `foster_native_entry` symbol. A generated, temporary Rust entry shim
 collects Unicode command arguments, supplies the supported String/List runtime operations, calls
