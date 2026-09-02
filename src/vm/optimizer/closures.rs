@@ -22,15 +22,20 @@ pub(super) fn specialize_non_escaping(program: &mut Program) {
                 Instruction::MakeClosure {
                     destination,
                     function,
+                    specialization,
                     captures,
-                } if use_counts.get(destination) == Some(&1) => {
-                    Some((index, *destination, *function, captures.clone()))
-                }
+                } if use_counts.get(destination) == Some(&1) => Some((
+                    index,
+                    *destination,
+                    *function,
+                    specialization.clone(),
+                    captures.clone(),
+                )),
                 _ => None,
             })
             .collect::<Vec<_>>();
 
-        for (creation, closure, target, captures) in candidates {
+        for (creation, closure, target, specialization, captures) in candidates {
             let Some(call) =
                 function
                     .instructions
@@ -69,6 +74,7 @@ pub(super) fn specialize_non_escaping(program: &mut Program) {
             function.instructions[call] = Instruction::CallClosure {
                 destination,
                 function: target,
+                specialization,
                 captures,
                 arguments,
             };

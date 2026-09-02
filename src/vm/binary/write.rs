@@ -515,11 +515,13 @@ impl Writer {
             Instruction::MakeClosure {
                 destination,
                 function,
+                specialization,
                 captures,
             } => {
                 self.u8(28);
                 self.reg(*destination);
                 self.id(*function);
+                self.specialization(specialization)?;
                 self.captures(captures)?;
             }
             Instruction::CallValue {
@@ -535,12 +537,14 @@ impl Writer {
             Instruction::CallClosure {
                 destination,
                 function,
+                specialization,
                 captures,
                 arguments,
             } => {
                 self.u8(30);
                 self.reg(*destination);
                 self.id(*function);
+                self.specialization(specialization)?;
                 self.captures(captures)?;
                 self.regs(arguments)?;
             }

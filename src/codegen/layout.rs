@@ -50,6 +50,7 @@ pub enum LayoutKind {
     },
     Closure {
         function: FunctionId,
+        specialization: crate::vm::Specialization,
         captures: Vec<Slot>,
     },
     /// A place handle is two scalar components: an owning slot pointer and a projection path.
@@ -61,7 +62,7 @@ pub enum LayoutKind {
     Builtin {
         ty: VerificationType,
     },
-    /// Box used when a structural join or generic value erases its concrete representation.
+    /// Box used when an explicitly dynamic value erases its concrete representation.
     Opaque,
 }
 
@@ -70,14 +71,18 @@ pub struct Layout {
     pub id: LayoutId,
     /// Aggregate values cross both current backend boundaries as one pointer-sized scalar.
     pub boxed: bool,
+    /// False for a generic schema that must be instantiated before code generation.
+    pub materialized: bool,
     pub kind: LayoutKind,
 }
 
 /// The only values a backend receives after representation legalization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LegalType {
-    /// Erased generics and heterogeneous joins cannot be assigned a physical ABI yet.
+    /// An explicitly dynamic or heterogeneous value uses the erased runtime representation.
     Opaque,
+    /// A generic schema has no executable representation until monomorphized.
+    UnresolvedGeneric,
     I8,
     I32,
     I64,
@@ -98,6 +103,7 @@ pub struct Registry {
     record_instances: BTreeMap<(RecordId, Vec<VerificationType>), LayoutId>,
     variant_instances: BTreeMap<(VariantTypeId, Vec<VerificationType>), LayoutId>,
     closures: HashMap<FunctionId, LayoutId>,
+    closure_instances: BTreeMap<(FunctionId, crate::vm::Specialization), LayoutId>,
     pointers: BTreeMap<(VerificationType, Ownership), LayoutId>,
     builtins: BTreeMap<VerificationType, LayoutId>,
     opaque: Option<LayoutId>,
@@ -124,7 +130,7 @@ impl Registry {
         self.record_instances
             .get(&(id, arguments.to_vec()))
             .copied()
-            .or_else(|| self.record(id))
+            .or_else(|| arguments.is_empty().then(|| self.record(id)).flatten())
     }
 
     pub fn variant(&self, id: VariantTypeId) -> Option<LayoutId> {
@@ -139,7 +145,7 @@ impl Registry {
         self.variant_instances
             .get(&(id, arguments.to_vec()))
             .copied()
-            .or_else(|| self.variant(id))
+            .or_else(|| arguments.is_empty().then(|| self.variant(id)).flatten())
     }
 
     /// Materialize concrete nominal layouts reachable by one native specialization.
@@ -294,6 +300,67 @@ impl Registry {
         self.closures.get(&id).copied()
     }
 
+    pub fn closure_instance(
+        &self,
+        id: FunctionId,
+        specialization: &crate::vm::Specialization,
+    ) -> Option<LayoutId> {
+        self.closure_instances
+            .get(&(id, specialization.clone()))
+            .copied()
+            .or_else(|| {
+                specialization
+                    .is_empty()
+                    .then(|| self.closure(id))
+                    .flatten()
+            })
+    }
+
+    /// Materialize the capture environment for one concrete closure body instance.
+    pub fn instantiate_closure(
+        &mut self,
+        function: FunctionId,
+        specialization: &crate::vm::Specialization,
+    ) -> Result<LayoutId, FosterError> {
+        let key = (function, specialization.clone());
+        if let Some(layout) = self.closure_instances.get(&key) {
+            return Ok(*layout);
+        }
+        let base = self
+            .closure(function)
+            .ok_or_else(|| FosterError::runtime("closure specialization has no logical layout"))?;
+        if specialization.is_empty() {
+            self.closure_instances.insert(key, base);
+            return Ok(base);
+        }
+        let LayoutKind::Closure { captures, .. } = self.get(base).kind.clone() else {
+            unreachable!()
+        };
+        let substitutions = specialization.iter().cloned().collect::<HashMap<_, _>>();
+        let captures = captures
+            .into_iter()
+            .map(|mut capture| {
+                capture.ty = substitute_type(&capture.ty, &substitutions);
+                capture
+            })
+            .collect::<Vec<_>>();
+        let layout = self.push(LayoutKind::Closure {
+            function,
+            specialization: specialization.clone(),
+            captures: Vec::new(),
+        });
+        self.closure_instances.insert(key, layout);
+        for capture in &captures {
+            self.instantiate_type(&capture.ty)?;
+        }
+        self.layouts[layout.0 as usize].kind = LayoutKind::Closure {
+            function,
+            specialization: specialization.clone(),
+            captures,
+        };
+        Ok(layout)
+    }
+
     pub fn pointer(&self, pointee: &VerificationType, ownership: Ownership) -> Option<LayoutId> {
         self.pointers.get(&(pointee.clone(), ownership)).copied()
     }
@@ -337,9 +404,8 @@ impl Registry {
                 layout: self.pointer(pointee, Ownership::Borrowed),
                 ownership: Ownership::Borrowed,
             },
-            VerificationType::Unknown
-            | VerificationType::Generic(_)
-            | VerificationType::Union(_) => LegalType::Opaque,
+            VerificationType::Unknown | VerificationType::Union(_) => LegalType::Opaque,
+            VerificationType::Generic(_) => LegalType::UnresolvedGeneric,
             VerificationType::Bytes
             | VerificationType::ByteBuffer
             | VerificationType::List(_)
@@ -353,10 +419,27 @@ impl Registry {
     }
 
     fn push(&mut self, kind: LayoutKind) -> LayoutId {
+        self.push_with_materialization(kind, true)
+    }
+
+    fn push_schema(&mut self, kind: LayoutKind) -> LayoutId {
+        self.push_with_materialization(kind, false)
+    }
+
+    fn push_runtime_kind(&mut self, kind: LayoutKind) -> LayoutId {
+        if layout_kind_has_generic(&kind) {
+            self.push_schema(kind)
+        } else {
+            self.push(kind)
+        }
+    }
+
+    fn push_with_materialization(&mut self, kind: LayoutKind, materialized: bool) -> LayoutId {
         let id = LayoutId(self.layouts.len() as u32);
         self.layouts.push(Layout {
             id,
             boxed: true,
+            materialized,
             kind,
         });
         id
@@ -420,6 +503,39 @@ fn substitute_type(
     }
 }
 
+fn type_has_generic(ty: &VerificationType) -> bool {
+    match ty {
+        VerificationType::Generic(_) => true,
+        VerificationType::List(value)
+        | VerificationType::Reference(value)
+        | VerificationType::Remote(value)
+        | VerificationType::Future(value) => type_has_generic(value),
+        VerificationType::Function {
+            parameters, result, ..
+        } => parameters.iter().any(type_has_generic) || type_has_generic(result),
+        VerificationType::Record { arguments, .. }
+        | VerificationType::Variant { arguments, .. }
+        | VerificationType::Union(arguments) => arguments.iter().any(type_has_generic),
+        _ => false,
+    }
+}
+
+fn layout_kind_has_generic(kind: &LayoutKind) -> bool {
+    match kind {
+        LayoutKind::Record { fields, .. } => fields.iter().any(|field| type_has_generic(&field.ty)),
+        LayoutKind::Variant { alternatives, .. } => alternatives
+            .iter()
+            .flat_map(|alternative| &alternative.payload)
+            .any(type_has_generic),
+        LayoutKind::Closure { captures, .. } => {
+            captures.iter().any(|capture| type_has_generic(&capture.ty))
+        }
+        LayoutKind::Pointer { pointee, .. } => type_has_generic(pointee),
+        LayoutKind::Builtin { ty } => type_has_generic(ty),
+        LayoutKind::Opaque => false,
+    }
+}
+
 /// Canonicalize aggregate operands and construct the complete logical layout table.
 ///
 /// This is deliberately run before optimization.  Consequently field order and variant tags are
@@ -453,10 +569,15 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
                 ownership: Ownership::Owned,
             })
             .collect();
-        let layout = registry.push(LayoutKind::Record {
+        let kind = LayoutKind::Record {
             record: *record,
             fields,
-        });
+        };
+        let layout = if runtime.parameters.is_empty() {
+            registry.push(kind)
+        } else {
+            registry.push_schema(kind)
+        };
         registry.records.insert(*record, layout);
     }
 
@@ -485,10 +606,15 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
                 payload: program.variants[&variant].payload.clone(),
             })
             .collect();
-        let layout = registry.push(LayoutKind::Variant {
+        let kind = LayoutKind::Variant {
             variant_type,
             alternatives,
-        });
+        };
+        let layout = if registry.variant_parameters[&variant_type].is_empty() {
+            registry.push(kind)
+        } else {
+            registry.push_schema(kind)
+        };
         registry.variants.insert(variant_type, layout);
     }
 
@@ -564,11 +690,20 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
                         ),
                 })
                 .collect();
-        let layout = registry.push(LayoutKind::Closure {
+        let kind = LayoutKind::Closure {
             function: *function,
+            specialization: Vec::new(),
             captures,
-        });
+        };
+        let layout = if layout_kind_has_generic(&kind) {
+            registry.push_schema(kind)
+        } else {
+            registry.push(kind)
+        };
         registry.closures.insert(*function, layout);
+        registry
+            .closure_instances
+            .insert((*function, Vec::new()), layout);
     }
 
     collect_runtime_layouts(program, &mut registry);
@@ -626,7 +761,7 @@ fn visit_runtime_types(ty: &VerificationType, registry: &mut Registry) {
         VerificationType::Reference(pointee) => {
             let key = ((**pointee).clone(), Ownership::Borrowed);
             if !registry.pointers.contains_key(&key) {
-                let id = registry.push(LayoutKind::Pointer {
+                let id = registry.push_runtime_kind(LayoutKind::Pointer {
                     pointee: (**pointee).clone(),
                     ownership: Ownership::Borrowed,
                 });
@@ -638,7 +773,7 @@ fn visit_runtime_types(ty: &VerificationType, registry: &mut Registry) {
         | VerificationType::Remote(element)
         | VerificationType::Future(element) => {
             if !registry.builtins.contains_key(ty) {
-                let id = registry.push(LayoutKind::Builtin { ty: ty.clone() });
+                let id = registry.push_runtime_kind(LayoutKind::Builtin { ty: ty.clone() });
                 registry.builtins.insert(ty.clone(), id);
             }
             visit_runtime_types(element, registry);
@@ -647,7 +782,7 @@ fn visit_runtime_types(ty: &VerificationType, registry: &mut Registry) {
             parameters, result, ..
         } => {
             if !registry.builtins.contains_key(ty) {
-                let id = registry.push(LayoutKind::Builtin { ty: ty.clone() });
+                let id = registry.push_runtime_kind(LayoutKind::Builtin { ty: ty.clone() });
                 registry.builtins.insert(ty.clone(), id);
             }
             parameters
@@ -669,7 +804,7 @@ fn visit_runtime_types(ty: &VerificationType, registry: &mut Registry) {
         VerificationType::Bytes | VerificationType::ByteBuffer
             if !registry.builtins.contains_key(ty) =>
         {
-            let id = registry.push(LayoutKind::Builtin { ty: ty.clone() });
+            let id = registry.push_runtime_kind(LayoutKind::Builtin { ty: ty.clone() });
             registry.builtins.insert(ty.clone(), id);
         }
         _ => {}
@@ -855,5 +990,48 @@ mod tests {
         right.records.insert(second, runtime("Second"));
 
         assert_eq!(legalize(&mut left).unwrap(), legalize(&mut right).unwrap());
+    }
+
+    #[test]
+    fn generic_schemas_are_not_executable_layouts() {
+        let compilation = crate::compile(
+            r#"
+type Boxed<T> = { value: T }
+func main() -> Int { Boxed { value: 42 }.value }
+"#,
+        )
+        .unwrap();
+        let mut program = crate::vm::compile_with_options(
+            &compilation,
+            crate::vm::CompileOptions { optimize: false },
+        )
+        .unwrap();
+        let mut registry = legalize(&mut program).unwrap();
+        let record = program
+            .records
+            .iter()
+            .find_map(|(id, record)| (record.name == "Boxed").then_some(*id))
+            .unwrap();
+        let schema = registry.record(record).unwrap();
+        assert!(!registry.get(schema).materialized);
+        assert_eq!(
+            registry.legal_type(&VerificationType::Generic("T".into())),
+            LegalType::UnresolvedGeneric
+        );
+
+        let concrete = VerificationType::Record {
+            record,
+            arguments: vec![VerificationType::Integer],
+        };
+        registry.instantiate_type(&concrete).unwrap();
+        let instance = registry
+            .record_instance(record, &[VerificationType::Integer])
+            .unwrap();
+        assert_ne!(schema, instance);
+        assert!(registry.get(instance).materialized);
+        let physical =
+            physical::PhysicalRegistry::build(&registry, physical::TargetLayout::host()).unwrap();
+        assert!(!physical.get(schema).materialized);
+        assert!(physical.get(instance).materialized);
     }
 }

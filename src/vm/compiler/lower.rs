@@ -81,6 +81,7 @@ impl FunctionCompiler<'_> {
                     Instruction::MakeClosure {
                         destination,
                         function: *function,
+                        specialization: self.specialization(*function, &[], id),
                         captures,
                     },
                     span,
@@ -358,6 +359,11 @@ impl FunctionCompiler<'_> {
                             Instruction::CallClosure {
                                 destination,
                                 function,
+                                specialization: self.specialization(
+                                    function,
+                                    &argument_expressions,
+                                    id,
+                                ),
                                 captures,
                                 arguments,
                             },
@@ -393,6 +399,7 @@ impl FunctionCompiler<'_> {
                     Instruction::MakeClosure {
                         destination,
                         function: *function,
+                        specialization: self.specialization(*function, &[], id),
                         captures,
                     },
                     span,
@@ -837,6 +844,11 @@ impl FunctionCompiler<'_> {
             collect_generic_names(self.types, *parameter, &mut names);
         }
         collect_generic_names(self.types, signature.result, &mut names);
+        for capture in self.closure_captures.get(&function).into_iter().flatten() {
+            if let Some(ty) = self.types.local_type(capture.local) {
+                collect_generic_names(self.types, ty, &mut names);
+            }
+        }
         names
             .into_iter()
             .map(|name| {

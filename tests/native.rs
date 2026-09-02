@@ -184,3 +184,39 @@ func main() -> Int {
     );
     assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
 }
+
+#[test]
+fn specializes_closure_environments_and_capture_destructors() {
+    let compilation = foster::compile(
+        r#"
+type Offset = { value: Int }
+
+func make_offset<T>(marker: T, offset: Offset) [consume marker, consume offset] {
+    [move marker, move offset] (value: Int) -> {
+        marker
+        offset.value + value
+    }
+}
+
+func main() -> Int {
+    let add = make_offset(0, Offset { value: 40 })
+    add(2)
+}
+"#,
+    )
+    .unwrap();
+    let executable = std::env::temp_dir().join(format!(
+        "foster-native-closure-test-{}{}",
+        std::process::id(),
+        std::env::consts::EXE_SUFFIX
+    ));
+    build_executable(&compilation, &executable, CompileOptions::default()).unwrap();
+    let output = std::process::Command::new(&executable).output().unwrap();
+    let _ = std::fs::remove_file(&executable);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+}

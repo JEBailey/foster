@@ -1,8 +1,8 @@
 # Native compilation
 
-Status: host-native AOT backend implemented with Cranelift; scalar, record, and tagged-variant
-lowering is executable, while collection, reference, closure, and host-service coverage is still
-in progress.
+Status: host-native AOT backend implemented with Cranelift; scalar, record, tagged-variant, and
+concrete closure lowering is executable, while collection, reference, erased-callable, and
+host-service coverage is still in progress.
 
 `foster build --native` compiles the functions reachable from `main` into a native object and links
 that object into a standalone executable with the installed Rust toolchain. `main` may take no
@@ -40,6 +40,8 @@ use the target pointer type. It supports:
 - enum-case allocation, deterministic tags, scalar payloads, and enum pattern tests/bindings;
 - closed-world monomorphization of reachable generic functions, records, and tagged variants, with
   concrete signatures, layouts, destructors, and call targets cached per substitution;
+- concrete closure construction and calls, capture-prefix ABIs, indirect calls through stored code
+  pointers, and specialized capture-environment destructors for copy/move captures;
 - descriptor-addressed allocation, strong retain/release, ownership transfer at calls and returns,
   and generated tag-aware recursive destructors;
 - assertions, guarded returns, `loop`, guarded `break`/`continue`, jumps, conditional control
@@ -50,9 +52,10 @@ use the target pointer type. It supports:
 Only functions statically reachable from `main` are compiled. An unused function may therefore use
 the complete VM language without preventing native compilation.
 
-General lists and buffers, String concatenation and library algorithms, symbols, references,
-closures, dynamic calls, intrinsics, dynamically erased aggregate payloads, remote objects,
-futures, and host I/O do not yet have a complete native lowering.
+General lists and buffers, String concatenation and library algorithms, symbols, reference
+captures, callable values selected across heterogeneous control-flow joins, intrinsics,
+dynamically erased aggregate payloads, remote objects, futures, and host I/O do not yet have a
+complete native lowering.
 If one is reachable, compilation stops
 before object emission and reports the unsupported type or instruction. The diagnostic recommends
 ordinary `foster build`, which emits portable `.fbc` for the complete language.
@@ -91,8 +94,9 @@ function is sealed into SSA; that unsealed form is never optimized, serialized, 
 Before backend-specific emission, logical layout legalization reduces values to scalars or pointers
 and builds deterministic descriptions for record field slots and declared types, enum alternative
 tags and payloads, closure environments and capture ownership, reference place handles, and
-runtime-backed structural values. Portable bytecode version 19 retains generic identities, nominal
-parameters and arguments, and sorted substitutions at statically resolved calls. Native
+runtime-backed structural values. Portable bytecode version 20 retains generic identities, nominal
+parameters and arguments, and sorted substitutions at statically resolved calls and closure
+construction. Native
 reachability is keyed by function plus substitutions; it materializes concrete signatures and
 record/enum layouts before target-specific physical layout calculation. Explicit opaque slots
 remain only for values whose representation is genuinely dynamic.
@@ -110,7 +114,8 @@ root/prefix generation snapshots needed for indexed-reference invalidation. This
 field/index projections without limiting a handle to one generation snapshot.
 
 Native object files contain a versioned, read-only `foster_layout_<id>` descriptor for every
-physical layout. Descriptors include the common-header offsets, kind-specific offsets, field value
+materialized physical layout. Generic schemas retain stable internal IDs but receive no descriptor
+or destructor until instantiated. Descriptors include common-header offsets, kind-specific offsets, field value
 representations and pointee identities, capture ownership, and destruction metadata. Record and
 variant lowering addresses these symbols directly, initializes the common header, emits typed
 field/tag loads and stores, and follows the descriptor-derived drop plan. Copy-on-write is explicit

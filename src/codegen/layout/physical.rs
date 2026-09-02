@@ -239,6 +239,8 @@ pub enum PhysicalKind {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PhysicalLayout {
     pub id: LayoutId,
+    /// Generic schemas are measured for stable IDs but never emitted or allocated.
+    pub materialized: bool,
     pub size: u32,
     pub align: u16,
     pub header: ObjectHeader,
@@ -463,7 +465,8 @@ impl PhysicalRegistry {
         let header = object_header(target)?;
         let mut layouts = Vec::with_capacity(logical.layouts().len());
         for layout in logical.layouts() {
-            let physical = calculate_layout(logical, target, header, layout.id, &layout.kind)?;
+            let mut physical = calculate_layout(logical, target, header, layout.id, &layout.kind)?;
+            physical.materialized = layout.materialized;
             if physical.id.0 as usize != layouts.len() {
                 return Err(LayoutError::new("logical layout IDs are not dense"));
             }
@@ -903,6 +906,7 @@ fn finish(
     let align = align.max(header.align);
     Ok(PhysicalLayout {
         id,
+        materialized: true,
         size: align_up(end, align)?,
         align,
         header,
@@ -964,6 +968,7 @@ fn value_layout(registry: &Registry, target: TargetLayout, ty: &VerificationType
         },
         LegalType::Pointer { layout, .. } => pointer_value(target, layout),
         LegalType::Opaque => pointer_value(target, Some(registry.opaque())),
+        LegalType::UnresolvedGeneric => pointer_value(target, None),
     }
 }
 
@@ -1202,6 +1207,7 @@ mod tests {
             registry.layouts.push(Layout {
                 id,
                 boxed: true,
+                materialized: true,
                 kind,
             });
         }

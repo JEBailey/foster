@@ -112,6 +112,58 @@ func main() -> Int { make(42).value }
 }
 
 #[test]
+fn round_trips_generic_closure_specializations() {
+    let source = r#"
+func apply_capture<T>(value: T, number: Int) -> Int [consume value] {
+    let action = [move value] (input: Int) -> {
+        value
+        input
+    }
+    action(number)
+}
+
+func make_capture<T>(value: T) [consume value] {
+    [move value] (input: Int) -> {
+        value
+        input
+    }
+}
+
+func main() -> Int {
+    let getter = make_capture(0)
+    getter(20) + apply_capture(0, 22)
+}
+"#;
+    let compilation = crate::compile(source).unwrap();
+    let program = compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
+    let optimized = compile(&compilation).unwrap();
+    assert!(program.functions.values().any(|function| {
+        function.instructions.iter().any(|instruction| {
+            matches!(
+                instruction,
+                Instruction::MakeClosure { specialization, .. }
+                    if !specialization.is_empty()
+            )
+        })
+    }));
+    assert!(optimized.functions.values().any(|function| {
+        function.instructions.iter().any(|instruction| {
+            matches!(
+                instruction,
+                Instruction::CallClosure { specialization, .. }
+                    if !specialization.is_empty()
+            )
+        })
+    }));
+    let decoded = decode_program(&encode_program(&optimized).unwrap()).unwrap();
+    assert_eq!(optimized, decoded);
+    assert_eq!(
+        Machine::new(&decoded).run_main().unwrap(),
+        crate::vm::Value::Integer(42)
+    );
+}
+
+#[test]
 fn rejects_invalid_envelopes() {
     assert!(decode_program(b"not bytecode").is_err());
     let compilation = crate::compile("func main() -> Int { 42 }").unwrap();

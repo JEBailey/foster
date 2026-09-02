@@ -332,6 +332,7 @@ impl<'a> Reader<'a> {
             28 => Instruction::MakeClosure {
                 destination: r!(),
                 function: id!(Function),
+                specialization: self.specialization()?,
                 captures: self.captures()?,
             },
             29 => Instruction::CallValue {
@@ -342,6 +343,7 @@ impl<'a> Reader<'a> {
             30 => Instruction::CallClosure {
                 destination: r!(),
                 function: id!(Function),
+                specialization: self.specialization()?,
                 captures: self.captures()?,
                 arguments: self.regs()?,
             },

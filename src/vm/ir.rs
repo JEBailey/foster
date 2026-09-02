@@ -227,6 +227,7 @@ pub enum Instruction {
     MakeClosure {
         destination: Register,
         function: FunctionId,
+        specialization: Specialization,
         captures: Vec<(crate::hir::CaptureMode, Register)>,
     },
     CallValue {
@@ -237,6 +238,7 @@ pub enum Instruction {
     CallClosure {
         destination: Register,
         function: FunctionId,
+        specialization: Specialization,
         captures: Vec<(crate::hir::CaptureMode, Register)>,
         arguments: Vec<Register>,
     },

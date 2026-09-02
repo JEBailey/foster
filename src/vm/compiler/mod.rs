@@ -335,7 +335,7 @@ impl Compiler<'_> {
                 let ty = self
                     .types
                     .local_type(capture.local)
-                    .map(|ty| verification_type(self.hir, self.types, ty, 0))
+                    .map(|ty| layout_verification_type(self.hir, self.types, ty, 0))
                     .unwrap_or(VerificationType::Unknown);
                 if capture.mode == crate::hir::CaptureMode::Ref
                     && !matches!(ty, VerificationType::Reference(_))

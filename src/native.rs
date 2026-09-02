@@ -172,7 +172,7 @@ pub fn emit_ir(compilation: &Compilation) -> Result<String, FosterError> {
         .iter()
         .map(|instance| (instance.key.clone(), instance.ir_function))
         .collect::<HashMap<_, _>>();
-    let function_types = collect_function_types(compilation, &instances, &mut layouts)?;
+    let function_types = collect_function_types(compilation, &program, &instances, &mut layouts)?;
     let physical_layouts =
         PhysicalRegistry::build(&layouts, TargetLayout::host()).map_err(|error| {
             native_error(format!("cannot calculate native object layouts: {error}"))
@@ -242,7 +242,7 @@ pub fn compile_object(
         .iter()
         .map(|instance| (instance.key.clone(), instance.ir_function))
         .collect::<HashMap<_, _>>();
-    let function_types = collect_function_types(compilation, &instances, &mut layouts)?;
+    let function_types = collect_function_types(compilation, &program, &instances, &mut layouts)?;
     let main_instance = instances
         .iter()
         .find(|instance| instance.key.function == main && instance.key.substitutions.is_empty())
@@ -365,7 +365,11 @@ fn emit_layout_descriptors(
     layouts: &PhysicalRegistry,
 ) -> Result<HashMap<LayoutId, DataId>, FosterError> {
     let mut descriptors = HashMap::new();
-    for layout in layouts.layouts() {
+    for layout in layouts
+        .layouts()
+        .iter()
+        .filter(|layout| layout.materialized)
+    {
         let symbol = format!("foster_layout_{}", layout.id.0);
         let data_id = module
             .declare_data(&symbol, Linkage::Local, false, false)
@@ -494,6 +498,16 @@ fn reachable_instances(
                     ..
                 }
                 | Instruction::CallMethod {
+                    function,
+                    specialization,
+                    ..
+                }
+                | Instruction::MakeClosure {
+                    function,
+                    specialization,
+                    ..
+                }
+                | Instruction::CallClosure {
                     function,
                     specialization,
                     ..
@@ -628,6 +642,7 @@ fn substitute_verification_type(
 
 fn collect_function_types(
     compilation: &Compilation,
+    program: &Program,
     instances: &[NativeInstance],
     layouts: &mut LayoutRegistry,
 ) -> Result<HashMap<FunctionId, ir::Signature>, FosterError> {
@@ -642,29 +657,119 @@ fn collect_function_types(
                     definition.name
                 ))
             })?;
-            let parameters = signature
-                .parameters
+            let mut parameters = program.functions[&function]
+                .capture_types
                 .iter()
                 .map(|ty| {
-                    native_type(
-                        compilation,
-                        layouts,
-                        *ty,
-                        &instance.key.substitutions,
-                        &definition.name,
-                    )
+                    let concrete = substitute_verification_type(ty, &instance.key.substitutions);
+                    layouts.instantiate_type(&concrete)?;
+                    concrete_native_type(compilation, layouts, &concrete, &definition.name)
                 })
-                .collect::<Result<Vec<_>, _>>()?;
-            let result = native_type(
-                compilation,
-                layouts,
-                signature.result,
-                &instance.key.substitutions,
-                &definition.name,
-            )?;
+                .collect::<Result<Vec<_>, FosterError>>()?;
+            parameters.extend(
+                signature
+                    .parameters
+                    .iter()
+                    .map(|ty| {
+                        native_type(
+                            compilation,
+                            layouts,
+                            *ty,
+                            &instance.key.substitutions,
+                            &definition.name,
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+            if layouts.closure(function).is_some() {
+                layouts.instantiate_closure(function, &instance.key.substitutions)?;
+            }
+            let result = if matches!(compilation.types.types[signature.result], Type::Function(_)) {
+                concrete_closure_result(program, layouts, &instance.key)?
+            } else {
+                native_type(
+                    compilation,
+                    layouts,
+                    signature.result,
+                    &instance.key.substitutions,
+                    &definition.name,
+                )?
+            };
             Ok((instance.ir_function, ir::Signature { parameters, result }))
         })
         .collect()
+}
+
+fn concrete_closure_result(
+    program: &Program,
+    layouts: &mut LayoutRegistry,
+    instance: &SpecializationKey,
+) -> Result<NativeType, FosterError> {
+    let body = &program.functions[&instance.function];
+    let mut result = None;
+    for (index, instruction) in body.instructions.iter().enumerate() {
+        let Instruction::Return { source } = instruction else {
+            continue;
+        };
+        let key = closure_definition_before(body, index, *source, &instance.substitutions)
+            .ok_or_else(|| {
+                native_error(format!(
+                    "native function `{}` returns an erased callable value",
+                    body.name
+                ))
+                .with_help(
+                    "return one statically known closure, or keep this explicitly dynamic call on the VM",
+                )
+            })?;
+        if result.as_ref().is_some_and(|previous| previous != &key) {
+            return Err(native_error(format!(
+                "native function `{}` returns multiple concrete closure layouts",
+                body.name
+            ))
+            .with_help("use the VM for a callable value selected dynamically"));
+        }
+        result = Some(key);
+    }
+    let key = result.ok_or_else(|| {
+        native_error(format!(
+            "native function `{}` has no concrete closure result",
+            body.name
+        ))
+    })?;
+    Ok(NativeType::Object(
+        layouts.instantiate_closure(key.function, &key.substitutions)?,
+    ))
+}
+
+fn closure_definition_before(
+    function: &BytecodeFunction,
+    before: usize,
+    register: Register,
+    outer: &crate::vm::Specialization,
+) -> Option<SpecializationKey> {
+    for (index, instruction) in function.instructions[..before].iter().enumerate().rev() {
+        match instruction {
+            Instruction::MakeClosure {
+                destination,
+                function,
+                specialization,
+                ..
+            } if *destination == register => {
+                return Some(SpecializationKey {
+                    function: *function,
+                    substitutions: resolve_specialization(specialization, outer),
+                });
+            }
+            Instruction::Move {
+                destination,
+                source,
+            } if *destination == register => {
+                return closure_definition_before(function, index, *source, outer);
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn native_type(
@@ -895,13 +1000,9 @@ fn validate_program(
     }
     for instance in instances {
         let body = &program.functions[&instance.key.function];
-        if body.captures != 0 {
-            return Err(native_error(format!(
-                "native compilation does not yet support captures in `{}`",
-                body.name
-            )));
-        }
-        if usize::from(body.parameters) != function_types[&instance.ir_function].parameters.len() {
+        if usize::from(body.captures) + usize::from(body.parameters)
+            != function_types[&instance.ir_function].parameters.len()
+        {
             return Err(native_error(format!(
                 "parameter metadata for `{}` is inconsistent",
                 body.name
@@ -920,6 +1021,9 @@ fn validate_program(
                     | Instruction::Assert { .. }
                     | Instruction::Call { .. }
                     | Instruction::CallMethod { .. }
+                    | Instruction::CallClosure { .. }
+                    | Instruction::MakeClosure { .. }
+                    | Instruction::CallValue { .. }
                     | Instruction::MakeRecord { .. }
                     | Instruction::MakeVariant { .. }
                     | Instruction::LoadField { .. }
@@ -984,6 +1088,7 @@ fn declare_layout_destructors(
     layouts
         .layouts()
         .iter()
+        .filter(|layout| layout.materialized)
         .map(|layout| {
             let signature = signature(
                 module,
@@ -1006,7 +1111,12 @@ fn define_layout_destructors(
     layouts: NativeLayouts<'_>,
     destructors: &HashMap<LayoutId, FuncId>,
 ) -> Result<(), FosterError> {
-    for layout in layouts.physical.layouts() {
+    for layout in layouts
+        .physical
+        .layouts()
+        .iter()
+        .filter(|layout| layout.materialized)
+    {
         let mut context = module.make_context();
         context.func.signature = signature(
             module,
@@ -1266,6 +1376,12 @@ fn infer_register_types(
                 function: callee,
                 specialization,
                 ..
+            }
+            | Instruction::CallClosure {
+                destination,
+                function: callee,
+                specialization,
+                ..
             } => {
                 let callee = environment.instances[&SpecializationKey {
                     function: *callee,
@@ -1273,6 +1389,55 @@ fn infer_register_types(
                 }];
                 result[usize::from(destination.0)] =
                     Some(environment.function_types[&callee].result);
+            }
+            Instruction::MakeClosure {
+                destination,
+                function: target,
+                specialization,
+                ..
+            } => {
+                let specialization =
+                    resolve_specialization(specialization, &instance.substitutions);
+                result[usize::from(destination.0)] = Some(NativeType::Object(
+                    environment
+                        .layouts
+                        .closure_instance(*target, &specialization)
+                        .ok_or_else(|| {
+                            native_error(format!(
+                                "closure in `{}` has no native layout",
+                                function.name
+                            ))
+                        })?,
+                ));
+            }
+            Instruction::CallValue {
+                destination,
+                callee,
+                ..
+            } => {
+                let NativeType::Object(layout) = register_type(&result, *callee, function)? else {
+                    return Err(native_error(format!(
+                        "dynamic call in `{}` has an erased callable representation",
+                        function.name
+                    )));
+                };
+                let LayoutKind::Closure {
+                    function: target,
+                    specialization,
+                    ..
+                } = &environment.layouts.get(layout).kind
+                else {
+                    return Err(native_error(format!(
+                        "dynamic call in `{}` does not reference a concrete closure",
+                        function.name
+                    )));
+                };
+                let target = environment.instances[&SpecializationKey {
+                    function: *target,
+                    substitutions: specialization.clone(),
+                }];
+                result[usize::from(destination.0)] =
+                    Some(environment.function_types[&target].result);
             }
             Instruction::MakeRecord {
                 destination,
@@ -1634,6 +1799,9 @@ fn native_instruction_definitions(instruction: &Instruction) -> Vec<Register> {
         | Instruction::Index { destination, .. }
         | Instruction::Call { destination, .. }
         | Instruction::CallMethod { destination, .. }
+        | Instruction::CallClosure { destination, .. }
+        | Instruction::MakeClosure { destination, .. }
+        | Instruction::CallValue { destination, .. }
         | Instruction::CallContractMethod { destination, .. } => vec![*destination],
         Instruction::MatchPattern {
             destination,
@@ -1665,6 +1833,16 @@ fn native_instruction_uses(instruction: &Instruction) -> Vec<Register> {
             fields.iter().map(|(_, register)| *register).collect()
         }
         Instruction::MakeVariant { payload, .. } => payload.clone(),
+        Instruction::MakeClosure { captures, .. } => {
+            captures.iter().map(|(_, register)| *register).collect()
+        }
+        Instruction::CallValue {
+            callee, arguments, ..
+        } => {
+            let mut uses = vec![*callee];
+            uses.extend(arguments);
+            uses
+        }
         Instruction::LoadField { object, .. } => vec![*object],
         Instruction::StoreField { object, source, .. } => vec![*object, *source],
         Instruction::MatchPattern { subject, .. } => vec![*subject],
@@ -1687,6 +1865,18 @@ fn native_instruction_uses(instruction: &Instruction) -> Vec<Register> {
             ..
         } => {
             let mut uses = vec![*receiver];
+            uses.extend(arguments);
+            uses
+        }
+        Instruction::CallClosure {
+            captures,
+            arguments,
+            ..
+        } => {
+            let mut uses = captures
+                .iter()
+                .map(|(_, register)| *register)
+                .collect::<Vec<_>>();
             uses.extend(arguments);
             uses
         }
@@ -1950,6 +2140,45 @@ fn lower_to_native_ir(
                                 .map(|ty| substitute_verification_type(ty, &instance.substitutions))
                                 .collect(),
                             payload,
+                        },
+                    ));
+                    instruction_spans.push(source_span);
+                }
+                Instruction::MakeClosure {
+                    destination,
+                    function: target,
+                    specialization,
+                    captures,
+                } => {
+                    let captures = lower_capture_arguments(
+                        captures,
+                        function,
+                        &inferred,
+                        &mut state,
+                        &mut value_types,
+                        &mut instructions,
+                    )?;
+                    let destination = define_native_register(
+                        *destination,
+                        &register_types,
+                        &mut state,
+                        &mut value_types,
+                        &mut instructions,
+                    );
+                    let specialization =
+                        resolve_specialization(specialization, &instance.substitutions);
+                    instructions.push(ir::Instruction::Portable(
+                        ir::PortableInstruction::MakeClosure {
+                            destination,
+                            function: environment.instances[&SpecializationKey {
+                                function: *target,
+                                substitutions: specialization,
+                            }],
+                            specialization: Vec::new(),
+                            captures: captures
+                                .into_iter()
+                                .map(|value| (crate::hir::CaptureMode::Move, value))
+                                .collect(),
                         },
                     ));
                     instruction_spans.push(source_span);
@@ -2246,6 +2475,96 @@ fn lower_to_native_ir(
                         arguments: lowered_arguments,
                     });
                 }
+                Instruction::CallClosure {
+                    destination,
+                    function: callee,
+                    specialization,
+                    captures,
+                    arguments,
+                } => {
+                    let mut lowered_arguments = lower_capture_arguments(
+                        captures,
+                        function,
+                        &inferred,
+                        &mut state,
+                        &mut value_types,
+                        &mut instructions,
+                    )?;
+                    lowered_arguments.extend(lower_call_arguments(
+                        arguments,
+                        &environment.program.functions[callee].parameter_modes,
+                        function,
+                        &inferred,
+                        &mut state,
+                        &mut value_types,
+                        &mut instructions,
+                    )?);
+                    let destination = define_native_register(
+                        *destination,
+                        &register_types,
+                        &mut state,
+                        &mut value_types,
+                        &mut instructions,
+                    );
+                    instructions.push(ir::Instruction::Call {
+                        destination,
+                        function: environment.instances[&SpecializationKey {
+                            function: *callee,
+                            substitutions: resolve_specialization(
+                                specialization,
+                                &instance.substitutions,
+                            ),
+                        }],
+                        specialization: Vec::new(),
+                        arguments: lowered_arguments,
+                    });
+                }
+                Instruction::CallValue {
+                    destination,
+                    callee,
+                    arguments,
+                } => {
+                    let callee_type = register_type(&inferred, *callee, function)?;
+                    let NativeType::Object(layout) = callee_type else {
+                        return Err(native_error(format!(
+                            "dynamic call in `{}` crosses an erased callable boundary",
+                            function.name
+                        )));
+                    };
+                    let LayoutKind::Closure {
+                        function: target, ..
+                    } = &environment.layouts.get(layout).kind
+                    else {
+                        return Err(native_error(format!(
+                            "dynamic call in `{}` requires a concrete closure",
+                            function.name
+                        )));
+                    };
+                    let lowered_arguments = lower_call_arguments(
+                        arguments,
+                        &environment.program.functions[target].parameter_modes,
+                        function,
+                        &inferred,
+                        &mut state,
+                        &mut value_types,
+                        &mut instructions,
+                    )?;
+                    let callee = native_register(&state, *callee, function)?;
+                    let destination = define_native_register(
+                        *destination,
+                        &register_types,
+                        &mut state,
+                        &mut value_types,
+                        &mut instructions,
+                    );
+                    instructions.push(ir::Instruction::Portable(
+                        ir::PortableInstruction::CallValue {
+                            destination,
+                            callee,
+                            arguments: lowered_arguments,
+                        },
+                    ));
+                }
                 Instruction::Return { source } => {
                     terminator_span = source_span;
                     let returned = native_register(&state, *source, function)?;
@@ -2383,6 +2702,52 @@ fn lower_call_arguments(
             arguments.push(value);
             if *mode == ParameterMode::Consume {
                 state[usize::from(register.0)] = None;
+            }
+        }
+    }
+    Ok(arguments)
+}
+
+fn lower_capture_arguments(
+    captures: &[(crate::hir::CaptureMode, Register)],
+    function: &BytecodeFunction,
+    inferred: &[Option<NativeType>],
+    state: &mut [Option<ir::Value>],
+    value_types: &mut Vec<NativeType>,
+    instructions: &mut Vec<ir::Instruction>,
+) -> Result<Vec<ir::Value>, FosterError> {
+    let mut arguments = Vec::with_capacity(captures.len());
+    for (mode, register) in captures {
+        let value = native_register(state, *register, function)?;
+        let ty = register_type(inferred, *register, function)?;
+        match mode {
+            crate::hir::CaptureMode::Move => {
+                state[usize::from(register.0)] = None;
+                arguments.push(value);
+            }
+            crate::hir::CaptureMode::Copy => {
+                if matches!(ty, NativeType::Object(_)) {
+                    let retained = allocate_native_value(value_types, ty);
+                    instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Move {
+                        destination: retained,
+                        source: value,
+                    }));
+                    arguments.push(retained);
+                } else {
+                    arguments.push(value);
+                }
+            }
+            crate::hir::CaptureMode::Ref => {
+                return Err(native_error(format!(
+                    "native closure `{}` cannot yet capture a reference",
+                    function.name
+                )));
+            }
+            crate::hir::CaptureMode::Pending => {
+                return Err(native_error(format!(
+                    "native closure `{}` has an unresolved capture mode",
+                    function.name
+                )));
             }
         }
     }
@@ -2795,14 +3160,7 @@ fn lower_native_instruction(
             return Ok(None);
         }
         ir::Instruction::Portable(instruction) => {
-            return lower_portable_native(
-                builder,
-                module,
-                function,
-                instruction,
-                values,
-                backend.objects,
-            );
+            return lower_portable_native(builder, module, function, instruction, values, backend);
         }
     };
     Ok(Some(result))
@@ -2814,8 +3172,9 @@ fn lower_portable_native(
     function: &ir::Function,
     instruction: &ir::PortableInstruction,
     values: &HashMap<ir::Value, ClifValue>,
-    objects: ObjectRuntime<'_>,
+    backend: &NativeBackend<'_>,
 ) -> Result<Option<ClifValue>, FosterError> {
+    let objects = backend.objects;
     let get = |value: &ir::Value| values[value];
     match instruction {
         ir::PortableInstruction::Drop { value } => {
@@ -2949,6 +3308,99 @@ fn lower_portable_native(
                 store_physical_value(builder, object, field.offset, value);
             }
             Ok(Some(object))
+        }
+        ir::PortableInstruction::MakeClosure {
+            destination,
+            function: target,
+            captures,
+            ..
+        } => {
+            let NativeType::Object(layout) = function.value_type(*destination) else {
+                return Err(native_error("closure result uses the wrong native layout"));
+            };
+            let physical = objects.layouts.physical.get(layout);
+            let PhysicalKind::Closure {
+                code_offset,
+                signature_offset,
+                captures: fields,
+            } = &physical.kind
+            else {
+                return Err(native_error("closure has a non-closure physical layout"));
+            };
+            if captures.len() != fields.len() {
+                return Err(native_error("closure capture layout has the wrong arity"));
+            }
+            let object = objects.allocate(builder, module, layout)?;
+            let reference = module.declare_func_in_func(backend.functions[target], builder.func);
+            let code = builder
+                .ins()
+                .func_addr(module.target_config().pointer_type(), reference);
+            store_physical_value(builder, object, *code_offset, code);
+            let no_signature = builder
+                .ins()
+                .iconst(module.target_config().pointer_type(), 0);
+            store_physical_value(builder, object, *signature_offset, no_signature);
+            for ((_, source), field) in captures.iter().zip(fields) {
+                store_physical_value(builder, object, field.offset, get(source));
+            }
+            Ok(Some(object))
+        }
+        ir::PortableInstruction::CallValue {
+            destination: _,
+            callee,
+            arguments,
+        } => {
+            let NativeType::Object(layout) = function.value_type(*callee) else {
+                return Err(native_error(
+                    "dynamic call requires a concrete closure layout",
+                ));
+            };
+            let LayoutKind::Closure {
+                function: target,
+                specialization,
+                ..
+            } = &objects.layouts.logical.get(layout).kind
+            else {
+                return Err(native_error("dynamic call target is not a closure layout"));
+            };
+            let target = backend.ir.instances[&SpecializationKey {
+                function: *target,
+                substitutions: specialization.clone(),
+            }];
+            let physical = objects.layouts.physical.get(layout);
+            let PhysicalKind::Closure {
+                code_offset,
+                captures,
+                ..
+            } = &physical.kind
+            else {
+                return Err(native_error(
+                    "dynamic call target is not a physical closure",
+                ));
+            };
+            let closure = get(callee);
+            let mut lowered = Vec::with_capacity(captures.len() + arguments.len());
+            for field in captures {
+                let value =
+                    load_physical_value(builder, module, closure, field.offset, field.value);
+                if let Some(pointee) = field.value.pointee
+                    && objects.layouts.is_managed(pointee)
+                {
+                    objects.retain(builder, value, pointee);
+                }
+                lowered.push(value);
+            }
+            lowered.extend(arguments.iter().map(get));
+            let code = builder.ins().load(
+                module.target_config().pointer_type(),
+                MemFlagsData::trusted(),
+                closure,
+                *code_offset as i32,
+            );
+            let signature = signature(module, &backend.ir.function_types[&target]);
+            let signature = builder.func.import_signature(signature);
+            let call = builder.ins().call_indirect(signature, code, &lowered);
+            Ok(Some(builder.inst_results(call)[0]))
         }
         ir::PortableInstruction::LoadField {
             destination,
@@ -3706,7 +4158,7 @@ func main() -> Int {
             .map(|instance| (instance.key.clone(), instance.ir_function))
             .collect::<HashMap<_, _>>();
         let function_types =
-            collect_function_types(&compilation, &instances, &mut layouts).unwrap();
+            collect_function_types(&compilation, &program, &instances, &mut layouts).unwrap();
         let physical_layouts = crate::codegen::layout::physical::PhysicalRegistry::build(
             &layouts,
             crate::codegen::layout::physical::TargetLayout::host(),

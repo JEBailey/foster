@@ -687,6 +687,7 @@ impl Machine {
                     destination,
                     function,
                     captures,
+                    ..
                 } => {
                     let captures = capture(frame, captures)?;
                     write(
@@ -897,6 +898,7 @@ impl Machine {
                     function,
                     captures,
                     arguments,
+                    ..
                 } => {
                     let captures = capture(frame, captures)?;
                     let next =

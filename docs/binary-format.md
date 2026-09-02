@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 19, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 20, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -26,7 +26,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `19` |
+| version | `u16` | `20` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -72,6 +72,8 @@ Version 16 appends `RandomBytes = 61`; all earlier tags retain their previous va
 adds declared record-field and enum-payload types to aggregate metadata. Version 19 adds declared
 nominal parameter names, concrete construction arguments, and deterministic generic substitutions
 on statically resolved calls; instruction and type tags remain unchanged.
+Version 20 adds the same deterministic generic substitutions to closure construction and
+specialized closure calls, so code and environment layout share one monomorphization identity.
 
 Verification type tags are `0 Unknown`, `1 Unit`, `2 Bool`, `3 Integer`, `4 Float`, `5 CodePoint`,
 `6 Byte`, `7 Bytes`, `8 ByteBuffer`, `9 List(VerificationType)`,
@@ -118,9 +120,9 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 25 | Call | `R destination, F, vector<(string, VerificationType)> substitutions, regs` |
 | 26 | CallMethod | `R destination, R receiver, F, vector<(string, VerificationType)> substitutions, regs` |
 | 27 | CallContractMethod | `R destination, R receiver, u32 slot, string name, regs` |
-| 28 | MakeClosure | `R destination, F, vector<(CaptureMode, R)>` |
+| 28 | MakeClosure | `R destination, F, vector<(string, VerificationType)> substitutions, vector<(CaptureMode, R)>` |
 | 29 | CallValue | `R destination, R callee, regs` |
-| 30 | CallClosure | `R destination, F, vector<(CaptureMode, R)>, regs` |
+| 30 | CallClosure | `R destination, F, vector<(string, VerificationType)> substitutions, vector<(CaptureMode, R)>, regs` |
 | 31 | Return | `R source` |
 | 32 | MakeFieldReference | `R destination, R object, string field` |
 | 33 | Assert | `R condition, optional<R> message` |
@@ -128,7 +130,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 19 readers accept only version 19 with zero flags. Development bytecode from another version
+Version 20 readers accept only version 20 with zero flags. Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
 canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of

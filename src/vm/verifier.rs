@@ -186,6 +186,44 @@ fn verify_specialization(
     Ok(())
 }
 
+fn specialize_type(
+    ty: &VerificationType,
+    specialization: &crate::vm::Specialization,
+) -> VerificationType {
+    let nested = |ty| specialize_type(ty, specialization);
+    match ty {
+        VerificationType::Generic(name) => specialization
+            .iter()
+            .find_map(|(candidate, ty)| (candidate == name).then(|| ty.clone()))
+            .unwrap_or_else(|| ty.clone()),
+        VerificationType::List(value) => VerificationType::List(Box::new(nested(value))),
+        VerificationType::Reference(value) => VerificationType::Reference(Box::new(nested(value))),
+        VerificationType::Remote(value) => VerificationType::Remote(Box::new(nested(value))),
+        VerificationType::Future(value) => VerificationType::Future(Box::new(nested(value))),
+        VerificationType::Function {
+            parameters,
+            parameter_modes,
+            result,
+        } => VerificationType::Function {
+            parameters: parameters.iter().map(nested).collect(),
+            parameter_modes: parameter_modes.clone(),
+            result: Box::new(nested(result)),
+        },
+        VerificationType::Record { record, arguments } => VerificationType::Record {
+            record: *record,
+            arguments: arguments.iter().map(nested).collect(),
+        },
+        VerificationType::Variant { variant, arguments } => VerificationType::Variant {
+            variant: *variant,
+            arguments: arguments.iter().map(nested).collect(),
+        },
+        VerificationType::Union(members) => {
+            VerificationType::Union(members.iter().map(nested).collect())
+        }
+        _ => ty.clone(),
+    }
+}
+
 fn verify_function_structure(
     program: &Program,
     _id: FunctionId,
@@ -330,10 +368,12 @@ fn verify_function_structure(
             }
             Instruction::CallClosure {
                 function: target,
+                specialization,
                 captures,
                 arguments,
                 ..
             } => {
+                verify_specialization(program, function, index, specialization)?;
                 let target = target_function(program, function, index, *target)?;
                 if target.intrinsic_stub
                     || captures.len() != usize::from(target.captures)
@@ -348,9 +388,11 @@ fn verify_function_structure(
             }
             Instruction::MakeClosure {
                 function: target,
+                specialization,
                 captures,
                 ..
             } => {
+                verify_specialization(program, function, index, specialization)?;
                 let target = target_function(program, function, index, *target)?;
                 if target.intrinsic_stub || captures.len() != usize::from(target.captures) {
                     return invalid_instruction(
@@ -1232,10 +1274,16 @@ fn transfer(
         Instruction::MakeClosure {
             destination,
             function: target,
+            specialization,
             captures,
         } => {
             let target = &program.functions[target];
-            verify_captures(function, index, &mut state, captures, &target.capture_types)?;
+            let capture_types = target
+                .capture_types
+                .iter()
+                .map(|ty| specialize_type(ty, specialization))
+                .collect::<Vec<_>>();
+            verify_captures(function, index, &mut state, captures, &capture_types)?;
             write_type(
                 function,
                 index,
@@ -1294,11 +1342,22 @@ fn transfer(
         Instruction::CallClosure {
             destination,
             function: target,
+            specialization,
             captures,
             arguments,
         } => {
             let target = &program.functions[target];
-            verify_captures(function, index, &mut state, captures, &target.capture_types)?;
+            let capture_types = target
+                .capture_types
+                .iter()
+                .map(|ty| specialize_type(ty, specialization))
+                .collect::<Vec<_>>();
+            let parameter_types = target
+                .parameter_types
+                .iter()
+                .map(|ty| specialize_type(ty, specialization))
+                .collect::<Vec<_>>();
+            verify_captures(function, index, &mut state, captures, &capture_types)?;
             verify_arguments(
                 function,
                 index,
@@ -1309,14 +1368,14 @@ fn transfer(
                     .copied()
                     .zip(arguments.iter().copied()),
                 target.parameter_modes.iter().copied(),
-                target.parameter_types.iter(),
+                parameter_types.iter(),
             )?;
             write_type(
                 function,
                 index,
                 &mut state,
                 *destination,
-                target.result_type.clone(),
+                specialize_type(&target.result_type, specialization),
             )?;
         }
         Instruction::Return { source } => {

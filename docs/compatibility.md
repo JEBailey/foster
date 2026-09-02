@@ -29,6 +29,15 @@ changes receive review.
 Foster is currently pre-1.0, so compatibility may change deliberately. It must nevertheless change
 through these gates rather than silently.
 
+## Bytecode format version 20
+
+Bytecode format version 20 carries sorted generic substitutions on closure construction and direct
+specialized closure calls. Native compilation can therefore use one function-plus-substitution key
+for the closure code, capture environment, indirect-call signature, and generated destructor.
+Unresolved generic layout schemas are not executable layouts; only explicitly dynamic verifier
+types use erased boxes. Source code requires no migration, but serialized development bytecode
+from version 19 must be rebuilt.
+
 ## Bytecode format version 19
 
 Bytecode format version 19 adds generic parameter identities to nominal runtime schemas, concrete

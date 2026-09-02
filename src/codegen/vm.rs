@@ -809,10 +809,12 @@ fn portable_instruction(
         vm::Instruction::MakeClosure {
             destination: output,
             function,
+            specialization,
             captures,
         } => ir::PortableInstruction::MakeClosure {
             destination: destination(output),
             function: *function,
+            specialization: specialization.clone(),
             captures: captures
                 .iter()
                 .map(|(mode, register)| (*mode, source(register)))
@@ -830,11 +832,13 @@ fn portable_instruction(
         vm::Instruction::CallClosure {
             destination: output,
             function,
+            specialization,
             captures,
             arguments,
         } => ir::PortableInstruction::CallClosure {
             destination: destination(output),
             function: *function,
+            specialization: specialization.clone(),
             captures: captures
                 .iter()
                 .map(|(mode, register)| (*mode, source(register)))
@@ -1518,10 +1522,12 @@ fn lower_portable(
         ir::PortableInstruction::MakeClosure {
             destination,
             function,
+            specialization,
             captures,
         } => vm::Instruction::MakeClosure {
             destination: get(destination),
             function: *function,
+            specialization: specialization.clone(),
             captures: captures
                 .iter()
                 .map(|(mode, value)| (*mode, get(value)))
@@ -1539,11 +1545,13 @@ fn lower_portable(
         ir::PortableInstruction::CallClosure {
             destination,
             function,
+            specialization,
             captures,
             arguments,
         } => vm::Instruction::CallClosure {
             destination: get(destination),
             function: *function,
+            specialization: specialization.clone(),
             captures: captures
                 .iter()
                 .map(|(mode, value)| (*mode, get(value)))

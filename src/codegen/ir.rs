@@ -317,6 +317,7 @@ pub enum PortableInstruction {
     MakeClosure {
         destination: Value,
         function: FunctionId,
+        specialization: crate::vm::Specialization,
         captures: Vec<(CaptureMode, Value)>,
     },
     CallValue {
@@ -327,6 +328,7 @@ pub enum PortableInstruction {
     CallClosure {
         destination: Value,
         function: FunctionId,
+        specialization: crate::vm::Specialization,
         captures: Vec<(CaptureMode, Value)>,
         arguments: Vec<Value>,
     },
