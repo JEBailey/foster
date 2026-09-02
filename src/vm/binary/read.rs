@@ -131,7 +131,10 @@ impl<'a> Reader<'a> {
             instruction_spans: self.vec(|r| r.range())?,
         })
     }
-    fn verification_type(&mut self, depth: usize) -> Result<VerificationType, BinaryError> {
+    pub(super) fn verification_type(
+        &mut self,
+        depth: usize,
+    ) -> Result<VerificationType, BinaryError> {
         if depth >= 64 {
             return Err(BinaryError::new(
                 "verification type nesting exceeds 64 levels",
@@ -157,9 +160,16 @@ impl<'a> Reader<'a> {
                 parameter_modes: self.vec(|reader| reader.parameter_mode())?,
                 result: Box::new(nested(self)?),
             },
-            14 => VerificationType::Record(self.id::<Record>()?),
-            15 => VerificationType::Variant(self.id::<VariantType>()?),
+            14 => VerificationType::Record {
+                record: self.id::<Record>()?,
+                arguments: self.vec(|reader| nested(reader))?,
+            },
+            15 => VerificationType::Variant {
+                variant: self.id::<VariantType>()?,
+                arguments: self.vec(|reader| nested(reader))?,
+            },
             16 => VerificationType::Union(self.vec(|reader| nested(reader))?),
+            17 => VerificationType::Generic(self.string()?),
             tag => {
                 return Err(BinaryError::new(format!(
                     "unknown verification type tag {tag}"

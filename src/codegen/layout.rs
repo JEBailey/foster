@@ -4,11 +4,13 @@
 //! turns those names into deterministic slots before a backend sees them.  VM values remain
 //! boxed Rust values, while native backends can use the same descriptions to choose an ABI.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use crate::error::FosterError;
 use crate::hir::{FunctionId, RecordId, VariantId, VariantTypeId};
 use crate::vm::{Instruction, Program, VerificationType};
+
+pub mod physical;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LayoutId(pub u32);
@@ -25,6 +27,7 @@ pub struct Slot {
     pub index: u32,
     pub name: String,
     pub ty: VerificationType,
+    pub ownership: Ownership,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +57,12 @@ pub enum LayoutKind {
         pointee: VerificationType,
         ownership: Ownership,
     },
+    /// A runtime-backed structural value such as a list, byte buffer, future, or callable.
+    Builtin {
+        ty: VerificationType,
+    },
+    /// Box used when a structural join or generic value erases its concrete representation.
+    Opaque,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +95,8 @@ pub struct Registry {
     variants: HashMap<VariantTypeId, LayoutId>,
     closures: HashMap<FunctionId, LayoutId>,
     pointers: BTreeMap<(VerificationType, Ownership), LayoutId>,
+    builtins: BTreeMap<VerificationType, LayoutId>,
+    opaque: Option<LayoutId>,
 }
 
 impl Registry {
@@ -113,6 +124,14 @@ impl Registry {
         self.pointers.get(&(pointee.clone(), ownership)).copied()
     }
 
+    pub fn builtin(&self, ty: &VerificationType) -> Option<LayoutId> {
+        self.builtins.get(ty).copied()
+    }
+
+    pub fn opaque(&self) -> LayoutId {
+        self.opaque.expect("every registry has an opaque layout")
+    }
+
     /// Reduce a verifier type to the scalar-or-pointer contract shared by the VM and Cranelift.
     pub fn legal_type(&self, ty: &VerificationType) -> LegalType {
         match ty {
@@ -122,11 +141,11 @@ impl Registry {
             VerificationType::CodePoint => LegalType::I32,
             VerificationType::Integer => LegalType::I64,
             VerificationType::Float => LegalType::F64,
-            VerificationType::Record(record) => LegalType::Pointer {
+            VerificationType::Record { record, .. } => LegalType::Pointer {
                 layout: self.record(*record),
                 ownership: Ownership::Owned,
             },
-            VerificationType::Variant(variant) => LegalType::Pointer {
+            VerificationType::Variant { variant, .. } => LegalType::Pointer {
                 layout: self.variant(*variant),
                 ownership: Ownership::Owned,
             },
@@ -134,14 +153,16 @@ impl Registry {
                 layout: self.pointer(pointee, Ownership::Borrowed),
                 ownership: Ownership::Borrowed,
             },
-            VerificationType::Unknown | VerificationType::Union(_) => LegalType::Opaque,
+            VerificationType::Unknown
+            | VerificationType::Generic(_)
+            | VerificationType::Union(_) => LegalType::Opaque,
             VerificationType::Bytes
             | VerificationType::ByteBuffer
             | VerificationType::List(_)
             | VerificationType::Remote(_)
             | VerificationType::Future(_)
             | VerificationType::Function { .. } => LegalType::Pointer {
-                layout: None,
+                layout: self.builtin(ty),
                 ownership: Ownership::Owned,
             },
         }
@@ -164,19 +185,28 @@ impl Registry {
 /// stable even when an optimizer later removes a construction site.
 pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
     let mut registry = Registry::default();
+    registry.opaque = Some(registry.push(LayoutKind::Opaque));
 
     let mut records = program.records.iter().collect::<Vec<_>>();
     records.sort_unstable_by_key(|(id, _)| id.into_raw().into_u32());
     for (record, runtime) in records {
+        if runtime.layout.names().len() != runtime.field_types.len() {
+            return Err(FosterError::runtime(format!(
+                "record `{}` has inconsistent typed layout metadata",
+                runtime.name
+            )));
+        }
         let fields = runtime
             .layout
             .names()
             .iter()
+            .zip(&runtime.field_types)
             .enumerate()
-            .map(|(index, name)| Slot {
+            .map(|(index, (name, ty))| Slot {
                 index: index as u32,
                 name: name.clone(),
-                ty: VerificationType::Unknown,
+                ty: ty.clone(),
+                ownership: Ownership::Owned,
             })
             .collect();
         let layout = registry.push(LayoutKind::Record {
@@ -186,29 +216,6 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
         registry.records.insert(*record, layout);
     }
 
-    let mut payloads = HashMap::<VariantId, Vec<VerificationType>>::new();
-    for function in program.functions.values() {
-        for instruction in &function.instructions {
-            if let Instruction::MakeVariant {
-                variant, payload, ..
-            } = instruction
-            {
-                let shape = vec![VerificationType::Unknown; payload.len()];
-                match payloads.get(variant) {
-                    Some(previous) if previous.len() != shape.len() => {
-                        return Err(FosterError::runtime(format!(
-                            "variant is constructed with both {} and {} payload values",
-                            previous.len(),
-                            shape.len()
-                        )));
-                    }
-                    _ => {
-                        payloads.insert(*variant, shape);
-                    }
-                }
-            }
-        }
-    }
     let mut by_parent = BTreeMap::<u32, (VariantTypeId, Vec<(VariantId, String)>)>::new();
     for (variant, runtime) in &program.variants {
         by_parent
@@ -226,7 +233,7 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
                 variant,
                 tag: tag as u32,
                 name,
-                payload: payloads.remove(&variant).unwrap_or_default(),
+                payload: program.variants[&variant].payload.clone(),
             })
             .collect();
         let layout = registry.push(LayoutKind::Variant {
@@ -246,22 +253,68 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
             _ => None,
         })
         .collect::<std::collections::HashSet<_>>();
+    let mut closure_modes = HashMap::new();
+    for instruction in program
+        .functions
+        .values()
+        .flat_map(|function| &function.instructions)
+    {
+        let (target, captures) = match instruction {
+            Instruction::MakeClosure {
+                function, captures, ..
+            }
+            | Instruction::CallClosure {
+                function, captures, ..
+            } => (*function, captures),
+            _ => continue,
+        };
+        let modes = captures.iter().map(|(mode, _)| *mode).collect::<Vec<_>>();
+        match closure_modes.get(&target) {
+            Some(previous) if previous != &modes => {
+                return Err(FosterError::runtime(format!(
+                    "closure target `{}` is constructed with inconsistent capture modes",
+                    program.functions[&target].name
+                )));
+            }
+            _ => {
+                closure_modes.insert(target, modes);
+            }
+        }
+    }
     let mut functions = program.functions.iter().collect::<Vec<_>>();
     functions.sort_unstable_by_key(|(id, _)| id.into_raw().into_u32());
     for (function, body) in functions {
         if body.captures == 0 && !closure_targets.contains(function) {
             continue;
         }
-        let captures = body
-            .capture_types
-            .iter()
-            .enumerate()
-            .map(|(index, ty)| Slot {
-                index: index as u32,
-                name: format!("capture{index}"),
-                ty: ty.clone(),
-            })
-            .collect();
+        let captures =
+            body.capture_types
+                .iter()
+                .enumerate()
+                .map(|(index, ty)| Slot {
+                    index: index as u32,
+                    name: format!("capture{index}"),
+                    ty: ty.clone(),
+                    ownership: closure_modes
+                        .get(function)
+                        .and_then(|modes| modes.get(index))
+                        .map_or_else(
+                            || {
+                                if matches!(ty, VerificationType::Reference(_)) {
+                                    Ownership::Borrowed
+                                } else {
+                                    Ownership::Owned
+                                }
+                            },
+                            |mode| match mode {
+                                crate::hir::CaptureMode::Ref => Ownership::Borrowed,
+                                crate::hir::CaptureMode::Copy => Ownership::Shared,
+                                crate::hir::CaptureMode::Move
+                                | crate::hir::CaptureMode::Pending => Ownership::Owned,
+                            },
+                        ),
+                })
+                .collect();
         let layout = registry.push(LayoutKind::Closure {
             function: *function,
             captures,
@@ -269,29 +322,33 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
         registry.closures.insert(*function, layout);
     }
 
-    collect_pointer_layouts(program, &mut registry);
+    collect_runtime_layouts(program, &mut registry);
     canonicalize_and_verify(program, &registry)?;
     Ok(registry)
 }
 
-fn collect_pointer_layouts(program: &Program, registry: &mut Registry) {
-    let mut types = Vec::new();
+fn collect_runtime_layouts(program: &Program, registry: &mut Registry) {
+    let mut types = BTreeSet::new();
     for function in program.functions.values() {
         types.extend(function.parameter_types.iter().cloned());
         types.extend(function.capture_types.iter().cloned());
-        types.push(function.result_type.clone());
+        types.insert(function.result_type.clone());
+        if function
+            .instructions
+            .iter()
+            .any(|instruction| matches!(instruction, Instruction::MakeList { .. }))
+        {
+            types.insert(VerificationType::List(Box::new(VerificationType::Unknown)));
+        }
+    }
+    for record in program.records.values() {
+        types.extend(record.field_types.iter().cloned());
+    }
+    for variant in program.variants.values() {
+        types.extend(variant.payload.iter().cloned());
     }
     for ty in types {
-        visit_references(&ty, &mut |pointee| {
-            let key = (pointee.clone(), Ownership::Borrowed);
-            if !registry.pointers.contains_key(&key) {
-                let id = registry.push(LayoutKind::Pointer {
-                    pointee: pointee.clone(),
-                    ownership: Ownership::Borrowed,
-                });
-                registry.pointers.insert(key, id);
-            }
-        });
+        visit_runtime_types(&ty, registry);
     }
     let constructs_erased_reference = program.functions.values().any(|function| {
         function.instructions.iter().any(|instruction| {
@@ -315,23 +372,56 @@ fn collect_pointer_layouts(program: &Program, registry: &mut Registry) {
     }
 }
 
-fn visit_references(ty: &VerificationType, visit: &mut impl FnMut(&VerificationType)) {
+fn visit_runtime_types(ty: &VerificationType, registry: &mut Registry) {
     match ty {
         VerificationType::Reference(pointee) => {
-            visit(pointee);
-            visit_references(pointee, visit);
+            let key = ((**pointee).clone(), Ownership::Borrowed);
+            if !registry.pointers.contains_key(&key) {
+                let id = registry.push(LayoutKind::Pointer {
+                    pointee: (**pointee).clone(),
+                    ownership: Ownership::Borrowed,
+                });
+                registry.pointers.insert(key, id);
+            }
+            visit_runtime_types(pointee, registry);
         }
         VerificationType::List(element)
         | VerificationType::Remote(element)
-        | VerificationType::Future(element) => visit_references(element, visit),
+        | VerificationType::Future(element) => {
+            if !registry.builtins.contains_key(ty) {
+                let id = registry.push(LayoutKind::Builtin { ty: ty.clone() });
+                registry.builtins.insert(ty.clone(), id);
+            }
+            visit_runtime_types(element, registry);
+        }
         VerificationType::Function {
             parameters, result, ..
         } => {
-            parameters.iter().for_each(|ty| visit_references(ty, visit));
-            visit_references(result, visit);
+            if !registry.builtins.contains_key(ty) {
+                let id = registry.push(LayoutKind::Builtin { ty: ty.clone() });
+                registry.builtins.insert(ty.clone(), id);
+            }
+            parameters
+                .iter()
+                .for_each(|ty| visit_runtime_types(ty, registry));
+            visit_runtime_types(result, registry);
         }
         VerificationType::Union(types) => {
-            types.iter().for_each(|ty| visit_references(ty, visit));
+            types
+                .iter()
+                .for_each(|ty| visit_runtime_types(ty, registry));
+        }
+        VerificationType::Record { arguments, .. }
+        | VerificationType::Variant { arguments, .. } => {
+            arguments
+                .iter()
+                .for_each(|ty| visit_runtime_types(ty, registry));
+        }
+        VerificationType::Bytes | VerificationType::ByteBuffer
+            if !registry.builtins.contains_key(ty) =>
+        {
+            let id = registry.push(LayoutKind::Builtin { ty: ty.clone() });
+            registry.builtins.insert(ty.clone(), id);
         }
         _ => {}
     }
@@ -444,6 +534,7 @@ mod tests {
             RuntimeRecord {
                 name: "Pair".into(),
                 layout: Arc::new(crate::vm::RecordLayout::new(vec!["a".into(), "b".into()])),
+                field_types: vec![VerificationType::Integer, VerificationType::Bool],
             },
         );
         program.functions.insert(
@@ -458,7 +549,10 @@ mod tests {
                 returns_reference: false,
                 captures: 0,
                 capture_types: vec![],
-                result_type: VerificationType::Record(record),
+                result_type: VerificationType::Record {
+                    record,
+                    arguments: Vec::new(),
+                },
                 registers: 3,
                 instructions: vec![Instruction::MakeRecord {
                     destination: Register(2),
@@ -471,7 +565,10 @@ mod tests {
         let registry = legalize(&mut program).unwrap();
         let layout = registry.record(record).unwrap();
         assert_eq!(
-            registry.legal_type(&VerificationType::Record(record)),
+            registry.legal_type(&VerificationType::Record {
+                record,
+                arguments: Vec::new(),
+            }),
             LegalType::Pointer {
                 layout: Some(layout),
                 ownership: Ownership::Owned,
@@ -487,5 +584,24 @@ mod tests {
         };
         assert_eq!(fields[0].0, "a");
         assert_eq!(fields[1].0, "b");
+    }
+
+    #[test]
+    fn logical_layout_ids_do_not_depend_on_hash_map_insertion_order() {
+        let first: RecordId = Idx::<Record>::from_raw(RawIdx::from_u32(0));
+        let second: RecordId = Idx::<Record>::from_raw(RawIdx::from_u32(1));
+        let runtime = |name: &str| RuntimeRecord {
+            name: name.into(),
+            layout: Arc::new(crate::vm::RecordLayout::new(vec!["value".into()])),
+            field_types: vec![VerificationType::Integer],
+        };
+        let mut left = Program::default();
+        left.records.insert(second, runtime("Second"));
+        left.records.insert(first, runtime("First"));
+        let mut right = Program::default();
+        right.records.insert(first, runtime("First"));
+        right.records.insert(second, runtime("Second"));
+
+        assert_eq!(legalize(&mut left).unwrap(), legalize(&mut right).unwrap());
     }
 }

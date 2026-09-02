@@ -9,6 +9,8 @@ use crate::hir::{CaptureMode, FunctionId, RecordId, VariantId};
 use crate::intrinsics::Builtin;
 use crate::types::DispatchSlot;
 
+use super::layout::LayoutId;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Representation {
     I8,
@@ -44,6 +46,8 @@ pub enum Type {
     String,
     Arguments,
     StringList,
+    /// A descriptor-backed Foster allocation with a statically known physical layout.
+    Object(LayoutId),
 }
 
 impl Type {
@@ -54,7 +58,9 @@ impl Type {
             Self::CodePoint => Representation::I32,
             Self::Int => Representation::I64,
             Self::Float => Representation::F64,
-            Self::String | Self::Arguments | Self::StringList => Representation::Pointer,
+            Self::String | Self::Arguments | Self::StringList | Self::Object(_) => {
+                Representation::Pointer
+            }
         }
     }
 }
@@ -165,6 +171,11 @@ pub enum PortableInstruction {
         constant: u16,
     },
     Move {
+        destination: Value,
+        source: Value,
+    },
+    /// Produces a uniquely owned physical object, copying only when the source is shared.
+    CopyOnWrite {
         destination: Value,
         source: Value,
     },
@@ -334,6 +345,7 @@ impl PortableInstruction {
             }
             Self::LoadConstant { destination, .. }
             | Self::Move { destination, .. }
+            | Self::CopyOnWrite { destination, .. }
             | Self::Unary { destination, .. }
             | Self::Binary { destination, .. }
             | Self::MakeList { destination, .. }
@@ -367,6 +379,7 @@ impl PortableInstruction {
             Self::Drop { value } => vec![*value],
             Self::LoadConstant { .. } => Vec::new(),
             Self::Move { source, .. }
+            | Self::CopyOnWrite { source, .. }
             | Self::MoveOut { source, .. }
             | Self::SpawnRemoteBorrow { source, .. } => vec![*source],
             Self::Unary { operand, .. } => vec![*operand],

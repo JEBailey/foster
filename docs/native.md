@@ -1,6 +1,8 @@
 # Native compilation
 
-Status: initial host-native AOT backend implemented with Cranelift.
+Status: host-native AOT backend implemented with Cranelift; scalar, record, and tagged-variant
+lowering is executable, while collection, reference, closure, and host-service coverage is still
+in progress.
 
 `foster build --native` compiles the functions reachable from `main` into a native object and links
 that object into a standalone executable with the installed Rust toolchain. `main` may take no
@@ -33,6 +35,11 @@ use the target pointer type. It supports:
   `length`, and `head` operations;
 - primitive constants, moves, unary operations, arithmetic, bit operations, shifts, and comparisons;
 - direct function and statically resolved method calls;
+- user-record construction and field reads, nested records, copy-on-write field assignment, and
+  record values passed through borrowed function parameters;
+- enum-case allocation, deterministic tags, scalar payloads, and enum pattern tests/bindings;
+- descriptor-addressed allocation, strong retain/release, ownership transfer at calls and returns,
+  and generated tag-aware recursive destructors;
 - assertions, guarded returns, `loop`, guarded `break`/`continue`, jumps, conditional control
   flow, and recursion; and
 - printing a result from `main` whose type is not `()`, matching `foster run` for these primitive
@@ -41,9 +48,10 @@ use the target pointer type. It supports:
 Only functions statically reachable from `main` are compiled. An unused function may therefore use
 the complete VM language without preventing native compilation.
 
-General lists, String concatenation and library algorithms, symbols, user records, enums,
-references, closures, dynamic calls, intrinsics, pattern matching, remote objects, futures, and
-host I/O do not yet have a native runtime representation. If one is reachable, compilation stops
+General lists and buffers, String concatenation and library algorithms, symbols, references,
+closures, dynamic calls, intrinsics, aggregate payload bindings that require erased generic
+representation, remote objects, futures, and host I/O do not yet have a complete native lowering.
+If one is reachable, compilation stops
 before object emission and reports the unsupported type or instruction. The diagnostic recommends
 ordinary `foster build`, which emits portable `.fbc` for the complete language.
 
@@ -56,8 +64,9 @@ and verifies definitions, dominance, types, call signatures, block arguments, an
 
 The current bootstrap native path asks the VM backend for verified, non-optimized bytecode so each
 storage home retains a stable static type, then rebuilds the reachable native subset as the same
-shared SSA shape. Foster moves become SSA aliases instead of Cranelift instructions, and ordinary
-values are emitted as Cranelift SSA values rather than accesses to a VM register array. This second
+shared SSA shape. Copyable scalars remain SSA aliases; ownership-bearing object moves become
+explicit retain operations, and ordinary values are emitted as Cranelift SSA values rather than
+accesses to a VM register array. This second
 sealing step is an implementation detail while native coverage grows; it does not make register
 bytecode the native code-generation contract.
 
@@ -77,16 +86,39 @@ references, move-out, closures and capture modes, pattern bindings, dynamic call
 suspension, and destruction. HIR construction uses temporary virtual registers only until the
 function is sealed into SSA; that unsealed form is never optimized, serialized, or executed.
 
-Before backend-specific emission, layout legalization reduces values to scalars or pointers and
-builds deterministic descriptions for record field slots, enum alternative tags and payloads,
-closure environments, and reference place handles. The VM implements these boxed layouts today.
-The native backend receives the same layout identities, but rejects aggregate operations before
-Cranelift until allocation, tracing/destruction, and the native runtime ABI for each boxed layout
-are implemented.
+Before backend-specific emission, logical layout legalization reduces values to scalars or pointers
+and builds deterministic descriptions for record field slots and declared types, enum alternative
+tags and payloads, closure environments and capture ownership, reference place handles, and
+runtime-backed structural values. Portable bytecode version 18 retains generic identities and
+nominal arguments. Generic fields currently use an explicit opaque pointer slot, so their physical
+ABI remains concrete without prematurely coupling portable bytecode to monomorphization.
+
+After target selection, the physical layout calculator derives checked sizes, alignments, byte
+offsets, and ownership-aware drop plans. Heap objects have a common descriptor-pointer, strong
+reference-count, and flags header. Exact target layouts exist for records, tagged variants,
+closures, place handles with structural-generation snapshots, bytes, mutable buffers, lists,
+remote/future handles, callable handles, and erased boxes. Recursive aggregate members remain
+pointer-sized, so layout calculation terminates without flattening recursive types.
+
+A place handle stores its root storage pointer plus a pointer/count projection path. Each path
+entry has a fixed target-aware layout containing a field-slot or collection-index operand and the
+root/prefix generation snapshots needed for indexed-reference invalidation. This supports nested
+field/index projections without limiting a handle to one generation snapshot.
+
+Native object files contain a versioned, read-only `foster_layout_<id>` descriptor for every
+physical layout. Descriptors include the common-header offsets, kind-specific offsets, field value
+representations and pointee identities, capture ownership, and destruction metadata. Record and
+variant lowering addresses these symbols directly, initializes the common header, emits typed
+field/tag loads and stores, and follows the descriptor-derived drop plan. Copy-on-write is explicit
+in shared IR; the current baseline copies record storage before mutation and can later add the
+reference-count uniqueness fast path without changing semantics.
 
 The object exports a C-ABI `foster_native_entry` symbol. A generated, temporary Rust entry shim
 collects Unicode command arguments, supplies the supported String/List runtime operations, calls
-that symbol, formats its result, and supplies the platform startup pieces to the system linker.
+that symbol, supplies raw zeroed allocation/deallocation, formats its result, and supplies the
+platform startup pieces to the system linker. Object semantics—layout, field access, reference
+counts, copy-on-write, and recursive destruction—are generated Cranelift code rather than Rust
+runtime helpers.
 Temporary object and shim files are removed after linking; the resulting executable does not
 contain or invoke the Foster VM.
 

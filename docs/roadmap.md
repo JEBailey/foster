@@ -93,9 +93,11 @@ and stable bytecode tags. The remaining structural work should preserve that dep
   instruction surface now seals through shared SSA and de-SSA with deterministic record, enum,
   closure, and reference layouts; erased heterogeneous joins retain an explicit opaque type until
   the bytecode ownership/type verifier resolves their concrete flow state.
-- Extend the Cranelift AOT backend beyond its current scalar, string-constant, and read-only command
-  argument subset to general strings and lists, records, enums, references, closures, native runtime
-  services, and cross-target object output while retaining the register VM as the semantic reference.
+- Extend the implemented descriptor-driven Cranelift record/enum allocation, memory access,
+  retain/release, copy-on-write, scalar pattern, and generated destruction lowering to general
+  strings, lists/buffers, erased generic payloads, references, and closures. Then extend native
+  runtime services and cross-target object output while retaining the register VM as the semantic
+  reference.
 - Compact the bytecode encoding after its instruction model is stable.
 
 ## Longer-horizon questions

@@ -75,26 +75,41 @@ pub fn compile_with_options(
         .records
         .iter()
         .map(|(id, value)| {
-            let mut fields = compilation
-                .types
-                .record_fields
-                .get(&id)
-                .cloned()
-                .unwrap_or_else(|| {
-                    value
+            let fields = compilation.types.record_field_types.get(&id);
+            let (names, field_types) = fields.map_or_else(
+                || {
+                    let mut names = value
                         .fields
                         .iter()
                         .map(|field| field.name.clone())
-                        .collect()
-                })
-                .into_iter()
-                .collect::<Vec<_>>();
-            fields.sort();
+                        .collect::<Vec<_>>();
+                    names.sort();
+                    let field_types = vec![VerificationType::Unknown; names.len()];
+                    (names, field_types)
+                },
+                |fields| {
+                    fields
+                        .iter()
+                        .map(|(name, ty)| {
+                            (
+                                name.clone(),
+                                layout_verification_type(
+                                    &compilation.hir,
+                                    &compilation.types,
+                                    *ty,
+                                    0,
+                                ),
+                            )
+                        })
+                        .unzip()
+                },
+            );
             (
                 id,
                 RuntimeRecord {
                     name: value.name.clone(),
-                    layout: std::sync::Arc::new(super::value::RecordLayout::new(fields)),
+                    layout: std::sync::Arc::new(super::value::RecordLayout::new(names)),
+                    field_types,
                 },
             )
         })
@@ -128,6 +143,16 @@ pub fn compile_with_options(
                     parent: value.parent,
                     type_name: variant_type_names[&value.parent].clone(),
                     alternative: std::sync::Arc::from(value.name.as_str()),
+                    payload: compilation
+                        .types
+                        .variant_payloads
+                        .get(&id)
+                        .and_then(|payload| *payload)
+                        .map(|ty| {
+                            layout_verification_type(&compilation.hir, &compilation.types, ty, 0)
+                        })
+                        .into_iter()
+                        .collect(),
                 },
             )
         })
@@ -340,14 +365,37 @@ fn verification_type(
     ty: crate::types::TypeId,
     depth: usize,
 ) -> VerificationType {
+    verification_type_inner(hir, information, ty, depth, false)
+}
+
+fn layout_verification_type(
+    hir: &hir::PackageHir,
+    information: &TypeInformation,
+    ty: crate::types::TypeId,
+    depth: usize,
+) -> VerificationType {
+    verification_type_inner(hir, information, ty, depth, true)
+}
+
+fn verification_type_inner(
+    hir: &hir::PackageHir,
+    information: &TypeInformation,
+    ty: crate::types::TypeId,
+    depth: usize,
+    retain_generics: bool,
+) -> VerificationType {
     if depth >= 64 {
         return VerificationType::Unknown;
     }
-    let nested = |ty| verification_type(hir, information, ty, depth + 1);
+    let nested = |ty| verification_type_inner(hir, information, ty, depth + 1, retain_generics);
     match &information.types[ty] {
-        crate::types::Type::Generic(_)
-        | crate::types::Type::Intersection(_)
-        | crate::types::Type::Module(_) => VerificationType::Unknown,
+        crate::types::Type::Generic(name) if retain_generics => {
+            VerificationType::Generic(name.clone())
+        }
+        crate::types::Type::Generic(_) => VerificationType::Unknown,
+        crate::types::Type::Intersection(_) | crate::types::Type::Module(_) => {
+            VerificationType::Unknown
+        }
         crate::types::Type::Unit => VerificationType::Unit,
         crate::types::Type::Bool => VerificationType::Bool,
         crate::types::Type::Int => VerificationType::Integer,
@@ -383,7 +431,10 @@ fn verification_type(
                 // Method-only records are structural contracts and carry no unique runtime
                 // representation. Their conformance proof has already been checked.
                 _ if hir.records[*record].fields.is_empty() => VerificationType::Unknown,
-                _ => VerificationType::Record(*record),
+                _ => VerificationType::Record {
+                    record: *record,
+                    arguments: arguments.iter().copied().map(nested).collect(),
+                },
             }
         }
         crate::types::Type::Variant { variant, .. }
@@ -392,7 +443,10 @@ fn verification_type(
             // Unions are erased structural views; their value keeps its member representation.
             VerificationType::Unknown
         }
-        crate::types::Type::Variant { variant, .. } => VerificationType::Variant(*variant),
+        crate::types::Type::Variant { variant, arguments } => VerificationType::Variant {
+            variant: *variant,
+            arguments: arguments.iter().copied().map(nested).collect(),
+        },
     }
 }
 

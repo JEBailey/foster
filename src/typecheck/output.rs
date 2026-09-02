@@ -45,14 +45,21 @@ impl Checker<'_> {
             })
             .collect::<Vec<_>>();
         let mut record_fields = HashMap::new();
+        let mut record_field_schemas = HashMap::new();
         let mut record_methods = HashMap::new();
         for (record, arguments) in records {
-            let fields = self
-                .effective_record_fields(record, &arguments)?
-                .into_iter()
-                .map(|field| field.name)
-                .collect::<HashSet<_>>();
-            record_fields.insert(record, fields);
+            let fields = self.effective_record_fields(record, &arguments)?;
+            record_fields.insert(
+                record,
+                fields.iter().map(|field| field.name.clone()).collect(),
+            );
+            record_field_schemas.insert(
+                record,
+                fields
+                    .into_iter()
+                    .map(|field| (field.name, field.ty))
+                    .collect::<Vec<_>>(),
+            );
             let methods = self.effective_record_methods(record, &arguments)?;
             record_methods.insert(
                 record,
@@ -79,6 +86,40 @@ impl Checker<'_> {
             ..TypeInformation::default()
         };
         let mut interner = HashMap::new();
+
+        for (record, mut fields) in record_field_schemas {
+            fields.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+            let fields = fields
+                .into_iter()
+                .map(|(name, ty)| (name, intern_type(&mut information, &mut interner, ty)))
+                .collect();
+            information.record_field_types.insert(record, fields);
+        }
+
+        let variants = self
+            .hir
+            .variants
+            .iter()
+            .map(|(id, variant)| (id, variant.clone()))
+            .collect::<Vec<_>>();
+        for (variant_id, variant) in variants {
+            let parent = &self.hir.variant_types[variant.parent];
+            if parent.kind != crate::ast::VariantKind::Enum {
+                continue;
+            }
+            let generics = parent
+                .parameters
+                .iter()
+                .map(|name| (name.clone(), Ty::Generic(name.clone())))
+                .collect::<HashMap<_, _>>();
+            let payload = variant
+                .payload
+                .as_ref()
+                .map(|annotation| self.annotation_type(parent.module, annotation, &generics))
+                .transpose()?
+                .map(|ty| intern_type(&mut information, &mut interner, ty));
+            information.variant_payloads.insert(variant_id, payload);
+        }
 
         for (expression, ty) in &self.expressions {
             let ty = self.require_concrete(ty.clone(), "expression")?;

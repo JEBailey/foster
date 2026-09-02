@@ -1024,8 +1024,9 @@ source -> tokens -> AST -> resolved HIR -> type/effect inference
             -> supported-subset validation -> Cranelift AOT -> host executable
 ```
 
-The register VM is the complete executable semantic reference. The initial native backend compiles
-the reachable primitive-value subset described in [Native compilation](native.md). Temporary
+The register VM is the complete executable semantic reference. The native backend compiles the
+reachable scalar, record, and tagged-variant subset described in [Native compilation](native.md).
+Temporary
 register construction is sealed into shared SSA before any executable bytecode is optimized,
 serialized, or run.
 

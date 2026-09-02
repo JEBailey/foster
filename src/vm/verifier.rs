@@ -46,6 +46,28 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
             ));
         }
     }
+    for record in program.records.values() {
+        if record.layout.names().len() != record.field_types.len() {
+            return Err(FosterError::runtime(format!(
+                "bytecode record `{}` has inconsistent typed field metadata",
+                record.name
+            )));
+        }
+        for ty in &record.field_types {
+            verify_metadata_type(program, ty, 0)?;
+        }
+    }
+    for variant in program.variants.values() {
+        if variant.payload.len() > 1 {
+            return Err(FosterError::runtime(format!(
+                "bytecode enum case `{}.{}` has more than one payload value",
+                variant.type_name, variant.alternative
+            )));
+        }
+        for ty in &variant.payload {
+            verify_metadata_type(program, ty, 0)?;
+        }
+    }
     for ((nominal, _), target) in &program.dispatch {
         let Some(target) = program.functions.get(target) else {
             return Err(FosterError::runtime(
@@ -71,6 +93,78 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
         }
     }
     Ok(())
+}
+
+fn verify_metadata_type(
+    program: &Program,
+    ty: &VerificationType,
+    depth: usize,
+) -> Result<(), FosterError> {
+    if depth >= 64 {
+        return Err(FosterError::runtime(
+            "bytecode aggregate metadata has excessively nested verification types",
+        ));
+    }
+    let nested = |ty| verify_metadata_type(program, ty, depth + 1);
+    match ty {
+        VerificationType::List(value)
+        | VerificationType::Reference(value)
+        | VerificationType::Remote(value)
+        | VerificationType::Future(value) => nested(value),
+        VerificationType::Function {
+            parameters,
+            parameter_modes,
+            result,
+        } => {
+            if parameters.len() != parameter_modes.len() {
+                return Err(FosterError::runtime(
+                    "bytecode aggregate metadata has an invalid callable type",
+                ));
+            }
+            for parameter in parameters {
+                nested(parameter)?;
+            }
+            nested(result)
+        }
+        VerificationType::Union(members) => {
+            if members.len() < 2 || members.windows(2).any(|pair| pair[0] >= pair[1]) {
+                return Err(FosterError::runtime(
+                    "bytecode aggregate metadata has a non-canonical union type",
+                ));
+            }
+            for member in members {
+                nested(member)?;
+            }
+            Ok(())
+        }
+        VerificationType::Record { record, arguments } => {
+            if !program.records.contains_key(record) {
+                return Err(FosterError::runtime(
+                    "bytecode aggregate metadata references a missing record",
+                ));
+            }
+            for argument in arguments {
+                nested(argument)?;
+            }
+            Ok(())
+        }
+        VerificationType::Variant { variant, arguments } => {
+            if !program
+                .variants
+                .values()
+                .any(|metadata| metadata.parent == *variant)
+            {
+                return Err(FosterError::runtime(
+                    "bytecode aggregate metadata references a missing enum",
+                ));
+            }
+            for argument in arguments {
+                nested(argument)?;
+            }
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
 
 fn verify_function_structure(
@@ -267,9 +361,21 @@ fn verify_function_structure(
                     );
                 }
             }
-            Instruction::MakeVariant { variant, .. } if !program.variants.contains_key(variant) => {
-                return invalid_instruction(function, index, "references a missing variant");
-            }
+            Instruction::MakeVariant {
+                variant, payload, ..
+            } => match program.variants.get(variant) {
+                None => {
+                    return invalid_instruction(function, index, "references a missing variant");
+                }
+                Some(metadata) if metadata.payload.len() != payload.len() => {
+                    return invalid_instruction(
+                        function,
+                        index,
+                        "constructs an enum case with an invalid payload layout",
+                    );
+                }
+                Some(_) => {}
+            },
             Instruction::MatchPattern {
                 pattern, bindings, ..
             } if pattern_binding_count(pattern) != bindings.len() => {
@@ -336,22 +442,33 @@ fn verify_type(
             }
             Ok(())
         }
-        VerificationType::Record(record) if !program.records.contains_key(record) => {
-            Err(FosterError::runtime(format!(
-                "bytecode function `{}` has a verification type for a missing record",
-                function.name
-            )))
+        VerificationType::Record { record, arguments } => {
+            if !program.records.contains_key(record) {
+                return Err(FosterError::runtime(format!(
+                    "bytecode function `{}` has a verification type for a missing record",
+                    function.name
+                )));
+            }
+            for argument in arguments {
+                verify_type(program, function, argument, depth + 1)?;
+            }
+            Ok(())
         }
-        VerificationType::Variant(variant)
+        VerificationType::Variant { variant, arguments } => {
             if !program
                 .variants
                 .values()
-                .any(|value| value.parent == *variant) =>
-        {
-            Err(FosterError::runtime(format!(
-                "bytecode function `{}` has a verification type for a missing variant",
-                function.name
-            )))
+                .any(|value| value.parent == *variant)
+            {
+                return Err(FosterError::runtime(format!(
+                    "bytecode function `{}` has a verification type for a missing variant",
+                    function.name
+                )));
+            }
+            for argument in arguments {
+                verify_type(program, function, argument, depth + 1)?;
+            }
+            Ok(())
         }
         _ => Ok(()),
     }
@@ -556,7 +673,10 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Variant(program.variants[variant].parent),
+                VerificationType::Variant {
+                    variant: program.variants[variant].parent,
+                    arguments: Vec::new(),
+                },
             )?;
         }
         Instruction::LoadField {
@@ -577,7 +697,7 @@ fn transfer(
             let object_type = read_type(function, index, &state, *object)?;
             if !matches!(
                 object_type,
-                VerificationType::Record(_)
+                VerificationType::Record { .. }
                     | VerificationType::List(_)
                     | VerificationType::Bytes
                     | VerificationType::ByteBuffer
@@ -864,7 +984,9 @@ fn transfer(
                     })
             });
             if let crate::hir::Pattern::Variant { variant, .. } = pattern.unspanned()
-                && let VerificationType::Variant(parent) = subject_type
+                && let VerificationType::Variant {
+                    variant: parent, ..
+                } = subject_type
                 && program.variants[variant].parent != parent
             {
                 return invalid_instruction(
@@ -937,7 +1059,7 @@ fn transfer(
             if let Some(message) = message {
                 let expected = program
                     .string_record
-                    .map(VerificationType::Record)
+                    .map(nominal_record)
                     .unwrap_or(VerificationType::Unknown);
                 let found = read_type(function, index, &state, *message)?;
                 require_type(function, index, &found, &expected, "assertion message")?;
@@ -1014,8 +1136,8 @@ fn transfer(
         } => {
             let receiver_type = read_type(function, index, &state, *receiver)?;
             let nominal = match receiver_type {
-                VerificationType::Record(record) => Some(NominalTypeId::Record(record)),
-                VerificationType::Variant(variant) => Some(NominalTypeId::Variant(variant)),
+                VerificationType::Record { record, .. } => Some(NominalTypeId::Record(record)),
+                VerificationType::Variant { variant, .. } => Some(NominalTypeId::Variant(variant)),
                 _ => None,
             };
             if let Some(target) = nominal
@@ -1446,8 +1568,14 @@ fn require_type(
 
 fn compatible(found: &VerificationType, expected: &VerificationType) -> bool {
     if found == expected
-        || matches!(found, VerificationType::Unknown)
-        || matches!(expected, VerificationType::Unknown)
+        || matches!(
+            found,
+            VerificationType::Unknown | VerificationType::Generic(_)
+        )
+        || matches!(
+            expected,
+            VerificationType::Unknown | VerificationType::Generic(_)
+        )
     {
         return true;
     }
@@ -1461,8 +1589,8 @@ fn compatible(found: &VerificationType, expected: &VerificationType) -> bool {
         (VerificationType::CodePoint | VerificationType::Byte, VerificationType::Integer) => true,
         // Structural record and variant conformance is resolved before bytecode lowering. The
         // verification vocabulary retains runtime representation, not the source contract proof.
-        (VerificationType::Record(_), VerificationType::Record(_))
-        | (VerificationType::Variant(_), VerificationType::Variant(_)) => true,
+        (VerificationType::Record { .. }, VerificationType::Record { .. })
+        | (VerificationType::Variant { .. }, VerificationType::Variant { .. }) => true,
         (VerificationType::List(found), VerificationType::List(expected))
         | (VerificationType::Reference(found), VerificationType::Reference(expected))
         | (VerificationType::Remote(found), VerificationType::Remote(expected))
@@ -1581,6 +1709,13 @@ fn is_integer_like(ty: &VerificationType) -> bool {
     )
 }
 
+fn nominal_record(record: crate::hir::RecordId) -> VerificationType {
+    VerificationType::Record {
+        record,
+        arguments: Vec::new(),
+    }
+}
+
 fn constant_type(program: &Program, constant: &Constant) -> VerificationType {
     match constant {
         Constant::Unit => VerificationType::Unit,
@@ -1589,12 +1724,12 @@ fn constant_type(program: &Program, constant: &Constant) -> VerificationType {
         Constant::Float(_) => VerificationType::Float,
         Constant::String(_) => program
             .string_record
-            .map(VerificationType::Record)
+            .map(nominal_record)
             .unwrap_or(VerificationType::Unknown),
         Constant::CodePoint(_) => VerificationType::CodePoint,
         Constant::Symbol(_) => program
             .symbol_record
-            .map(VerificationType::Record)
+            .map(nominal_record)
             .unwrap_or(VerificationType::Unknown),
     }
 }
@@ -1608,7 +1743,7 @@ fn record_type(program: &Program, record: crate::hir::RecordId) -> VerificationT
         Some("List") => VerificationType::List(Box::new(VerificationType::Unknown)),
         Some("Bytes") => VerificationType::Bytes,
         Some("ByteBuffer") => VerificationType::ByteBuffer,
-        _ => VerificationType::Record(record),
+        _ => nominal_record(record),
     }
 }
 
@@ -1633,7 +1768,7 @@ fn intrinsic_verification_type(program: &Program, ty: IntrinsicType) -> Verifica
         IntrinsicType::ByteBuffer => VerificationType::ByteBuffer,
         IntrinsicType::String => program
             .string_record
-            .map(VerificationType::Record)
+            .map(nominal_record)
             .unwrap_or(VerificationType::Unknown),
         IntrinsicType::ListByte => VerificationType::List(Box::new(VerificationType::Byte)),
     }

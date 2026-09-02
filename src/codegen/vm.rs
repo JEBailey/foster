@@ -1253,6 +1253,10 @@ fn lower_portable(
         ir::PortableInstruction::Move {
             destination,
             source,
+        }
+        | ir::PortableInstruction::CopyOnWrite {
+            destination,
+            source,
         } => vm::Instruction::Move {
             destination: get(destination),
             source: get(source),
@@ -1539,7 +1543,7 @@ fn verification_type(ty: Type) -> VerificationType {
         Type::Float => VerificationType::Float,
         Type::CodePoint => VerificationType::CodePoint,
         Type::Byte => VerificationType::Byte,
-        Type::Opaque | Type::String | Type::Arguments | Type::StringList => {
+        Type::Opaque | Type::String | Type::Arguments | Type::StringList | Type::Object(_) => {
             VerificationType::Unknown
         }
     }

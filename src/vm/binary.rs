@@ -16,7 +16,7 @@ use crate::intrinsics::Builtin;
 use crate::types::{DispatchSlot, NominalTypeId};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 17;
+pub const FORMAT_VERSION: u16 = 18;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -72,8 +72,9 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
         w.id(*id);
         w.string(&record.name)?;
         w.u32(record.layout.names().len())?;
-        for field in record.layout.names() {
+        for (field, ty) in record.layout.names().iter().zip(&record.field_types) {
             w.string(field)?;
+            w.verification_type(ty)?;
         }
     }
 
@@ -94,6 +95,10 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
         w.id(variant.parent);
         w.string(&variant.type_name)?;
         w.string(&variant.alternative)?;
+        w.u32(variant.payload.len())?;
+        for ty in &variant.payload {
+            w.verification_type(ty)?;
+        }
     }
     Ok(w.bytes)
 }
@@ -123,13 +128,16 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
     let string_record = r.option_id::<Record>()?;
     let symbol_record = r.option_id::<Record>()?;
     let records = r.map(|r| {
+        let id = r.id::<Record>()?;
+        let name = r.string()?;
+        let fields = r.vec(|r| Ok((r.string()?, r.verification_type(0)?)))?;
+        let (names, field_types) = fields.into_iter().unzip();
         Ok((
-            r.id::<Record>()?,
+            id,
             RuntimeRecord {
-                name: r.string()?,
-                layout: std::sync::Arc::new(super::value::RecordLayout::new(
-                    r.vec(|r| r.string())?,
-                )),
+                name,
+                layout: std::sync::Arc::new(super::value::RecordLayout::new(names)),
+                field_types,
             },
         ))
     })?;
@@ -146,6 +154,7 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
                 parent: r.id::<VariantType>()?,
                 type_name: std::sync::Arc::from(r.string()?),
                 alternative: std::sync::Arc::from(r.string()?),
+                payload: r.vec(|r| r.verification_type(0))?,
             },
         ))
     })?;

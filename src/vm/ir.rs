@@ -12,13 +12,15 @@ pub struct Register(pub u16);
 
 /// Runtime-visible type information retained solely for bytecode verification.
 ///
-/// Groups, effects, and generic identities have already served their purpose by this stage.
-/// `Unknown` is used for erased generic and structural types. It acts as the verifier's top type:
+/// Groups and effects have already served their purpose by this stage. Generic identities and
+/// nominal arguments are retained for physical layout selection. `Unknown` is used for erased
+/// structural types and acts as the verifier's top type:
 /// availability and ownership are still checked, while representation-specific checks are deferred
 /// to the already type-checked compiler boundary.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum VerificationType {
     Unknown,
+    Generic(String),
     Unit,
     Bool,
     Integer,
@@ -36,8 +38,14 @@ pub enum VerificationType {
         parameter_modes: Vec<crate::ast::ParameterMode>,
         result: Box<VerificationType>,
     },
-    Record(RecordId),
-    Variant(VariantTypeId),
+    Record {
+        record: RecordId,
+        arguments: Vec<VerificationType>,
+    },
+    Variant {
+        variant: VariantTypeId,
+        arguments: Vec<VerificationType>,
+    },
     /// A control-flow join whose alternatives retain different runtime representations.
     Union(Vec<VerificationType>),
 }
@@ -510,6 +518,8 @@ pub struct Program {
 pub struct RuntimeRecord {
     pub name: String,
     pub layout: Arc<super::value::RecordLayout>,
+    /// Declared field types in the same canonical order as `layout`.
+    pub field_types: Vec<VerificationType>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -517,6 +527,8 @@ pub struct RuntimeVariant {
     pub parent: VariantTypeId,
     pub type_name: Arc<str>,
     pub alternative: Arc<str>,
+    /// Enum cases currently have zero or one declared payload value.
+    pub payload: Vec<VerificationType>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

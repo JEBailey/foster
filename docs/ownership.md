@@ -565,8 +565,11 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   and promote to stable slots only when their identity becomes observable. The bytecode compiler
   emits deterministic `Drop` instructions after register last use, while observable shared slots
   remain alive through frame teardown. Borrow edges are weak and therefore do not create reference
-  cycles. Native layout, arbitrary cyclic owned graphs, resource destructors, and destructor
-  ordering remain backend work.
+  cycles. Target-aware native object layouts and ownership drop plans are calculated and emitted as
+  object descriptors. Cranelift record/enum code now executes strong retain/release, copy-on-write,
+  and recursive tag-aware destruction plans. Collection/reference/closure destruction, arbitrary
+  cyclic owned graphs, resource destructors, and a language-level destructor ordering contract
+  remain backend work.
 - Explicit assertion failures are represented in ownership MIR. Other dynamic failures, such as
   bounds errors and host-operation errors, use deterministic runtime frame teardown but do not yet
   have per-operation exceptional successors in ownership MIR.

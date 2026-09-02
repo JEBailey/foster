@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use la_arena::{Arena, Idx};
 
 use crate::ast;
-use crate::hir::{ConstantId, ExprId, FunctionId, LocalId, RecordId, VariantTypeId};
+use crate::hir::{ConstantId, ExprId, FunctionId, LocalId, RecordId, VariantId, VariantTypeId};
 
 pub type TypeId = Idx<Type>;
 
@@ -122,8 +122,12 @@ pub struct TypeInformation {
     pub constants: HashMap<ConstantId, TypeId>,
     pub record_names: HashMap<RecordId, String>,
     pub record_fields: HashMap<RecordId, HashSet<String>>,
+    /// Canonical stored fields and their generic-aware declared types.
+    pub record_field_types: HashMap<RecordId, Vec<(String, TypeId)>>,
     pub record_methods: HashMap<RecordId, HashSet<String>>,
     pub variant_names: HashMap<VariantTypeId, String>,
+    /// Declared enum-case payload types. `None` denotes a payload-free case.
+    pub variant_payloads: HashMap<VariantId, Option<TypeId>>,
 }
 
 impl TypeInformation {

@@ -45,6 +45,40 @@ func main() -> Int { observe(ref (make())) }
 }
 
 #[test]
+fn round_trips_generic_aggregate_layout_metadata() {
+    let source = r#"
+type Box<T> = { value: T }
+enum Maybe<T> = None | Some(T)
+
+func make<T>(value: T) -> Box<T> { Box { value } }
+func main() -> Int { make(42).value }
+"#;
+    let compilation = crate::compile(source).unwrap();
+    let program = compile(&compilation).unwrap();
+    let record = program
+        .records
+        .values()
+        .find(|record| record.name == "Box")
+        .unwrap();
+    assert_eq!(
+        record.field_types,
+        vec![VerificationType::Generic("T".into())]
+    );
+    let some = program
+        .variants
+        .values()
+        .find(|variant| variant.alternative.as_ref() == "Some")
+        .unwrap();
+    assert_eq!(some.payload, vec![VerificationType::Generic("T".into())]);
+    let decoded = decode_program(&encode_program(&program).unwrap()).unwrap();
+    assert_eq!(program, decoded);
+    assert_eq!(
+        Machine::new(&decoded).run_main().unwrap(),
+        crate::vm::Value::Integer(42)
+    );
+}
+
+#[test]
 fn rejects_invalid_envelopes() {
     assert!(decode_program(b"not bytecode").is_err());
     let compilation = crate::compile("func main() -> Int { 42 }").unwrap();

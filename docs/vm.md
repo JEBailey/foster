@@ -41,8 +41,8 @@ registry. The verifier and execution machine consume that metadata instead of ma
 builtin matches. Compiler-only intrinsics use the same registry model with opcode lowering
 metadata, including an explicit read/mutate/consume receiver mode; `list.push` and `list.append`
 lower directly to `Push` and `Append` and deliberately have no builtin tag. Adding or changing one
-of those lowering-only entries therefore does not change the version-17 bytecode ABI. Builtin tags
-retired from source remain registered for decoding and executing existing version-17 artifacts.
+of those lowering-only entries therefore does not change the version-18 bytecode ABI. Builtin tags
+retired from source remain registered for decoding and executing existing version-18 artifacts.
 
 The verifier performs a fixed-point dataflow analysis over instruction-index control flow. Each
 reachable edge carries the definite availability and runtime verification type of every register.
@@ -138,9 +138,11 @@ analysis.
 
 ## Related native backend
 
-The initial [native backend](native.md) finds functions reachable from `main`, validates its
-supported primitive subset, rebuilds that subset as shared SSA from verified unoptimized bytecode,
-and lowers it to Cranelift machine code. Cranelift performs machine-level optimization
+The [native backend](native.md) finds functions reachable from `main`, validates its supported
+scalar-and-aggregate subset, rebuilds that subset as shared SSA from verified unoptimized bytecode,
+and lowers it to Cranelift machine code. Descriptor-backed records and variants use generated
+allocation, field/tag access, retain/release, copy-on-write, pattern, and destruction code.
+Cranelift performs machine-level optimization
 independently. Keeping this route downstream of the same checked frontend, layouts, and shared IR
 contract lets native execution reuse the language's type, effect, and ownership decisions without
 weakening the VM's role as the complete reference implementation.

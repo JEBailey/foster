@@ -142,7 +142,7 @@ The current implementation includes:
 - first-class `test "description" { ... }` declarations with a package-aware test runner;
 - an optional optimizing register-bytecode pipeline with a verifier and iterative VM call frames;
   and
-- an initial Cranelift AOT backend for standalone primitive-value executables.
+- a Cranelift AOT backend for standalone scalar, record, and tagged-variant executables.
 
 Module qualification uses `::`; type accessors and runtime value access use `.`. Imports keep their
 canonical dotted module names:
@@ -307,19 +307,23 @@ cargo run --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.e
 ./fibonacci.exe
 ```
 
-Native compilation currently supports reachable functions over `()`, `Bool`, `Int`, `Float`,
-`CodePoint`, and `Byte`, including direct calls, methods, recursion, arithmetic, comparisons, and
-control flow. A reachable aggregate, closure, intrinsic, remote operation, or other VM-only
-instruction is rejected with an actionable compile error. See [native compilation](docs/native.md)
-for the exact boundary.
+Native compilation supports reachable scalar functions plus descriptor-backed user records and
+tagged enums, including nested fields, copy-on-write field mutation, scalar payload patterns,
+direct calls, methods, recursion, arithmetic, comparisons, and control flow. General collections,
+references, closures, intrinsics, remote operations, and other VM-only instructions are rejected
+with an actionable compile error. See [native compilation](docs/native.md) for the exact boundary.
 
 The de-SSA VM emitter owns critical-edge splitting, cycle-safe parallel copies, and deterministic
-register assignment. Aggregate legalization separately freezes record slots, enum tags and payload
-shapes, closure capture slots, and reference place-handle layouts. HIR lowering now seals its
+register assignment. Aggregate legalization separately freezes typed record slots, enum tags and
+payload shapes, closure capture ownership, reference place-handle layouts, and runtime structural
+values. Native target selection derives checked headers, sizes, alignments, field offsets, and drop
+plans and emits versioned read-only object descriptors. HIR lowering now seals its
 temporary virtual registers into shared SSA, verifies dominance and block arguments, de-SSAs back
 to portable bytecode, and runs the ownership/type verifier after optimization and drop insertion,
 before the bytecode can be returned or executed. There is no direct executable bypass around the
-shared IR.
+shared IR. The Cranelift backend uses those descriptors for allocation and field/tag offsets and
+generates retain/release, copy-on-write, and recursive tag-aware destruction directly in machine
+code; Rust supplies only the platform allocator and process-facing bootstrap services.
 
 ## Executable packages
 

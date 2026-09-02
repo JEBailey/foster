@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 17, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 18, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -26,7 +26,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `17` |
+| version | `u16` | `18` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -34,9 +34,9 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | main arguments | `bool` | whether `main` receives `std.process.Arguments` |
 | string record | optional `RecordId` | String wrapper |
 | symbol record | optional `RecordId` | Symbol wrapper |
-| records | `vector<(RecordId, string, vector<string>)>` | runtime name and indexed field layout |
+| records | `vector<(RecordId, string, vector<(string, VerificationType)>)>` | runtime name and typed indexed field layout |
 | dispatch | `vector<(NominalTypeId, u32 slot, FunctionId)>` | record and enum dispatch |
-| enum cases | `vector<(VariantId, VariantTypeId, string, string)>` | parent enum and case label |
+| enum cases | `vector<(VariantId, VariantTypeId, string, string, vector<VerificationType>)>` | parent enum, case label, and declared payload layout |
 
 Dispatch slots are program-local `u32` identifiers assigned to the contract signatures selected by
 type checking. The type checker also resolves every concrete record and enum implementation for
@@ -68,15 +68,20 @@ Divide, BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight, Equal, NotEqual, Less, Les
 GreaterEqual. Builtin tags use the explicit stable values in the intrinsic registry, from `Print = 0` through
 `RandomBytes = 61`. Version 14 appended `IoReadRange = 56`, `IoAppendBytes = 57`, and
 `IoFileLength = 58`. Version 15 appended `TimeWallNow = 59` and `TimeMonotonicNow = 60`.
-Version 16 appends `RandomBytes = 61`; all earlier tags retain their previous values.
+Version 16 appends `RandomBytes = 61`; all earlier tags retain their previous values. Version 18
+adds declared record-field and enum-payload types to aggregate metadata; instruction and type tags
+remain unchanged.
 
 Verification type tags are `0 Unknown`, `1 Unit`, `2 Bool`, `3 Integer`, `4 Float`, `5 CodePoint`,
 `6 Byte`, `7 Bytes`, `8 ByteBuffer`, `9 List(VerificationType)`,
 `10 Reference(VerificationType)`, `11 Remote(VerificationType)`, `12 Future(VerificationType)`,
 `13 Function(vector<VerificationType>, vector<ParameterMode>, VerificationType)`,
-`14 Record(RecordId)`, `15 Variant(VariantTypeId)`, and
-`16 Union(vector<VerificationType>)`. Union members are sorted, unique, and contain at least two
-types. Readers reject verification types nested more than 64 levels deep.
+`14 Record(RecordId, vector<VerificationType> arguments)`,
+`15 Variant(VariantTypeId, vector<VerificationType> arguments)`,
+`16 Union(vector<VerificationType>)`, and `17 Generic(string identity)`. Union members are sorted,
+unique, and contain at least two types. Readers reject verification types nested more than 64
+levels deep. Generic identities are retained so target-specific layout selection can distinguish
+them; the initial native ABI stores an unsubstituted generic field as an opaque pointer slot.
 
 ## Instructions
 
@@ -122,7 +127,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 17 readers accept only version 17 with zero flags. Development bytecode from another version
+Version 18 readers accept only version 18 with zero flags. Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
 canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of

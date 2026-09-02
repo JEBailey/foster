@@ -125,9 +125,13 @@ impl Writer {
         }
         Ok(())
     }
-    fn verification_type(&mut self, ty: &VerificationType) -> Result<(), BinaryError> {
+    pub(super) fn verification_type(&mut self, ty: &VerificationType) -> Result<(), BinaryError> {
         match ty {
             VerificationType::Unknown => self.u8(0),
+            VerificationType::Generic(name) => {
+                self.u8(17);
+                self.string(name)?;
+            }
             VerificationType::Unit => self.u8(1),
             VerificationType::Bool => self.u8(2),
             VerificationType::Integer => self.u8(3),
@@ -168,13 +172,21 @@ impl Writer {
                 }
                 self.verification_type(result)?;
             }
-            VerificationType::Record(record) => {
+            VerificationType::Record { record, arguments } => {
                 self.u8(14);
                 self.id(*record);
+                self.u32(arguments.len())?;
+                for argument in arguments {
+                    self.verification_type(argument)?;
+                }
             }
-            VerificationType::Variant(variant) => {
+            VerificationType::Variant { variant, arguments } => {
                 self.u8(15);
                 self.id(*variant);
+                self.u32(arguments.len())?;
+                for argument in arguments {
+                    self.verification_type(argument)?;
+                }
             }
             VerificationType::Union(members) => {
                 self.u8(16);

@@ -29,6 +29,15 @@ changes receive review.
 Foster is currently pre-1.0, so compatibility may change deliberately. It must nevertheless change
 through these gates rather than silently.
 
+## Bytecode format version 18
+
+Bytecode format version 18 adds generic-aware declared types to record fields and enum payloads.
+Nominal verification types retain their generic arguments, and a generic identity has its own
+verification-type tag. This metadata is target-independent and lets native compilation calculate
+exact physical aggregate layouts after selecting a target. Instruction opcodes and builtin tags
+are unchanged. Source code requires no migration, but serialized development bytecode from version
+17 must be rebuilt.
+
 ## Bytecode format version 17
 
 Bytecode format version 17 adds verifier-only parameter, capture, result, and callable types plus
