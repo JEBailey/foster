@@ -147,10 +147,7 @@ fn match_generic_types(
     }
 }
 
-pub fn compile_with_options(
-    compilation: &Compilation,
-    options: CompileOptions,
-) -> Result<Program, FosterError> {
+fn compile_construction(compilation: &Compilation) -> Result<Program, FosterError> {
     let closure_captures = compilation
         .hir
         .expressions
@@ -270,18 +267,39 @@ pub fn compile_with_options(
         .map(|main| crate::entry::accepts_arguments(&compilation.hir, &compilation.types, main))
         .transpose()?
         .unwrap_or(false);
-    // Freeze all aggregate field/tag/capture/place layouts before any backend rewrite.  The VM
-    // consumes the canonical operand order; native compilation consumes the same registry when
-    // deciding whether a representation has been legalized for Cranelift.
-    crate::codegen::layout::legalize(&mut compiler.program)?;
-    crate::codegen::vm::lower_program_through_shared_ir(&mut compiler.program)
+    Ok(compiler.program)
+}
+
+pub fn compile_with_options(
+    compilation: &Compilation,
+    options: CompileOptions,
+) -> Result<Program, FosterError> {
+    let mut program = compile_construction(compilation)?;
+    // Freeze all aggregate field/tag/capture/place layouts before any backend rewrite. The VM
+    // consumes the canonical operand order and then de-SSA lowers the shared representation.
+    crate::codegen::layout::legalize(&mut program)?;
+    crate::codegen::vm::lower_program_through_shared_ir(&mut program)
         .map_err(|error| FosterError::runtime(format!("shared VM lowering failed: {error}")))?;
     if options.optimize {
-        super::optimizer::optimize(&mut compiler.program);
+        super::optimizer::optimize(&mut program);
     }
-    super::optimizer::insert_drops(&mut compiler.program);
-    super::verifier::verify(&compiler.program)?;
-    Ok(compiler.program)
+    super::optimizer::insert_drops(&mut program);
+    super::verifier::verify(&program)?;
+    Ok(program)
+}
+
+/// Compile directly to the typed shared-SSA boundary without de-SSA bytecode lowering.
+pub(crate) fn compile_shared(
+    compilation: &Compilation,
+) -> Result<crate::codegen::vm::SharedProgram, FosterError> {
+    let mut program = compile_construction(compilation)?;
+    crate::codegen::layout::legalize(&mut program)?;
+    // Drop insertion is still expressed over construction registers. Sealing then turns those
+    // ownership operations into SSA instructions; native codegen never reconstructs bytecode.
+    super::optimizer::insert_drops(&mut program);
+    super::verifier::verify(&program)?;
+    crate::codegen::vm::seal_program(program)
+        .map_err(|error| FosterError::runtime(format!("shared native lowering failed: {error}")))
 }
 
 struct Compiler<'a> {
@@ -478,6 +496,45 @@ fn layout_verification_type(
     depth: usize,
 ) -> VerificationType {
     verification_type_inner(hir, information, ty, depth, true)
+}
+
+fn projected_field_verification_type(
+    hir: &hir::PackageHir,
+    information: &TypeInformation,
+    receiver: &VerificationType,
+    field: &str,
+) -> Option<VerificationType> {
+    match receiver {
+        VerificationType::Reference(pointee) => {
+            projected_field_verification_type(hir, information, pointee, field)
+        }
+        VerificationType::Record { record, arguments } => {
+            let (_, field_type) = information
+                .record_field_types
+                .get(record)?
+                .iter()
+                .find(|(name, _)| name == field)?;
+            let substitutions = hir.records[*record]
+                .parameters
+                .iter()
+                .cloned()
+                .zip(arguments.iter().cloned())
+                .collect::<HashMap<_, _>>();
+            Some(
+                layout_verification_type(hir, information, *field_type, 0)
+                    .substitute(&substitutions),
+            )
+        }
+        VerificationType::List(element) => match field {
+            "empty?" => Some(VerificationType::Bool),
+            "length" => Some(VerificationType::Integer),
+            "head" => Some((**element).clone()),
+            "rest" => Some(receiver.clone()),
+            _ => None,
+        },
+        VerificationType::Unknown | VerificationType::Generic(_) => Some(VerificationType::Unknown),
+        _ => None,
+    }
 }
 
 fn verification_type_inner(

@@ -308,23 +308,28 @@ cargo run --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.e
 ./fibonacci.exe
 ```
 
-Native compilation supports reachable scalar functions plus descriptor-backed user records and
-tagged enums, including nested fields, copy-on-write field mutation, scalar payload patterns,
-direct calls, methods, recursion, arithmetic, comparisons, and control flow. General collections,
-references, closures, intrinsics, remote operations, and other VM-only instructions are rejected
-with an actionable compile error. See [native compilation](docs/native.md) for the exact boundary.
+Native compilation supports reachable scalar functions plus descriptor-backed user records,
+tagged enums, concrete closures, generic lists, and local references, including nested fields,
+copy-on-write mutation, aggregate payload patterns, reference captures and parameters, direct and
+indirect calls, generic specialization, methods, recursion, arithmetic, comparisons, and control
+flow. Supported core list algorithms compile as ordinary Foster code; higher-order erased callable
+parameters, bytes, remote operations, host services, and other VM-only instructions are rejected
+with an actionable compile error. See
+[native compilation](docs/native.md) for the exact boundary.
 
 The de-SSA VM emitter owns critical-edge splitting, cycle-safe parallel copies, and deterministic
 register assignment. Aggregate legalization separately freezes typed record slots, enum tags and
 payload shapes, closure capture ownership, reference place-handle layouts, and runtime structural
 values. Native target selection derives checked headers, sizes, alignments, field offsets, and drop
-plans and emits versioned read-only object descriptors. HIR lowering now seals its
-temporary virtual registers into shared SSA, verifies dominance and block arguments, de-SSAs back
-to portable bytecode, and runs the ownership/type verifier after optimization and drop insertion,
-before the bytecode can be returned or executed. There is no direct executable bypass around the
-shared IR. The Cranelift backend uses those descriptors for allocation and field/tag offsets and
-generates retain/release, copy-on-write, and recursive tag-aware destruction directly in machine
-code; Rust supplies only the platform allocator and process-facing bootstrap services.
+plans and emits versioned read-only object descriptors. HIR lowering seals its temporary virtual
+registers into shared SSA and verifies dominance and block arguments. The VM branch de-SSAs that
+graph to portable bytecode and runs the ownership/type verifier after optimization and drop
+insertion before bytecode can be returned or executed. The Cranelift branch instead specializes
+the same sealed graph directly, without a bytecode round trip. There is no direct executable bypass
+around the shared IR. The Cranelift backend uses those descriptors for allocation and
+field/tag/capture offsets and generates retain/release, copy-on-write, indirect calls, and recursive
+tag-aware destruction directly in machine code; Rust supplies only the platform allocator and
+process-facing bootstrap services.
 
 ## Executable packages
 

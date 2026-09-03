@@ -256,10 +256,12 @@ impl Writer {
             }
             Instruction::MakeList {
                 destination,
+                element_type,
                 elements,
             } => {
                 self.u8(5);
                 self.reg(*destination);
+                self.verification_type(element_type)?;
                 self.regs(elements)?;
             }
             Instruction::Index {
@@ -340,30 +342,36 @@ impl Writer {
             }
             Instruction::MakeReference {
                 destination,
+                pointee_type,
                 object,
                 index,
             } => {
                 self.u8(12);
                 self.reg(*destination);
+                self.verification_type(pointee_type)?;
                 self.reg(*object);
                 self.reg(*index);
             }
             Instruction::MakeFieldReference {
                 destination,
+                pointee_type,
                 object,
                 field,
             } => {
                 self.u8(32);
                 self.reg(*destination);
+                self.verification_type(pointee_type)?;
                 self.reg(*object);
                 self.string(field)?;
             }
             Instruction::MakeWholeReference {
                 destination,
+                pointee_type,
                 object,
             } => {
                 self.u8(34);
                 self.reg(*destination);
+                self.verification_type(pointee_type)?;
                 self.reg(*object);
             }
             Instruction::MoveOut {

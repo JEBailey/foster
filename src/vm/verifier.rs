@@ -186,44 +186,6 @@ fn verify_specialization(
     Ok(())
 }
 
-fn specialize_type(
-    ty: &VerificationType,
-    specialization: &crate::vm::Specialization,
-) -> VerificationType {
-    let nested = |ty| specialize_type(ty, specialization);
-    match ty {
-        VerificationType::Generic(name) => specialization
-            .iter()
-            .find_map(|(candidate, ty)| (candidate == name).then(|| ty.clone()))
-            .unwrap_or_else(|| ty.clone()),
-        VerificationType::List(value) => VerificationType::List(Box::new(nested(value))),
-        VerificationType::Reference(value) => VerificationType::Reference(Box::new(nested(value))),
-        VerificationType::Remote(value) => VerificationType::Remote(Box::new(nested(value))),
-        VerificationType::Future(value) => VerificationType::Future(Box::new(nested(value))),
-        VerificationType::Function {
-            parameters,
-            parameter_modes,
-            result,
-        } => VerificationType::Function {
-            parameters: parameters.iter().map(nested).collect(),
-            parameter_modes: parameter_modes.clone(),
-            result: Box::new(nested(result)),
-        },
-        VerificationType::Record { record, arguments } => VerificationType::Record {
-            record: *record,
-            arguments: arguments.iter().map(nested).collect(),
-        },
-        VerificationType::Variant { variant, arguments } => VerificationType::Variant {
-            variant: *variant,
-            arguments: arguments.iter().map(nested).collect(),
-        },
-        VerificationType::Union(members) => {
-            VerificationType::Union(members.iter().map(nested).collect())
-        }
-        _ => ty.clone(),
-    }
-}
-
 fn verify_function_structure(
     program: &Program,
     _id: FunctionId,
@@ -698,9 +660,10 @@ fn transfer(
         }
         Instruction::MakeList {
             destination,
+            element_type,
             elements,
         } => {
-            let mut element = VerificationType::Unknown;
+            let mut element = element_type.clone();
             for register in elements {
                 let found = read_type(function, index, &state, *register)?;
                 element = merge_types(function, index, &element, &found)?;
@@ -830,6 +793,7 @@ fn transfer(
         }
         Instruction::MakeReference {
             destination,
+            pointee_type,
             object,
             index: subscript,
         } => {
@@ -841,45 +805,79 @@ fn transfer(
                 &VerificationType::Integer,
                 "index",
             )?;
-            let value = match read_type(function, index, &state, *object)? {
-                VerificationType::List(element) => *element,
-                VerificationType::ByteBuffer => VerificationType::Byte,
-                VerificationType::Unknown => VerificationType::Unknown,
-                found => return type_error(function, index, "referenceable indexed value", &found),
-            };
+            let object_type = read_type(function, index, &state, *object)?;
+            let inferred = object_type.indexed_element().ok_or_else(|| {
+                FosterError::runtime(format!(
+                    "bytecode function `{}` instruction {index} has referenceable indexed value type {object_type:?}",
+                    function.name
+                ))
+            })?;
+            require_type(
+                function,
+                index,
+                &inferred,
+                pointee_type,
+                "reference pointee",
+            )?;
             write_type(
                 function,
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Reference(Box::new(value)),
+                VerificationType::Reference(Box::new(pointee_type.clone())),
             )?;
         }
         Instruction::MakeWholeReference {
             destination,
+            pointee_type,
             object,
         } => {
             let value = read_type(function, index, &state, *object)?;
+            let inferred = match value {
+                VerificationType::Reference(pointee) => *pointee,
+                value => value,
+            };
+            require_type(
+                function,
+                index,
+                &inferred,
+                pointee_type,
+                "reference pointee",
+            )?;
             write_type(
                 function,
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Reference(Box::new(value)),
+                VerificationType::Reference(Box::new(pointee_type.clone())),
             )?;
         }
         Instruction::MakeFieldReference {
             destination,
+            pointee_type,
             object,
-            ..
+            field,
         } => {
-            read_type(function, index, &state, *object)?;
+            let object = read_type(function, index, &state, *object)?;
+            let inferred = verification_field_type(program, &object, field).ok_or_else(|| {
+                FosterError::runtime(format!(
+                    "bytecode function `{}` instruction {index} references missing field `{field}`",
+                    function.name
+                ))
+            })?;
+            require_type(
+                function,
+                index,
+                &inferred,
+                pointee_type,
+                "reference pointee",
+            )?;
             write_type(
                 function,
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Reference(Box::new(VerificationType::Unknown)),
+                VerificationType::Reference(Box::new(pointee_type.clone())),
             )?;
         }
         Instruction::MoveOut {
@@ -1281,7 +1279,7 @@ fn transfer(
             let capture_types = target
                 .capture_types
                 .iter()
-                .map(|ty| specialize_type(ty, specialization))
+                .map(|ty| ty.specialize(specialization))
                 .collect::<Vec<_>>();
             verify_captures(function, index, &mut state, captures, &capture_types)?;
             write_type(
@@ -1350,12 +1348,12 @@ fn transfer(
             let capture_types = target
                 .capture_types
                 .iter()
-                .map(|ty| specialize_type(ty, specialization))
+                .map(|ty| ty.specialize(specialization))
                 .collect::<Vec<_>>();
             let parameter_types = target
                 .parameter_types
                 .iter()
-                .map(|ty| specialize_type(ty, specialization))
+                .map(|ty| ty.specialize(specialization))
                 .collect::<Vec<_>>();
             verify_captures(function, index, &mut state, captures, &capture_types)?;
             verify_arguments(
@@ -1375,7 +1373,7 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                specialize_type(&target.result_type, specialization),
+                target.result_type.specialize(specialization),
             )?;
         }
         Instruction::Return { source } => {
@@ -1395,6 +1393,40 @@ fn transfer(
         }
     }
     Ok(vec![(next, state)])
+}
+
+fn verification_field_type(
+    program: &Program,
+    receiver: &VerificationType,
+    field: &str,
+) -> Option<VerificationType> {
+    match receiver {
+        VerificationType::Reference(pointee) => verification_field_type(program, pointee, field),
+        VerificationType::Record { record, arguments } => {
+            let metadata = program.records.get(record)?;
+            let index = metadata
+                .layout
+                .names()
+                .iter()
+                .position(|name| name == field)?;
+            let substitutions = metadata
+                .parameters
+                .iter()
+                .cloned()
+                .zip(arguments.iter().cloned())
+                .collect::<HashMap<_, _>>();
+            Some(metadata.field_types.get(index)?.substitute(&substitutions))
+        }
+        VerificationType::List(element) => match field {
+            "empty?" => Some(VerificationType::Bool),
+            "length" => Some(VerificationType::Integer),
+            "head" => Some((**element).clone()),
+            "rest" => Some(receiver.clone()),
+            _ => None,
+        },
+        VerificationType::Unknown => Some(VerificationType::Unknown),
+        _ => None,
+    }
 }
 
 fn verify_arguments<'a>(

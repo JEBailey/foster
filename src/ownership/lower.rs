@@ -692,11 +692,10 @@ impl<'a> Builder<'a> {
             }
             hir::Expr::Name(ResolvedName::Local(_))
             | hir::Expr::Member { .. }
-            | hir::Expr::Index { .. }
-                if self.owned_place(expression).is_some() =>
-            {
-                BorrowValue::Place(self.owned_place(expression).unwrap())
-            }
+            | hir::Expr::Index { .. } => self
+                .owned_place(expression)
+                .map(BorrowValue::Place)
+                .unwrap_or(BorrowValue::Empty),
             hir::Expr::List(values) => BorrowValue::Fields(
                 values
                     .iter()

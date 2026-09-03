@@ -1,4 +1,4 @@
-//! Stable builtin tags and declarative source-intrinsic metadata.
+//! Stable builtin tags and declarative VM/native source-intrinsic metadata.
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntrinsicType {
@@ -64,6 +64,21 @@ pub enum BuiltinExecution {
     ConsumeFirst,
 }
 
+/// Native lowering selected from the same registry as VM execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeIntrinsic {
+    Unavailable,
+    Inline(NativeInlineIntrinsic),
+    Runtime(&'static str),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeInlineIntrinsic {
+    IntegerToCodePoint,
+    ByteIsValid,
+    IntegerToByte,
+}
+
 pub(crate) type DirectBuiltinHandler = fn(
     &[crate::vm::Value],
     Option<crate::hir::RecordId>,
@@ -95,6 +110,8 @@ pub struct BuiltinDescriptor {
     pub module: Option<&'static str>,
     pub signature: IntrinsicSignature,
     pub execution: BuiltinExecution,
+    /// Native policy: scalar codegen, a typed platform import, or deliberately unavailable.
+    pub native: NativeIntrinsic,
     pub(crate) handler: Option<BuiltinHandler>,
 }
 
@@ -140,9 +157,31 @@ macro_rules! builtin_descriptors {
                     result: IntrinsicType::$result,
                 },
                 execution: BuiltinExecution::$execution,
+                native: native_builtin!($builtin),
                 handler: builtin_handler!($execution, $builtin),
             }),+
         ];
+    };
+}
+
+macro_rules! native_builtin {
+    (FromCodePoint) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::IntegerToCodePoint)
+    };
+    (ByteValid) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::ByteIsValid)
+    };
+    (ByteUnchecked) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::IntegerToByte)
+    };
+    (ParseFloat) => {
+        NativeIntrinsic::Runtime("foster_parse_float")
+    };
+    (FormatFloat) => {
+        NativeIntrinsic::Runtime("foster_format_float")
+    };
+    ($builtin:ident) => {
+        NativeIntrinsic::Unavailable
     };
 }
 
@@ -329,6 +368,28 @@ impl Builtin {
 
     pub fn is_host(self) -> bool {
         self.descriptor().execution == BuiltinExecution::Host
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeReceiverKind {
+    Arguments,
+    String,
+    StringList,
+}
+
+/// Registry-owned runtime member lookup used only by legacy host-backed ABI views.
+pub fn native_member_runtime(receiver: NativeReceiverKind, member: &str) -> Option<&'static str> {
+    match (receiver, member) {
+        (NativeReceiverKind::Arguments, "executable") => Some("foster_args_executable"),
+        (NativeReceiverKind::Arguments, "values") => Some("foster_args_values"),
+        (NativeReceiverKind::StringList, "empty?") => Some("foster_string_list_empty"),
+        (NativeReceiverKind::StringList, "length") => Some("foster_string_list_length"),
+        (NativeReceiverKind::StringList, "head") => Some("foster_string_list_head"),
+        (NativeReceiverKind::String, "empty?") => Some("foster_string_empty"),
+        (NativeReceiverKind::String, "length") => Some("foster_string_length"),
+        (NativeReceiverKind::String, "head") => Some("foster_string_head"),
+        _ => None,
     }
 }
 
@@ -533,6 +594,29 @@ mod tests {
         assert_eq!(
             Intrinsic::Opcode(OpcodeIntrinsic::ListAppend).receiver_mode(),
             Some(IntrinsicReceiverMode::Consume)
+        );
+    }
+
+    #[test]
+    fn native_intrinsic_policies_are_explicit() {
+        let supported = BUILTINS
+            .iter()
+            .filter(|descriptor| descriptor.native != NativeIntrinsic::Unavailable)
+            .map(|descriptor| descriptor.builtin)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            supported,
+            vec![
+                Builtin::FromCodePoint,
+                Builtin::ParseFloat,
+                Builtin::FormatFloat,
+                Builtin::ByteValid,
+                Builtin::ByteUnchecked,
+            ]
+        );
+        assert_eq!(
+            native_member_runtime(NativeReceiverKind::String, "length"),
+            Some("foster_string_length")
         );
     }
 

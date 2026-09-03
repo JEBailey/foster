@@ -7,5 +7,6 @@ pub(crate) use registry::BuiltinHandler;
 pub use registry::{
     BUILTINS, Builtin, BuiltinDescriptor, BuiltinExecution, Intrinsic, IntrinsicArgumentMode,
     IntrinsicParameter, IntrinsicParameters, IntrinsicReceiverMode, IntrinsicSignature,
-    IntrinsicType, OPCODE_INTRINSICS, OpcodeIntrinsic, OpcodeIntrinsicDescriptor,
+    IntrinsicType, NativeInlineIntrinsic, NativeIntrinsic, NativeReceiverKind, OPCODE_INTRINSICS,
+    OpcodeIntrinsic, OpcodeIntrinsicDescriptor, native_member_runtime,
 };

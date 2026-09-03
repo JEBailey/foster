@@ -221,6 +221,7 @@ pub(super) fn rewrite_registers(
         Instruction::MakeList {
             destination,
             elements,
+            ..
         } => {
             rewrite(destination, mapping);
             elements

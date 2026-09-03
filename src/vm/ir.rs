@@ -55,6 +55,149 @@ pub enum VerificationType {
     Union(Vec<VerificationType>),
 }
 
+impl VerificationType {
+    pub(crate) fn indexed_element(&self) -> Option<Self> {
+        match self {
+            Self::Reference(pointee) => pointee.indexed_element(),
+            Self::List(element) => Some((**element).clone()),
+            Self::ByteBuffer => Some(Self::Byte),
+            Self::Unknown | Self::Generic(_) => Some(Self::Unknown),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn depth(&self) -> usize {
+        match self {
+            Self::List(value)
+            | Self::Reference(value)
+            | Self::Remote(value)
+            | Self::Future(value) => 1 + value.depth(),
+            Self::Function {
+                parameters, result, ..
+            } => {
+                1 + parameters
+                    .iter()
+                    .chain(std::iter::once(result.as_ref()))
+                    .map(Self::depth)
+                    .max()
+                    .unwrap_or(0)
+            }
+            Self::Record { arguments, .. }
+            | Self::Variant { arguments, .. }
+            | Self::Union(arguments) => 1 + arguments.iter().map(Self::depth).max().unwrap_or(0),
+            _ => 1,
+        }
+    }
+
+    pub(crate) fn contains_generic(&self) -> bool {
+        match self {
+            Self::Generic(_) => true,
+            Self::List(value)
+            | Self::Reference(value)
+            | Self::Remote(value)
+            | Self::Future(value) => value.contains_generic(),
+            Self::Function {
+                parameters, result, ..
+            } => parameters.iter().any(Self::contains_generic) || result.contains_generic(),
+            Self::Record { arguments, .. }
+            | Self::Variant { arguments, .. }
+            | Self::Union(arguments) => arguments.iter().any(Self::contains_generic),
+            _ => false,
+        }
+    }
+
+    /// Replace generic leaves using a named substitution map.
+    pub(crate) fn substitute(&self, substitutions: &HashMap<String, VerificationType>) -> Self {
+        self.substitute_with(&|name| substitutions.get(name).cloned())
+    }
+
+    /// Replace generic leaves using the stable, sorted specialization carried by bytecode calls.
+    pub(crate) fn specialize(&self, substitutions: &Specialization) -> Self {
+        self.substitute_with(&|name| {
+            substitutions
+                .binary_search_by(|(candidate, _)| candidate.as_str().cmp(name))
+                .ok()
+                .map(|index| substitutions[index].1.clone())
+        })
+    }
+
+    fn substitute_with(&self, lookup: &impl Fn(&str) -> Option<Self>) -> Self {
+        match self {
+            Self::Generic(name) => lookup(name).unwrap_or_else(|| self.clone()),
+            Self::List(value) => Self::List(Box::new(value.substitute_with(lookup))),
+            Self::Reference(value) => Self::Reference(Box::new(value.substitute_with(lookup))),
+            Self::Remote(value) => Self::Remote(Box::new(value.substitute_with(lookup))),
+            Self::Future(value) => Self::Future(Box::new(value.substitute_with(lookup))),
+            Self::Function {
+                parameters,
+                parameter_modes,
+                result,
+            } => Self::Function {
+                parameters: parameters
+                    .iter()
+                    .map(|ty| ty.substitute_with(lookup))
+                    .collect(),
+                parameter_modes: parameter_modes.clone(),
+                result: Box::new(result.substitute_with(lookup)),
+            },
+            Self::Record { record, arguments } => Self::Record {
+                record: *record,
+                arguments: arguments
+                    .iter()
+                    .map(|ty| ty.substitute_with(lookup))
+                    .collect(),
+            },
+            Self::Variant { variant, arguments } => Self::Variant {
+                variant: *variant,
+                arguments: arguments
+                    .iter()
+                    .map(|ty| ty.substitute_with(lookup))
+                    .collect(),
+            },
+            Self::Union(members) => Self::Union(
+                members
+                    .iter()
+                    .map(|ty| ty.substitute_with(lookup))
+                    .collect(),
+            ),
+            _ => self.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod verification_type_tests {
+    use super::*;
+
+    #[test]
+    fn substitutions_walk_nested_types_consistently() {
+        let generic = VerificationType::Function {
+            parameters: vec![VerificationType::List(Box::new(VerificationType::Generic(
+                "T".into(),
+            )))],
+            parameter_modes: vec![crate::ast::ParameterMode::Borrow],
+            result: Box::new(VerificationType::Reference(Box::new(
+                VerificationType::Generic("T".into()),
+            ))),
+        };
+        let expected = VerificationType::Function {
+            parameters: vec![VerificationType::List(Box::new(VerificationType::Integer))],
+            parameter_modes: vec![crate::ast::ParameterMode::Borrow],
+            result: Box::new(VerificationType::Reference(Box::new(
+                VerificationType::Integer,
+            ))),
+        };
+        let map = HashMap::from([("T".into(), VerificationType::Integer)]);
+        let specialization = vec![("T".into(), VerificationType::Integer)];
+
+        assert_eq!(generic.substitute(&map), expected);
+        assert_eq!(generic.specialize(&specialization), expected);
+        assert_eq!(generic.depth(), 3);
+        assert!(generic.contains_generic());
+        assert!(!expected.contains_generic());
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Constant {
     Unit,
@@ -96,6 +239,7 @@ pub enum Instruction {
     },
     MakeList {
         destination: Register,
+        element_type: VerificationType,
         elements: Vec<Register>,
     },
     Index {
@@ -133,15 +277,18 @@ pub enum Instruction {
     },
     MakeReference {
         destination: Register,
+        pointee_type: VerificationType,
         object: Register,
         index: Register,
     },
     MakeWholeReference {
         destination: Register,
+        pointee_type: VerificationType,
         object: Register,
     },
     MakeFieldReference {
         destination: Register,
+        pointee_type: VerificationType,
         object: Register,
         field: String,
     },
@@ -280,6 +427,7 @@ impl Instruction {
             Self::MakeList {
                 destination,
                 elements,
+                ..
             } => {
                 visit(*destination);
                 elements.iter().copied().for_each(&mut visit);
@@ -334,6 +482,7 @@ impl Instruction {
                 destination,
                 object,
                 index,
+                ..
             } => {
                 visit(*destination);
                 visit(*object);
@@ -342,6 +491,7 @@ impl Instruction {
             Self::MakeWholeReference {
                 destination,
                 object,
+                ..
             } => {
                 visit(*destination);
                 visit(*object);

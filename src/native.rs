@@ -6,12 +6,13 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use cranelift_codegen::ir::{
-    AbiParam, Block as ClifBlock, InstBuilder, MemFlagsData, Signature as ClifSignature, TrapCode,
-    Type as ClifType, Value as ClifValue, types,
+    AbiParam, Block as ClifBlock, InstBuilder, MemFlagsData, Signature as ClifSignature, StackSlot,
+    StackSlotData, StackSlotKind, TrapCode, Type as ClifType, Value as ClifValue, types,
 };
 use cranelift_codegen::ir::{condcodes::FloatCC, condcodes::IntCC};
 use cranelift_codegen::settings::{self, Configurable};
@@ -66,13 +67,12 @@ struct NativeLayouts<'a> {
 
 impl NativeLayouts<'_> {
     fn is_managed(self, layout: LayoutId) -> bool {
-        !matches!(
-            self.logical.get(layout).kind,
-            LayoutKind::Builtin { .. } | LayoutKind::Pointer { .. } | LayoutKind::Opaque
-        ) && !matches!(
-            self.logical.get(layout).kind,
-            LayoutKind::Record { record, .. } if Some(record) == self.program.string_record
-        )
+        self.logical.get(layout).materialized
+            && !matches!(self.logical.get(layout).kind, LayoutKind::Pointer { .. })
+            && !matches!(
+                self.logical.get(layout).kind,
+                LayoutKind::Record { record, .. } if Some(record) == self.program.string_record
+            )
     }
 }
 
@@ -126,6 +126,7 @@ impl ObjectRuntime<'_> {
 #[derive(Clone, Copy)]
 struct NativeIrEnvironment<'a> {
     program: &'a Program,
+    shared_functions: &'a HashMap<FunctionId, ir::Function>,
     function_types: &'a HashMap<FunctionId, ir::Signature>,
     runtime_string_indices: &'a HashMap<u16, u64>,
     layouts: &'a LayoutRegistry,
@@ -144,7 +145,6 @@ struct NativeBackend<'a> {
 struct PatternSubject {
     value: ClifValue,
     ty: NativeType,
-    may_bind_object: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -161,13 +161,14 @@ struct NativeInstance {
 
 /// Lower the reachable native subset and render deterministic typed SSA IR.
 pub fn emit_ir(compilation: &Compilation) -> Result<String, FosterError> {
-    let mut program =
-        vm::compile_with_options(compilation, vm::CompileOptions { optimize: false })?;
+    let shared = vm::compile_shared(compilation)?;
+    let mut program = shared.metadata;
+    let shared_functions = shared.functions;
     let mut layouts = crate::codegen::layout::legalize(&mut program)?;
     let main = program.main.ok_or_else(|| {
         FosterError::runtime("native compilation requires a `main` function").with_code("E0900")
     })?;
-    let instances = reachable_instances(&program, main)?;
+    let instances = reachable_instances(&program, &shared_functions, main)?;
     let instance_ids = instances
         .iter()
         .map(|instance| (instance.key.clone(), instance.ir_function))
@@ -181,6 +182,7 @@ pub fn emit_ir(compilation: &Compilation) -> Result<String, FosterError> {
         .iter()
         .find(|instance| instance.key.function == main && instance.key.substitutions.is_empty())
         .expect("main specialization is reachable");
+    validate_program(compilation, &program, &instances, &function_types, &layouts)?;
     if matches!(
         function_types[&main_instance.ir_function].result,
         NativeType::Arguments | NativeType::StringList | NativeType::Object(_)
@@ -189,10 +191,10 @@ pub fn emit_ir(compilation: &Compilation) -> Result<String, FosterError> {
             "native `main` cannot return Arguments or List<String>",
         ));
     }
-    validate_program(compilation, &program, &instances, &function_types, &layouts)?;
     let (_, runtime_string_indices) = runtime_strings(&program);
     let environment = NativeIrEnvironment {
         program: &program,
+        shared_functions: &shared_functions,
         function_types: &function_types,
         runtime_string_indices: &runtime_string_indices,
         layouts: &layouts,
@@ -202,7 +204,8 @@ pub fn emit_ir(compilation: &Compilation) -> Result<String, FosterError> {
     let mut output = String::from("foster-codegen-ir 1\n\n");
     for instance in &instances {
         let function = &program.functions[&instance.key.function];
-        let lowered = lower_to_native_ir(
+        let lowered = lower_shared_to_native_ir(
+            &shared_functions[&instance.key.function],
             function,
             &function_types[&instance.ir_function],
             &instance.key,
@@ -228,16 +231,17 @@ pub fn compile_object(
     compilation: &Compilation,
     options: CompileOptions,
 ) -> Result<ObjectArtifact, FosterError> {
-    // Request verified bytecode without bytecode optimization. Its storage homes retain the
-    // stable types needed while the native subset is rebuilt as shared SSA below; Cranelift still
-    // performs the requested machine-level optimization.
-    let mut program =
-        vm::compile_with_options(compilation, vm::CompileOptions { optimize: false })?;
+    // Consume the compiler's verified first SSA artifact directly. Construction metadata remains
+    // available for source spans, nominal identities, and storage-home type specialization;
+    // Cranelift performs the requested machine-level optimization.
+    let shared = vm::compile_shared(compilation)?;
+    let mut program = shared.metadata;
+    let shared_functions = shared.functions;
     let mut layouts = crate::codegen::layout::legalize(&mut program)?;
     let main = program.main.ok_or_else(|| {
         FosterError::runtime("native compilation requires a `main` function").with_code("E0900")
     })?;
-    let instances = reachable_instances(&program, main)?;
+    let instances = reachable_instances(&program, &shared_functions, main)?;
     let instance_ids = instances
         .iter()
         .map(|instance| (instance.key.clone(), instance.ir_function))
@@ -247,6 +251,7 @@ pub fn compile_object(
         .iter()
         .find(|instance| instance.key.function == main && instance.key.substitutions.is_empty())
         .expect("main specialization is reachable");
+    validate_program(compilation, &program, &instances, &function_types, &layouts)?;
     if matches!(
         function_types[&main_instance.ir_function].result,
         NativeType::Arguments | NativeType::StringList | NativeType::Object(_)
@@ -284,7 +289,6 @@ pub fn compile_object(
         native_error(format!("cannot calculate native object layouts: {error}"))
     })?;
     let layout_descriptors = emit_layout_descriptors(&mut module, &physical_layouts)?;
-    validate_program(compilation, &program, &instances, &function_types, &layouts)?;
     let (runtime_strings, runtime_string_indices) = runtime_strings(&program);
 
     let mut native_ids = HashMap::new();
@@ -320,6 +324,7 @@ pub fn compile_object(
     let backend = NativeBackend {
         ir: NativeIrEnvironment {
             program: &program,
+            shared_functions: &shared_functions,
             function_types: &function_types,
             runtime_string_indices: &runtime_string_indices,
             layouts: &layouts,
@@ -456,6 +461,7 @@ pub fn build_executable(
 
 fn reachable_instances(
     program: &Program,
+    shared_functions: &HashMap<FunctionId, ir::Function>,
     main: FunctionId,
 ) -> Result<Vec<NativeInstance>, FosterError> {
     let mut reachable = BTreeSet::new();
@@ -464,11 +470,7 @@ fn reachable_instances(
         substitutions: Vec::new(),
     }];
     while let Some(instance) = pending.pop() {
-        if instance
-            .substitutions
-            .iter()
-            .any(|(_, ty)| verification_type_depth(ty) > 64)
-        {
+        if instance.substitutions.iter().any(|(_, ty)| ty.depth() > 64) {
             return Err(native_error(
                 "native monomorphization encountered expanding polymorphic recursion",
             )
@@ -490,32 +492,48 @@ fn reachable_instances(
                 instance.function.into_raw().into_u32()
             ))
         })?;
-        for instruction in &body.instructions {
-            match instruction {
-                Instruction::Call {
+        let shared = shared_functions.get(&instance.function).ok_or_else(|| {
+            native_error(format!(
+                "native function `{}` has no shared SSA body",
+                body.name
+            ))
+        })?;
+        for instruction in shared.blocks.iter().flat_map(|block| &block.instructions) {
+            let target = match instruction {
+                ir::Instruction::Call {
                     function,
                     specialization,
                     ..
-                }
-                | Instruction::CallMethod {
+                } => Some((*function, specialization)),
+                ir::Instruction::Portable(
+                    ir::PortableInstruction::Call {
+                        function,
+                        specialization,
+                        ..
+                    }
+                    | ir::PortableInstruction::CallMethod {
+                        function,
+                        specialization,
+                        ..
+                    }
+                    | ir::PortableInstruction::MakeClosure {
+                        function,
+                        specialization,
+                        ..
+                    }
+                    | ir::PortableInstruction::CallClosure {
+                        function,
+                        specialization,
+                        ..
+                    },
+                ) => Some((*function, specialization)),
+                _ => None,
+            };
+            if let Some((function, specialization)) = target {
+                pending.push(SpecializationKey {
                     function,
-                    specialization,
-                    ..
-                }
-                | Instruction::MakeClosure {
-                    function,
-                    specialization,
-                    ..
-                }
-                | Instruction::CallClosure {
-                    function,
-                    specialization,
-                    ..
-                } => pending.push(SpecializationKey {
-                    function: *function,
                     substitutions: resolve_specialization(specialization, &instance.substitutions),
-                }),
-                _ => {}
+                });
             }
         }
     }
@@ -542,102 +560,14 @@ fn reachable_instances(
         .collect()
 }
 
-fn verification_type_depth(ty: &crate::vm::VerificationType) -> usize {
-    use crate::vm::VerificationType;
-    match ty {
-        VerificationType::List(value)
-        | VerificationType::Reference(value)
-        | VerificationType::Remote(value)
-        | VerificationType::Future(value) => 1 + verification_type_depth(value),
-        VerificationType::Function {
-            parameters, result, ..
-        } => {
-            1 + parameters
-                .iter()
-                .chain(std::iter::once(result.as_ref()))
-                .map(verification_type_depth)
-                .max()
-                .unwrap_or(0)
-        }
-        VerificationType::Record { arguments, .. }
-        | VerificationType::Variant { arguments, .. }
-        | VerificationType::Union(arguments) => {
-            1 + arguments
-                .iter()
-                .map(verification_type_depth)
-                .max()
-                .unwrap_or(0)
-        }
-        _ => 1,
-    }
-}
-
 fn resolve_specialization(
     specialization: &crate::vm::Specialization,
     outer: &crate::vm::Specialization,
 ) -> crate::vm::Specialization {
     specialization
         .iter()
-        .map(|(name, ty)| (name.clone(), substitute_verification_type(ty, outer)))
+        .map(|(name, ty)| (name.clone(), ty.specialize(outer)))
         .collect()
-}
-
-fn substitute_verification_type(
-    ty: &crate::vm::VerificationType,
-    substitutions: &crate::vm::Specialization,
-) -> crate::vm::VerificationType {
-    use crate::vm::VerificationType;
-    match ty {
-        VerificationType::Generic(name) => substitutions
-            .iter()
-            .find_map(|(candidate, ty)| (candidate == name).then(|| ty.clone()))
-            .unwrap_or_else(|| ty.clone()),
-        VerificationType::List(value) => {
-            VerificationType::List(Box::new(substitute_verification_type(value, substitutions)))
-        }
-        VerificationType::Reference(value) => VerificationType::Reference(Box::new(
-            substitute_verification_type(value, substitutions),
-        )),
-        VerificationType::Remote(value) => {
-            VerificationType::Remote(Box::new(substitute_verification_type(value, substitutions)))
-        }
-        VerificationType::Future(value) => {
-            VerificationType::Future(Box::new(substitute_verification_type(value, substitutions)))
-        }
-        VerificationType::Function {
-            parameters,
-            parameter_modes,
-            result,
-        } => VerificationType::Function {
-            parameters: parameters
-                .iter()
-                .map(|ty| substitute_verification_type(ty, substitutions))
-                .collect(),
-            parameter_modes: parameter_modes.clone(),
-            result: Box::new(substitute_verification_type(result, substitutions)),
-        },
-        VerificationType::Record { record, arguments } => VerificationType::Record {
-            record: *record,
-            arguments: arguments
-                .iter()
-                .map(|ty| substitute_verification_type(ty, substitutions))
-                .collect(),
-        },
-        VerificationType::Variant { variant, arguments } => VerificationType::Variant {
-            variant: *variant,
-            arguments: arguments
-                .iter()
-                .map(|ty| substitute_verification_type(ty, substitutions))
-                .collect(),
-        },
-        VerificationType::Union(members) => VerificationType::Union(
-            members
-                .iter()
-                .map(|ty| substitute_verification_type(ty, substitutions))
-                .collect(),
-        ),
-        _ => ty.clone(),
-    }
 }
 
 fn collect_function_types(
@@ -661,7 +591,7 @@ fn collect_function_types(
                 .capture_types
                 .iter()
                 .map(|ty| {
-                    let concrete = substitute_verification_type(ty, &instance.key.substitutions);
+                    let concrete = ty.specialize(&instance.key.substitutions);
                     layouts.instantiate_type(&concrete)?;
                     concrete_native_type(compilation, layouts, &concrete, &definition.name)
                 })
@@ -684,6 +614,13 @@ fn collect_function_types(
             if layouts.closure(function).is_some() {
                 layouts.instantiate_closure(function, &instance.key.substitutions)?;
             }
+            for instruction in &program.functions[&function].instructions {
+                if let Some(ty) =
+                    instruction_layout_type(program, instruction, &instance.key.substitutions)
+                {
+                    layouts.instantiate_type(&ty)?;
+                }
+            }
             let result = if matches!(compilation.types.types[signature.result], Type::Function(_)) {
                 concrete_closure_result(program, layouts, &instance.key)?
             } else {
@@ -698,6 +635,47 @@ fn collect_function_types(
             Ok((instance.ir_function, ir::Signature { parameters, result }))
         })
         .collect()
+}
+
+fn instruction_layout_type(
+    program: &Program,
+    instruction: &Instruction,
+    specialization: &crate::vm::Specialization,
+) -> Option<crate::vm::VerificationType> {
+    use crate::vm::VerificationType;
+    match instruction {
+        Instruction::MakeRecord {
+            record,
+            type_arguments,
+            ..
+        } => Some(VerificationType::Record {
+            record: *record,
+            arguments: type_arguments
+                .iter()
+                .map(|ty| ty.specialize(specialization))
+                .collect(),
+        }),
+        Instruction::MakeVariant {
+            variant,
+            type_arguments,
+            ..
+        } => Some(VerificationType::Variant {
+            variant: program.variants[variant].parent,
+            arguments: type_arguments
+                .iter()
+                .map(|ty| ty.specialize(specialization))
+                .collect(),
+        }),
+        Instruction::MakeList { element_type, .. } => Some(VerificationType::List(Box::new(
+            element_type.specialize(specialization),
+        ))),
+        Instruction::MakeReference { pointee_type, .. }
+        | Instruction::MakeWholeReference { pointee_type, .. }
+        | Instruction::MakeFieldReference { pointee_type, .. } => Some(
+            VerificationType::Reference(Box::new(pointee_type.specialize(specialization))),
+        ),
+        _ => None,
+    }
 }
 
 fn concrete_closure_result(
@@ -818,18 +796,16 @@ fn native_type(
         } if compilation.hir.records[record].name == "List"
             && compilation.hir.modules[compilation.hir.records[record].module].name
                 == "core.list"
-            && arguments.len() == 1
-            && native_type(compilation, layouts, arguments[0], substitutions, function)?
-                == NativeType::String =>
+            && arguments.len() == 1 =>
         {
-            Ok(NativeType::StringList)
-        }
-        Type::Record { record, .. } if compilation.hir.records[record].name == "Symbol" => {
-            Err(native_error(format!(
-                "native compilation of `{function}` does not yet support type `{}`",
-                compilation.types.display(ty)
-            ))
-            .with_help("use `foster build` without `--native` for the complete VM language"))
+            let element =
+                specialized_verification_type(compilation, arguments[0], substitutions, 0)?;
+            let concrete = crate::vm::VerificationType::List(Box::new(element));
+            layouts.instantiate_type(&concrete)?;
+            layouts
+                .builtin(&concrete)
+                .map(NativeType::Object)
+                .ok_or_else(|| native_error(format!("list type in `{function}` has no layout")))
         }
         Type::Record {
             record,
@@ -866,6 +842,18 @@ fn native_type(
                 .variant_instance(variant, &arguments)
                 .map(NativeType::Object)
                 .ok_or_else(|| native_error(format!("variant type in `{function}` has no layout")))
+        }
+        Type::RawBytes
+        | Type::RawByteBuffer
+        | Type::Reference { .. }
+        | Type::RawList(_)
+        | Type::Sequence(_)
+        | Type::Remote(_)
+        | Type::Future(_)
+        | Type::Function(_)
+        | Type::Intersection(_) => {
+            let concrete = specialized_verification_type(compilation, ty, substitutions, 0)?;
+            concrete_native_type(compilation, layouts, &concrete, function)
         }
         ref unsupported => Err(native_error(format!(
             "native compilation of `{function}` does not yet support type `{}` ({unsupported:?})",
@@ -977,6 +965,30 @@ fn concrete_native_type(
                 .map(NativeType::Object)
                 .ok_or_else(|| native_error(format!("variant type in `{function}` has no layout")))
         }
+        VerificationType::Reference(pointee) => {
+            layouts.instantiate_type(ty)?;
+            layouts
+                .pointer(pointee, crate::codegen::layout::Ownership::Borrowed)
+                .map(NativeType::Object)
+                .ok_or_else(|| {
+                    native_error(format!("reference type in `{function}` has no layout"))
+                })
+        }
+        VerificationType::Bytes
+        | VerificationType::ByteBuffer
+        | VerificationType::List(_)
+        | VerificationType::Remote(_)
+        | VerificationType::Future(_)
+        | VerificationType::Function { .. } => {
+            layouts.instantiate_type(ty)?;
+            layouts
+                .builtin(ty)
+                .map(NativeType::Object)
+                .ok_or_else(|| native_error(format!("runtime type in `{function}` has no layout")))
+        }
+        VerificationType::Unknown | VerificationType::Union(_) => {
+            Ok(NativeType::Object(layouts.opaque()))
+        }
         unsupported => Err(native_error(format!(
             "native specialization of `{function}` does not yet support `{unsupported:?}`"
         ))),
@@ -1026,10 +1038,20 @@ fn validate_program(
                     | Instruction::CallValue { .. }
                     | Instruction::MakeRecord { .. }
                     | Instruction::MakeVariant { .. }
+                    | Instruction::MakeList { .. }
                     | Instruction::LoadField { .. }
                     | Instruction::StoreField { .. }
+                    | Instruction::StoreIndex { .. }
                     | Instruction::MatchPattern { .. }
                     | Instruction::Index { .. }
+                    | Instruction::MakeReference { .. }
+                    | Instruction::MakeWholeReference { .. }
+                    | Instruction::MakeFieldReference { .. }
+                    | Instruction::MoveOut { .. }
+                    | Instruction::Push { .. }
+                    | Instruction::Append { .. }
+                    | Instruction::Contains { .. }
+                    | Instruction::Builtin { .. }
                     | Instruction::CallContractMethod { .. }
                     | Instruction::Return { .. }
             );
@@ -1064,6 +1086,15 @@ fn validate_program(
                 }
                 return Err(error);
             }
+            if let Instruction::Builtin { builtin, .. } = instruction
+                && builtin.descriptor().native == crate::intrinsics::NativeIntrinsic::Unavailable
+            {
+                return Err(native_error(format!(
+                    "native compilation of `{}` has no lowering for intrinsic `{builtin:?}`",
+                    body.name
+                ))
+                .with_help("move the algorithm into Foster or register a typed native primitive"));
+            }
             if let Instruction::LoadConstant { constant, .. } = instruction
                 && matches!(
                     program.constants[usize::from(*constant)],
@@ -1071,9 +1102,10 @@ fn validate_program(
                 )
             {
                 return Err(native_error(format!(
-                    "native compilation of `{}` does not yet support symbol constants",
+                    "native compilation of `{}` does not yet support type `Symbol` constants",
                     body.name
-                )));
+                ))
+                .with_help("use `foster build` without `--native` for the complete VM language"));
             }
         }
     }
@@ -1171,7 +1203,18 @@ fn define_layout_destructors(
                     builder.ins().jump(finish, &[]);
                     builder.switch_to_block(finish);
                 }
-                DropPlan::Trivial | DropPlan::Buffer { .. } | DropPlan::Runtime => {}
+                DropPlan::Buffer { element, .. } => {
+                    lower_drop_buffer(
+                        &mut builder,
+                        module,
+                        object,
+                        layout,
+                        *element,
+                        layouts,
+                        destructors,
+                    )?;
+                }
+                DropPlan::Trivial | DropPlan::Runtime => {}
             }
             let size = builder.ins().iconst(types::I64, i64::from(layout.size));
             let align = builder.ins().iconst(types::I64, i64::from(layout.align));
@@ -1204,6 +1247,98 @@ fn define_layout_destructors(
             })?;
         module.clear_context(&mut context);
     }
+    Ok(())
+}
+
+fn lower_drop_buffer(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    object: ClifValue,
+    layout: &crate::codegen::layout::physical::PhysicalLayout,
+    element: ValueLayout,
+    layouts: NativeLayouts<'_>,
+    destructors: &HashMap<LayoutId, FuncId>,
+) -> Result<(), FosterError> {
+    let PhysicalKind::Buffer {
+        data_offset,
+        length_offset,
+        capacity_offset,
+        ..
+    } = layout.kind
+    else {
+        return Err(native_error("buffer drop plan has a non-buffer layout"));
+    };
+    let pointer_type = module.target_config().pointer_type();
+    let data = builder.ins().load(
+        pointer_type,
+        MemFlagsData::trusted(),
+        object,
+        data_offset as i32,
+    );
+    let length = builder.ins().load(
+        pointer_type,
+        MemFlagsData::trusted(),
+        object,
+        length_offset as i32,
+    );
+    if let Some(pointee) = element.pointee
+        && layouts.is_managed(pointee)
+    {
+        let loop_block = builder.create_block();
+        let release = builder.create_block();
+        let released = builder.create_block();
+        builder.append_block_param(loop_block, pointer_type);
+        let zero = builder.ins().iconst(pointer_type, 0);
+        builder.ins().jump(loop_block, &[zero.into()]);
+        builder.switch_to_block(loop_block);
+        let index = builder.block_params(loop_block)[0];
+        let done = builder
+            .ins()
+            .icmp(IntCC::UnsignedGreaterThanOrEqual, index, length);
+        builder.ins().brif(done, released, &[], release, &[]);
+        builder.switch_to_block(release);
+        let offset = builder.ins().imul_imm_u(index, i64::from(element.size));
+        let address = builder.ins().iadd(data, offset);
+        let value = builder
+            .ins()
+            .load(pointer_type, MemFlagsData::trusted(), address, 0);
+        release_object(
+            builder,
+            module,
+            value,
+            pointee,
+            layouts.physical,
+            destructors,
+        )?;
+        let next = builder.ins().iadd_imm_s(index, 1);
+        builder.ins().jump(loop_block, &[next.into()]);
+        builder.switch_to_block(released);
+    }
+    let capacity = builder.ins().load(
+        pointer_type,
+        MemFlagsData::trusted(),
+        object,
+        capacity_offset as i32,
+    );
+    let has_data = builder.ins().icmp_imm_s(IntCC::NotEqual, capacity, 0);
+    let deallocate = builder.create_block();
+    let finish = builder.create_block();
+    builder.ins().brif(has_data, deallocate, &[], finish, &[]);
+    builder.switch_to_block(deallocate);
+    let size = builder.ins().imul_imm_u(capacity, i64::from(element.size));
+    let align = builder.ins().iconst(types::I64, i64::from(element.align));
+    runtime_call(
+        builder,
+        module,
+        "foster_dealloc",
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque, NativeType::Int, NativeType::Int],
+            result: NativeType::Unit,
+        },
+        &[data, size, align],
+    )?;
+    builder.ins().jump(finish, &[]);
+    builder.switch_to_block(finish);
     Ok(())
 }
 
@@ -1245,7 +1380,8 @@ fn define_function(
     backend: &NativeBackend<'_>,
 ) -> Result<(), FosterError> {
     let function = &backend.ir.program.functions[&instance.key.function];
-    let native_function = lower_to_native_ir(
+    let native_function = lower_shared_to_native_ir(
+        &backend.ir.shared_functions[&instance.key.function],
         function,
         &backend.ir.function_types[&instance.ir_function],
         &instance.key,
@@ -1362,7 +1498,10 @@ fn infer_register_types(
                     | BinaryOp::BitXor
                     | BinaryOp::ShiftLeft
                     | BinaryOp::ShiftRight => NativeType::Byte,
-                    _ => register_type(&result, *left, function)?,
+                    _ => dereference_native_type(
+                        register_type(&result, *left, function)?,
+                        environment,
+                    )?,
                 });
             }
             Instruction::Call {
@@ -1447,7 +1586,7 @@ fn infer_register_types(
             } => {
                 let arguments = type_arguments
                     .iter()
-                    .map(|ty| substitute_verification_type(ty, &instance.substitutions))
+                    .map(|ty| ty.specialize(&instance.substitutions))
                     .collect::<Vec<_>>();
                 result[usize::from(destination.0)] = Some(NativeType::Object(
                     environment
@@ -1470,7 +1609,7 @@ fn infer_register_types(
                 let parent = environment.program.variants[variant].parent;
                 let arguments = type_arguments
                     .iter()
-                    .map(|ty| substitute_verification_type(ty, &instance.substitutions))
+                    .map(|ty| ty.specialize(&instance.substitutions))
                     .collect::<Vec<_>>();
                 result[usize::from(destination.0)] = Some(NativeType::Object(
                     environment
@@ -1483,6 +1622,22 @@ fn infer_register_types(
                             ))
                         })?,
                 ));
+            }
+            Instruction::MakeList {
+                destination,
+                element_type,
+                ..
+            } => {
+                let concrete = crate::vm::VerificationType::List(Box::new(
+                    element_type.specialize(&instance.substitutions),
+                ));
+                let layout = environment.layouts.builtin(&concrete).ok_or_else(|| {
+                    native_error(format!(
+                        "list in `{}` has no concrete native layout for `{concrete:?}`",
+                        function.name
+                    ))
+                })?;
+                result[usize::from(destination.0)] = Some(NativeType::Object(layout));
             }
             Instruction::LoadField {
                 destination,
@@ -1508,6 +1663,17 @@ fn infer_register_types(
                 result[usize::from(destination.0)] = Some(match object {
                     NativeType::StringList => NativeType::String,
                     NativeType::String => NativeType::CodePoint,
+                    NativeType::Object(layout) => {
+                        let PhysicalKind::Buffer { element, .. } =
+                            &environment.physical_layouts.get(layout).kind
+                        else {
+                            return Err(native_error(format!(
+                                "native indexing requires a buffer in `{}`",
+                                function.name
+                            )));
+                        };
+                        native_type_from_value_layout(*element)
+                    }
                     _ => {
                         return Err(native_error(format!(
                             "native indexing does not support `{object:?}` in `{}`",
@@ -1515,6 +1681,60 @@ fn infer_register_types(
                         )));
                     }
                 });
+            }
+            Instruction::MakeReference {
+                destination,
+                pointee_type,
+                ..
+            }
+            | Instruction::MakeWholeReference {
+                destination,
+                pointee_type,
+                ..
+            }
+            | Instruction::MakeFieldReference {
+                destination,
+                pointee_type,
+                ..
+            } => {
+                let pointee = pointee_type.specialize(&instance.substitutions);
+                let layout = environment
+                    .layouts
+                    .pointer(&pointee, crate::codegen::layout::Ownership::Borrowed)
+                    .ok_or_else(|| native_error("reference has no concrete native layout"))?;
+                result[usize::from(destination.0)] = Some(NativeType::Object(layout));
+            }
+            Instruction::MoveOut {
+                destination,
+                source,
+            } => {
+                let source_type = register_type(&result, *source, function)?;
+                result[usize::from(destination.0)] =
+                    Some(dereference_native_type(source_type, environment)?);
+            }
+            Instruction::Push { destination, .. } => {
+                result[usize::from(destination.0)] = Some(NativeType::Unit);
+            }
+            Instruction::Append {
+                destination,
+                object,
+                ..
+            } => {
+                result[usize::from(destination.0)] =
+                    Some(register_type(&result, *object, function)?);
+            }
+            Instruction::Contains { destination, .. } => {
+                result[usize::from(destination.0)] = Some(NativeType::Bool);
+            }
+            Instruction::Builtin {
+                destination,
+                builtin,
+                ..
+            } => {
+                result[usize::from(destination.0)] = Some(native_intrinsic_type(
+                    builtin.descriptor().signature.result,
+                    environment.layouts,
+                )?);
             }
             Instruction::CallContractMethod {
                 destination,
@@ -1646,6 +1866,19 @@ fn register_type(
     })
 }
 
+fn dereference_native_type(
+    ty: NativeType,
+    environment: NativeIrEnvironment<'_>,
+) -> Result<NativeType, FosterError> {
+    let NativeType::Object(layout) = ty else {
+        return Ok(ty);
+    };
+    let LayoutKind::Pointer { pointee, .. } = &environment.layouts.get(layout).kind else {
+        return Ok(ty);
+    };
+    native_verification_type(environment.program, environment.layouts, pointee, None)
+}
+
 fn field_type(
     program: &Program,
     layouts: &LayoutRegistry,
@@ -1660,27 +1893,51 @@ fn field_type(
         (NativeType::StringList, "length") | (NativeType::String, "length") => Ok(NativeType::Int),
         (NativeType::StringList, "head") => Ok(NativeType::String),
         (NativeType::String, "head") => Ok(NativeType::CodePoint),
-        (NativeType::Object(layout), field) => {
-            let LayoutKind::Record { fields, .. } = &layouts.get(layout).kind else {
-                return Err(native_error(format!(
-                    "native field access requires a record, found l{}",
-                    layout.0
-                )));
-            };
-            let slot = fields
-                .iter()
-                .find(|slot| slot.name == field)
-                .ok_or_else(|| {
-                    native_error(format!(
-                        "native record l{} has no field `{field}`",
-                        layout.0
-                    ))
-                })?;
-            let physical = physical_layouts
-                .record_field(layout, slot.index)
-                .ok_or_else(|| native_error("logical and physical record fields disagree"))?;
-            native_verification_type(program, layouts, &slot.ty, physical.value.pointee)
-        }
+        (NativeType::Object(layout), field) => match &layouts.get(layout).kind {
+            LayoutKind::Record { fields, .. } => {
+                let slot = fields
+                    .iter()
+                    .find(|slot| slot.name == field)
+                    .ok_or_else(|| {
+                        native_error(format!(
+                            "native record l{} has no field `{field}`",
+                            layout.0
+                        ))
+                    })?;
+                let physical = physical_layouts
+                    .record_field(layout, slot.index)
+                    .ok_or_else(|| native_error("logical and physical record fields disagree"))?;
+                native_verification_type(program, layouts, &slot.ty, physical.value.pointee)
+            }
+            LayoutKind::Builtin {
+                ty: crate::vm::VerificationType::List(element),
+            } => match field {
+                "empty?" => Ok(NativeType::Bool),
+                "length" => Ok(NativeType::Int),
+                "head" => native_verification_type(
+                    program,
+                    layouts,
+                    element,
+                    match physical_layouts.get(layout).kind {
+                        PhysicalKind::Buffer { element, .. } => element.pointee,
+                        _ => None,
+                    },
+                ),
+                "rest" => Ok(NativeType::Object(layout)),
+                _ => Err(native_error(format!("native list has no field `{field}`"))),
+            },
+            LayoutKind::Pointer { pointee, .. } => field_type(
+                program,
+                layouts,
+                physical_layouts,
+                native_verification_type(program, layouts, pointee, None)?,
+                field,
+            ),
+            _ => Err(native_error(format!(
+                "native field access requires a record or list, found l{}",
+                layout.0
+            ))),
+        },
         _ => Err(native_error(format!(
             "native compilation does not support field `{field}` on `{receiver:?}`"
         ))),
@@ -1704,1066 +1961,900 @@ fn native_verification_type(
         VerificationType::Record { record, .. } if Some(*record) == program.string_record => {
             Ok(NativeType::String)
         }
-        VerificationType::Record { record, .. } => layouts
-            .record(*record)
+        VerificationType::Record { record, arguments } => layouts
+            .record_instance(*record, arguments)
             .or(physical_pointee)
             .map(NativeType::Object)
             .ok_or_else(|| native_error("record field has no native layout")),
-        VerificationType::Variant { variant, .. } => layouts
-            .variant(*variant)
+        VerificationType::Variant { variant, arguments } => layouts
+            .variant_instance(*variant, arguments)
             .or(physical_pointee)
             .map(NativeType::Object)
             .ok_or_else(|| native_error("variant field has no native layout")),
-        unsupported => Err(native_error(format!(
-            "native aggregate field type `{unsupported:?}` is not yet representable"
+        VerificationType::List(_)
+        | VerificationType::Bytes
+        | VerificationType::ByteBuffer
+        | VerificationType::Remote(_)
+        | VerificationType::Future(_)
+        | VerificationType::Function { .. } => layouts
+            .builtin(ty)
+            .or(physical_pointee)
+            .map(NativeType::Object)
+            .ok_or_else(|| native_error("builtin value has no native layout")),
+        VerificationType::Reference(pointee) => layouts
+            .pointer(pointee, crate::codegen::layout::Ownership::Borrowed)
+            .or(physical_pointee)
+            .map(NativeType::Object)
+            .ok_or_else(|| native_error("reference has no native layout")),
+        VerificationType::Unknown | VerificationType::Union(_) => {
+            Ok(NativeType::Object(layouts.opaque()))
+        }
+        VerificationType::Generic(name) => Err(native_error(format!(
+            "unresolved generic `{name}` has no native representation"
         ))),
     }
 }
 
-fn native_block_live_ins(
-    function: &BytecodeFunction,
-    leaders: &[usize],
-    block_for_leader: &HashMap<usize, ir::Block>,
-) -> Result<Vec<HashSet<Register>>, FosterError> {
-    let mut uses = vec![HashSet::new(); leaders.len()];
-    let mut definitions = vec![HashSet::new(); leaders.len()];
-    let mut successors = vec![Vec::new(); leaders.len()];
-    for (block_index, start) in leaders.iter().copied().enumerate() {
-        let end = leaders
-            .get(block_index + 1)
-            .copied()
-            .unwrap_or(function.instructions.len());
-        for instruction in &function.instructions[start..end] {
-            for register in native_instruction_uses(instruction) {
-                if !definitions[block_index].contains(&register) {
-                    uses[block_index].insert(register);
-                }
-            }
-            definitions[block_index].extend(native_instruction_definitions(instruction));
-        }
-        successors[block_index] = match function.instructions.get(end.saturating_sub(1)) {
-            Some(Instruction::Jump { target }) => vec![block_for_leader[target]],
-            Some(Instruction::JumpIfFalse { target, .. }) => {
-                let fallthrough = leaders.get(block_index + 1).ok_or_else(|| {
-                    native_error(format!(
-                        "conditional jump at end of `{}` has no fallthrough",
-                        function.name
-                    ))
-                })?;
-                vec![block_for_leader[target], block_for_leader[fallthrough]]
-            }
-            Some(Instruction::Return { .. }) | None => Vec::new(),
-            Some(_) if block_index + 1 < leaders.len() => {
-                vec![ir::Block((block_index + 1) as u32)]
-            }
-            Some(_) => Vec::new(),
-        };
-    }
-
-    let mut live_in = vec![HashSet::new(); leaders.len()];
-    let mut live_out = vec![HashSet::new(); leaders.len()];
-    loop {
-        let mut changed = false;
-        for block in (0..leaders.len()).rev() {
-            let next_out = successors[block]
-                .iter()
-                .flat_map(|successor| live_in[successor.0 as usize].iter().copied())
-                .collect::<HashSet<_>>();
-            let mut next_in = uses[block].clone();
-            next_in.extend(
-                next_out
-                    .iter()
-                    .filter(|register| !definitions[block].contains(register))
-                    .copied(),
-            );
-            changed |= next_in != live_in[block] || next_out != live_out[block];
-            live_in[block] = next_in;
-            live_out[block] = next_out;
-        }
-        if !changed {
-            return Ok(live_in);
-        }
+fn native_intrinsic_type(
+    ty: crate::intrinsics::IntrinsicType,
+    layouts: &LayoutRegistry,
+) -> Result<NativeType, FosterError> {
+    use crate::intrinsics::IntrinsicType;
+    use crate::vm::VerificationType;
+    match ty {
+        IntrinsicType::Unit => Ok(NativeType::Unit),
+        IntrinsicType::Bool => Ok(NativeType::Bool),
+        IntrinsicType::Integer => Ok(NativeType::Int),
+        IntrinsicType::Float => Ok(NativeType::Float),
+        IntrinsicType::CodePoint => Ok(NativeType::CodePoint),
+        IntrinsicType::Byte => Ok(NativeType::Byte),
+        IntrinsicType::String => Ok(NativeType::String),
+        IntrinsicType::Bytes => layouts
+            .builtin(&VerificationType::Bytes)
+            .map(NativeType::Object)
+            .ok_or_else(|| native_error("Bytes intrinsic type has no native layout")),
+        IntrinsicType::ByteBuffer => layouts
+            .builtin(&VerificationType::ByteBuffer)
+            .map(NativeType::Object)
+            .ok_or_else(|| native_error("ByteBuffer intrinsic type has no native layout")),
+        IntrinsicType::ListByte => layouts
+            .builtin(&VerificationType::List(Box::new(VerificationType::Byte)))
+            .map(NativeType::Object)
+            .ok_or_else(|| native_error("List<Byte> intrinsic type has no native layout")),
+        IntrinsicType::Any => Err(native_error(
+            "erased intrinsic type does not define a native ABI",
+        )),
     }
 }
 
-fn native_instruction_definitions(instruction: &Instruction) -> Vec<Register> {
-    match instruction {
-        Instruction::Drop { register } => vec![*register],
-        Instruction::LoadConstant { destination, .. }
-        | Instruction::Move { destination, .. }
-        | Instruction::Unary { destination, .. }
-        | Instruction::Binary { destination, .. }
-        | Instruction::MakeRecord { destination, .. }
-        | Instruction::MakeVariant { destination, .. }
-        | Instruction::LoadField { destination, .. }
-        | Instruction::Index { destination, .. }
-        | Instruction::Call { destination, .. }
-        | Instruction::CallMethod { destination, .. }
-        | Instruction::CallClosure { destination, .. }
-        | Instruction::MakeClosure { destination, .. }
-        | Instruction::CallValue { destination, .. }
-        | Instruction::CallContractMethod { destination, .. } => vec![*destination],
-        Instruction::MatchPattern {
-            destination,
-            bindings,
-            ..
-        } => {
-            let mut definitions = vec![*destination];
-            definitions.extend(bindings);
-            definitions
-        }
-        Instruction::Jump { .. }
-        | Instruction::JumpIfFalse { .. }
-        | Instruction::Assert { .. }
-        | Instruction::StoreField { .. }
-        | Instruction::Return { .. } => Vec::new(),
-        _ => unreachable!("validated native instruction subset"),
-    }
-}
-
-fn native_instruction_uses(instruction: &Instruction) -> Vec<Register> {
-    match instruction {
-        Instruction::Drop { .. } | Instruction::LoadConstant { .. } | Instruction::Jump { .. } => {
-            Vec::new()
-        }
-        Instruction::Move { source, .. } => vec![*source],
-        Instruction::Unary { operand, .. } => vec![*operand],
-        Instruction::Binary { left, right, .. } => vec![*left, *right],
-        Instruction::MakeRecord { fields, .. } => {
-            fields.iter().map(|(_, register)| *register).collect()
-        }
-        Instruction::MakeVariant { payload, .. } => payload.clone(),
-        Instruction::MakeClosure { captures, .. } => {
-            captures.iter().map(|(_, register)| *register).collect()
-        }
-        Instruction::CallValue {
-            callee, arguments, ..
-        } => {
-            let mut uses = vec![*callee];
-            uses.extend(arguments);
-            uses
-        }
-        Instruction::LoadField { object, .. } => vec![*object],
-        Instruction::StoreField { object, source, .. } => vec![*object, *source],
-        Instruction::MatchPattern { subject, .. } => vec![*subject],
-        Instruction::Index { object, index, .. } => vec![*object, *index],
-        Instruction::JumpIfFalse { condition, .. } => vec![*condition],
-        Instruction::Assert { condition, message } => {
-            let mut uses = vec![*condition];
-            uses.extend(message);
-            uses
-        }
-        Instruction::Call { arguments, .. } => arguments.clone(),
-        Instruction::CallMethod {
-            receiver,
-            arguments,
-            ..
-        }
-        | Instruction::CallContractMethod {
-            receiver,
-            arguments,
-            ..
-        } => {
-            let mut uses = vec![*receiver];
-            uses.extend(arguments);
-            uses
-        }
-        Instruction::CallClosure {
-            captures,
-            arguments,
-            ..
-        } => {
-            let mut uses = captures
-                .iter()
-                .map(|(_, register)| *register)
-                .collect::<Vec<_>>();
-            uses.extend(arguments);
-            uses
-        }
-        Instruction::Return { source } => vec![*source],
-        _ => unreachable!("validated native instruction subset"),
-    }
-}
-
-fn lower_to_native_ir(
-    function: &BytecodeFunction,
+fn lower_shared_to_native_ir(
+    shared: &ir::Function,
+    metadata: &BytecodeFunction,
     function_signature: &ir::Signature,
     instance: &SpecializationKey,
     environment: NativeIrEnvironment<'_>,
 ) -> Result<ir::Function, FosterError> {
+    let external_values = shared.captures.iter().chain(&shared.parameters);
+    let external_types = metadata
+        .capture_types
+        .iter()
+        .chain(&metadata.parameter_types);
+    let reference_homes = external_values
+        .zip(external_types)
+        .filter_map(|(value, ty)| {
+            matches!(ty, crate::vm::VerificationType::Reference(_))
+                .then(|| shared.storage_hints[value.0 as usize].map(|home| (home, *value)))
+                .flatten()
+        })
+        .collect::<HashMap<_, _>>();
     let inferred = infer_register_types(
-        function,
+        metadata,
         &function_signature.parameters,
         instance,
         environment,
     )?;
-    let register_types = inferred
-        .iter()
-        .map(|ty| ty.unwrap_or(NativeType::Unit))
-        .collect::<Vec<_>>();
-    let leaders = block_leaders(function)?;
-    let block_for_leader = leaders
+    let mut value_types = shared
+        .storage_hints
         .iter()
         .enumerate()
-        .map(|(block, leader)| (*leader, ir::Block(block as u32)))
-        .collect::<HashMap<_, _>>();
-    let live_ins = native_block_live_ins(function, &leaders, &block_for_leader)?;
-    let mut value_types = Vec::new();
-    let function_parameters = function_signature
-        .parameters
-        .iter()
-        .map(|ty| allocate_native_value(&mut value_types, *ty))
-        .collect::<Vec<_>>();
-    let mut parameter_registers = Vec::with_capacity(leaders.len());
-    let mut block_parameters = Vec::with_capacity(leaders.len());
-    for live_in in &live_ins {
-        let mut registers = live_in.iter().copied().collect::<Vec<_>>();
-        registers.sort_unstable_by_key(|register| register.0);
-        let values = registers
-            .iter()
-            .map(|register| {
-                register_type(&inferred, *register, function)
-                    .map(|ty| allocate_native_value(&mut value_types, ty))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        parameter_registers.push(registers);
-        block_parameters.push(values);
-    }
-    let mut entry_seeds = Vec::new();
-    let entry_arguments = parameter_registers[0]
-        .iter()
-        .map(|register| {
-            function_parameters
-                .get(usize::from(register.0))
-                .copied()
-                .unwrap_or_else(|| {
-                    let seed = allocate_native_value(
-                        &mut value_types,
-                        register_types[usize::from(register.0)],
-                    );
-                    entry_seeds.push(seed);
-                    seed
+        .map(|(index, register)| {
+            register
+                .and_then(|register| inferred[usize::from(register)])
+                .or_else(|| {
+                    shared
+                        .value_types
+                        .get(index)
+                        .copied()
+                        .map(native_shared_type)
                 })
+                .unwrap_or(NativeType::Unit)
         })
         .collect::<Vec<_>>();
-
-    let mut blocks = Vec::with_capacity(leaders.len());
-    for (block_index, start) in leaders.iter().copied().enumerate() {
-        let end = leaders
-            .get(block_index + 1)
-            .copied()
-            .unwrap_or(function.instructions.len());
-        let mut state = vec![None; usize::from(function.registers)];
-        for (register, value) in parameter_registers[block_index]
+    for (home, value) in &reference_homes {
+        let Some(crate::vm::VerificationType::Reference(pointee)) = metadata
+            .capture_types
             .iter()
-            .zip(&block_parameters[block_index])
-        {
-            state[usize::from(register.0)] = Some(*value);
+            .chain(&metadata.parameter_types)
+            .nth(usize::from(*home))
+        else {
+            continue;
+        };
+        let pointee = pointee.specialize(&instance.substitutions);
+        let layout = environment
+            .layouts
+            .pointer(&pointee, crate::codegen::layout::Ownership::Borrowed)
+            .ok_or_else(|| native_error("captured reference has no native layout"))?;
+        value_types[value.0 as usize] = NativeType::Object(layout);
+    }
+    let mut storage_hints = shared.storage_hints.clone();
+    let mut blocks = Vec::with_capacity(shared.blocks.len());
+
+    for block in &shared.blocks {
+        let mut state = HashMap::<u16, ir::Value>::new();
+        for value in &block.parameters {
+            if let Some(home) = shared.storage_hints[value.0 as usize] {
+                state.insert(home, *value);
+            }
         }
         let mut instructions = Vec::new();
-        let mut instruction_spans = Vec::new();
-        let mut terminator = None;
-        let mut terminator_span = std::ops::Range::default();
-
-        for (index, instruction) in function.instructions[start..end].iter().enumerate() {
-            let source_index = start + index;
-            let source_span = function
-                .instruction_spans
-                .get(source_index)
-                .cloned()
-                .unwrap_or_default();
-            match instruction {
-                Instruction::Drop { register } => {
-                    if let Some(value) = state[usize::from(register.0)].take()
-                        && matches!(value_types[value.0 as usize], NativeType::Object(_))
-                    {
-                        instructions.push(ir::Instruction::Portable(
-                            ir::PortableInstruction::Drop { value },
-                        ));
+        let mut spans = Vec::new();
+        for (instruction, span) in block.instructions.iter().zip(&block.instruction_spans) {
+            let lowered = lower_shared_instruction(
+                instruction,
+                metadata,
+                instance,
+                environment,
+                &mut value_types,
+                &mut storage_hints,
+                &reference_homes,
+            )?;
+            for (instruction, consumed) in lowered {
+                if let ir::Instruction::Portable(ir::PortableInstruction::Drop { value }) =
+                    &instruction
+                    && !remove_shared_home(&mut state, &storage_hints, *value)
+                {
+                    continue;
+                }
+                for value in consumed {
+                    remove_shared_home(&mut state, &storage_hints, value);
+                }
+                for destination in instruction.destinations() {
+                    if let Some(home) = storage_hints[destination.0 as usize] {
+                        state.insert(home, destination);
                     }
                 }
-                Instruction::LoadConstant {
-                    destination,
-                    constant,
-                } => {
-                    let constant = match environment.program.constants[usize::from(*constant)] {
-                        Constant::Unit => ir::Constant::Unit,
-                        Constant::Bool(value) => ir::Constant::Bool(value),
-                        Constant::Integer(value) => ir::Constant::Integer(value),
-                        Constant::Float(value) => ir::Constant::Float(value),
-                        Constant::CodePoint(value) => ir::Constant::CodePoint(value),
-                        Constant::String(_) => ir::Constant::RuntimeString(
-                            environment.runtime_string_indices[constant],
-                        ),
-                        Constant::Symbol(_) => unreachable!("validated above"),
-                    };
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    instructions.push(ir::Instruction::Constant {
-                        destination,
-                        value: constant,
-                    });
-                    instruction_spans.push(source_span);
-                }
-                Instruction::Move {
-                    destination,
-                    source,
-                } => {
-                    let source = native_register(&state, *source, function)?;
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Move {
-                        destination,
-                        source,
-                    }));
-                    instruction_spans.push(source_span);
-                }
-                Instruction::Unary {
-                    destination,
-                    operator,
-                    operand,
-                } => {
-                    let operand = native_register(&state, *operand, function)?;
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    instructions.push(ir::Instruction::Unary {
-                        destination,
-                        operator: *operator,
-                        operand,
-                    });
-                    instruction_spans.push(source_span);
-                }
-                Instruction::Binary {
-                    destination,
-                    operator,
-                    left,
-                    right,
-                } => {
-                    let left_type = register_type(&inferred, *left, function)?;
-                    let right_type = register_type(&inferred, *right, function)?;
-                    let mut left = native_register(&state, *left, function)?;
-                    let mut right = native_register(&state, *right, function)?;
-                    if left_type == NativeType::Int
-                        && matches!(right_type, NativeType::Byte | NativeType::CodePoint)
-                    {
-                        right = extend_native_integer(right, &mut instructions, &mut value_types);
-                    } else if right_type == NativeType::Int
-                        && matches!(left_type, NativeType::Byte | NativeType::CodePoint)
-                    {
-                        left = extend_native_integer(left, &mut instructions, &mut value_types);
-                    }
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    instructions.push(ir::Instruction::Binary {
-                        destination,
-                        operator: *operator,
-                        left,
-                        right,
-                    });
-                    instruction_spans.push(source_span);
-                }
-                Instruction::MakeRecord {
-                    destination,
-                    record,
-                    type_arguments,
-                    fields,
-                } => {
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    let fields = fields
-                        .iter()
-                        .map(|(name, register)| {
-                            Ok((name.clone(), native_register(&state, *register, function)?))
-                        })
-                        .collect::<Result<Vec<_>, FosterError>>()?;
-                    instructions.push(ir::Instruction::Portable(
-                        ir::PortableInstruction::MakeRecord {
-                            destination,
-                            record: *record,
-                            type_arguments: type_arguments
-                                .iter()
-                                .map(|ty| substitute_verification_type(ty, &instance.substitutions))
-                                .collect(),
-                            fields,
-                        },
-                    ));
-                    instruction_spans.push(source_span);
-                }
-                Instruction::MakeVariant {
-                    destination,
-                    variant,
-                    type_arguments,
-                    payload,
-                } => {
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    let payload = payload
-                        .iter()
-                        .map(|register| native_register(&state, *register, function))
-                        .collect::<Result<Vec<_>, _>>()?;
-                    instructions.push(ir::Instruction::Portable(
-                        ir::PortableInstruction::MakeVariant {
-                            destination,
-                            variant: *variant,
-                            type_arguments: type_arguments
-                                .iter()
-                                .map(|ty| substitute_verification_type(ty, &instance.substitutions))
-                                .collect(),
-                            payload,
-                        },
-                    ));
-                    instruction_spans.push(source_span);
-                }
-                Instruction::MakeClosure {
-                    destination,
-                    function: target,
-                    specialization,
-                    captures,
-                } => {
-                    let captures = lower_capture_arguments(
-                        captures,
-                        function,
-                        &inferred,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    )?;
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    let specialization =
-                        resolve_specialization(specialization, &instance.substitutions);
-                    instructions.push(ir::Instruction::Portable(
-                        ir::PortableInstruction::MakeClosure {
-                            destination,
-                            function: environment.instances[&SpecializationKey {
-                                function: *target,
-                                substitutions: specialization,
-                            }],
-                            specialization: Vec::new(),
-                            captures: captures
-                                .into_iter()
-                                .map(|value| (crate::hir::CaptureMode::Move, value))
-                                .collect(),
-                        },
-                    ));
-                    instruction_spans.push(source_span);
-                }
-                Instruction::LoadField {
-                    destination,
-                    object,
-                    field,
-                    by_reference,
-                } => {
-                    if *by_reference {
-                        return Err(native_error(format!(
-                            "native compilation does not support reference field `{field}`"
-                        )));
-                    }
-                    let receiver_type = register_type(&inferred, *object, function)?;
-                    let object = native_register(&state, *object, function)?;
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    if matches!(receiver_type, NativeType::Object(_)) {
-                        instructions.push(ir::Instruction::Portable(
-                            ir::PortableInstruction::LoadField {
-                                destination,
-                                object,
-                                field: field.clone(),
-                                by_reference: false,
-                            },
-                        ));
-                    } else {
-                        let helper = native_field_helper(receiver_type, field)?;
-                        let arguments = vec![object];
-                        instructions.push(ir::Instruction::RuntimeCall {
-                            destination,
-                            helper,
-                            signature: runtime_signature(destination, &arguments, &value_types),
-                            arguments,
-                        });
-                    }
-                    instruction_spans.push(source_span);
-                }
-                Instruction::StoreField {
-                    object,
-                    field,
-                    source,
-                } => {
-                    let object_type = register_type(&inferred, *object, function)?;
-                    if !matches!(object_type, NativeType::Object(_)) {
-                        return Err(native_error(format!(
-                            "native field assignment requires a Foster object, found {object_type:?}"
-                        )));
-                    }
-                    let old = native_register(&state, *object, function)?;
-                    let source = native_register(&state, *source, function)?;
-                    let unique = allocate_native_value(&mut value_types, object_type);
-                    instructions.push(ir::Instruction::Portable(
-                        ir::PortableInstruction::CopyOnWrite {
-                            destination: unique,
-                            source: old,
-                        },
-                    ));
-                    state[usize::from(object.0)] = Some(unique);
-                    instructions.push(ir::Instruction::Portable(
-                        ir::PortableInstruction::StoreField {
-                            object: unique,
-                            field: field.clone(),
-                            source,
-                        },
-                    ));
-                    instruction_spans.push(source_span.clone());
-                    instruction_spans.push(source_span);
-                }
-                Instruction::Index {
-                    destination,
-                    object,
-                    index,
-                } => {
-                    let receiver_type = register_type(&inferred, *object, function)?;
-                    let helper = match receiver_type {
-                        NativeType::StringList => "foster_string_list_get",
-                        NativeType::String => "foster_string_get",
-                        _ => {
-                            return Err(native_error(format!(
-                                "native indexing does not support `{receiver_type:?}`"
-                            )));
-                        }
-                    };
-                    let arguments = vec![
-                        native_register(&state, *object, function)?,
-                        native_register(&state, *index, function)?,
-                    ];
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    instructions.push(ir::Instruction::RuntimeCall {
-                        destination,
-                        helper,
-                        signature: runtime_signature(destination, &arguments, &value_types),
-                        arguments,
-                    });
-                }
-                Instruction::CallContractMethod {
-                    destination,
-                    receiver,
-                    name,
-                    arguments,
-                    ..
-                } => {
-                    if !arguments.is_empty() {
-                        return Err(native_error(format!(
-                            "native contract call `{name}` does not yet accept arguments"
-                        )));
-                    }
-                    let helper =
-                        native_field_helper(register_type(&inferred, *receiver, function)?, name)?;
-                    let arguments = vec![native_register(&state, *receiver, function)?];
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    instructions.push(ir::Instruction::RuntimeCall {
-                        destination,
-                        helper,
-                        signature: runtime_signature(destination, &arguments, &value_types),
-                        arguments,
-                    });
-                }
-                Instruction::Jump { target } => {
-                    terminator_span = source_span;
-                    terminator = Some(ir::Terminator::Jump {
-                        target: block_for_leader[target],
-                        arguments: native_edge_arguments(
-                            block_for_leader[target],
-                            &parameter_registers,
-                            &state,
-                            function,
-                        )?,
-                    });
-                    break;
-                }
-                Instruction::JumpIfFalse { condition, target } => {
-                    terminator_span = source_span;
-                    let fallthrough =
-                        block_for_leader.get(&(source_index + 1)).ok_or_else(|| {
-                            native_error(format!(
-                                "conditional jump at end of `{}` has no fallthrough",
-                                function.name
-                            ))
-                        })?;
-                    terminator = Some(ir::Terminator::Branch {
-                        condition: native_register(&state, *condition, function)?,
-                        then_target: *fallthrough,
-                        then_arguments: native_edge_arguments(
-                            *fallthrough,
-                            &parameter_registers,
-                            &state,
-                            function,
-                        )?,
-                        else_target: block_for_leader[target],
-                        else_arguments: native_edge_arguments(
-                            block_for_leader[target],
-                            &parameter_registers,
-                            &state,
-                            function,
-                        )?,
-                    });
-                    break;
-                }
-                Instruction::MatchPattern {
-                    destination,
-                    subject,
-                    pattern,
-                    bindings,
-                } => {
-                    let subject = native_register(&state, *subject, function)?;
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    let bindings = bindings
-                        .iter()
-                        .map(|binding| {
-                            define_native_register(
-                                *binding,
-                                &register_types,
-                                &mut state,
-                                &mut value_types,
-                                &mut instructions,
-                            )
-                        })
-                        .collect();
-                    instructions.push(ir::Instruction::Portable(
-                        ir::PortableInstruction::MatchPattern {
-                            destination,
-                            subject,
-                            pattern: pattern.clone(),
-                            bindings,
-                        },
-                    ));
-                    instruction_spans.push(source_span);
-                }
-                Instruction::Assert { condition, message } => {
-                    instructions.push(ir::Instruction::Assert {
-                        condition: native_register(&state, *condition, function)?,
-                        message: message
-                            .map(|message| native_register(&state, message, function))
-                            .transpose()?,
-                    });
-                }
-                Instruction::Call {
-                    destination,
-                    function: callee,
-                    specialization,
-                    arguments,
-                } => {
-                    let lowered_arguments = lower_call_arguments(
-                        arguments,
-                        &environment.program.functions[callee].parameter_modes,
-                        function,
-                        &inferred,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    )?;
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    instructions.push(ir::Instruction::Call {
-                        destination,
-                        function: environment.instances[&SpecializationKey {
-                            function: *callee,
-                            substitutions: resolve_specialization(
-                                specialization,
-                                &instance.substitutions,
-                            ),
-                        }],
-                        specialization: Vec::new(),
-                        arguments: lowered_arguments,
-                    });
-                }
-                Instruction::CallMethod {
-                    destination,
-                    receiver,
-                    function: callee,
-                    specialization,
-                    arguments,
-                } => {
-                    let mut registers = vec![*receiver];
-                    registers.extend(arguments);
-                    let lowered_arguments = lower_call_arguments(
-                        &registers,
-                        &environment.program.functions[callee].parameter_modes,
-                        function,
-                        &inferred,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    )?;
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    instructions.push(ir::Instruction::Call {
-                        destination,
-                        function: environment.instances[&SpecializationKey {
-                            function: *callee,
-                            substitutions: resolve_specialization(
-                                specialization,
-                                &instance.substitutions,
-                            ),
-                        }],
-                        specialization: Vec::new(),
-                        arguments: lowered_arguments,
-                    });
-                }
-                Instruction::CallClosure {
-                    destination,
-                    function: callee,
-                    specialization,
-                    captures,
-                    arguments,
-                } => {
-                    let mut lowered_arguments = lower_capture_arguments(
-                        captures,
-                        function,
-                        &inferred,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    )?;
-                    lowered_arguments.extend(lower_call_arguments(
-                        arguments,
-                        &environment.program.functions[callee].parameter_modes,
-                        function,
-                        &inferred,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    )?);
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    instructions.push(ir::Instruction::Call {
-                        destination,
-                        function: environment.instances[&SpecializationKey {
-                            function: *callee,
-                            substitutions: resolve_specialization(
-                                specialization,
-                                &instance.substitutions,
-                            ),
-                        }],
-                        specialization: Vec::new(),
-                        arguments: lowered_arguments,
-                    });
-                }
-                Instruction::CallValue {
-                    destination,
-                    callee,
-                    arguments,
-                } => {
-                    let callee_type = register_type(&inferred, *callee, function)?;
-                    let NativeType::Object(layout) = callee_type else {
-                        return Err(native_error(format!(
-                            "dynamic call in `{}` crosses an erased callable boundary",
-                            function.name
-                        )));
-                    };
-                    let LayoutKind::Closure {
-                        function: target, ..
-                    } = &environment.layouts.get(layout).kind
-                    else {
-                        return Err(native_error(format!(
-                            "dynamic call in `{}` requires a concrete closure",
-                            function.name
-                        )));
-                    };
-                    let lowered_arguments = lower_call_arguments(
-                        arguments,
-                        &environment.program.functions[target].parameter_modes,
-                        function,
-                        &inferred,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    )?;
-                    let callee = native_register(&state, *callee, function)?;
-                    let destination = define_native_register(
-                        *destination,
-                        &register_types,
-                        &mut state,
-                        &mut value_types,
-                        &mut instructions,
-                    );
-                    instructions.push(ir::Instruction::Portable(
-                        ir::PortableInstruction::CallValue {
-                            destination,
-                            callee,
-                            arguments: lowered_arguments,
-                        },
-                    ));
-                }
-                Instruction::Return { source } => {
-                    terminator_span = source_span;
-                    let returned = native_register(&state, *source, function)?;
-                    let mut released = HashSet::new();
-                    for value in state.iter().flatten().copied() {
-                        if value != returned
-                            && released.insert(value)
-                            && matches!(value_types[value.0 as usize], NativeType::Object(_))
-                        {
-                            instructions.push(ir::Instruction::Portable(
-                                ir::PortableInstruction::Drop { value },
-                            ));
-                        }
-                    }
-                    terminator = Some(ir::Terminator::Return(returned));
-                    break;
-                }
-                _ => unreachable!("validated above"),
+                instructions.push(instruction);
+                spans.push(span.clone());
             }
         }
-
-        let terminator = match terminator {
-            Some(terminator) => terminator,
-            None if block_index + 1 < leaders.len() => ir::Terminator::Jump {
-                target: ir::Block((block_index + 1) as u32),
-                arguments: native_edge_arguments(
-                    ir::Block((block_index + 1) as u32),
-                    &parameter_registers,
-                    &state,
-                    function,
-                )?,
-            },
-            None => {
-                let unit = allocate_native_value(&mut value_types, NativeType::Unit);
-                instructions.push(ir::Instruction::Constant {
-                    destination: unit,
-                    value: ir::Constant::Unit,
-                });
-                ir::Terminator::Return(unit)
+        if let ir::Terminator::Return(returned) = block.terminator {
+            let mut released = HashSet::new();
+            for value in state.values().copied() {
+                if value != returned
+                    && released.insert(value)
+                    && matches!(value_types[value.0 as usize], NativeType::Object(_))
+                {
+                    instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Drop {
+                        value,
+                    }));
+                    spans.push(block.terminator_span.clone());
+                }
             }
-        };
-        instruction_spans.resize(instructions.len(), std::ops::Range::default());
+        }
         blocks.push(ir::BlockData {
-            parameters: block_parameters[block_index].clone(),
+            parameters: block.parameters.clone(),
             instructions,
-            instruction_spans,
-            terminator,
-            terminator_span,
+            instruction_spans: spans,
+            terminator: block.terminator.clone(),
+            terminator_span: block.terminator_span.clone(),
         });
     }
 
+    let mut parameters = shared.captures.clone();
+    parameters.extend(&shared.parameters);
+    let mut entry = shared.entry;
+    let mut entry_arguments = shared.entry_arguments.clone();
+    if !reference_homes.is_empty() {
+        let mut loaded_captures = HashMap::new();
+        let mut prologue_instructions = Vec::new();
+        let mut prologue_spans = Vec::new();
+        for (input, input_type) in shared.captures.iter().chain(&shared.parameters).zip(
+            metadata
+                .capture_types
+                .iter()
+                .chain(&metadata.parameter_types),
+        ) {
+            let crate::vm::VerificationType::Reference(pointee) = input_type else {
+                continue;
+            };
+            let concrete_pointee = pointee.specialize(&instance.substitutions);
+            let reference_type = NativeType::Object(
+                environment
+                    .layouts
+                    .pointer(
+                        &concrete_pointee,
+                        crate::codegen::layout::Ownership::Borrowed,
+                    )
+                    .ok_or_else(|| native_error("captured reference has no native layout"))?,
+            );
+            value_types[input.0 as usize] = reference_type;
+            let loaded_type =
+                native_verification_type(environment.program, environment.layouts, pointee, None)?;
+            let loaded = allocate_shared_value(&mut value_types, &mut storage_hints, loaded_type);
+            prologue_instructions.push(ir::Instruction::RuntimeCall {
+                destination: loaded,
+                helper: reference_load_helper(loaded_type),
+                signature: ir::Signature {
+                    parameters: vec![reference_type],
+                    result: loaded_type,
+                },
+                arguments: vec![*input],
+            });
+            prologue_spans.push(Range::default());
+            loaded_captures.insert(*input, loaded);
+        }
+        for block in &mut blocks {
+            shift_native_blocks(&mut block.terminator, 1);
+        }
+        let arguments = shared
+            .entry_arguments
+            .iter()
+            .map(|value| loaded_captures.get(value).copied().unwrap_or(*value))
+            .collect();
+        blocks.insert(
+            0,
+            ir::BlockData {
+                parameters: Vec::new(),
+                instructions: prologue_instructions,
+                instruction_spans: prologue_spans,
+                terminator: ir::Terminator::Jump {
+                    target: ir::Block(shared.entry.0 + 1),
+                    arguments,
+                },
+                terminator_span: Range::default(),
+            },
+        );
+        entry = ir::Block(0);
+        entry_arguments = Vec::new();
+    }
     Ok(ir::Function {
-        name: function.name.clone(),
+        name: shared.name.clone(),
         signature: function_signature.clone(),
-        parameters: function_parameters,
+        parameters,
         captures: Vec::new(),
         capture_types: Vec::new(),
-        entry_seeds,
-        entry: ir::Block(0),
+        entry_seeds: shared.entry_seeds.clone(),
+        entry,
         entry_arguments,
-        storage_hints: vec![None; value_types.len()],
         value_types,
+        storage_hints,
         blocks,
     })
 }
 
-fn allocate_native_value(value_types: &mut Vec<NativeType>, ty: NativeType) -> ir::Value {
+fn shift_native_blocks(terminator: &mut ir::Terminator, offset: u32) {
+    match terminator {
+        ir::Terminator::Jump { target, .. } => target.0 += offset,
+        ir::Terminator::Branch {
+            then_target,
+            else_target,
+            ..
+        } => {
+            then_target.0 += offset;
+            else_target.0 += offset;
+        }
+        ir::Terminator::Return(_) => {}
+    }
+}
+
+fn native_shared_type(ty: ir::Type) -> NativeType {
+    match ty {
+        ir::Type::Opaque => NativeType::Opaque,
+        ir::Type::Unit => NativeType::Unit,
+        ir::Type::Bool => NativeType::Bool,
+        ir::Type::Int => NativeType::Int,
+        ir::Type::Float => NativeType::Float,
+        ir::Type::CodePoint => NativeType::CodePoint,
+        ir::Type::Byte => NativeType::Byte,
+        ir::Type::String => NativeType::String,
+        ir::Type::Arguments => NativeType::Arguments,
+        ir::Type::StringList => NativeType::StringList,
+        ir::Type::Object(layout) => NativeType::Object(layout),
+    }
+}
+
+fn remove_shared_home(
+    state: &mut HashMap<u16, ir::Value>,
+    storage_hints: &[Option<u16>],
+    value: ir::Value,
+) -> bool {
+    let Some(home) = storage_hints[value.0 as usize] else {
+        return true;
+    };
+    if state.get(&home) == Some(&value) {
+        state.remove(&home);
+        true
+    } else {
+        false
+    }
+}
+
+fn allocate_shared_value(
+    value_types: &mut Vec<NativeType>,
+    storage_hints: &mut Vec<Option<u16>>,
+    ty: NativeType,
+) -> ir::Value {
     let value = ir::Value(value_types.len() as u32);
     value_types.push(ty);
+    storage_hints.push(None);
     value
 }
 
-fn define_native_register(
-    register: Register,
-    register_types: &[NativeType],
-    state: &mut [Option<ir::Value>],
+fn lower_shared_instruction(
+    instruction: &ir::Instruction,
+    metadata: &BytecodeFunction,
+    instance: &SpecializationKey,
+    environment: NativeIrEnvironment<'_>,
     value_types: &mut Vec<NativeType>,
-    instructions: &mut Vec<ir::Instruction>,
-) -> ir::Value {
-    let index = usize::from(register.0);
-    if let Some(previous) = state[index]
-        && matches!(value_types[previous.0 as usize], NativeType::Object(_))
-    {
-        instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Drop {
-            value: previous,
-        }));
+    storage_hints: &mut Vec<Option<u16>>,
+    reference_homes: &HashMap<u16, ir::Value>,
+) -> Result<Vec<(ir::Instruction, Vec<ir::Value>)>, FosterError> {
+    let ty = |value: ir::Value| value_types[value.0 as usize];
+    let one = |instruction| vec![(instruction, Vec::new())];
+    let ir::Instruction::Portable(portable) = instruction else {
+        return Ok(one(instruction.clone()));
+    };
+    match portable {
+        ir::PortableInstruction::LoadConstant {
+            destination,
+            constant,
+        } => {
+            let value = match environment.program.constants[usize::from(*constant)] {
+                Constant::Unit => ir::Constant::Unit,
+                Constant::Bool(value) => ir::Constant::Bool(value),
+                Constant::Integer(value) => ir::Constant::Integer(value),
+                Constant::Float(value) => ir::Constant::Float(value),
+                Constant::CodePoint(value) => ir::Constant::CodePoint(value),
+                Constant::String(_) => {
+                    ir::Constant::RuntimeString(environment.runtime_string_indices[constant])
+                }
+                Constant::Symbol(_) => {
+                    return Err(native_error(format!(
+                        "native compilation of `{}` does not yet support symbol constants",
+                        metadata.name
+                    )));
+                }
+            };
+            Ok(one(ir::Instruction::Constant {
+                destination: *destination,
+                value,
+            }))
+        }
+        ir::PortableInstruction::Move {
+            destination,
+            source,
+        } => {
+            let Some(reference) = storage_hints[destination.0 as usize]
+                .and_then(|home| reference_homes.get(&home).copied())
+            else {
+                return Ok(one(instruction.clone()));
+            };
+            let stored_type = ty(*source);
+            let reference_type = ty(reference);
+            let stored = allocate_shared_value(value_types, storage_hints, NativeType::Unit);
+            Ok(vec![
+                (
+                    ir::Instruction::RuntimeCall {
+                        destination: stored,
+                        helper: reference_store_helper(stored_type),
+                        signature: ir::Signature {
+                            parameters: vec![reference_type, stored_type],
+                            result: NativeType::Unit,
+                        },
+                        arguments: vec![reference, *source],
+                    },
+                    Vec::new(),
+                ),
+                (instruction.clone(), Vec::new()),
+            ])
+        }
+        ir::PortableInstruction::Unary {
+            destination,
+            operator,
+            operand,
+        } => Ok(one(ir::Instruction::Unary {
+            destination: *destination,
+            operator: *operator,
+            operand: *operand,
+        })),
+        ir::PortableInstruction::Binary {
+            destination,
+            operator,
+            left,
+            right,
+        } => {
+            let mut result = Vec::new();
+            let mut left = *left;
+            let mut right = *right;
+            for operand in [&mut left, &mut right] {
+                let operand_type = value_types[operand.0 as usize];
+                if let NativeType::Object(layout) = operand_type
+                    && let LayoutKind::Pointer { pointee, .. } =
+                        &environment.layouts.get(layout).kind
+                {
+                    let loaded_type = native_verification_type(
+                        environment.program,
+                        environment.layouts,
+                        pointee,
+                        None,
+                    )?;
+                    let loaded = allocate_shared_value(value_types, storage_hints, loaded_type);
+                    result.push((
+                        ir::Instruction::RuntimeCall {
+                            destination: loaded,
+                            helper: reference_load_helper(loaded_type),
+                            signature: ir::Signature {
+                                parameters: vec![NativeType::Object(layout)],
+                                result: loaded_type,
+                            },
+                            arguments: vec![*operand],
+                        },
+                        Vec::new(),
+                    ));
+                    *operand = loaded;
+                }
+            }
+            if value_types[left.0 as usize] == NativeType::Int
+                && matches!(
+                    value_types[right.0 as usize],
+                    NativeType::Byte | NativeType::CodePoint
+                )
+            {
+                let extended = allocate_shared_value(value_types, storage_hints, NativeType::Int);
+                result.push((
+                    ir::Instruction::IntegerExtend {
+                        destination: extended,
+                        operand: right,
+                    },
+                    Vec::new(),
+                ));
+                right = extended;
+            } else if value_types[right.0 as usize] == NativeType::Int
+                && matches!(
+                    value_types[left.0 as usize],
+                    NativeType::Byte | NativeType::CodePoint
+                )
+            {
+                let extended = allocate_shared_value(value_types, storage_hints, NativeType::Int);
+                result.push((
+                    ir::Instruction::IntegerExtend {
+                        destination: extended,
+                        operand: left,
+                    },
+                    Vec::new(),
+                ));
+                left = extended;
+            }
+            result.push((
+                ir::Instruction::Binary {
+                    destination: *destination,
+                    operator: *operator,
+                    left,
+                    right,
+                },
+                Vec::new(),
+            ));
+            Ok(result)
+        }
+        ir::PortableInstruction::Call {
+            destination,
+            function,
+            specialization,
+            arguments,
+        } => {
+            let mut result = Vec::new();
+            let (arguments, consumed) = shared_call_arguments(
+                arguments,
+                &environment.program.functions[function].parameter_modes,
+                value_types,
+                storage_hints,
+                &mut result,
+            )?;
+            Ok({
+                result.push((
+                    ir::Instruction::Call {
+                        destination: *destination,
+                        function: environment.instances[&SpecializationKey {
+                            function: *function,
+                            substitutions: resolve_specialization(
+                                specialization,
+                                &instance.substitutions,
+                            ),
+                        }],
+                        specialization: Vec::new(),
+                        arguments,
+                    },
+                    consumed,
+                ));
+                result
+            })
+        }
+        ir::PortableInstruction::CallMethod {
+            destination,
+            receiver,
+            function,
+            specialization,
+            arguments,
+        } => {
+            let mut sources = vec![*receiver];
+            sources.extend(arguments);
+            let mut result = Vec::new();
+            let (arguments, consumed) = shared_call_arguments(
+                &sources,
+                &environment.program.functions[function].parameter_modes,
+                value_types,
+                storage_hints,
+                &mut result,
+            )?;
+            result.push((
+                ir::Instruction::Call {
+                    destination: *destination,
+                    function: environment.instances[&SpecializationKey {
+                        function: *function,
+                        substitutions: resolve_specialization(
+                            specialization,
+                            &instance.substitutions,
+                        ),
+                    }],
+                    specialization: Vec::new(),
+                    arguments,
+                },
+                consumed,
+            ));
+            Ok(result)
+        }
+        ir::PortableInstruction::CallClosure {
+            destination,
+            function,
+            specialization,
+            captures,
+            arguments,
+        } => {
+            let mut result = Vec::new();
+            let target = environment.instances[&SpecializationKey {
+                function: *function,
+                substitutions: resolve_specialization(specialization, &instance.substitutions),
+            }];
+            let expected_captures =
+                &environment.function_types[&target].parameters[..captures.len()];
+            let (mut lowered, mut consumed) = shared_capture_arguments(
+                captures,
+                expected_captures,
+                value_types,
+                storage_hints,
+                &mut result,
+                &metadata.name,
+            )?;
+            let (ordinary, ordinary_consumed) = shared_call_arguments(
+                arguments,
+                &environment.program.functions[function].parameter_modes,
+                value_types,
+                storage_hints,
+                &mut result,
+            )?;
+            lowered.extend(ordinary);
+            consumed.extend(ordinary_consumed);
+            result.push((
+                ir::Instruction::Call {
+                    destination: *destination,
+                    function: target,
+                    specialization: Vec::new(),
+                    arguments: lowered,
+                },
+                consumed,
+            ));
+            Ok(result)
+        }
+        ir::PortableInstruction::MakeClosure {
+            destination,
+            function,
+            specialization,
+            captures,
+        } => {
+            let mut result = Vec::new();
+            let specialization = resolve_specialization(specialization, &instance.substitutions);
+            let target = environment.instances[&SpecializationKey {
+                function: *function,
+                substitutions: specialization.clone(),
+            }];
+            let expected_captures =
+                &environment.function_types[&target].parameters[..captures.len()];
+            let (captures, consumed) = shared_capture_arguments(
+                captures,
+                expected_captures,
+                value_types,
+                storage_hints,
+                &mut result,
+                &metadata.name,
+            )?;
+            result.push((
+                ir::Instruction::Portable(ir::PortableInstruction::MakeClosure {
+                    destination: *destination,
+                    function: target,
+                    specialization: Vec::new(),
+                    captures: captures
+                        .into_iter()
+                        .map(|value| (crate::hir::CaptureMode::Move, value))
+                        .collect(),
+                }),
+                consumed,
+            ));
+            Ok(result)
+        }
+        ir::PortableInstruction::CallValue {
+            destination,
+            callee,
+            arguments,
+        } => {
+            let NativeType::Object(layout) = ty(*callee) else {
+                return Err(native_error(format!(
+                    "dynamic call in `{}` crosses an erased callable boundary",
+                    metadata.name
+                )));
+            };
+            let LayoutKind::Closure {
+                function: target, ..
+            } = &environment.layouts.get(layout).kind
+            else {
+                return Err(native_error(format!(
+                    "dynamic call in `{}` requires a concrete closure",
+                    metadata.name
+                )));
+            };
+            let mut result = Vec::new();
+            let (arguments, consumed) = shared_call_arguments(
+                arguments,
+                &environment.program.functions[target].parameter_modes,
+                value_types,
+                storage_hints,
+                &mut result,
+            )?;
+            result.push((
+                ir::Instruction::Portable(ir::PortableInstruction::CallValue {
+                    destination: *destination,
+                    callee: *callee,
+                    arguments,
+                }),
+                consumed,
+            ));
+            Ok(result)
+        }
+        ir::PortableInstruction::MakeRecord {
+            destination,
+            record,
+            type_arguments,
+            fields,
+        } => Ok(one(ir::Instruction::Portable(
+            ir::PortableInstruction::MakeRecord {
+                destination: *destination,
+                record: *record,
+                type_arguments: type_arguments
+                    .iter()
+                    .map(|ty| ty.specialize(&instance.substitutions))
+                    .collect(),
+                fields: fields.clone(),
+            },
+        ))),
+        ir::PortableInstruction::MakeVariant {
+            destination,
+            variant,
+            type_arguments,
+            payload,
+        } => Ok(one(ir::Instruction::Portable(
+            ir::PortableInstruction::MakeVariant {
+                destination: *destination,
+                variant: *variant,
+                type_arguments: type_arguments
+                    .iter()
+                    .map(|ty| ty.specialize(&instance.substitutions))
+                    .collect(),
+                payload: payload.clone(),
+            },
+        ))),
+        ir::PortableInstruction::MoveOut { source, .. } => {
+            Ok(vec![(instruction.clone(), vec![*source])])
+        }
+        ir::PortableInstruction::Index {
+            destination,
+            object,
+            index,
+        } => {
+            let helper = match ty(*object) {
+                NativeType::StringList => Some("foster_string_list_get"),
+                NativeType::String => Some("foster_string_get"),
+                NativeType::Object(layout)
+                    if matches!(
+                        environment.physical_layouts.get(layout).kind,
+                        PhysicalKind::Buffer { .. }
+                    ) =>
+                {
+                    None
+                }
+                receiver => {
+                    return Err(native_error(format!(
+                        "native indexing does not support `{receiver:?}`"
+                    )));
+                }
+            };
+            let Some(helper) = helper else {
+                return Ok(one(instruction.clone()));
+            };
+            let arguments = vec![*object, *index];
+            Ok(one(ir::Instruction::RuntimeCall {
+                destination: *destination,
+                helper,
+                signature: runtime_signature(*destination, &arguments, value_types),
+                arguments,
+            }))
+        }
+        ir::PortableInstruction::LoadField {
+            destination,
+            object,
+            field,
+            by_reference,
+        } if !matches!(ty(*object), NativeType::Object(_)) => {
+            if *by_reference {
+                return Err(native_error(format!(
+                    "native compilation does not support reference field `{field}`"
+                )));
+            }
+            let helper = native_field_helper(ty(*object), field)?;
+            let arguments = vec![*object];
+            Ok(one(ir::Instruction::RuntimeCall {
+                destination: *destination,
+                helper,
+                signature: runtime_signature(*destination, &arguments, value_types),
+                arguments,
+            }))
+        }
+        ir::PortableInstruction::CallContractMethod {
+            destination,
+            receiver,
+            name,
+            arguments,
+            ..
+        } => {
+            if !arguments.is_empty() {
+                return Err(native_error(format!(
+                    "native contract call `{name}` does not yet accept arguments"
+                )));
+            }
+            if matches!(ty(*receiver), NativeType::Object(_)) {
+                return Ok(one(ir::Instruction::Portable(
+                    ir::PortableInstruction::LoadField {
+                        destination: *destination,
+                        object: *receiver,
+                        field: name.clone(),
+                        by_reference: false,
+                    },
+                )));
+            }
+            let helper = native_field_helper(ty(*receiver), name)?;
+            let arguments = vec![*receiver];
+            Ok(one(ir::Instruction::RuntimeCall {
+                destination: *destination,
+                helper,
+                signature: runtime_signature(*destination, &arguments, value_types),
+                arguments,
+            }))
+        }
+        ir::PortableInstruction::Assert { condition, message } => {
+            Ok(one(ir::Instruction::Assert {
+                condition: *condition,
+                message: *message,
+            }))
+        }
+        _ => Ok(one(instruction.clone())),
     }
-    let value = allocate_native_value(value_types, register_types[index]);
-    state[index] = Some(value);
-    value
 }
 
-fn native_register(
-    state: &[Option<ir::Value>],
-    register: Register,
-    function: &BytecodeFunction,
-) -> Result<ir::Value, FosterError> {
-    state[usize::from(register.0)].ok_or_else(|| {
-        native_error(format!(
-            "native lowering reads unavailable r{} in `{}`",
-            register.0, function.name
-        ))
-    })
-}
-
-fn lower_call_arguments(
-    registers: &[Register],
+fn shared_call_arguments(
+    arguments: &[ir::Value],
     modes: &[ParameterMode],
-    function: &BytecodeFunction,
-    inferred: &[Option<NativeType>],
-    state: &mut [Option<ir::Value>],
     value_types: &mut Vec<NativeType>,
-    instructions: &mut Vec<ir::Instruction>,
-) -> Result<Vec<ir::Value>, FosterError> {
-    if registers.len() != modes.len() {
-        return Err(native_error(format!(
-            "call in `{}` has {} arguments but {} ownership modes",
-            function.name,
-            registers.len(),
-            modes.len()
-        )));
+    storage_hints: &mut Vec<Option<u16>>,
+    instructions: &mut Vec<(ir::Instruction, Vec<ir::Value>)>,
+) -> Result<(Vec<ir::Value>, Vec<ir::Value>), FosterError> {
+    if arguments.len() != modes.len() {
+        return Err(native_error(
+            "shared call ownership metadata has the wrong arity",
+        ));
     }
-    let mut arguments = Vec::with_capacity(registers.len());
-    for (register, mode) in registers.iter().zip(modes) {
-        let value = native_register(state, *register, function)?;
-        let ty = register_type(inferred, *register, function)?;
+    let mut lowered = Vec::with_capacity(arguments.len());
+    let mut consumed = Vec::new();
+    for (argument, mode) in arguments.iter().zip(modes) {
+        let ty = value_types[argument.0 as usize];
         if *mode == ParameterMode::Borrow && matches!(ty, NativeType::Object(_)) {
-            let retained = allocate_native_value(value_types, ty);
-            instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Move {
-                destination: retained,
-                source: value,
-            }));
-            arguments.push(retained);
+            let retained = allocate_shared_value(value_types, storage_hints, ty);
+            instructions.push((
+                ir::Instruction::Portable(ir::PortableInstruction::Move {
+                    destination: retained,
+                    source: *argument,
+                }),
+                Vec::new(),
+            ));
+            lowered.push(retained);
         } else {
-            arguments.push(value);
+            lowered.push(*argument);
             if *mode == ParameterMode::Consume {
-                state[usize::from(register.0)] = None;
+                consumed.push(*argument);
             }
         }
     }
-    Ok(arguments)
+    Ok((lowered, consumed))
 }
 
-fn lower_capture_arguments(
-    captures: &[(crate::hir::CaptureMode, Register)],
-    function: &BytecodeFunction,
-    inferred: &[Option<NativeType>],
-    state: &mut [Option<ir::Value>],
+fn shared_capture_arguments(
+    captures: &[(crate::hir::CaptureMode, ir::Value)],
+    expected_types: &[NativeType],
     value_types: &mut Vec<NativeType>,
-    instructions: &mut Vec<ir::Instruction>,
-) -> Result<Vec<ir::Value>, FosterError> {
-    let mut arguments = Vec::with_capacity(captures.len());
-    for (mode, register) in captures {
-        let value = native_register(state, *register, function)?;
-        let ty = register_type(inferred, *register, function)?;
+    storage_hints: &mut Vec<Option<u16>>,
+    instructions: &mut Vec<(ir::Instruction, Vec<ir::Value>)>,
+    function: &str,
+) -> Result<(Vec<ir::Value>, Vec<ir::Value>), FosterError> {
+    if captures.len() != expected_types.len() {
+        return Err(native_error("closure capture ABI has the wrong arity"));
+    }
+    let mut lowered = Vec::with_capacity(captures.len());
+    let mut consumed = Vec::new();
+    for ((mode, value), expected) in captures.iter().zip(expected_types) {
+        let ty = value_types[value.0 as usize];
         match mode {
             crate::hir::CaptureMode::Move => {
-                state[usize::from(register.0)] = None;
-                arguments.push(value);
+                lowered.push(*value);
+                consumed.push(*value);
             }
             crate::hir::CaptureMode::Copy => {
                 if matches!(ty, NativeType::Object(_)) {
-                    let retained = allocate_native_value(value_types, ty);
-                    instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Move {
-                        destination: retained,
-                        source: value,
-                    }));
-                    arguments.push(retained);
+                    let retained = allocate_shared_value(value_types, storage_hints, ty);
+                    instructions.push((
+                        ir::Instruction::Portable(ir::PortableInstruction::Move {
+                            destination: retained,
+                            source: *value,
+                        }),
+                        Vec::new(),
+                    ));
+                    lowered.push(retained);
                 } else {
-                    arguments.push(value);
+                    lowered.push(*value);
                 }
             }
             crate::hir::CaptureMode::Ref => {
-                return Err(native_error(format!(
-                    "native closure `{}` cannot yet capture a reference",
-                    function.name
-                )));
+                let NativeType::Object(layout) = expected else {
+                    return Err(native_error(format!(
+                        "native closure `{function}` has a non-reference capture ABI"
+                    )));
+                };
+                let reference =
+                    allocate_shared_value(value_types, storage_hints, NativeType::Object(*layout));
+                instructions.push((
+                    ir::Instruction::Portable(ir::PortableInstruction::MakeWholeReference {
+                        destination: reference,
+                        pointee_type: crate::vm::VerificationType::Unknown,
+                        object: *value,
+                    }),
+                    Vec::new(),
+                ));
+                lowered.push(reference);
             }
             crate::hir::CaptureMode::Pending => {
                 return Err(native_error(format!(
-                    "native closure `{}` has an unresolved capture mode",
-                    function.name
+                    "native closure `{function}` has an unresolved capture mode"
                 )));
             }
         }
     }
-    Ok(arguments)
-}
-
-fn native_edge_arguments(
-    target: ir::Block,
-    parameter_registers: &[Vec<Register>],
-    state: &[Option<ir::Value>],
-    function: &BytecodeFunction,
-) -> Result<Vec<ir::Value>, FosterError> {
-    parameter_registers[target.0 as usize]
-        .iter()
-        .map(|register| native_register(state, *register, function))
-        .collect()
+    Ok((lowered, consumed))
 }
 
 fn runtime_signature(
@@ -2780,32 +2871,47 @@ fn runtime_signature(
     }
 }
 
-fn extend_native_integer(
-    operand: ir::Value,
-    instructions: &mut Vec<ir::Instruction>,
-    value_types: &mut Vec<NativeType>,
-) -> ir::Value {
-    let destination = allocate_native_value(value_types, NativeType::Int);
-    instructions.push(ir::Instruction::IntegerExtend {
-        destination,
-        operand,
-    });
-    destination
+fn native_field_helper(receiver: NativeType, field: &str) -> Result<&'static str, FosterError> {
+    let receiver_kind = match receiver {
+        NativeType::Arguments => Some(crate::intrinsics::NativeReceiverKind::Arguments),
+        NativeType::String => Some(crate::intrinsics::NativeReceiverKind::String),
+        NativeType::StringList => Some(crate::intrinsics::NativeReceiverKind::StringList),
+        _ => None,
+    };
+    receiver_kind
+        .and_then(|receiver| crate::intrinsics::native_member_runtime(receiver, field))
+        .ok_or_else(|| {
+            native_error(format!(
+                "native compilation does not support field `{field}` on `{receiver:?}`"
+            ))
+        })
 }
 
-fn native_field_helper(receiver: NativeType, field: &str) -> Result<&'static str, FosterError> {
-    match (receiver, field) {
-        (NativeType::Arguments, "executable") => Ok("foster_args_executable"),
-        (NativeType::Arguments, "values") => Ok("foster_args_values"),
-        (NativeType::StringList, "empty?") => Ok("foster_string_list_empty"),
-        (NativeType::StringList, "length") => Ok("foster_string_list_length"),
-        (NativeType::StringList, "head") => Ok("foster_string_list_head"),
-        (NativeType::String, "empty?") => Ok("foster_string_empty"),
-        (NativeType::String, "length") => Ok("foster_string_length"),
-        (NativeType::String, "head") => Ok("foster_string_head"),
-        _ => Err(native_error(format!(
-            "native compilation does not support field `{field}` on `{receiver:?}`"
-        ))),
+fn reference_load_helper(ty: NativeType) -> &'static str {
+    match ty {
+        NativeType::Unit | NativeType::Bool | NativeType::Byte => "foster_ref_load_i8",
+        NativeType::CodePoint => "foster_ref_load_i32",
+        NativeType::Int => "foster_ref_load_i64",
+        NativeType::Float => "foster_ref_load_f64",
+        NativeType::String
+        | NativeType::Arguments
+        | NativeType::StringList
+        | NativeType::Object(_)
+        | NativeType::Opaque => "foster_ref_load_ptr",
+    }
+}
+
+fn reference_store_helper(ty: NativeType) -> &'static str {
+    match ty {
+        NativeType::Unit | NativeType::Bool | NativeType::Byte => "foster_ref_store_i8",
+        NativeType::CodePoint => "foster_ref_store_i32",
+        NativeType::Int => "foster_ref_store_i64",
+        NativeType::Float => "foster_ref_store_f64",
+        NativeType::String
+        | NativeType::Arguments
+        | NativeType::StringList
+        | NativeType::Object(_)
+        | NativeType::Opaque => "foster_ref_store_ptr",
     }
 }
 
@@ -2816,6 +2922,28 @@ fn lower_native_ir(
     backend: &NativeBackend<'_>,
 ) -> Result<(), FosterError> {
     let pointer_type = module.target_config().pointer_type();
+    let mut home_types = HashMap::<u16, NativeType>::new();
+    for (value, home) in function.storage_hints.iter().enumerate() {
+        if let Some(home) = home {
+            home_types
+                .entry(*home)
+                .or_insert(function.value_types[value]);
+        }
+    }
+    let homes = home_types
+        .into_iter()
+        .map(|(home, ty)| {
+            let lowered = cranelift_type(ty, pointer_type);
+            let size = lowered.bytes();
+            let align_shift = u8::try_from(size.trailing_zeros()).unwrap_or(0);
+            let slot = builder.create_sized_stack_slot(StackSlotData::new(
+                StackSlotKind::ExplicitSlot,
+                size,
+                align_shift,
+            ));
+            (home, slot)
+        })
+        .collect::<HashMap<_, _>>();
     let prologue = builder.create_block();
     builder.append_block_params_for_function_params(prologue);
     let blocks = function
@@ -2855,6 +2983,13 @@ fn lower_native_ir(
         };
         values.insert(*seed, value);
     }
+    for (value, lowered) in &values {
+        if let Some(home) = function.storage_hints[value.0 as usize] {
+            builder
+                .ins()
+                .stack_store(pointer_type, *lowered, homes[&home], 0);
+        }
+    }
     let entry_arguments = function
         .entry_arguments
         .iter()
@@ -2873,6 +3008,11 @@ fn lower_native_ir(
             .zip(builder.block_params(lowered_block).to_vec())
         {
             values.insert(*parameter, lowered);
+            if let Some(home) = function.storage_hints[parameter.0 as usize] {
+                builder
+                    .ins()
+                    .stack_store(pointer_type, lowered, homes[&home], 0);
+            }
         }
         for instruction in &block.instructions {
             if let ir::Instruction::Portable(ir::PortableInstruction::MatchPattern {
@@ -2888,7 +3028,6 @@ fn lower_native_ir(
                     PatternSubject {
                         value: values[subject],
                         ty: function.value_type(*subject),
-                        may_bind_object: true,
                     },
                     pattern,
                     backend.objects.layouts,
@@ -2900,18 +3039,41 @@ fn lower_native_ir(
                 }
                 values.insert(*destination, matched);
                 for (binding, value) in bindings.iter().zip(lowered_bindings) {
+                    if let NativeType::Object(layout) = function.value_type(*binding)
+                        && backend.objects.layouts.is_managed(layout)
+                    {
+                        let retain = builder.create_block();
+                        let finish = builder.create_block();
+                        builder.ins().brif(matched, retain, &[], finish, &[]);
+                        builder.switch_to_block(retain);
+                        backend.objects.retain(builder, value, layout);
+                        builder.ins().jump(finish, &[]);
+                        builder.switch_to_block(finish);
+                    }
                     values.insert(*binding, value);
                 }
                 continue;
             }
-            let result =
-                lower_native_instruction(builder, module, function, instruction, &values, backend)?;
+            let result = lower_native_instruction(
+                builder,
+                module,
+                function,
+                instruction,
+                &values,
+                &homes,
+                backend,
+            )?;
             let destinations = instruction.destinations();
             if let Some(destination) = destinations.first() {
                 values.insert(
                     *destination,
                     result.expect("value-producing native instruction"),
                 );
+                if let Some(home) = function.storage_hints[destination.0 as usize] {
+                    builder
+                        .ins()
+                        .stack_store(pointer_type, values[destination], homes[&home], 0);
+                }
             }
         }
         lower_native_terminator(builder, &block.terminator, &blocks, &values);
@@ -2930,17 +3092,7 @@ fn lower_native_pattern(
     let true_value = |builder: &mut FunctionBuilder<'_>| builder.ins().iconst(types::I8, 1);
     match pattern.unspanned() {
         Pattern::Wildcard => Ok((true_value(builder), Vec::new())),
-        Pattern::Binding(_) => {
-            if let NativeType::Object(layout) = subject.ty {
-                if !subject.may_bind_object {
-                    return Err(native_error(
-                        "native patterns do not yet bind aggregate variant payloads",
-                    ));
-                }
-                retain_object(builder, subject.value, layout, layouts.physical);
-            }
-            Ok((true_value(builder), vec![subject.value]))
-        }
+        Pattern::Binding(_) => Ok((true_value(builder), vec![subject.value])),
         Pattern::Bool(expected) => Ok((
             builder
                 .ins()
@@ -3009,10 +3161,18 @@ fn lower_native_pattern(
                 subject.value,
                 *tag_offset as i32,
             );
-            let mut matched =
+            let matched_tag =
                 builder
                     .ins()
                     .icmp_imm_s(IntCC::Equal, tag, i64::from(alternative.tag));
+            let payload_block = builder.create_block();
+            let failed_block = builder.create_block();
+            let join_block = builder.create_block();
+            builder
+                .ins()
+                .brif(matched_tag, payload_block, &[], failed_block, &[]);
+            builder.switch_to_block(payload_block);
+            let mut matched = true_value(builder);
             let mut bindings = Vec::new();
             for (pattern, field) in fields.iter().zip(&physical.fields) {
                 let value =
@@ -3024,7 +3184,6 @@ fn lower_native_pattern(
                     PatternSubject {
                         value,
                         ty: field_type,
-                        may_bind_object: false,
                     },
                     pattern,
                     layouts,
@@ -3032,7 +3191,34 @@ fn lower_native_pattern(
                 matched = builder.ins().band(matched, field_matched);
                 bindings.append(&mut field_bindings);
             }
-            Ok((matched, bindings))
+            builder.append_block_param(join_block, types::I8);
+            for binding in &bindings {
+                builder.append_block_param(join_block, builder.func.dfg.value_type(*binding));
+            }
+            let mut success_arguments = vec![matched.into()];
+            success_arguments.extend(
+                bindings
+                    .iter()
+                    .copied()
+                    .map(cranelift_codegen::ir::BlockArg::Value),
+            );
+            builder.ins().jump(join_block, &success_arguments);
+            builder.switch_to_block(failed_block);
+            let false_value = builder.ins().iconst(types::I8, 0);
+            let mut failed_arguments = vec![false_value.into()];
+            for binding in &bindings {
+                let ty = builder.func.dfg.value_type(*binding);
+                let zero = if ty == types::F64 {
+                    builder.ins().f64const(0.0)
+                } else {
+                    builder.ins().iconst(ty, 0)
+                };
+                failed_arguments.push(zero.into());
+            }
+            builder.ins().jump(join_block, &failed_arguments);
+            builder.switch_to_block(join_block);
+            let parameters = builder.block_params(join_block);
+            Ok((parameters[0], parameters[1..].to_vec()))
         }
         Pattern::Spanned { .. } => unreachable!(),
     }
@@ -3055,6 +3241,7 @@ fn lower_native_instruction(
     function: &ir::Function,
     instruction: &ir::Instruction,
     values: &HashMap<ir::Value, ClifValue>,
+    homes: &HashMap<u16, StackSlot>,
     backend: &NativeBackend<'_>,
 ) -> Result<Option<ClifValue>, FosterError> {
     let get = |value: &ir::Value| values[value];
@@ -3160,7 +3347,15 @@ fn lower_native_instruction(
             return Ok(None);
         }
         ir::Instruction::Portable(instruction) => {
-            return lower_portable_native(builder, module, function, instruction, values, backend);
+            return lower_portable_native(
+                builder,
+                module,
+                function,
+                instruction,
+                values,
+                homes,
+                backend,
+            );
         }
     };
     Ok(Some(result))
@@ -3172,13 +3367,16 @@ fn lower_portable_native(
     function: &ir::Function,
     instruction: &ir::PortableInstruction,
     values: &HashMap<ir::Value, ClifValue>,
+    homes: &HashMap<u16, StackSlot>,
     backend: &NativeBackend<'_>,
 ) -> Result<Option<ClifValue>, FosterError> {
     let objects = backend.objects;
     let get = |value: &ir::Value| values[value];
     match instruction {
         ir::PortableInstruction::Drop { value } => {
-            if let NativeType::Object(layout) = function.value_type(*value) {
+            if let NativeType::Object(layout) = function.value_type(*value)
+                && objects.layouts.is_managed(layout)
+            {
                 objects.release(builder, module, get(value), layout)?;
             }
             Ok(None)
@@ -3188,7 +3386,9 @@ fn lower_portable_native(
             source,
         } => {
             let value = get(source);
-            if let NativeType::Object(layout) = function.value_type(*destination) {
+            if let NativeType::Object(layout) = function.value_type(*destination)
+                && objects.layouts.is_managed(layout)
+            {
                 objects.retain(builder, value, layout);
             }
             Ok(Some(value))
@@ -3201,24 +3401,275 @@ fn lower_portable_native(
                 return Err(native_error("copy-on-write requires a native object"));
             };
             let physical = objects.layouts.physical.get(layout);
-            let PhysicalKind::Record { fields } = &physical.kind else {
-                return Err(native_error(
-                    "native copy-on-write currently requires a record layout",
-                ));
-            };
             let source = get(source);
-            let copied = objects.allocate(builder, module, layout)?;
-            for field in fields {
-                let value = load_physical_value(builder, module, source, field.offset, field.value);
-                if let Some(pointee) = field.value.pointee
+            let copied = match &physical.kind {
+                PhysicalKind::Record { fields } => {
+                    let copied = objects.allocate(builder, module, layout)?;
+                    for field in fields {
+                        let value =
+                            load_physical_value(builder, module, source, field.offset, field.value);
+                        if let Some(pointee) = field.value.pointee
+                            && objects.layouts.is_managed(pointee)
+                        {
+                            objects.retain(builder, value, pointee);
+                        }
+                        store_physical_value(builder, copied, field.offset, value);
+                    }
+                    copied
+                }
+                PhysicalKind::Buffer { .. } => {
+                    clone_native_buffer(builder, module, source, layout, objects)?
+                }
+                _ => {
+                    return Err(native_error(
+                        "native copy-on-write requires a record or buffer layout",
+                    ));
+                }
+            };
+            objects.release(builder, module, source, layout)?;
+            Ok(Some(copied))
+        }
+        ir::PortableInstruction::MakeList {
+            destination,
+            elements,
+            ..
+        } => {
+            let NativeType::Object(layout) = function.value_type(*destination) else {
+                return Err(native_error("list result uses the wrong native layout"));
+            };
+            let object = allocate_native_buffer(builder, module, layout, elements.len(), objects)?;
+            let PhysicalKind::Buffer {
+                data_offset,
+                element,
+                ..
+            } = objects.layouts.physical.get(layout).kind
+            else {
+                return Err(native_error("list result has a non-buffer layout"));
+            };
+            let data = load_physical_value(
+                builder,
+                module,
+                object,
+                data_offset,
+                ValueLayout {
+                    size: module.target_config().pointer_type().bytes(),
+                    align: u16::try_from(module.target_config().pointer_type().bytes())
+                        .expect("pointer alignment fits in u16"),
+                    kind: ScalarKind::Pointer,
+                    pointee: None,
+                },
+            );
+            for (index, source) in elements.iter().enumerate() {
+                let value = get(source);
+                if let Some(pointee) = element.pointee
                     && objects.layouts.is_managed(pointee)
                 {
                     objects.retain(builder, value, pointee);
                 }
-                store_physical_value(builder, copied, field.offset, value);
+                store_physical_value(
+                    builder,
+                    data,
+                    u32::try_from(index).unwrap_or(u32::MAX) * element.size,
+                    value,
+                );
             }
-            objects.release(builder, module, source, layout)?;
-            Ok(Some(copied))
+            Ok(Some(object))
+        }
+        ir::PortableInstruction::Index {
+            destination,
+            object,
+            index,
+        } if matches!(function.value_type(*object), NativeType::Object(_)) => {
+            let NativeType::Object(layout) = function.value_type(*object) else {
+                unreachable!()
+            };
+            let (address, element) = native_buffer_element_address(
+                builder,
+                module,
+                get(object),
+                get(index),
+                layout,
+                objects,
+            )?;
+            let value = builder.ins().load(
+                physical_cranelift_type(element.kind, module.target_config().pointer_type()),
+                MemFlagsData::trusted(),
+                address,
+                0,
+            );
+            if let NativeType::Object(pointee) = function.value_type(*destination)
+                && objects.layouts.is_managed(pointee)
+            {
+                objects.retain(builder, value, pointee);
+            }
+            Ok(Some(value))
+        }
+        ir::PortableInstruction::StoreIndex {
+            object,
+            index,
+            source,
+        } => {
+            let NativeType::Object(layout) = function.value_type(*object) else {
+                return Err(native_error("native indexed store requires a buffer"));
+            };
+            let (address, element) = native_buffer_element_address(
+                builder,
+                module,
+                get(object),
+                get(index),
+                layout,
+                objects,
+            )?;
+            if let Some(pointee) = element.pointee
+                && objects.layouts.is_managed(pointee)
+            {
+                let old = builder.ins().load(
+                    module.target_config().pointer_type(),
+                    MemFlagsData::trusted(),
+                    address,
+                    0,
+                );
+                objects.release(builder, module, old, pointee)?;
+                objects.retain(builder, get(source), pointee);
+            }
+            store_physical_value(builder, address, 0, get(source));
+            Ok(None)
+        }
+        ir::PortableInstruction::Append {
+            destination,
+            object,
+            value,
+        } => {
+            let NativeType::Object(layout) = function.value_type(*destination) else {
+                return Err(native_error("native append requires a buffer"));
+            };
+            let appended =
+                append_native_buffer(builder, module, get(object), get(value), layout, objects)?;
+            Ok(Some(appended))
+        }
+        ir::PortableInstruction::Push { object, value, .. } => {
+            let NativeType::Object(layout) = function.value_type(*object) else {
+                return Err(native_error("native push requires a buffer"));
+            };
+            push_native_buffer(builder, module, get(object), get(value), layout, objects)?;
+            Ok(Some(builder.ins().iconst(types::I8, 0)))
+        }
+        ir::PortableInstruction::Contains {
+            value, candidates, ..
+        } => {
+            let mut matched = builder.ins().iconst(types::I8, 0);
+            for candidate in candidates {
+                let equal = lower_binary(
+                    builder,
+                    module,
+                    BinaryOp::Equal,
+                    function.value_type(*value),
+                    get(value),
+                    get(candidate),
+                )?;
+                matched = builder.ins().bor(matched, equal);
+            }
+            Ok(Some(matched))
+        }
+        ir::PortableInstruction::MakeWholeReference { object, .. } => {
+            if let NativeType::Object(layout) = function.value_type(*object)
+                && matches!(
+                    objects.layouts.logical.get(layout).kind,
+                    LayoutKind::Pointer { .. }
+                )
+            {
+                return Ok(Some(get(object)));
+            }
+            let home = function.storage_hints[object.0 as usize]
+                .and_then(|home| homes.get(&home).copied())
+                .ok_or_else(|| native_error("referenced value has no native storage home"))?;
+            Ok(Some(builder.ins().stack_addr(
+                module.target_config().pointer_type(),
+                home,
+                0,
+            )))
+        }
+        ir::PortableInstruction::MakeReference { object, index, .. } => {
+            let (object, object_type) = native_reference_receiver(
+                builder,
+                module,
+                get(object),
+                function.value_type(*object),
+                backend,
+            )?;
+            let NativeType::Object(layout) = object_type else {
+                return Err(native_error("indexed reference requires a native buffer"));
+            };
+            let (address, _) = native_buffer_element_address(
+                builder,
+                module,
+                object,
+                get(index),
+                layout,
+                objects,
+            )?;
+            Ok(Some(address))
+        }
+        ir::PortableInstruction::MakeFieldReference { object, field, .. }
+        | ir::PortableInstruction::LoadField {
+            object,
+            field,
+            by_reference: true,
+            ..
+        } => {
+            let (object, object_type) = native_reference_receiver(
+                builder,
+                module,
+                get(object),
+                function.value_type(*object),
+                backend,
+            )?;
+            let NativeType::Object(layout) = object_type else {
+                return Err(native_error("field reference requires a native record"));
+            };
+            let LayoutKind::Record { fields, .. } = &objects.layouts.logical.get(layout).kind
+            else {
+                return Err(native_error("field reference requires a native record"));
+            };
+            let slot = fields
+                .iter()
+                .find(|slot| slot.name == *field)
+                .ok_or_else(|| native_error(format!("record has no field `{field}`")))?;
+            let physical = objects
+                .layouts
+                .physical
+                .record_field(layout, slot.index)
+                .ok_or_else(|| native_error("record field has no physical slot"))?;
+            Ok(Some(
+                builder.ins().iadd_imm_s(object, i64::from(physical.offset)),
+            ))
+        }
+        ir::PortableInstruction::MoveOut {
+            destination,
+            source,
+        } => {
+            let source_type = function.value_type(*source);
+            let is_reference = matches!(
+                source_type,
+                NativeType::Object(layout)
+                    if matches!(objects.layouts.logical.get(layout).kind, LayoutKind::Pointer { .. })
+            );
+            if !is_reference {
+                return Ok(Some(get(source)));
+            }
+            let ty = function.value_type(*destination);
+            let lowered = cranelift_type(ty, module.target_config().pointer_type());
+            let value = builder
+                .ins()
+                .load(lowered, MemFlagsData::trusted(), get(source), 0);
+            let zero = match ty {
+                NativeType::Float => builder.ins().f64const(0.0),
+                _ => builder.ins().iconst(lowered, 0),
+            };
+            builder
+                .ins()
+                .store(MemFlagsData::trusted(), zero, get(source), 0);
+            Ok(Some(value))
         }
         ir::PortableInstruction::MakeRecord {
             destination,
@@ -3411,9 +3862,54 @@ fn lower_portable_native(
             let NativeType::Object(layout) = function.value_type(*object) else {
                 return Err(native_error("native field load requires a Foster object"));
             };
+            if matches!(
+                objects.layouts.logical.get(layout).kind,
+                LayoutKind::Builtin {
+                    ty: crate::vm::VerificationType::List(_)
+                }
+            ) {
+                let (data_offset, length_offset, _, element) =
+                    native_buffer_layout(layout, objects)?;
+                let word = module.target_config().pointer_type();
+                let length = builder.ins().load(
+                    word,
+                    MemFlagsData::trusted(),
+                    get(object),
+                    length_offset as i32,
+                );
+                let result = match field.as_str() {
+                    "empty?" => builder.ins().icmp_imm_s(IntCC::Equal, length, 0),
+                    "length" => length,
+                    "head" => {
+                        let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
+                        builder.ins().trapnz(empty, TrapCode::HEAP_OUT_OF_BOUNDS);
+                        let data = builder.ins().load(
+                            word,
+                            MemFlagsData::trusted(),
+                            get(object),
+                            data_offset as i32,
+                        );
+                        let value = builder.ins().load(
+                            physical_cranelift_type(element.kind, word),
+                            MemFlagsData::trusted(),
+                            data,
+                            0,
+                        );
+                        if let Some(pointee) = element.pointee
+                            && objects.layouts.is_managed(pointee)
+                        {
+                            objects.retain(builder, value, pointee);
+                        }
+                        value
+                    }
+                    "rest" => native_buffer_tail(builder, module, get(object), layout, objects)?,
+                    _ => return Err(native_error(format!("native list has no field `{field}`"))),
+                };
+                return Ok(Some(result));
+            }
             let LayoutKind::Record { fields, .. } = &objects.layouts.logical.get(layout).kind
             else {
-                return Err(native_error("native field load requires a record"));
+                return Err(native_error("native field load requires a record or list"));
             };
             let slot = fields
                 .iter()
@@ -3476,10 +3972,453 @@ fn lower_portable_native(
             store_physical_value(builder, get(object), physical.offset, source_value);
             Ok(None)
         }
+        ir::PortableInstruction::Builtin {
+            destination,
+            builtin,
+            arguments,
+        } => {
+            use crate::intrinsics::{NativeInlineIntrinsic, NativeIntrinsic};
+            let lowered = arguments.iter().map(get).collect::<Vec<_>>();
+            let result = match builtin.descriptor().native {
+                NativeIntrinsic::Inline(NativeInlineIntrinsic::IntegerToCodePoint) => {
+                    let value = lowered[0];
+                    let above =
+                        builder
+                            .ins()
+                            .icmp_imm_u(IntCC::UnsignedGreaterThan, value, 0x10_ffff);
+                    let below_surrogate =
+                        builder
+                            .ins()
+                            .icmp_imm_s(IntCC::SignedLessThan, value, 0xd800);
+                    let above_surrogate =
+                        builder
+                            .ins()
+                            .icmp_imm_s(IntCC::SignedGreaterThan, value, 0xdfff);
+                    let valid_surrogate = builder.ins().bor(below_surrogate, above_surrogate);
+                    let invalid_surrogate = builder.ins().bxor_imm_u(valid_surrogate, 1);
+                    let invalid = builder.ins().bor(above, invalid_surrogate);
+                    builder
+                        .ins()
+                        .trapnz(invalid, TrapCode::BAD_CONVERSION_TO_INTEGER);
+                    builder.ins().ireduce(types::I32, value)
+                }
+                NativeIntrinsic::Inline(NativeInlineIntrinsic::ByteIsValid) => builder
+                    .ins()
+                    .icmp_imm_u(IntCC::UnsignedLessThanOrEqual, lowered[0], 255),
+                NativeIntrinsic::Inline(NativeInlineIntrinsic::IntegerToByte) => {
+                    let invalid =
+                        builder
+                            .ins()
+                            .icmp_imm_u(IntCC::UnsignedGreaterThan, lowered[0], 255);
+                    builder
+                        .ins()
+                        .trapnz(invalid, TrapCode::BAD_CONVERSION_TO_INTEGER);
+                    builder.ins().ireduce(types::I8, lowered[0])
+                }
+                NativeIntrinsic::Runtime(helper) => runtime_call(
+                    builder,
+                    module,
+                    helper,
+                    &runtime_signature(*destination, arguments, &function.value_types),
+                    &lowered,
+                )?,
+                NativeIntrinsic::Unavailable => {
+                    return Err(native_error(format!(
+                        "intrinsic `{builtin:?}` reached Cranelift without a native lowering"
+                    )));
+                }
+            };
+            Ok(Some(result))
+        }
         unsupported => Err(native_error(format!(
             "portable operation reached Cranelift without native legalization: {unsupported:?}"
         ))),
     }
+}
+
+fn native_reference_receiver(
+    builder: &mut FunctionBuilder<'_>,
+    module: &ObjectModule,
+    value: ClifValue,
+    mut ty: NativeType,
+    backend: &NativeBackend<'_>,
+) -> Result<(ClifValue, NativeType), FosterError> {
+    let mut value = value;
+    while let NativeType::Object(layout) = ty {
+        let LayoutKind::Pointer { pointee, .. } = &backend.ir.layouts.get(layout).kind else {
+            break;
+        };
+        ty = native_verification_type(backend.ir.program, backend.ir.layouts, pointee, None)?;
+        value = builder.ins().load(
+            cranelift_type(ty, module.target_config().pointer_type()),
+            MemFlagsData::trusted(),
+            value,
+            0,
+        );
+    }
+    Ok((value, ty))
+}
+
+fn native_buffer_layout(
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<(u32, u32, u32, ValueLayout), FosterError> {
+    match objects.layouts.physical.get(layout).kind {
+        PhysicalKind::Buffer {
+            data_offset,
+            length_offset,
+            capacity_offset,
+            element,
+        } => Ok((data_offset, length_offset, capacity_offset, element)),
+        _ => Err(native_error(
+            "native list operation requires a buffer layout",
+        )),
+    }
+}
+
+fn allocate_native_buffer(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    layout: LayoutId,
+    length: usize,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let (data_offset, length_offset, capacity_offset, element) =
+        native_buffer_layout(layout, objects)?;
+    let object = objects.allocate(builder, module, layout)?;
+    let capacity = length.max(1);
+    let size = builder.ins().iconst(
+        types::I64,
+        i64::try_from(capacity).unwrap_or(i64::MAX) * i64::from(element.size),
+    );
+    let align = builder.ins().iconst(types::I64, i64::from(element.align));
+    let data = runtime_call(
+        builder,
+        module,
+        "foster_alloc",
+        &ir::Signature {
+            parameters: vec![NativeType::Int, NativeType::Int],
+            result: NativeType::Opaque,
+        },
+        &[size, align],
+    )?;
+    let word = module.target_config().pointer_type();
+    store_physical_value(builder, object, data_offset, data);
+    let length = builder
+        .ins()
+        .iconst(word, i64::try_from(length).unwrap_or(i64::MAX));
+    store_physical_value(builder, object, length_offset, length);
+    let capacity = builder
+        .ins()
+        .iconst(word, i64::try_from(capacity).unwrap_or(i64::MAX));
+    store_physical_value(builder, object, capacity_offset, capacity);
+    Ok(object)
+}
+
+fn native_buffer_element_address(
+    builder: &mut FunctionBuilder<'_>,
+    module: &ObjectModule,
+    object: ClifValue,
+    index: ClifValue,
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<(ClifValue, ValueLayout), FosterError> {
+    let (data_offset, length_offset, _, element) = native_buffer_layout(layout, objects)?;
+    let word = module.target_config().pointer_type();
+    let length = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), object, length_offset as i32);
+    let outside = builder
+        .ins()
+        .icmp(IntCC::UnsignedGreaterThanOrEqual, index, length);
+    builder.ins().trapnz(outside, TrapCode::HEAP_OUT_OF_BOUNDS);
+    let data = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), object, data_offset as i32);
+    let offset = builder.ins().imul_imm_u(index, i64::from(element.size));
+    Ok((builder.ins().iadd(data, offset), element))
+}
+
+fn copy_native_buffer_elements(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    source: ClifValue,
+    target: ClifValue,
+    layout: LayoutId,
+    retain: bool,
+    objects: ObjectRuntime<'_>,
+) -> Result<(), FosterError> {
+    let (data_offset, length_offset, _, element) = native_buffer_layout(layout, objects)?;
+    let word = module.target_config().pointer_type();
+    let source_data = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), source, data_offset as i32);
+    let target_data = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), target, data_offset as i32);
+    let length = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), source, length_offset as i32);
+    let loop_block = builder.create_block();
+    let copy = builder.create_block();
+    let finish = builder.create_block();
+    builder.append_block_param(loop_block, word);
+    let zero = builder.ins().iconst(word, 0);
+    builder.ins().jump(loop_block, &[zero.into()]);
+    builder.switch_to_block(loop_block);
+    let index = builder.block_params(loop_block)[0];
+    let done = builder
+        .ins()
+        .icmp(IntCC::UnsignedGreaterThanOrEqual, index, length);
+    builder.ins().brif(done, finish, &[], copy, &[]);
+    builder.switch_to_block(copy);
+    let offset = builder.ins().imul_imm_u(index, i64::from(element.size));
+    let source_address = builder.ins().iadd(source_data, offset);
+    let value = builder.ins().load(
+        physical_cranelift_type(element.kind, word),
+        MemFlagsData::trusted(),
+        source_address,
+        0,
+    );
+    if retain
+        && let Some(pointee) = element.pointee
+        && objects.layouts.is_managed(pointee)
+    {
+        objects.retain(builder, value, pointee);
+    }
+    let target_address = builder.ins().iadd(target_data, offset);
+    store_physical_value(builder, target_address, 0, value);
+    let next = builder.ins().iadd_imm_s(index, 1);
+    builder.ins().jump(loop_block, &[next.into()]);
+    builder.switch_to_block(finish);
+    Ok(())
+}
+
+fn clone_native_buffer(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    source: ClifValue,
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let (_, length_offset, _, _) = native_buffer_layout(layout, objects)?;
+    let length = builder.ins().load(
+        module.target_config().pointer_type(),
+        MemFlagsData::trusted(),
+        source,
+        length_offset as i32,
+    );
+    let target = allocate_native_buffer_dynamic(builder, module, layout, length, objects)?;
+    copy_native_buffer_elements(builder, module, source, target, layout, true, objects)?;
+    Ok(target)
+}
+
+fn native_buffer_tail(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    source: ClifValue,
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let (data_offset, length_offset, _, element) = native_buffer_layout(layout, objects)?;
+    let word = module.target_config().pointer_type();
+    let source_data = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), source, data_offset as i32);
+    let length = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), source, length_offset as i32);
+    let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
+    let zero = builder.ins().iconst(word, 0);
+    let decremented = builder.ins().iadd_imm_s(length, -1);
+    let tail_length = builder.ins().select(empty, zero, decremented);
+    let target = allocate_native_buffer_dynamic(builder, module, layout, tail_length, objects)?;
+    let target_data = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), target, data_offset as i32);
+    let loop_block = builder.create_block();
+    let copy = builder.create_block();
+    let finish = builder.create_block();
+    builder.append_block_param(loop_block, word);
+    builder.ins().jump(loop_block, &[zero.into()]);
+    builder.switch_to_block(loop_block);
+    let index = builder.block_params(loop_block)[0];
+    let done = builder
+        .ins()
+        .icmp(IntCC::UnsignedGreaterThanOrEqual, index, tail_length);
+    builder.ins().brif(done, finish, &[], copy, &[]);
+    builder.switch_to_block(copy);
+    let target_offset = builder.ins().imul_imm_u(index, i64::from(element.size));
+    let source_offset = builder
+        .ins()
+        .iadd_imm_s(target_offset, i64::from(element.size));
+    let source_address = builder.ins().iadd(source_data, source_offset);
+    let value = builder.ins().load(
+        physical_cranelift_type(element.kind, word),
+        MemFlagsData::trusted(),
+        source_address,
+        0,
+    );
+    if let Some(pointee) = element.pointee
+        && objects.layouts.is_managed(pointee)
+    {
+        objects.retain(builder, value, pointee);
+    }
+    let target_address = builder.ins().iadd(target_data, target_offset);
+    store_physical_value(builder, target_address, 0, value);
+    let next = builder.ins().iadd_imm_s(index, 1);
+    builder.ins().jump(loop_block, &[next.into()]);
+    builder.switch_to_block(finish);
+    Ok(target)
+}
+
+fn copy_native_buffer_data(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    source_data: ClifValue,
+    target_data: ClifValue,
+    length: ClifValue,
+    element: ValueLayout,
+) {
+    let word = module.target_config().pointer_type();
+    let loop_block = builder.create_block();
+    let copy = builder.create_block();
+    let finish = builder.create_block();
+    builder.append_block_param(loop_block, word);
+    let zero = builder.ins().iconst(word, 0);
+    builder.ins().jump(loop_block, &[zero.into()]);
+    builder.switch_to_block(loop_block);
+    let index = builder.block_params(loop_block)[0];
+    let done = builder
+        .ins()
+        .icmp(IntCC::UnsignedGreaterThanOrEqual, index, length);
+    builder.ins().brif(done, finish, &[], copy, &[]);
+    builder.switch_to_block(copy);
+    let offset = builder.ins().imul_imm_u(index, i64::from(element.size));
+    let source = builder.ins().iadd(source_data, offset);
+    let value = builder.ins().load(
+        physical_cranelift_type(element.kind, word),
+        MemFlagsData::trusted(),
+        source,
+        0,
+    );
+    let target = builder.ins().iadd(target_data, offset);
+    store_physical_value(builder, target, 0, value);
+    let next = builder.ins().iadd_imm_s(index, 1);
+    builder.ins().jump(loop_block, &[next.into()]);
+    builder.switch_to_block(finish);
+}
+
+fn allocate_native_buffer_dynamic(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    layout: LayoutId,
+    length: ClifValue,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let (data_offset, length_offset, capacity_offset, element) =
+        native_buffer_layout(layout, objects)?;
+    let object = objects.allocate(builder, module, layout)?;
+    let word = module.target_config().pointer_type();
+    let is_empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
+    let one = builder.ins().iconst(word, 1);
+    let capacity = builder.ins().select(is_empty, one, length);
+    let size = builder.ins().imul_imm_u(capacity, i64::from(element.size));
+    let align = builder.ins().iconst(types::I64, i64::from(element.align));
+    let data = runtime_call(
+        builder,
+        module,
+        "foster_alloc",
+        &ir::Signature {
+            parameters: vec![NativeType::Int, NativeType::Int],
+            result: NativeType::Opaque,
+        },
+        &[size, align],
+    )?;
+    store_physical_value(builder, object, data_offset, data);
+    store_physical_value(builder, object, length_offset, length);
+    store_physical_value(builder, object, capacity_offset, capacity);
+    Ok(object)
+}
+
+fn append_native_buffer(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    source: ClifValue,
+    value: ClifValue,
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let target = clone_native_buffer(builder, module, source, layout, objects)?;
+    push_native_buffer(builder, module, target, value, layout, objects)?;
+    Ok(target)
+}
+
+fn push_native_buffer(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    object: ClifValue,
+    value: ClifValue,
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<(), FosterError> {
+    let (data_offset, length_offset, capacity_offset, element) =
+        native_buffer_layout(layout, objects)?;
+    let word = module.target_config().pointer_type();
+    let old_data = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), object, data_offset as i32);
+    let length = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), object, length_offset as i32);
+    let old_capacity = builder.ins().load(
+        word,
+        MemFlagsData::trusted(),
+        object,
+        capacity_offset as i32,
+    );
+    let new_length = builder.ins().iadd_imm_s(length, 1);
+    let new_capacity = new_length;
+    let size = builder
+        .ins()
+        .imul_imm_u(new_capacity, i64::from(element.size));
+    let align = builder.ins().iconst(types::I64, i64::from(element.align));
+    let new_data = runtime_call(
+        builder,
+        module,
+        "foster_alloc",
+        &ir::Signature {
+            parameters: vec![NativeType::Int, NativeType::Int],
+            result: NativeType::Opaque,
+        },
+        &[size, align],
+    )?;
+    copy_native_buffer_data(builder, module, old_data, new_data, length, element);
+    store_physical_value(builder, object, data_offset, new_data);
+    store_physical_value(builder, object, capacity_offset, new_capacity);
+    let offset = builder.ins().imul_imm_u(length, i64::from(element.size));
+    let address = builder.ins().iadd(new_data, offset);
+    if let Some(pointee) = element.pointee
+        && objects.layouts.is_managed(pointee)
+    {
+        objects.retain(builder, value, pointee);
+    }
+    store_physical_value(builder, address, 0, value);
+    store_physical_value(builder, object, length_offset, new_length);
+    let old_size = builder
+        .ins()
+        .imul_imm_u(old_capacity, i64::from(element.size));
+    runtime_call(
+        builder,
+        module,
+        "foster_dealloc",
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque, NativeType::Int, NativeType::Int],
+            result: NativeType::Unit,
+        },
+        &[old_data, old_size, align],
+    )?;
+    Ok(())
 }
 
 fn allocate_object(
@@ -3811,33 +4750,6 @@ fn float_comparison(
     builder.ins().fcmp(condition, left, right)
 }
 
-fn block_leaders(function: &BytecodeFunction) -> Result<Vec<usize>, FosterError> {
-    let mut leaders = HashSet::from([0]);
-    for (index, instruction) in function.instructions.iter().enumerate() {
-        match instruction {
-            Instruction::Jump { target } | Instruction::JumpIfFalse { target, .. } => {
-                if *target >= function.instructions.len() {
-                    return Err(native_error(format!(
-                        "invalid jump target {target} in `{}`",
-                        function.name
-                    )));
-                }
-                leaders.insert(*target);
-                if index + 1 < function.instructions.len() {
-                    leaders.insert(index + 1);
-                }
-            }
-            Instruction::Return { .. } if index + 1 < function.instructions.len() => {
-                leaders.insert(index + 1);
-            }
-            _ => {}
-        }
-    }
-    let mut leaders = leaders.into_iter().collect::<Vec<_>>();
-    leaders.sort_unstable();
-    Ok(leaders)
-}
-
 fn instruction_name(instruction: &Instruction) -> &'static str {
     match instruction {
         Instruction::MakeList { .. } => "MakeList",
@@ -4074,6 +4986,56 @@ extern "C" fn foster_string_equal(left: usize, right: usize) -> u8 {{
     u8::from(unsafe {{ string_value(left) == string_value(right) }})
 }}
 
+#[unsafe(no_mangle)]
+extern "C" fn foster_parse_float(value: usize) -> f64 {{
+    unsafe {{ string_value(value) }}.parse::<f64>().unwrap_or_else(|_| {{
+        eprintln!("error: invalid Float text");
+        std::process::exit(2);
+    }})
+}}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_format_float(value: f64) -> usize {{
+    Box::into_raw(Box::new(value.to_string())) as usize
+}}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_ref_load_i8(reference: usize) -> u8 {{ unsafe {{ *(reference as *const u8) }} }}
+#[unsafe(no_mangle)]
+extern "C" fn foster_ref_load_i32(reference: usize) -> u32 {{ unsafe {{ *(reference as *const u32) }} }}
+#[unsafe(no_mangle)]
+extern "C" fn foster_ref_load_i64(reference: usize) -> i64 {{ unsafe {{ *(reference as *const i64) }} }}
+#[unsafe(no_mangle)]
+extern "C" fn foster_ref_load_f64(reference: usize) -> f64 {{ unsafe {{ *(reference as *const f64) }} }}
+#[unsafe(no_mangle)]
+extern "C" fn foster_ref_load_ptr(reference: usize) -> usize {{ unsafe {{ *(reference as *const usize) }} }}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_ref_store_i8(reference: usize, value: u8) -> u8 {{
+    unsafe {{ *(reference as *mut u8) = value }};
+    0
+}}
+#[unsafe(no_mangle)]
+extern "C" fn foster_ref_store_i32(reference: usize, value: u32) -> u8 {{
+    unsafe {{ *(reference as *mut u32) = value }};
+    0
+}}
+#[unsafe(no_mangle)]
+extern "C" fn foster_ref_store_i64(reference: usize, value: i64) -> u8 {{
+    unsafe {{ *(reference as *mut i64) = value }};
+    0
+}}
+#[unsafe(no_mangle)]
+extern "C" fn foster_ref_store_f64(reference: usize, value: f64) -> u8 {{
+    unsafe {{ *(reference as *mut f64) = value }};
+    0
+}}
+#[unsafe(no_mangle)]
+extern "C" fn foster_ref_store_ptr(reference: usize, value: usize) -> u8 {{
+    unsafe {{ *(reference as *mut usize) = value }};
+    0
+}}
+
 {declaration}
 
 fn main() {{
@@ -4148,11 +5110,12 @@ func main() -> Int {
 "#,
         )
         .unwrap();
-        let mut program =
-            vm::compile_with_options(&compilation, vm::CompileOptions { optimize: false }).unwrap();
+        let shared = vm::compile_shared(&compilation).unwrap();
+        let shared_functions = shared.functions;
+        let mut program = shared.metadata;
         let mut layouts = crate::codegen::layout::legalize(&mut program).unwrap();
         let main = program.main.unwrap();
-        let instances = reachable_instances(&program, main).unwrap();
+        let instances = reachable_instances(&program, &shared_functions, main).unwrap();
         let instance_ids = instances
             .iter()
             .map(|instance| (instance.key.clone(), instance.ir_function))
@@ -4169,12 +5132,14 @@ func main() -> Int {
             .find(|instance| instance.key.function == main)
             .unwrap();
         let (_, runtime_string_indices) = runtime_strings(&program);
-        let function = lower_to_native_ir(
+        let function = lower_shared_to_native_ir(
+            &shared_functions[&main],
             &program.functions[&main],
             &function_types[&instance.ir_function],
             &instance.key,
             NativeIrEnvironment {
                 program: &program,
+                shared_functions: &shared_functions,
                 function_types: &function_types,
                 runtime_string_indices: &runtime_string_indices,
                 layouts: &layouts,

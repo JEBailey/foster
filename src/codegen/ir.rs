@@ -83,7 +83,7 @@ pub struct Value(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Block(pub u32);
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
     pub signature: Signature,
@@ -112,7 +112,7 @@ impl Function {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockData {
     pub parameters: Vec<Value>,
     pub instructions: Vec<Instruction>,
@@ -121,7 +121,7 @@ pub struct BlockData {
     pub terminator_span: Range<usize>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Instruction {
     Constant {
         destination: Value,
@@ -193,6 +193,7 @@ pub enum PortableInstruction {
     },
     MakeList {
         destination: Value,
+        element_type: crate::vm::VerificationType,
         elements: Vec<Value>,
     },
     Index {
@@ -230,15 +231,18 @@ pub enum PortableInstruction {
     },
     MakeReference {
         destination: Value,
+        pointee_type: crate::vm::VerificationType,
         object: Value,
         index: Value,
     },
     MakeWholeReference {
         destination: Value,
+        pointee_type: crate::vm::VerificationType,
         object: Value,
     },
     MakeFieldReference {
         destination: Value,
+        pointee_type: crate::vm::VerificationType,
         object: Value,
         field: String,
     },
@@ -522,7 +526,7 @@ impl Constant {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Terminator {
     Jump {
         target: Block,

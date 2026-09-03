@@ -93,12 +93,10 @@ and stable bytecode tags. The remaining structural work should preserve that dep
   instruction surface now seals through shared SSA and de-SSA with deterministic record, enum,
   closure, and reference layouts; erased heterogeneous joins retain an explicit opaque type until
   the bytecode ownership/type verifier resolves their concrete flow state.
-- Extend the implemented descriptor-driven Cranelift record/enum/closure allocation,
-  monomorphization, memory access, retain/release, copy-on-write, scalar pattern, indirect call, and
-  generated destruction lowering to general strings, lists/buffers, dynamically erased payloads,
-  references, and heterogeneous callable joins. Then extend native
-  runtime services and cross-target object output while retaining the register VM as the semantic
-  reference.
+- Complete instruction lowering for the target-specific String/Symbol/bytes, erased box,
+  heterogeneous callable, remote, and future layouts now materialized by native
+  specialization. Then extend native runtime services and cross-target object output while
+  retaining the register VM as the semantic reference.
 - Compact the bytecode encoding after its instruction model is stable.
 
 ## Longer-horizon questions

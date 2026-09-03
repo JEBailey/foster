@@ -1,7 +1,7 @@
 # Native compilation
 
-Status: host-native AOT backend implemented with Cranelift; scalar, record, tagged-variant, and
-concrete closure lowering is executable, while collection, reference, erased-callable, and
+Status: host-native AOT backend implemented with Cranelift; scalar, record, tagged-variant,
+concrete closure, list, and local-reference lowering is executable, while erased-callable and
 host-service coverage is still in progress.
 
 `foster build --native` compiles the functions reachable from `main` into a native object and links
@@ -37,11 +37,16 @@ use the target pointer type. It supports:
 - direct function and statically resolved method calls;
 - user-record construction and field reads, nested records, copy-on-write field assignment, and
   record values passed through borrowed function parameters;
-- enum-case allocation, deterministic tags, scalar payloads, and enum pattern tests/bindings;
+- descriptor-backed generic list construction, indexing, copy-on-write indexed assignment,
+  push/append, containment, and the `empty?`, `length`, `head`, and `rest` sequence views;
+- enum-case allocation, deterministic tags, aggregate payloads, and short-circuiting enum pattern
+  tests/bindings;
 - closed-world monomorphization of reachable generic functions, records, and tagged variants, with
   concrete signatures, layouts, destructors, and call targets cached per substitution;
 - concrete closure construction and calls, capture-prefix ABIs, indirect calls through stored code
-  pointers, and specialized capture-environment destructors for copy/move captures;
+  pointers, specialized capture-environment destructors, and reference captures;
+- whole, indexed, and field references lowered as typed addresses, including typed reference
+  parameters, load/store, move-out, and mutation observed through a closure capture;
 - descriptor-addressed allocation, strong retain/release, ownership transfer at calls and returns,
   and generated tag-aware recursive destructors;
 - assertions, guarded returns, `loop`, guarded `break`/`continue`, jumps, conditional control
@@ -52,10 +57,11 @@ use the target pointer type. It supports:
 Only functions statically reachable from `main` are compiled. An unused function may therefore use
 the complete VM language without preventing native compilation.
 
-General lists and buffers, String concatenation and library algorithms, symbols, reference
-captures, callable values selected across heterogeneous control-flow joins, intrinsics,
-dynamically erased aggregate payloads, remote objects, futures, and host I/O do not yet have a
-complete native lowering.
+All declared runtime-backed categories now have target-specific physical layouts, including bytes,
+buffers, generic lists, places, callable handles, erased boxes, remote values, and futures. Core
+list algorithms that use the supported sequence views compile as ordinary Foster functions.
+Higher-order callable parameters, String concatenation, symbol literals, bytes, remote execution,
+suspension, and host I/O do not yet have complete native instruction lowering.
 If one is reachable, compilation stops
 before object emission and reports the unsupported type or instruction. The diagnostic recommends
 ordinary `foster build`, which emits portable `.fbc` for the complete language.
@@ -67,13 +73,12 @@ contract are common to the executable backends. HIR lowering temporarily constru
 registers and jumps, seals them into typed basic blocks where instructions define immutable values,
 and verifies definitions, dominance, types, call signatures, block arguments, and terminators.
 
-The current bootstrap native path asks the VM backend for verified, non-optimized bytecode so each
-storage home retains a stable static type, then rebuilds the reachable native subset as the same
-shared SSA shape. Copyable scalars remain SSA aliases; ownership-bearing object moves become
-explicit retain operations, and ordinary values are emitted as Cranelift SSA values rather than
-accesses to a VM register array. This second
-sealing step is an implementation detail while native coverage grows; it does not make register
-bytecode the native code-generation contract.
+The compiler exposes its first sealed, typed SSA graph as a reusable compilation artifact. Native
+reachability and specialization consume that graph directly; they do not de-SSA it to bytecode or
+reconstruct control flow from a register program. Copyable scalars remain SSA aliases,
+ownership-bearing object copies become explicit retain operations, consuming calls transfer their
+SSA value, and COW mutation is explicit before a field or index store. The bytecode backend remains
+an independent de-SSA consumer of the same graph.
 
 The portable, versioned bytecode remains the VM's execution and distribution format. The native
 IR is a shared internal backend boundary rather than a replacement for bytecode, leaving room for
@@ -94,12 +99,14 @@ function is sealed into SSA; that unsealed form is never optimized, serialized, 
 Before backend-specific emission, logical layout legalization reduces values to scalars or pointers
 and builds deterministic descriptions for record field slots and declared types, enum alternative
 tags and payloads, closure environments and capture ownership, reference place handles, and
-runtime-backed structural values. Portable bytecode version 20 retains generic identities, nominal
+runtime-backed structural values. Portable bytecode version 21 retains generic identities, nominal
 parameters and arguments, and sorted substitutions at statically resolved calls and closure
 construction. Native
 reachability is keyed by function plus substitutions; it materializes concrete signatures and
-record/enum layouts before target-specific physical layout calculation. Explicit opaque slots
-remain only for values whose representation is genuinely dynamic.
+record/enum/closure and runtime-backed generic layouts before target-specific physical layout
+calculation. Generic lists, callable signatures, remote/future handles, and places are cached by
+their concrete verifier type. Explicit opaque slots remain only for values whose representation is
+genuinely dynamic.
 
 After target selection, the physical layout calculator derives checked sizes, alignments, byte
 offsets, and ownership-aware drop plans. Heap objects have a common descriptor-pointer, strong
@@ -117,17 +124,20 @@ Native object files contain a versioned, read-only `foster_layout_<id>` descript
 materialized physical layout. Generic schemas retain stable internal IDs but receive no descriptor
 or destructor until instantiated. Descriptors include common-header offsets, kind-specific offsets, field value
 representations and pointee identities, capture ownership, and destruction metadata. Record and
-variant lowering addresses these symbols directly, initializes the common header, emits typed
+variant, and buffer lowering addresses these symbols directly, initializes the common header, emits typed
 field/tag loads and stores, and follows the descriptor-derived drop plan. Copy-on-write is explicit
-in shared IR; the current baseline copies record storage before mutation and can later add the
+in shared IR; the current baseline copies record or buffer storage before mutation and can later add the
 reference-count uniqueness fast path without changing semantics.
 
 The object exports a C-ABI `foster_native_entry` symbol. A generated, temporary Rust entry shim
-collects Unicode command arguments, supplies the supported String/List runtime operations, calls
+collects Unicode command arguments, supplies legacy argument/String views and typed platform
+imports, calls
 that symbol, supplies raw zeroed allocation/deallocation, formats its result, and supplies the
 platform startup pieces to the system linker. Object semantics—layout, field access, reference
 counts, copy-on-write, and recursive destruction—are generated Cranelift code rather than Rust
-runtime helpers.
+runtime helpers. The authoritative intrinsic registry also declares each builtin's native policy:
+inline scalar primitive, typed runtime import, or unavailable. Native member helper selection for
+the legacy argument/String ABI is registry-owned rather than an ad hoc backend switch.
 Temporary object and shim files are removed after linking; the resulting executable does not
 contain or invoke the Foster VM.
 

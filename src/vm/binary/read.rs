@@ -214,6 +214,7 @@ impl<'a> Reader<'a> {
             },
             5 => Instruction::MakeList {
                 destination: r!(),
+                element_type: self.verification_type(0)?,
                 elements: self.regs()?,
             },
             6 => Instruction::Index {
@@ -251,6 +252,7 @@ impl<'a> Reader<'a> {
             },
             12 => Instruction::MakeReference {
                 destination: r!(),
+                pointee_type: self.verification_type(0)?,
                 object: r!(),
                 index: r!(),
             },
@@ -350,6 +352,7 @@ impl<'a> Reader<'a> {
             31 => Instruction::Return { source: r!() },
             32 => Instruction::MakeFieldReference {
                 destination: r!(),
+                pointee_type: self.verification_type(0)?,
                 object: r!(),
                 field: self.string()?,
             },
@@ -367,6 +370,7 @@ impl<'a> Reader<'a> {
             },
             34 => Instruction::MakeWholeReference {
                 destination: r!(),
+                pointee_type: self.verification_type(0)?,
                 object: r!(),
             },
             tag => {

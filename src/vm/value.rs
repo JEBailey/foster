@@ -601,24 +601,21 @@ fn project_value(
 }
 
 fn indexed_value(value: Value, index: usize) -> Result<Value, RuntimeError> {
-    match value {
-        Value::RawByteBuffer(values) => values.get(index).copied().map(Value::Byte),
-        value if value.list_value().is_some() => value.list_value().unwrap().get(index).cloned(),
-        value if value.byte_buffer_value().is_some() => value
-            .byte_buffer_value()
-            .unwrap()
-            .get(index)
-            .copied()
-            .map(Value::Byte),
-        value if value.byte_buffer_list_value().is_some() => {
-            value.byte_buffer_list_value().unwrap().get(index).cloned()
-        }
-        value => value
+    let projected = if let Value::RawByteBuffer(values) = &value {
+        values.get(index).copied().map(Value::Byte)
+    } else if let Some(values) = value.list_value() {
+        values.get(index).cloned()
+    } else if let Some(values) = value.byte_buffer_value() {
+        values.get(index).copied().map(Value::Byte)
+    } else if let Some(values) = value.byte_buffer_list_value() {
+        values.get(index).cloned()
+    } else {
+        value
             .bytes_value()
             .and_then(|values| values.get(index).copied())
-            .map(Value::Byte),
-    }
-    .ok_or_else(|| RuntimeError::runtime("referenced indexed value no longer exists"))
+            .map(Value::Byte)
+    };
+    projected.ok_or_else(|| RuntimeError::runtime("referenced indexed value no longer exists"))
 }
 
 fn replace_projected(
@@ -790,6 +787,26 @@ pub(crate) static NEXT_REMOTE_ID: AtomicU64 = AtomicU64::new(1);
 pub(crate) static NEXT_FUTURE_ID: AtomicU64 = AtomicU64::new(1);
 
 impl Value {
+    fn record_field_named(&self, record_name: &str, field: &str) -> Option<&Self> {
+        let Self::Record { name, fields, .. } = self else {
+            return None;
+        };
+        if name != record_name {
+            return None;
+        }
+        fields.get(field)
+    }
+
+    fn record_field_named_mut(&mut self, record_name: &str, field: &str) -> Option<&mut Self> {
+        let Self::Record { name, fields, .. } = self else {
+            return None;
+        };
+        if name != record_name {
+            return None;
+        }
+        fields.get_mut(field)
+    }
+
     /// Returns the UTF-8 text when this value is a Foster `String` record.
     pub fn as_string(&self) -> Option<&str> {
         std::str::from_utf8(self.string_bytes()?).ok()
@@ -832,62 +849,33 @@ impl Value {
     }
 
     pub(crate) fn bytes_value(&self) -> Option<&[u8]> {
-        let Self::Record { name, fields, .. } = self else {
-            return None;
-        };
-        if name != "Bytes" {
-            return None;
-        }
-        match fields.get("value") {
+        match self.record_field_named("Bytes", "value") {
             Some(Self::RawBytes(value)) => Some(value.as_slice()),
             _ => None,
         }
     }
 
     pub(crate) fn byte_buffer_value(&self) -> Option<&Vec<u8>> {
-        let Self::Record { name, fields, .. } = self else {
-            return None;
-        };
-        if name != "ByteBuffer" {
-            return None;
-        }
-        match fields.get("value") {
+        match self.record_field_named("ByteBuffer", "value") {
             Some(Self::RawByteBuffer(value)) => Some(value),
             _ => None,
         }
     }
 
     pub(crate) fn byte_buffer_value_mut(&mut self) -> Option<&mut Vec<u8>> {
-        let Self::Record { name, fields, .. } = self else {
-            return None;
-        };
-        if name != "ByteBuffer" {
-            return None;
-        }
-        match fields.get_mut("value") {
+        match self.record_field_named_mut("ByteBuffer", "value") {
             Some(Self::RawByteBuffer(value)) => Some(value),
             _ => None,
         }
     }
 
     pub(crate) fn byte_buffer_list_value(&self) -> Option<&Vec<Value>> {
-        let Self::Record { name, fields, .. } = self else {
-            return None;
-        };
-        if name != "ByteBuffer" {
-            return None;
-        }
-        fields.get("value")?.list_value()
+        self.record_field_named("ByteBuffer", "value")?.list_value()
     }
 
     pub(crate) fn byte_buffer_list_value_mut(&mut self) -> Option<&mut Vec<Value>> {
-        let Self::Record { name, fields, .. } = self else {
-            return None;
-        };
-        if name != "ByteBuffer" {
-            return None;
-        }
-        fields.get_mut("value")?.list_value_mut()
+        self.record_field_named_mut("ByteBuffer", "value")?
+            .list_value_mut()
     }
 
     pub(crate) fn list(values: Vec<Value>) -> Self {
@@ -925,39 +913,21 @@ impl Value {
     }
 
     pub(crate) fn list_value(&self) -> Option<&Vec<Value>> {
-        let Self::Record { name, fields, .. } = self else {
-            return None;
-        };
-        if name != "List" {
-            return None;
-        }
-        match fields.get("value") {
+        match self.record_field_named("List", "value") {
             Some(Self::RawList(values)) => Some(values),
             _ => None,
         }
     }
 
     pub(crate) fn list_value_mut(&mut self) -> Option<&mut Vec<Value>> {
-        let Self::Record { name, fields, .. } = self else {
-            return None;
-        };
-        if name != "List" {
-            return None;
-        }
-        match fields.get_mut("value") {
+        match self.record_field_named_mut("List", "value") {
             Some(Self::RawList(values)) => Some(values),
             _ => None,
         }
     }
 
     pub(crate) fn string_bytes(&self) -> Option<&[u8]> {
-        let Self::Record { name, fields, .. } = self else {
-            return None;
-        };
-        if name != "String" {
-            return None;
-        }
-        fields.get("value")?.bytes_value()
+        self.record_field_named("String", "value")?.bytes_value()
     }
 
     pub(crate) fn symbol(
@@ -973,12 +943,7 @@ impl Value {
     }
 
     pub(crate) fn symbol_bytes(&self) -> Option<&[u8]> {
-        let Self::Record { name, fields, .. } = self else {
-            return None;
-        };
-        (name == "Symbol")
-            .then(|| fields.get("value")?.string_bytes())
-            .flatten()
+        self.record_field_named("Symbol", "value")?.string_bytes()
     }
 
     pub(crate) fn string_text(&self) -> Result<&str, RuntimeError> {

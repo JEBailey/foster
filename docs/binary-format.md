@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 20, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 21, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -26,7 +26,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `20` |
+| version | `u16` | `21` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -74,6 +74,9 @@ nominal parameter names, concrete construction arguments, and deterministic gene
 on statically resolved calls; instruction and type tags remain unchanged.
 Version 20 adds the same deterministic generic substitutions to closure construction and
 specialized closure calls, so code and environment layout share one monomorphization identity.
+Version 21 adds concrete element types to `MakeList` and concrete pointee types to reference
+construction. This preserves empty generic-list and projected-reference layouts through the shared
+SSA, bytecode, and native boundaries.
 
 Verification type tags are `0 Unknown`, `1 Unit`, `2 Bool`, `3 Integer`, `4 Float`, `5 CodePoint`,
 `6 Byte`, `7 Bytes`, `8 ByteBuffer`, `9 List(VerificationType)`,
@@ -97,14 +100,14 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 2 | Move | `R destination, R source` |
 | 3 | Unary | `R destination, UnaryOp, R operand` |
 | 4 | Binary | `R destination, BinaryOp, R left, R right` |
-| 5 | MakeList | `R destination, regs` |
+| 5 | MakeList | `R destination, VerificationType element, regs` |
 | 6 | Index | `R destination, R object, R index` |
 | 7 | MakeRecord | `R destination, RecordId, vector<VerificationType> arguments, vector<(string, R)>` |
 | 8 | MakeVariant | `R destination, VariantId, vector<VerificationType> arguments, regs` |
 | 9 | LoadField | `R destination, R object, string, bool by_reference` |
 | 10 | StoreField | `R object, string, R source` |
 | 11 | StoreIndex | `R object, R index, R source` |
-| 12 | MakeReference | `R destination, R object, R index` |
+| 12 | MakeReference | `R destination, VerificationType pointee, R object, R index` |
 | 13 | MoveOut | `R destination, R source` |
 | 14 | Push | `R destination, R object, R value` |
 | 15 | Append | `R destination, R object, R value` |
@@ -124,13 +127,13 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 29 | CallValue | `R destination, R callee, regs` |
 | 30 | CallClosure | `R destination, F, vector<(string, VerificationType)> substitutions, vector<(CaptureMode, R)>, regs` |
 | 31 | Return | `R source` |
-| 32 | MakeFieldReference | `R destination, R object, string field` |
+| 32 | MakeFieldReference | `R destination, VerificationType pointee, R object, string field` |
 | 33 | Assert | `R condition, optional<R> message` |
-| 34 | MakeWholeReference | `R destination, R object` |
+| 34 | MakeWholeReference | `R destination, VerificationType pointee, R object` |
 
 ## Compatibility and canonical form
 
-Version 20 readers accept only version 20 with zero flags. Development bytecode from another version
+Version 21 readers accept only version 21 with zero flags. Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
 canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of

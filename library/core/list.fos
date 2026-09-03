@@ -4,7 +4,7 @@ import core.functions
 import core.option
 import std.sequence
 
-/// Private host-backed contiguous list storage.
+/// Private descriptor-backed contiguous list storage shared by executable backends.
 intrinsic type RawList<T>
 
 /// An immutable ordered collection backed by private contiguous storage.

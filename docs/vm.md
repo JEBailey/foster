@@ -139,10 +139,11 @@ analysis.
 ## Related native backend
 
 The [native backend](native.md) finds functions reachable from `main`, validates its supported
-scalar-and-aggregate subset, rebuilds that subset as shared SSA from verified unoptimized bytecode,
-and lowers it to Cranelift machine code. Descriptor-backed records and variants use generated
-allocation, field/tag access, retain/release, copy-on-write, pattern, and destruction code.
-Cranelift performs machine-level optimization
+subset, specializes the compiler's first verified shared-SSA graph directly, and lowers it to
+Cranelift machine code. It never reconstructs control flow from VM bytecode. Descriptor-backed
+records, variants, and closures use generated allocation, field/tag/capture access,
+retain/release, copy-on-write, indirect calls, patterns, and destruction code. Cranelift performs
+machine-level optimization
 independently. Keeping this route downstream of the same checked frontend, layouts, and shared IR
 contract lets native execution reuse the language's type, effect, and ownership decisions without
 weakening the VM's role as the complete reference implementation.

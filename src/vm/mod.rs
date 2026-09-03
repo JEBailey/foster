@@ -18,6 +18,7 @@ mod value;
 mod verifier;
 
 pub use binary::{BinaryError, FORMAT_VERSION, decode_program, encode_program};
+pub(crate) use compiler::compile_shared;
 pub use compiler::{CompileOptions, compile, compile_with_options};
 pub use host::HostContext;
 pub use ir::{
@@ -149,6 +150,7 @@ func main() -> Int {
             {
                 *instruction = Instruction::MakeReference {
                     destination: *destination,
+                    pointee_type: VerificationType::Integer,
                     object: *object,
                     index: *index,
                 };
@@ -195,6 +197,7 @@ func main() -> Int {
             {
                 *instruction = Instruction::MakeReference {
                     destination: *destination,
+                    pointee_type: VerificationType::Integer,
                     object: *object,
                     index: *index,
                 };

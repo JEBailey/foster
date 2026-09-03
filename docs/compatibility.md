@@ -29,6 +29,14 @@ changes receive review.
 Foster is currently pre-1.0, so compatibility may change deliberately. It must nevertheless change
 through these gates rather than silently.
 
+## Bytecode format version 21
+
+Bytecode format version 21 adds concrete element types to list construction and concrete pointee
+types to whole, indexed, and field reference construction. Empty generic lists and projected
+references therefore preserve exact layout selection through shared SSA, bytecode, and native
+lowering. Source code requires no migration, but serialized development bytecode from version 20
+must be rebuilt.
+
 ## Bytecode format version 20
 
 Bytecode format version 20 carries sorted generic substitutions on closure construction and direct

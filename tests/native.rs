@@ -111,15 +111,61 @@ func main() -> Int {
 }
 
 #[test]
+fn lowers_native_reference_captures() {
+    let compilation = foster::compile(
+        r#"
+func main() -> Int {
+    let value = 39
+    let add = [ref value] (amount: Int) -> {
+        value = value + amount
+        value
+    }
+    assert(add(1) == 40)
+    let direct = 40
+    assert(increment(ref direct, 2) == 42)
+    let values = [40]
+    assert(increment(ref values[0], 2) == 42)
+    let boxed = Outer { inner: Boxed { value: 40 } }
+    increment(ref boxed.inner.value, 2)
+}
+
+type Boxed<T> = { value: T }
+type Outer<T> = { inner: Boxed<T> }
+
+func increment[g: group Int](value: ref[g] Int, amount: Int) -> Int [mut g] {
+    value = value + amount
+    value
+}
+"#,
+    )
+    .unwrap();
+    let executable = std::env::temp_dir().join(format!(
+        "foster-native-reference-test-{}{}",
+        std::process::id(),
+        std::env::consts::EXE_SUFFIX
+    ));
+    build_executable(&compilation, &executable, CompileOptions::default()).unwrap();
+    let output = std::process::Command::new(&executable).output().unwrap();
+    let _ = std::fs::remove_file(&executable);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+}
+
+#[test]
 fn lowers_variant_tags_payloads_and_pattern_bindings_to_cranelift() {
     let compilation = foster::compile(
         r#"
-enum Choice = Number(Int) | Empty
+type Boxed = { value: Int }
+enum Choice = Number(Boxed) | Empty
 
 func main() -> Int {
-    let choice = Number(42)
+    let choice = Number(Boxed { value: 42 })
     branch choice {
-        Number(value) -> value
+        Number(boxed) -> boxed.value
         Empty -> 0
     }
 }
@@ -207,6 +253,53 @@ func main() -> Int {
     .unwrap();
     let executable = std::env::temp_dir().join(format!(
         "foster-native-closure-test-{}{}",
+        std::process::id(),
+        std::env::consts::EXE_SUFFIX
+    ));
+    build_executable(&compilation, &executable, CompileOptions::default()).unwrap();
+    let output = std::process::Command::new(&executable).output().unwrap();
+    let _ = std::fs::remove_file(&executable);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+}
+
+#[test]
+fn lowers_native_lists_and_core_list_algorithms() {
+    let compilation = foster::compile(
+        r#"
+import core.list
+import core.option
+import core.float
+import core.byte
+
+func main() -> Int {
+    let values = [10, 0]
+    values[1] = 20
+    values.push(12)
+    let copied = values.append(100)
+    assert(values.length == 3)
+    assert(copied.length == 4)
+    assert(from_code_point(65) == 'A')
+    assert(parse_float("42.5") == 42.5)
+    assert(42.5.as_string() == "42.5")
+    assert(Byte.valid(255))
+    assert(!Byte.valid(256))
+    assert(Byte.unchecked(42) == Byte.unchecked(42))
+    branch values.last() {
+        Option.Some(value) -> value + 30
+        Option.None -> 0
+    }
+}
+
+"#,
+    )
+    .unwrap();
+    let executable = std::env::temp_dir().join(format!(
+        "foster-native-list-test-{}{}",
         std::process::id(),
         std::env::consts::EXE_SUFFIX
     ));

@@ -57,9 +57,19 @@ impl FunctionCompiler<'_> {
                     .map(|item| self.expression(*item))
                     .collect::<Result<Vec<_>, _>>()?;
                 let destination = self.allocate();
+                let element_type = self
+                    .types
+                    .expression_type(id)
+                    .map(|ty| layout_verification_type(self.hir, self.types, ty, 0))
+                    .and_then(|ty| match ty {
+                        VerificationType::List(element) => Some(*element),
+                        _ => None,
+                    })
+                    .unwrap_or(VerificationType::Unknown);
                 self.emit(
                     Instruction::MakeList {
                         destination,
+                        element_type,
                         elements,
                     },
                     span,
@@ -423,10 +433,20 @@ impl FunctionCompiler<'_> {
             hir::Expr::Reference(place) => {
                 let Some(place) = crate::hir::queries::expression_place(self.hir, *place) else {
                     let object = self.expression(*place)?;
+                    let pointee_type = self
+                        .types
+                        .expression_type(id)
+                        .map(|ty| layout_verification_type(self.hir, self.types, ty, 0))
+                        .and_then(|ty| match ty {
+                            VerificationType::Reference(pointee) => Some(*pointee),
+                            _ => None,
+                        })
+                        .unwrap_or(VerificationType::Unknown);
                     let destination = self.allocate();
                     self.emit(
                         Instruction::MakeWholeReference {
                             destination,
+                            pointee_type,
                             object,
                         },
                         span,
@@ -434,22 +454,66 @@ impl FunctionCompiler<'_> {
                     return Ok(destination);
                 };
                 let mut object = self.locals[&place.root];
+                let mut object_type = self
+                    .types
+                    .local_type(place.root)
+                    .map(|ty| layout_verification_type(self.hir, self.types, ty, 0))
+                    .unwrap_or(VerificationType::Unknown);
+                if place.projections.is_empty() {
+                    let pointee_type = match object_type {
+                        VerificationType::Reference(pointee) => *pointee,
+                        value => value,
+                    };
+                    let destination = self.allocate();
+                    self.emit(
+                        Instruction::MakeWholeReference {
+                            destination,
+                            pointee_type,
+                            object,
+                        },
+                        span,
+                    );
+                    return Ok(destination);
+                }
                 for projection in place.projections {
+                    if matches!(&projection, hir::Projection::Dereference) {
+                        object_type = match object_type {
+                            VerificationType::Reference(pointee) => *pointee,
+                            _ => VerificationType::Unknown,
+                        };
+                        continue;
+                    }
                     let destination = self.allocate();
                     let instruction = match projection {
-                        hir::Projection::Field(field) => Instruction::MakeFieldReference {
-                            destination,
-                            object,
-                            field,
-                        },
+                        hir::Projection::Field(field) => {
+                            object_type = projected_field_verification_type(
+                                self.hir,
+                                self.types,
+                                &object_type,
+                                &field,
+                            )
+                            .unwrap_or(VerificationType::Unknown);
+                            Instruction::MakeFieldReference {
+                                destination,
+                                pointee_type: object_type.clone(),
+                                object,
+                                field,
+                            }
+                        }
                         hir::Projection::Index {
                             expression: index, ..
-                        } => Instruction::MakeReference {
-                            destination,
-                            object,
-                            index: self.expression(index)?,
-                        },
-                        hir::Projection::Dereference => continue,
+                        } => {
+                            object_type = object_type
+                                .indexed_element()
+                                .unwrap_or(VerificationType::Unknown);
+                            Instruction::MakeReference {
+                                destination,
+                                pointee_type: object_type.clone(),
+                                object,
+                                index: self.expression(index)?,
+                            }
+                        }
+                        hir::Projection::Dereference => unreachable!(),
                     };
                     self.emit(instruction, span.clone());
                     object = destination;
@@ -803,6 +867,7 @@ impl FunctionCompiler<'_> {
                 self.emit(
                     Instruction::MakeList {
                         destination,
+                        element_type: VerificationType::Unknown,
                         elements,
                     },
                     span,

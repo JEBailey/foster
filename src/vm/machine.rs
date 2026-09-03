@@ -334,6 +334,7 @@ impl Machine {
                 Instruction::MakeList {
                     destination,
                     elements,
+                    ..
                 } => {
                     let values = elements
                         .iter()
@@ -509,6 +510,7 @@ impl Machine {
                     destination,
                     object,
                     index,
+                    ..
                 } => {
                     let Value::Integer(index) = read(frame, index)? else {
                         return Err(RuntimeError::runtime("reference index must be Int"));
@@ -521,6 +523,7 @@ impl Machine {
                 &Instruction::MakeWholeReference {
                     destination,
                     object,
+                    ..
                 } => {
                     let reference = Slot::place(&place(frame, object));
                     write(frame, destination, Value::Reference(reference))?;
@@ -529,6 +532,7 @@ impl Machine {
                     destination,
                     object,
                     field,
+                    ..
                 } => {
                     let reference = PlaceHandle::field(place(frame, *object), field.clone())?;
                     write(frame, *destination, Value::Reference(reference))?;

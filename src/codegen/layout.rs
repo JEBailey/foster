@@ -163,10 +163,23 @@ impl Registry {
                 }
                 self.instantiate_variant(*variant, arguments)?;
             }
+            VerificationType::Reference(value) => {
+                self.instantiate_type(value)?;
+                let key = ((**value).clone(), Ownership::Borrowed);
+                if !self.pointers.contains_key(&key) {
+                    let layout = self.push_runtime_kind(LayoutKind::Pointer {
+                        pointee: (**value).clone(),
+                        ownership: Ownership::Borrowed,
+                    });
+                    self.pointers.insert(key, layout);
+                }
+            }
             VerificationType::List(value)
-            | VerificationType::Reference(value)
             | VerificationType::Remote(value)
-            | VerificationType::Future(value) => self.instantiate_type(value)?,
+            | VerificationType::Future(value) => {
+                self.instantiate_type(value)?;
+                self.instantiate_builtin(ty);
+            }
             VerificationType::Function {
                 parameters, result, ..
             } => {
@@ -174,15 +187,28 @@ impl Registry {
                     self.instantiate_type(parameter)?;
                 }
                 self.instantiate_type(result)?;
+                self.instantiate_builtin(ty);
             }
             VerificationType::Union(members) => {
                 for member in members {
                     self.instantiate_type(member)?;
                 }
             }
+            VerificationType::Bytes | VerificationType::ByteBuffer => {
+                self.instantiate_builtin(ty);
+            }
             _ => {}
         }
         Ok(())
+    }
+
+    fn instantiate_builtin(&mut self, ty: &VerificationType) -> LayoutId {
+        if let Some(layout) = self.builtin(ty) {
+            return layout;
+        }
+        let layout = self.push_runtime_kind(LayoutKind::Builtin { ty: ty.clone() });
+        self.builtins.insert(ty.clone(), layout);
+        layout
     }
 
     fn instantiate_record(
@@ -220,7 +246,7 @@ impl Registry {
         let fields = fields
             .into_iter()
             .map(|mut field| {
-                field.ty = substitute_type(&field.ty, &substitutions);
+                field.ty = field.ty.substitute(&substitutions);
                 field
             })
             .collect::<Vec<_>>();
@@ -274,7 +300,7 @@ impl Registry {
                 alternative.payload = alternative
                     .payload
                     .iter()
-                    .map(|ty| substitute_type(ty, &substitutions))
+                    .map(|ty| ty.substitute(&substitutions))
                     .collect();
                 alternative
             })
@@ -340,7 +366,7 @@ impl Registry {
         let captures = captures
             .into_iter()
             .map(|mut capture| {
-                capture.ty = substitute_type(&capture.ty, &substitutions);
+                capture.ty = capture.ty.substitute(&substitutions);
                 capture
             })
             .collect::<Vec<_>>();
@@ -446,92 +472,18 @@ impl Registry {
     }
 }
 
-fn substitute_type(
-    ty: &VerificationType,
-    substitutions: &HashMap<String, VerificationType>,
-) -> VerificationType {
-    match ty {
-        VerificationType::Generic(name) => substitutions
-            .get(name)
-            .cloned()
-            .unwrap_or_else(|| ty.clone()),
-        VerificationType::List(value) => {
-            VerificationType::List(Box::new(substitute_type(value, substitutions)))
-        }
-        VerificationType::Reference(value) => {
-            VerificationType::Reference(Box::new(substitute_type(value, substitutions)))
-        }
-        VerificationType::Remote(value) => {
-            VerificationType::Remote(Box::new(substitute_type(value, substitutions)))
-        }
-        VerificationType::Future(value) => {
-            VerificationType::Future(Box::new(substitute_type(value, substitutions)))
-        }
-        VerificationType::Function {
-            parameters,
-            parameter_modes,
-            result,
-        } => VerificationType::Function {
-            parameters: parameters
-                .iter()
-                .map(|ty| substitute_type(ty, substitutions))
-                .collect(),
-            parameter_modes: parameter_modes.clone(),
-            result: Box::new(substitute_type(result, substitutions)),
-        },
-        VerificationType::Record { record, arguments } => VerificationType::Record {
-            record: *record,
-            arguments: arguments
-                .iter()
-                .map(|ty| substitute_type(ty, substitutions))
-                .collect(),
-        },
-        VerificationType::Variant { variant, arguments } => VerificationType::Variant {
-            variant: *variant,
-            arguments: arguments
-                .iter()
-                .map(|ty| substitute_type(ty, substitutions))
-                .collect(),
-        },
-        VerificationType::Union(members) => VerificationType::Union(
-            members
-                .iter()
-                .map(|ty| substitute_type(ty, substitutions))
-                .collect(),
-        ),
-        _ => ty.clone(),
-    }
-}
-
-fn type_has_generic(ty: &VerificationType) -> bool {
-    match ty {
-        VerificationType::Generic(_) => true,
-        VerificationType::List(value)
-        | VerificationType::Reference(value)
-        | VerificationType::Remote(value)
-        | VerificationType::Future(value) => type_has_generic(value),
-        VerificationType::Function {
-            parameters, result, ..
-        } => parameters.iter().any(type_has_generic) || type_has_generic(result),
-        VerificationType::Record { arguments, .. }
-        | VerificationType::Variant { arguments, .. }
-        | VerificationType::Union(arguments) => arguments.iter().any(type_has_generic),
-        _ => false,
-    }
-}
-
 fn layout_kind_has_generic(kind: &LayoutKind) -> bool {
     match kind {
-        LayoutKind::Record { fields, .. } => fields.iter().any(|field| type_has_generic(&field.ty)),
+        LayoutKind::Record { fields, .. } => fields.iter().any(|field| field.ty.contains_generic()),
         LayoutKind::Variant { alternatives, .. } => alternatives
             .iter()
             .flat_map(|alternative| &alternative.payload)
-            .any(type_has_generic),
+            .any(VerificationType::contains_generic),
         LayoutKind::Closure { captures, .. } => {
-            captures.iter().any(|capture| type_has_generic(&capture.ty))
+            captures.iter().any(|capture| capture.ty.contains_generic())
         }
-        LayoutKind::Pointer { pointee, .. } => type_has_generic(pointee),
-        LayoutKind::Builtin { ty } => type_has_generic(ty),
+        LayoutKind::Pointer { pointee, .. } => pointee.contains_generic(),
+        LayoutKind::Builtin { ty } => ty.contains_generic(),
         LayoutKind::Opaque => false,
     }
 }
@@ -717,12 +669,18 @@ fn collect_runtime_layouts(program: &Program, registry: &mut Registry) {
         types.extend(function.parameter_types.iter().cloned());
         types.extend(function.capture_types.iter().cloned());
         types.insert(function.result_type.clone());
-        if function
-            .instructions
-            .iter()
-            .any(|instruction| matches!(instruction, Instruction::MakeList { .. }))
-        {
-            types.insert(VerificationType::List(Box::new(VerificationType::Unknown)));
+        for instruction in &function.instructions {
+            match instruction {
+                Instruction::MakeList { element_type, .. } => {
+                    types.insert(VerificationType::List(Box::new(element_type.clone())));
+                }
+                Instruction::MakeReference { pointee_type, .. }
+                | Instruction::MakeWholeReference { pointee_type, .. }
+                | Instruction::MakeFieldReference { pointee_type, .. } => {
+                    types.insert(VerificationType::Reference(Box::new(pointee_type.clone())));
+                }
+                _ => {}
+            }
         }
     }
     for record in program.records.values() {
@@ -733,26 +691,6 @@ fn collect_runtime_layouts(program: &Program, registry: &mut Registry) {
     }
     for ty in types {
         visit_runtime_types(&ty, registry);
-    }
-    let constructs_erased_reference = program.functions.values().any(|function| {
-        function.instructions.iter().any(|instruction| {
-            matches!(
-                instruction,
-                Instruction::MakeReference { .. }
-                    | Instruction::MakeWholeReference { .. }
-                    | Instruction::MakeFieldReference { .. }
-            )
-        })
-    });
-    if constructs_erased_reference {
-        let key = (VerificationType::Unknown, Ownership::Borrowed);
-        if !registry.pointers.contains_key(&key) {
-            let id = registry.push(LayoutKind::Pointer {
-                pointee: VerificationType::Unknown,
-                ownership: Ownership::Borrowed,
-            });
-            registry.pointers.insert(key, id);
-        }
     }
 }
 
@@ -1033,5 +971,60 @@ func main() -> Int { Boxed { value: 42 }.value }
             physical::PhysicalRegistry::build(&registry, physical::TargetLayout::host()).unwrap();
         assert!(!physical.get(schema).materialized);
         assert!(physical.get(instance).materialized);
+    }
+
+    #[test]
+    fn runtime_backed_types_receive_concrete_physical_layouts() {
+        let mut registry = Registry::default();
+        registry.opaque = Some(registry.push(LayoutKind::Opaque));
+        let types = [
+            VerificationType::Bytes,
+            VerificationType::ByteBuffer,
+            VerificationType::List(Box::new(VerificationType::Integer)),
+            VerificationType::Remote(Box::new(VerificationType::Integer)),
+            VerificationType::Future(Box::new(VerificationType::Integer)),
+            VerificationType::Function {
+                parameters: vec![VerificationType::Integer],
+                parameter_modes: vec![crate::ast::ParameterMode::Borrow],
+                result: Box::new(VerificationType::Bool),
+            },
+        ];
+        for ty in &types {
+            registry.instantiate_type(ty).unwrap();
+            assert!(registry.get(registry.builtin(ty).unwrap()).materialized);
+        }
+        let reference = VerificationType::Reference(Box::new(VerificationType::Integer));
+        registry.instantiate_type(&reference).unwrap();
+        let place = registry
+            .pointer(&VerificationType::Integer, Ownership::Borrowed)
+            .unwrap();
+        assert!(registry.get(place).materialized);
+
+        let schema = VerificationType::List(Box::new(VerificationType::Generic("T".into())));
+        registry.instantiate_type(&schema).unwrap();
+        assert!(
+            !registry
+                .get(registry.builtin(&schema).unwrap())
+                .materialized
+        );
+
+        let physical =
+            physical::PhysicalRegistry::build(&registry, physical::TargetLayout::host()).unwrap();
+        assert!(matches!(
+            physical
+                .get(registry.builtin(&VerificationType::Bytes).unwrap())
+                .kind,
+            physical::PhysicalKind::Bytes { .. }
+        ));
+        assert!(matches!(
+            physical
+                .get(registry.builtin(&VerificationType::ByteBuffer).unwrap())
+                .kind,
+            physical::PhysicalKind::Buffer { .. }
+        ));
+        assert!(matches!(
+            physical.get(place).kind,
+            physical::PhysicalKind::Place { .. }
+        ));
     }
 }

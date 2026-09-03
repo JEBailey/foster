@@ -19,6 +19,47 @@ impl fmt::Display for LowerError {
 
 impl std::error::Error for LowerError {}
 
+/// Typed SSA plus the nominal/runtime metadata shared by executable backends.
+#[derive(Debug)]
+pub struct SharedProgram {
+    pub metadata: vm::Program,
+    pub functions: HashMap<FunctionId, ir::Function>,
+    pub signatures: HashMap<FunctionId, ir::Signature>,
+}
+
+/// Retain the compiler's first SSA graph instead of immediately de-SSA lowering it to bytecode.
+pub fn seal_program(metadata: vm::Program) -> Result<SharedProgram, LowerError> {
+    let result_types = metadata
+        .functions
+        .iter()
+        .map(|(id, function)| (*id, shared_type(&function.result_type)))
+        .collect::<HashMap<_, _>>();
+    let mut functions = HashMap::with_capacity(metadata.functions.len());
+    for (id, function) in &metadata.functions {
+        if function.intrinsic_stub {
+            continue;
+        }
+        functions.insert(
+            *id,
+            seal_function_with_types(&metadata.constants, &result_types, function)?,
+        );
+    }
+    let signatures = functions
+        .iter()
+        .map(|(id, function)| (*id, function.signature.clone()))
+        .collect::<HashMap<_, _>>();
+    for function in functions.values() {
+        function
+            .verify(&signatures)
+            .map_err(|error| LowerError(format!("invalid shared IR: {error}")))?;
+    }
+    Ok(SharedProgram {
+        metadata,
+        functions,
+        signatures,
+    })
+}
+
 /// Make shared SSA the mandatory backend boundary for every executable VM function.
 pub fn lower_program_through_shared_ir(program: &mut vm::Program) -> Result<(), LowerError> {
     // Own the table during the transaction instead of cloning every instruction payload. Any
@@ -265,12 +306,109 @@ fn seal_function_with_types(
                     break;
                 }
                 vm::Instruction::Drop { register } => {
-                    let value = lifted_register(&state, *register, function)?;
-                    instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Drop {
-                        value,
+                    if let Some(value) = state[usize::from(register.0)] {
+                        instructions.push(ir::Instruction::Portable(
+                            ir::PortableInstruction::Drop { value },
+                        ));
+                        instruction_spans.push(source_span);
+                    }
+                    state[usize::from(register.0)] = None;
+                }
+                vm::Instruction::StoreField {
+                    object,
+                    field,
+                    source,
+                } => {
+                    let old = lifted_register(&state, *object, function)?;
+                    let value = lifted_register(&state, *source, function)?;
+                    let unique = allocate_lifted_value(
+                        &mut value_types,
+                        &mut storage_hints,
+                        hints[usize::from(object.0)],
+                        *object,
+                    );
+                    instructions.push(ir::Instruction::Portable(
+                        ir::PortableInstruction::CopyOnWrite {
+                            destination: unique,
+                            source: old,
+                        },
+                    ));
+                    instruction_spans.push(source_span.clone());
+                    instructions.push(ir::Instruction::Portable(
+                        ir::PortableInstruction::StoreField {
+                            object: unique,
+                            field: field.clone(),
+                            source: value,
+                        },
+                    ));
+                    instruction_spans.push(source_span);
+                    state[usize::from(object.0)] = Some(unique);
+                }
+                vm::Instruction::StoreIndex {
+                    object,
+                    index,
+                    source,
+                } => {
+                    let old = lifted_register(&state, *object, function)?;
+                    let index = lifted_register(&state, *index, function)?;
+                    let value = lifted_register(&state, *source, function)?;
+                    let unique = allocate_lifted_value(
+                        &mut value_types,
+                        &mut storage_hints,
+                        hints[usize::from(object.0)],
+                        *object,
+                    );
+                    instructions.push(ir::Instruction::Portable(
+                        ir::PortableInstruction::CopyOnWrite {
+                            destination: unique,
+                            source: old,
+                        },
+                    ));
+                    instruction_spans.push(source_span.clone());
+                    instructions.push(ir::Instruction::Portable(
+                        ir::PortableInstruction::StoreIndex {
+                            object: unique,
+                            index,
+                            source: value,
+                        },
+                    ));
+                    instruction_spans.push(source_span);
+                    state[usize::from(object.0)] = Some(unique);
+                }
+                vm::Instruction::Push {
+                    destination,
+                    object,
+                    value,
+                } => {
+                    let old = lifted_register(&state, *object, function)?;
+                    let pushed = lifted_register(&state, *value, function)?;
+                    let unique = allocate_lifted_value(
+                        &mut value_types,
+                        &mut storage_hints,
+                        hints[usize::from(object.0)],
+                        *object,
+                    );
+                    instructions.push(ir::Instruction::Portable(
+                        ir::PortableInstruction::CopyOnWrite {
+                            destination: unique,
+                            source: old,
+                        },
+                    ));
+                    instruction_spans.push(source_span.clone());
+                    let result = allocate_lifted_value(
+                        &mut value_types,
+                        &mut storage_hints,
+                        Type::Unit,
+                        *destination,
+                    );
+                    instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Push {
+                        destination: result,
+                        object: unique,
+                        value: pushed,
                     }));
                     instruction_spans.push(source_span);
-                    state[usize::from(register.0)] = None;
+                    state[usize::from(object.0)] = Some(unique);
+                    state[usize::from(destination.0)] = Some(result);
                 }
                 operation => {
                     for register in crate::vm::optimizer::analysis::uses(operation) {
@@ -583,9 +721,11 @@ fn portable_instruction(
         },
         vm::Instruction::MakeList {
             destination: output,
+            element_type,
             elements,
         } => ir::PortableInstruction::MakeList {
             destination: destination(output),
+            element_type: element_type.clone(),
             elements: elements.iter().map(source).collect(),
         },
         vm::Instruction::Index {
@@ -653,26 +793,32 @@ fn portable_instruction(
         },
         vm::Instruction::MakeReference {
             destination: output,
+            pointee_type,
             object,
             index,
         } => ir::PortableInstruction::MakeReference {
             destination: destination(output),
+            pointee_type: pointee_type.clone(),
             object: source(object),
             index: source(index),
         },
         vm::Instruction::MakeWholeReference {
             destination: output,
+            pointee_type,
             object,
         } => ir::PortableInstruction::MakeWholeReference {
             destination: destination(output),
+            pointee_type: pointee_type.clone(),
             object: source(object),
         },
         vm::Instruction::MakeFieldReference {
             destination: output,
+            pointee_type,
             object,
             field,
         } => ir::PortableInstruction::MakeFieldReference {
             destination: destination(output),
+            pointee_type: pointee_type.clone(),
             object: source(object),
             field: field.clone(),
         },
@@ -1297,9 +1443,11 @@ fn lower_portable(
         },
         ir::PortableInstruction::MakeList {
             destination,
+            element_type,
             elements,
         } => vm::Instruction::MakeList {
             destination: get(destination),
+            element_type: element_type.clone(),
             elements: elements.iter().map(get).collect(),
         },
         ir::PortableInstruction::Index {
@@ -1367,26 +1515,32 @@ fn lower_portable(
         },
         ir::PortableInstruction::MakeReference {
             destination,
+            pointee_type,
             object,
             index,
         } => vm::Instruction::MakeReference {
             destination: get(destination),
+            pointee_type: pointee_type.clone(),
             object: get(object),
             index: get(index),
         },
         ir::PortableInstruction::MakeWholeReference {
             destination,
+            pointee_type,
             object,
         } => vm::Instruction::MakeWholeReference {
             destination: get(destination),
+            pointee_type: pointee_type.clone(),
             object: get(object),
         },
         ir::PortableInstruction::MakeFieldReference {
             destination,
+            pointee_type,
             object,
             field,
         } => vm::Instruction::MakeFieldReference {
             destination: get(destination),
+            pointee_type: pointee_type.clone(),
             object: get(object),
             field: field.clone(),
         },
