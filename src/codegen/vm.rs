@@ -1384,6 +1384,14 @@ fn lower_instruction(
                 "runtime helper `{helper}` has no portable VM opcode"
             )));
         }
+        ir::Instruction::WrapCallable { .. }
+        | ir::Instruction::StringToBytes { .. }
+        | ir::Instruction::BoxValue { .. }
+        | ir::Instruction::UnboxValue { .. } => {
+            return Err(LowerError(
+                "native representation conversion has no portable VM opcode".into(),
+            ));
+        }
         ir::Instruction::Assert { condition, message } => vm::Instruction::Assert {
             condition: reg(registers, *condition),
             message: message.map(|value| reg(registers, value)),

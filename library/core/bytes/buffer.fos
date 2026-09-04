@@ -23,20 +23,15 @@ pub func ByteBuffer.with_capacity(capacity: Int) -> ByteBuffer {
 }
 
 /// Appends one byte.
-pub func ByteBuffer.push(self: ByteBuffer, value: Byte) -> () [reshape self.value.items] {
-    self.value.push(value)
+pub func ByteBuffer.push(self: ByteBuffer, value: Byte) -> () [mut self.value, reshape self.value.items] {
+    self.value = self.value.map((item: Byte) -> item).append(value)
+    ()
 }
 
 /// Appends an immutable byte sequence.
-pub func ByteBuffer.extend(self: ByteBuffer, values: Bytes) -> () [read self, reshape self.value.items] {
-    extend_remaining(self, values.list())
-}
-
-/// Appends the remaining byte values.
-func extend_remaining(buffer: ByteBuffer, values: List<Byte>) -> () [read buffer, reshape buffer.value.items] {
-    return () if values.empty?
-    buffer.value.push(values.head)
-    extend_remaining(buffer, values.rest)
+pub func ByteBuffer.extend(self: ByteBuffer, values: Bytes) -> () [mut self.value, reshape self.value.items] {
+    self.value = self.value.map((item: Byte) -> item).concat(values.list())
+    ()
 }
 
 /// Removes every buffered byte.

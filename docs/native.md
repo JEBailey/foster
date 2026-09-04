@@ -1,8 +1,8 @@
 # Native compilation
 
-Status: host-native AOT backend implemented with Cranelift; scalar, record, tagged-variant,
-concrete closure, list, and local-reference lowering is executable, while erased-callable and
-host-service coverage is still in progress.
+Status: host-native AOT backend implemented with Cranelift; scalar, aggregate, concrete and erased
+callable, list, string/bytes, erased-value, and local-reference lowering is executable. Remote,
+suspending, and host-service coverage is still in progress.
 
 `foster build --native` compiles the functions reachable from `main` into a native object and links
 that object into a standalone executable with the installed Rust toolchain. `main` may take no
@@ -30,7 +30,8 @@ use `i8`; `CodePoint` uses `i32`; `Int` uses `i64`; `Float` uses `f64`; and runt
 use the target pointer type. It supports:
 
 - `()`, `Bool`, `Int`, binary64 `Float`, `CodePoint`, and `Byte` parameters and results;
-- String constants, equality, command-argument strings, and String results;
+- String and Symbol literals, equality, concatenation, Unicode sequence views, UTF-8 conversion,
+  command-argument strings, and text results;
 - the `executable` and `values` fields of `Arguments`, plus read-only `List<String>` indexing, `empty?`,
   `length`, and `head` operations;
 - primitive constants, moves, unary operations, arithmetic, bit operations, shifts, and comparisons;
@@ -39,12 +40,18 @@ use the target pointer type. It supports:
   record values passed through borrowed function parameters;
 - descriptor-backed generic list construction, indexing, copy-on-write indexed assignment,
   push/append, containment, and the `empty?`, `length`, `head`, and `rest` sequence views;
+- descriptor-backed immutable bytes, including indexing and sequence views, plus compact
+  list/UTF-8 bridges; byte algorithms and mutable `ByteBuffer` are implemented in Foster over
+  those primitives;
 - enum-case allocation, deterministic tags, aggregate payloads, and short-circuiting enum pattern
   tests/bindings;
 - closed-world monomorphization of reachable generic functions, records, and tagged variants, with
   concrete signatures, layouts, destructors, and call targets cached per substitution;
-- concrete closure construction and calls, capture-prefix ABIs, indirect calls through stored code
-  pointers, specialized capture-environment destructors, and reference captures;
+- concrete closure construction and calls, capture-prefix ABIs, and specialized environment
+  destructors; a uniform `(code thunk, environment, release thunk)` callable representation lets
+  higher-order Foster functions accept independently shaped closure environments;
+- owned erased boxes for union and other explicitly dynamic ABI boundaries, with scalar-or-pointer
+  payloads and type-specific release thunks;
 - whole, indexed, and field references lowered as typed addresses, including typed reference
   parameters, load/store, move-out, and mutation observed through a closure capture;
 - descriptor-addressed allocation, strong retain/release, ownership transfer at calls and returns,
@@ -57,12 +64,11 @@ use the target pointer type. It supports:
 Only functions statically reachable from `main` are compiled. An unused function may therefore use
 the complete VM language without preventing native compilation.
 
-All declared runtime-backed categories now have target-specific physical layouts, including bytes,
+All declared runtime-backed categories have target-specific physical layouts, including bytes,
 buffers, generic lists, places, callable handles, erased boxes, remote values, and futures. Core
-list algorithms that use the supported sequence views compile as ordinary Foster functions.
-Higher-order callable parameters, String concatenation, symbol literals, bytes, remote execution,
-suspension, and host I/O do not yet have complete native instruction lowering.
-If one is reachable, compilation stops
+list, string, byte, and byte-buffer algorithms using the supported primitives compile as ordinary
+Foster functions. Remote execution, futures/suspension, host I/O, and string/symbol literal patterns
+do not yet have complete native instruction lowering. If one is reachable, compilation stops
 before object emission and reports the unsupported type or instruction. The diagnostic recommends
 ordinary `foster build`, which emits portable `.fbc` for the complete language.
 
@@ -112,8 +118,10 @@ After target selection, the physical layout calculator derives checked sizes, al
 offsets, and ownership-aware drop plans. Heap objects have a common descriptor-pointer, strong
 reference-count, and flags header. Exact target layouts exist for records, tagged variants,
 closures, place handles with structural-generation snapshots, bytes, mutable buffers, lists,
-remote/future handles, callable handles, and erased boxes. Recursive aggregate members remain
-pointer-sized, so layout calculation terminates without flattening recursive types.
+remote/future handles, callable handles, and erased boxes. Callable handles carry uniform call and
+release thunks around a concrete closure environment. Erased boxes carry one scalar-or-pointer
+payload plus its release thunk. Recursive aggregate members remain pointer-sized, so layout
+calculation terminates without flattening recursive types.
 
 A place handle stores its root storage pointer plus a pointer/count projection path. Each path
 entry has a fixed target-aware layout containing a field-slot or collection-index operand and the
@@ -134,10 +142,11 @@ collects Unicode command arguments, supplies legacy argument/String views and ty
 imports, calls
 that symbol, supplies raw zeroed allocation/deallocation, formats its result, and supplies the
 platform startup pieces to the system linker. Object semantics—layout, field access, reference
-counts, copy-on-write, and recursive destruction—are generated Cranelift code rather than Rust
-runtime helpers. The authoritative intrinsic registry also declares each builtin's native policy:
-inline scalar primitive, typed runtime import, or unavailable. Native member helper selection for
-the legacy argument/String ABI is registry-owned rather than an ad hoc backend switch.
+counts, copy-on-write, callable and erased-value ownership, and recursive destruction—are generated
+Cranelift code rather than Rust runtime helpers. The authoritative intrinsic registry also declares
+each builtin's native policy: Foster replacement, inline scalar/representation primitive, typed
+runtime import, or unavailable. Native member helper selection for the legacy process/String ABI is
+registry-owned rather than an ad hoc backend switch.
 Temporary object and shim files are removed after linking; the resulting executable does not
 contain or invoke the Foster VM.
 

@@ -75,7 +75,17 @@ pub func Bytes.hex(self: Bytes) -> String {
 
 /// Returns whether two byte sequences contain identical values.
 pub func Bytes.equal?(self: Bytes, other: Bytes) -> Bool {
-    self == other
+    equal_bytes(self, other)
+}
+
+/// Compares immutable bytes without exposing their compact backing representation.
+func equal_bytes(left: Bytes, right: Bytes) -> Bool {
+    branch {
+        left.empty? -> right.empty?
+        right.empty? -> false
+        left.head != right.head -> false
+        _ -> equal_bytes(left.rest, right.rest)
+    }
 }
 
 /// Computes a deterministic hash over the byte sequence.

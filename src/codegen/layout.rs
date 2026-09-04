@@ -1026,5 +1026,28 @@ func main() -> Int { Boxed { value: 42 }.value }
             physical.get(place).kind,
             physical::PhysicalKind::Place { .. }
         ));
+        let callable = registry.builtin(&types[5]).unwrap();
+        let physical::PhysicalKind::Callable {
+            code_offset,
+            environment_offset,
+            release_offset,
+        } = physical.get(callable).kind
+        else {
+            panic!("function type did not receive a callable layout");
+        };
+        assert!(code_offset < environment_offset);
+        assert!(environment_offset < release_offset);
+        assert!(release_offset < physical.get(callable).size);
+
+        let physical::PhysicalKind::Opaque {
+            value_offset,
+            release_offset,
+            ..
+        } = physical.get(registry.opaque()).kind
+        else {
+            panic!("erased values did not receive an opaque layout");
+        };
+        assert!(value_offset < release_offset);
+        assert!(release_offset < physical.get(registry.opaque()).size);
     }
 }

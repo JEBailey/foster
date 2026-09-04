@@ -689,10 +689,14 @@ fn transfer(
                 &VerificationType::Integer,
                 "index",
             )?;
-            let result = match read_type(function, index, &state, *object)? {
+            let object_type = read_type(function, index, &state, *object)?;
+            let result = match object_type {
                 VerificationType::List(element) => *element,
                 VerificationType::Bytes | VerificationType::ByteBuffer => VerificationType::Byte,
                 VerificationType::Unknown => VerificationType::Unknown,
+                VerificationType::Record { .. } if is_foster_byte_buffer(program, &object_type) => {
+                    VerificationType::Byte
+                }
                 found => return type_error(function, index, "indexable value", &found),
             };
             write_type(function, index, &mut state, *destination, result)?;
@@ -776,7 +780,8 @@ fn transfer(
                 "index",
             )?;
             let source_type = read_type(function, index, &state, *source)?;
-            match read_type(function, index, &state, *object)? {
+            let object_type = read_type(function, index, &state, *object)?;
+            match object_type {
                 VerificationType::List(element) => {
                     require_type(function, index, &source_type, &element, "list element")?
                 }
@@ -787,6 +792,15 @@ fn transfer(
                     &VerificationType::Byte,
                     "byte-buffer element",
                 )?,
+                VerificationType::Record { .. } if is_foster_byte_buffer(program, &object_type) => {
+                    require_type(
+                        function,
+                        index,
+                        &source_type,
+                        &VerificationType::Byte,
+                        "byte-buffer element",
+                    )?
+                }
                 VerificationType::Unknown => {}
                 found => return type_error(function, index, "mutable indexed value", &found),
             }
@@ -806,7 +820,7 @@ fn transfer(
                 "index",
             )?;
             let object_type = read_type(function, index, &state, *object)?;
-            let inferred = object_type.indexed_element().ok_or_else(|| {
+            let inferred = indexed_element_type(program, &object_type).ok_or_else(|| {
                 FosterError::runtime(format!(
                     "bytecode function `{}` instruction {index} has referenceable indexed value type {object_type:?}",
                     function.name
@@ -893,7 +907,8 @@ fn transfer(
             value,
         } => {
             let value = read_type(function, index, &state, *value)?;
-            match read_type(function, index, &state, *object)? {
+            let object_type = read_type(function, index, &state, *object)?;
+            match object_type {
                 VerificationType::List(element) => {
                     require_type(function, index, &value, &element, "list element")?
                 }
@@ -904,6 +919,15 @@ fn transfer(
                     &VerificationType::Byte,
                     "byte-buffer element",
                 )?,
+                VerificationType::Record { .. } if is_foster_byte_buffer(program, &object_type) => {
+                    require_type(
+                        function,
+                        index,
+                        &value,
+                        &VerificationType::Byte,
+                        "byte-buffer element",
+                    )?
+                }
                 VerificationType::Unknown => {}
                 found => return type_error(function, index, "List or ByteBuffer", &found),
             }
@@ -1885,8 +1909,25 @@ fn record_type(program: &Program, record: crate::hir::RecordId) -> VerificationT
     {
         Some("List") => VerificationType::List(Box::new(VerificationType::Unknown)),
         Some("Bytes") => VerificationType::Bytes,
-        Some("ByteBuffer") => VerificationType::ByteBuffer,
         _ => nominal_record(record),
+    }
+}
+
+fn is_foster_byte_buffer(program: &Program, ty: &VerificationType) -> bool {
+    let VerificationType::Record { record, .. } = ty else {
+        return false;
+    };
+    program
+        .records
+        .get(record)
+        .is_some_and(|metadata| metadata.name == "ByteBuffer")
+}
+
+fn indexed_element_type(program: &Program, ty: &VerificationType) -> Option<VerificationType> {
+    match ty {
+        VerificationType::Reference(pointee) => indexed_element_type(program, pointee),
+        _ if is_foster_byte_buffer(program, ty) => Some(VerificationType::Byte),
+        _ => ty.indexed_element(),
     }
 }
 

@@ -77,6 +77,9 @@ pub enum NativeInlineIntrinsic {
     IntegerToCodePoint,
     ByteIsValid,
     IntegerToByte,
+    BytesFromList,
+    BytesToList,
+    BytesDecodeUtf8,
 }
 
 pub(crate) type DirectBuiltinHandler = fn(
@@ -179,6 +182,15 @@ macro_rules! native_builtin {
     };
     (FormatFloat) => {
         NativeIntrinsic::Runtime("foster_format_float")
+    };
+    (BytesFromList) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesFromList)
+    };
+    (BytesToList) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesToList)
+    };
+    (BytesDecodeUtf8) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesDecodeUtf8)
     };
     ($builtin:ident) => {
         NativeIntrinsic::Unavailable
@@ -389,6 +401,8 @@ pub fn native_member_runtime(receiver: NativeReceiverKind, member: &str) -> Opti
         (NativeReceiverKind::String, "empty?") => Some("foster_string_empty"),
         (NativeReceiverKind::String, "length") => Some("foster_string_length"),
         (NativeReceiverKind::String, "head") => Some("foster_string_head"),
+        (NativeReceiverKind::String, "rest") => Some("foster_string_rest"),
+        (NativeReceiverKind::String, "whitespace?") => Some("foster_string_whitespace"),
         _ => None,
     }
 }
@@ -612,6 +626,9 @@ mod tests {
                 Builtin::FormatFloat,
                 Builtin::ByteValid,
                 Builtin::ByteUnchecked,
+                Builtin::BytesFromList,
+                Builtin::BytesToList,
+                Builtin::BytesDecodeUtf8,
             ]
         );
         assert_eq!(

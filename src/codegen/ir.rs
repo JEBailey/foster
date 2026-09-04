@@ -154,6 +154,26 @@ pub enum Instruction {
         signature: Signature,
         arguments: Vec<Value>,
     },
+    /// Erases a concrete closure environment behind the uniform callable ABI.
+    WrapCallable {
+        destination: Value,
+        source: Value,
+    },
+    /// Copies a legacy process string into descriptor-backed immutable byte storage.
+    StringToBytes {
+        destination: Value,
+        source: Value,
+    },
+    /// Places one scalar-or-pointer value into the uniform erased box representation.
+    BoxValue {
+        destination: Value,
+        source: Value,
+    },
+    /// Reads a statically verified representation from an erased box.
+    UnboxValue {
+        destination: Value,
+        source: Value,
+    },
     Assert {
         condition: Value,
         message: Option<Value>,
@@ -481,7 +501,11 @@ impl Instruction {
             | Self::IntegerExtend { destination, .. }
             | Self::Binary { destination, .. }
             | Self::Call { destination, .. }
-            | Self::RuntimeCall { destination, .. } => vec![*destination],
+            | Self::RuntimeCall { destination, .. }
+            | Self::WrapCallable { destination, .. }
+            | Self::StringToBytes { destination, .. }
+            | Self::BoxValue { destination, .. }
+            | Self::UnboxValue { destination, .. } => vec![*destination],
             Self::Assert { .. } => Vec::new(),
             Self::Portable(instruction) => instruction.destinations(),
         }
@@ -490,7 +514,20 @@ impl Instruction {
     fn operands(&self) -> Vec<Value> {
         match self {
             Self::Constant { .. } => Vec::new(),
-            Self::Unary { operand, .. } | Self::IntegerExtend { operand, .. } => vec![*operand],
+            Self::Unary { operand, .. }
+            | Self::IntegerExtend { operand, .. }
+            | Self::WrapCallable {
+                source: operand, ..
+            }
+            | Self::StringToBytes {
+                source: operand, ..
+            }
+            | Self::BoxValue {
+                source: operand, ..
+            }
+            | Self::UnboxValue {
+                source: operand, ..
+            } => vec![*operand],
             Self::Binary { left, right, .. } => vec![*left, *right],
             Self::Call { arguments, .. } | Self::RuntimeCall { arguments, .. } => arguments.clone(),
             Self::Assert { condition, message } => {
@@ -887,6 +924,7 @@ impl<'a> Verifier<'a> {
                             Type::Int | Type::Float | Type::CodePoint | Type::Byte
                         )
                     || arithmetic && matches!(operand_type, Type::Int | Type::Float)
+                    || operator == &BinaryOp::Add && operand_type == Type::String
                     || bits && operand_type == Type::Byte;
                 if !valid {
                     return Err(VerifyError::new(format!(
@@ -920,6 +958,43 @@ impl<'a> Verifier<'a> {
             } => {
                 self.verify_call(arguments, signature, "runtime call")?;
                 self.require_type(*destination, signature.result, "runtime call result")
+            }
+            Instruction::WrapCallable {
+                destination,
+                source,
+            } => {
+                if !matches!(self.value_type(*source)?, Type::Object(_)) {
+                    return Err(VerifyError::new("callable source is not an object"));
+                }
+                if !matches!(self.value_type(*destination)?, Type::Object(_)) {
+                    return Err(VerifyError::new("callable result is not an object"));
+                }
+                Ok(())
+            }
+            Instruction::StringToBytes {
+                destination,
+                source,
+            } => {
+                self.require_type(*source, Type::String, "string byte source")?;
+                if !matches!(self.value_type(*destination)?, Type::Object(_)) {
+                    return Err(VerifyError::new("string byte result is not an object"));
+                }
+                Ok(())
+            }
+            Instruction::BoxValue {
+                destination,
+                source: _,
+            } => {
+                if !matches!(self.value_type(*destination)?, Type::Object(_)) {
+                    return Err(VerifyError::new("erased box result is not an object"));
+                }
+                Ok(())
+            }
+            Instruction::UnboxValue { source, .. } => {
+                if !matches!(self.value_type(*source)?, Type::Object(_)) {
+                    return Err(VerifyError::new("erased box source is not an object"));
+                }
+                Ok(())
             }
             Instruction::Assert { condition, message } => {
                 self.require_type(*condition, Type::Bool, "assert condition")?;
@@ -1132,6 +1207,14 @@ fn display_instruction(
             write_values(formatter, arguments)?;
             formatter.write_str(")")
         }
+        Instruction::WrapCallable { source, .. } => {
+            write!(formatter, "wrap_callable v{}", source.0)
+        }
+        Instruction::StringToBytes { source, .. } => {
+            write!(formatter, "string_to_bytes v{}", source.0)
+        }
+        Instruction::BoxValue { source, .. } => write!(formatter, "box v{}", source.0),
+        Instruction::UnboxValue { source, .. } => write!(formatter, "unbox v{}", source.0),
         Instruction::Assert { condition, message } => match message {
             Some(message) => write!(formatter, "assert v{}, v{}", condition.0, message.0),
             None => write!(formatter, "assert v{}", condition.0),

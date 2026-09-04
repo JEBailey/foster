@@ -587,7 +587,6 @@ fn verification_type_inner(
                         .unwrap_or(VerificationType::Unknown),
                 )),
                 Some("Bytes") => VerificationType::Bytes,
-                Some("ByteBuffer") => VerificationType::ByteBuffer,
                 // Method-only records are structural contracts and carry no unique runtime
                 // representation. Their conformance proof has already been checked.
                 _ if hir.records[*record].fields.is_empty() => VerificationType::Unknown,

@@ -309,12 +309,13 @@ cargo run --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.e
 ```
 
 Native compilation supports reachable scalar functions plus descriptor-backed user records,
-tagged enums, concrete closures, generic lists, and local references, including nested fields,
-copy-on-write mutation, aggregate payload patterns, reference captures and parameters, direct and
-indirect calls, generic specialization, methods, recursion, arithmetic, comparisons, and control
-flow. Supported core list algorithms compile as ordinary Foster code; higher-order erased callable
-parameters, bytes, remote operations, host services, and other VM-only instructions are rejected
-with an actionable compile error. See
+tagged enums, concrete closures, uniform higher-order callables, owned erased values, generic
+lists, immutable bytes, Foster-written byte buffers, and local references. This includes nested
+fields, copy-on-write mutation, aggregate payload patterns, reference captures and parameters,
+direct and indirect calls, generic specialization, methods, recursion, arithmetic, comparisons,
+and control flow. Supported core list, string, byte, and byte-buffer algorithms compile as ordinary
+Foster code. Remote operations, suspension, host services, literal string/symbol patterns, and
+other VM-only instructions are rejected with an actionable compile error. See
 [native compilation](docs/native.md) for the exact boundary.
 
 The de-SSA VM emitter owns critical-edge splitting, cycle-safe parallel copies, and deterministic

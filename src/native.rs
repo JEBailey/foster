@@ -138,6 +138,9 @@ struct NativeIrEnvironment<'a> {
 struct NativeBackend<'a> {
     ir: NativeIrEnvironment<'a>,
     functions: &'a HashMap<FunctionId, FuncId>,
+    method_receivers: &'a HashSet<FunctionId>,
+    callable_thunks: &'a HashMap<LayoutId, FuncId>,
+    release_thunks: &'a HashMap<LayoutId, FuncId>,
     objects: ObjectRuntime<'a>,
 }
 
@@ -145,6 +148,15 @@ struct NativeBackend<'a> {
 struct PatternSubject {
     value: ClifValue,
     ty: NativeType,
+}
+
+#[derive(Clone, Copy)]
+struct NativeLowering<'a, 'backend> {
+    function: &'a ir::Function,
+    values: &'a HashMap<ir::Value, ClifValue>,
+    homes: &'a HashMap<u16, StackSlot>,
+    mutable_parameter_homes: &'a HashSet<u16>,
+    backend: &'a NativeBackend<'backend>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -313,13 +325,23 @@ pub fn compile_object(
         native_ids.insert(instance.ir_function, id);
     }
 
-    let drop_ids = declare_layout_destructors(&mut module, &physical_layouts)?;
     let native_layouts = NativeLayouts {
         program: &program,
         logical: &layouts,
         physical: &physical_layouts,
     };
+    let drop_ids = declare_layout_destructors(&mut module, &physical_layouts)?;
+    let callable_thunks =
+        declare_callable_thunks(&mut module, native_layouts, &instance_ids, &function_types)?;
+    let release_thunks = declare_release_thunks(&mut module, native_layouts)?;
+    let method_receivers = compilation
+        .hir
+        .functions
+        .iter()
+        .filter_map(|(function, declaration)| declaration.receiver.is_some().then_some(function))
+        .collect::<HashSet<_>>();
     define_layout_destructors(&mut module, native_layouts, &drop_ids)?;
+    define_release_thunks(&mut module, native_layouts, &drop_ids, &release_thunks)?;
 
     let backend = NativeBackend {
         ir: NativeIrEnvironment {
@@ -332,6 +354,9 @@ pub fn compile_object(
             instances: &instance_ids,
         },
         functions: &native_ids,
+        method_receivers: &method_receivers,
+        callable_thunks: &callable_thunks,
+        release_thunks: &release_thunks,
         objects: ObjectRuntime {
             layouts: native_layouts,
             descriptors: &layout_descriptors,
@@ -347,6 +372,7 @@ pub fn compile_object(
             &backend,
         )?;
     }
+    define_callable_thunks(&mut module, &backend)?;
 
     let bytes = module
         .finish()
@@ -785,10 +811,29 @@ fn native_type(
         {
             Ok(NativeType::String)
         }
+        Type::Record { record, .. }
+            if compilation.hir.records[record].name == "Symbol"
+                && compilation.hir.modules[compilation.hir.records[record].module].name
+                    == "core.symbol" =>
+        {
+            Ok(NativeType::String)
+        }
         Type::Record { .. }
             if crate::entry::is_arguments_type(&compilation.hir, &compilation.types, ty) =>
         {
             Ok(NativeType::Arguments)
+        }
+        Type::Record { record, .. }
+            if compilation.hir.records[record].name == "Bytes"
+                && compilation.hir.modules[compilation.hir.records[record].module].name
+                    == "core.bytes" =>
+        {
+            let concrete = crate::vm::VerificationType::Bytes;
+            layouts.instantiate_type(&concrete)?;
+            layouts
+                .builtin(&concrete)
+                .map(NativeType::Object)
+                .ok_or_else(|| native_error(format!("Bytes type in `{function}` has no layout")))
         }
         Type::Record {
             record,
@@ -824,6 +869,17 @@ fn native_type(
                 .record_instance(record, &arguments)
                 .map(NativeType::Object)
                 .ok_or_else(|| native_error(format!("record type in `{function}` has no layout")))
+        }
+        Type::Variant {
+            variant,
+            ref arguments,
+        } if compilation.hir.variant_types[variant].kind == crate::ast::VariantKind::Union => {
+            let members = arguments
+                .iter()
+                .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 0))
+                .collect::<Result<Vec<_>, _>>()?;
+            layouts.instantiate_type(&crate::vm::VerificationType::Union(members))?;
+            Ok(NativeType::Object(layouts.opaque()))
         }
         Type::Variant {
             variant,
@@ -904,6 +960,13 @@ fn specialized_verification_type(
             parameter_modes: function.parameter_modes.clone(),
             result: Box::new(nested(function.result)?),
         },
+        Type::Record { record, .. }
+            if compilation.hir.records[*record].name == "Bytes"
+                && compilation.hir.modules[compilation.hir.records[*record].module].name
+                    == "core.bytes" =>
+        {
+            VerificationType::Bytes
+        }
         Type::Record { record, arguments } => VerificationType::Record {
             record: *record,
             arguments: arguments
@@ -911,6 +974,16 @@ fn specialized_verification_type(
                 .map(|ty| nested(*ty))
                 .collect::<Result<_, _>>()?,
         },
+        Type::Variant { variant, arguments }
+            if compilation.hir.variant_types[*variant].kind == crate::ast::VariantKind::Union =>
+        {
+            VerificationType::Union(
+                arguments
+                    .iter()
+                    .map(|ty| nested(*ty))
+                    .collect::<Result<_, _>>()?,
+            )
+        }
         Type::Variant { variant, arguments } => VerificationType::Variant {
             variant: *variant,
             arguments: arguments
@@ -950,6 +1023,28 @@ fn concrete_native_type(
                 .is_some_and(|name| name == "String") =>
         {
             Ok(NativeType::String)
+        }
+        VerificationType::Record { record, .. }
+            if compilation
+                .types
+                .record_names
+                .get(record)
+                .is_some_and(|name| name == "Symbol") =>
+        {
+            Ok(NativeType::String)
+        }
+        VerificationType::Record { record, .. }
+            if compilation
+                .types
+                .record_names
+                .get(record)
+                .is_some_and(|name| name == "Bytes") =>
+        {
+            layouts.instantiate_type(&VerificationType::Bytes)?;
+            layouts
+                .builtin(&VerificationType::Bytes)
+                .map(NativeType::Object)
+                .ok_or_else(|| native_error(format!("Bytes type in `{function}` has no layout")))
         }
         VerificationType::Record { record, arguments } => {
             layouts.instantiate_type(ty)?;
@@ -1095,18 +1190,6 @@ fn validate_program(
                 ))
                 .with_help("move the algorithm into Foster or register a typed native primitive"));
             }
-            if let Instruction::LoadConstant { constant, .. } = instruction
-                && matches!(
-                    program.constants[usize::from(*constant)],
-                    Constant::Symbol(_)
-                )
-            {
-                return Err(native_error(format!(
-                    "native compilation of `{}` does not yet support type `Symbol` constants",
-                    body.name
-                ))
-                .with_help("use `foster build` without `--native` for the complete VM language"));
-            }
         }
     }
     let _ = compilation;
@@ -1136,6 +1219,91 @@ fn declare_layout_destructors(
             Ok((layout.id, function))
         })
         .collect()
+}
+
+fn concrete_closure_target(
+    layouts: NativeLayouts<'_>,
+    instances: &HashMap<SpecializationKey, FunctionId>,
+    layout: LayoutId,
+) -> Option<(FunctionId, usize)> {
+    let LayoutKind::Closure {
+        function,
+        specialization,
+        captures,
+    } = &layouts.logical.get(layout).kind
+    else {
+        return None;
+    };
+    instances
+        .get(&SpecializationKey {
+            function: *function,
+            substitutions: specialization.clone(),
+        })
+        .copied()
+        .map(|target| (target, captures.len()))
+}
+
+fn declare_callable_thunks(
+    module: &mut ObjectModule,
+    layouts: NativeLayouts<'_>,
+    instances: &HashMap<SpecializationKey, FunctionId>,
+    function_types: &HashMap<FunctionId, ir::Signature>,
+) -> Result<HashMap<LayoutId, FuncId>, FosterError> {
+    let mut result = HashMap::new();
+    for layout in layouts
+        .physical
+        .layouts()
+        .iter()
+        .filter(|layout| layout.materialized)
+    {
+        let Some((target, captures)) = concrete_closure_target(layouts, instances, layout.id)
+        else {
+            continue;
+        };
+        let target_signature = &function_types[&target];
+        let mut parameters = vec![NativeType::Object(layout.id)];
+        parameters.extend_from_slice(&target_signature.parameters[captures..]);
+        let thunk_signature = signature(
+            module,
+            &ir::Signature {
+                parameters,
+                result: target_signature.result,
+            },
+        );
+        let name = format!("foster_callable_l{}", layout.id.0);
+        let id = module
+            .declare_function(&name, Linkage::Local, &thunk_signature)
+            .map_err(|error| native_error(format!("cannot declare `{name}`: {error}")))?;
+        result.insert(layout.id, id);
+    }
+    Ok(result)
+}
+
+fn declare_release_thunks(
+    module: &mut ObjectModule,
+    layouts: NativeLayouts<'_>,
+) -> Result<HashMap<LayoutId, FuncId>, FosterError> {
+    let mut result = HashMap::new();
+    for layout in layouts
+        .physical
+        .layouts()
+        .iter()
+        .filter(|layout| layout.materialized && layouts.is_managed(layout.id))
+    {
+        let thunk_signature = signature(
+            module,
+            &ir::Signature {
+                parameters: vec![NativeType::Object(layout.id)],
+                result: NativeType::Unit,
+            },
+        );
+        let name = format!("foster_release_l{}", layout.id.0);
+        let id = module
+            .declare_function(&name, Linkage::Local, &thunk_signature)
+            .map_err(|error| native_error(format!("cannot declare `{name}`: {error}")))?;
+        result.insert(layout.id, id);
+    }
+    Ok(result)
 }
 
 fn define_layout_destructors(
@@ -1214,7 +1382,115 @@ fn define_layout_destructors(
                         destructors,
                     )?;
                 }
-                DropPlan::Trivial | DropPlan::Runtime => {}
+                DropPlan::Runtime => match layout.kind {
+                    PhysicalKind::Callable {
+                        environment_offset,
+                        release_offset,
+                        ..
+                    } => {
+                        let word = module.target_config().pointer_type();
+                        let environment = builder.ins().load(
+                            word,
+                            MemFlagsData::trusted(),
+                            object,
+                            environment_offset as i32,
+                        );
+                        let release = builder.ins().load(
+                            word,
+                            MemFlagsData::trusted(),
+                            object,
+                            release_offset as i32,
+                        );
+                        let release_signature = signature(
+                            module,
+                            &ir::Signature {
+                                parameters: vec![NativeType::Opaque],
+                                result: NativeType::Unit,
+                            },
+                        );
+                        let release_signature = builder.func.import_signature(release_signature);
+                        builder
+                            .ins()
+                            .call_indirect(release_signature, release, &[environment]);
+                    }
+                    PhysicalKind::Bytes {
+                        data_offset,
+                        length_offset,
+                    } => {
+                        let word = module.target_config().pointer_type();
+                        let data = builder.ins().load(
+                            word,
+                            MemFlagsData::trusted(),
+                            object,
+                            data_offset as i32,
+                        );
+                        let length = builder.ins().load(
+                            word,
+                            MemFlagsData::trusted(),
+                            object,
+                            length_offset as i32,
+                        );
+                        let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
+                        let one = builder.ins().iconst(word, 1);
+                        let size = builder.ins().select(empty, one, length);
+                        let align = builder.ins().iconst(types::I64, 1);
+                        runtime_call(
+                            &mut builder,
+                            module,
+                            "foster_dealloc",
+                            &ir::Signature {
+                                parameters: vec![
+                                    NativeType::Opaque,
+                                    NativeType::Int,
+                                    NativeType::Int,
+                                ],
+                                result: NativeType::Unit,
+                            },
+                            &[data, size, align],
+                        )?;
+                    }
+                    PhysicalKind::Opaque {
+                        value_offset,
+                        release_offset,
+                        ..
+                    } => {
+                        let word = module.target_config().pointer_type();
+                        let release = builder.ins().load(
+                            word,
+                            MemFlagsData::trusted(),
+                            object,
+                            release_offset as i32,
+                        );
+                        let has_release = builder.ins().icmp_imm_s(IntCC::NotEqual, release, 0);
+                        let release_block = builder.create_block();
+                        let finish = builder.create_block();
+                        builder
+                            .ins()
+                            .brif(has_release, release_block, &[], finish, &[]);
+                        builder.switch_to_block(release_block);
+                        let value = builder.ins().load(
+                            word,
+                            MemFlagsData::trusted(),
+                            object,
+                            value_offset as i32,
+                        );
+                        let release_signature = signature(
+                            module,
+                            &ir::Signature {
+                                parameters: vec![NativeType::Opaque],
+                                result: NativeType::Unit,
+                            },
+                        );
+                        let release_signature = builder.func.import_signature(release_signature);
+                        builder
+                            .ins()
+                            .call_indirect(release_signature, release, &[value]);
+                        builder.ins().jump(finish, &[]);
+                        builder.switch_to_block(finish);
+                    }
+                    _ => {}
+                },
+                DropPlan::Trivial => {}
             }
             let size = builder.ins().iconst(types::I64, i64::from(layout.size));
             let align = builder.ins().iconst(types::I64, i64::from(layout.align));
@@ -1245,6 +1521,53 @@ fn define_layout_destructors(
                     layout.id.0
                 ))
             })?;
+        module.clear_context(&mut context);
+    }
+    Ok(())
+}
+
+fn define_release_thunks(
+    module: &mut ObjectModule,
+    layouts: NativeLayouts<'_>,
+    destructors: &HashMap<LayoutId, FuncId>,
+    release_thunks: &HashMap<LayoutId, FuncId>,
+) -> Result<(), FosterError> {
+    for (&layout, &id) in release_thunks {
+        let mut context = module.make_context();
+        context.func.signature = signature(
+            module,
+            &ir::Signature {
+                parameters: vec![NativeType::Object(layout)],
+                result: NativeType::Unit,
+            },
+        );
+        let frontend_config = module.target_config();
+        let mut builder_context = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
+            let entry = builder.create_block();
+            builder.append_block_params_for_function_params(entry);
+            builder.switch_to_block(entry);
+            let object = builder.block_params(entry)[0];
+            release_object(
+                &mut builder,
+                module,
+                object,
+                layout,
+                layouts.physical,
+                destructors,
+            )?;
+            let unit = builder.ins().iconst(types::I8, 0);
+            builder.ins().return_(&[unit]);
+            builder.seal_all_blocks();
+            builder.finalize(frontend_config);
+        }
+        module.define_function(id, &mut context).map_err(|error| {
+            native_error(format!(
+                "cannot compile release thunk l{}: {error}",
+                layout.0
+            ))
+        })?;
         module.clear_context(&mut context);
     }
     Ok(())
@@ -1401,13 +1724,87 @@ fn define_function(
     let mut builder_context = FunctionBuilderContext::new();
     {
         let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
-        lower_native_ir(&mut builder, module, &native_function, backend)?;
+        lower_native_ir(
+            &mut builder,
+            module,
+            &native_function,
+            instance,
+            function,
+            backend,
+        )?;
         builder.finalize(frontend_config);
     }
     module
         .define_function(native_id, &mut context)
         .map_err(|error| native_error(format!("cannot compile `{}`: {error}", function.name)))?;
     module.clear_context(&mut context);
+    Ok(())
+}
+
+fn define_callable_thunks(
+    module: &mut ObjectModule,
+    backend: &NativeBackend<'_>,
+) -> Result<(), FosterError> {
+    for (&layout, &thunk_id) in backend.callable_thunks {
+        let (target, capture_count) =
+            concrete_closure_target(backend.objects.layouts, backend.ir.instances, layout)
+                .ok_or_else(|| native_error("callable thunk has no concrete closure target"))?;
+        let target_signature = &backend.ir.function_types[&target];
+        let mut parameters = vec![NativeType::Object(layout)];
+        parameters.extend_from_slice(&target_signature.parameters[capture_count..]);
+        let thunk_signature = ir::Signature {
+            parameters,
+            result: target_signature.result,
+        };
+        let mut context = module.make_context();
+        context.func.signature = signature(module, &thunk_signature);
+        let frontend_config = module.target_config();
+        let mut builder_context = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
+            let entry = builder.create_block();
+            builder.append_block_params_for_function_params(entry);
+            builder.switch_to_block(entry);
+            let inputs = builder.block_params(entry).to_vec();
+            let environment = inputs[0];
+            let physical = backend.objects.layouts.physical.get(layout);
+            let PhysicalKind::Closure { captures, .. } = &physical.kind else {
+                return Err(native_error("callable thunk environment is not a closure"));
+            };
+            let mut arguments = Vec::with_capacity(captures.len() + inputs.len() - 1);
+            for field in captures {
+                let value = load_physical_value(
+                    &mut builder,
+                    module,
+                    environment,
+                    field.offset,
+                    field.value,
+                );
+                if let Some(pointee) = field.value.pointee
+                    && backend.objects.layouts.is_managed(pointee)
+                {
+                    backend.objects.retain(&mut builder, value, pointee);
+                }
+                arguments.push(value);
+            }
+            arguments.extend_from_slice(&inputs[1..]);
+            let target = module.declare_func_in_func(backend.functions[&target], builder.func);
+            let call = builder.ins().call(target, &arguments);
+            let results = builder.inst_results(call).to_vec();
+            builder.ins().return_(&results);
+            builder.seal_all_blocks();
+            builder.finalize(frontend_config);
+        }
+        module
+            .define_function(thunk_id, &mut context)
+            .map_err(|error| {
+                native_error(format!(
+                    "cannot compile callable thunk l{}: {error}",
+                    layout.0
+                ))
+            })?;
+        module.clear_context(&mut context);
+    }
     Ok(())
 }
 
@@ -1459,7 +1856,7 @@ fn infer_register_types(
                         Constant::Float(_) => NativeType::Float,
                         Constant::CodePoint(_) => NativeType::CodePoint,
                         Constant::String(_) => NativeType::String,
-                        Constant::Symbol(_) => unreachable!("validated above"),
+                        Constant::Symbol(_) => NativeType::String,
                     },
                 );
             }
@@ -1560,23 +1957,34 @@ fn infer_register_types(
                         function.name
                     )));
                 };
-                let LayoutKind::Closure {
-                    function: target,
-                    specialization,
-                    ..
-                } = &environment.layouts.get(layout).kind
-                else {
-                    return Err(native_error(format!(
-                        "dynamic call in `{}` does not reference a concrete closure",
-                        function.name
-                    )));
+                let result_type = match &environment.layouts.get(layout).kind {
+                    LayoutKind::Closure {
+                        function: target,
+                        specialization,
+                        ..
+                    } => {
+                        let target = environment.instances[&SpecializationKey {
+                            function: *target,
+                            substitutions: specialization.clone(),
+                        }];
+                        environment.function_types[&target].result
+                    }
+                    LayoutKind::Builtin {
+                        ty: crate::vm::VerificationType::Function { result, .. },
+                    } => native_verification_type(
+                        environment.program,
+                        environment.layouts,
+                        result,
+                        None,
+                    )?,
+                    _ => {
+                        return Err(native_error(format!(
+                            "dynamic call in `{}` does not reference a callable layout",
+                            function.name
+                        )));
+                    }
                 };
-                let target = environment.instances[&SpecializationKey {
-                    function: *target,
-                    substitutions: specialization.clone(),
-                }];
-                result[usize::from(destination.0)] =
-                    Some(environment.function_types[&target].result);
+                result[usize::from(destination.0)] = Some(result_type);
             }
             Instruction::MakeRecord {
                 destination,
@@ -1664,15 +2072,18 @@ fn infer_register_types(
                     NativeType::StringList => NativeType::String,
                     NativeType::String => NativeType::CodePoint,
                     NativeType::Object(layout) => {
-                        let PhysicalKind::Buffer { element, .. } =
-                            &environment.physical_layouts.get(layout).kind
-                        else {
-                            return Err(native_error(format!(
-                                "native indexing requires a buffer in `{}`",
-                                function.name
-                            )));
-                        };
-                        native_type_from_value_layout(*element)
+                        match &environment.physical_layouts.get(layout).kind {
+                            PhysicalKind::Buffer { element, .. } => {
+                                native_type_from_value_layout(*element)
+                            }
+                            PhysicalKind::Bytes { .. } => NativeType::Byte,
+                            _ => {
+                                return Err(native_error(format!(
+                                    "native indexing requires bytes or a buffer in `{}`",
+                                    function.name
+                                )));
+                            }
+                        }
                     }
                     _ => {
                         return Err(native_error(format!(
@@ -1893,6 +2304,15 @@ fn field_type(
         (NativeType::StringList, "length") | (NativeType::String, "length") => Ok(NativeType::Int),
         (NativeType::StringList, "head") => Ok(NativeType::String),
         (NativeType::String, "head") => Ok(NativeType::CodePoint),
+        (NativeType::String, "rest") => Ok(NativeType::String),
+        (NativeType::String, "whitespace?") => Ok(NativeType::Bool),
+        (NativeType::String, "utf8" | "value") => layouts
+            .builtin(&crate::vm::VerificationType::Bytes)
+            .map(NativeType::Object)
+            .ok_or_else(|| native_error("String byte storage has no native layout")),
+        (NativeType::Byte, "int") => Ok(NativeType::Int),
+        (NativeType::CodePoint, "whitespace?") => Ok(NativeType::Bool),
+        (NativeType::CodePoint, "string") => Ok(NativeType::String),
         (NativeType::Object(layout), field) => match &layouts.get(layout).kind {
             LayoutKind::Record { fields, .. } => {
                 let slot = fields
@@ -1925,6 +2345,24 @@ fn field_type(
                 ),
                 "rest" => Ok(NativeType::Object(layout)),
                 _ => Err(native_error(format!("native list has no field `{field}`"))),
+            },
+            LayoutKind::Builtin {
+                ty: crate::vm::VerificationType::Bytes,
+            } => match field {
+                "empty?" => Ok(NativeType::Bool),
+                "length" => Ok(NativeType::Int),
+                "head" => Ok(NativeType::Byte),
+                "rest" => Ok(NativeType::Object(layout)),
+                _ => Err(native_error(format!("native Bytes has no field `{field}`"))),
+            },
+            LayoutKind::Builtin {
+                ty: crate::vm::VerificationType::ByteBuffer,
+            } => match field {
+                "empty?" => Ok(NativeType::Bool),
+                "length" | "capacity" => Ok(NativeType::Int),
+                _ => Err(native_error(format!(
+                    "native ByteBuffer has no field `{field}`"
+                ))),
             },
             LayoutKind::Pointer { pointee, .. } => field_type(
                 program,
@@ -1959,6 +2397,9 @@ fn native_verification_type(
         VerificationType::CodePoint => Ok(NativeType::CodePoint),
         VerificationType::Byte => Ok(NativeType::Byte),
         VerificationType::Record { record, .. } if Some(*record) == program.string_record => {
+            Ok(NativeType::String)
+        }
+        VerificationType::Record { record, .. } if Some(*record) == program.symbol_record => {
             Ok(NativeType::String)
         }
         VerificationType::Record { record, arguments } => layouts
@@ -2127,7 +2568,36 @@ fn lower_shared_to_native_ir(
                 spans.push(span.clone());
             }
         }
-        if let ir::Terminator::Return(returned) = block.terminator {
+        let mut terminator = block.terminator.clone();
+        if let ir::Terminator::Return(returned) = &terminator {
+            let returned = *returned;
+            if let Some(conversion) = erased_conversion(
+                value_types[returned.0 as usize],
+                function_signature.result,
+                environment.layouts,
+            ) {
+                let converted = allocate_shared_value(
+                    &mut value_types,
+                    &mut storage_hints,
+                    function_signature.result,
+                );
+                instructions.push(match conversion {
+                    ErasedConversion::Box => ir::Instruction::BoxValue {
+                        destination: converted,
+                        source: returned,
+                    },
+                    ErasedConversion::Unbox => ir::Instruction::UnboxValue {
+                        destination: converted,
+                        source: returned,
+                    },
+                });
+                spans.push(block.terminator_span.clone());
+                terminator = ir::Terminator::Return(converted);
+            }
+            let ir::Terminator::Return(returned) = &terminator else {
+                unreachable!()
+            };
+            let returned = *returned;
             let mut released = HashSet::new();
             for value in state.values().copied() {
                 if value != returned
@@ -2145,7 +2615,7 @@ fn lower_shared_to_native_ir(
             parameters: block.parameters.clone(),
             instructions,
             instruction_spans: spans,
-            terminator: block.terminator.clone(),
+            terminator,
             terminator_span: block.terminator_span.clone(),
         });
     }
@@ -2319,10 +2789,7 @@ fn lower_shared_instruction(
                     ir::Constant::RuntimeString(environment.runtime_string_indices[constant])
                 }
                 Constant::Symbol(_) => {
-                    return Err(native_error(format!(
-                        "native compilation of `{}` does not yet support symbol constants",
-                        metadata.name
-                    )));
+                    ir::Constant::RuntimeString(environment.runtime_string_indices[constant])
                 }
             };
             Ok(one(ir::Instruction::Constant {
@@ -2453,9 +2920,15 @@ fn lower_shared_instruction(
             arguments,
         } => {
             let mut result = Vec::new();
+            let target = environment.instances[&SpecializationKey {
+                function: *function,
+                substitutions: resolve_specialization(specialization, &instance.substitutions),
+            }];
             let (arguments, consumed) = shared_call_arguments(
                 arguments,
                 &environment.program.functions[function].parameter_modes,
+                &environment.function_types[&target].parameters,
+                environment.layouts,
                 value_types,
                 storage_hints,
                 &mut result,
@@ -2464,13 +2937,7 @@ fn lower_shared_instruction(
                 result.push((
                     ir::Instruction::Call {
                         destination: *destination,
-                        function: environment.instances[&SpecializationKey {
-                            function: *function,
-                            substitutions: resolve_specialization(
-                                specialization,
-                                &instance.substitutions,
-                            ),
-                        }],
+                        function: target,
                         specialization: Vec::new(),
                         arguments,
                     },
@@ -2489,9 +2956,15 @@ fn lower_shared_instruction(
             let mut sources = vec![*receiver];
             sources.extend(arguments);
             let mut result = Vec::new();
+            let target = environment.instances[&SpecializationKey {
+                function: *function,
+                substitutions: resolve_specialization(specialization, &instance.substitutions),
+            }];
             let (arguments, consumed) = shared_call_arguments(
                 &sources,
                 &environment.program.functions[function].parameter_modes,
+                &environment.function_types[&target].parameters,
+                environment.layouts,
                 value_types,
                 storage_hints,
                 &mut result,
@@ -2499,13 +2972,7 @@ fn lower_shared_instruction(
             result.push((
                 ir::Instruction::Call {
                     destination: *destination,
-                    function: environment.instances[&SpecializationKey {
-                        function: *function,
-                        substitutions: resolve_specialization(
-                            specialization,
-                            &instance.substitutions,
-                        ),
-                    }],
+                    function: target,
                     specialization: Vec::new(),
                     arguments,
                 },
@@ -2530,6 +2997,7 @@ fn lower_shared_instruction(
             let (mut lowered, mut consumed) = shared_capture_arguments(
                 captures,
                 expected_captures,
+                environment.layouts,
                 value_types,
                 storage_hints,
                 &mut result,
@@ -2538,6 +3006,8 @@ fn lower_shared_instruction(
             let (ordinary, ordinary_consumed) = shared_call_arguments(
                 arguments,
                 &environment.program.functions[function].parameter_modes,
+                &environment.function_types[&target].parameters[captures.len()..],
+                environment.layouts,
                 value_types,
                 storage_hints,
                 &mut result,
@@ -2572,6 +3042,7 @@ fn lower_shared_instruction(
             let (captures, consumed) = shared_capture_arguments(
                 captures,
                 expected_captures,
+                environment.layouts,
                 value_types,
                 storage_hints,
                 &mut result,
@@ -2602,19 +3073,58 @@ fn lower_shared_instruction(
                     metadata.name
                 )));
             };
-            let LayoutKind::Closure {
-                function: target, ..
-            } = &environment.layouts.get(layout).kind
-            else {
-                return Err(native_error(format!(
-                    "dynamic call in `{}` requires a concrete closure",
-                    metadata.name
-                )));
-            };
             let mut result = Vec::new();
+            let (modes, expected) = match &environment.layouts.get(layout).kind {
+                LayoutKind::Closure {
+                    function: target,
+                    specialization,
+                    captures,
+                } => {
+                    let target_instance = environment.instances[&SpecializationKey {
+                        function: *target,
+                        substitutions: specialization.clone(),
+                    }];
+                    (
+                        environment.program.functions[target]
+                            .parameter_modes
+                            .as_slice(),
+                        environment.function_types[&target_instance].parameters[captures.len()..]
+                            .to_vec(),
+                    )
+                }
+                LayoutKind::Builtin {
+                    ty:
+                        crate::vm::VerificationType::Function {
+                            parameters,
+                            parameter_modes,
+                            ..
+                        },
+                } => (
+                    parameter_modes.as_slice(),
+                    parameters
+                        .iter()
+                        .map(|parameter| {
+                            native_verification_type(
+                                environment.program,
+                                environment.layouts,
+                                parameter,
+                                None,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                ),
+                _ => {
+                    return Err(native_error(format!(
+                        "dynamic call in `{}` requires a callable layout",
+                        metadata.name
+                    )));
+                }
+            };
             let (arguments, consumed) = shared_call_arguments(
                 arguments,
-                &environment.program.functions[target].parameter_modes,
+                modes,
+                &expected,
+                environment.layouts,
                 value_types,
                 storage_hints,
                 &mut result,
@@ -2675,7 +3185,7 @@ fn lower_shared_instruction(
                 NativeType::Object(layout)
                     if matches!(
                         environment.physical_layouts.get(layout).kind,
-                        PhysicalKind::Buffer { .. }
+                        PhysicalKind::Buffer { .. } | PhysicalKind::Bytes { .. }
                     ) =>
                 {
                     None
@@ -2707,6 +3217,45 @@ fn lower_shared_instruction(
                 return Err(native_error(format!(
                     "native compilation does not support reference field `{field}`"
                 )));
+            }
+            if ty(*object) == NativeType::String && matches!(field.as_str(), "utf8" | "value") {
+                let bytes = environment
+                    .layouts
+                    .builtin(&crate::vm::VerificationType::Bytes)
+                    .ok_or_else(|| native_error("String byte storage has no native layout"))?;
+                value_types[destination.0 as usize] = NativeType::Object(bytes);
+                return Ok(one(ir::Instruction::StringToBytes {
+                    destination: *destination,
+                    source: *object,
+                }));
+            }
+            if ty(*object) == NativeType::Byte && field == "int" {
+                return Ok(one(ir::Instruction::IntegerExtend {
+                    destination: *destination,
+                    operand: *object,
+                }));
+            }
+            if ty(*object) == NativeType::CodePoint && field == "whitespace?" {
+                return Ok(one(ir::Instruction::RuntimeCall {
+                    destination: *destination,
+                    helper: "foster_code_point_whitespace",
+                    signature: ir::Signature {
+                        parameters: vec![NativeType::CodePoint],
+                        result: NativeType::Bool,
+                    },
+                    arguments: vec![*object],
+                }));
+            }
+            if ty(*object) == NativeType::CodePoint && field == "string" {
+                return Ok(one(ir::Instruction::RuntimeCall {
+                    destination: *destination,
+                    helper: "foster_code_point_string",
+                    signature: ir::Signature {
+                        parameters: vec![NativeType::CodePoint],
+                        result: NativeType::String,
+                    },
+                    arguments: vec![*object],
+                }));
             }
             let helper = native_field_helper(ty(*object), field)?;
             let arguments = vec![*object];
@@ -2748,6 +3297,15 @@ fn lower_shared_instruction(
                 arguments,
             }))
         }
+        ir::PortableInstruction::Builtin {
+            destination,
+            builtin,
+            ..
+        } => {
+            value_types[destination.0 as usize] =
+                native_intrinsic_type(builtin.descriptor().signature.result, environment.layouts)?;
+            Ok(one(instruction.clone()))
+        }
         ir::PortableInstruction::Assert { condition, message } => {
             Ok(one(ir::Instruction::Assert {
                 condition: *condition,
@@ -2761,19 +3319,63 @@ fn lower_shared_instruction(
 fn shared_call_arguments(
     arguments: &[ir::Value],
     modes: &[ParameterMode],
+    expected_types: &[NativeType],
+    layouts: &LayoutRegistry,
     value_types: &mut Vec<NativeType>,
     storage_hints: &mut Vec<Option<u16>>,
     instructions: &mut Vec<(ir::Instruction, Vec<ir::Value>)>,
 ) -> Result<(Vec<ir::Value>, Vec<ir::Value>), FosterError> {
-    if arguments.len() != modes.len() {
+    if arguments.len() != modes.len() || arguments.len() != expected_types.len() {
         return Err(native_error(
             "shared call ownership metadata has the wrong arity",
         ));
     }
     let mut lowered = Vec::with_capacity(arguments.len());
     let mut consumed = Vec::new();
-    for (argument, mode) in arguments.iter().zip(modes) {
+    for ((argument, mode), expected) in arguments.iter().zip(modes).zip(expected_types) {
         let ty = value_types[argument.0 as usize];
+        if callable_conversion(ty, *expected, layouts) {
+            let callable = allocate_shared_value(value_types, storage_hints, *expected);
+            instructions.push((
+                ir::Instruction::WrapCallable {
+                    destination: callable,
+                    source: *argument,
+                },
+                Vec::new(),
+            ));
+            lowered.push(callable);
+            if *mode == ParameterMode::Consume {
+                instructions.push((
+                    ir::Instruction::Portable(ir::PortableInstruction::Drop { value: *argument }),
+                    Vec::new(),
+                ));
+            }
+            continue;
+        }
+        if let Some(boxing) = erased_conversion(ty, *expected, layouts) {
+            let converted = allocate_shared_value(value_types, storage_hints, *expected);
+            instructions.push((
+                match boxing {
+                    ErasedConversion::Box => ir::Instruction::BoxValue {
+                        destination: converted,
+                        source: *argument,
+                    },
+                    ErasedConversion::Unbox => ir::Instruction::UnboxValue {
+                        destination: converted,
+                        source: *argument,
+                    },
+                },
+                Vec::new(),
+            ));
+            lowered.push(converted);
+            if *mode == ParameterMode::Consume {
+                instructions.push((
+                    ir::Instruction::Portable(ir::PortableInstruction::Drop { value: *argument }),
+                    Vec::new(),
+                ));
+            }
+            continue;
+        }
         if *mode == ParameterMode::Borrow && matches!(ty, NativeType::Object(_)) {
             let retained = allocate_shared_value(value_types, storage_hints, ty);
             instructions.push((
@@ -2794,9 +3396,47 @@ fn shared_call_arguments(
     Ok((lowered, consumed))
 }
 
+fn callable_conversion(actual: NativeType, expected: NativeType, layouts: &LayoutRegistry) -> bool {
+    let (NativeType::Object(actual), NativeType::Object(expected)) = (actual, expected) else {
+        return false;
+    };
+    matches!(layouts.get(actual).kind, LayoutKind::Closure { .. })
+        && matches!(
+            layouts.get(expected).kind,
+            LayoutKind::Builtin {
+                ty: crate::vm::VerificationType::Function { .. }
+            }
+        )
+}
+
+#[derive(Clone, Copy)]
+enum ErasedConversion {
+    Box,
+    Unbox,
+}
+
+fn erased_conversion(
+    actual: NativeType,
+    expected: NativeType,
+    layouts: &LayoutRegistry,
+) -> Option<ErasedConversion> {
+    let opaque = |ty| {
+        matches!(
+            ty,
+            NativeType::Object(layout) if matches!(layouts.get(layout).kind, LayoutKind::Opaque)
+        )
+    };
+    match (opaque(actual), opaque(expected)) {
+        (false, true) => Some(ErasedConversion::Box),
+        (true, false) => Some(ErasedConversion::Unbox),
+        _ => None,
+    }
+}
+
 fn shared_capture_arguments(
     captures: &[(crate::hir::CaptureMode, ir::Value)],
     expected_types: &[NativeType],
+    layouts: &LayoutRegistry,
     value_types: &mut Vec<NativeType>,
     storage_hints: &mut Vec<Option<u16>>,
     instructions: &mut Vec<(ir::Instruction, Vec<ir::Value>)>,
@@ -2809,6 +3449,48 @@ fn shared_capture_arguments(
     let mut consumed = Vec::new();
     for ((mode, value), expected) in captures.iter().zip(expected_types) {
         let ty = value_types[value.0 as usize];
+        if callable_conversion(ty, *expected, layouts) {
+            let callable = allocate_shared_value(value_types, storage_hints, *expected);
+            instructions.push((
+                ir::Instruction::WrapCallable {
+                    destination: callable,
+                    source: *value,
+                },
+                Vec::new(),
+            ));
+            lowered.push(callable);
+            if *mode == crate::hir::CaptureMode::Move {
+                instructions.push((
+                    ir::Instruction::Portable(ir::PortableInstruction::Drop { value: *value }),
+                    Vec::new(),
+                ));
+            }
+            continue;
+        }
+        if let Some(boxing) = erased_conversion(ty, *expected, layouts) {
+            let converted = allocate_shared_value(value_types, storage_hints, *expected);
+            instructions.push((
+                match boxing {
+                    ErasedConversion::Box => ir::Instruction::BoxValue {
+                        destination: converted,
+                        source: *value,
+                    },
+                    ErasedConversion::Unbox => ir::Instruction::UnboxValue {
+                        destination: converted,
+                        source: *value,
+                    },
+                },
+                Vec::new(),
+            ));
+            lowered.push(converted);
+            if *mode == crate::hir::CaptureMode::Move {
+                instructions.push((
+                    ir::Instruction::Portable(ir::PortableInstruction::Drop { value: *value }),
+                    Vec::new(),
+                ));
+            }
+            continue;
+        }
         match mode {
             crate::hir::CaptureMode::Move => {
                 lowered.push(*value);
@@ -2919,9 +3601,30 @@ fn lower_native_ir(
     builder: &mut FunctionBuilder<'_>,
     module: &mut ObjectModule,
     function: &ir::Function,
+    instance: &NativeInstance,
+    metadata: &BytecodeFunction,
     backend: &NativeBackend<'_>,
 ) -> Result<(), FosterError> {
     let pointer_type = module.target_config().pointer_type();
+    let mutable_parameter_offset = function
+        .parameters
+        .len()
+        .saturating_sub(metadata.mutable_parameters.len());
+    let mut mutable_parameter_homes = function.parameters[mutable_parameter_offset..]
+        .iter()
+        .zip(&metadata.mutable_parameters)
+        .filter_map(|(value, mutable)| {
+            mutable
+                .then(|| function.storage_hints[value.0 as usize])
+                .flatten()
+        })
+        .collect::<HashSet<_>>();
+    if backend.method_receivers.contains(&instance.key.function)
+        && let Some(receiver) = function.parameters.get(mutable_parameter_offset)
+        && let Some(home) = function.storage_hints[receiver.0 as usize]
+    {
+        mutable_parameter_homes.insert(home);
+    }
     let mut home_types = HashMap::<u16, NativeType>::new();
     for (value, home) in function.storage_hints.iter().enumerate() {
         if let Some(home) = home {
@@ -3057,11 +3760,14 @@ fn lower_native_ir(
             let result = lower_native_instruction(
                 builder,
                 module,
-                function,
                 instruction,
-                &values,
-                &homes,
-                backend,
+                NativeLowering {
+                    function,
+                    values: &values,
+                    homes: &homes,
+                    mutable_parameter_homes: &mutable_parameter_homes,
+                    backend,
+                },
             )?;
             let destinations = instruction.destinations();
             if let Some(destination) = destinations.first() {
@@ -3238,12 +3944,12 @@ fn native_type_from_value_layout(value: ValueLayout) -> NativeType {
 fn lower_native_instruction(
     builder: &mut FunctionBuilder<'_>,
     module: &mut ObjectModule,
-    function: &ir::Function,
     instruction: &ir::Instruction,
-    values: &HashMap<ir::Value, ClifValue>,
-    homes: &HashMap<u16, StackSlot>,
-    backend: &NativeBackend<'_>,
+    context: NativeLowering<'_, '_>,
 ) -> Result<Option<ClifValue>, FosterError> {
+    let function = context.function;
+    let values = context.values;
+    let backend = context.backend;
     let get = |value: &ir::Value| values[value];
     let result = match instruction {
         ir::Instruction::Constant { value, .. } => match value {
@@ -3318,6 +4024,146 @@ fn lower_native_instruction(
             let call = builder.ins().call(reference, &arguments);
             builder.inst_results(call)[0]
         }
+        ir::Instruction::WrapCallable {
+            destination,
+            source,
+        } => {
+            let NativeType::Object(callable_layout) = function.value_type(*destination) else {
+                return Err(native_error("callable wrapper has a non-object result"));
+            };
+            let NativeType::Object(environment_layout) = function.value_type(*source) else {
+                return Err(native_error(
+                    "callable wrapper has a non-object environment",
+                ));
+            };
+            if !matches!(
+                backend.objects.layouts.logical.get(environment_layout).kind,
+                LayoutKind::Closure { .. }
+            ) {
+                return Err(native_error(
+                    "callable environment is not a concrete closure",
+                ));
+            }
+            let PhysicalKind::Callable {
+                code_offset,
+                environment_offset,
+                release_offset,
+            } = backend.objects.layouts.physical.get(callable_layout).kind
+            else {
+                return Err(native_error("callable wrapper result has the wrong layout"));
+            };
+            let object = backend.objects.allocate(builder, module, callable_layout)?;
+            let code = module
+                .declare_func_in_func(backend.callable_thunks[&environment_layout], builder.func);
+            let code = builder
+                .ins()
+                .func_addr(module.target_config().pointer_type(), code);
+            let release = module
+                .declare_func_in_func(backend.release_thunks[&environment_layout], builder.func);
+            let release = builder
+                .ins()
+                .func_addr(module.target_config().pointer_type(), release);
+            let environment = get(source);
+            backend
+                .objects
+                .retain(builder, environment, environment_layout);
+            store_physical_value(builder, object, code_offset, code);
+            store_physical_value(builder, object, environment_offset, environment);
+            store_physical_value(builder, object, release_offset, release);
+            object
+        }
+        ir::Instruction::StringToBytes {
+            destination,
+            source,
+        } => {
+            let NativeType::Object(layout) = function.value_type(*destination) else {
+                return Err(native_error("String bytes require an object layout"));
+            };
+            let length = runtime_call(
+                builder,
+                module,
+                "foster_string_byte_length",
+                &ir::Signature {
+                    parameters: vec![NativeType::String],
+                    result: NativeType::Int,
+                },
+                &[get(source)],
+            )?;
+            let (object, data) =
+                allocate_native_bytes(builder, module, backend.objects, layout, length)?;
+            runtime_call(
+                builder,
+                module,
+                "foster_string_copy_bytes",
+                &ir::Signature {
+                    parameters: vec![NativeType::String, NativeType::Opaque],
+                    result: NativeType::Unit,
+                },
+                &[get(source), data],
+            )?;
+            object
+        }
+        ir::Instruction::BoxValue {
+            destination,
+            source,
+        } => {
+            let NativeType::Object(layout) = function.value_type(*destination) else {
+                return Err(native_error("erased box has a non-object layout"));
+            };
+            let PhysicalKind::Opaque {
+                value_offset,
+                release_offset,
+                ..
+            } = backend.objects.layouts.physical.get(layout).kind
+            else {
+                return Err(native_error("erased value has the wrong physical layout"));
+            };
+            let object = backend.objects.allocate(builder, module, layout)?;
+            let value = get(source);
+            store_physical_value(builder, object, value_offset, value);
+            let release = if let NativeType::Object(source_layout) = function.value_type(*source)
+                && backend.objects.layouts.is_managed(source_layout)
+            {
+                backend.objects.retain(builder, value, source_layout);
+                let release = module
+                    .declare_func_in_func(backend.release_thunks[&source_layout], builder.func);
+                builder
+                    .ins()
+                    .func_addr(module.target_config().pointer_type(), release)
+            } else {
+                builder
+                    .ins()
+                    .iconst(module.target_config().pointer_type(), 0)
+            };
+            store_physical_value(builder, object, release_offset, release);
+            object
+        }
+        ir::Instruction::UnboxValue {
+            destination,
+            source,
+        } => {
+            let NativeType::Object(layout) = function.value_type(*source) else {
+                return Err(native_error("erased box source has a non-object layout"));
+            };
+            let PhysicalKind::Opaque { value_offset, .. } =
+                backend.objects.layouts.physical.get(layout).kind
+            else {
+                return Err(native_error("unboxed value has the wrong physical layout"));
+            };
+            let ty = function.value_type(*destination);
+            let value = builder.ins().load(
+                cranelift_type(ty, module.target_config().pointer_type()),
+                MemFlagsData::trusted(),
+                get(source),
+                value_offset as i32,
+            );
+            if let NativeType::Object(value_layout) = ty
+                && backend.objects.layouts.is_managed(value_layout)
+            {
+                backend.objects.retain(builder, value, value_layout);
+            }
+            value
+        }
         ir::Instruction::RuntimeCall {
             helper,
             signature,
@@ -3347,15 +4193,7 @@ fn lower_native_instruction(
             return Ok(None);
         }
         ir::Instruction::Portable(instruction) => {
-            return lower_portable_native(
-                builder,
-                module,
-                function,
-                instruction,
-                values,
-                homes,
-                backend,
-            );
+            return lower_portable_native(builder, module, instruction, context);
         }
     };
     Ok(Some(result))
@@ -3364,12 +4202,16 @@ fn lower_native_instruction(
 fn lower_portable_native(
     builder: &mut FunctionBuilder<'_>,
     module: &mut ObjectModule,
-    function: &ir::Function,
     instruction: &ir::PortableInstruction,
-    values: &HashMap<ir::Value, ClifValue>,
-    homes: &HashMap<u16, StackSlot>,
-    backend: &NativeBackend<'_>,
+    context: NativeLowering<'_, '_>,
 ) -> Result<Option<ClifValue>, FosterError> {
+    let NativeLowering {
+        function,
+        values,
+        homes,
+        mutable_parameter_homes,
+        backend,
+    } = context;
     let objects = backend.objects;
     let get = |value: &ir::Value| values[value];
     match instruction {
@@ -3401,7 +4243,13 @@ fn lower_portable_native(
                 return Err(native_error("copy-on-write requires a native object"));
             };
             let physical = objects.layouts.physical.get(layout);
+            let source_value = *source;
             let source = get(source);
+            if function.storage_hints[source_value.0 as usize]
+                .is_some_and(|home| mutable_parameter_homes.contains(&home))
+            {
+                return Ok(Some(source));
+            }
             let copied = match &physical.kind {
                 PhysicalKind::Record { fields } => {
                     let copied = objects.allocate(builder, module, layout)?;
@@ -3483,14 +4331,48 @@ fn lower_portable_native(
             let NativeType::Object(layout) = function.value_type(*object) else {
                 unreachable!()
             };
-            let (address, element) = native_buffer_element_address(
-                builder,
-                module,
-                get(object),
-                get(index),
-                layout,
-                objects,
-            )?;
+            let (address, element) = match objects.layouts.physical.get(layout).kind {
+                PhysicalKind::Bytes {
+                    data_offset,
+                    length_offset,
+                } => {
+                    let word = module.target_config().pointer_type();
+                    let length = builder.ins().load(
+                        word,
+                        MemFlagsData::trusted(),
+                        get(object),
+                        length_offset as i32,
+                    );
+                    let outside =
+                        builder
+                            .ins()
+                            .icmp(IntCC::UnsignedGreaterThanOrEqual, get(index), length);
+                    builder.ins().trapnz(outside, TrapCode::HEAP_OUT_OF_BOUNDS);
+                    let data = builder.ins().load(
+                        word,
+                        MemFlagsData::trusted(),
+                        get(object),
+                        data_offset as i32,
+                    );
+                    (
+                        builder.ins().iadd(data, get(index)),
+                        ValueLayout {
+                            size: 1,
+                            align: 1,
+                            kind: ScalarKind::I8,
+                            pointee: None,
+                        },
+                    )
+                }
+                _ => native_buffer_element_address(
+                    builder,
+                    module,
+                    get(object),
+                    get(index),
+                    layout,
+                    objects,
+                )?,
+            };
             let value = builder.ins().load(
                 physical_cranelift_type(element.kind, module.target_config().pointer_type()),
                 MemFlagsData::trusted(),
@@ -3806,6 +4688,67 @@ fn lower_portable_native(
                     "dynamic call requires a concrete closure layout",
                 ));
             };
+            if let LayoutKind::Builtin {
+                ty:
+                    crate::vm::VerificationType::Function {
+                        parameters, result, ..
+                    },
+            } = &objects.layouts.logical.get(layout).kind
+            {
+                let PhysicalKind::Callable {
+                    code_offset,
+                    environment_offset,
+                    ..
+                } = objects.layouts.physical.get(layout).kind
+                else {
+                    return Err(native_error("callable has the wrong physical layout"));
+                };
+                let callable = get(callee);
+                let word = module.target_config().pointer_type();
+                let code =
+                    builder
+                        .ins()
+                        .load(word, MemFlagsData::trusted(), callable, code_offset as i32);
+                let environment = builder.ins().load(
+                    word,
+                    MemFlagsData::trusted(),
+                    callable,
+                    environment_offset as i32,
+                );
+                let mut lowered = Vec::with_capacity(arguments.len() + 1);
+                lowered.push(environment);
+                lowered.extend(arguments.iter().map(get));
+                let mut abi_parameters = vec![NativeType::Opaque];
+                abi_parameters.extend(
+                    parameters
+                        .iter()
+                        .map(|parameter| {
+                            native_verification_type(
+                                objects.layouts.program,
+                                objects.layouts.logical,
+                                parameter,
+                                None,
+                            )
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                );
+                let result = native_verification_type(
+                    objects.layouts.program,
+                    objects.layouts.logical,
+                    result,
+                    None,
+                )?;
+                let signature = signature(
+                    module,
+                    &ir::Signature {
+                        parameters: abi_parameters,
+                        result,
+                    },
+                );
+                let signature = builder.func.import_signature(signature);
+                let call = builder.ins().call_indirect(signature, code, &lowered);
+                return Ok(Some(builder.inst_results(call)[0]));
+            }
             let LayoutKind::Closure {
                 function: target,
                 specialization,
@@ -3862,6 +4805,73 @@ fn lower_portable_native(
             let NativeType::Object(layout) = function.value_type(*object) else {
                 return Err(native_error("native field load requires a Foster object"));
             };
+            if matches!(
+                objects.layouts.logical.get(layout).kind,
+                LayoutKind::Builtin {
+                    ty: crate::vm::VerificationType::Bytes
+                }
+            ) {
+                let (data_offset, length_offset) = native_bytes_layout(layout, objects)?;
+                let word = module.target_config().pointer_type();
+                let length = builder.ins().load(
+                    word,
+                    MemFlagsData::trusted(),
+                    get(object),
+                    length_offset as i32,
+                );
+                let result = match field.as_str() {
+                    "empty?" => builder.ins().icmp_imm_s(IntCC::Equal, length, 0),
+                    "length" => length,
+                    "head" => {
+                        let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
+                        builder.ins().trapnz(empty, TrapCode::HEAP_OUT_OF_BOUNDS);
+                        let data = builder.ins().load(
+                            word,
+                            MemFlagsData::trusted(),
+                            get(object),
+                            data_offset as i32,
+                        );
+                        builder
+                            .ins()
+                            .load(types::I8, MemFlagsData::trusted(), data, 0)
+                    }
+                    "rest" => native_bytes_tail(builder, module, get(object), layout, objects)?,
+                    _ => return Err(native_error(format!("native Bytes has no field `{field}`"))),
+                };
+                return Ok(Some(result));
+            }
+            if matches!(
+                objects.layouts.logical.get(layout).kind,
+                LayoutKind::Builtin {
+                    ty: crate::vm::VerificationType::ByteBuffer
+                }
+            ) {
+                let (_, length_offset, capacity_offset, _) = native_buffer_layout(layout, objects)?;
+                let offset = match field.as_str() {
+                    "length" => length_offset,
+                    "capacity" => capacity_offset,
+                    "empty?" => {
+                        let length = builder.ins().load(
+                            module.target_config().pointer_type(),
+                            MemFlagsData::trusted(),
+                            get(object),
+                            length_offset as i32,
+                        );
+                        return Ok(Some(builder.ins().icmp_imm_s(IntCC::Equal, length, 0)));
+                    }
+                    _ => {
+                        return Err(native_error(format!(
+                            "native ByteBuffer has no field `{field}`"
+                        )));
+                    }
+                };
+                return Ok(Some(builder.ins().load(
+                    module.target_config().pointer_type(),
+                    MemFlagsData::trusted(),
+                    get(object),
+                    offset as i32,
+                )));
+            }
             if matches!(
                 objects.layouts.logical.get(layout).kind,
                 LayoutKind::Builtin {
@@ -4015,6 +5025,100 @@ fn lower_portable_native(
                         .trapnz(invalid, TrapCode::BAD_CONVERSION_TO_INTEGER);
                     builder.ins().ireduce(types::I8, lowered[0])
                 }
+                NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesFromList) => {
+                    let NativeType::Object(result_layout) = function.value_type(*destination)
+                    else {
+                        return Err(native_error("Bytes result has no object layout"));
+                    };
+                    let NativeType::Object(source_layout) = function.value_type(arguments[0])
+                    else {
+                        return Err(native_error("Bytes.from requires a native byte list"));
+                    };
+                    let (source_data, length, _, element) =
+                        native_buffer_layout(source_layout, objects)?;
+                    if element.kind != ScalarKind::I8 {
+                        return Err(native_error("Bytes.from requires List<Byte>"));
+                    }
+                    let source_data = builder.ins().load(
+                        module.target_config().pointer_type(),
+                        MemFlagsData::trusted(),
+                        lowered[0],
+                        source_data as i32,
+                    );
+                    let length = builder.ins().load(
+                        module.target_config().pointer_type(),
+                        MemFlagsData::trusted(),
+                        lowered[0],
+                        length as i32,
+                    );
+                    let (object, data) =
+                        allocate_native_bytes(builder, module, objects, result_layout, length)?;
+                    copy_native_bytes(builder, module, data, source_data, length)?;
+                    object
+                }
+                NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesToList) => {
+                    let NativeType::Object(result_layout) = function.value_type(*destination)
+                    else {
+                        return Err(native_error("byte list result has no object layout"));
+                    };
+                    let NativeType::Object(source_layout) = function.value_type(arguments[0])
+                    else {
+                        return Err(native_error("Bytes.list requires native Bytes"));
+                    };
+                    let (source_data_offset, source_length_offset) =
+                        native_bytes_layout(source_layout, objects)?;
+                    let source_data = builder.ins().load(
+                        module.target_config().pointer_type(),
+                        MemFlagsData::trusted(),
+                        lowered[0],
+                        source_data_offset as i32,
+                    );
+                    let length = builder.ins().load(
+                        module.target_config().pointer_type(),
+                        MemFlagsData::trusted(),
+                        lowered[0],
+                        source_length_offset as i32,
+                    );
+                    let (object, data) = allocate_native_byte_buffer(
+                        builder,
+                        module,
+                        objects,
+                        result_layout,
+                        length,
+                    )?;
+                    copy_native_bytes(builder, module, data, source_data, length)?;
+                    object
+                }
+                NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesDecodeUtf8) => {
+                    let NativeType::Object(source_layout) = function.value_type(arguments[0])
+                    else {
+                        return Err(native_error("UTF-8 decoding requires native Bytes"));
+                    };
+                    let (data_offset, length_offset) = native_bytes_layout(source_layout, objects)?;
+                    let word = module.target_config().pointer_type();
+                    let data = builder.ins().load(
+                        word,
+                        MemFlagsData::trusted(),
+                        lowered[0],
+                        data_offset as i32,
+                    );
+                    let length = builder.ins().load(
+                        word,
+                        MemFlagsData::trusted(),
+                        lowered[0],
+                        length_offset as i32,
+                    );
+                    runtime_call(
+                        builder,
+                        module,
+                        "foster_string_from_utf8",
+                        &ir::Signature {
+                            parameters: vec![NativeType::Opaque, NativeType::Int],
+                            result: NativeType::String,
+                        },
+                        &[data, length],
+                    )?
+                }
                 NativeIntrinsic::Runtime(helper) => runtime_call(
                     builder,
                     module,
@@ -4074,6 +5178,127 @@ fn native_buffer_layout(
             "native list operation requires a buffer layout",
         )),
     }
+}
+
+fn native_bytes_layout(
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<(u32, u32), FosterError> {
+    match objects.layouts.physical.get(layout).kind {
+        PhysicalKind::Bytes {
+            data_offset,
+            length_offset,
+        } => Ok((data_offset, length_offset)),
+        ref kind => Err(native_error(format!(
+            "native Bytes l{} has the wrong physical layout {kind:?}",
+            layout.0
+        ))),
+    }
+}
+
+fn allocate_byte_data(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    length: ClifValue,
+) -> Result<ClifValue, FosterError> {
+    let word = module.target_config().pointer_type();
+    let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
+    let one = builder.ins().iconst(word, 1);
+    let size = builder.ins().select(empty, one, length);
+    let align = builder.ins().iconst(types::I64, 1);
+    runtime_call(
+        builder,
+        module,
+        "foster_alloc",
+        &ir::Signature {
+            parameters: vec![NativeType::Int, NativeType::Int],
+            result: NativeType::Opaque,
+        },
+        &[size, align],
+    )
+}
+
+fn allocate_native_bytes(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    objects: ObjectRuntime<'_>,
+    layout: LayoutId,
+    length: ClifValue,
+) -> Result<(ClifValue, ClifValue), FosterError> {
+    let (data_offset, length_offset) = native_bytes_layout(layout, objects)?;
+    let object = objects.allocate(builder, module, layout)?;
+    let data = allocate_byte_data(builder, module, length)?;
+    store_physical_value(builder, object, data_offset, data);
+    store_physical_value(builder, object, length_offset, length);
+    Ok((object, data))
+}
+
+fn allocate_native_byte_buffer(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    objects: ObjectRuntime<'_>,
+    layout: LayoutId,
+    length: ClifValue,
+) -> Result<(ClifValue, ClifValue), FosterError> {
+    let (data_offset, length_offset, capacity_offset, element) =
+        native_buffer_layout(layout, objects)?;
+    if element.size != 1 {
+        return Err(native_error(
+            "byte buffer allocation requires one-byte elements",
+        ));
+    }
+    let object = objects.allocate(builder, module, layout)?;
+    let data = allocate_byte_data(builder, module, length)?;
+    store_physical_value(builder, object, data_offset, data);
+    store_physical_value(builder, object, length_offset, length);
+    store_physical_value(builder, object, capacity_offset, length);
+    Ok((object, data))
+}
+
+fn copy_native_bytes(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    destination: ClifValue,
+    source: ClifValue,
+    length: ClifValue,
+) -> Result<(), FosterError> {
+    runtime_call(
+        builder,
+        module,
+        "foster_copy_bytes",
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque, NativeType::Opaque, NativeType::Int],
+            result: NativeType::Unit,
+        },
+        &[destination, source, length],
+    )?;
+    Ok(())
+}
+
+fn native_bytes_tail(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    source: ClifValue,
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let (data_offset, length_offset) = native_bytes_layout(layout, objects)?;
+    let word = module.target_config().pointer_type();
+    let source_data = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), source, data_offset as i32);
+    let length = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), source, length_offset as i32);
+    let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
+    let zero = builder.ins().iconst(word, 0);
+    let decremented = builder.ins().iadd_imm_s(length, -1);
+    let tail_length = builder.ins().select(empty, zero, decremented);
+    let (target, target_data) =
+        allocate_native_bytes(builder, module, objects, layout, tail_length)?;
+    let first_tail_byte = builder.ins().iadd_imm_s(source_data, 1);
+    copy_native_bytes(builder, module, target_data, first_tail_byte, tail_length)?;
+    Ok(target)
 }
 
 fn allocate_native_buffer(
@@ -4613,6 +5838,18 @@ fn lower_binary(
     right: ClifValue,
 ) -> Result<ClifValue, FosterError> {
     if operand_type == NativeType::String {
+        if operator == BinaryOp::Add {
+            return runtime_call(
+                builder,
+                module,
+                "foster_string_concat",
+                &ir::Signature {
+                    parameters: vec![NativeType::String, NativeType::String],
+                    result: NativeType::String,
+                },
+                &[left, right],
+            );
+        }
         let equal = runtime_call(
             builder,
             module,
@@ -4785,7 +6022,7 @@ fn runtime_strings(program: &Program) -> (Vec<String>, HashMap<u16, u64>) {
     let mut values = Vec::new();
     let mut indices = HashMap::new();
     for (index, constant) in program.constants.iter().enumerate() {
-        if let Constant::String(value) = constant {
+        if let Constant::String(value) | Constant::Symbol(value) = constant {
             indices.insert(index as u16, values.len() as u64);
             values.push(value.clone());
         }
@@ -4971,6 +6208,66 @@ extern "C" fn foster_string_head(value: usize) -> u32 {{
     unsafe {{ string_value(value).chars().next() }}
         .map(|value| value as u32)
         .unwrap_or_else(|| bounds_error("string", 0, 0))
+}}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_string_rest(value: usize) -> usize {{
+    let text = unsafe {{ string_value(value) }};
+    let offset = text.chars().next().map_or(0, char::len_utf8);
+    Box::into_raw(Box::new(text[offset..].to_owned())) as usize
+}}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_string_whitespace(value: usize) -> u8 {{
+    u8::from(unsafe {{ string_value(value).chars().all(char::is_whitespace) }})
+}}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_string_concat(left: usize, right: usize) -> usize {{
+    let mut result = unsafe {{ string_value(left).clone() }};
+    result.push_str(unsafe {{ string_value(right) }});
+    Box::into_raw(Box::new(result)) as usize
+}}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_string_byte_length(value: usize) -> i64 {{
+    unsafe {{ string_value(value).len() as i64 }}
+}}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_string_copy_bytes(value: usize, destination: usize) -> u8 {{
+    let bytes = unsafe {{ string_value(value).as_bytes() }};
+    unsafe {{ std::ptr::copy_nonoverlapping(bytes.as_ptr(), destination as *mut u8, bytes.len()) }};
+    0
+}}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_string_from_utf8(data: usize, length: i64) -> usize {{
+    let length = usize::try_from(length).unwrap_or_else(|_| std::process::abort());
+    let bytes = unsafe {{ std::slice::from_raw_parts(data as *const u8, length) }};
+    let text = std::str::from_utf8(bytes).unwrap_or_else(|_| {{
+        eprintln!("error: Bytes are not valid UTF-8");
+        std::process::exit(2);
+    }});
+    Box::into_raw(Box::new(text.to_owned())) as usize
+}}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_copy_bytes(destination: usize, source: usize, length: i64) -> u8 {{
+    let length = usize::try_from(length).unwrap_or_else(|_| std::process::abort());
+    unsafe {{ std::ptr::copy_nonoverlapping(source as *const u8, destination as *mut u8, length) }};
+    0
+}}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_code_point_whitespace(value: u32) -> u8 {{
+    u8::from(char::from_u32(value).is_some_and(char::is_whitespace))
+}}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_code_point_string(value: u32) -> usize {{
+    let value = char::from_u32(value).unwrap_or(char::REPLACEMENT_CHARACTER);
+    Box::into_raw(Box::new(value.to_string())) as usize
 }}
 
 #[unsafe(no_mangle)]

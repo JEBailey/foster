@@ -1,0 +1,10 @@
+import core.byte
+import core.bytes
+import core.bytes.buffer
+
+func main() -> String {
+    let output = ByteBuffer.empty()
+    output.push(Byte.unchecked(111))
+    output.extend("k".utf8)
+    output.snapshot().hex()
+}

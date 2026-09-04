@@ -228,9 +228,11 @@ pub enum PhysicalKind {
     Callable {
         code_offset: u32,
         environment_offset: u32,
+        release_offset: u32,
     },
     Opaque {
         value_offset: u32,
+        release_offset: u32,
         value_size: u32,
         value_align: u16,
     },
@@ -358,16 +360,20 @@ impl PhysicalLayout {
             PhysicalKind::Callable {
                 code_offset,
                 environment_offset,
+                release_offset,
             } => {
                 push_u32(&mut bytes, *code_offset);
                 push_u32(&mut bytes, *environment_offset);
+                push_u32(&mut bytes, *release_offset);
             }
             PhysicalKind::Opaque {
                 value_offset,
+                release_offset,
                 value_size,
                 value_align,
             } => {
                 push_u32(&mut bytes, *value_offset);
+                push_u32(&mut bytes, *release_offset);
                 push_u32(&mut bytes, *value_size);
                 push_u16(&mut bytes, *value_align);
                 push_u16(&mut bytes, 0);
@@ -850,7 +856,8 @@ fn builtin_layout(
         VerificationType::Function { .. } => {
             let code_offset = align_up(header.size, pointer.align)?;
             let environment_offset = checked_add(code_offset, pointer.size)?;
-            let end = checked_add(environment_offset, pointer.size)?;
+            let release_offset = checked_add(environment_offset, pointer.size)?;
+            let end = checked_add(release_offset, pointer.size)?;
             finish(
                 id,
                 header,
@@ -859,6 +866,7 @@ fn builtin_layout(
                 PhysicalKind::Callable {
                     code_offset,
                     environment_offset,
+                    release_offset,
                 },
                 DropPlan::Runtime,
             )
@@ -881,13 +889,18 @@ fn opaque_layout(
         .max(target.float64_align())
         .max(u16::from(target.pointer_align));
     let value_offset = align_up(header.size, value_align)?;
+    let release_offset = align_up(
+        checked_add(value_offset, value_size)?,
+        u16::from(target.pointer_align),
+    )?;
     finish(
         id,
         header,
-        checked_add(value_offset, value_size)?,
+        checked_add(release_offset, u32::from(target.pointer_size))?,
         header.align.max(value_align),
         PhysicalKind::Opaque {
             value_offset,
+            release_offset,
             value_size,
             value_align,
         },
@@ -1135,21 +1148,27 @@ fn validate_kind(layout: &PhysicalLayout, target: TargetLayout) -> Result<(), La
         PhysicalKind::Callable {
             code_offset,
             environment_offset,
+            release_offset,
         } => {
             word(*code_offset, "callable code")?;
-            word(*environment_offset, "callable environment")
+            word(*environment_offset, "callable environment")?;
+            word(*release_offset, "callable environment release")
         }
         PhysicalKind::Opaque {
             value_offset,
+            release_offset,
             value_size,
             value_align,
-        } => validate_slot(
-            layout,
-            *value_offset,
-            *value_size,
-            *value_align,
-            "opaque payload",
-        ),
+        } => {
+            validate_slot(
+                layout,
+                *value_offset,
+                *value_size,
+                *value_align,
+                "opaque payload",
+            )?;
+            word(*release_offset, "opaque payload release")
+        }
     }
 }
 

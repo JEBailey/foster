@@ -45,20 +45,26 @@ fn compiles_lossless_integer_widening_to_an_int_result() {
 }
 
 #[test]
-fn rejects_unsupported_reachable_types_with_actionable_guidance() {
+fn compiles_symbol_literals_with_the_immutable_text_abi() {
     let compilation = foster::compile(r#"func main() -> Symbol { :hello }"#).unwrap();
-    let error = compile_object(&compilation, CompileOptions::default()).unwrap_err();
+    let artifact = compile_object(&compilation, CompileOptions::default()).unwrap();
+    assert!(!artifact.bytes.is_empty());
+    assert_eq!(artifact.result, NativeType::String);
+
+    let executable = std::env::temp_dir().join(format!(
+        "foster-native-symbol-test-{}{}",
+        std::process::id(),
+        std::env::consts::EXE_SUFFIX
+    ));
+    build_executable(&compilation, &executable, CompileOptions::default()).unwrap();
+    let output = std::process::Command::new(&executable).output().unwrap();
+    let _ = std::fs::remove_file(&executable);
     assert!(
-        error.message.contains("does not yet support type"),
-        "{error}"
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    assert!(
-        error
-            .help
-            .as_deref()
-            .is_some_and(|help| help.contains("without `--native`")),
-        "{error:?}"
-    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "hello");
 }
 
 #[test]
@@ -268,6 +274,70 @@ func main() -> Int {
 }
 
 #[test]
+fn lowers_erased_callable_parameters_through_uniform_thunks() {
+    let compilation = foster::compile(
+        r#"
+func apply(value: Int, operation: func(Int) -> Int) -> Int {
+    operation(value)
+}
+
+func main() -> Int {
+    let offset = 40
+    let add = [copy offset] (value: Int) -> offset + value
+    let double = (value: Int) -> value * 2
+    assert(apply(21, double) == 42)
+    apply(2, add)
+}
+"#,
+    )
+    .unwrap();
+    let executable = std::env::temp_dir().join(format!(
+        "foster-native-callable-test-{}{}",
+        std::process::id(),
+        std::env::consts::EXE_SUFFIX
+    ));
+    build_executable(&compilation, &executable, CompileOptions::default()).unwrap();
+    let output = std::process::Command::new(&executable).output().unwrap();
+    let _ = std::fs::remove_file(&executable);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+}
+
+#[test]
+fn lowers_erased_union_arguments_through_owned_boxes() {
+    let compilation = foster::compile(
+        r#"
+type Scalar = String | Int
+
+func count(value: Scalar) -> Int { 1 }
+
+func main() -> Int {
+    count("Foster") + count(42)
+}
+"#,
+    )
+    .unwrap();
+    let executable = std::env::temp_dir().join(format!(
+        "foster-native-erased-test-{}{}",
+        std::process::id(),
+        std::env::consts::EXE_SUFFIX
+    ));
+    build_executable(&compilation, &executable, CompileOptions::default()).unwrap();
+    let output = std::process::Command::new(&executable).output().unwrap();
+    let _ = std::fs::remove_file(&executable);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "2");
+}
+
+#[test]
 fn lowers_native_lists_and_core_list_algorithms() {
     let compilation = foster::compile(
         r#"
@@ -289,6 +359,8 @@ func main() -> Int {
     assert(Byte.valid(255))
     assert(!Byte.valid(256))
     assert(Byte.unchecked(42) == Byte.unchecked(42))
+    let add = (total: Int, value: Int) -> total + value
+    assert(values.fold(0, add) == 42)
     branch values.last() {
         Option.Some(value) -> value + 30
         Option.None -> 0
@@ -312,4 +384,77 @@ func main() -> Int {
         String::from_utf8_lossy(&output.stderr)
     );
     assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+}
+
+#[test]
+fn lowers_string_algorithms_and_descriptor_backed_bytes() {
+    let compilation = foster::compile(
+        r#"
+import core.byte
+import core.bytes
+import core.result
+
+func main() -> String {
+    let encoded = "Foster λ".utf8
+    assert(encoded.length == 9)
+    assert(encoded.head == Byte.unchecked(70))
+    assert(encoded.equal?("Foster λ".utf8))
+    assert(!encoded.equal?("Foster".utf8))
+    let decoded = branch String.from_utf8(encoded) {
+        Result.Ok(value) -> value
+        Result.Error(_) -> "invalid"
+    }
+    decoded + "!"
+}
+
+"#,
+    )
+    .unwrap();
+    let executable = std::env::temp_dir().join(format!(
+        "foster-native-bytes-test-{}{}",
+        std::process::id(),
+        std::env::consts::EXE_SUFFIX
+    ));
+    build_executable(&compilation, &executable, CompileOptions::default()).unwrap();
+    let output = std::process::Command::new(&executable).output().unwrap();
+    let _ = std::fs::remove_file(&executable);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "Foster λ!");
+}
+
+#[test]
+fn lowers_foster_written_byte_buffers_over_native_lists() {
+    let compilation = foster::compile(
+        r#"
+import core.byte
+import core.bytes
+import core.bytes.buffer
+
+func main() -> String {
+    let output = ByteBuffer.empty()
+    output.push(Byte.unchecked(111))
+    output.extend("k".utf8)
+    output.snapshot().hex()
+}
+"#,
+    )
+    .unwrap();
+    let executable = std::env::temp_dir().join(format!(
+        "foster-native-byte-buffer-test-{}{}",
+        std::process::id(),
+        std::env::consts::EXE_SUFFIX
+    ));
+    build_executable(&compilation, &executable, CompileOptions::default()).unwrap();
+    let output = std::process::Command::new(&executable).output().unwrap();
+    let _ = std::fs::remove_file(&executable);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "6f6b");
 }
