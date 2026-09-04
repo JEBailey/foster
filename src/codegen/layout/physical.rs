@@ -119,11 +119,29 @@ pub enum ScalarKind {
     Pointer,
 }
 
+/// Semantic interpretation used by the native runtime when formatting a scalar slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ValueSemantic {
+    Unit = 0,
+    Bool = 1,
+    Integer = 2,
+    Float = 3,
+    CodePoint = 4,
+    Byte = 5,
+    String = 6,
+    Symbol = 7,
+    Object = 8,
+    Reference = 9,
+    Opaque = 10,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ValueLayout {
     pub size: u32,
     pub align: u16,
     pub kind: ScalarKind,
+    pub semantic: ValueSemantic,
     /// The object descriptor expected by a pointer value, when statically known.
     pub pointee: Option<LayoutId>,
 }
@@ -191,9 +209,11 @@ pub struct DropField {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PhysicalKind {
     Record {
+        name: String,
         fields: Vec<FieldLayout>,
     },
     Variant {
+        name: String,
         tag_offset: u32,
         payload_offset: u32,
         payload_size: u32,
@@ -220,6 +240,7 @@ pub enum PhysicalKind {
         length_offset: u32,
         capacity_offset: u32,
         element: ValueLayout,
+        mutable: bool,
     },
     Handle {
         handle_offset: u32,
@@ -233,6 +254,7 @@ pub enum PhysicalKind {
     Opaque {
         value_offset: u32,
         release_offset: u32,
+        semantic_offset: u32,
         value_size: u32,
         value_align: u16,
     },
@@ -273,7 +295,7 @@ impl PhysicalLayout {
         };
         let mut bytes = Vec::new();
         bytes.extend_from_slice(b"FLYT");
-        push_u16(&mut bytes, 1);
+        push_u16(&mut bytes, 2);
         push_u16(&mut bytes, kind);
         push_u32(&mut bytes, self.id.0);
         push_u32(&mut bytes, self.size);
@@ -284,14 +306,19 @@ impl PhysicalLayout {
         push_u32(&mut bytes, self.header.strong_count_offset);
         push_u32(&mut bytes, self.header.flags_offset);
         match &self.kind {
-            PhysicalKind::Record { fields } => push_fields(&mut bytes, fields),
+            PhysicalKind::Record { name, fields } => {
+                push_string(&mut bytes, name);
+                push_fields(&mut bytes, fields);
+            }
             PhysicalKind::Variant {
+                name,
                 tag_offset,
                 payload_offset,
                 payload_size,
                 payload_align,
                 alternatives,
             } => {
+                push_string(&mut bytes, name);
                 push_u32(&mut bytes, *tag_offset);
                 push_u32(&mut bytes, *payload_offset);
                 push_u32(&mut bytes, *payload_size);
@@ -299,6 +326,7 @@ impl PhysicalLayout {
                 push_u16(&mut bytes, 0);
                 push_u32(&mut bytes, alternatives.len() as u32);
                 for alternative in alternatives {
+                    push_string(&mut bytes, &alternative.name);
                     push_u32(&mut bytes, alternative.tag);
                     push_u32(&mut bytes, alternative.payload_size);
                     push_u16(&mut bytes, alternative.payload_align);
@@ -344,11 +372,14 @@ impl PhysicalLayout {
                 length_offset,
                 capacity_offset,
                 element,
+                mutable,
             } => {
                 push_u32(&mut bytes, *data_offset);
                 push_u32(&mut bytes, *length_offset);
                 push_u32(&mut bytes, *capacity_offset);
                 push_value(&mut bytes, *element);
+                bytes.push(u8::from(*mutable));
+                bytes.extend_from_slice(&[0; 3]);
             }
             PhysicalKind::Handle {
                 handle_offset,
@@ -369,11 +400,13 @@ impl PhysicalLayout {
             PhysicalKind::Opaque {
                 value_offset,
                 release_offset,
+                semantic_offset,
                 value_size,
                 value_align,
             } => {
                 push_u32(&mut bytes, *value_offset);
                 push_u32(&mut bytes, *release_offset);
+                push_u32(&mut bytes, *semantic_offset);
                 push_u32(&mut bytes, *value_size);
                 push_u16(&mut bytes, *value_align);
                 push_u16(&mut bytes, 0);
@@ -426,6 +459,7 @@ fn push_fields(bytes: &mut Vec<u8>, fields: &[FieldLayout]) {
         push_value(bytes, field.value);
         bytes.push(ownership_tag(field.ownership));
         bytes.extend_from_slice(&[0; 3]);
+        push_string(bytes, &field.name);
     }
 }
 
@@ -439,8 +473,13 @@ fn push_value(bytes: &mut Vec<u8>, value: ValueLayout) {
         ScalarKind::F64 => 3,
         ScalarKind::Pointer => 4,
     });
-    bytes.push(0);
+    bytes.push(value.semantic as u8);
     push_u32(bytes, value.pointee.map_or(u32::MAX, |layout| layout.0));
+}
+
+fn push_string(bytes: &mut Vec<u8>, value: &str) {
+    push_u32(bytes, value.len() as u32);
+    bytes.extend_from_slice(value.as_bytes());
 }
 
 fn ownership_tag(ownership: Ownership) -> u8 {
@@ -504,7 +543,7 @@ impl PhysicalRegistry {
     }
 
     pub fn record_field(&self, id: LayoutId, slot: u32) -> Option<&FieldLayout> {
-        let PhysicalKind::Record { fields } = &self.get(id).kind else {
+        let PhysicalKind::Record { fields, .. } = &self.get(id).kind else {
             return None;
         };
         fields.iter().find(|field| field.index == slot)
@@ -632,7 +671,7 @@ fn calculate_layout(
     kind: &LayoutKind,
 ) -> Result<PhysicalLayout, LayoutError> {
     match kind {
-        LayoutKind::Record { fields, .. } => {
+        LayoutKind::Record { name, fields, .. } => {
             let (fields, end, align) = place_fields(registry, target, header.size, fields)?;
             finish(
                 id,
@@ -640,12 +679,15 @@ fn calculate_layout(
                 end,
                 align,
                 PhysicalKind::Record {
+                    name: name.clone(),
                     fields: fields.clone(),
                 },
                 drop_plan(&fields),
             )
         }
-        LayoutKind::Variant { alternatives, .. } => {
+        LayoutKind::Variant {
+            name, alternatives, ..
+        } => {
             let tag_offset = align_up(header.size, 4)?;
             let after_tag = checked_add(tag_offset, 4)?;
             let mut lowered = Vec::with_capacity(alternatives.len());
@@ -705,6 +747,7 @@ fn calculate_layout(
                 end,
                 header.align.max(payload_align),
                 PhysicalKind::Variant {
+                    name: name.clone(),
                     tag_offset,
                     payload_offset,
                     payload_size,
@@ -715,7 +758,7 @@ fn calculate_layout(
             )
         }
         LayoutKind::Closure { captures, .. } => {
-            let pointer = pointer_value(target, None);
+            let pointer = pointer_value(target, None, ValueSemantic::Object);
             let code_offset = align_up(header.size, pointer.align)?;
             let signature_offset = checked_add(code_offset, pointer.size)?;
             let captures_start = checked_add(signature_offset, pointer.size)?;
@@ -744,7 +787,7 @@ fn place_layout(
     target: TargetLayout,
     header: ObjectHeader,
 ) -> Result<PhysicalLayout, LayoutError> {
-    let pointer = pointer_value(target, None);
+    let pointer = pointer_value(target, None, ValueSemantic::Object);
     let word = pointer;
     let origin_offset = align_up(header.size, pointer.align)?;
     let path_offset = checked_add(origin_offset, pointer.size)?;
@@ -790,7 +833,7 @@ fn builtin_layout(
     header: ObjectHeader,
     ty: &VerificationType,
 ) -> Result<PhysicalLayout, LayoutError> {
-    let pointer = pointer_value(target, None);
+    let pointer = pointer_value(target, None, ValueSemantic::Object);
     let word = pointer;
     match ty {
         VerificationType::Bytes => {
@@ -830,6 +873,7 @@ fn builtin_layout(
                     length_offset,
                     capacity_offset,
                     element,
+                    mutable: matches!(ty, VerificationType::ByteBuffer),
                 },
                 DropPlan::Buffer {
                     element,
@@ -893,14 +937,16 @@ fn opaque_layout(
         checked_add(value_offset, value_size)?,
         u16::from(target.pointer_align),
     )?;
+    let semantic_offset = checked_add(release_offset, u32::from(target.pointer_size))?;
     finish(
         id,
         header,
-        checked_add(release_offset, u32::from(target.pointer_size))?,
+        checked_add(semantic_offset, 1)?,
         header.align.max(value_align),
         PhysicalKind::Opaque {
             value_offset,
             release_offset,
+            semantic_offset,
             value_size,
             value_align,
         },
@@ -959,38 +1005,82 @@ fn value_layout(registry: &Registry, target: TargetLayout, ty: &VerificationType
             size: 1,
             align: 1,
             kind: ScalarKind::I8,
+            semantic: value_semantic(registry, ty),
             pointee: None,
         },
         LegalType::I32 => ValueLayout {
             size: 4,
             align: 4,
             kind: ScalarKind::I32,
+            semantic: value_semantic(registry, ty),
             pointee: None,
         },
         LegalType::I64 => ValueLayout {
             size: 8,
             align: target.integer64_align(),
             kind: ScalarKind::I64,
+            semantic: value_semantic(registry, ty),
             pointee: None,
         },
         LegalType::F64 => ValueLayout {
             size: 8,
             align: target.float64_align(),
             kind: ScalarKind::F64,
+            semantic: value_semantic(registry, ty),
             pointee: None,
         },
-        LegalType::Pointer { layout, .. } => pointer_value(target, layout),
-        LegalType::Opaque => pointer_value(target, Some(registry.opaque())),
-        LegalType::UnresolvedGeneric => pointer_value(target, None),
+        LegalType::Pointer { layout, .. } => {
+            pointer_value(target, layout, value_semantic(registry, ty))
+        }
+        LegalType::Opaque => pointer_value(target, Some(registry.opaque()), ValueSemantic::Opaque),
+        LegalType::UnresolvedGeneric => pointer_value(target, None, ValueSemantic::Opaque),
     }
 }
 
-fn pointer_value(target: TargetLayout, pointee: Option<LayoutId>) -> ValueLayout {
+fn pointer_value(
+    target: TargetLayout,
+    pointee: Option<LayoutId>,
+    semantic: ValueSemantic,
+) -> ValueLayout {
     ValueLayout {
         size: u32::from(target.pointer_size),
         align: u16::from(target.pointer_align),
         kind: ScalarKind::Pointer,
+        semantic,
         pointee,
+    }
+}
+
+fn value_semantic(registry: &Registry, ty: &VerificationType) -> ValueSemantic {
+    match ty {
+        VerificationType::Unit => ValueSemantic::Unit,
+        VerificationType::Bool => ValueSemantic::Bool,
+        VerificationType::Integer => ValueSemantic::Integer,
+        VerificationType::Float => ValueSemantic::Float,
+        VerificationType::CodePoint => ValueSemantic::CodePoint,
+        VerificationType::Byte => ValueSemantic::Byte,
+        VerificationType::Record { .. } => match registry.legal_type(ty) {
+            LegalType::Pointer {
+                layout: Some(layout),
+                ..
+            } => match &registry.get(layout).kind {
+                LayoutKind::Record { name, .. } if name == "String" => ValueSemantic::String,
+                LayoutKind::Record { name, .. } if name == "Symbol" => ValueSemantic::Symbol,
+                _ => ValueSemantic::Object,
+            },
+            _ => ValueSemantic::Object,
+        },
+        VerificationType::Reference(_) => ValueSemantic::Reference,
+        VerificationType::Unknown | VerificationType::Union(_) | VerificationType::Generic(_) => {
+            ValueSemantic::Opaque
+        }
+        VerificationType::Bytes
+        | VerificationType::ByteBuffer
+        | VerificationType::List(_)
+        | VerificationType::Remote(_)
+        | VerificationType::Future(_)
+        | VerificationType::Function { .. }
+        | VerificationType::Variant { .. } => ValueSemantic::Object,
     }
 }
 
@@ -1019,7 +1109,7 @@ fn drop_fields(fields: &[FieldLayout]) -> Vec<DropField> {
 
 fn fields_of(kind: &PhysicalKind) -> Vec<&FieldLayout> {
     match kind {
-        PhysicalKind::Record { fields } => fields.iter().collect(),
+        PhysicalKind::Record { fields, .. } => fields.iter().collect(),
         PhysicalKind::Variant { alternatives, .. } => alternatives
             .iter()
             .flat_map(|alternative| &alternative.fields)
@@ -1157,6 +1247,7 @@ fn validate_kind(layout: &PhysicalLayout, target: TargetLayout) -> Result<(), La
         PhysicalKind::Opaque {
             value_offset,
             release_offset,
+            semantic_offset,
             value_size,
             value_align,
         } => {
@@ -1167,7 +1258,8 @@ fn validate_kind(layout: &PhysicalLayout, target: TargetLayout) -> Result<(), La
                 *value_align,
                 "opaque payload",
             )?;
-            word(*release_offset, "opaque payload release")
+            word(*release_offset, "opaque payload release")?;
+            validate_slot(layout, *semantic_offset, 1, 1, "opaque payload semantic")
         }
     }
 }
@@ -1240,6 +1332,8 @@ mod tests {
             LayoutKind::Opaque,
             LayoutKind::Record {
                 record: id::<Record>(0),
+                name: "Example".into(),
+                arguments: Vec::new(),
                 fields: vec![
                     Slot {
                         index: 0,
@@ -1265,7 +1359,7 @@ mod tests {
         let physical =
             PhysicalRegistry::build(&registry, TargetLayout::new(8, 8).unwrap()).unwrap();
         let record = physical.get(LayoutId(1));
-        let PhysicalKind::Record { fields } = &record.kind else {
+        let PhysicalKind::Record { fields, .. } = &record.kind else {
             panic!();
         };
         assert_eq!(record.header.size, 24);
@@ -1303,6 +1397,8 @@ mod tests {
             LayoutKind::Opaque,
             LayoutKind::Record {
                 record: id::<Record>(0),
+                name: "Example".into(),
+                arguments: Vec::new(),
                 fields: vec![
                     Slot {
                         index: 0,
@@ -1321,7 +1417,7 @@ mod tests {
         ]);
         let target = TargetLayout::with_scalar_alignments(4, 4, 8, 4).unwrap();
         let physical = PhysicalRegistry::build(&registry, target).unwrap();
-        let PhysicalKind::Record { fields } = &physical.get(LayoutId(1)).kind else {
+        let PhysicalKind::Record { fields, .. } = &physical.get(LayoutId(1)).kind else {
             panic!();
         };
         assert_eq!(fields[0].offset, 12);
@@ -1335,6 +1431,8 @@ mod tests {
             LayoutKind::Opaque,
             LayoutKind::Variant {
                 variant_type: id::<VariantType>(0),
+                name: "Maybe".into(),
+                arguments: Vec::new(),
                 alternatives: vec![
                     Alternative {
                         variant: id::<Variant>(0),
@@ -1373,6 +1471,8 @@ mod tests {
             LayoutKind::Opaque,
             LayoutKind::Record {
                 record: id::<Record>(0),
+                name: "Example".into(),
+                arguments: Vec::new(),
                 fields: vec![Slot {
                     index: 0,
                     name: "value".into(),
@@ -1387,6 +1487,9 @@ mod tests {
         let first = layout.descriptor_bytes();
         assert_eq!(first, layout.descriptor_bytes());
         assert_eq!(&first[..4], b"FLYT");
+        assert_eq!(u16::from_le_bytes([first[4], first[5]]), 2);
+        assert!(first.windows(7).any(|bytes| bytes == b"Example"));
+        assert!(first.windows(5).any(|bytes| bytes == b"value"));
         assert!(first.windows(4).any(|bytes| bytes == 24_u32.to_le_bytes()));
     }
 }

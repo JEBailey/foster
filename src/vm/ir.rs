@@ -56,6 +56,73 @@ pub enum VerificationType {
 }
 
 impl VerificationType {
+    /// Infer named generic arguments from a concrete operand without discarding logical types.
+    pub(crate) fn infer_specialization(
+        &self,
+        actual: &Self,
+        substitutions: &mut std::collections::BTreeMap<String, Self>,
+    ) {
+        match (self, actual) {
+            (Self::Generic(name), actual) => {
+                substitutions
+                    .entry(name.clone())
+                    .or_insert_with(|| actual.clone());
+            }
+            (Self::List(schema), Self::List(actual))
+            | (Self::Reference(schema), Self::Reference(actual))
+            | (Self::Remote(schema), Self::Remote(actual))
+            | (Self::Future(schema), Self::Future(actual)) => {
+                schema.infer_specialization(actual, substitutions)
+            }
+            (
+                Self::Record {
+                    record: left,
+                    arguments: schema,
+                },
+                Self::Record {
+                    record: right,
+                    arguments: actual,
+                },
+            ) if left == right => {
+                for (schema, actual) in schema.iter().zip(actual) {
+                    schema.infer_specialization(actual, substitutions);
+                }
+            }
+            (
+                Self::Variant {
+                    variant: left,
+                    arguments: schema,
+                },
+                Self::Variant {
+                    variant: right,
+                    arguments: actual,
+                },
+            ) if left == right => {
+                for (schema, actual) in schema.iter().zip(actual) {
+                    schema.infer_specialization(actual, substitutions);
+                }
+            }
+            (
+                Self::Function {
+                    parameters: schema,
+                    result: schema_result,
+                    ..
+                },
+                Self::Function {
+                    parameters: actual,
+                    result: actual_result,
+                    ..
+                },
+            ) => {
+                for (schema, actual) in schema.iter().zip(actual) {
+                    schema.infer_specialization(actual, substitutions);
+                }
+                schema_result.infer_specialization(actual_result, substitutions);
+            }
+            _ => {}
+        }
+    }
+
     pub(crate) fn indexed_element(&self) -> Option<Self> {
         match self {
             Self::Reference(pointee) => pointee.indexed_element(),

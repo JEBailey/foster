@@ -1387,7 +1387,8 @@ fn lower_instruction(
         ir::Instruction::WrapCallable { .. }
         | ir::Instruction::StringToBytes { .. }
         | ir::Instruction::BoxValue { .. }
-        | ir::Instruction::UnboxValue { .. } => {
+        | ir::Instruction::UnboxValue { .. }
+        | ir::Instruction::ConvertResultError { .. } => {
             return Err(LowerError(
                 "native representation conversion has no portable VM opcode".into(),
             ));

@@ -3,6 +3,35 @@ use super::*;
 use crate::vm::{CompileOptions, Machine, compile, compile_with_options};
 
 #[test]
+fn decoder_rejects_a_forged_specialized_method_return_type() {
+    let compilation = crate::compile(
+        "type Echo<T> = { value: T }\nfunc Echo.get<T>(self: Echo<T>) -> T { self.value }\nfunc main() -> Bool { Echo { value: true }.get() }",
+    ).unwrap();
+    let program = compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
+    let mut bytes = encode_program(&program).unwrap();
+    let mut main = program.functions[&program.main.unwrap()].clone();
+    let mut original = Writer { bytes: Vec::new() };
+    original.function(&main).unwrap();
+    let offsets = bytes
+        .windows(original.bytes.len())
+        .enumerate()
+        .filter_map(|(index, window)| (window == original.bytes).then_some(index))
+        .collect::<Vec<_>>();
+    assert_eq!(offsets.len(), 1);
+    main.result_type = VerificationType::Integer;
+    let mut forged = Writer { bytes: Vec::new() };
+    forged.function(&main).unwrap();
+    bytes.splice(offsets[0]..offsets[0] + original.bytes.len(), forged.bytes);
+    let error = decode_program(&bytes).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("return value type Bool, expected Integer"),
+        "{error}"
+    );
+}
+
+#[test]
 fn round_trips_and_executes_compiled_program() {
     let source = "enum Choice = Left(Int) | Right(Int)\n\
             func unwrap(value: Choice) -> Int { branch value { Choice.Left(number) -> number _ -> 0 } }\n\

@@ -27,13 +27,19 @@ impl CompilationCache {
     }
 
     pub(super) fn invalidate(&self, uri: &Uri) {
-        let invalid = self.entries.borrow().get(uri).cloned();
-        let mut entries = self.entries.borrow_mut();
-        if let Some(invalid) = invalid {
-            entries.retain(|_, compilation| !Rc::ptr_eq(compilation, &invalid));
-        } else {
-            entries.remove(uri);
-        }
+        // A dependency can belong to several snapshots; its URI entry only names the latest.
+        // Check every snapshot's module membership rather than following that single alias.
+        self.entries.borrow_mut().retain(|cached_uri, compilation| {
+            cached_uri != uri
+                && !compilation.hir.modules.iter().any(|(_, module)| {
+                    module
+                        .source_path
+                        .as_deref()
+                        .and_then(|path| path_to_uri(path.as_std_path()))
+                        .as_ref()
+                        == Some(uri)
+                })
+        });
         // Failed compilations are keyed by the document that requested them rather than by a
         // resolved package, so conservatively discard these small entries on any source change.
         self.errors.borrow_mut().clear();
@@ -232,5 +238,40 @@ impl Workspace {
         module.source_path = Some(source_path);
         module.source = Some(source);
         crate::compiler::check_recovering(package)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalidates_every_snapshot_containing_a_shared_module() {
+        let cache = CompilationCache::default();
+        let root = std::env::current_dir().unwrap();
+        let shared = root.join("shared.fos");
+        let shared_uri = path_to_uri(&shared).unwrap();
+        let first_uri = path_to_uri(&root.join("first.fos")).unwrap();
+        let second_uri = path_to_uri(&root.join("second.fos")).unwrap();
+        let unrelated_uri = path_to_uri(&root.join("unrelated.fos")).unwrap();
+        for uri in [&first_uri, &second_uri] {
+            let mut compilation = crate::compile("func main() -> Int { 1 }").unwrap();
+            // Model two independently checked roots containing the same dependency.
+            let module = compilation.hir.modules.iter().next().unwrap().0;
+            compilation.hir.modules[module].source_path =
+                Some(Utf8PathBuf::from_path_buf(shared.clone()).unwrap());
+            cache.insert(uri.clone(), compilation);
+        }
+        let unrelated = cache.insert(
+            unrelated_uri.clone(),
+            crate::compile("func main() -> Int { 2 }").unwrap(),
+        );
+        assert!(cache.get(&first_uri).is_some());
+        assert!(cache.get(&second_uri).is_some());
+        cache.invalidate(&shared_uri);
+        assert!(cache.get(&first_uri).is_none());
+        assert!(cache.get(&second_uri).is_none());
+        assert!(cache.get(&shared_uri).is_none());
+        assert!(Rc::ptr_eq(&unrelated, &cache.get(&unrelated_uri).unwrap()));
     }
 }

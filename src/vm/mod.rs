@@ -31,6 +31,7 @@ pub use runtime::Capture;
 #[cfg(test)]
 pub(crate) use value::RecordLayout;
 pub use value::Value;
+pub(crate) use verifier::type_states;
 pub use verifier::verify;
 
 pub fn run(compilation: &crate::compiler::Compilation) -> Result<Value, crate::error::FosterError> {

@@ -486,7 +486,7 @@ fn verification_type(
     ty: crate::types::TypeId,
     depth: usize,
 ) -> VerificationType {
-    verification_type_inner(hir, information, ty, depth, false)
+    layout_verification_type(hir, information, ty, depth)
 }
 
 fn layout_verification_type(
@@ -495,7 +495,7 @@ fn layout_verification_type(
     ty: crate::types::TypeId,
     depth: usize,
 ) -> VerificationType {
-    verification_type_inner(hir, information, ty, depth, true)
+    verification_type_inner(hir, information, ty, depth)
 }
 
 fn projected_field_verification_type(
@@ -542,17 +542,13 @@ fn verification_type_inner(
     information: &TypeInformation,
     ty: crate::types::TypeId,
     depth: usize,
-    retain_generics: bool,
 ) -> VerificationType {
     if depth >= 64 {
         return VerificationType::Unknown;
     }
-    let nested = |ty| verification_type_inner(hir, information, ty, depth + 1, retain_generics);
+    let nested = |ty| verification_type_inner(hir, information, ty, depth + 1);
     match &information.types[ty] {
-        crate::types::Type::Generic(name) if retain_generics => {
-            VerificationType::Generic(name.clone())
-        }
-        crate::types::Type::Generic(_) => VerificationType::Unknown,
+        crate::types::Type::Generic(name) => VerificationType::Generic(name.clone()),
         crate::types::Type::Intersection(_) | crate::types::Type::Module(_) => {
             VerificationType::Unknown
         }

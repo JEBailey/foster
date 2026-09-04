@@ -68,8 +68,13 @@ pub enum BuiltinExecution {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeIntrinsic {
     Unavailable,
+    Print {
+        newline: bool,
+    },
     Inline(NativeInlineIntrinsic),
     Runtime(&'static str),
+    /// A typed call through the versioned native platform-service ABI.
+    Host,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,6 +173,12 @@ macro_rules! builtin_descriptors {
 }
 
 macro_rules! native_builtin {
+    (Print) => {
+        NativeIntrinsic::Print { newline: false }
+    };
+    (Println) => {
+        NativeIntrinsic::Print { newline: true }
+    };
     (FromCodePoint) => {
         NativeIntrinsic::Inline(NativeInlineIntrinsic::IntegerToCodePoint)
     };
@@ -178,10 +189,10 @@ macro_rules! native_builtin {
         NativeIntrinsic::Inline(NativeInlineIntrinsic::IntegerToByte)
     };
     (ParseFloat) => {
-        NativeIntrinsic::Runtime("foster_parse_float")
+        NativeIntrinsic::Runtime(crate::native::abi::PARSE_FLOAT)
     };
     (FormatFloat) => {
-        NativeIntrinsic::Runtime("foster_format_float")
+        NativeIntrinsic::Runtime(crate::native::abi::FORMAT_FLOAT)
     };
     (BytesFromList) => {
         NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesFromList)
@@ -191,6 +202,114 @@ macro_rules! native_builtin {
     };
     (BytesDecodeUtf8) => {
         NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesDecodeUtf8)
+    };
+    (IoReadText) => {
+        NativeIntrinsic::Host
+    };
+    (IoWriteText) => {
+        NativeIntrinsic::Host
+    };
+    (IoReadBytes) => {
+        NativeIntrinsic::Host
+    };
+    (IoWriteBytes) => {
+        NativeIntrinsic::Host
+    };
+    (IoListDirectory) => {
+        NativeIntrinsic::Host
+    };
+    (IoExists) => {
+        NativeIntrinsic::Host
+    };
+    (IoIsFile) => {
+        NativeIntrinsic::Host
+    };
+    (IoIsDirectory) => {
+        NativeIntrinsic::Host
+    };
+    (IoCreateDirectory) => {
+        NativeIntrinsic::Host
+    };
+    (IoCreateDirectoryAll) => {
+        NativeIntrinsic::Host
+    };
+    (IoRemoveFile) => {
+        NativeIntrinsic::Host
+    };
+    (IoRemoveDirectory) => {
+        NativeIntrinsic::Host
+    };
+    (IoRename) => {
+        NativeIntrinsic::Host
+    };
+    (IoCopyFile) => {
+        NativeIntrinsic::Host
+    };
+    (IoJoin) => {
+        NativeIntrinsic::Host
+    };
+    (IoParent) => {
+        NativeIntrinsic::Host
+    };
+    (IoFileName) => {
+        NativeIntrinsic::Host
+    };
+    (IoExtension) => {
+        NativeIntrinsic::Host
+    };
+    (IoCanonicalize) => {
+        NativeIntrinsic::Host
+    };
+    (IoCurrentDirectory) => {
+        NativeIntrinsic::Host
+    };
+    (TcpListen) => {
+        NativeIntrinsic::Host
+    };
+    (TcpConnect) => {
+        NativeIntrinsic::Host
+    };
+    (TcpAccept) => {
+        NativeIntrinsic::Host
+    };
+    (TcpRead) => {
+        NativeIntrinsic::Host
+    };
+    (TcpWrite) => {
+        NativeIntrinsic::Host
+    };
+    (TcpReadBytes) => {
+        NativeIntrinsic::Host
+    };
+    (TcpWriteBytes) => {
+        NativeIntrinsic::Host
+    };
+    (TcpSetTimeout) => {
+        NativeIntrinsic::Host
+    };
+    (TcpCloseListener) => {
+        NativeIntrinsic::Host
+    };
+    (TcpCloseConnection) => {
+        NativeIntrinsic::Host
+    };
+    (IoReadRange) => {
+        NativeIntrinsic::Host
+    };
+    (IoAppendBytes) => {
+        NativeIntrinsic::Host
+    };
+    (IoFileLength) => {
+        NativeIntrinsic::Host
+    };
+    (TimeWallNow) => {
+        NativeIntrinsic::Host
+    };
+    (TimeMonotonicNow) => {
+        NativeIntrinsic::Host
+    };
+    (RandomBytes) => {
+        NativeIntrinsic::Host
     };
     ($builtin:ident) => {
         NativeIntrinsic::Unavailable
@@ -393,16 +512,16 @@ pub enum NativeReceiverKind {
 /// Registry-owned runtime member lookup used only by legacy host-backed ABI views.
 pub fn native_member_runtime(receiver: NativeReceiverKind, member: &str) -> Option<&'static str> {
     match (receiver, member) {
-        (NativeReceiverKind::Arguments, "executable") => Some("foster_args_executable"),
-        (NativeReceiverKind::Arguments, "values") => Some("foster_args_values"),
-        (NativeReceiverKind::StringList, "empty?") => Some("foster_string_list_empty"),
-        (NativeReceiverKind::StringList, "length") => Some("foster_string_list_length"),
-        (NativeReceiverKind::StringList, "head") => Some("foster_string_list_head"),
-        (NativeReceiverKind::String, "empty?") => Some("foster_string_empty"),
-        (NativeReceiverKind::String, "length") => Some("foster_string_length"),
-        (NativeReceiverKind::String, "head") => Some("foster_string_head"),
-        (NativeReceiverKind::String, "rest") => Some("foster_string_rest"),
-        (NativeReceiverKind::String, "whitespace?") => Some("foster_string_whitespace"),
+        (NativeReceiverKind::Arguments, "executable") => Some(crate::native::abi::ARGS_EXECUTABLE),
+        (NativeReceiverKind::Arguments, "values") => Some(crate::native::abi::ARGS_VALUES),
+        (NativeReceiverKind::StringList, "empty?") => Some(crate::native::abi::STRING_LIST_EMPTY),
+        (NativeReceiverKind::StringList, "length") => Some(crate::native::abi::STRING_LIST_LENGTH),
+        (NativeReceiverKind::StringList, "head") => Some(crate::native::abi::STRING_LIST_HEAD),
+        (NativeReceiverKind::String, "empty?") => Some(crate::native::abi::STRING_EMPTY),
+        (NativeReceiverKind::String, "length") => Some(crate::native::abi::STRING_LENGTH),
+        (NativeReceiverKind::String, "head") => Some(crate::native::abi::STRING_HEAD),
+        (NativeReceiverKind::String, "rest") => Some(crate::native::abi::STRING_REST),
+        (NativeReceiverKind::String, "whitespace?") => Some(crate::native::abi::STRING_WHITESPACE),
         _ => None,
     }
 }
@@ -613,14 +732,21 @@ mod tests {
 
     #[test]
     fn native_intrinsic_policies_are_explicit() {
-        let supported = BUILTINS
+        let lowered_in_process = BUILTINS
             .iter()
-            .filter(|descriptor| descriptor.native != NativeIntrinsic::Unavailable)
+            .filter(|descriptor| {
+                !matches!(
+                    descriptor.native,
+                    NativeIntrinsic::Unavailable | NativeIntrinsic::Host
+                )
+            })
             .map(|descriptor| descriptor.builtin)
             .collect::<Vec<_>>();
         assert_eq!(
-            supported,
+            lowered_in_process,
             vec![
+                Builtin::Print,
+                Builtin::Println,
                 Builtin::FromCodePoint,
                 Builtin::ParseFloat,
                 Builtin::FormatFloat,
@@ -631,9 +757,17 @@ mod tests {
                 Builtin::BytesDecodeUtf8,
             ]
         );
+        for descriptor in BUILTINS {
+            assert_eq!(
+                matches!(descriptor.native, NativeIntrinsic::Host),
+                descriptor.execution == BuiltinExecution::Host,
+                "host policy differs for {:?}",
+                descriptor.builtin
+            );
+        }
         assert_eq!(
             native_member_runtime(NativeReceiverKind::String, "length"),
-            Some("foster_string_length")
+            Some(crate::native::abi::STRING_LENGTH)
         );
     }
 

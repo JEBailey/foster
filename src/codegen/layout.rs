@@ -42,10 +42,14 @@ pub struct Alternative {
 pub enum LayoutKind {
     Record {
         record: RecordId,
+        name: String,
+        arguments: Vec<VerificationType>,
         fields: Vec<Slot>,
     },
     Variant {
         variant_type: VariantTypeId,
+        name: String,
+        arguments: Vec<VerificationType>,
         alternatives: Vec<Alternative>,
     },
     Closure {
@@ -59,9 +63,7 @@ pub enum LayoutKind {
         ownership: Ownership,
     },
     /// A runtime-backed structural value such as a list, byte buffer, future, or callable.
-    Builtin {
-        ty: VerificationType,
-    },
+    Builtin { ty: VerificationType },
     /// Box used when an explicitly dynamic value erases its concrete representation.
     Opaque,
 }
@@ -236,7 +238,7 @@ impl Registry {
         if parameters.is_empty() {
             return Ok(base);
         }
-        let LayoutKind::Record { fields, .. } = self.get(base).kind.clone() else {
+        let LayoutKind::Record { name, fields, .. } = self.get(base).kind.clone() else {
             unreachable!()
         };
         let substitutions = parameters
@@ -252,13 +254,20 @@ impl Registry {
             .collect::<Vec<_>>();
         let layout = self.push(LayoutKind::Record {
             record,
+            name: name.clone(),
+            arguments: arguments.to_vec(),
             fields: Vec::new(),
         });
         self.record_instances.insert(key, layout);
         for field in &fields {
             self.instantiate_type(&field.ty)?;
         }
-        self.layouts[layout.0 as usize].kind = LayoutKind::Record { record, fields };
+        self.layouts[layout.0 as usize].kind = LayoutKind::Record {
+            record,
+            name,
+            arguments: arguments.to_vec(),
+            fields,
+        };
         Ok(layout)
     }
 
@@ -287,7 +296,10 @@ impl Registry {
         if parameters.is_empty() {
             return Ok(base);
         }
-        let LayoutKind::Variant { alternatives, .. } = self.get(base).kind.clone() else {
+        let LayoutKind::Variant {
+            name, alternatives, ..
+        } = self.get(base).kind.clone()
+        else {
             unreachable!()
         };
         let substitutions = parameters
@@ -307,6 +319,8 @@ impl Registry {
             .collect::<Vec<_>>();
         let layout = self.push(LayoutKind::Variant {
             variant_type,
+            name: name.clone(),
+            arguments: arguments.to_vec(),
             alternatives: Vec::new(),
         });
         self.variant_instances.insert(key, layout);
@@ -317,6 +331,8 @@ impl Registry {
         }
         self.layouts[layout.0 as usize].kind = LayoutKind::Variant {
             variant_type,
+            name,
+            arguments: arguments.to_vec(),
             alternatives,
         };
         Ok(layout)
@@ -523,6 +539,8 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
             .collect();
         let kind = LayoutKind::Record {
             record: *record,
+            name: runtime.name.clone(),
+            arguments: Vec::new(),
             fields,
         };
         let layout = if runtime.parameters.is_empty() {
@@ -548,6 +566,10 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
                 .insert(variant_type, program.variants[variant].parameters.clone());
         }
         entries.sort_unstable_by_key(|(id, _)| id.into_raw().into_u32());
+        let name = entries
+            .first()
+            .map(|(variant, _)| program.variants[variant].type_name.to_string())
+            .unwrap_or_default();
         let alternatives = entries
             .into_iter()
             .enumerate()
@@ -560,6 +582,8 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
             .collect();
         let kind = LayoutKind::Variant {
             variant_type,
+            name,
+            arguments: Vec::new(),
             alternatives,
         };
         let layout = if registry.variant_parameters[&variant_type].is_empty() {

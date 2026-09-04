@@ -142,8 +142,9 @@ The current implementation includes:
 - first-class `test "description" { ... }` declarations with a package-aware test runner;
 - an optional optimizing register-bytecode pipeline with a verifier and iterative VM call frames;
   and
-- a Cranelift AOT backend for standalone scalar, record, and tagged-variant executables, including
-  closed-world specialization of reachable generic functions and nominal aggregates.
+- a Cranelift AOT backend for standalone executables, including closed-world specialization of
+  reachable generics, nominal aggregates, closures, structural contracts, host services, local
+  remote actors, futures, and blocking `await`.
 
 Module qualification uses `::`; type accessors and runtime value access use `.`. Imports keep their
 canonical dotted module names:
@@ -310,13 +311,17 @@ cargo run --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.e
 
 Native compilation supports reachable scalar functions plus descriptor-backed user records,
 tagged enums, concrete closures, uniform higher-order callables, owned erased values, generic
-lists, immutable bytes, Foster-written byte buffers, and local references. This includes nested
-fields, copy-on-write mutation, aggregate payload patterns, reference captures and parameters,
-direct and indirect calls, generic specialization, methods, recursion, arithmetic, comparisons,
-and control flow. Supported core list, string, byte, and byte-buffer algorithms compile as ordinary
-Foster code. Remote operations, suspension, host services, literal string/symbol patterns, and
-other VM-only instructions are rejected with an actionable compile error. See
-[native compilation](docs/native.md) for the exact boundary.
+lists, immutable bytes, Foster-written byte buffers, local references, local remote actors, and
+futures. This includes nested fields, copy-on-write mutation, aggregate payload patterns,
+reference captures and parameters, direct and indirect calls, descriptor-dispatched structural
+contracts, generic specialization, methods, String/Symbol literal patterns, `print`/`println`,
+aggregate result formatting, friendly runtime failures, recursion, arithmetic, comparisons, and
+control flow. Supported core list, string, byte, and byte-buffer algorithms compile as ordinary
+Foster code. A versioned platform ABI provides filesystem and path operations, the working
+directory, clocks, operating-system entropy, handle-based TCP listeners and connections, and
+in-process actor workers. Native code can spawn owned or borrowed actors, queue FIFO method calls,
+and consume their futures with a blocking `await`. Resumable suspension/state-machine lowering is
+not yet implemented. See [native compilation](docs/native.md) for the exact boundary.
 
 The de-SSA VM emitter owns critical-edge splitting, cycle-safe parallel copies, and deterministic
 register assignment. Aggregate legalization separately freezes typed record slots, enum tags and
@@ -329,8 +334,8 @@ insertion before bytecode can be returned or executed. The Cranelift branch inst
 the same sealed graph directly, without a bytecode round trip. There is no direct executable bypass
 around the shared IR. The Cranelift backend uses those descriptors for allocation and
 field/tag/capture offsets and generates retain/release, copy-on-write, indirect calls, and recursive
-tag-aware destruction directly in machine code; Rust supplies only the platform allocator and
-process-facing bootstrap services.
+tag-aware destruction directly in machine code; Rust supplies the allocator, process bootstrap,
+and the explicitly versioned operating-system service boundary.
 
 ## Executable packages
 

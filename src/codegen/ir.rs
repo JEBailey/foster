@@ -174,6 +174,11 @@ pub enum Instruction {
         destination: Value,
         source: Value,
     },
+    /// Rebuilds the `Error` alternative when `try` changes a `Result` success type.
+    ConvertResultError {
+        destination: Value,
+        source: Value,
+    },
     Assert {
         condition: Value,
         message: Option<Value>,
@@ -505,7 +510,8 @@ impl Instruction {
             | Self::WrapCallable { destination, .. }
             | Self::StringToBytes { destination, .. }
             | Self::BoxValue { destination, .. }
-            | Self::UnboxValue { destination, .. } => vec![*destination],
+            | Self::UnboxValue { destination, .. }
+            | Self::ConvertResultError { destination, .. } => vec![*destination],
             Self::Assert { .. } => Vec::new(),
             Self::Portable(instruction) => instruction.destinations(),
         }
@@ -526,6 +532,9 @@ impl Instruction {
                 source: operand, ..
             }
             | Self::UnboxValue {
+                source: operand, ..
+            }
+            | Self::ConvertResultError {
                 source: operand, ..
             } => vec![*operand],
             Self::Binary { left, right, .. } => vec![*left, *right],
@@ -996,6 +1005,19 @@ impl<'a> Verifier<'a> {
                 }
                 Ok(())
             }
+            Instruction::ConvertResultError {
+                destination,
+                source,
+            } => {
+                if !matches!(self.value_type(*source)?, Type::Object(_))
+                    || !matches!(self.value_type(*destination)?, Type::Object(_))
+                {
+                    return Err(VerifyError::new(
+                        "Result error conversion requires object layouts",
+                    ));
+                }
+                Ok(())
+            }
             Instruction::Assert { condition, message } => {
                 self.require_type(*condition, Type::Bool, "assert condition")?;
                 if let Some(message) = message {
@@ -1215,6 +1237,9 @@ fn display_instruction(
         }
         Instruction::BoxValue { source, .. } => write!(formatter, "box v{}", source.0),
         Instruction::UnboxValue { source, .. } => write!(formatter, "unbox v{}", source.0),
+        Instruction::ConvertResultError { source, .. } => {
+            write!(formatter, "convert_result_error v{}", source.0)
+        }
         Instruction::Assert { condition, message } => match message {
             Some(message) => write!(formatter, "assert v{}, v{}", condition.0, message.0),
             None => write!(formatter, "assert v{}", condition.0),

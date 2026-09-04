@@ -12,7 +12,7 @@ use std::process::Command;
 
 use cranelift_codegen::ir::{
     AbiParam, Block as ClifBlock, InstBuilder, MemFlagsData, Signature as ClifSignature, StackSlot,
-    StackSlotData, StackSlotKind, TrapCode, Type as ClifType, Value as ClifValue, types,
+    StackSlotData, StackSlotKind, Type as ClifType, Value as ClifValue, types,
 };
 use cranelift_codegen::ir::{condcodes::FloatCC, condcodes::IntCC};
 use cranelift_codegen::settings::{self, Configurable};
@@ -24,14 +24,29 @@ use la_arena::RawIdx;
 use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::codegen::ir;
 use crate::codegen::layout::physical::{
-    DropField, DropPlan, PhysicalKind, PhysicalRegistry, ScalarKind, TargetLayout, ValueLayout,
+    AlternativeLayout, DropField, DropPlan, PhysicalKind, PhysicalRegistry, ScalarKind,
+    TargetLayout, ValueLayout, ValueSemantic,
 };
 use crate::codegen::layout::{LayoutId, LayoutKind, Registry as LayoutRegistry};
 use crate::compiler::Compilation;
 use crate::error::FosterError;
 use crate::hir::{FunctionId, Pattern};
 use crate::types::{Type, TypeId};
-use crate::vm::{self, BytecodeFunction, Constant, Instruction, Program, Register};
+use crate::vm::{
+    self, BytecodeFunction, Constant, Instruction, Program, Register, VerificationType,
+};
+
+pub mod abi;
+mod emission;
+use emission::{emit_object, ordered_entries};
+mod ownership;
+mod program;
+mod runtime;
+pub use ownership::MemoryManagement;
+use ownership::*;
+pub use program::{LogicalSignature, NativeFunction, NativeProgram, prepare};
+mod equality_runtime;
+mod host_runtime;
 
 /// Primitive Foster values supported by the native ABI.
 pub use crate::codegen::ir::Type as NativeType;
@@ -55,91 +70,29 @@ pub struct ObjectArtifact {
     pub result: NativeType,
     pub accepts_arguments: bool,
     runtime_strings: Vec<String>,
+    releases_result: bool,
 }
 
-/// Target-independent and target-specific layout information used while lowering objects.
-#[derive(Clone, Copy)]
-struct NativeLayouts<'a> {
-    program: &'a Program,
-    logical: &'a LayoutRegistry,
-    physical: &'a PhysicalRegistry,
-}
-
-impl NativeLayouts<'_> {
-    fn is_managed(self, layout: LayoutId) -> bool {
-        self.logical.get(layout).materialized
-            && !matches!(self.logical.get(layout).kind, LayoutKind::Pointer { .. })
-            && !matches!(
-                self.logical.get(layout).kind,
-                LayoutKind::Record { record, .. } if Some(record) == self.program.string_record
-            )
-    }
-}
-
-/// Object-runtime symbols needed after portable IR has been legalized.
-#[derive(Clone, Copy)]
-struct ObjectRuntime<'a> {
-    layouts: NativeLayouts<'a>,
-    descriptors: &'a HashMap<LayoutId, DataId>,
-    destructors: &'a HashMap<LayoutId, FuncId>,
-}
-
-impl ObjectRuntime<'_> {
-    fn allocate(
-        self,
-        builder: &mut FunctionBuilder<'_>,
-        module: &mut ObjectModule,
-        layout: LayoutId,
-    ) -> Result<ClifValue, FosterError> {
-        allocate_object(
-            builder,
-            module,
-            layout,
-            self.layouts.physical,
-            self.descriptors,
-        )
-    }
-
-    fn retain(self, builder: &mut FunctionBuilder<'_>, object: ClifValue, layout: LayoutId) {
-        retain_object(builder, object, layout, self.layouts.physical);
-    }
-
-    fn release(
-        self,
-        builder: &mut FunctionBuilder<'_>,
-        module: &mut ObjectModule,
-        object: ClifValue,
-        layout: LayoutId,
-    ) -> Result<(), FosterError> {
-        release_object(
-            builder,
-            module,
-            object,
-            layout,
-            self.layouts.physical,
-            self.destructors,
-        )
-    }
-}
-
-/// Inputs shared while rebuilding specialized portable bytecode as native SSA.
+/// Immutable inputs for specialization and representation legalization.
 #[derive(Clone, Copy)]
 struct NativeIrEnvironment<'a> {
+    compilation: &'a Compilation,
     program: &'a Program,
-    shared_functions: &'a HashMap<FunctionId, ir::Function>,
     function_types: &'a HashMap<FunctionId, ir::Signature>,
     runtime_string_indices: &'a HashMap<u16, u64>,
+    runtime_literal_indices: &'a HashMap<String, u64>,
     layouts: &'a LayoutRegistry,
     physical_layouts: &'a PhysicalRegistry,
     instances: &'a HashMap<SpecializationKey, FunctionId>,
+    builtin_result_types: &'a HashMap<crate::intrinsics::Builtin, crate::vm::VerificationType>,
 }
 
 /// Shared immutable state for lowering one module's functions to Cranelift.
 struct NativeBackend<'a> {
     ir: NativeIrEnvironment<'a>,
     functions: &'a HashMap<FunctionId, FuncId>,
-    method_receivers: &'a HashSet<FunctionId>,
     callable_thunks: &'a HashMap<LayoutId, FuncId>,
+    remote_thunks: &'a HashMap<FunctionId, FuncId>,
     release_thunks: &'a HashMap<LayoutId, FuncId>,
     objects: ObjectRuntime<'a>,
 }
@@ -171,250 +124,24 @@ struct NativeInstance {
     ir_function: FunctionId,
 }
 
-/// Lower the reachable native subset and render deterministic typed SSA IR.
-pub fn emit_ir(compilation: &Compilation) -> Result<String, FosterError> {
-    let shared = vm::compile_shared(compilation)?;
-    let mut program = shared.metadata;
-    let shared_functions = shared.functions;
-    let mut layouts = crate::codegen::layout::legalize(&mut program)?;
-    let main = program.main.ok_or_else(|| {
-        FosterError::runtime("native compilation requires a `main` function").with_code("E0900")
-    })?;
-    let instances = reachable_instances(&program, &shared_functions, main)?;
-    let instance_ids = instances
-        .iter()
-        .map(|instance| (instance.key.clone(), instance.ir_function))
-        .collect::<HashMap<_, _>>();
-    let function_types = collect_function_types(compilation, &program, &instances, &mut layouts)?;
-    let physical_layouts =
-        PhysicalRegistry::build(&layouts, TargetLayout::host()).map_err(|error| {
-            native_error(format!("cannot calculate native object layouts: {error}"))
-        })?;
-    let main_instance = instances
-        .iter()
-        .find(|instance| instance.key.function == main && instance.key.substitutions.is_empty())
-        .expect("main specialization is reachable");
-    validate_program(compilation, &program, &instances, &function_types, &layouts)?;
-    if matches!(
-        function_types[&main_instance.ir_function].result,
-        NativeType::Arguments | NativeType::StringList | NativeType::Object(_)
-    ) {
-        return Err(native_error(
-            "native `main` cannot return Arguments or List<String>",
-        ));
-    }
-    let (_, runtime_string_indices) = runtime_strings(&program);
-    let environment = NativeIrEnvironment {
-        program: &program,
-        shared_functions: &shared_functions,
-        function_types: &function_types,
-        runtime_string_indices: &runtime_string_indices,
-        layouts: &layouts,
-        physical_layouts: &physical_layouts,
-        instances: &instance_ids,
-    };
-    let mut output = String::from("foster-codegen-ir 1\n\n");
-    for instance in &instances {
-        let function = &program.functions[&instance.key.function];
-        let lowered = lower_shared_to_native_ir(
-            &shared_functions[&instance.key.function],
-            function,
-            &function_types[&instance.ir_function],
-            &instance.key,
-            environment,
-        )?;
-        lowered.verify(&function_types).map_err(|error| {
-            native_error(format!(
-                "invalid native IR for `{}`: {error}",
-                function.name
-            ))
-        })?;
-        output.push_str(&format!(
-            "; function #{} {:?}\n{lowered}\n",
-            instance.key.function.into_raw().into_u32(),
-            instance.key.substitutions
-        ));
-    }
-    Ok(output)
+#[derive(Debug, Clone, Copy)]
+struct ContractCandidate {
+    layout: LayoutId,
+    implementation: FunctionId,
+    function: FunctionId,
 }
 
-/// Compile the reachable portion of `main` to a host-native object file.
+/// Render the same verified program consumed by native object emission.
+pub fn emit_ir(compilation: &Compilation) -> Result<String, FosterError> {
+    Ok(prepare(compilation)?.emit_ir())
+}
+
+/// Prepare and compile the reachable portion of main to a host-native object.
 pub fn compile_object(
     compilation: &Compilation,
     options: CompileOptions,
 ) -> Result<ObjectArtifact, FosterError> {
-    // Consume the compiler's verified first SSA artifact directly. Construction metadata remains
-    // available for source spans, nominal identities, and storage-home type specialization;
-    // Cranelift performs the requested machine-level optimization.
-    let shared = vm::compile_shared(compilation)?;
-    let mut program = shared.metadata;
-    let shared_functions = shared.functions;
-    let mut layouts = crate::codegen::layout::legalize(&mut program)?;
-    let main = program.main.ok_or_else(|| {
-        FosterError::runtime("native compilation requires a `main` function").with_code("E0900")
-    })?;
-    let instances = reachable_instances(&program, &shared_functions, main)?;
-    let instance_ids = instances
-        .iter()
-        .map(|instance| (instance.key.clone(), instance.ir_function))
-        .collect::<HashMap<_, _>>();
-    let function_types = collect_function_types(compilation, &program, &instances, &mut layouts)?;
-    let main_instance = instances
-        .iter()
-        .find(|instance| instance.key.function == main && instance.key.substitutions.is_empty())
-        .expect("main specialization is reachable");
-    validate_program(compilation, &program, &instances, &function_types, &layouts)?;
-    if matches!(
-        function_types[&main_instance.ir_function].result,
-        NativeType::Arguments | NativeType::StringList | NativeType::Object(_)
-    ) {
-        return Err(native_error(
-            "native `main` cannot return Arguments or List<String>",
-        ));
-    }
-    let mut flag_builder = settings::builder();
-    flag_builder
-        .set("is_pic", "true")
-        .map_err(|error| native_error(format!("cannot configure Cranelift PIC: {error}")))?;
-    flag_builder
-        .set("opt_level", if options.optimize { "speed" } else { "none" })
-        .map_err(|error| {
-            native_error(format!("cannot configure Cranelift optimization: {error}"))
-        })?;
-    let isa_builder = cranelift_native::builder()
-        .map_err(|error| native_error(format!("host architecture is not supported: {error}")))?;
-    let isa = isa_builder
-        .finish(settings::Flags::new(flag_builder))
-        .map_err(|error| native_error(format!("cannot create the native target: {error}")))?;
-    let object_builder = ObjectBuilder::new(isa, "foster", default_libcall_names())
-        .map_err(|error| native_error(format!("cannot create a native object: {error}")))?;
-    let mut module = ObjectModule::new(object_builder);
-    let pointer_size = u8::try_from(module.target_config().pointer_type().bytes())
-        .map_err(|_| native_error("native target pointer size does not fit in u8"))?;
-    let target_layout = TargetLayout::host();
-    if target_layout.pointer_size() != pointer_size {
-        return Err(native_error(
-            "Cranelift host target disagrees with the compiler process pointer size",
-        ));
-    }
-    let physical_layouts = PhysicalRegistry::build(&layouts, target_layout).map_err(|error| {
-        native_error(format!("cannot calculate native object layouts: {error}"))
-    })?;
-    let layout_descriptors = emit_layout_descriptors(&mut module, &physical_layouts)?;
-    let (runtime_strings, runtime_string_indices) = runtime_strings(&program);
-
-    let mut native_ids = HashMap::new();
-    for instance in &instances {
-        let bytecode = &program.functions[&instance.key.function];
-        let signature = signature(&mut module, &function_types[&instance.ir_function]);
-        let linkage = if instance.key.function == main && instance.key.substitutions.is_empty() {
-            Linkage::Export
-        } else {
-            Linkage::Local
-        };
-        let symbol = if instance.key.function == main && instance.key.substitutions.is_empty() {
-            "foster_native_entry".to_owned()
-        } else {
-            format!("foster_fn_{}", instance.ir_function.into_raw().into_u32())
-        };
-        let id = module
-            .declare_function(&symbol, linkage, &signature)
-            .map_err(|error| {
-                native_error(format!("cannot declare `{}`: {error}", bytecode.name))
-            })?;
-        native_ids.insert(instance.ir_function, id);
-    }
-
-    let native_layouts = NativeLayouts {
-        program: &program,
-        logical: &layouts,
-        physical: &physical_layouts,
-    };
-    let drop_ids = declare_layout_destructors(&mut module, &physical_layouts)?;
-    let callable_thunks =
-        declare_callable_thunks(&mut module, native_layouts, &instance_ids, &function_types)?;
-    let release_thunks = declare_release_thunks(&mut module, native_layouts)?;
-    let method_receivers = compilation
-        .hir
-        .functions
-        .iter()
-        .filter_map(|(function, declaration)| declaration.receiver.is_some().then_some(function))
-        .collect::<HashSet<_>>();
-    define_layout_destructors(&mut module, native_layouts, &drop_ids)?;
-    define_release_thunks(&mut module, native_layouts, &drop_ids, &release_thunks)?;
-
-    let backend = NativeBackend {
-        ir: NativeIrEnvironment {
-            program: &program,
-            shared_functions: &shared_functions,
-            function_types: &function_types,
-            runtime_string_indices: &runtime_string_indices,
-            layouts: &layouts,
-            physical_layouts: &physical_layouts,
-            instances: &instance_ids,
-        },
-        functions: &native_ids,
-        method_receivers: &method_receivers,
-        callable_thunks: &callable_thunks,
-        release_thunks: &release_thunks,
-        objects: ObjectRuntime {
-            layouts: native_layouts,
-            descriptors: &layout_descriptors,
-            destructors: &drop_ids,
-        },
-    };
-
-    for instance in &instances {
-        define_function(
-            &mut module,
-            instance,
-            native_ids[&instance.ir_function],
-            &backend,
-        )?;
-    }
-    define_callable_thunks(&mut module, &backend)?;
-
-    let bytes = module
-        .finish()
-        .emit()
-        .map_err(|error| native_error(format!("cannot encode the native object: {error}")))?;
-    Ok(ObjectArtifact {
-        bytes,
-        result: function_types[&main_instance.ir_function].result,
-        accepts_arguments: program.main_arguments,
-        runtime_strings,
-    })
-}
-
-/// Emit deterministic read-only metadata for every physical object layout.
-///
-/// The records are intentionally versioned and contain no process addresses. Allocation lowering
-/// can reference these symbols as object-header descriptors without making portable bytecode
-/// target-dependent.
-fn emit_layout_descriptors(
-    module: &mut ObjectModule,
-    layouts: &PhysicalRegistry,
-) -> Result<HashMap<LayoutId, DataId>, FosterError> {
-    let mut descriptors = HashMap::new();
-    for layout in layouts
-        .layouts()
-        .iter()
-        .filter(|layout| layout.materialized)
-    {
-        let symbol = format!("foster_layout_{}", layout.id.0);
-        let data_id = module
-            .declare_data(&symbol, Linkage::Local, false, false)
-            .map_err(|error| native_error(format!("cannot declare `{symbol}`: {error}")))?;
-        let mut description = DataDescription::new();
-        description.define(layout.descriptor_bytes().into_boxed_slice());
-        description.set_align(u64::from(layouts.target().pointer_align()));
-        description.set_used(true);
-        module
-            .define_data(data_id, &description)
-            .map_err(|error| native_error(format!("cannot define `{symbol}`: {error}")))?;
-        descriptors.insert(layout.id, data_id);
-    }
-    Ok(descriptors)
+    prepare(compilation)?.compile_object(options)
 }
 
 /// Compile and link a standalone host executable using the installed Rust linker toolchain.
@@ -423,74 +150,18 @@ pub fn build_executable(
     output: impl AsRef<Path>,
     options: CompileOptions,
 ) -> Result<(), FosterError> {
-    let output = absolute_path(output.as_ref())?;
-    if let Some(parent) = output.parent() {
-        fs::create_dir_all(parent).map_err(|error| {
-            native_error(format!(
-                "cannot create output directory `{}`: {error}",
-                parent.display()
-            ))
-        })?;
-    }
-    let artifact = compile_object(compilation, options)?;
-    let temporary = TemporaryDirectory::create()?;
-    let object = temporary.path.join(if cfg!(windows) {
-        "program.obj"
-    } else {
-        "program.o"
-    });
-    let shim = temporary.path.join("entry.rs");
-    fs::write(&object, artifact.bytes)
-        .map_err(|error| native_error(format!("cannot write `{}`: {error}", object.display())))?;
-    fs::write(
-        &shim,
-        entry_source(
-            artifact.result,
-            artifact.accepts_arguments,
-            &artifact.runtime_strings,
-        ),
-    )
-    .map_err(|error| native_error(format!("cannot write linker shim: {error}")))?;
-
-    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let result = Command::new(&rustc)
-        .arg("--edition=2024")
-        .arg(&shim)
-        .arg("-C")
-        .arg(if options.optimize {
-            "opt-level=2"
-        } else {
-            "opt-level=0"
-        })
-        .arg("-C")
-        .arg(format!("link-arg={}", object.display()))
-        .arg("-o")
-        .arg(&output)
-        .output()
-        .map_err(|error| {
-            native_error(format!(
-                "cannot run `{}` to link the executable: {error}",
-                Path::new(&rustc).display()
-            ))
-        })?;
-    if !result.status.success() {
-        let stderr = String::from_utf8_lossy(&result.stderr);
-        return Err(native_error(format!(
-            "native linker failed with {}{}{}",
-            result.status,
-            if stderr.trim().is_empty() { "" } else { ": " },
-            stderr.trim()
-        )));
-    }
-    Ok(())
+    prepare(compilation)?.build_executable(output, options)
 }
 
 fn reachable_instances(
+    compilation: &Compilation,
     program: &Program,
     shared_functions: &HashMap<FunctionId, ir::Function>,
     main: FunctionId,
 ) -> Result<Vec<NativeInstance>, FosterError> {
     let mut reachable = BTreeSet::new();
+    let mut concrete_nominals = BTreeSet::new();
+    let mut contract_calls = BTreeSet::new();
     let mut pending = vec![SpecializationKey {
         function: main,
         substitutions: Vec::new(),
@@ -524,6 +195,94 @@ fn reachable_instances(
                 body.name
             ))
         })?;
+        for ty in body
+            .parameter_types
+            .iter()
+            .chain(&body.capture_types)
+            .chain(std::iter::once(&body.result_type))
+            .map(|ty| ty.specialize(&instance.substitutions))
+        {
+            collect_nominal_types(&ty, &mut concrete_nominals);
+        }
+        for instruction in &body.instructions {
+            if let Some(ty) = instruction_layout_type(program, instruction, &instance.substitutions)
+            {
+                collect_nominal_types(&ty, &mut concrete_nominals);
+            }
+        }
+        let type_states = vm::type_states(program, body)?;
+        for (index, instruction) in body.instructions.iter().enumerate() {
+            let Some(state) = type_states[index].as_ref() else {
+                continue;
+            };
+            match instruction {
+                Instruction::CallContractMethod {
+                    slot, arguments, ..
+                } => {
+                    let argument_types = arguments
+                        .iter()
+                        .map(|argument| {
+                            state[usize::from(argument.0)]
+                                .as_ref()
+                                .map(|ty| ty.specialize(&instance.substitutions))
+                                .ok_or_else(|| {
+                                    native_error(format!(
+                                        "contract argument r{} in `{}` has no verified type",
+                                        argument.0, body.name
+                                    ))
+                                })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    contract_calls.insert((*slot, argument_types));
+                }
+                Instruction::RemoteCall {
+                    remote,
+                    function,
+                    arguments,
+                    ..
+                } => {
+                    let receiver = state[usize::from(remote.0)]
+                        .as_ref()
+                        .map(|ty| ty.specialize(&instance.substitutions))
+                        .ok_or_else(|| {
+                            native_error(format!(
+                                "remote receiver r{} in `{}` has no verified type",
+                                remote.0, body.name
+                            ))
+                        })?;
+                    let VerificationType::Remote(receiver) = receiver else {
+                        return Err(native_error(format!(
+                            "remote receiver in `{}` does not have a Remote type",
+                            body.name
+                        )));
+                    };
+                    let argument_types = arguments
+                        .iter()
+                        .map(|(_, argument)| {
+                            state[usize::from(argument.0)]
+                                .as_ref()
+                                .map(|ty| ty.specialize(&instance.substitutions))
+                                .ok_or_else(|| {
+                                    native_error(format!(
+                                        "remote argument r{} in `{}` has no verified type",
+                                        argument.0, body.name
+                                    ))
+                                })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    pending.push(SpecializationKey {
+                        function: *function,
+                        substitutions: remote_specialization(
+                            compilation,
+                            *function,
+                            &receiver,
+                            &argument_types,
+                        )?,
+                    });
+                }
+                _ => {}
+            }
+        }
         for instruction in shared.blocks.iter().flat_map(|block| &block.instructions) {
             let target = match instruction {
                 ir::Instruction::Call {
@@ -562,6 +321,40 @@ fn reachable_instances(
                 });
             }
         }
+        for ty in &concrete_nominals {
+            let Some(nominal) = nominal_id(ty) else {
+                continue;
+            };
+            for (slot, argument_types) in &contract_calls {
+                let Some(target) = program.dispatch.get(&(nominal, *slot)).copied() else {
+                    continue;
+                };
+                let target_body = &program.functions[&target];
+                let mut substitutions = std::collections::BTreeMap::new();
+                let hir_signature = compilation.types.function_type(target).ok_or_else(|| {
+                    native_error(format!(
+                        "contract implementation `{}` has no inferred signature",
+                        target_body.name
+                    ))
+                })?;
+                let parameter_types = hir_signature
+                    .parameters
+                    .iter()
+                    .map(|ty| specialized_verification_type(compilation, *ty, &Vec::new(), 0))
+                    .collect::<Result<Vec<_>, _>>()?;
+                if let Some(receiver) = parameter_types.first() {
+                    receiver.infer_specialization(ty, &mut substitutions);
+                }
+                for (parameter, argument) in parameter_types.iter().skip(1).zip(argument_types) {
+                    parameter.infer_specialization(argument, &mut substitutions);
+                }
+                let substitutions = substitutions.into_iter().collect::<Vec<_>>();
+                pending.push(SpecializationKey {
+                    function: target,
+                    substitutions,
+                });
+            }
+        }
     }
     let first_synthetic = program
         .functions
@@ -586,6 +379,287 @@ fn reachable_instances(
         .collect()
 }
 
+fn nominal_id(ty: &crate::vm::VerificationType) -> Option<crate::types::NominalTypeId> {
+    match ty {
+        crate::vm::VerificationType::Record { record, .. } => {
+            Some(crate::types::NominalTypeId::Record(*record))
+        }
+        crate::vm::VerificationType::Variant { variant, .. } => {
+            Some(crate::types::NominalTypeId::Variant(*variant))
+        }
+        _ => None,
+    }
+}
+
+fn collect_nominal_types(
+    ty: &crate::vm::VerificationType,
+    output: &mut BTreeSet<crate::vm::VerificationType>,
+) {
+    use crate::vm::VerificationType;
+    match ty {
+        VerificationType::Record { arguments, .. }
+        | VerificationType::Variant { arguments, .. } => {
+            if !ty.contains_generic() {
+                output.insert(ty.clone());
+            }
+            for argument in arguments {
+                collect_nominal_types(argument, output);
+            }
+        }
+        VerificationType::List(value)
+        | VerificationType::Reference(value)
+        | VerificationType::Remote(value)
+        | VerificationType::Future(value) => collect_nominal_types(value, output),
+        VerificationType::Function {
+            parameters, result, ..
+        } => {
+            for parameter in parameters {
+                collect_nominal_types(parameter, output);
+            }
+            collect_nominal_types(result, output);
+        }
+        VerificationType::Union(values) => {
+            for value in values {
+                collect_nominal_types(value, output);
+            }
+        }
+        VerificationType::Unknown
+        | VerificationType::Generic(_)
+        | VerificationType::Unit
+        | VerificationType::Bool
+        | VerificationType::Integer
+        | VerificationType::Float
+        | VerificationType::CodePoint
+        | VerificationType::Byte
+        | VerificationType::Bytes
+        | VerificationType::ByteBuffer => {}
+    }
+}
+
+fn remote_specialization(
+    compilation: &Compilation,
+    function: FunctionId,
+    receiver: &VerificationType,
+    arguments: &[VerificationType],
+) -> Result<crate::vm::Specialization, FosterError> {
+    let declaration = &compilation.hir.functions[function];
+    let signature = compilation.types.function_type(function).ok_or_else(|| {
+        native_error(format!(
+            "remote method `{}` has no inferred signature",
+            declaration.name
+        ))
+    })?;
+    if signature.parameters.len() != arguments.len() + 1 {
+        return Err(native_error(format!(
+            "remote method `{}` has inconsistent parameter metadata",
+            declaration.name
+        )));
+    }
+    let schemas = signature
+        .parameters
+        .iter()
+        .map(|ty| specialized_verification_type(compilation, *ty, &Vec::new(), 0))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut substitutions = std::collections::BTreeMap::new();
+    schemas[0].infer_specialization(receiver, &mut substitutions);
+    for (schema, argument) in schemas.iter().skip(1).zip(arguments) {
+        schema.infer_specialization(argument, &mut substitutions);
+    }
+    for generic in &declaration.type_parameters {
+        if !substitutions.contains_key(generic) {
+            return Err(native_error(format!(
+                "native remote call cannot infer `{generic}` for `{}`",
+                declaration.name
+            )));
+        }
+    }
+    Ok(substitutions.into_iter().collect())
+}
+
+fn verification_type_for_native(
+    ty: NativeType,
+    program: &Program,
+    layouts: &LayoutRegistry,
+) -> VerificationType {
+    match ty {
+        NativeType::Unit => VerificationType::Unit,
+        NativeType::Bool => VerificationType::Bool,
+        NativeType::Int => VerificationType::Integer,
+        NativeType::Float => VerificationType::Float,
+        NativeType::CodePoint => VerificationType::CodePoint,
+        NativeType::Byte => VerificationType::Byte,
+        NativeType::String => program
+            .string_record
+            .map_or(VerificationType::Unknown, |record| {
+                VerificationType::Record {
+                    record,
+                    arguments: Vec::new(),
+                }
+            }),
+        NativeType::Object(layout) => match &layouts.get(layout).kind {
+            LayoutKind::Record {
+                record, arguments, ..
+            } => VerificationType::Record {
+                record: *record,
+                arguments: arguments.clone(),
+            },
+            LayoutKind::Variant {
+                variant_type,
+                arguments,
+                ..
+            } => VerificationType::Variant {
+                variant: *variant_type,
+                arguments: arguments.clone(),
+            },
+            LayoutKind::Pointer { pointee, .. } => {
+                VerificationType::Reference(Box::new(pointee.clone()))
+            }
+            LayoutKind::Builtin { ty } => ty.clone(),
+            LayoutKind::Opaque | LayoutKind::Closure { .. } => VerificationType::Unknown,
+        },
+        NativeType::Opaque | NativeType::Arguments | NativeType::StringList => {
+            VerificationType::Unknown
+        }
+    }
+}
+
+struct VerifiedRemoteCall {
+    target: FunctionId,
+    result: VerificationType,
+}
+
+fn verified_remote_calls(
+    function: &BytecodeFunction,
+    states: &[Option<Vec<Option<VerificationType>>>],
+    instance: &SpecializationKey,
+    environment: NativeIrEnvironment<'_>,
+) -> Result<HashMap<u16, VerifiedRemoteCall>, FosterError> {
+    let mut calls = HashMap::new();
+    for (instruction, state) in function.instructions.iter().zip(states) {
+        let Instruction::RemoteCall {
+            destination,
+            remote,
+            function: target,
+            arguments,
+        } = instruction
+        else {
+            continue;
+        };
+        let Some(state) = state else {
+            continue;
+        };
+        let logical_type = |register: Register| {
+            state[usize::from(register.0)]
+                .as_ref()
+                .map(|ty| ty.specialize(&instance.substitutions))
+                .ok_or_else(|| native_error("remote call operand has no verified type"))
+        };
+        let VerificationType::Remote(receiver) = logical_type(*remote)? else {
+            return Err(native_error(
+                "remote call receiver has no verified Remote type",
+            ));
+        };
+        let arguments = arguments
+            .iter()
+            .map(|(_, argument)| logical_type(*argument))
+            .collect::<Result<Vec<_>, _>>()?;
+        let substitutions =
+            remote_specialization(environment.compilation, *target, &receiver, &arguments)?;
+        let result = environment.program.functions[target]
+            .result_type
+            .specialize(&substitutions);
+        let key = SpecializationKey {
+            function: *target,
+            substitutions,
+        };
+        let target = environment.instances.get(&key).copied().ok_or_else(|| {
+            native_error("verified remote specialization was not included in native reachability")
+        })?;
+        calls.insert(destination.0, VerifiedRemoteCall { target, result });
+    }
+    Ok(calls)
+}
+
+fn contract_candidates(
+    slot: crate::types::DispatchSlot,
+    receiver: NativeType,
+    argument_types: &[NativeType],
+    environment: NativeIrEnvironment<'_>,
+) -> Result<Vec<ContractCandidate>, FosterError> {
+    let receiver_layout = match receiver {
+        NativeType::Object(layout) => layout,
+        _ => return Ok(Vec::new()),
+    };
+    let receiver_nominal = match &environment.layouts.get(receiver_layout).kind {
+        LayoutKind::Record { record, .. } => Some(crate::types::NominalTypeId::Record(*record)),
+        LayoutKind::Variant { variant_type, .. } => {
+            Some(crate::types::NominalTypeId::Variant(*variant_type))
+        }
+        _ => None,
+    };
+    let dynamic = matches!(
+        environment.layouts.get(receiver_layout).kind,
+        LayoutKind::Opaque
+    ) || receiver_nominal
+        .is_some_and(|nominal| !environment.program.dispatch.contains_key(&(nominal, slot)));
+    let mut candidates = Vec::new();
+    for layout in environment
+        .layouts
+        .layouts()
+        .iter()
+        .filter(|layout| layout.materialized)
+    {
+        if !dynamic && layout.id != receiver_layout {
+            continue;
+        }
+        let concrete = match &layout.kind {
+            LayoutKind::Record {
+                record, arguments, ..
+            } => crate::vm::VerificationType::Record {
+                record: *record,
+                arguments: arguments.clone(),
+            },
+            LayoutKind::Variant {
+                variant_type,
+                arguments,
+                ..
+            } => crate::vm::VerificationType::Variant {
+                variant: *variant_type,
+                arguments: arguments.clone(),
+            },
+            _ => continue,
+        };
+        let nominal = nominal_id(&concrete).expect("record and variant layouts are nominal");
+        let Some(implementation) = environment.program.dispatch.get(&(nominal, slot)).copied()
+        else {
+            continue;
+        };
+        let mut matching = environment
+            .instances
+            .iter()
+            .filter_map(|(key, function)| {
+                if key.function != implementation {
+                    return None;
+                }
+                let signature = &environment.function_types[function];
+                (signature.parameters.first() == Some(&NativeType::Object(layout.id))
+                    && signature.parameters.get(1..) == Some(argument_types))
+                .then_some(*function)
+            })
+            .collect::<Vec<_>>();
+        matching.sort_unstable_by_key(|function| function.into_raw().into_u32());
+        let Some(function) = matching.into_iter().next() else {
+            continue;
+        };
+        candidates.push(ContractCandidate {
+            layout: layout.id,
+            implementation,
+            function,
+        });
+    }
+    Ok(candidates)
+}
+
 fn resolve_specialization(
     specialization: &crate::vm::Specialization,
     outer: &crate::vm::Specialization,
@@ -600,6 +674,7 @@ fn collect_function_types(
     compilation: &Compilation,
     program: &Program,
     instances: &[NativeInstance],
+    builtin_result_types: &HashMap<crate::intrinsics::Builtin, crate::vm::VerificationType>,
     layouts: &mut LayoutRegistry,
 ) -> Result<HashMap<FunctionId, ir::Signature>, FosterError> {
     instances
@@ -640,11 +715,29 @@ fn collect_function_types(
             if layouts.closure(function).is_some() {
                 layouts.instantiate_closure(function, &instance.key.substitutions)?;
             }
+            for state in vm::type_states(program, &program.functions[&function])?
+                .into_iter()
+                .flatten()
+            {
+                for ty in state.into_iter().flatten() {
+                    layouts.instantiate_type(&ty.specialize(&instance.key.substitutions))?;
+                }
+            }
             for instruction in &program.functions[&function].instructions {
                 if let Some(ty) =
                     instruction_layout_type(program, instruction, &instance.key.substitutions)
                 {
                     layouts.instantiate_type(&ty)?;
+                }
+                if let Instruction::Builtin { builtin, .. } = instruction
+                    && builtin.descriptor().native == crate::intrinsics::NativeIntrinsic::Host
+                {
+                    let ty = builtin_result_types.get(builtin).ok_or_else(|| {
+                        native_error(format!(
+                            "native host intrinsic `{builtin:?}` has no declared result type"
+                        ))
+                    })?;
+                    layouts.instantiate_type(ty)?;
                 }
             }
             let result = if matches!(compilation.types.types[signature.result], Type::Function(_)) {
@@ -661,6 +754,33 @@ fn collect_function_types(
             Ok((instance.ir_function, ir::Signature { parameters, result }))
         })
         .collect()
+}
+
+fn native_builtin_result_types(
+    compilation: &Compilation,
+) -> Result<HashMap<crate::intrinsics::Builtin, crate::vm::VerificationType>, FosterError> {
+    let mut result = HashMap::new();
+    for (function, declaration) in compilation.hir.functions.iter() {
+        let Some(builtin) = declaration
+            .intrinsic
+            .as_deref()
+            .and_then(crate::intrinsics::Intrinsic::from_key)
+            .and_then(crate::intrinsics::Intrinsic::builtin)
+        else {
+            continue;
+        };
+        if builtin.descriptor().native != crate::intrinsics::NativeIntrinsic::Host {
+            continue;
+        }
+        let signature = compilation.types.function_type(function).ok_or_else(|| {
+            native_error(format!(
+                "native host intrinsic `{builtin:?}` is missing type information"
+            ))
+        })?;
+        let ty = specialized_verification_type(compilation, signature.result, &Vec::new(), 0)?;
+        result.insert(builtin, ty);
+    }
+    Ok(result)
 }
 
 fn instruction_layout_type(
@@ -818,6 +938,9 @@ fn native_type(
         {
             Ok(NativeType::String)
         }
+        Type::Record { record, .. } if record_uses_dynamic_dispatch(compilation, record) => {
+            Ok(NativeType::Object(layouts.opaque()))
+        }
         Type::Record { .. }
             if crate::entry::is_arguments_type(&compilation.hir, &compilation.types, ty) =>
         {
@@ -967,6 +1090,14 @@ fn specialized_verification_type(
         {
             VerificationType::Bytes
         }
+        Type::Record { record, arguments }
+            if compilation.hir.records[*record].name == "List"
+                && compilation.hir.modules[compilation.hir.records[*record].module].name
+                    == "core.list"
+                && arguments.len() == 1 =>
+        {
+            VerificationType::List(Box::new(nested(arguments[0])?))
+        }
         Type::Record { record, arguments } => VerificationType::Record {
             record: *record,
             arguments: arguments
@@ -1023,6 +1154,11 @@ fn concrete_native_type(
                 .is_some_and(|name| name == "String") =>
         {
             Ok(NativeType::String)
+        }
+        VerificationType::Record { record, .. }
+            if record_uses_dynamic_dispatch(compilation, *record) =>
+        {
+            Ok(NativeType::Object(layouts.opaque()))
         }
         VerificationType::Record { record, .. }
             if compilation
@@ -1090,6 +1226,24 @@ fn concrete_native_type(
     }
 }
 
+fn record_uses_dynamic_dispatch(compilation: &Compilation, record: crate::hir::RecordId) -> bool {
+    let declaration = &compilation.hir.records[record];
+    // Private storage is nominal implementation state, so values of this exact type always keep
+    // their concrete descriptor. Pure public structural surfaces may be erased when they have no
+    // implementation of their own.
+    if declaration.fields.iter().any(|field| !field.public) {
+        return false;
+    }
+    let has_contract_surface =
+        !declaration.methods.is_empty() || !declaration.compositions.is_empty();
+    let has_implementation = compilation
+        .types
+        .dispatch
+        .keys()
+        .any(|(nominal, _)| *nominal == crate::types::NominalTypeId::Record(record));
+    has_contract_surface && !has_implementation
+}
+
 fn validate_program(
     compilation: &Compilation,
     program: &Program,
@@ -1147,6 +1301,10 @@ fn validate_program(
                     | Instruction::Append { .. }
                     | Instruction::Contains { .. }
                     | Instruction::Builtin { .. }
+                    | Instruction::SpawnRemote { .. }
+                    | Instruction::SpawnRemoteBorrow { .. }
+                    | Instruction::RemoteCall { .. }
+                    | Instruction::Await { .. }
                     | Instruction::CallContractMethod { .. }
                     | Instruction::Return { .. }
             );
@@ -1194,31 +1352,6 @@ fn validate_program(
     }
     let _ = compilation;
     Ok(())
-}
-
-fn declare_layout_destructors(
-    module: &mut ObjectModule,
-    layouts: &PhysicalRegistry,
-) -> Result<HashMap<LayoutId, FuncId>, FosterError> {
-    layouts
-        .layouts()
-        .iter()
-        .filter(|layout| layout.materialized)
-        .map(|layout| {
-            let signature = signature(
-                module,
-                &ir::Signature {
-                    parameters: vec![NativeType::Object(layout.id)],
-                    result: NativeType::Unit,
-                },
-            );
-            let name = format!("foster_drop_l{}", layout.id.0);
-            let function = module
-                .declare_function(&name, Linkage::Local, &signature)
-                .map_err(|error| native_error(format!("cannot declare `{name}`: {error}")))?;
-            Ok((layout.id, function))
-        })
-        .collect()
 }
 
 fn concrete_closure_target(
@@ -1279,459 +1412,49 @@ fn declare_callable_thunks(
     Ok(result)
 }
 
-fn declare_release_thunks(
+fn declare_remote_thunks(
     module: &mut ObjectModule,
-    layouts: NativeLayouts<'_>,
-) -> Result<HashMap<LayoutId, FuncId>, FosterError> {
-    let mut result = HashMap::new();
-    for layout in layouts
-        .physical
-        .layouts()
-        .iter()
-        .filter(|layout| layout.materialized && layouts.is_managed(layout.id))
-    {
-        let thunk_signature = signature(
-            module,
-            &ir::Signature {
-                parameters: vec![NativeType::Object(layout.id)],
-                result: NativeType::Unit,
-            },
-        );
-        let name = format!("foster_release_l{}", layout.id.0);
-        let id = module
-            .declare_function(&name, Linkage::Local, &thunk_signature)
-            .map_err(|error| native_error(format!("cannot declare `{name}`: {error}")))?;
-        result.insert(layout.id, id);
-    }
-    Ok(result)
-}
-
-fn define_layout_destructors(
-    module: &mut ObjectModule,
-    layouts: NativeLayouts<'_>,
-    destructors: &HashMap<LayoutId, FuncId>,
-) -> Result<(), FosterError> {
-    for layout in layouts
-        .physical
-        .layouts()
-        .iter()
-        .filter(|layout| layout.materialized)
-    {
-        let mut context = module.make_context();
-        context.func.signature = signature(
-            module,
-            &ir::Signature {
-                parameters: vec![NativeType::Object(layout.id)],
-                result: NativeType::Unit,
-            },
-        );
-        let frontend_config = module.target_config();
-        let mut builder_context = FunctionBuilderContext::new();
-        {
-            let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
-            let entry = builder.create_block();
-            builder.append_block_params_for_function_params(entry);
-            builder.switch_to_block(entry);
-            let object = builder.block_params(entry)[0];
-            match &layout.drop_plan {
-                DropPlan::Fields(fields) => {
-                    lower_drop_fields(&mut builder, module, object, fields, layouts, destructors)?;
-                }
-                DropPlan::Variant {
-                    tag_offset,
-                    alternatives,
-                } => {
-                    let tag = builder.ins().load(
-                        types::I32,
-                        MemFlagsData::trusted(),
-                        object,
-                        *tag_offset as i32,
-                    );
-                    let finish = builder.create_block();
-                    for alternative in alternatives {
-                        let matched = builder.create_block();
-                        let next = builder.create_block();
-                        let is_match =
-                            builder
-                                .ins()
-                                .icmp_imm_s(IntCC::Equal, tag, i64::from(alternative.tag));
-                        builder.ins().brif(is_match, matched, &[], next, &[]);
-                        builder.switch_to_block(matched);
-                        lower_drop_fields(
-                            &mut builder,
-                            module,
-                            object,
-                            &alternative.fields,
-                            layouts,
-                            destructors,
-                        )?;
-                        builder.ins().jump(finish, &[]);
-                        builder.switch_to_block(next);
-                    }
-                    builder.ins().jump(finish, &[]);
-                    builder.switch_to_block(finish);
-                }
-                DropPlan::Buffer { element, .. } => {
-                    lower_drop_buffer(
-                        &mut builder,
-                        module,
-                        object,
-                        layout,
-                        *element,
-                        layouts,
-                        destructors,
-                    )?;
-                }
-                DropPlan::Runtime => match layout.kind {
-                    PhysicalKind::Callable {
-                        environment_offset,
-                        release_offset,
-                        ..
-                    } => {
-                        let word = module.target_config().pointer_type();
-                        let environment = builder.ins().load(
-                            word,
-                            MemFlagsData::trusted(),
-                            object,
-                            environment_offset as i32,
-                        );
-                        let release = builder.ins().load(
-                            word,
-                            MemFlagsData::trusted(),
-                            object,
-                            release_offset as i32,
-                        );
-                        let release_signature = signature(
-                            module,
-                            &ir::Signature {
-                                parameters: vec![NativeType::Opaque],
-                                result: NativeType::Unit,
-                            },
-                        );
-                        let release_signature = builder.func.import_signature(release_signature);
-                        builder
-                            .ins()
-                            .call_indirect(release_signature, release, &[environment]);
-                    }
-                    PhysicalKind::Bytes {
-                        data_offset,
-                        length_offset,
-                    } => {
-                        let word = module.target_config().pointer_type();
-                        let data = builder.ins().load(
-                            word,
-                            MemFlagsData::trusted(),
-                            object,
-                            data_offset as i32,
-                        );
-                        let length = builder.ins().load(
-                            word,
-                            MemFlagsData::trusted(),
-                            object,
-                            length_offset as i32,
-                        );
-                        let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
-                        let one = builder.ins().iconst(word, 1);
-                        let size = builder.ins().select(empty, one, length);
-                        let align = builder.ins().iconst(types::I64, 1);
-                        runtime_call(
-                            &mut builder,
-                            module,
-                            "foster_dealloc",
-                            &ir::Signature {
-                                parameters: vec![
-                                    NativeType::Opaque,
-                                    NativeType::Int,
-                                    NativeType::Int,
-                                ],
-                                result: NativeType::Unit,
-                            },
-                            &[data, size, align],
-                        )?;
-                    }
-                    PhysicalKind::Opaque {
-                        value_offset,
-                        release_offset,
-                        ..
-                    } => {
-                        let word = module.target_config().pointer_type();
-                        let release = builder.ins().load(
-                            word,
-                            MemFlagsData::trusted(),
-                            object,
-                            release_offset as i32,
-                        );
-                        let has_release = builder.ins().icmp_imm_s(IntCC::NotEqual, release, 0);
-                        let release_block = builder.create_block();
-                        let finish = builder.create_block();
-                        builder
-                            .ins()
-                            .brif(has_release, release_block, &[], finish, &[]);
-                        builder.switch_to_block(release_block);
-                        let value = builder.ins().load(
-                            word,
-                            MemFlagsData::trusted(),
-                            object,
-                            value_offset as i32,
-                        );
-                        let release_signature = signature(
-                            module,
-                            &ir::Signature {
-                                parameters: vec![NativeType::Opaque],
-                                result: NativeType::Unit,
-                            },
-                        );
-                        let release_signature = builder.func.import_signature(release_signature);
-                        builder
-                            .ins()
-                            .call_indirect(release_signature, release, &[value]);
-                        builder.ins().jump(finish, &[]);
-                        builder.switch_to_block(finish);
-                    }
-                    _ => {}
-                },
-                DropPlan::Trivial => {}
-            }
-            let size = builder.ins().iconst(types::I64, i64::from(layout.size));
-            let align = builder.ins().iconst(types::I64, i64::from(layout.align));
-            runtime_call(
-                &mut builder,
-                module,
-                "foster_dealloc",
-                &ir::Signature {
-                    parameters: vec![
-                        NativeType::Object(layout.id),
-                        NativeType::Int,
-                        NativeType::Int,
-                    ],
-                    result: NativeType::Unit,
-                },
-                &[object, size, align],
-            )?;
-            let unit = builder.ins().iconst(types::I8, 0);
-            builder.ins().return_(&[unit]);
-            builder.seal_all_blocks();
-            builder.finalize(frontend_config);
-        }
-        module
-            .define_function(destructors[&layout.id], &mut context)
-            .map_err(|error| {
-                native_error(format!(
-                    "cannot compile destructor for l{}: {error}",
-                    layout.id.0
-                ))
-            })?;
-        module.clear_context(&mut context);
-    }
-    Ok(())
-}
-
-fn define_release_thunks(
-    module: &mut ObjectModule,
-    layouts: NativeLayouts<'_>,
-    destructors: &HashMap<LayoutId, FuncId>,
-    release_thunks: &HashMap<LayoutId, FuncId>,
-) -> Result<(), FosterError> {
-    for (&layout, &id) in release_thunks {
-        let mut context = module.make_context();
-        context.func.signature = signature(
-            module,
-            &ir::Signature {
-                parameters: vec![NativeType::Object(layout)],
-                result: NativeType::Unit,
-            },
-        );
-        let frontend_config = module.target_config();
-        let mut builder_context = FunctionBuilderContext::new();
-        {
-            let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
-            let entry = builder.create_block();
-            builder.append_block_params_for_function_params(entry);
-            builder.switch_to_block(entry);
-            let object = builder.block_params(entry)[0];
-            release_object(
-                &mut builder,
-                module,
-                object,
-                layout,
-                layouts.physical,
-                destructors,
-            )?;
-            let unit = builder.ins().iconst(types::I8, 0);
-            builder.ins().return_(&[unit]);
-            builder.seal_all_blocks();
-            builder.finalize(frontend_config);
-        }
-        module.define_function(id, &mut context).map_err(|error| {
-            native_error(format!(
-                "cannot compile release thunk l{}: {error}",
-                layout.0
-            ))
-        })?;
-        module.clear_context(&mut context);
-    }
-    Ok(())
-}
-
-fn lower_drop_buffer(
-    builder: &mut FunctionBuilder<'_>,
-    module: &mut ObjectModule,
-    object: ClifValue,
-    layout: &crate::codegen::layout::physical::PhysicalLayout,
-    element: ValueLayout,
-    layouts: NativeLayouts<'_>,
-    destructors: &HashMap<LayoutId, FuncId>,
-) -> Result<(), FosterError> {
-    let PhysicalKind::Buffer {
-        data_offset,
-        length_offset,
-        capacity_offset,
-        ..
-    } = layout.kind
-    else {
-        return Err(native_error("buffer drop plan has a non-buffer layout"));
-    };
-    let pointer_type = module.target_config().pointer_type();
-    let data = builder.ins().load(
-        pointer_type,
-        MemFlagsData::trusted(),
-        object,
-        data_offset as i32,
-    );
-    let length = builder.ins().load(
-        pointer_type,
-        MemFlagsData::trusted(),
-        object,
-        length_offset as i32,
-    );
-    if let Some(pointee) = element.pointee
-        && layouts.is_managed(pointee)
-    {
-        let loop_block = builder.create_block();
-        let release = builder.create_block();
-        let released = builder.create_block();
-        builder.append_block_param(loop_block, pointer_type);
-        let zero = builder.ins().iconst(pointer_type, 0);
-        builder.ins().jump(loop_block, &[zero.into()]);
-        builder.switch_to_block(loop_block);
-        let index = builder.block_params(loop_block)[0];
-        let done = builder
-            .ins()
-            .icmp(IntCC::UnsignedGreaterThanOrEqual, index, length);
-        builder.ins().brif(done, released, &[], release, &[]);
-        builder.switch_to_block(release);
-        let offset = builder.ins().imul_imm_u(index, i64::from(element.size));
-        let address = builder.ins().iadd(data, offset);
-        let value = builder
-            .ins()
-            .load(pointer_type, MemFlagsData::trusted(), address, 0);
-        release_object(
-            builder,
-            module,
-            value,
-            pointee,
-            layouts.physical,
-            destructors,
-        )?;
-        let next = builder.ins().iadd_imm_s(index, 1);
-        builder.ins().jump(loop_block, &[next.into()]);
-        builder.switch_to_block(released);
-    }
-    let capacity = builder.ins().load(
-        pointer_type,
-        MemFlagsData::trusted(),
-        object,
-        capacity_offset as i32,
-    );
-    let has_data = builder.ins().icmp_imm_s(IntCC::NotEqual, capacity, 0);
-    let deallocate = builder.create_block();
-    let finish = builder.create_block();
-    builder.ins().brif(has_data, deallocate, &[], finish, &[]);
-    builder.switch_to_block(deallocate);
-    let size = builder.ins().imul_imm_u(capacity, i64::from(element.size));
-    let align = builder.ins().iconst(types::I64, i64::from(element.align));
-    runtime_call(
-        builder,
+    instances: &[NativeInstance],
+    method_receivers: &HashSet<FunctionId>,
+) -> Result<HashMap<FunctionId, FuncId>, FosterError> {
+    let thunk_signature = signature(
         module,
-        "foster_dealloc",
         &ir::Signature {
-            parameters: vec![NativeType::Opaque, NativeType::Int, NativeType::Int],
-            result: NativeType::Unit,
+            parameters: vec![NativeType::Int, NativeType::Opaque],
+            result: NativeType::Int,
         },
-        &[data, size, align],
-    )?;
-    builder.ins().jump(finish, &[]);
-    builder.switch_to_block(finish);
-    Ok(())
-}
-
-fn lower_drop_fields(
-    builder: &mut FunctionBuilder<'_>,
-    module: &mut ObjectModule,
-    object: ClifValue,
-    fields: &[DropField],
-    layouts: NativeLayouts<'_>,
-    destructors: &HashMap<LayoutId, FuncId>,
-) -> Result<(), FosterError> {
-    let pointer_type = module.target_config().pointer_type();
-    for field in fields {
-        if !layouts.is_managed(field.pointee) {
-            continue;
-        }
-        let child = builder.ins().load(
-            pointer_type,
-            MemFlagsData::trusted(),
-            object,
-            field.offset as i32,
-        );
-        release_object(
-            builder,
-            module,
-            child,
-            field.pointee,
-            layouts.physical,
-            destructors,
-        )?;
-    }
-    Ok(())
+    );
+    instances
+        .iter()
+        .filter(|instance| method_receivers.contains(&instance.key.function))
+        .map(|instance| {
+            let name = format!(
+                "foster_remote_{}",
+                instance.ir_function.into_raw().into_u32()
+            );
+            let thunk = module
+                .declare_function(&name, Linkage::Local, &thunk_signature)
+                .map_err(|error| native_error(format!("cannot declare `{name}`: {error}")))?;
+            Ok((instance.ir_function, thunk))
+        })
+        .collect()
 }
 
 fn define_function(
     module: &mut ObjectModule,
-    instance: &NativeInstance,
+    prepared: &NativeFunction,
     native_id: FuncId,
     backend: &NativeBackend<'_>,
 ) -> Result<(), FosterError> {
+    let instance = &prepared.instance;
     let function = &backend.ir.program.functions[&instance.key.function];
-    let native_function = lower_shared_to_native_ir(
-        &backend.ir.shared_functions[&instance.key.function],
-        function,
-        &backend.ir.function_types[&instance.ir_function],
-        &instance.key,
-        backend.ir,
-    )?;
-    native_function
-        .verify(backend.ir.function_types)
-        .map_err(|error| {
-            native_error(format!(
-                "invalid native IR for `{}`: {error}",
-                function.name
-            ))
-        })?;
     let frontend_config = module.target_config();
     let mut context = module.make_context();
     context.func.signature = signature(module, &backend.ir.function_types[&instance.ir_function]);
     let mut builder_context = FunctionBuilderContext::new();
     {
         let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
-        lower_native_ir(
-            &mut builder,
-            module,
-            &native_function,
-            instance,
-            function,
-            backend,
-        )?;
+        lower_native_ir(&mut builder, module, prepared, backend)?;
         builder.finalize(frontend_config);
     }
     module
@@ -1745,7 +1468,7 @@ fn define_callable_thunks(
     module: &mut ObjectModule,
     backend: &NativeBackend<'_>,
 ) -> Result<(), FosterError> {
-    for (&layout, &thunk_id) in backend.callable_thunks {
+    for (layout, thunk_id) in ordered_entries(backend.callable_thunks) {
         let (target, capture_count) =
             concrete_closure_target(backend.objects.layouts, backend.ir.instances, layout)
                 .ok_or_else(|| native_error("callable thunk has no concrete closure target"))?;
@@ -1808,6 +1531,138 @@ fn define_callable_thunks(
     Ok(())
 }
 
+fn native_to_remote_word(
+    builder: &mut FunctionBuilder<'_>,
+    module: &ObjectModule,
+    value: ClifValue,
+    ty: NativeType,
+) -> ClifValue {
+    match ty {
+        NativeType::Int => value,
+        NativeType::Float => builder
+            .ins()
+            .bitcast(types::I64, MemFlagsData::new(), value),
+        NativeType::Unit | NativeType::Bool | NativeType::Byte => {
+            builder.ins().uextend(types::I64, value)
+        }
+        NativeType::CodePoint => builder.ins().uextend(types::I64, value),
+        NativeType::String
+        | NativeType::Arguments
+        | NativeType::StringList
+        | NativeType::Object(_)
+        | NativeType::Opaque => {
+            if module.target_config().pointer_type() == types::I64 {
+                value
+            } else {
+                builder.ins().uextend(types::I64, value)
+            }
+        }
+    }
+}
+
+fn remote_word_to_native(
+    builder: &mut FunctionBuilder<'_>,
+    module: &ObjectModule,
+    value: ClifValue,
+    ty: NativeType,
+) -> ClifValue {
+    match ty {
+        NativeType::Int => value,
+        NativeType::Float => builder
+            .ins()
+            .bitcast(types::F64, MemFlagsData::new(), value),
+        NativeType::Unit | NativeType::Bool | NativeType::Byte => {
+            builder.ins().ireduce(types::I8, value)
+        }
+        NativeType::CodePoint => builder.ins().ireduce(types::I32, value),
+        NativeType::String
+        | NativeType::Arguments
+        | NativeType::StringList
+        | NativeType::Object(_)
+        | NativeType::Opaque => {
+            if module.target_config().pointer_type() == types::I64 {
+                value
+            } else {
+                builder
+                    .ins()
+                    .ireduce(module.target_config().pointer_type(), value)
+            }
+        }
+    }
+}
+
+fn define_remote_thunks(
+    module: &mut ObjectModule,
+    backend: &NativeBackend<'_>,
+) -> Result<(), FosterError> {
+    for (target, thunk_id) in ordered_entries(backend.remote_thunks) {
+        let target_signature = &backend.ir.function_types[&target];
+        let Some(&receiver_type) = target_signature.parameters.first() else {
+            return Err(native_error("remote method has no receiver parameter"));
+        };
+        let mut context = module.make_context();
+        context.func.signature = signature(
+            module,
+            &ir::Signature {
+                parameters: vec![NativeType::Int, NativeType::Opaque],
+                result: NativeType::Int,
+            },
+        );
+        let frontend_config = module.target_config();
+        let mut builder_context = FunctionBuilderContext::new();
+        {
+            let mut builder = FunctionBuilder::new(&mut context.func, &mut builder_context);
+            let entry = builder.create_block();
+            builder.append_block_params_for_function_params(entry);
+            builder.switch_to_block(entry);
+            let state_word = builder.block_params(entry)[0];
+            let state = remote_word_to_native(&mut builder, module, state_word, receiver_type);
+            if let NativeType::Object(layout) = receiver_type
+                && backend.objects.layouts.is_managed(layout)
+            {
+                backend.objects.retain(&mut builder, state, layout);
+            }
+            let argument_data = builder.block_params(entry)[1];
+            let mut arguments = Vec::with_capacity(target_signature.parameters.len());
+            arguments.push(state);
+            for (index, ty) in target_signature
+                .parameters
+                .iter()
+                .copied()
+                .skip(1)
+                .enumerate()
+            {
+                let word = builder.ins().load(
+                    types::I64,
+                    MemFlagsData::trusted(),
+                    argument_data,
+                    i32::try_from(index * 8)
+                        .map_err(|_| native_error("remote argument frame exceeds i32 offsets"))?,
+                );
+                arguments.push(remote_word_to_native(&mut builder, module, word, ty));
+            }
+            let target = module.declare_func_in_func(backend.functions[&target], builder.func);
+            let call = builder.ins().call(target, &arguments);
+            let result = builder.inst_results(call)[0];
+            let result =
+                native_to_remote_word(&mut builder, module, result, target_signature.result);
+            builder.ins().return_(&[result]);
+            builder.seal_all_blocks();
+            builder.finalize(frontend_config);
+        }
+        module
+            .define_function(thunk_id, &mut context)
+            .map_err(|error| {
+                native_error(format!(
+                    "cannot compile remote thunk for function #{}: {error}",
+                    target.into_raw().into_u32()
+                ))
+            })?;
+        module.clear_context(&mut context);
+    }
+    Ok(())
+}
+
 fn signature(module: &mut ObjectModule, source: &ir::Signature) -> ClifSignature {
     let mut signature = module.make_signature();
     let pointer_type = module.target_config().pointer_type();
@@ -1823,7 +1678,14 @@ fn signature(module: &mut ObjectModule, source: &ir::Signature) -> ClifSignature
 }
 
 fn cranelift_type(ty: NativeType, pointer_type: ClifType) -> ClifType {
-    match ty.representation() {
+    cranelift_representation(ty.representation(), pointer_type)
+}
+
+fn cranelift_representation(
+    representation: ir::Representation,
+    pointer_type: ClifType,
+) -> ClifType {
+    match representation {
         ir::Representation::I8 => types::I8,
         ir::Representation::I32 => types::I32,
         ir::Representation::I64 => types::I64,
@@ -1837,6 +1699,7 @@ fn infer_register_types(
     parameter_types: &[NativeType],
     instance: &SpecializationKey,
     environment: NativeIrEnvironment<'_>,
+    remote_calls: &HashMap<u16, VerifiedRemoteCall>,
 ) -> Result<Vec<Option<NativeType>>, FosterError> {
     let mut result = vec![None; usize::from(function.registers)];
     for (index, ty) in parameter_types.iter().enumerate() {
@@ -2054,13 +1917,21 @@ fn infer_register_types(
                 ..
             } => {
                 let object = register_type(&result, *object, function)?;
-                result[usize::from(destination.0)] = Some(field_type(
-                    environment.program,
-                    environment.layouts,
-                    environment.physical_layouts,
-                    object,
-                    field,
-                )?);
+                result[usize::from(destination.0)] = Some(
+                    field_type(
+                        environment.program,
+                        environment.layouts,
+                        environment.physical_layouts,
+                        object,
+                        field,
+                    )
+                    .map_err(|error| {
+                        native_error(format!(
+                            "{} while lowering field `{field}` in `{}`",
+                            error.message, function.name
+                        ))
+                    })?,
+                );
             }
             Instruction::Index {
                 destination,
@@ -2142,32 +2013,111 @@ fn infer_register_types(
                 builtin,
                 ..
             } => {
-                result[usize::from(destination.0)] = Some(native_intrinsic_type(
-                    builtin.descriptor().signature.result,
+                result[usize::from(destination.0)] =
+                    Some(native_intrinsic_result_type(*builtin, environment)?);
+            }
+            Instruction::SpawnRemote { destination, value }
+            | Instruction::SpawnRemoteBorrow {
+                destination,
+                source: value,
+            } => {
+                let value = register_type(&result, *value, function)?;
+                let remote = VerificationType::Remote(Box::new(verification_type_for_native(
+                    value,
+                    environment.program,
                     environment.layouts,
+                )));
+                let layout = environment.layouts.builtin(&remote).ok_or_else(|| {
+                    native_error(format!(
+                        "remote value in `{}` has no concrete native layout",
+                        function.name
+                    ))
+                })?;
+                result[usize::from(destination.0)] = Some(NativeType::Object(layout));
+            }
+            Instruction::RemoteCall { destination, .. } => {
+                let call = remote_calls
+                    .get(&destination.0)
+                    .ok_or_else(|| native_error("remote call has no verified specialization"))?;
+                let future = VerificationType::Future(Box::new(call.result.clone()));
+                let layout = environment.layouts.builtin(&future).ok_or_else(|| {
+                    native_error(format!(
+                        "future in `{}` has no concrete native layout",
+                        function.name
+                    ))
+                })?;
+                result[usize::from(destination.0)] = Some(NativeType::Object(layout));
+            }
+            Instruction::Await {
+                destination,
+                future,
+            } => {
+                let NativeType::Object(layout) = register_type(&result, *future, function)? else {
+                    return Err(native_error(format!(
+                        "await in `{}` has a non-object future",
+                        function.name
+                    )));
+                };
+                let LayoutKind::Builtin {
+                    ty: VerificationType::Future(value),
+                } = &environment.layouts.get(layout).kind
+                else {
+                    return Err(native_error(format!(
+                        "await in `{}` does not receive Future<T>",
+                        function.name
+                    )));
+                };
+                result[usize::from(destination.0)] = Some(native_verification_type(
+                    environment.program,
+                    environment.layouts,
+                    value,
+                    None,
                 )?);
             }
             Instruction::CallContractMethod {
                 destination,
                 receiver,
+                slot,
                 name,
                 arguments,
                 ..
             } => {
-                if !arguments.is_empty() {
-                    return Err(native_error(format!(
-                        "native contract call `{}` in `{}` does not yet accept arguments",
-                        name, function.name
-                    )));
-                }
                 let receiver = register_type(&result, *receiver, function)?;
-                result[usize::from(destination.0)] = Some(field_type(
-                    environment.program,
-                    environment.layouts,
-                    environment.physical_layouts,
-                    receiver,
-                    name,
-                )?);
+                let argument_types = arguments
+                    .iter()
+                    .map(|argument| register_type(&result, *argument, function))
+                    .collect::<Result<Vec<_>, _>>()?;
+                let candidates =
+                    contract_candidates(*slot, receiver, &argument_types, environment)?;
+                if let Some(first) = candidates.first() {
+                    let signature = &environment.function_types[&first.function];
+                    if signature.parameters.len() != arguments.len() + 1 {
+                        return Err(native_error(format!(
+                            "contract implementation for `{name}` has an inconsistent arity"
+                        )));
+                    }
+                    if candidates.iter().any(|candidate| {
+                        environment.function_types[&candidate.function].result != signature.result
+                    }) {
+                        return Err(native_error(format!(
+                            "contract implementations for `{name}` disagree on their native result ABI"
+                        )));
+                    }
+                    result[usize::from(destination.0)] = Some(signature.result);
+                } else {
+                    if !arguments.is_empty() {
+                        return Err(native_error(format!(
+                            "value has no native implementation of required method `{name}`"
+                        )));
+                    }
+                    result[usize::from(destination.0)] = Some(field_type(
+                        environment.program,
+                        environment.layouts,
+                        environment.physical_layouts,
+                        receiver,
+                        name,
+                    )?);
+                }
             }
             Instruction::MatchPattern {
                 destination,
@@ -2220,6 +2170,7 @@ fn native_pattern_binding_types(
             let LayoutKind::Variant {
                 variant_type,
                 alternatives,
+                ..
             } = &layouts.get(layout).kind
             else {
                 unreachable!()
@@ -2468,13 +2419,33 @@ fn native_intrinsic_type(
     }
 }
 
+fn native_intrinsic_result_type(
+    builtin: crate::intrinsics::Builtin,
+    environment: NativeIrEnvironment<'_>,
+) -> Result<NativeType, FosterError> {
+    if builtin.descriptor().signature.result != crate::intrinsics::IntrinsicType::Any {
+        return native_intrinsic_type(builtin.descriptor().signature.result, environment.layouts);
+    }
+    let ty = environment
+        .builtin_result_types
+        .get(&builtin)
+        .ok_or_else(|| {
+            native_error(format!(
+                "native intrinsic `{builtin:?}` has no concrete result type"
+            ))
+        })?;
+    native_verification_type(environment.program, environment.layouts, ty, None)
+}
+
 fn lower_shared_to_native_ir(
     shared: &ir::Function,
     metadata: &BytecodeFunction,
+    source_states: &[Option<Vec<Option<VerificationType>>>],
     function_signature: &ir::Signature,
     instance: &SpecializationKey,
     environment: NativeIrEnvironment<'_>,
 ) -> Result<ir::Function, FosterError> {
+    let remote_calls = verified_remote_calls(metadata, source_states, instance, environment)?;
     let external_values = shared.captures.iter().chain(&shared.parameters);
     let external_types = metadata
         .capture_types
@@ -2493,6 +2464,7 @@ fn lower_shared_to_native_ir(
         &function_signature.parameters,
         instance,
         environment,
+        &remote_calls,
     )?;
     let mut value_types = shared
         .storage_hints
@@ -2547,7 +2519,10 @@ fn lower_shared_to_native_ir(
                 environment,
                 &mut value_types,
                 &mut storage_hints,
-                &reference_homes,
+                NativeFunctionFacts {
+                    reference_homes: &reference_homes,
+                    remote_calls: &remote_calls,
+                },
             )?;
             for (instruction, consumed) in lowered {
                 if let ir::Instruction::Portable(ir::PortableInstruction::Drop { value }) =
@@ -2593,15 +2568,34 @@ fn lower_shared_to_native_ir(
                 });
                 spans.push(block.terminator_span.clone());
                 terminator = ir::Terminator::Return(converted);
+            } else if result_error_conversion(
+                value_types[returned.0 as usize],
+                function_signature.result,
+                environment.layouts,
+            ) {
+                let converted = allocate_shared_value(
+                    &mut value_types,
+                    &mut storage_hints,
+                    function_signature.result,
+                );
+                instructions.push(ir::Instruction::ConvertResultError {
+                    destination: converted,
+                    source: returned,
+                });
+                spans.push(block.terminator_span.clone());
+                instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Drop {
+                    value: returned,
+                }));
+                spans.push(block.terminator_span.clone());
+                remove_shared_home(&mut state, &storage_hints, returned);
+                terminator = ir::Terminator::Return(converted);
             }
             let ir::Terminator::Return(returned) = &terminator else {
                 unreachable!()
             };
             let returned = *returned;
-            let mut released = HashSet::new();
-            for value in state.values().copied() {
+            for value in state.values().copied().collect::<BTreeSet<_>>() {
                 if value != returned
-                    && released.insert(value)
                     && matches!(value_types[value.0 as usize], NativeType::Object(_))
                 {
                     instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Drop {
@@ -2702,6 +2696,51 @@ fn lower_shared_to_native_ir(
     })
 }
 
+fn result_error_conversion(
+    source: NativeType,
+    target: NativeType,
+    layouts: &LayoutRegistry,
+) -> bool {
+    let (NativeType::Object(source), NativeType::Object(target)) = (source, target) else {
+        return false;
+    };
+    if source == target {
+        return false;
+    }
+    let LayoutKind::Variant {
+        name: source_name,
+        alternatives: source_alternatives,
+        ..
+    } = &layouts.get(source).kind
+    else {
+        return false;
+    };
+    let LayoutKind::Variant {
+        name: target_name,
+        alternatives: target_alternatives,
+        ..
+    } = &layouts.get(target).kind
+    else {
+        return false;
+    };
+    if source_name != "Result" || target_name != "Result" {
+        return false;
+    }
+    let Some(source_error) = source_alternatives
+        .iter()
+        .find(|alternative| alternative.name == "Error")
+    else {
+        return false;
+    };
+    let Some(target_error) = target_alternatives
+        .iter()
+        .find(|alternative| alternative.name == "Error")
+    else {
+        return false;
+    };
+    source_error.payload == target_error.payload
+}
+
 fn shift_native_blocks(terminator: &mut ir::Terminator, offset: u32) {
     match terminator {
         ir::Terminator::Jump { target, .. } => target.0 += offset,
@@ -2760,6 +2799,11 @@ fn allocate_shared_value(
     value
 }
 
+struct NativeFunctionFacts<'a> {
+    reference_homes: &'a HashMap<u16, ir::Value>,
+    remote_calls: &'a HashMap<u16, VerifiedRemoteCall>,
+}
+
 fn lower_shared_instruction(
     instruction: &ir::Instruction,
     metadata: &BytecodeFunction,
@@ -2767,7 +2811,7 @@ fn lower_shared_instruction(
     environment: NativeIrEnvironment<'_>,
     value_types: &mut Vec<NativeType>,
     storage_hints: &mut Vec<Option<u16>>,
-    reference_homes: &HashMap<u16, ir::Value>,
+    facts: NativeFunctionFacts<'_>,
 ) -> Result<Vec<(ir::Instruction, Vec<ir::Value>)>, FosterError> {
     let ty = |value: ir::Value| value_types[value.0 as usize];
     let one = |instruction| vec![(instruction, Vec::new())];
@@ -2802,7 +2846,7 @@ fn lower_shared_instruction(
             source,
         } => {
             let Some(reference) = storage_hints[destination.0 as usize]
-                .and_then(|home| reference_homes.get(&home).copied())
+                .and_then(|home| facts.reference_homes.get(&home).copied())
             else {
                 return Ok(one(instruction.clone()));
             };
@@ -3180,8 +3224,8 @@ fn lower_shared_instruction(
             index,
         } => {
             let helper = match ty(*object) {
-                NativeType::StringList => Some("foster_string_list_get"),
-                NativeType::String => Some("foster_string_get"),
+                NativeType::StringList => Some(abi::STRING_LIST_GET),
+                NativeType::String => Some(abi::STRING_GET),
                 NativeType::Object(layout)
                     if matches!(
                         environment.physical_layouts.get(layout).kind,
@@ -3238,7 +3282,7 @@ fn lower_shared_instruction(
             if ty(*object) == NativeType::CodePoint && field == "whitespace?" {
                 return Ok(one(ir::Instruction::RuntimeCall {
                     destination: *destination,
-                    helper: "foster_code_point_whitespace",
+                    helper: abi::CODE_POINT_WHITESPACE,
                     signature: ir::Signature {
                         parameters: vec![NativeType::CodePoint],
                         result: NativeType::Bool,
@@ -3249,7 +3293,7 @@ fn lower_shared_instruction(
             if ty(*object) == NativeType::CodePoint && field == "string" {
                 return Ok(one(ir::Instruction::RuntimeCall {
                     destination: *destination,
-                    helper: "foster_code_point_string",
+                    helper: abi::CODE_POINT_STRING,
                     signature: ir::Signature {
                         parameters: vec![NativeType::CodePoint],
                         result: NativeType::String,
@@ -3269,14 +3313,48 @@ fn lower_shared_instruction(
         ir::PortableInstruction::CallContractMethod {
             destination,
             receiver,
+            slot,
             name,
             arguments,
             ..
         } => {
-            if !arguments.is_empty() {
-                return Err(native_error(format!(
-                    "native contract call `{name}` does not yet accept arguments"
-                )));
+            let argument_types = arguments
+                .iter()
+                .map(|argument| ty(*argument))
+                .collect::<Vec<_>>();
+            let candidates =
+                contract_candidates(*slot, ty(*receiver), &argument_types, environment)?;
+            if let Some(first) = candidates.first() {
+                let target = &environment.function_types[&first.function];
+                let modes = &environment.program.functions[&first.implementation].parameter_modes;
+                if target.parameters.len() != arguments.len() + 1
+                    || modes.len() != arguments.len() + 1
+                {
+                    return Err(native_error(format!(
+                        "contract implementation for `{name}` has an inconsistent arity"
+                    )));
+                }
+                let mut lowered = Vec::new();
+                let (arguments, consumed) = shared_call_arguments(
+                    arguments,
+                    &modes[1..],
+                    &target.parameters[1..],
+                    environment.layouts,
+                    value_types,
+                    storage_hints,
+                    &mut lowered,
+                )?;
+                lowered.push((
+                    ir::Instruction::Portable(ir::PortableInstruction::CallContractMethod {
+                        destination: *destination,
+                        receiver: *receiver,
+                        slot: *slot,
+                        name: name.clone(),
+                        arguments,
+                    }),
+                    consumed,
+                ));
+                return Ok(lowered);
             }
             if matches!(ty(*receiver), NativeType::Object(_)) {
                 return Ok(one(ir::Instruction::Portable(
@@ -3303,8 +3381,57 @@ fn lower_shared_instruction(
             ..
         } => {
             value_types[destination.0 as usize] =
-                native_intrinsic_type(builtin.descriptor().signature.result, environment.layouts)?;
+                native_intrinsic_result_type(*builtin, environment)?;
             Ok(one(instruction.clone()))
+        }
+        ir::PortableInstruction::SpawnRemote { value, .. } => {
+            Ok(vec![(instruction.clone(), vec![*value])])
+        }
+        ir::PortableInstruction::SpawnRemoteBorrow { source, .. } => {
+            if !matches!(ty(*source), NativeType::Object(_)) {
+                return Err(native_error(format!(
+                    "native borrowed remote state in `{}` must use an object layout",
+                    metadata.name
+                ))
+                .with_help("wrap scalar state in a Foster record before borrowing it remotely"));
+            }
+            Ok(one(instruction.clone()))
+        }
+        ir::PortableInstruction::RemoteCall {
+            destination,
+            remote,
+            arguments,
+            ..
+        } => {
+            let target = storage_hints[destination.0 as usize]
+                .and_then(|home| facts.remote_calls.get(&home))
+                .ok_or_else(|| native_error("remote SSA call has no verified specialization"))?
+                .target;
+            let modes = arguments.iter().map(|(mode, _)| *mode).collect::<Vec<_>>();
+            let sources = arguments
+                .iter()
+                .map(|(_, value)| *value)
+                .collect::<Vec<_>>();
+            let mut result = Vec::new();
+            let (lowered, consumed) = shared_call_arguments(
+                &sources,
+                &modes,
+                &environment.function_types[&target].parameters[1..],
+                environment.layouts,
+                value_types,
+                storage_hints,
+                &mut result,
+            )?;
+            result.push((
+                ir::Instruction::Portable(ir::PortableInstruction::RemoteCall {
+                    destination: *destination,
+                    remote: *remote,
+                    function: target,
+                    arguments: modes.into_iter().zip(lowered).collect(),
+                }),
+                consumed,
+            ));
+            Ok(result)
         }
         ir::PortableInstruction::Assert { condition, message } => {
             Ok(one(ir::Instruction::Assert {
@@ -3571,72 +3698,46 @@ fn native_field_helper(receiver: NativeType, field: &str) -> Result<&'static str
 
 fn reference_load_helper(ty: NativeType) -> &'static str {
     match ty {
-        NativeType::Unit | NativeType::Bool | NativeType::Byte => "foster_ref_load_i8",
-        NativeType::CodePoint => "foster_ref_load_i32",
-        NativeType::Int => "foster_ref_load_i64",
-        NativeType::Float => "foster_ref_load_f64",
+        NativeType::Unit | NativeType::Bool | NativeType::Byte => abi::REF_LOAD_I8,
+        NativeType::CodePoint => abi::REF_LOAD_I32,
+        NativeType::Int => abi::REF_LOAD_I64,
+        NativeType::Float => abi::REF_LOAD_F64,
         NativeType::String
         | NativeType::Arguments
         | NativeType::StringList
         | NativeType::Object(_)
-        | NativeType::Opaque => "foster_ref_load_ptr",
+        | NativeType::Opaque => abi::REF_LOAD_PTR,
     }
 }
 
 fn reference_store_helper(ty: NativeType) -> &'static str {
     match ty {
-        NativeType::Unit | NativeType::Bool | NativeType::Byte => "foster_ref_store_i8",
-        NativeType::CodePoint => "foster_ref_store_i32",
-        NativeType::Int => "foster_ref_store_i64",
-        NativeType::Float => "foster_ref_store_f64",
+        NativeType::Unit | NativeType::Bool | NativeType::Byte => abi::REF_STORE_I8,
+        NativeType::CodePoint => abi::REF_STORE_I32,
+        NativeType::Int => abi::REF_STORE_I64,
+        NativeType::Float => abi::REF_STORE_F64,
         NativeType::String
         | NativeType::Arguments
         | NativeType::StringList
         | NativeType::Object(_)
-        | NativeType::Opaque => "foster_ref_store_ptr",
+        | NativeType::Opaque => abi::REF_STORE_PTR,
     }
 }
 
 fn lower_native_ir(
     builder: &mut FunctionBuilder<'_>,
     module: &mut ObjectModule,
-    function: &ir::Function,
-    instance: &NativeInstance,
-    metadata: &BytecodeFunction,
+    prepared: &NativeFunction,
     backend: &NativeBackend<'_>,
 ) -> Result<(), FosterError> {
+    let function = &prepared.ir;
+    let mutable_parameter_homes = &prepared.mutable_parameter_homes;
     let pointer_type = module.target_config().pointer_type();
-    let mutable_parameter_offset = function
-        .parameters
-        .len()
-        .saturating_sub(metadata.mutable_parameters.len());
-    let mut mutable_parameter_homes = function.parameters[mutable_parameter_offset..]
+    let homes = prepared
+        .home_types
         .iter()
-        .zip(&metadata.mutable_parameters)
-        .filter_map(|(value, mutable)| {
-            mutable
-                .then(|| function.storage_hints[value.0 as usize])
-                .flatten()
-        })
-        .collect::<HashSet<_>>();
-    if backend.method_receivers.contains(&instance.key.function)
-        && let Some(receiver) = function.parameters.get(mutable_parameter_offset)
-        && let Some(home) = function.storage_hints[receiver.0 as usize]
-    {
-        mutable_parameter_homes.insert(home);
-    }
-    let mut home_types = HashMap::<u16, NativeType>::new();
-    for (value, home) in function.storage_hints.iter().enumerate() {
-        if let Some(home) = home {
-            home_types
-                .entry(*home)
-                .or_insert(function.value_types[value]);
-        }
-    }
-    let homes = home_types
-        .into_iter()
         .map(|(home, ty)| {
-            let lowered = cranelift_type(ty, pointer_type);
+            let lowered = cranelift_type(*ty, pointer_type);
             let size = lowered.bytes();
             let align_shift = u8::try_from(size.trailing_zeros()).unwrap_or(0);
             let slot = builder.create_sized_stack_slot(StackSlotData::new(
@@ -3644,7 +3745,7 @@ fn lower_native_ir(
                 size,
                 align_shift,
             ));
-            (home, slot)
+            (*home, slot)
         })
         .collect::<HashMap<_, _>>();
     let prologue = builder.create_block();
@@ -3686,11 +3787,11 @@ fn lower_native_ir(
         };
         values.insert(*seed, value);
     }
-    for (value, lowered) in &values {
+    for value in function.parameters.iter().chain(&function.entry_seeds) {
         if let Some(home) = function.storage_hints[value.0 as usize] {
             builder
                 .ins()
-                .stack_store(pointer_type, *lowered, homes[&home], 0);
+                .stack_store(pointer_type, values[value], homes[&home], 0);
         }
     }
     let entry_arguments = function
@@ -3734,6 +3835,7 @@ fn lower_native_ir(
                     },
                     pattern,
                     backend.objects.layouts,
+                    backend.ir.runtime_literal_indices,
                 )?;
                 if lowered_bindings.len() != bindings.len() {
                     return Err(native_error(
@@ -3765,7 +3867,7 @@ fn lower_native_ir(
                     function,
                     values: &values,
                     homes: &homes,
-                    mutable_parameter_homes: &mutable_parameter_homes,
+                    mutable_parameter_homes,
                     backend,
                 },
             )?;
@@ -3794,6 +3896,7 @@ fn lower_native_pattern(
     subject: PatternSubject,
     pattern: &Pattern,
     layouts: NativeLayouts<'_>,
+    runtime_literal_indices: &HashMap<String, u64>,
 ) -> Result<(ClifValue, Vec<ClifValue>), FosterError> {
     let true_value = |builder: &mut FunctionBuilder<'_>| builder.ins().iconst(types::I8, 1);
     match pattern.unspanned() {
@@ -3832,9 +3935,33 @@ fn lower_native_pattern(
                 Vec::new(),
             ))
         }
-        Pattern::String(_) | Pattern::Symbol(_) => Err(native_error(
-            "native string and symbol patterns are not yet lowered",
-        )),
+        Pattern::String(expected) | Pattern::Symbol(expected) => {
+            let index = runtime_literal_indices
+                .get(expected)
+                .ok_or_else(|| native_error("native string pattern has no runtime constant"))?;
+            let index = builder.ins().iconst(types::I64, *index as i64);
+            let expected = runtime_call(
+                builder,
+                module,
+                abi::STRING_CONSTANT,
+                &ir::Signature {
+                    parameters: vec![NativeType::Int],
+                    result: NativeType::String,
+                },
+                &[index],
+            )?;
+            let matched = runtime_call(
+                builder,
+                module,
+                abi::STRING_EQUAL,
+                &ir::Signature {
+                    parameters: vec![NativeType::String, NativeType::String],
+                    result: NativeType::Bool,
+                },
+                &[subject.value, expected],
+            )?;
+            Ok((matched, Vec::new()))
+        }
         Pattern::Variant { variant, fields } => {
             let NativeType::Object(layout) = subject.ty else {
                 return Err(native_error("variant pattern requires a native object"));
@@ -3893,6 +4020,7 @@ fn lower_native_pattern(
                     },
                     pattern,
                     layouts,
+                    runtime_literal_indices,
                 )?;
                 matched = builder.ins().band(matched, field_matched);
                 bindings.append(&mut field_bindings);
@@ -3941,6 +4069,27 @@ fn native_type_from_value_layout(value: ValueLayout) -> NativeType {
     }
 }
 
+fn native_type_semantic(ty: NativeType, layouts: &LayoutRegistry) -> ValueSemantic {
+    match ty {
+        NativeType::Unit => ValueSemantic::Unit,
+        NativeType::Bool => ValueSemantic::Bool,
+        NativeType::Int => ValueSemantic::Integer,
+        NativeType::Float => ValueSemantic::Float,
+        NativeType::CodePoint => ValueSemantic::CodePoint,
+        NativeType::Byte => ValueSemantic::Byte,
+        NativeType::String => ValueSemantic::String,
+        NativeType::Object(layout)
+            if matches!(layouts.get(layout).kind, LayoutKind::Pointer { .. }) =>
+        {
+            ValueSemantic::Reference
+        }
+        NativeType::Object(_) => ValueSemantic::Object,
+        NativeType::Opaque | NativeType::Arguments | NativeType::StringList => {
+            ValueSemantic::Opaque
+        }
+    }
+}
+
 fn lower_native_instruction(
     builder: &mut FunctionBuilder<'_>,
     module: &mut ObjectModule,
@@ -3965,7 +4114,7 @@ fn lower_native_instruction(
                 runtime_call(
                     builder,
                     module,
-                    "foster_string_constant",
+                    abi::STRING_CONSTANT,
                     &ir::Signature {
                         parameters: vec![NativeType::Int],
                         result: NativeType::String,
@@ -3991,7 +4140,16 @@ fn lower_native_instruction(
                         0,
                     );
                     let result = builder.ins().ssub_overflow(zero, word);
-                    builder.ins().trapnz(result.1, TrapCode::INTEGER_OVERFLOW);
+                    let detail = zero_i64(builder);
+                    let limit = zero_i64(builder);
+                    fail_if(
+                        builder,
+                        module,
+                        result.1,
+                        abi::failure::INTEGER_OVERFLOW,
+                        detail,
+                        limit,
+                    )?;
                     result.0
                 }
                 UnaryOp::Not => builder.ins().icmp_imm_s(IntCC::Equal, word, 0),
@@ -4013,6 +4171,7 @@ fn lower_native_instruction(
             function.value_type(*left),
             get(left),
             get(right),
+            backend.objects.layouts.logical,
         )?,
         ir::Instruction::Call {
             function,
@@ -4082,7 +4241,7 @@ fn lower_native_instruction(
             let length = runtime_call(
                 builder,
                 module,
-                "foster_string_byte_length",
+                abi::STRING_BYTE_LENGTH,
                 &ir::Signature {
                     parameters: vec![NativeType::String],
                     result: NativeType::Int,
@@ -4094,7 +4253,7 @@ fn lower_native_instruction(
             runtime_call(
                 builder,
                 module,
-                "foster_string_copy_bytes",
+                abi::STRING_COPY_BYTES,
                 &ir::Signature {
                     parameters: vec![NativeType::String, NativeType::Opaque],
                     result: NativeType::Unit,
@@ -4113,6 +4272,7 @@ fn lower_native_instruction(
             let PhysicalKind::Opaque {
                 value_offset,
                 release_offset,
+                semantic_offset,
                 ..
             } = backend.objects.layouts.physical.get(layout).kind
             else {
@@ -4136,6 +4296,13 @@ fn lower_native_instruction(
                     .iconst(module.target_config().pointer_type(), 0)
             };
             store_physical_value(builder, object, release_offset, release);
+            let semantic = builder.ins().iconst(
+                types::I8,
+                i64::from(
+                    native_type_semantic(function.value_type(*source), backend.ir.layouts) as u8,
+                ),
+            );
+            store_physical_value(builder, object, semantic_offset, semantic);
             object
         }
         ir::Instruction::UnboxValue {
@@ -4164,6 +4331,17 @@ fn lower_native_instruction(
             }
             value
         }
+        ir::Instruction::ConvertResultError {
+            destination,
+            source,
+        } => lower_result_error_conversion(
+            builder,
+            module,
+            get(source),
+            function.value_type(*source),
+            function.value_type(*destination),
+            backend.objects,
+        )?,
         ir::Instruction::RuntimeCall {
             helper,
             signature,
@@ -4183,7 +4361,7 @@ fn lower_native_instruction(
             runtime_call(
                 builder,
                 module,
-                "foster_assert",
+                abi::ASSERT,
                 &ir::Signature {
                     parameters: vec![NativeType::Bool, NativeType::String],
                     result: NativeType::Unit,
@@ -4251,7 +4429,7 @@ fn lower_portable_native(
                 return Ok(Some(source));
             }
             let copied = match &physical.kind {
-                PhysicalKind::Record { fields } => {
+                PhysicalKind::Record { fields, .. } => {
                     let copied = objects.allocate(builder, module, layout)?;
                     for field in fields {
                         let value =
@@ -4277,6 +4455,34 @@ fn lower_portable_native(
             objects.release(builder, module, source, layout)?;
             Ok(Some(copied))
         }
+        ir::PortableInstruction::SpawnRemote { destination, value } => {
+            lower_native_spawn_remote(builder, module, *destination, *value, false, context)
+                .map(Some)
+        }
+        ir::PortableInstruction::SpawnRemoteBorrow {
+            destination,
+            source,
+        } => lower_native_spawn_remote(builder, module, *destination, *source, true, context)
+            .map(Some),
+        ir::PortableInstruction::RemoteCall {
+            destination,
+            remote,
+            function: target,
+            arguments,
+        } => lower_native_remote_call(
+            builder,
+            module,
+            *destination,
+            *remote,
+            *target,
+            arguments,
+            context,
+        )
+        .map(Some),
+        ir::PortableInstruction::Await {
+            destination,
+            future,
+        } => lower_native_await(builder, module, *destination, *future, context).map(Some),
         ir::PortableInstruction::MakeList {
             destination,
             elements,
@@ -4304,6 +4510,7 @@ fn lower_portable_native(
                     align: u16::try_from(module.target_config().pointer_type().bytes())
                         .expect("pointer alignment fits in u16"),
                     kind: ScalarKind::Pointer,
+                    semantic: ValueSemantic::Object,
                     pointee: None,
                 },
             );
@@ -4347,7 +4554,14 @@ fn lower_portable_native(
                         builder
                             .ins()
                             .icmp(IntCC::UnsignedGreaterThanOrEqual, get(index), length);
-                    builder.ins().trapnz(outside, TrapCode::HEAP_OUT_OF_BOUNDS);
+                    fail_if(
+                        builder,
+                        module,
+                        outside,
+                        abi::failure::INDEX_OUT_OF_BOUNDS,
+                        get(index),
+                        length,
+                    )?;
                     let data = builder.ins().load(
                         word,
                         MemFlagsData::trusted(),
@@ -4360,6 +4574,7 @@ fn lower_portable_native(
                             size: 1,
                             align: 1,
                             kind: ScalarKind::I8,
+                            semantic: ValueSemantic::Byte,
                             pointee: None,
                         },
                     )
@@ -4448,6 +4663,7 @@ fn lower_portable_native(
                     function.value_type(*value),
                     get(value),
                     get(candidate),
+                    objects.layouts.logical,
                 )?;
                 matched = builder.ins().bor(matched, equal);
             }
@@ -4573,7 +4789,7 @@ fn lower_portable_native(
                 return Err(native_error("record result uses the wrong nominal layout"));
             }
             let physical = objects.layouts.physical.get(layout);
-            let PhysicalKind::Record { fields } = &physical.kind else {
+            let PhysicalKind::Record { fields, .. } = &physical.kind else {
                 return Err(native_error("record has a non-record physical layout"));
             };
             let object = objects.allocate(builder, module, layout)?;
@@ -4796,6 +5012,28 @@ fn lower_portable_native(
             let call = builder.ins().call_indirect(signature, code, &lowered);
             Ok(Some(builder.inst_results(call)[0]))
         }
+        ir::PortableInstruction::CallContractMethod {
+            destination,
+            receiver,
+            slot,
+            name,
+            arguments,
+        } => lower_contract_dispatch(
+            builder,
+            module,
+            get(receiver),
+            function.value_type(*receiver),
+            function.value_type(*destination),
+            *slot,
+            name,
+            &arguments.iter().map(get).collect::<Vec<_>>(),
+            &arguments
+                .iter()
+                .map(|argument| function.value_type(*argument))
+                .collect::<Vec<_>>(),
+            backend,
+        )
+        .map(Some),
         ir::PortableInstruction::LoadField {
             destination,
             object,
@@ -4824,7 +5062,15 @@ fn lower_portable_native(
                     "length" => length,
                     "head" => {
                         let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
-                        builder.ins().trapnz(empty, TrapCode::HEAP_OUT_OF_BOUNDS);
+                        let index = zero_i64(builder);
+                        fail_if(
+                            builder,
+                            module,
+                            empty,
+                            abi::failure::INDEX_OUT_OF_BOUNDS,
+                            index,
+                            length,
+                        )?;
                         let data = builder.ins().load(
                             word,
                             MemFlagsData::trusted(),
@@ -4892,7 +5138,15 @@ fn lower_portable_native(
                     "length" => length,
                     "head" => {
                         let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
-                        builder.ins().trapnz(empty, TrapCode::HEAP_OUT_OF_BOUNDS);
+                        let index = zero_i64(builder);
+                        fail_if(
+                            builder,
+                            module,
+                            empty,
+                            abi::failure::INDEX_OUT_OF_BOUNDS,
+                            index,
+                            length,
+                        )?;
                         let data = builder.ins().load(
                             word,
                             MemFlagsData::trusted(),
@@ -4990,6 +5244,20 @@ fn lower_portable_native(
             use crate::intrinsics::{NativeInlineIntrinsic, NativeIntrinsic};
             let lowered = arguments.iter().map(get).collect::<Vec<_>>();
             let result = match builtin.descriptor().native {
+                NativeIntrinsic::Print { newline } => {
+                    for (index, (argument, value)) in
+                        arguments.iter().zip(lowered.iter().copied()).enumerate()
+                    {
+                        if index > 0 {
+                            write_native_separator(builder, module)?;
+                        }
+                        write_native_value(builder, module, value, function.value_type(*argument))?;
+                    }
+                    if newline {
+                        write_native_newline(builder, module)?;
+                    }
+                    builder.ins().iconst(types::I8, 0)
+                }
                 NativeIntrinsic::Inline(NativeInlineIntrinsic::IntegerToCodePoint) => {
                     let value = lowered[0];
                     let above =
@@ -5007,9 +5275,15 @@ fn lower_portable_native(
                     let valid_surrogate = builder.ins().bor(below_surrogate, above_surrogate);
                     let invalid_surrogate = builder.ins().bxor_imm_u(valid_surrogate, 1);
                     let invalid = builder.ins().bor(above, invalid_surrogate);
-                    builder
-                        .ins()
-                        .trapnz(invalid, TrapCode::BAD_CONVERSION_TO_INTEGER);
+                    let limit = zero_i64(builder);
+                    fail_if(
+                        builder,
+                        module,
+                        invalid,
+                        abi::failure::INVALID_CODE_POINT,
+                        value,
+                        limit,
+                    )?;
                     builder.ins().ireduce(types::I32, value)
                 }
                 NativeIntrinsic::Inline(NativeInlineIntrinsic::ByteIsValid) => builder
@@ -5020,9 +5294,15 @@ fn lower_portable_native(
                         builder
                             .ins()
                             .icmp_imm_u(IntCC::UnsignedGreaterThan, lowered[0], 255);
-                    builder
-                        .ins()
-                        .trapnz(invalid, TrapCode::BAD_CONVERSION_TO_INTEGER);
+                    let limit = builder.ins().iconst(types::I64, 255);
+                    fail_if(
+                        builder,
+                        module,
+                        invalid,
+                        abi::failure::INVALID_BYTE,
+                        lowered[0],
+                        limit,
+                    )?;
                     builder.ins().ireduce(types::I8, lowered[0])
                 }
                 NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesFromList) => {
@@ -5111,7 +5391,7 @@ fn lower_portable_native(
                     runtime_call(
                         builder,
                         module,
-                        "foster_string_from_utf8",
+                        abi::STRING_FROM_UTF8,
                         &ir::Signature {
                             parameters: vec![NativeType::Opaque, NativeType::Int],
                             result: NativeType::String,
@@ -5126,6 +5406,18 @@ fn lower_portable_native(
                     &runtime_signature(*destination, arguments, &function.value_types),
                     &lowered,
                 )?,
+                NativeIntrinsic::Host => lower_native_host_intrinsic(
+                    builder,
+                    module,
+                    *builtin,
+                    NativeHostArguments {
+                        values: arguments,
+                        lowered: &lowered,
+                    },
+                    function.value_type(*destination),
+                    function,
+                    objects,
+                )?,
                 NativeIntrinsic::Unavailable => {
                     return Err(native_error(format!(
                         "intrinsic `{builtin:?}` reached Cranelift without a native lowering"
@@ -5138,6 +5430,101 @@ fn lower_portable_native(
             "portable operation reached Cranelift without native legalization: {unsupported:?}"
         ))),
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn lower_contract_dispatch(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    receiver: ClifValue,
+    receiver_type: NativeType,
+    result_type: NativeType,
+    slot: crate::types::DispatchSlot,
+    name: &str,
+    arguments: &[ClifValue],
+    argument_types: &[NativeType],
+    backend: &NativeBackend<'_>,
+) -> Result<ClifValue, FosterError> {
+    let candidates = contract_candidates(slot, receiver_type, argument_types, backend.ir)?;
+    if candidates.is_empty() {
+        return Err(native_error(format!(
+            "value has no native implementation of required method `{name}`"
+        )));
+    }
+    let word = module.target_config().pointer_type();
+    let payload = match receiver_type {
+        NativeType::Object(layout)
+            if matches!(backend.ir.layouts.get(layout).kind, LayoutKind::Opaque) =>
+        {
+            let PhysicalKind::Opaque { value_offset, .. } =
+                backend.ir.physical_layouts.get(layout).kind
+            else {
+                return Err(native_error(
+                    "contract receiver has an invalid erased layout",
+                ));
+            };
+            builder
+                .ins()
+                .load(word, MemFlagsData::trusted(), receiver, value_offset as i32)
+        }
+        NativeType::Object(_) => receiver,
+        _ => {
+            return Err(native_error(
+                "native contract dispatch requires a descriptor-backed object",
+            ));
+        }
+    };
+    let descriptor = builder.ins().load(
+        word,
+        MemFlagsData::trusted(),
+        payload,
+        backend.ir.physical_layouts.header().descriptor_offset as i32,
+    );
+    let join = builder.create_block();
+    builder.append_block_param(join, cranelift_type(result_type, word));
+    for candidate in candidates {
+        let call_block = builder.create_block();
+        let next = builder.create_block();
+        let expected = module
+            .declare_data_in_func(backend.objects.descriptors[&candidate.layout], builder.func);
+        let expected = builder.ins().symbol_value(word, expected);
+        let matches = builder.ins().icmp(IntCC::Equal, descriptor, expected);
+        builder.ins().brif(matches, call_block, &[], next, &[]);
+        builder.switch_to_block(call_block);
+        backend.objects.retain(builder, payload, candidate.layout);
+        let mut lowered = Vec::with_capacity(arguments.len() + 1);
+        lowered.push(payload);
+        lowered.extend_from_slice(arguments);
+        let target =
+            module.declare_func_in_func(backend.functions[&candidate.function], builder.func);
+        let call = builder.ins().call(target, &lowered);
+        let result = builder.inst_results(call)[0];
+        builder.ins().jump(join, &[result.into()]);
+        builder.switch_to_block(next);
+    }
+    let kind = builder
+        .ins()
+        .iconst(types::I64, abi::failure::CONTRACT_DISPATCH);
+    let detail = builder.ins().iconst(types::I64, i64::from(slot.0));
+    let limit = zero_i64(builder);
+    runtime_call(
+        builder,
+        module,
+        abi::FAIL,
+        &ir::Signature {
+            parameters: vec![NativeType::Int, NativeType::Int, NativeType::Int],
+            result: NativeType::Unit,
+        },
+        &[kind, detail, limit],
+    )?;
+    let fallback = if result_type == NativeType::Float {
+        builder.ins().f64const(0.0)
+    } else {
+        builder.ins().iconst(cranelift_type(result_type, word), 0)
+    };
+    builder.ins().jump(join, &[fallback.into()]);
+    builder.switch_to_block(join);
+    Ok(builder.block_params(join)[0])
 }
 
 fn native_reference_receiver(
@@ -5173,6 +5560,7 @@ fn native_buffer_layout(
             length_offset,
             capacity_offset,
             element,
+            ..
         } => Ok((data_offset, length_offset, capacity_offset, element)),
         _ => Err(native_error(
             "native list operation requires a buffer layout",
@@ -5196,6 +5584,1008 @@ fn native_bytes_layout(
     }
 }
 
+fn native_handle_layout(
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<(u32, u32), FosterError> {
+    match objects.layouts.physical.get(layout).kind {
+        PhysicalKind::Handle {
+            handle_offset,
+            value_descriptor_offset,
+        } => Ok((handle_offset, value_descriptor_offset)),
+        _ => Err(native_error("native remote value requires a handle layout")),
+    }
+}
+
+fn native_release_address(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    ty: NativeType,
+    backend: &NativeBackend<'_>,
+) -> ClifValue {
+    if let NativeType::Object(layout) = ty
+        && backend.objects.layouts.is_managed(layout)
+    {
+        let release = module.declare_func_in_func(backend.release_thunks[&layout], builder.func);
+        builder
+            .ins()
+            .func_addr(module.target_config().pointer_type(), release)
+    } else {
+        builder
+            .ins()
+            .iconst(module.target_config().pointer_type(), 0)
+    }
+}
+
+fn native_descriptor_address(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    ty: NativeType,
+    backend: &NativeBackend<'_>,
+) -> ClifValue {
+    if let NativeType::Object(layout) = ty {
+        let descriptor =
+            module.declare_data_in_func(backend.objects.descriptors[&layout], builder.func);
+        builder
+            .ins()
+            .symbol_value(module.target_config().pointer_type(), descriptor)
+    } else {
+        builder
+            .ins()
+            .iconst(module.target_config().pointer_type(), 0)
+    }
+}
+
+fn allocate_native_handle(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    layout: LayoutId,
+    handle: ClifValue,
+    value_type: NativeType,
+    backend: &NativeBackend<'_>,
+) -> Result<ClifValue, FosterError> {
+    let object = backend.objects.allocate(builder, module, layout)?;
+    let (handle_offset, descriptor_offset) = native_handle_layout(layout, backend.objects)?;
+    store_physical_value(builder, object, handle_offset, handle);
+    let descriptor = native_descriptor_address(builder, module, value_type, backend);
+    store_physical_value(builder, object, descriptor_offset, descriptor);
+    Ok(object)
+}
+
+fn lower_native_spawn_remote(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    destination: ir::Value,
+    source: ir::Value,
+    borrowed: bool,
+    context: NativeLowering<'_, '_>,
+) -> Result<ClifValue, FosterError> {
+    let NativeType::Object(layout) = context.function.value_type(destination) else {
+        return Err(native_error("native Remote<T> has a non-object layout"));
+    };
+    let source_type = context.function.value_type(source);
+    if borrowed && !matches!(source_type, NativeType::Object(_)) {
+        return Err(native_error(
+            "borrowed native remote state must be an object",
+        ));
+    }
+    let state = native_to_remote_word(builder, module, context.values[&source], source_type);
+    if borrowed
+        && let NativeType::Object(source_layout) = source_type
+        && context.backend.objects.layouts.is_managed(source_layout)
+    {
+        context
+            .backend
+            .objects
+            .retain(builder, context.values[&source], source_layout);
+    }
+    let release = native_release_address(builder, module, source_type, context.backend);
+    let borrowed = builder.ins().iconst(types::I8, i64::from(borrowed));
+    let handle = runtime_call(
+        builder,
+        module,
+        abi::REMOTE_SPAWN,
+        &ir::Signature {
+            parameters: vec![NativeType::Int, NativeType::Opaque, NativeType::Bool],
+            result: NativeType::Opaque,
+        },
+        &[state, release, borrowed],
+    )?;
+    allocate_native_handle(
+        builder,
+        module,
+        layout,
+        handle,
+        source_type,
+        context.backend,
+    )
+}
+
+fn lower_native_remote_call(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    destination: ir::Value,
+    remote: ir::Value,
+    target: FunctionId,
+    arguments: &[(ParameterMode, ir::Value)],
+    context: NativeLowering<'_, '_>,
+) -> Result<ClifValue, FosterError> {
+    let target_signature = &context.backend.ir.function_types[&target];
+    if target_signature.parameters.len() != arguments.len() + 1 {
+        return Err(native_error(
+            "native remote call has the wrong argument arity",
+        ));
+    }
+    let frame_size = arguments
+        .len()
+        .checked_mul(8)
+        .and_then(|size| u32::try_from(size.max(8)).ok())
+        .ok_or_else(|| native_error("native remote argument frame is too large"))?;
+    let frame = builder.create_sized_stack_slot(StackSlotData::new(
+        StackSlotKind::ExplicitSlot,
+        frame_size,
+        3,
+    ));
+    for (index, (_, argument)) in arguments.iter().enumerate() {
+        let value = native_to_remote_word(
+            builder,
+            module,
+            context.values[argument],
+            context.function.value_type(*argument),
+        );
+        builder.ins().stack_store(
+            module.target_config().pointer_type(),
+            value,
+            frame,
+            i32::try_from(index * 8)
+                .map_err(|_| native_error("native remote argument frame exceeds i32 offsets"))?,
+        );
+    }
+    let NativeType::Object(remote_layout) = context.function.value_type(remote) else {
+        return Err(native_error("native remote call has a non-object receiver"));
+    };
+    let (handle_offset, _) = native_handle_layout(remote_layout, context.backend.objects)?;
+    let handle = builder.ins().load(
+        module.target_config().pointer_type(),
+        MemFlagsData::trusted(),
+        context.values[&remote],
+        handle_offset as i32,
+    );
+    let thunk = context
+        .backend
+        .remote_thunks
+        .get(&target)
+        .copied()
+        .ok_or_else(|| native_error("native remote method has no callback thunk"))?;
+    let thunk = module.declare_func_in_func(thunk, builder.func);
+    let thunk = builder
+        .ins()
+        .func_addr(module.target_config().pointer_type(), thunk);
+    let argument_data = builder
+        .ins()
+        .stack_addr(module.target_config().pointer_type(), frame, 0);
+    let argument_count = builder.ins().iconst(
+        types::I64,
+        i64::try_from(arguments.len())
+            .map_err(|_| native_error("native remote argument count exceeds Int"))?,
+    );
+    let blocking = arguments.iter().any(|(mode, argument)| {
+        *mode == ParameterMode::Borrow
+            && matches!(
+                context.function.value_type(*argument),
+                NativeType::Object(_)
+            )
+    });
+    let blocking = builder.ins().iconst(types::I8, i64::from(blocking));
+    let result_release =
+        native_release_address(builder, module, target_signature.result, context.backend);
+    let future = runtime_call(
+        builder,
+        module,
+        abi::REMOTE_CALL,
+        &ir::Signature {
+            parameters: vec![
+                NativeType::Opaque,
+                NativeType::Opaque,
+                NativeType::Opaque,
+                NativeType::Int,
+                NativeType::Bool,
+                NativeType::Opaque,
+            ],
+            result: NativeType::Opaque,
+        },
+        &[
+            handle,
+            thunk,
+            argument_data,
+            argument_count,
+            blocking,
+            result_release,
+        ],
+    )?;
+    let NativeType::Object(future_layout) = context.function.value_type(destination) else {
+        return Err(native_error("native Future<T> has a non-object layout"));
+    };
+    allocate_native_handle(
+        builder,
+        module,
+        future_layout,
+        future,
+        target_signature.result,
+        context.backend,
+    )
+}
+
+fn lower_native_await(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    destination: ir::Value,
+    future: ir::Value,
+    context: NativeLowering<'_, '_>,
+) -> Result<ClifValue, FosterError> {
+    let NativeType::Object(future_layout) = context.function.value_type(future) else {
+        return Err(native_error("native await has a non-object future"));
+    };
+    let (handle_offset, _) = native_handle_layout(future_layout, context.backend.objects)?;
+    let handle = builder.ins().load(
+        module.target_config().pointer_type(),
+        MemFlagsData::trusted(),
+        context.values[&future],
+        handle_offset as i32,
+    );
+    let value = runtime_call(
+        builder,
+        module,
+        abi::FUTURE_AWAIT,
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque],
+            result: NativeType::Int,
+        },
+        &[handle],
+    )?;
+    Ok(remote_word_to_native(
+        builder,
+        module,
+        value,
+        context.function.value_type(destination),
+    ))
+}
+
+fn lower_result_error_conversion(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    source: ClifValue,
+    source_type: NativeType,
+    target_type: NativeType,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let (NativeType::Object(source_layout), NativeType::Object(target_layout)) =
+        (source_type, target_type)
+    else {
+        return Err(native_error(
+            "Result error conversion requires object layouts",
+        ));
+    };
+    let result_error = |layout| -> Result<(u32, AlternativeLayout), FosterError> {
+        let PhysicalKind::Variant {
+            tag_offset,
+            alternatives,
+            ..
+        } = &objects.layouts.physical.get(layout).kind
+        else {
+            return Err(native_error(
+                "Result error conversion requires variant layouts",
+            ));
+        };
+        let alternative = alternatives
+            .iter()
+            .find(|alternative| alternative.name == "Error")
+            .cloned()
+            .ok_or_else(|| native_error("Result layout is missing its Error alternative"))?;
+        Ok((*tag_offset, alternative))
+    };
+    let (_, source_error) = result_error(source_layout)?;
+    let (target_tag_offset, target_error) = result_error(target_layout)?;
+    if source_error.fields.len() != 1
+        || target_error.fields.len() != 1
+        || source_error.fields[0].value != target_error.fields[0].value
+    {
+        return Err(native_error(
+            "Result error conversion has incompatible error payloads",
+        ));
+    }
+    let field = &source_error.fields[0];
+    let value = load_physical_value(builder, module, source, field.offset, field.value);
+    if let Some(pointee) = field.value.pointee
+        && objects.layouts.is_managed(pointee)
+    {
+        objects.retain(builder, value, pointee);
+    }
+    let target = objects.allocate(builder, module, target_layout)?;
+    let tag = builder
+        .ins()
+        .iconst(types::I32, i64::from(target_error.tag));
+    builder.ins().store(
+        MemFlagsData::trusted(),
+        tag,
+        target,
+        target_tag_offset as i32,
+    );
+    store_physical_value(builder, target, target_error.fields[0].offset, value);
+    Ok(target)
+}
+
+#[derive(Clone, Copy)]
+struct NativeHostArguments<'a> {
+    values: &'a [ir::Value],
+    lowered: &'a [ClifValue],
+}
+
+fn lower_native_host_intrinsic(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    builtin: crate::intrinsics::Builtin,
+    arguments: NativeHostArguments<'_>,
+    result_type: NativeType,
+    function: &ir::Function,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    use crate::intrinsics::Builtin;
+
+    let response = call_native_host(builder, module, builtin, arguments, function, objects)?;
+    match builtin {
+        Builtin::IoExists | Builtin::IoIsFile | Builtin::IoIsDirectory => {
+            require_native_host_response(builder, module, response)?;
+            let value = native_host_integer(builder, module, response, 0)?;
+            let value = builder.ins().icmp_imm_s(IntCC::NotEqual, value, 0);
+            release_native_host_response(builder, module, response)?;
+            Ok(value)
+        }
+        Builtin::IoJoin | Builtin::IoParent | Builtin::IoFileName | Builtin::IoExtension => {
+            require_native_host_response(builder, module, response)?;
+            let value = native_host_string(builder, module, response, abi::host_string::VALUE, 0)?;
+            release_native_host_response(builder, module, response)?;
+            Ok(value)
+        }
+        Builtin::TimeMonotonicNow => {
+            require_native_host_response(builder, module, response)?;
+            let value = native_host_integer(builder, module, response, 0)?;
+            release_native_host_response(builder, module, response)?;
+            Ok(value)
+        }
+        Builtin::TimeWallNow => {
+            require_native_host_response(builder, module, response)?;
+            let NativeType::Object(layout) = result_type else {
+                return Err(native_error("wall-clock result has no native list layout"));
+            };
+            let object = allocate_native_buffer(builder, module, layout, 2, objects)?;
+            let (data_offset, _, _, element) = native_buffer_layout(layout, objects)?;
+            if element.semantic != ValueSemantic::Integer {
+                return Err(native_error("wall-clock result is not a List<Int>"));
+            }
+            let data = builder.ins().load(
+                module.target_config().pointer_type(),
+                MemFlagsData::trusted(),
+                object,
+                data_offset as i32,
+            );
+            for index in 0..2 {
+                let value = native_host_integer(builder, module, response, index)?;
+                store_physical_value(
+                    builder,
+                    data,
+                    u32::try_from(index).unwrap_or(0) * element.size,
+                    value,
+                );
+            }
+            release_native_host_response(builder, module, response)?;
+            Ok(object)
+        }
+        _ => {
+            let NativeType::Object(layout) = result_type else {
+                return Err(native_error(format!(
+                    "host intrinsic `{builtin:?}` has a non-object Result ABI"
+                )));
+            };
+            lower_native_host_result(builder, module, builtin, response, layout, objects)
+        }
+    }
+}
+
+fn call_native_host(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    builtin: crate::intrinsics::Builtin,
+    arguments: NativeHostArguments<'_>,
+    function: &ir::Function,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    use crate::intrinsics::Builtin;
+
+    let operation = builder
+        .ins()
+        .iconst(types::I64, i64::from(builtin.descriptor().bytecode_tag));
+    let call = |builder: &mut FunctionBuilder<'_>,
+                module: &mut ObjectModule,
+                helper,
+                parameters: Vec<NativeType>,
+                values: &[ClifValue]| {
+        runtime_call(
+            builder,
+            module,
+            helper,
+            &ir::Signature {
+                parameters,
+                result: NativeType::Opaque,
+            },
+            values,
+        )
+    };
+    match builtin {
+        Builtin::IoCurrentDirectory | Builtin::TimeWallNow | Builtin::TimeMonotonicNow => call(
+            builder,
+            module,
+            abi::HOST_CALL_NULLARY,
+            vec![NativeType::Int],
+            &[operation],
+        ),
+        Builtin::IoReadText
+        | Builtin::IoReadBytes
+        | Builtin::IoListDirectory
+        | Builtin::IoExists
+        | Builtin::IoIsFile
+        | Builtin::IoIsDirectory
+        | Builtin::IoCreateDirectory
+        | Builtin::IoCreateDirectoryAll
+        | Builtin::IoRemoveFile
+        | Builtin::IoRemoveDirectory
+        | Builtin::IoParent
+        | Builtin::IoFileName
+        | Builtin::IoExtension
+        | Builtin::IoCanonicalize
+        | Builtin::IoFileLength => call(
+            builder,
+            module,
+            abi::HOST_CALL_STRING,
+            vec![NativeType::Int, NativeType::String],
+            &[operation, arguments.lowered[0]],
+        ),
+        Builtin::IoWriteText | Builtin::IoRename | Builtin::IoCopyFile | Builtin::IoJoin => call(
+            builder,
+            module,
+            abi::HOST_CALL_STRINGS,
+            vec![NativeType::Int, NativeType::String, NativeType::String],
+            &[operation, arguments.lowered[0], arguments.lowered[1]],
+        ),
+        Builtin::IoReadRange | Builtin::TcpListen | Builtin::TcpConnect => {
+            let second = arguments
+                .lowered
+                .get(2)
+                .copied()
+                .unwrap_or_else(|| builder.ins().iconst(types::I64, 0));
+            call(
+                builder,
+                module,
+                abi::HOST_CALL_STRING_INTS,
+                vec![
+                    NativeType::Int,
+                    NativeType::String,
+                    NativeType::Int,
+                    NativeType::Int,
+                ],
+                &[
+                    operation,
+                    arguments.lowered[0],
+                    arguments.lowered[1],
+                    second,
+                ],
+            )
+        }
+        Builtin::RandomBytes
+        | Builtin::TcpAccept
+        | Builtin::TcpCloseListener
+        | Builtin::TcpCloseConnection => call(
+            builder,
+            module,
+            abi::HOST_CALL_INT,
+            vec![NativeType::Int, NativeType::Int],
+            &[operation, arguments.lowered[0]],
+        ),
+        Builtin::TcpRead | Builtin::TcpReadBytes | Builtin::TcpSetTimeout => call(
+            builder,
+            module,
+            abi::HOST_CALL_INTS,
+            vec![NativeType::Int, NativeType::Int, NativeType::Int],
+            &[operation, arguments.lowered[0], arguments.lowered[1]],
+        ),
+        Builtin::IoWriteBytes | Builtin::IoAppendBytes => {
+            let (data, length) = native_host_bytes_argument(
+                builder,
+                module,
+                arguments.values[1],
+                arguments.lowered[1],
+                function,
+                objects,
+            )?;
+            call(
+                builder,
+                module,
+                abi::HOST_CALL_STRING_BYTES,
+                vec![
+                    NativeType::Int,
+                    NativeType::String,
+                    NativeType::Opaque,
+                    NativeType::Int,
+                ],
+                &[operation, arguments.lowered[0], data, length],
+            )
+        }
+        Builtin::TcpWriteBytes => {
+            let (data, length) = native_host_bytes_argument(
+                builder,
+                module,
+                arguments.values[1],
+                arguments.lowered[1],
+                function,
+                objects,
+            )?;
+            call(
+                builder,
+                module,
+                abi::HOST_CALL_INT_BYTES,
+                vec![
+                    NativeType::Int,
+                    NativeType::Int,
+                    NativeType::Opaque,
+                    NativeType::Int,
+                ],
+                &[operation, arguments.lowered[0], data, length],
+            )
+        }
+        Builtin::TcpWrite => call(
+            builder,
+            module,
+            abi::HOST_CALL_INT_STRING,
+            vec![NativeType::Int, NativeType::Int, NativeType::String],
+            &[operation, arguments.lowered[0], arguments.lowered[1]],
+        ),
+        unsupported => Err(native_error(format!(
+            "host intrinsic `{unsupported:?}` has no platform call shape"
+        ))),
+    }
+}
+
+fn native_host_bytes_argument(
+    builder: &mut FunctionBuilder<'_>,
+    module: &ObjectModule,
+    argument: ir::Value,
+    object: ClifValue,
+    function: &ir::Function,
+    objects: ObjectRuntime<'_>,
+) -> Result<(ClifValue, ClifValue), FosterError> {
+    let NativeType::Object(layout) = function.value_type(argument) else {
+        return Err(native_error(
+            "host byte argument has no native Bytes layout",
+        ));
+    };
+    let (data_offset, length_offset) = native_bytes_layout(layout, objects)?;
+    let word = module.target_config().pointer_type();
+    Ok((
+        builder
+            .ins()
+            .load(word, MemFlagsData::trusted(), object, data_offset as i32),
+        builder
+            .ins()
+            .load(word, MemFlagsData::trusted(), object, length_offset as i32),
+    ))
+}
+
+fn lower_native_host_result(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    builtin: crate::intrinsics::Builtin,
+    response: ClifValue,
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let PhysicalKind::Variant {
+        tag_offset,
+        alternatives,
+        ..
+    } = &objects.layouts.physical.get(layout).kind
+    else {
+        return Err(native_error(
+            "native host result does not use a variant layout",
+        ));
+    };
+    let tag_offset = *tag_offset;
+    let success = alternatives
+        .iter()
+        .find(|alternative| alternative.name == "Ok")
+        .cloned()
+        .ok_or_else(|| native_error("native host Result is missing its Ok alternative"))?;
+    let failure = alternatives
+        .iter()
+        .find(|alternative| alternative.name == "Error")
+        .cloned()
+        .ok_or_else(|| native_error("native host Result is missing its Error alternative"))?;
+    if success.fields.len() != 1 || failure.fields.len() != 1 {
+        return Err(native_error(
+            "native host Result alternatives must have one payload",
+        ));
+    }
+
+    let success_block = builder.create_block();
+    let failure_block = builder.create_block();
+    let finish = builder.create_block();
+    builder.append_block_param(finish, module.target_config().pointer_type());
+    let ok = runtime_call(
+        builder,
+        module,
+        abi::HOST_OK,
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque],
+            result: NativeType::Bool,
+        },
+        &[response],
+    )?;
+    builder
+        .ins()
+        .brif(ok, success_block, &[], failure_block, &[]);
+
+    builder.switch_to_block(success_block);
+    let object = objects.allocate(builder, module, layout)?;
+    let tag = builder.ins().iconst(types::I32, i64::from(success.tag));
+    builder
+        .ins()
+        .store(MemFlagsData::trusted(), tag, object, tag_offset as i32);
+    let value = lower_native_host_success(
+        builder,
+        module,
+        builtin,
+        response,
+        success.fields[0].value,
+        objects,
+    )?;
+    store_physical_value(builder, object, success.fields[0].offset, value);
+    release_native_host_response(builder, module, response)?;
+    builder.ins().jump(finish, &[object.into()]);
+
+    builder.switch_to_block(failure_block);
+    let object = objects.allocate(builder, module, layout)?;
+    let tag = builder.ins().iconst(types::I32, i64::from(failure.tag));
+    builder
+        .ins()
+        .store(MemFlagsData::trusted(), tag, object, tag_offset as i32);
+    let error_layout = failure.fields[0]
+        .value
+        .pointee
+        .ok_or_else(|| native_error("native host Result error has no record layout"))?;
+    let error = lower_native_host_error(builder, module, response, error_layout, objects)?;
+    store_physical_value(builder, object, failure.fields[0].offset, error);
+    release_native_host_response(builder, module, response)?;
+    builder.ins().jump(finish, &[object.into()]);
+
+    builder.switch_to_block(finish);
+    Ok(builder.block_params(finish)[0])
+}
+
+fn lower_native_host_success(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    builtin: crate::intrinsics::Builtin,
+    response: ClifValue,
+    value: ValueLayout,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    use crate::intrinsics::Builtin;
+
+    match builtin {
+        Builtin::IoWriteText
+        | Builtin::IoWriteBytes
+        | Builtin::IoCreateDirectory
+        | Builtin::IoCreateDirectoryAll
+        | Builtin::IoRemoveFile
+        | Builtin::IoRemoveDirectory
+        | Builtin::IoRename
+        | Builtin::TcpWrite
+        | Builtin::TcpWriteBytes
+        | Builtin::TcpSetTimeout
+        | Builtin::TcpCloseListener
+        | Builtin::TcpCloseConnection => Ok(builder.ins().iconst(types::I8, 0)),
+        Builtin::IoAppendBytes
+        | Builtin::IoFileLength
+        | Builtin::IoCopyFile
+        | Builtin::TcpListen
+        | Builtin::TcpConnect
+        | Builtin::TcpAccept => native_host_integer(builder, module, response, 0),
+        Builtin::IoReadText
+        | Builtin::IoCanonicalize
+        | Builtin::IoCurrentDirectory
+        | Builtin::TcpRead => {
+            native_host_string(builder, module, response, abi::host_string::VALUE, 0)
+        }
+        Builtin::IoReadBytes
+        | Builtin::IoReadRange
+        | Builtin::TcpReadBytes
+        | Builtin::RandomBytes => {
+            let layout = value
+                .pointee
+                .ok_or_else(|| native_error("native host byte result has no Bytes layout"))?;
+            lower_native_host_bytes(builder, module, response, layout, objects)
+        }
+        Builtin::IoListDirectory => {
+            let layout = value
+                .pointee
+                .ok_or_else(|| native_error("native directory result has no list layout"))?;
+            lower_native_host_string_list(builder, module, response, layout, objects)
+        }
+        unsupported => Err(native_error(format!(
+            "host intrinsic `{unsupported:?}` has no success-value lowering"
+        ))),
+    }
+}
+
+fn lower_native_host_error(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    response: ClifValue,
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let PhysicalKind::Record { fields, .. } = &objects.layouts.physical.get(layout).kind else {
+        return Err(native_error("native host error has a non-record layout"));
+    };
+    let fields = fields.clone();
+    let error = objects.allocate(builder, module, layout)?;
+    for field in fields {
+        let value = match field.name.as_str() {
+            "operation" => native_host_string(
+                builder,
+                module,
+                response,
+                abi::host_string::ERROR_OPERATION,
+                0,
+            )?,
+            "path" => {
+                native_host_string(builder, module, response, abi::host_string::ERROR_PATH, 0)?
+            }
+            "message" => native_host_string(
+                builder,
+                module,
+                response,
+                abi::host_string::ERROR_MESSAGE,
+                0,
+            )?,
+            "value" => runtime_call(
+                builder,
+                module,
+                abi::HOST_ERROR_VALUE,
+                &ir::Signature {
+                    parameters: vec![NativeType::Opaque],
+                    result: NativeType::Int,
+                },
+                &[response],
+            )?,
+            name => {
+                return Err(native_error(format!(
+                    "native host error has unsupported field `{name}`"
+                )));
+            }
+        };
+        store_physical_value(builder, error, field.offset, value);
+    }
+    Ok(error)
+}
+
+fn lower_native_host_bytes(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    response: ClifValue,
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let length = runtime_call(
+        builder,
+        module,
+        abi::HOST_BYTES_LENGTH,
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque],
+            result: NativeType::Int,
+        },
+        &[response],
+    )?;
+    let native_length = native_int_to_word(builder, module, length);
+    let (object, data) = allocate_native_bytes(builder, module, objects, layout, native_length)?;
+    runtime_call(
+        builder,
+        module,
+        abi::HOST_COPY_BYTES,
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque, NativeType::Opaque],
+            result: NativeType::Unit,
+        },
+        &[response, data],
+    )?;
+    Ok(object)
+}
+
+fn lower_native_host_string_list(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    response: ClifValue,
+    layout: LayoutId,
+    objects: ObjectRuntime<'_>,
+) -> Result<ClifValue, FosterError> {
+    let length = runtime_call(
+        builder,
+        module,
+        abi::HOST_STRINGS_LENGTH,
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque],
+            result: NativeType::Int,
+        },
+        &[response],
+    )?;
+    let length = native_int_to_word(builder, module, length);
+    let (data_offset, _, _, element) = native_buffer_layout(layout, objects)?;
+    if element.semantic != ValueSemantic::String {
+        return Err(native_error(
+            "native directory result is not a List<String>",
+        ));
+    }
+    let object = allocate_native_buffer_dynamic(builder, module, layout, length, objects)?;
+    let word = module.target_config().pointer_type();
+    let data = builder
+        .ins()
+        .load(word, MemFlagsData::trusted(), object, data_offset as i32);
+    let loop_block = builder.create_block();
+    let copy = builder.create_block();
+    let finish = builder.create_block();
+    builder.append_block_param(loop_block, word);
+    let zero = builder.ins().iconst(word, 0);
+    builder.ins().jump(loop_block, &[zero.into()]);
+    builder.switch_to_block(loop_block);
+    let index = builder.block_params(loop_block)[0];
+    let done = builder
+        .ins()
+        .icmp(IntCC::UnsignedGreaterThanOrEqual, index, length);
+    builder.ins().brif(done, finish, &[], copy, &[]);
+    builder.switch_to_block(copy);
+    let runtime_index = native_word_to_int(builder, module, index);
+    let value = native_host_string(
+        builder,
+        module,
+        response,
+        abi::host_string::LIST_VALUE,
+        runtime_index,
+    )?;
+    let offset = builder.ins().imul_imm_u(index, i64::from(element.size));
+    let address = builder.ins().iadd(data, offset);
+    store_physical_value(builder, address, 0, value);
+    let next = builder.ins().iadd_imm_s(index, 1);
+    builder.ins().jump(loop_block, &[next.into()]);
+    builder.switch_to_block(finish);
+    Ok(object)
+}
+
+fn native_int_to_word(
+    builder: &mut FunctionBuilder<'_>,
+    module: &ObjectModule,
+    value: ClifValue,
+) -> ClifValue {
+    let word = module.target_config().pointer_type();
+    if word == types::I64 {
+        value
+    } else {
+        builder.ins().ireduce(word, value)
+    }
+}
+
+fn native_word_to_int(
+    builder: &mut FunctionBuilder<'_>,
+    module: &ObjectModule,
+    value: ClifValue,
+) -> ClifValue {
+    if module.target_config().pointer_type() == types::I64 {
+        value
+    } else {
+        builder.ins().uextend(types::I64, value)
+    }
+}
+
+fn native_host_integer(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    response: ClifValue,
+    index: i64,
+) -> Result<ClifValue, FosterError> {
+    let index = builder.ins().iconst(types::I64, index);
+    runtime_call(
+        builder,
+        module,
+        abi::HOST_INTEGER,
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque, NativeType::Int],
+            result: NativeType::Int,
+        },
+        &[response, index],
+    )
+}
+
+fn native_host_string(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    response: ClifValue,
+    field: i64,
+    index: impl IntoNativeHostIndex,
+) -> Result<ClifValue, FosterError> {
+    let field = builder.ins().iconst(types::I64, field);
+    let index = index.into_native_host_index(builder);
+    runtime_call(
+        builder,
+        module,
+        abi::HOST_STRING,
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque, NativeType::Int, NativeType::Int],
+            result: NativeType::String,
+        },
+        &[response, field, index],
+    )
+}
+
+trait IntoNativeHostIndex {
+    fn into_native_host_index(self, builder: &mut FunctionBuilder<'_>) -> ClifValue;
+}
+
+impl IntoNativeHostIndex for i64 {
+    fn into_native_host_index(self, builder: &mut FunctionBuilder<'_>) -> ClifValue {
+        builder.ins().iconst(types::I64, self)
+    }
+}
+
+impl IntoNativeHostIndex for ClifValue {
+    fn into_native_host_index(self, _builder: &mut FunctionBuilder<'_>) -> ClifValue {
+        self
+    }
+}
+
+fn require_native_host_response(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    response: ClifValue,
+) -> Result<(), FosterError> {
+    runtime_call(
+        builder,
+        module,
+        abi::HOST_REQUIRE_OK,
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque],
+            result: NativeType::Unit,
+        },
+        &[response],
+    )?;
+    Ok(())
+}
+
+fn release_native_host_response(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    response: ClifValue,
+) -> Result<(), FosterError> {
+    runtime_call(
+        builder,
+        module,
+        abi::HOST_RELEASE,
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque],
+            result: NativeType::Unit,
+        },
+        &[response],
+    )?;
+    Ok(())
+}
+
 fn allocate_byte_data(
     builder: &mut FunctionBuilder<'_>,
     module: &mut ObjectModule,
@@ -5209,7 +6599,7 @@ fn allocate_byte_data(
     runtime_call(
         builder,
         module,
-        "foster_alloc",
+        abi::ALLOC,
         &ir::Signature {
             parameters: vec![NativeType::Int, NativeType::Int],
             result: NativeType::Opaque,
@@ -5265,7 +6655,7 @@ fn copy_native_bytes(
     runtime_call(
         builder,
         module,
-        "foster_copy_bytes",
+        abi::COPY_BYTES,
         &ir::Signature {
             parameters: vec![NativeType::Opaque, NativeType::Opaque, NativeType::Int],
             result: NativeType::Unit,
@@ -5320,7 +6710,7 @@ fn allocate_native_buffer(
     let data = runtime_call(
         builder,
         module,
-        "foster_alloc",
+        abi::ALLOC,
         &ir::Signature {
             parameters: vec![NativeType::Int, NativeType::Int],
             result: NativeType::Opaque,
@@ -5342,7 +6732,7 @@ fn allocate_native_buffer(
 
 fn native_buffer_element_address(
     builder: &mut FunctionBuilder<'_>,
-    module: &ObjectModule,
+    module: &mut ObjectModule,
     object: ClifValue,
     index: ClifValue,
     layout: LayoutId,
@@ -5356,7 +6746,14 @@ fn native_buffer_element_address(
     let outside = builder
         .ins()
         .icmp(IntCC::UnsignedGreaterThanOrEqual, index, length);
-    builder.ins().trapnz(outside, TrapCode::HEAP_OUT_OF_BOUNDS);
+    fail_if(
+        builder,
+        module,
+        outside,
+        abi::failure::INDEX_OUT_OF_BOUNDS,
+        index,
+        length,
+    )?;
     let data = builder
         .ins()
         .load(word, MemFlagsData::trusted(), object, data_offset as i32);
@@ -5553,7 +6950,7 @@ fn allocate_native_buffer_dynamic(
     let data = runtime_call(
         builder,
         module,
-        "foster_alloc",
+        abi::ALLOC,
         &ir::Signature {
             parameters: vec![NativeType::Int, NativeType::Int],
             result: NativeType::Opaque,
@@ -5611,7 +7008,7 @@ fn push_native_buffer(
     let new_data = runtime_call(
         builder,
         module,
-        "foster_alloc",
+        abi::ALLOC,
         &ir::Signature {
             parameters: vec![NativeType::Int, NativeType::Int],
             result: NativeType::Opaque,
@@ -5636,117 +7033,13 @@ fn push_native_buffer(
     runtime_call(
         builder,
         module,
-        "foster_dealloc",
+        abi::DEALLOC,
         &ir::Signature {
             parameters: vec![NativeType::Opaque, NativeType::Int, NativeType::Int],
             result: NativeType::Unit,
         },
         &[old_data, old_size, align],
     )?;
-    Ok(())
-}
-
-fn allocate_object(
-    builder: &mut FunctionBuilder<'_>,
-    module: &mut ObjectModule,
-    layout: LayoutId,
-    physical_layouts: &PhysicalRegistry,
-    descriptors: &HashMap<LayoutId, DataId>,
-) -> Result<ClifValue, FosterError> {
-    let physical = physical_layouts.get(layout);
-    let size = builder.ins().iconst(types::I64, i64::from(physical.size));
-    let align = builder.ins().iconst(types::I64, i64::from(physical.align));
-    let object = runtime_call(
-        builder,
-        module,
-        "foster_alloc",
-        &ir::Signature {
-            parameters: vec![NativeType::Int, NativeType::Int],
-            result: NativeType::Object(layout),
-        },
-        &[size, align],
-    )?;
-    let pointer_type = module.target_config().pointer_type();
-    let descriptor = module.declare_data_in_func(descriptors[&layout], builder.func);
-    let descriptor = builder.ins().symbol_value(pointer_type, descriptor);
-    builder.ins().store(
-        MemFlagsData::trusted(),
-        descriptor,
-        object,
-        physical.header.descriptor_offset as i32,
-    );
-    let one = builder.ins().iconst(pointer_type, 1);
-    builder.ins().store(
-        MemFlagsData::trusted(),
-        one,
-        object,
-        physical.header.strong_count_offset as i32,
-    );
-    let zero = builder.ins().iconst(types::I32, 0);
-    builder.ins().store(
-        MemFlagsData::trusted(),
-        zero,
-        object,
-        physical.header.flags_offset as i32,
-    );
-    Ok(object)
-}
-
-fn retain_object(
-    builder: &mut FunctionBuilder<'_>,
-    object: ClifValue,
-    layout: LayoutId,
-    physical_layouts: &PhysicalRegistry,
-) {
-    let physical = physical_layouts.get(layout);
-    let pointer_type = builder.func.dfg.value_type(object);
-    let count = builder.ins().load(
-        pointer_type,
-        MemFlagsData::trusted(),
-        object,
-        physical.header.strong_count_offset as i32,
-    );
-    let count = builder.ins().iadd_imm_s(count, 1);
-    builder.ins().store(
-        MemFlagsData::trusted(),
-        count,
-        object,
-        physical.header.strong_count_offset as i32,
-    );
-}
-
-fn release_object(
-    builder: &mut FunctionBuilder<'_>,
-    module: &mut ObjectModule,
-    object: ClifValue,
-    layout: LayoutId,
-    physical_layouts: &PhysicalRegistry,
-    destructors: &HashMap<LayoutId, FuncId>,
-) -> Result<(), FosterError> {
-    let physical = physical_layouts.get(layout);
-    let pointer_type = builder.func.dfg.value_type(object);
-    let count = builder.ins().load(
-        pointer_type,
-        MemFlagsData::trusted(),
-        object,
-        physical.header.strong_count_offset as i32,
-    );
-    let count = builder.ins().iadd_imm_s(count, -1);
-    builder.ins().store(
-        MemFlagsData::trusted(),
-        count,
-        object,
-        physical.header.strong_count_offset as i32,
-    );
-    let is_zero = builder.ins().icmp_imm_s(IntCC::Equal, count, 0);
-    let destroy = builder.create_block();
-    let continuation = builder.create_block();
-    builder.ins().brif(is_zero, destroy, &[], continuation, &[]);
-    builder.switch_to_block(destroy);
-    let destructor = module.declare_func_in_func(destructors[&layout], builder.func);
-    builder.ins().call(destructor, &[object]);
-    builder.ins().jump(continuation, &[]);
-    builder.switch_to_block(continuation);
     Ok(())
 }
 
@@ -5836,13 +7129,34 @@ fn lower_binary(
     operand_type: NativeType,
     left: ClifValue,
     right: ClifValue,
+    layouts: &LayoutRegistry,
 ) -> Result<ClifValue, FosterError> {
+    if let NativeType::Object(layout) = operand_type
+        && !matches!(layouts.get(layout).kind, LayoutKind::Pointer { .. })
+        && matches!(operator, BinaryOp::Equal | BinaryOp::NotEqual)
+    {
+        let equal = runtime_call(
+            builder,
+            module,
+            abi::OBJECT_EQUAL,
+            &ir::Signature {
+                parameters: vec![operand_type, operand_type],
+                result: NativeType::Bool,
+            },
+            &[left, right],
+        )?;
+        return Ok(if operator == BinaryOp::NotEqual {
+            builder.ins().bxor_imm_u(equal, 1)
+        } else {
+            equal
+        });
+    }
     if operand_type == NativeType::String {
         if operator == BinaryOp::Add {
             return runtime_call(
                 builder,
                 module,
-                "foster_string_concat",
+                abi::STRING_CONCAT,
                 &ir::Signature {
                     parameters: vec![NativeType::String, NativeType::String],
                     result: NativeType::String,
@@ -5853,7 +7167,7 @@ fn lower_binary(
         let equal = runtime_call(
             builder,
             module,
-            "foster_string_equal",
+            abi::STRING_EQUAL,
             &ir::Signature {
                 parameters: vec![NativeType::String, NativeType::String],
                 result: NativeType::Bool,
@@ -5917,10 +7231,35 @@ fn lower_binary(
                 BinaryOp::Multiply => builder.ins().smul_overflow(left, right),
                 _ => unreachable!(),
             };
-            builder.ins().trapnz(pair.1, TrapCode::INTEGER_OVERFLOW);
+            let detail = zero_i64(builder);
+            let limit = zero_i64(builder);
+            fail_if(
+                builder,
+                module,
+                pair.1,
+                abi::failure::INTEGER_OVERFLOW,
+                detail,
+                limit,
+            )?;
             pair.0
         }
-        BinaryOp::Divide => builder.ins().sdiv(left, right),
+        BinaryOp::Divide => {
+            let zero_divisor = builder.ins().icmp_imm_s(IntCC::Equal, right, 0);
+            let minimum = builder.ins().icmp_imm_s(IntCC::Equal, left, i64::MIN);
+            let negative_one = builder.ins().icmp_imm_s(IntCC::Equal, right, -1);
+            let overflow = builder.ins().band(minimum, negative_one);
+            let invalid = builder.ins().bor(zero_divisor, overflow);
+            let limit = zero_i64(builder);
+            fail_if(
+                builder,
+                module,
+                invalid,
+                abi::failure::DIVISION,
+                right,
+                limit,
+            )?;
+            builder.ins().sdiv(left, right)
+        }
         BinaryOp::BitAnd => builder.ins().band(left, right),
         BinaryOp::BitOr => builder.ins().bor(left, right),
         BinaryOp::BitXor => builder.ins().bxor(left, right),
@@ -5928,9 +7267,16 @@ fn lower_binary(
             let invalid = builder
                 .ins()
                 .icmp_imm_u(IntCC::UnsignedGreaterThan, right, 7);
-            builder
-                .ins()
-                .trapnz(invalid, TrapCode::BAD_CONVERSION_TO_INTEGER);
+            let detail = builder.ins().uextend(types::I64, right);
+            let limit = builder.ins().iconst(types::I64, 7);
+            fail_if(
+                builder,
+                module,
+                invalid,
+                abi::failure::INVALID_SHIFT,
+                detail,
+                limit,
+            )?;
             if operator == BinaryOp::ShiftLeft {
                 builder.ins().ishl(left, right)
             } else {
@@ -5958,7 +7304,28 @@ fn runtime_call(
     source_signature: &ir::Signature,
     arguments: &[ClifValue],
 ) -> Result<ClifValue, FosterError> {
-    let signature = signature(module, source_signature);
+    let contract = abi::verify_call(name, source_signature).map_err(native_error)?;
+    if arguments.len() != source_signature.parameters.len() {
+        return Err(native_error(format!(
+            "runtime helper `{name}` has inconsistent argument count"
+        )));
+    }
+    let pointer_type = module.target_config().pointer_type();
+    let mut signature = module.make_signature();
+    signature
+        .params
+        .extend(contract.parameters.iter().map(|(wire, _)| {
+            AbiParam::new(cranelift_representation(
+                wire.representation(),
+                pointer_type,
+            ))
+        }));
+    signature
+        .returns
+        .push(AbiParam::new(cranelift_representation(
+            contract.result.representation(),
+            pointer_type,
+        )));
     let function = module
         .declare_function(name, Linkage::Import, &signature)
         .map_err(|error| {
@@ -5967,6 +7334,110 @@ fn runtime_call(
     let reference = module.declare_func_in_func(function, builder.func);
     let call = builder.ins().call(reference, arguments);
     Ok(builder.inst_results(call)[0])
+}
+
+fn fail_if(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    condition: ClifValue,
+    kind: i64,
+    detail: ClifValue,
+    limit: ClifValue,
+) -> Result<(), FosterError> {
+    let failed = builder.create_block();
+    let continuation = builder.create_block();
+    builder
+        .ins()
+        .brif(condition, failed, &[], continuation, &[]);
+    builder.switch_to_block(failed);
+    let kind = builder.ins().iconst(types::I64, kind);
+    runtime_call(
+        builder,
+        module,
+        abi::FAIL,
+        &ir::Signature {
+            parameters: vec![NativeType::Int, NativeType::Int, NativeType::Int],
+            result: NativeType::Unit,
+        },
+        &[kind, detail, limit],
+    )?;
+    builder.ins().jump(continuation, &[]);
+    builder.switch_to_block(continuation);
+    Ok(())
+}
+
+fn zero_i64(builder: &mut FunctionBuilder<'_>) -> ClifValue {
+    builder.ins().iconst(types::I64, 0)
+}
+
+fn write_native_value(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    value: ClifValue,
+    ty: NativeType,
+) -> Result<(), FosterError> {
+    let (helper, parameters) = match ty {
+        NativeType::Unit => (abi::WRITE_UNIT, Vec::new()),
+        NativeType::Bool => (abi::WRITE_BOOL, vec![NativeType::Bool]),
+        NativeType::Int => (abi::WRITE_INT, vec![NativeType::Int]),
+        NativeType::Float => (abi::WRITE_FLOAT, vec![NativeType::Float]),
+        NativeType::CodePoint => (abi::WRITE_CODE_POINT, vec![NativeType::CodePoint]),
+        NativeType::Byte => (abi::WRITE_BYTE, vec![NativeType::Byte]),
+        NativeType::String => (abi::WRITE_STRING, vec![NativeType::String]),
+        NativeType::Arguments => (abi::WRITE_ARGUMENTS, vec![NativeType::Arguments]),
+        NativeType::StringList => (abi::WRITE_STRING_LIST, vec![NativeType::StringList]),
+        NativeType::Object(_) | NativeType::Opaque => (abi::WRITE_OBJECT, vec![NativeType::Opaque]),
+    };
+    let arguments = if parameters.is_empty() {
+        Vec::new()
+    } else {
+        vec![value]
+    };
+    runtime_call(
+        builder,
+        module,
+        helper,
+        &ir::Signature {
+            parameters,
+            result: NativeType::Unit,
+        },
+        &arguments,
+    )?;
+    Ok(())
+}
+
+fn write_native_separator(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+) -> Result<(), FosterError> {
+    runtime_call(
+        builder,
+        module,
+        abi::WRITE_SEPARATOR,
+        &ir::Signature {
+            parameters: Vec::new(),
+            result: NativeType::Unit,
+        },
+        &[],
+    )?;
+    Ok(())
+}
+
+fn write_native_newline(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+) -> Result<(), FosterError> {
+    runtime_call(
+        builder,
+        module,
+        abi::WRITE_NEWLINE,
+        &ir::Signature {
+            parameters: Vec::new(),
+            result: NativeType::Unit,
+        },
+        &[],
+    )?;
+    Ok(())
 }
 
 fn integer_comparison(
@@ -6018,329 +7489,56 @@ fn instruction_name(instruction: &Instruction) -> &'static str {
     }
 }
 
-fn runtime_strings(program: &Program) -> (Vec<String>, HashMap<u16, u64>) {
+fn runtime_strings(program: &Program) -> (Vec<String>, HashMap<u16, u64>, HashMap<String, u64>) {
     let mut values = Vec::new();
     let mut indices = HashMap::new();
+    let mut literals = HashMap::new();
     for (index, constant) in program.constants.iter().enumerate() {
         if let Constant::String(value) | Constant::Symbol(value) = constant {
             indices.insert(index as u16, values.len() as u64);
+            literals.entry(value.clone()).or_insert(values.len() as u64);
             values.push(value.clone());
         }
     }
-    (values, indices)
+    let mut functions = program.functions.iter().collect::<Vec<_>>();
+    functions.sort_unstable_by_key(|(function, _)| function.into_raw().into_u32());
+    for (_, function) in functions {
+        for pattern in function
+            .instructions
+            .iter()
+            .filter_map(|instruction| match instruction {
+                Instruction::MatchPattern { pattern, .. } => Some(pattern),
+                _ => None,
+            })
+        {
+            collect_pattern_literals(pattern, &mut |literal| {
+                if !literals.contains_key(literal) {
+                    let index = values.len() as u64;
+                    literals.insert(literal.to_owned(), index);
+                    values.push(literal.to_owned());
+                }
+            });
+        }
+    }
+    (values, indices, literals)
 }
 
-fn entry_source(result: NativeType, accepts_arguments: bool, runtime_strings: &[String]) -> String {
-    let print = match result {
-        NativeType::Unit => String::new(),
-        NativeType::Bool => {
-            "println!(\"{}\", if value == 0 { \"false\" } else { \"true\" });".to_owned()
+fn collect_pattern_literals(pattern: &Pattern, visit: &mut impl FnMut(&str)) {
+    match pattern.unspanned() {
+        Pattern::String(value) | Pattern::Symbol(value) => visit(value),
+        Pattern::Variant { fields, .. } => {
+            for field in fields {
+                collect_pattern_literals(field, visit);
+            }
         }
-        NativeType::Int => "println!(\"{value}\");".to_owned(),
-        NativeType::Float => "println!(\"{value}\");".to_owned(),
-        NativeType::CodePoint => {
-            "println!(\"{}\", char::from_u32(value).unwrap_or(char::REPLACEMENT_CHARACTER));"
-                .to_owned()
-        }
-        NativeType::Byte => "println!(\"{value}\");".to_owned(),
-        NativeType::String => "println!(\"{}\", unsafe { &*(value as *const String) });".to_owned(),
-        NativeType::Opaque
-        | NativeType::Arguments
-        | NativeType::StringList
-        | NativeType::Object(_) => {
-            unreachable!("rejected above")
-        }
-    };
-    let constants = runtime_strings
-        .iter()
-        .map(|value| format!("{value:?}.to_owned()"))
-        .collect::<Vec<_>>()
-        .join(", ");
-    let result_type = match result {
-        NativeType::Unit | NativeType::Bool | NativeType::Byte => "u8",
-        NativeType::CodePoint => "u32",
-        NativeType::Int => "i64",
-        NativeType::String => "usize",
-        NativeType::Float => "f64",
-        NativeType::Opaque
-        | NativeType::Arguments
-        | NativeType::StringList
-        | NativeType::Object(_) => {
-            unreachable!("rejected above")
-        }
-    };
-    let declaration = if accepts_arguments {
-        format!(
-            "unsafe extern \"C\" {{ fn foster_native_entry(arguments: usize) -> {result_type}; }}"
-        )
-    } else {
-        format!("unsafe extern \"C\" {{ fn foster_native_entry() -> {result_type}; }}")
-    };
-    let invocation = if accepts_arguments {
-        "let mut supplied = std::env::args_os();\n    let executable = supplied.next().map(unicode_argument).unwrap_or_default();\n    let arguments = FosterArguments { executable, values: supplied.map(unicode_argument).collect() };\n    let value = unsafe { foster_native_entry(&arguments as *const FosterArguments as usize) };"
-    } else {
-        "let value = unsafe { foster_native_entry() };"
-    };
-    format!(
-        r#"use std::alloc::{{Layout, alloc_zeroed, dealloc, handle_alloc_error}};
-use std::ffi::OsString;
-use std::sync::OnceLock;
-
-struct FosterArguments {{
-    executable: String,
-    values: Vec<String>,
-}}
-
-static FOSTER_STRINGS: OnceLock<Vec<String>> = OnceLock::new();
-
-fn constants() -> &'static Vec<String> {{
-    FOSTER_STRINGS.get_or_init(|| vec![{constants}])
-}}
-
-fn unicode_argument(value: OsString) -> String {{
-    value.into_string().unwrap_or_else(|_| {{
-        eprintln!("error: command arguments must be valid Unicode");
-        std::process::exit(2);
-    }})
-}}
-
-fn bounds_error(kind: &str, index: i64, length: usize) -> ! {{
-    eprintln!("error: {{kind}} index {{index}} is outside 0..{{length}}");
-    std::process::exit(2);
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_alloc(size: i64, align: i64) -> usize {{
-    let layout = Layout::from_size_align(size as usize, align as usize)
-        .unwrap_or_else(|_| std::process::abort());
-    let pointer = unsafe {{ alloc_zeroed(layout) }};
-    if pointer.is_null() {{
-        handle_alloc_error(layout);
-    }}
-    pointer as usize
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_dealloc(pointer: usize, size: i64, align: i64) -> u8 {{
-    let layout = Layout::from_size_align(size as usize, align as usize)
-        .unwrap_or_else(|_| std::process::abort());
-    unsafe {{ dealloc(pointer as *mut u8, layout) }};
-    0
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_assert(condition: u8, message: usize) -> u8 {{
-    if condition == 0 {{
-        if message == 0 {{
-            eprintln!("error: assertion failed");
-        }} else {{
-            eprintln!("error: assertion failed: {{}}", unsafe {{ string_value(message) }});
-        }}
-        std::process::exit(2);
-    }}
-    0
-}}
-
-unsafe fn command_arguments<'a>(value: usize) -> &'a FosterArguments {{
-    unsafe {{ &*(value as *const FosterArguments) }}
-}}
-
-unsafe fn string_list<'a>(value: usize) -> &'a Vec<String> {{
-    unsafe {{ &*(value as *const Vec<String>) }}
-}}
-
-unsafe fn string_value<'a>(value: usize) -> &'a String {{
-    unsafe {{ &*(value as *const String) }}
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_constant(index: i64) -> usize {{
-    let index = usize::try_from(index).unwrap_or_else(|_| bounds_error("constant", index, constants().len()));
-    constants().get(index).map(|value| value as *const String as usize)
-        .unwrap_or_else(|| bounds_error("constant", index as i64, constants().len()))
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_args_executable(value: usize) -> usize {{
-    unsafe {{ &command_arguments(value).executable as *const String as usize }}
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_args_values(value: usize) -> usize {{
-    unsafe {{ &command_arguments(value).values as *const Vec<String> as usize }}
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_list_empty(value: usize) -> u8 {{
-    u8::from(unsafe {{ string_list(value).is_empty() }})
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_list_length(value: usize) -> i64 {{
-    unsafe {{ string_list(value).len() as i64 }}
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_list_get(value: usize, index: i64) -> usize {{
-    let values = unsafe {{ string_list(value) }};
-    let index = usize::try_from(index).unwrap_or_else(|_| bounds_error("argument", index, values.len()));
-    values.get(index).map(|value| value as *const String as usize)
-        .unwrap_or_else(|| bounds_error("argument", index as i64, values.len()))
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_list_head(value: usize) -> usize {{
-    foster_string_list_get(value, 0)
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_empty(value: usize) -> u8 {{
-    u8::from(unsafe {{ string_value(value).is_empty() }})
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_length(value: usize) -> i64 {{
-    unsafe {{ string_value(value).chars().count() as i64 }}
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_head(value: usize) -> u32 {{
-    unsafe {{ string_value(value).chars().next() }}
-        .map(|value| value as u32)
-        .unwrap_or_else(|| bounds_error("string", 0, 0))
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_rest(value: usize) -> usize {{
-    let text = unsafe {{ string_value(value) }};
-    let offset = text.chars().next().map_or(0, char::len_utf8);
-    Box::into_raw(Box::new(text[offset..].to_owned())) as usize
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_whitespace(value: usize) -> u8 {{
-    u8::from(unsafe {{ string_value(value).chars().all(char::is_whitespace) }})
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_concat(left: usize, right: usize) -> usize {{
-    let mut result = unsafe {{ string_value(left).clone() }};
-    result.push_str(unsafe {{ string_value(right) }});
-    Box::into_raw(Box::new(result)) as usize
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_byte_length(value: usize) -> i64 {{
-    unsafe {{ string_value(value).len() as i64 }}
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_copy_bytes(value: usize, destination: usize) -> u8 {{
-    let bytes = unsafe {{ string_value(value).as_bytes() }};
-    unsafe {{ std::ptr::copy_nonoverlapping(bytes.as_ptr(), destination as *mut u8, bytes.len()) }};
-    0
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_from_utf8(data: usize, length: i64) -> usize {{
-    let length = usize::try_from(length).unwrap_or_else(|_| std::process::abort());
-    let bytes = unsafe {{ std::slice::from_raw_parts(data as *const u8, length) }};
-    let text = std::str::from_utf8(bytes).unwrap_or_else(|_| {{
-        eprintln!("error: Bytes are not valid UTF-8");
-        std::process::exit(2);
-    }});
-    Box::into_raw(Box::new(text.to_owned())) as usize
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_copy_bytes(destination: usize, source: usize, length: i64) -> u8 {{
-    let length = usize::try_from(length).unwrap_or_else(|_| std::process::abort());
-    unsafe {{ std::ptr::copy_nonoverlapping(source as *const u8, destination as *mut u8, length) }};
-    0
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_code_point_whitespace(value: u32) -> u8 {{
-    u8::from(char::from_u32(value).is_some_and(char::is_whitespace))
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_code_point_string(value: u32) -> usize {{
-    let value = char::from_u32(value).unwrap_or(char::REPLACEMENT_CHARACTER);
-    Box::into_raw(Box::new(value.to_string())) as usize
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_get(value: usize, index: i64) -> u32 {{
-    let text = unsafe {{ string_value(value) }};
-    let index = usize::try_from(index).unwrap_or_else(|_| bounds_error("string", index, text.chars().count()));
-    text.chars().nth(index).map(|value| value as u32)
-        .unwrap_or_else(|| bounds_error("string", index as i64, text.chars().count()))
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_string_equal(left: usize, right: usize) -> u8 {{
-    u8::from(unsafe {{ string_value(left) == string_value(right) }})
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_parse_float(value: usize) -> f64 {{
-    unsafe {{ string_value(value) }}.parse::<f64>().unwrap_or_else(|_| {{
-        eprintln!("error: invalid Float text");
-        std::process::exit(2);
-    }})
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_format_float(value: f64) -> usize {{
-    Box::into_raw(Box::new(value.to_string())) as usize
-}}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_ref_load_i8(reference: usize) -> u8 {{ unsafe {{ *(reference as *const u8) }} }}
-#[unsafe(no_mangle)]
-extern "C" fn foster_ref_load_i32(reference: usize) -> u32 {{ unsafe {{ *(reference as *const u32) }} }}
-#[unsafe(no_mangle)]
-extern "C" fn foster_ref_load_i64(reference: usize) -> i64 {{ unsafe {{ *(reference as *const i64) }} }}
-#[unsafe(no_mangle)]
-extern "C" fn foster_ref_load_f64(reference: usize) -> f64 {{ unsafe {{ *(reference as *const f64) }} }}
-#[unsafe(no_mangle)]
-extern "C" fn foster_ref_load_ptr(reference: usize) -> usize {{ unsafe {{ *(reference as *const usize) }} }}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_ref_store_i8(reference: usize, value: u8) -> u8 {{
-    unsafe {{ *(reference as *mut u8) = value }};
-    0
-}}
-#[unsafe(no_mangle)]
-extern "C" fn foster_ref_store_i32(reference: usize, value: u32) -> u8 {{
-    unsafe {{ *(reference as *mut u32) = value }};
-    0
-}}
-#[unsafe(no_mangle)]
-extern "C" fn foster_ref_store_i64(reference: usize, value: i64) -> u8 {{
-    unsafe {{ *(reference as *mut i64) = value }};
-    0
-}}
-#[unsafe(no_mangle)]
-extern "C" fn foster_ref_store_f64(reference: usize, value: f64) -> u8 {{
-    unsafe {{ *(reference as *mut f64) = value }};
-    0
-}}
-#[unsafe(no_mangle)]
-extern "C" fn foster_ref_store_ptr(reference: usize, value: usize) -> u8 {{
-    unsafe {{ *(reference as *mut usize) = value }};
-    0
-}}
-
-{declaration}
-
-fn main() {{
-    {invocation}
-    {print}
-}}
-"#
-    )
+        Pattern::Spanned { .. } => unreachable!(),
+        Pattern::Wildcard
+        | Pattern::Binding(_)
+        | Pattern::Bool(_)
+        | Pattern::Integer(_)
+        | Pattern::Float(_)
+        | Pattern::CodePoint(_) => {}
+    }
 }
 
 fn absolute_path(path: &Path) -> Result<PathBuf, FosterError> {
@@ -6407,47 +7605,19 @@ func main() -> Int {
 "#,
         )
         .unwrap();
-        let shared = vm::compile_shared(&compilation).unwrap();
-        let shared_functions = shared.functions;
-        let mut program = shared.metadata;
-        let mut layouts = crate::codegen::layout::legalize(&mut program).unwrap();
-        let main = program.main.unwrap();
-        let instances = reachable_instances(&program, &shared_functions, main).unwrap();
-        let instance_ids = instances
+        let prepared = prepare(&compilation).unwrap();
+        let program = &prepared.program;
+        let main = prepared.main;
+        let function = prepared
+            .functions()
             .iter()
-            .map(|instance| (instance.key.clone(), instance.ir_function))
-            .collect::<HashMap<_, _>>();
-        let function_types =
-            collect_function_types(&compilation, &program, &instances, &mut layouts).unwrap();
-        let physical_layouts = crate::codegen::layout::physical::PhysicalRegistry::build(
-            &layouts,
-            crate::codegen::layout::physical::TargetLayout::host(),
-        )
-        .unwrap();
-        let instance = instances
-            .iter()
-            .find(|instance| instance.key.function == main)
-            .unwrap();
-        let (_, runtime_string_indices) = runtime_strings(&program);
-        let function = lower_shared_to_native_ir(
-            &shared_functions[&main],
-            &program.functions[&main],
-            &function_types[&instance.ir_function],
-            &instance.key,
-            NativeIrEnvironment {
-                program: &program,
-                shared_functions: &shared_functions,
-                function_types: &function_types,
-                runtime_string_indices: &runtime_string_indices,
-                layouts: &layouts,
-                physical_layouts: &physical_layouts,
-                instances: &instance_ids,
-            },
-        )
-        .unwrap();
+            .find(|function| function.source_function() == main)
+            .unwrap()
+            .ir();
+        let function_types = &prepared.function_types;
 
         assert!(function.blocks.len() > 1);
-        function.verify(&function_types).unwrap();
+        function.verify(function_types).unwrap();
         let mut definitions = function.parameters.iter().copied().collect::<HashSet<_>>();
         let mut has_branch = false;
         let mut has_back_edge = false;

@@ -546,8 +546,27 @@ fn verify_function_flow(
     _id: FunctionId,
     function: &BytecodeFunction,
 ) -> Result<(), FosterError> {
+    analyze_function_flow(program, function).map(|_| ())
+}
+
+pub(crate) fn type_states(
+    program: &Program,
+    function: &BytecodeFunction,
+) -> Result<Vec<Option<Vec<Option<VerificationType>>>>, FosterError> {
+    analyze_function_flow(program, function).map(|states| {
+        states
+            .into_iter()
+            .map(|state| state.map(|state| state.registers))
+            .collect()
+    })
+}
+
+fn analyze_function_flow(
+    program: &Program,
+    function: &BytecodeFunction,
+) -> Result<Vec<Option<FlowState>>, FosterError> {
     if function.intrinsic_stub {
-        return Ok(());
+        return Ok(vec![None; function.instructions.len()]);
     }
     let mut entry = FlowState {
         registers: vec![None; usize::from(function.registers)],
@@ -592,7 +611,7 @@ fn verify_function_flow(
             }
         }
     }
-    Ok(())
+    Ok(states)
 }
 
 fn transfer(
@@ -1041,11 +1060,25 @@ fn transfer(
                 VerificationType::Unknown => VerificationType::Unknown,
                 found => return type_error(function, index, "Remote", &found),
             };
+            let mut substitutions = std::collections::BTreeMap::new();
+            target.parameter_types[0].infer_specialization(&receiver, &mut substitutions);
+            for (schema, (_, argument)) in target.parameter_types.iter().skip(1).zip(arguments) {
+                schema.infer_specialization(
+                    &read_type(function, index, &state, *argument)?,
+                    &mut substitutions,
+                );
+            }
+            let specialization = substitutions.into_iter().collect();
+            let parameter_types = target
+                .parameter_types
+                .iter()
+                .map(|ty| ty.specialize(&specialization))
+                .collect::<Vec<_>>();
             require_type(
                 function,
                 index,
                 &receiver,
-                &target.parameter_types[0],
+                &parameter_types[0],
                 "remote receiver",
             )?;
             verify_arguments(
@@ -1054,14 +1087,14 @@ fn transfer(
                 &mut state,
                 arguments.iter().map(|(mode, register)| (*mode, *register)),
                 target.parameter_modes.iter().copied().skip(1),
-                target.parameter_types.iter().skip(1),
+                parameter_types.iter().skip(1),
             )?;
             write_type(
                 function,
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Future(Box::new(target.result_type.clone())),
+                VerificationType::Future(Box::new(target.result_type.specialize(&specialization))),
             )?;
         }
         Instruction::Await {
@@ -1183,9 +1216,14 @@ fn transfer(
             destination,
             function: target,
             arguments,
-            ..
+            specialization,
         } => {
             let target = &program.functions[target];
+            let parameter_types = target
+                .parameter_types
+                .iter()
+                .map(|ty| ty.specialize(specialization))
+                .collect::<Vec<_>>();
             verify_arguments(
                 function,
                 index,
@@ -1196,14 +1234,14 @@ fn transfer(
                     .copied()
                     .zip(arguments.iter().copied()),
                 target.parameter_modes.iter().copied(),
-                target.parameter_types.iter(),
+                parameter_types.iter(),
             )?;
             write_type(
                 function,
                 index,
                 &mut state,
                 *destination,
-                target.result_type.clone(),
+                target.result_type.specialize(specialization),
             )?;
         }
         Instruction::CallMethod {
@@ -1211,15 +1249,20 @@ fn transfer(
             receiver,
             function: target,
             arguments,
-            ..
+            specialization,
         } => {
             let target = &program.functions[target];
+            let parameter_types = target
+                .parameter_types
+                .iter()
+                .map(|ty| ty.specialize(specialization))
+                .collect::<Vec<_>>();
             let receiver = read_type(function, index, &state, *receiver)?;
             require_type(
                 function,
                 index,
                 &receiver,
-                &target.parameter_types[0],
+                &parameter_types[0],
                 "method receiver",
             )?;
             verify_arguments(
@@ -1233,14 +1276,14 @@ fn transfer(
                     .skip(1)
                     .zip(arguments.iter().copied()),
                 target.parameter_modes.iter().copied().skip(1),
-                target.parameter_types.iter().skip(1),
+                parameter_types.iter().skip(1),
             )?;
             write_type(
                 function,
                 index,
                 &mut state,
                 *destination,
-                target.result_type.clone(),
+                target.result_type.specialize(specialization),
             )?;
         }
         Instruction::CallContractMethod {

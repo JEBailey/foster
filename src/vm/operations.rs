@@ -24,7 +24,7 @@ pub(super) fn constant_value(
 
 pub(super) fn unary(operator: UnaryOp, value: &Value) -> Result<Value, RuntimeError> {
     match (operator, value) {
-        (UnaryOp::Negate, Value::Integer(value)) => Ok(Value::Integer(-value)),
+        (UnaryOp::Negate, Value::Integer(value)) => checked_integer(value.checked_neg()),
         (UnaryOp::Negate, Value::CodePoint(value)) => Ok(Value::Integer(-(*value as i64))),
         (UnaryOp::Negate, Value::Byte(value)) => Ok(Value::Integer(-i64::from(*value))),
         (UnaryOp::Negate, Value::Float(value)) => Ok(Value::Float(-value)),
