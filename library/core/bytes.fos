@@ -46,21 +46,48 @@ pub func Bytes.from(values: List<Byte>) -> Bytes [consume values] {
 
 /// Decodes an even-length hexadecimal string.
 pub func Bytes.from_hex(value: String) -> Result<Bytes, HexError> {
-    decode_hex(value.code_points(), 0, [])
+    let characters = value.code_points()
+    let output = []
+    let offset = 0
+    loop {
+        break if offset >= characters.length
+        return Result.Error(HexError {
+            offset: offset + 1
+            message: "hexadecimal byte text must have even length"
+        }) if offset + 1 == characters.length
+        let high = hex_nibble(characters[offset])
+        return invalid_hex(offset, characters[offset]) if high < 0
+        let low = hex_nibble(characters[offset + 1])
+        return invalid_hex(offset + 1, characters[offset + 1]) if low < 0
+        output.push(Byte.unchecked(high * 16 + low))
+        offset = offset + 2
+    }
+    Result.Ok(Bytes.from(move output))
 }
 
 /// Concatenates two immutable byte sequences.
 pub func Bytes.concat(self: Bytes, other: Bytes) -> Bytes {
-    let left = self.list()
-    Bytes.from((move left).concat(other.list()))
+    let output = self.list()
+    let index = 0
+    loop {
+        break if index >= other.length
+        output.push(other[index])
+        index = index + 1
+    }
+    Bytes.from(move output)
 }
 
 /// Returns bytes in the half-open range `start..end`.
 pub func Bytes.slice(self: Bytes, start: Int, end: Int) -> Bytes {
     assert(start >= 0 && end >= start && end <= self.length, "byte slice is out of bounds")
-    let values = self.list()
-    let remaining = (move values).drop(start)
-    Bytes.from(remaining.take(end - start))
+    let output = []
+    let index = start
+    loop {
+        break if index >= end
+        output.push(self[index])
+        index = index + 1
+    }
+    Bytes.from(move output)
 }
 
 /// Expands compact bytes into a Foster list.
@@ -70,32 +97,78 @@ pub func Bytes.list(self: Bytes) -> List<Byte> {
 
 /// Encodes bytes as lowercase hexadecimal text.
 pub func Bytes.hex(self: Bytes) -> String {
-    hex_remaining(self.list(), "")
+    let output = []
+    let index = 0
+    loop {
+        break if index >= self.length
+        let value = self[index].int
+        output.push(hex_digit(value / 16))
+        output.push(hex_digit(value - value / 16 * 16))
+        index = index + 1
+    }
+    BytesHost.decode_utf8(Bytes.from(move output))
 }
 
 /// Returns whether two byte sequences contain identical values.
 pub func Bytes.equal?(self: Bytes, other: Bytes) -> Bool {
-    equal_bytes(self, other)
-}
-
-/// Compares immutable bytes without exposing their compact backing representation.
-func equal_bytes(left: Bytes, right: Bytes) -> Bool {
-    branch {
-        left.empty? -> right.empty?
-        right.empty? -> false
-        left.head != right.head -> false
-        _ -> equal_bytes(left.rest, right.rest)
+    return false if self.length != other.length
+    let index = 0
+    loop {
+        break if index >= self.length
+        return false if self[index] != other[index]
+        index = index + 1
     }
+    true
 }
 
 /// Computes a deterministic hash over the byte sequence.
 pub func Bytes.hash(self: Bytes) -> Int {
-    hash_remaining(self, 17)
+    let state = 17
+    let index = 0
+    loop {
+        break if index >= self.length
+        state = state + self[index]
+        index = index + 1
+    }
+    state
 }
 
-/// Decodes valid UTF-8 or returns a typed error.
+/// Checks UTF-8 scalar boundaries without allocating decoded text or copied suffixes.
 pub func Bytes.utf8_valid?(self: Bytes) -> Bool {
-    utf8_valid(self.list())
+    let index = 0
+    loop {
+        break if index >= self.length
+        let first = self[index].int
+        let width = branch {
+            first <= 127 -> 1
+            first >= 194 && first <= 223 -> 2
+            first >= 224 && first <= 239 -> 3
+            first >= 240 && first <= 244 -> 4
+            _ -> 0
+        }
+        return false if width == 0 || width > self.length - index
+        branch {
+            width > 1 -> {
+                let second = self[index + 1].int
+                return false if second < 128 || second > 191
+                return false if first == 224 && second < 160
+                return false if first == 237 && second > 159
+                return false if first == 240 && second < 144
+                return false if first == 244 && second > 143
+                let tail = 2
+                loop {
+                    break if tail >= width
+                    let continuation = self[index + tail].int
+                    return false if continuation < 128 || continuation > 191
+                    tail = tail + 1
+                }
+                ()
+            }
+            _ -> ()
+        }
+        index = index + width
+    }
+    true
 }
 
 /// Decodes valid UTF-8 or returns a typed error.
@@ -114,36 +187,6 @@ test "bytes round-trip UTF-8 and hexadecimal text" {
     }
     assert(valid)
     assert(encoded.hex() == "466f7374657220cebb")
-}
-
-/// Accumulates a stable byte hash.
-func hash_remaining(values: Bytes, state: Int) -> Int {
-    branch {
-        values.empty? -> state
-        _ -> hash_remaining(values.rest, state + values.head)
-    }
-}
-
-/// Decodes pairs of ASCII hexadecimal code points into compact bytes.
-func decode_hex(characters: List<CodePoint>, offset: Int, output: List<Byte>) -> Result<Bytes, HexError> [consume output] {
-    branch {
-        characters.empty? -> Result.Ok(Bytes.from(move output))
-        characters.rest.empty? -> Result.Error(HexError {
-            offset: offset + 1
-            message: "hexadecimal byte text must have even length"
-        })
-        _ -> decode_hex_pair(characters, offset, move output)
-    }
-}
-
-/// Validates and appends one hexadecimal byte pair.
-func decode_hex_pair(characters: List<CodePoint>, offset: Int, output: List<Byte>) -> Result<Bytes, HexError> [consume output] {
-    let high = hex_nibble(characters.head)
-    return invalid_hex(offset, characters.head) if high < 0
-    let tail = characters.rest
-    let low = hex_nibble(tail.head)
-    return invalid_hex(offset + 1, tail.head) if low < 0
-    decode_hex(tail.rest, offset + 2, output.append(Byte.unchecked(high * 16 + low)))
 }
 
 /// Converts one hexadecimal digit to its integer nibble, or `-1` when invalid.
@@ -165,63 +208,23 @@ func invalid_hex(offset: Int, character: CodePoint) -> Result<Bytes, HexError> {
     })
 }
 
-/// Encodes every byte as two lowercase hexadecimal digits.
-func hex_remaining(values: List<Byte>, output: String) -> String [consume output] {
+/// Encodes one integer nibble as an ASCII byte.
+func hex_digit(value: Int) -> Byte {
     branch {
-        values.empty? -> output
-        _ -> hex_remaining(values.rest, output + hex_byte(values.head))
+        value < 10 -> Byte.unchecked(48 + value)
+        _ -> Byte.unchecked(87 + value)
     }
 }
 
-/// Encodes one byte as two lowercase hexadecimal digits.
-func hex_byte(value: Byte) -> String {
-    let integer = value.int
-    let high = integer / 16
-    hex_digit(high) + hex_digit(integer - high * 16)
-}
-
-/// Encodes one integer nibble as a lowercase hexadecimal digit.
-func hex_digit(value: Int) -> String {
-    branch {
-        value < 10 -> from_code_point(48 + value).string
-        _ -> from_code_point(87 + value).string
-    }
-}
-
-/// Validates a complete UTF-8 byte sequence.
-func utf8_valid(values: List<Byte>) -> Bool {
-    branch {
-        values.empty? -> true
-        values.head.int <= 127 -> utf8_valid(values.rest)
-        values.head.int >= 194 && values.head.int <= 223 -> valid_utf8_tail(values.rest, 1)
-        values.head.int == 224 -> valid_utf8_second(values.rest, 160, 191, 1)
-        values.head.int >= 225 && values.head.int <= 236 -> valid_utf8_tail(values.rest, 2)
-        values.head.int == 237 -> valid_utf8_second(values.rest, 128, 159, 1)
-        values.head.int >= 238 && values.head.int <= 239 -> valid_utf8_tail(values.rest, 2)
-        values.head.int == 240 -> valid_utf8_second(values.rest, 144, 191, 2)
-        values.head.int >= 241 && values.head.int <= 243 -> valid_utf8_tail(values.rest, 3)
-        values.head.int == 244 -> valid_utf8_second(values.rest, 128, 143, 2)
-        _ -> false
-    }
-}
-
-/// Validates a constrained second byte followed by ordinary continuation bytes.
-func valid_utf8_second(values: List<Byte>, minimum: Int, maximum: Int, remaining: Int) -> Bool {
-    branch {
-        values.empty? -> false
-        values.head.int < minimum -> false
-        values.head.int > maximum -> false
-        _ -> valid_utf8_tail(values.rest, remaining)
-    }
-}
-
-/// Validates `remaining` continuation bytes and then the rest of the sequence.
-func valid_utf8_tail(values: List<Byte>, remaining: Int) -> Bool {
-    branch {
-        remaining == 0 -> utf8_valid(values)
-        values.empty? -> false
-        values.head.int < 128 -> false
-        values.head.int > 191 -> false
-        _ -> valid_utf8_tail(values.rest, remaining - 1)
-    }
+test "UTF-8 validation rejects invalid boundaries and truncated sequences" {
+    assert(Bytes.from([Byte.unchecked(0)]).utf8_valid?())
+    assert("λ€🙂".utf8.utf8_valid?())
+    assert(!Bytes.from([Byte.unchecked(128)]).utf8_valid?())
+    assert(!Bytes.from([Byte.unchecked(192), Byte.unchecked(128)]).utf8_valid?())
+    assert(!Bytes.from([Byte.unchecked(224), Byte.unchecked(159), Byte.unchecked(191)]).utf8_valid?())
+    assert(!Bytes.from([Byte.unchecked(237), Byte.unchecked(160), Byte.unchecked(128)]).utf8_valid?())
+    assert(!Bytes.from([Byte.unchecked(244), Byte.unchecked(144), Byte.unchecked(128), Byte.unchecked(128)]).utf8_valid?())
+    assert(!Bytes.from([Byte.unchecked(240), Byte.unchecked(159)]).utf8_valid?())
+    assert("abcdef".utf8.slice(2, 4).hex() == "6364")
+    ()
 }

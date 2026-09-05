@@ -10,24 +10,17 @@ type SkipIterator<T> = & Iterator<T> & {
 
 /// Discards the configured prefix before yielding source values.
 func SkipIterator.next<T>(self: SkipIterator<T>) -> Option<T> {
-    branch {
-        self.remaining <= 0 -> self.source.next()
-        _ -> self.skip_next()
+    loop {
+        break if self.remaining <= 0
+        branch self.source.next() {
+            Option.Some(_) -> {
+                self.remaining = self.remaining - 1
+                ()
+            }
+            Option.None -> { return Option.None }
+        }
     }
-}
-
-/// Discards one source value while the skip count remains positive.
-func SkipIterator.skip_next<T>(self: SkipIterator<T>) -> Option<T> {
-    branch self.source.next() {
-        Option.Some(_) -> self.decrement_and_continue()
-        Option.None -> Option.None
-    }
-}
-
-/// Decrements the skip count and continues looking for the first yielded value.
-func SkipIterator.decrement_and_continue<T>(self: SkipIterator<T>) -> Option<T> {
-    self.remaining = self.remaining - 1
-    self.next()
+    self.source.next()
 }
 
 /// Lazily discards the first `amount` remaining elements.

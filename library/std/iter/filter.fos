@@ -11,13 +11,16 @@ type FilterIterator<T> = & Iterator<T> & {
 
 /// Pulls until a filtered iterator finds a matching value or reaches exhaustion.
 func FilterIterator.next<T>(self: FilterIterator<T>) -> Option<T> {
-    branch self.source.next() {
-        Option.Some(value) -> branch {
-            self.predicate(value) -> Option.Some(value)
-            _ -> self.next()
+    loop {
+        branch self.source.next() {
+            Option.Some(value) -> {
+                return Option.Some(value) if self.predicate(value)
+                ()
+            }
+            Option.None -> { break }
         }
-        Option.None -> Option.None
     }
+    Option.None
 }
 
 /// Lazily retains this iterator's remaining elements that satisfy `predicate`.

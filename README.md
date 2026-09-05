@@ -379,6 +379,7 @@ remain build/run concerns, so ordinary library documents do not need a `main`. T
 
 ## Documentation map
 
+- [Semantic specification and conformance gaps](docs/semantics.md)
 - [Language design and implemented syntax](docs/language-design.md)
 - [Source and ownership compatibility policy](docs/compatibility.md)
 - [Roadmap](docs/roadmap.md)

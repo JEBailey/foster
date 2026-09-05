@@ -1914,9 +1914,33 @@ fn infer_register_types(
                 destination,
                 object,
                 field,
-                ..
+                by_reference,
             } => {
-                let object = register_type(&result, *object, function)?;
+                let object = dereference_native_type(
+                    register_type(&result, *object, function)?,
+                    environment,
+                )?;
+                if *by_reference {
+                    let NativeType::Object(layout) = object else {
+                        return Err(native_error("projected field requires a record"));
+                    };
+                    let LayoutKind::Record { fields, .. } = &environment.layouts.get(layout).kind
+                    else {
+                        return Err(native_error("projected field requires a record layout"));
+                    };
+                    let slot = fields
+                        .iter()
+                        .find(|slot| slot.name == *field)
+                        .ok_or_else(|| native_error("projected field has no logical slot"))?;
+                    let pointer = environment
+                        .layouts
+                        .pointer(&slot.ty, crate::codegen::layout::Ownership::Borrowed)
+                        .ok_or_else(|| {
+                            native_error("projected field has no borrowed pointer layout")
+                        })?;
+                    result[usize::from(destination.0)] = Some(NativeType::Object(pointer));
+                    continue;
+                }
                 result[usize::from(destination.0)] = Some(
                     field_type(
                         environment.program,
@@ -1945,7 +1969,17 @@ fn infer_register_types(
                     NativeType::Object(layout) => {
                         match &environment.physical_layouts.get(layout).kind {
                             PhysicalKind::Buffer { element, .. } => {
-                                native_type_from_value_layout(*element)
+                                match &environment.layouts.get(layout).kind {
+                                    LayoutKind::Builtin {
+                                        ty: VerificationType::List(item),
+                                    } => native_verification_type(
+                                        environment.program,
+                                        environment.layouts,
+                                        item,
+                                        element.pointee,
+                                    )?,
+                                    _ => native_type_from_value_layout(*element),
+                                }
                             }
                             PhysicalKind::Bytes { .. } => NativeType::Byte,
                             _ => {
@@ -2110,13 +2144,21 @@ fn infer_register_types(
                             "value has no native implementation of required method `{name}`"
                         )));
                     }
-                    result[usize::from(destination.0)] = Some(field_type(
-                        environment.program,
-                        environment.layouts,
-                        environment.physical_layouts,
-                        receiver,
-                        name,
-                    )?);
+                    result[usize::from(destination.0)] = Some(
+                        field_type(
+                            environment.program,
+                            environment.layouts,
+                            environment.physical_layouts,
+                            receiver,
+                            name,
+                        )
+                        .map_err(|error| {
+                            native_error(format!(
+                                "{} while resolving contract `{name}` in `{}`",
+                                error.message, function.name
+                            ))
+                        })?,
+                    );
                 }
             }
             Instruction::MatchPattern {
@@ -2972,7 +3014,7 @@ fn lower_shared_instruction(
                 arguments,
                 &environment.program.functions[function].parameter_modes,
                 &environment.function_types[&target].parameters,
-                environment.layouts,
+                environment,
                 value_types,
                 storage_hints,
                 &mut result,
@@ -3008,7 +3050,7 @@ fn lower_shared_instruction(
                 &sources,
                 &environment.program.functions[function].parameter_modes,
                 &environment.function_types[&target].parameters,
-                environment.layouts,
+                environment,
                 value_types,
                 storage_hints,
                 &mut result,
@@ -3051,7 +3093,7 @@ fn lower_shared_instruction(
                 arguments,
                 &environment.program.functions[function].parameter_modes,
                 &environment.function_types[&target].parameters[captures.len()..],
-                environment.layouts,
+                environment,
                 value_types,
                 storage_hints,
                 &mut result,
@@ -3168,7 +3210,7 @@ fn lower_shared_instruction(
                 arguments,
                 modes,
                 &expected,
-                environment.layouts,
+                environment,
                 value_types,
                 storage_hints,
                 &mut result,
@@ -3339,7 +3381,7 @@ fn lower_shared_instruction(
                     arguments,
                     &modes[1..],
                     &target.parameters[1..],
-                    environment.layouts,
+                    environment,
                     value_types,
                     storage_hints,
                     &mut lowered,
@@ -3417,7 +3459,7 @@ fn lower_shared_instruction(
                 &sources,
                 &modes,
                 &environment.function_types[&target].parameters[1..],
-                environment.layouts,
+                environment,
                 value_types,
                 storage_hints,
                 &mut result,
@@ -3447,7 +3489,7 @@ fn shared_call_arguments(
     arguments: &[ir::Value],
     modes: &[ParameterMode],
     expected_types: &[NativeType],
-    layouts: &LayoutRegistry,
+    environment: NativeIrEnvironment<'_>,
     value_types: &mut Vec<NativeType>,
     storage_hints: &mut Vec<Option<u16>>,
     instructions: &mut Vec<(ir::Instruction, Vec<ir::Value>)>,
@@ -3457,9 +3499,34 @@ fn shared_call_arguments(
             "shared call ownership metadata has the wrong arity",
         ));
     }
+    let layouts = environment.layouts;
     let mut lowered = Vec::with_capacity(arguments.len());
     let mut consumed = Vec::new();
     for ((argument, mode), expected) in arguments.iter().zip(modes).zip(expected_types) {
+        let source_type = value_types[argument.0 as usize];
+        let pointee_type = dereference_native_type(source_type, environment)?;
+        let loaded;
+        let argument = if *mode == ParameterMode::Borrow
+            && source_type != pointee_type
+            && source_type != *expected
+        {
+            loaded = allocate_shared_value(value_types, storage_hints, pointee_type);
+            instructions.push((
+                ir::Instruction::RuntimeCall {
+                    destination: loaded,
+                    helper: reference_load_helper(pointee_type),
+                    signature: ir::Signature {
+                        parameters: vec![source_type],
+                        result: pointee_type,
+                    },
+                    arguments: vec![*argument],
+                },
+                Vec::new(),
+            ));
+            &loaded
+        } else {
+            argument
+        };
         let ty = value_types[argument.0 as usize];
         if callable_conversion(ty, *expected, layouts) {
             let callable = allocate_shared_value(value_types, storage_hints, *expected);
@@ -4417,17 +4484,39 @@ fn lower_portable_native(
             destination,
             source,
         } => {
-            let NativeType::Object(layout) = function.value_type(*destination) else {
+            let source_value = *source;
+            let original = get(source);
+            let source_type = function.value_type(*destination);
+            let (source, object_type) =
+                native_reference_receiver(builder, module, original, source_type, backend)?;
+            let address = (source_type != object_type).then_some(original);
+            let NativeType::Object(layout) = object_type else {
                 return Err(native_error("copy-on-write requires a native object"));
             };
             let physical = objects.layouts.physical.get(layout);
-            let source_value = *source;
-            let source = get(source);
-            if function.storage_hints[source_value.0 as usize]
-                .is_some_and(|home| mutable_parameter_homes.contains(&home))
+            if address.is_none()
+                && function.storage_hints[source_value.0 as usize]
+                    .is_some_and(|home| mutable_parameter_homes.contains(&home))
             {
                 return Ok(Some(source));
             }
+            // A builder's unique storage can be mutated directly. Shared values still detach
+            // before mutation so snapshots and borrowed callers retain value semantics.
+            let pointer_type = module.target_config().pointer_type();
+            let count = builder.ins().load(
+                pointer_type,
+                MemFlagsData::trusted(),
+                source,
+                physical.header.strong_count_offset as i32,
+            );
+            let unique = builder.ins().icmp_imm_s(IntCC::Equal, count, 1);
+            let detach = builder.create_block();
+            let ready = builder.create_block();
+            builder.append_block_param(ready, pointer_type);
+            builder
+                .ins()
+                .brif(unique, ready, &[source.into()], detach, &[]);
+            builder.switch_to_block(detach);
             let copied = match &physical.kind {
                 PhysicalKind::Record { fields, .. } => {
                     let copied = objects.allocate(builder, module, layout)?;
@@ -4453,7 +4542,15 @@ fn lower_portable_native(
                 }
             };
             objects.release(builder, module, source, layout)?;
-            Ok(Some(copied))
+            builder.ins().jump(ready, &[copied.into()]);
+            builder.switch_to_block(ready);
+            let unique = builder.block_params(ready)[0];
+            if let Some(address) = address {
+                store_physical_value(builder, address, 0, unique);
+                Ok(Some(address))
+            } else {
+                Ok(Some(unique))
+            }
         }
         ir::PortableInstruction::SpawnRemote { destination, value } => {
             lower_native_spawn_remote(builder, module, *destination, *value, false, context)
@@ -4645,10 +4742,17 @@ fn lower_portable_native(
             Ok(Some(appended))
         }
         ir::PortableInstruction::Push { object, value, .. } => {
-            let NativeType::Object(layout) = function.value_type(*object) else {
+            let (object, object_type) = native_reference_receiver(
+                builder,
+                module,
+                get(object),
+                function.value_type(*object),
+                backend,
+            )?;
+            let NativeType::Object(layout) = object_type else {
                 return Err(native_error("native push requires a buffer"));
             };
-            push_native_buffer(builder, module, get(object), get(value), layout, objects)?;
+            push_native_buffer(builder, module, object, get(value), layout, objects)?;
             Ok(Some(builder.ins().iconst(types::I8, 0)))
         }
         ir::PortableInstruction::Contains {
@@ -6999,8 +7103,42 @@ fn push_native_buffer(
         object,
         capacity_offset as i32,
     );
+    // Capacity growth is storage policy, not a Foster collection algorithm. Keep byte-size
+    // arithmetic representable before allocating or writing the next element.
+    let maximum = isize::MAX as i64 / i64::from(element.size);
+    let full = builder
+        .ins()
+        .icmp_imm_s(IntCC::SignedGreaterThanOrEqual, length, maximum);
+    let limit = builder.ins().iconst(word, maximum);
+    fail_if(
+        builder,
+        module,
+        full,
+        abi::failure::INTEGER_OVERFLOW,
+        length,
+        limit,
+    )?;
     let new_length = builder.ins().iadd_imm_s(length, 1);
-    let new_capacity = new_length;
+    let grow = builder.create_block();
+    let ready = builder.create_block();
+    builder.append_block_param(ready, word);
+    let needs_growth = builder
+        .ins()
+        .icmp(IntCC::UnsignedGreaterThan, new_length, old_capacity);
+    builder
+        .ins()
+        .brif(needs_growth, grow, &[], ready, &[old_data.into()]);
+    builder.switch_to_block(grow);
+    let can_double =
+        builder
+            .ins()
+            .icmp_imm_s(IntCC::SignedLessThanOrEqual, old_capacity, maximum / 2);
+    let doubled = builder.ins().imul_imm_u(old_capacity, 2);
+    let grown = builder.ins().select(can_double, doubled, limit);
+    let too_small = builder
+        .ins()
+        .icmp(IntCC::UnsignedLessThan, grown, new_length);
+    let new_capacity = builder.ins().select(too_small, new_length, grown);
     let size = builder
         .ins()
         .imul_imm_u(new_capacity, i64::from(element.size));
@@ -7018,15 +7156,6 @@ fn push_native_buffer(
     copy_native_buffer_data(builder, module, old_data, new_data, length, element);
     store_physical_value(builder, object, data_offset, new_data);
     store_physical_value(builder, object, capacity_offset, new_capacity);
-    let offset = builder.ins().imul_imm_u(length, i64::from(element.size));
-    let address = builder.ins().iadd(new_data, offset);
-    if let Some(pointee) = element.pointee
-        && objects.layouts.is_managed(pointee)
-    {
-        objects.retain(builder, value, pointee);
-    }
-    store_physical_value(builder, address, 0, value);
-    store_physical_value(builder, object, length_offset, new_length);
     let old_size = builder
         .ins()
         .imul_imm_u(old_capacity, i64::from(element.size));
@@ -7040,6 +7169,18 @@ fn push_native_buffer(
         },
         &[old_data, old_size, align],
     )?;
+    builder.ins().jump(ready, &[new_data.into()]);
+    builder.switch_to_block(ready);
+    let data = builder.block_params(ready)[0];
+    let offset = builder.ins().imul_imm_u(length, i64::from(element.size));
+    let address = builder.ins().iadd(data, offset);
+    if let Some(pointee) = element.pointee
+        && objects.layouts.is_managed(pointee)
+    {
+        objects.retain(builder, value, pointee);
+    }
+    store_physical_value(builder, address, 0, value);
+    store_physical_value(builder, object, length_offset, new_length);
     Ok(())
 }
 

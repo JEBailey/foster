@@ -1,5 +1,9 @@
 # Compatibility policy
 
+The [semantic specification](semantics.md) records the source contract using stable rule IDs.
+Its draft revision number is editorial and does not replace the language or ownership versions.
+Changing a normative rule requires the compatibility assessment and witnesses described below.
+
 Foster versions three different surfaces independently:
 
 - The package version in `Cargo.toml` versions compiler releases.

@@ -23,14 +23,19 @@ pub func ByteBuffer.with_capacity(capacity: Int) -> ByteBuffer {
 }
 
 /// Appends one byte.
-pub func ByteBuffer.push(self: ByteBuffer, value: Byte) -> () [mut self.value, reshape self.value.items] {
-    self.value = self.value.map((item: Byte) -> item).append(value)
+pub func ByteBuffer.push(self: ByteBuffer, value: Byte) -> () [reshape self.value.items] {
+    self.value.push(value)
     ()
 }
 
 /// Appends an immutable byte sequence.
-pub func ByteBuffer.extend(self: ByteBuffer, values: Bytes) -> () [mut self.value, reshape self.value.items] {
-    self.value = self.value.map((item: Byte) -> item).concat(values.list())
+pub func ByteBuffer.extend(self: ByteBuffer, values: Bytes) -> () [reshape self.value.items] {
+    let index = 0
+    loop {
+        break if index >= values.length
+        self.value.push(values[index])
+        index = index + 1
+    }
     ()
 }
 

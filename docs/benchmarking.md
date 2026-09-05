@@ -35,6 +35,40 @@ time is not mixed into VM measurements. It includes recursive Fibonacci plus foc
 for Foster-defined `String`, `Symbol`, `Bytes`, `ByteBuffer`, and `List` values. Each workload
 reports optimized and unoptimized VM execution separately.
 
+The `vm/list_fold` pair compares the indexed Foster implementation against the former recursive
+shrinking-tail strategy on the same 2,048-element input. Both measurements include identical input
+construction. Run just that comparison with `cargo bench --bench runtime -- list_fold`; it is a
+diagnostic comparison, not a timing-based correctness gate.
+
+A local Windows release run on 2026-09-04 measured 67.1 ms for the recursive-tail reference and
+2.83 ms for the indexed fold with optimized bytecode (about 24x faster). This compares both
+strategies in the same build, not two historical releases; timings are machine-dependent.
+
+## Foster library algorithms
+
+Concrete list algorithms use indexed loops and one output list. `List.at` is the low-level checked
+storage read that returns an owned element without moving it out of the source; it lowers to the
+existing indexing instruction in both backends. `List.slice` and `Bytes.slice` copy only their
+selected half-open ranges once; these APIs are value copies, not zero-copy slice views.
+
+String algorithms scan one UTF-8 byte snapshot. Trimming and code-point slicing select byte
+boundaries and copy the result once. `StringBuilder` encodes Unicode scalars and accumulates text
+over the Foster `ByteBuffer`; UTF-8 validation, casing, splitting, joining, and encoding remain
+Foster algorithms. ASCII casing preserves non-ASCII bytes. Substring search is a byte-range scan
+without suffix allocations, but remains O(n*m) in the worst case.
+
+`ByteBuffer.push` and `extend` update list storage directly. Native copy-on-write reuses uniquely
+owned storage and detaches shared values; buffer growth uses checked geometric capacities.
+Allocation, storage access, and platform operations remain low-level primitives. No text or
+collection algorithm has been moved into a Rust runtime helper.
+
+Iterator consumers, filtering, and skipping use loops and preserve short-circuit consumption.
+Their behavior is covered by the Foster VM suite; native lowering of the generic
+`SequenceIterator` adapter still cannot resolve its erased sequence's storage members.
+General `Sequence` head/rest adapters still inherit their source's tail-copy costs; they are not
+zero-copy indexed cursors. The concrete List overload of `String.from_code_points` avoids that
+cost. More specialized collections and parsers remain candidates for later algorithm work.
+
 ## Lua comparison harness
 
 Run the cross-language harness in release mode:

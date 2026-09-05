@@ -66,3 +66,10 @@ compilation, and CLI process behavior.
 Files under `examples/` demonstrate programs for readers and are intentionally not used as test
 fixtures. A behavior needed by a test belongs in `tests/foster/`, `library/`, or a dedicated file
 under `tests/fixtures/`.
+
+## Semantic specification checks
+
+The [semantic specification](semantics.md) records stable rules and links them to behavioral
+witnesses. `cargo test --test semantic_specification` checks its version baseline, rule identifiers,
+and local link paths. These are editorial integrity checks, not a proof of the rules or a
+replacement for compile-pass/compile-fail, runtime, and backend-parity coverage.

@@ -35,6 +35,11 @@ fn opcode_intrinsic_instruction(
     value: Register,
 ) -> Instruction {
     match intrinsic {
+        OpcodeIntrinsic::ListAt => Instruction::Index {
+            destination,
+            object: receiver,
+            index: value,
+        },
         OpcodeIntrinsic::ListPush => Instruction::Push {
             destination,
             object: receiver,

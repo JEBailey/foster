@@ -409,7 +409,7 @@ fn string_method_hover_publishes_library_documentation() {
     assert!(
         hover
             .value
-            .contains("Returns the code points in the half-open range"),
+            .contains("Returns a clamped half-open range measured in Unicode scalar values"),
         "{}",
         hover.value
     );
@@ -446,7 +446,7 @@ fn method_hover_survives_an_error_in_another_function() {
     assert!(
         hover
             .value
-            .contains("Returns the code points in the half-open range"),
+            .contains("Returns a clamped half-open range measured in Unicode scalar values"),
         "{}",
         hover.value
     );
@@ -1104,7 +1104,11 @@ fn definition_opens_embedded_core_source_when_available() {
             .unwrap()
             .join("library/core/list.fos")
     );
-    assert_eq!(location.range.start, Position::new(48, 14));
+    let declaration_line = include_str!("../../../library/core/list.fos")
+        .lines()
+        .position(|line| line.starts_with("pub func List.map<"))
+        .unwrap() as u32;
+    assert_eq!(location.range.start, Position::new(declaration_line, 14));
 }
 
 #[test]

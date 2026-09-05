@@ -1,6 +1,24 @@
 //! The same source and expectations must hold for both execution engines and optimization modes.
 use foster::{native, vm};
 
+#[test]
+fn foster_library_loops_slices_and_builders_agree() {
+    check(
+        "library-algorithms",
+        include_str!("fixtures/programs/library_algorithms.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn owned_list_reads_check_bounds_in_both_backends() {
+    check(
+        "list-at-bounds",
+        "import core.list\nfunc main() -> Int { [1].at(-1) }",
+        Err("index"),
+    );
+}
+
 struct Scratch(std::path::PathBuf);
 
 impl Scratch {

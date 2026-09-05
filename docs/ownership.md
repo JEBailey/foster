@@ -8,6 +8,9 @@ implements it today. It is intentionally separate from
 [`effect-derivation.md`](effect-derivation.md): ownership answers *who controls a value and when a
 reference remains valid*, while effects describe *what a function may do to a borrowed group*.
 
+See the [semantic specification](semantics.md) for the cross-language contract, rule IDs, and
+explicitly tracked backend gaps. The detailed ownership rules below supplement that specification.
+
 ## Design goals
 
 Foster uses single ownership with explicit borrowing. The model is intended to provide predictable
@@ -53,7 +56,7 @@ The built-in copy types are currently:
 
 Other values are ownership-bearing and default to move semantics when captured. Explicit move-out
 is represented in HIR as `MoveOut(place)`. Once a root has been moved, subsequent reads or writes
-through that root are rejected.
+through its projections are rejected. Assignment to the whole local may reinitialize it.
 
 Function calls are different from closure capture: arguments are borrowed by default. A function
 that takes ownership names each ownership-taking parameter with a `consume` contract, and callers
@@ -519,16 +522,17 @@ should be rejected statically before reaching either condition.
 
 Mutable binary construction follows the same rules. `buffer.snapshot()` borrows a `ByteBuffer` and
 copies its current contents into immutable `Bytes`. `ByteBuffer.freeze` consumes the buffer, written
-as `(move buffer).freeze()`, and transfers its allocation into `Bytes`. Structural operations such
-as `push`, `extend`, `clear`, `truncate`, and `reserve` invalidate outstanding indexed loans because
-they may relocate or remove elements; replacing an existing byte through an indexed mutable loan
-does not change the buffer's shape.
+as `(move buffer).freeze()`, and packs its list-backed contents into `Bytes`; allocation transfer
+without copying is not guaranteed. `push` and `extend` reshape the list storage, while `clear` and
+`truncate` replace that storage. These operations invalidate overlapping indexed loans. `reserve`
+currently only checks an allocation hint and does not reshape storage. Replacing an existing byte
+through an indexed mutable loan does not change the buffer's shape.
 
 ## Diagnostics
 
 Ownership violations are compile errors. Current errors cover:
 
-- using or assigning a value after it was moved;
+- using an unavailable value or projecting through a moved parent (whole-local reinitialization is allowed);
 - explicitly copying a non-copy value;
 - returning a reference into a frame local;
 - returning a borrowed closure whose group is not exposed by its result type;

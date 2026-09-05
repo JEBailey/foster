@@ -28,6 +28,10 @@ and predicate-mutation rejection witnesses.
 
 ## Rule witnesses
 
+The [semantic specification](semantics.md#11-backend-conformance-and-witnesses) maps its stable
+`S-` rules to these ownership witnesses and to the other language/backend suites. That crosswalk
+is coverage guidance, not a claim of complete semantic verification.
+
 `tests/ownership_soundness.rs` contains rule-indexed compile-pass and compile-fail programs. New or
 changed normative rules in `docs/ownership.md` must add both a smallest accepted witness and a
 smallest rejected witness where both outcomes are meaningful.

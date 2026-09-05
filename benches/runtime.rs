@@ -89,6 +89,38 @@ fn runtime_benchmarks(criterion: &mut Criterion) {
     benchmark_workload(criterion, "bytes", BYTES_SOURCE);
     benchmark_workload(criterion, "byte_buffer", BYTE_BUFFER_SOURCE);
     benchmark_workload(criterion, "list", LIST_SOURCE);
+    // Keep the former shrinking-tail strategy as a comparison, with identical input building.
+    for (name, expression) in [
+        ("list_fold/reference_tail", "sum_tail(values, 0)"),
+        (
+            "list_fold/indexed",
+            "values.fold(0, (sum: Int, value: Int) -> sum + value)",
+        ),
+    ] {
+        let source = format!(
+            r#"
+import core.list
+
+func sum_tail(values: List<Int>, total: Int) -> Int {{
+    branch {{
+        values.empty? -> total
+        _ -> sum_tail(values.rest, total + values.head)
+    }}
+}}
+func main() -> Int {{
+    let values = []
+    let index = 0
+    loop {{
+        break if index == 2048
+        values.push(index)
+        index = index + 1
+    }}
+    {expression}
+}}
+"#
+        );
+        benchmark_workload(criterion, name, &source);
+    }
 }
 
 fn benchmark_workload(criterion: &mut Criterion, name: &str, source: &str) {

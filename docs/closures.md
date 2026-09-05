@@ -445,7 +445,8 @@ result type, effect-unsafe erasure, and calls after a projected capture is struc
 
 1. Arrow syntax for anonymous closures and ordinary `func` syntax for nested named closures.
 2. Minimal inferred capture sets with `[ref ...]`, `[move ...]`, and `[copy ...]` overrides.
-3. No silent move solely because a closure escapes; require an explicit move or copy.
+3. Capture mode is independent of escape: implicit captures copy built-in copy values and move
+   ownership-bearing values; borrowing requires explicit `ref`.
 4. One surface function type with latent effects rather than `Fn`/`FnMut`/`FnOnce` traits.
 5. Safe mutable aliasing between closures through shared group parameters.
 6. Structural mutation invalidates affected captured references instead of being prohibited.

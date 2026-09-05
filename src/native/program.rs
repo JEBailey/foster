@@ -92,6 +92,23 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         &builtin_result_types,
         &mut layouts,
     )?;
+    // Projected mutable fields are addresses, not the objects stored at those addresses.
+    // Materialize typed borrowed pointers before freezing the physical-layout registry.
+    let field_types = layouts
+        .layouts()
+        .iter()
+        .filter(|layout| layout.materialized)
+        .flat_map(|layout| match &layout.kind {
+            LayoutKind::Record { fields, .. } => fields
+                .iter()
+                .map(|field| field.ty.clone())
+                .collect::<Vec<_>>(),
+            _ => Vec::new(),
+        })
+        .collect::<BTreeSet<_>>();
+    for ty in field_types {
+        layouts.instantiate_type(&VerificationType::Reference(Box::new(ty)))?;
+    }
     let physical_layouts =
         PhysicalRegistry::build(&layouts, TargetLayout::host()).map_err(|error| {
             native_error(format!("cannot calculate native object layouts: {error}"))

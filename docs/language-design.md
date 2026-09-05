@@ -1,5 +1,8 @@
 # Foster Language Design
 
+For the backend-independent contract, stable rule IDs, and unresolved semantic questions, see the
+[semantic specification](semantics.md). This document remains the implemented syntax inventory.
+
 This document is an inventory of the Foster language implemented by this repository. It describes
 the syntax and semantics accepted by the bootstrap compiler, the behavior of its VM, and the core
 library shipped with it. It is descriptive rather than a roadmap: unimplemented ideas belong in

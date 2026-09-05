@@ -1,0 +1,105 @@
+import core.bytes
+import core.byte
+import core.bytes.buffer as byte_buffers
+import core.code_point
+import core.list
+import core.option
+import core.result
+import core.string
+
+type Box = { value: Int }
+type Storage = { items: List<Int> }
+
+func consume_box(value: Box) -> Int [consume value] { value.value }
+
+func match_second(value: Int) -> Bool {
+    assert(value < 3, "predicate was called after a match")
+    value == 2
+}
+
+func read_bytes(value: String) -> Bytes [read value] { value.utf8 }
+
+func main() -> Int {
+    let original = [Box { value: 42 }]
+    assert(consume_box(original.at(0)) == 42)
+    assert(original.at(0).value == 42)
+    let stored = [Storage { items: [1] }]
+    let detached = stored.at(0)
+    detached.items.push(2)
+    assert(detached.items == [1, 2], "detached field must receive the appended element")
+    assert(stored.at(0).items == [1], "shared source field must remain unchanged")
+    let selected = original.get(0)
+    assert(selected == Option.Some(Box { value: 42 }))
+    assert(original.at(0).value == 42)
+    assert([1, 2, 3].find(match_second) == Option.Some(2))
+    assert([1, 2, 3].any?(match_second))
+
+    let values = []
+    let index = 0
+    loop {
+        break if index == 4096
+        values.push(index)
+        index = index + 1
+    }
+    assert(values.fold(0, (sum: Int, value: Int) -> sum + value) == 8386560)
+    assert(values.reverse().at(0) == 4095)
+    assert(values.map((value: Int) -> value + 1).at(4095) == 4096)
+    assert(values.filter((value: Int) -> value < 2) == [0, 1])
+    assert(values.slice(2048, 2050) == [2048, 2049])
+    assert(values.length == 4096)
+    assert([[1], [], [2, 3]].flatten() == [1, 2, 3])
+
+    let buffer = ByteBuffer.empty()
+    buffer.extend("abc".utf8)
+    let snapshot = buffer.snapshot()
+    buffer.push(Byte.unchecked(100))
+    assert(snapshot.hex() == "616263")
+    assert((move buffer).freeze().hex() == "61626364")
+
+    let text = from_code_point(0).string + "aλ€🙂"
+    assert(read_bytes(text).length == 11)
+    assert(text.reverse() == "🙂€λa" + from_code_point(0).string)
+    assert(text.slice(1, 4) == "aλ€")
+    assert(text.slice(4, 2) == "")
+    assert(text.slice(-10, 2) == from_code_point(0).string + "a")
+    assert(text.ends_with?("€🙂"))
+    assert(text.contains?("λ€"))
+    assert(text.contains?(""))
+    assert(" \tλ🙂\r\n".trim() == "λ🙂")
+    assert(" \t".trim() == "")
+    assert(" λ ".trim_start() == "λ ")
+    assert(" λ ".trim_end() == " λ")
+    assert("λ,,🙂,".split(",") == ["λ", "", "🙂", ""])
+    assert("aaaaa".split("aa") == ["", "", "a"])
+    assert("λ🙂".split("") == ["λ", "🙂"])
+    assert(["λ", "", "🙂"].join("|") == "λ||🙂")
+    assert("AZλ🙂".lower() == "azλ🙂")
+    assert("azλ🙂".upper() == "AZλ🙂")
+
+    let scalars = [from_code_point(0), from_code_point(127), from_code_point(128), from_code_point(2047), from_code_point(2048), from_code_point(65535), from_code_point(65536), from_code_point(1114111)]
+    assert(String.from_code_points(scalars).code_points() == scalars)
+    assert(!Bytes.from([Byte.unchecked(237), Byte.unchecked(160), Byte.unchecked(128)]).utf8_valid?())
+    assert(!Bytes.from([Byte.unchecked(244), Byte.unchecked(144), Byte.unchecked(128), Byte.unchecked(128)]).utf8_valid?())
+    assert(!Bytes.from([Byte.unchecked(240), Byte.unchecked(159)]).utf8_valid?())
+    branch Bytes.from_hex("ffx") {
+        Result.Error(error) -> {
+            assert(error.offset == 3)
+            ()
+        }
+        Result.Ok(_) -> {
+            assert(false)
+            ()
+        }
+    }
+    branch Bytes.from_hex("0x") {
+        Result.Error(error) -> {
+            assert(error.offset == 1)
+            ()
+        }
+        Result.Ok(_) -> {
+            assert(false)
+            ()
+        }
+    }
+    42
+}

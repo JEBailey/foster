@@ -2,6 +2,31 @@ use foster::vm::Value;
 use std::path::Path;
 
 #[test]
+fn computed_utf8_borrows_text_but_stored_utf8_fields_keep_move_effects() {
+    let compilation = foster::compile(
+        r#"
+func bytes(value: String) -> Bytes [read value] { value.utf8 }
+func main() -> Bool {
+    let text = "λ"
+    bytes(text).length == 2 && text == "λ"
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(foster::vm::run(&compilation).unwrap(), Value::Bool(true));
+    let error = foster::compile(
+        r#"
+type Storage = { utf8: List<Int> }
+func field(value: Storage) -> List<Int> [read value] { value.utf8 }
+func main() -> Int { 0 }
+"#,
+    )
+    .err()
+    .unwrap();
+    assert!(error.message.contains("consume value.utf8"), "{error}");
+}
+
+#[test]
 fn remote_objects_process_methods_on_virtual_threads() {
     let source = r#"
 type Counter = {

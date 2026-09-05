@@ -181,9 +181,10 @@ kind-specific offsets, record/variant/field names, scalar semantic tags, pointee
 mutability, capture ownership, and destruction metadata. Record, variant, buffer, generic
 formatting, and structural-contract dispatch address these symbols directly. Lowering initializes
 the common header, emits typed field/tag loads and stores, and follows the descriptor-derived drop
-plan. Copy-on-write is explicit in shared IR; the current baseline copies record or buffer storage
-before mutation and can later add the reference-count uniqueness fast path without changing
-semantics.
+plan. Copy-on-write is explicit in shared IR: unique record and buffer storage is reused, while
+shared storage detaches before mutation. Native buffers reuse capacity and grow geometrically with
+checked size arithmetic. Projected mutable fields use typed borrowed addresses; detaching their
+contents updates the owning field rather than treating its address as an object.
 
 The object exports a C-ABI `foster_native_entry` symbol and, when needed, a result-release thunk. A
 generated, temporary Rust entry shim collects Unicode command arguments, supplies legacy

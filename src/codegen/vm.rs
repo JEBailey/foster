@@ -314,6 +314,46 @@ fn seal_function_with_types(
                     }
                     state[usize::from(register.0)] = None;
                 }
+                vm::Instruction::LoadField {
+                    destination,
+                    object,
+                    field,
+                    by_reference: true,
+                } => {
+                    // A mutable field address must belong to this value's unique record,
+                    // not to a record still shared with an independently owned snapshot.
+                    let old = lifted_register(&state, *object, function)?;
+                    let unique = allocate_lifted_value(
+                        &mut value_types,
+                        &mut storage_hints,
+                        hints[usize::from(object.0)],
+                        *object,
+                    );
+                    instructions.push(ir::Instruction::Portable(
+                        ir::PortableInstruction::CopyOnWrite {
+                            destination: unique,
+                            source: old,
+                        },
+                    ));
+                    instruction_spans.push(source_span.clone());
+                    let address = allocate_lifted_value(
+                        &mut value_types,
+                        &mut storage_hints,
+                        hints[usize::from(destination.0)],
+                        *destination,
+                    );
+                    instructions.push(ir::Instruction::Portable(
+                        ir::PortableInstruction::LoadField {
+                            destination: address,
+                            object: unique,
+                            field: field.clone(),
+                            by_reference: true,
+                        },
+                    ));
+                    instruction_spans.push(source_span);
+                    state[usize::from(object.0)] = Some(unique);
+                    state[usize::from(destination.0)] = Some(address);
+                }
                 vm::Instruction::StoreField {
                     object,
                     field,
