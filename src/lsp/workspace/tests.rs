@@ -693,6 +693,50 @@ func main() -> Int {
 }
 
 #[test]
+fn partial_application_value_captures_do_not_leak_into_lsp_locals() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = r#"func add(left: Int, right: Int) -> Int { left + right }
+
+func main() -> Int {
+    let prefix = 40
+    let add_two = add(prefix, _)
+    add_two(2)
+}
+"#;
+    workspace.open(uri.clone(), source.into(), 1);
+    workspace.compile_for(&uri).unwrap();
+
+    let completion = workspace
+        .completion(&CompletionParams {
+            text_document_position: TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri.clone()),
+                Position::new(5, 11),
+            ),
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: None,
+        })
+        .unwrap();
+    let CompletionResponse::Array(items) = completion else {
+        panic!("expected completion items")
+    };
+    assert!(items.iter().any(|item| item.label == "prefix"));
+    assert!(items.iter().any(|item| item.label == "add_two"));
+    assert!(items.iter().all(|item| !item.label.starts_with("$partial")));
+
+    let hints = workspace
+        .inlay_hints(&InlayHintParams {
+            work_done_progress_params: Default::default(),
+            text_document: lsp_types::TextDocumentIdentifier::new(uri),
+            range: lsp_types::Range::new(Position::new(0, 0), Position::new(6, 1)),
+        })
+        .unwrap();
+    assert!(hints.iter().all(|hint| {
+        hint.kind != Some(lsp_types::InlayHintKind::TYPE) || hint.position != Position::new(4, 28)
+    }));
+}
+
+#[test]
 fn inlay_hints_survive_an_error_in_another_function_without_stale_positions() {
     let (mut workspace, uri, _) = fixture_workspace();
     let source = r#"func changing() -> Int {

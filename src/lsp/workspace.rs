@@ -411,12 +411,9 @@ impl Workspace {
             }
         } else {
             if let Some(function) = function_at(&compilation, module_id, offset) {
-                for (local, definition) in compilation
-                    .hir
-                    .locals
-                    .iter()
-                    .filter(|(_, local)| local.function == function)
-                {
+                for (local, definition) in compilation.hir.locals.iter().filter(|(_, local)| {
+                    local.function == function && local.kind != crate::hir::LocalKind::CapturedValue
+                }) {
                     let detail = compilation
                         .types
                         .local_type(local)

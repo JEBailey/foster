@@ -292,6 +292,25 @@ func main() -> Int {
 }
 
 #[test]
+fn borrowed_temporaries_share_the_complete_full_expression() {
+    check(
+        "full-expression-temporaries",
+        r#"
+func make(value: Int) -> Int { value }
+
+func combine[left: group Int, right: group Int](first: ref[left] Int, second: ref[right] Int) -> Int {
+    first * 10 + second
+}
+
+func main() -> Int {
+    combine(ref (make(4)), ref (make(2)))
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
 fn minimum_integer_negation_is_a_language_error() {
     check(
         "negation",

@@ -1,6 +1,6 @@
 # Foster semantic specification
 
-Status: **draft normative specification**, revision 3, 2026-09-05.
+Status: **draft normative specification**, revision 4, 2026-09-05.
 Baseline: **language version 7, ownership-model version 3**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
@@ -109,8 +109,10 @@ A resolved member is one of a stored place, a computed value, or a method. Store
 comes from a field declaration. Compiler-provided computed members produce values and cannot be
 assigned to; their ordinary result type determines whether the result is copied or owned. Sharing
 immutable storage is an implementation detail and does not turn a computed result into a place.
-Foster does not currently provide user-defined getter/setter declarations or implicit
-getter-modify-setter write-back; user-defined computations are methods.
+Foster does not provide user-defined getter/setter declarations or implicit getter-modify-setter
+write-back. This is a settled part of the current language rather than an unresolved accessor
+choice: user-defined computations are methods. Adding property declarations would be a language
+change and must not reinterpret existing fields or methods.
 
 Compiler-provided members have the following resolved classifications. The type checker records
 the classification on each member expression; effects, ownership, the VM, and native lowering use
@@ -313,26 +315,28 @@ Existing witnesses provide regression evidence, not a proof or exhaustive confor
 | Rules | Existing witness location |
 | --- | --- |
 | S-03–S-05 | [language tests](../tests/language.rs), [CLI tests](../tests/cli.rs) |
-| S-06–S-08 | [backend parity](../tests/backend_parity.rs), [library algorithm fixture](../tests/fixtures/programs/library_algorithms.fos), [library sources/tests](../library/) |
-| S-09–S-10 | [language tests](../tests/language.rs), [portable tests](../tests/foster/), [control-flow lowering](../src/control_flow.rs) |
-| S-11–S-16 | [ownership tests](../tests/language_ownership.rs), [rule-indexed witnesses](../tests/ownership_soundness.rs), [reference model](../src/ownership/model.rs) |
-| S-17–S-18 | [ownership tests](../tests/language_ownership.rs), [backend parity](../tests/backend_parity.rs) |
+| S-06–S-08 | [language tests](../tests/language.rs) for stored/computed place behavior and resolved member ownership, [ownership tests](../tests/language_ownership.rs), [backend parity](../tests/backend_parity.rs), [library algorithm fixture](../tests/fixtures/programs/library_algorithms.fos), [library sources/tests](../library/) |
+| S-09–S-10 | [backend parity](../tests/backend_parity.rs) for assignment, call, aggregate, branch, and partial-application ordering; [language tests](../tests/language.rs), [portable tests](../tests/foster/), [control-flow lowering](../src/control_flow.rs) |
+| S-11–S-16 | [ownership tests](../tests/language_ownership.rs) for accepted and rejected partial capture, moves, loans, and computed results; [rule-indexed witnesses](../tests/ownership_soundness.rs), [reference model](../src/ownership/model.rs) |
+| S-17–S-18 | [ownership tests](../tests/language_ownership.rs) for reverse cleanup and transfer/failure edges, [backend parity](../tests/backend_parity.rs) for borrowed full-expression temporaries |
 | S-19–S-20 | [remote ownership tests](../tests/language_ownership.rs), [native tests](../tests/native.rs); failure gap below |
 | S-21 | [host tests](../tests/core_host.rs), [intrinsic registry](../src/intrinsics/registry.rs) |
 | S-22 | [backend parity](../tests/backend_parity.rs), [native tests](../tests/native.rs) |
 
-For a changed rule, add a smallest accepted and rejected witness where meaningful, plus runtime
-parity coverage for supported executable behavior. A known backend violation must be recorded
+Every changed semantic rule must keep the smallest applicable set of witnesses: an observable
+side-effect-ordering test, an accepted ownership case, a rejected ownership case, VM/native parity
+for behavior supported by both backends, and an LSP test when member classification changes hover
+or completion. A category may be omitted only when it cannot apply to the rule, such as an
+ownership rejection for a purely lexical rule. A known backend violation must be recorded
 explicitly rather than hidden by weakening an assertion. See [testing](testing.md) and
 [ownership verification](ownership-verification.md) for execution commands and test organization.
 
 ## 12. Open decisions and implementation gaps
 
-These entries distinguish missing language decisions from missing implementation work:
+These entries distinguish missing language decisions from missing implementation work. `G-01`
+(evaluation order) is closed by S-09, and `G-02` (member/accessor classification) is closed by
+S-08. Their decisions are normative rules above rather than open entries:
 
-- **G-02 — User-defined accessors (deferred feature):** stored fields, compiler-provided computed
-  values, and methods have distinct semantics. A future property protocol must preserve those
-  categories and cannot silently introduce implicit getter-modify-setter write-back.
 - **G-03 — Remote failure implementation:** native worker failures currently terminate the process
   rather than populating their futures, even for unawaited calls. Sticky failure and the planned
   typed remote outcomes require implementation and cross-backend witnesses.

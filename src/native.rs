@@ -2515,6 +2515,15 @@ fn lower_shared_to_native_ir(
             continue;
         };
         let pointee = pointee.specialize(&instance.substitutions);
+        let pointee_type =
+            native_verification_type(environment.program, environment.layouts, &pointee, None)?;
+        // The ABI input is a typed address, while every SSA value carrying
+        // that storage home after the prologue is the loaded pointee value.
+        for (index, storage_home) in shared.storage_hints.iter().enumerate() {
+            if storage_home == &Some(*home) {
+                value_types[index] = pointee_type;
+            }
+        }
         let layout = environment
             .layouts
             .pointer(&pointee, crate::codegen::layout::Ownership::Borrowed)
@@ -2724,8 +2733,12 @@ fn lower_shared_to_native_ir(
                     .ok_or_else(|| native_error("captured reference has no native layout"))?,
             );
             value_types[input.0 as usize] = reference_type;
-            let loaded_type =
-                native_verification_type(environment.program, environment.layouts, pointee, None)?;
+            let loaded_type = native_verification_type(
+                environment.program,
+                environment.layouts,
+                &concrete_pointee,
+                None,
+            )?;
             let loaded = allocate_shared_value(&mut value_types, &mut storage_hints, loaded_type);
             prologue_instructions.push(ir::Instruction::RuntimeCall {
                 destination: loaded,
