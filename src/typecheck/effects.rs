@@ -184,8 +184,10 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     fn walk_consumed_expr(&mut self, expression: ExprId) {
         match &self.checker.hir.expressions[expression] {
             hir::Expr::Member { .. }
-                if self.checker.member_kinds.get(&expression)
-                    == Some(&crate::semantics::MemberKind::ComputedValue) =>
+                if matches!(
+                    self.checker.member_kinds.get(&expression),
+                    Some(crate::semantics::MemberKind::ComputedValue(_))
+                ) =>
             {
                 // Computed members produce values. Consuming that result does
                 // not move from a same-named projection of the receiver.
@@ -234,6 +236,17 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             hir::Expr::Try { value, .. } => self.walk_consumed_expr(*value),
             hir::Expr::Closure { captures, .. } => {
                 for capture in captures {
+                    if let Some(source) = capture.source {
+                        match capture.mode {
+                            hir::CaptureMode::Move | hir::CaptureMode::Pending => {
+                                self.walk_consumed_expr(source);
+                            }
+                            hir::CaptureMode::Copy | hir::CaptureMode::Ref => {
+                                self.walk_expr(source);
+                            }
+                        }
+                        continue;
+                    }
                     match capture.mode {
                         hir::CaptureMode::Move => self.add(
                             crate::ast::EffectKind::Consume,

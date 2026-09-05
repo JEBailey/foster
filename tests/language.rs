@@ -2368,6 +2368,83 @@ func main() -> Int {
 }
 
 #[test]
+fn computed_member_metadata_records_result_ownership() {
+    use foster::semantics::{ComputedValueKind, MemberKind};
+
+    let compilation = foster::compile(
+        r#"
+import std.iter
+
+type Storage = { bytes: String }
+func main() -> Int {
+    let storage = Storage { bytes: "stored" }
+    let stored = storage.bytes
+    let text = "text"
+    let bytes = text.bytes
+    let length = text.length
+    let head = text.head
+    let rest = text.rest
+    let item = ["item"].head
+    let number = 1
+    let references = [(ref number)]
+    let borrowed = references.head
+    let iterator = [1].iterator()
+    0
+}
+"#,
+    )
+    .unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let main = compilation.hir.function_named(module, "main").unwrap();
+    let bindings = compilation.hir.functions[main]
+        .body
+        .iter()
+        .filter_map(|statement| match statement {
+            foster::hir::Stmt::Bind { local, value } => {
+                Some((compilation.hir.locals[*local].name.as_str(), *value))
+            }
+            _ => None,
+        })
+        .collect::<std::collections::HashMap<_, _>>();
+    let member = |binding: &str| {
+        let expression = bindings[binding];
+        match compilation.hir.expressions[expression] {
+            foster::hir::Expr::Call { callee, .. } => callee,
+            foster::hir::Expr::Member { .. } => expression,
+            ref other => panic!("expected member expression for {binding}, found {other:?}"),
+        }
+    };
+    let kind = |binding: &str| compilation.types.member_kinds[&member(binding)];
+
+    assert_eq!(kind("stored"), MemberKind::StoredPlace);
+    assert_eq!(
+        kind("bytes"),
+        MemberKind::ComputedValue(ComputedValueKind::IndependentOwned)
+    );
+    assert_eq!(
+        kind("length"),
+        MemberKind::ComputedValue(ComputedValueKind::Copy)
+    );
+    assert_eq!(
+        kind("head"),
+        MemberKind::ComputedValue(ComputedValueKind::Copy)
+    );
+    assert_eq!(
+        kind("rest"),
+        MemberKind::ComputedValue(ComputedValueKind::IndependentOwned)
+    );
+    assert_eq!(
+        kind("item"),
+        MemberKind::ComputedValue(ComputedValueKind::IndependentOwned)
+    );
+    assert_eq!(
+        kind("borrowed"),
+        MemberKind::ComputedValue(ComputedValueKind::Borrowed)
+    );
+    assert_eq!(kind("iterator"), MemberKind::Method);
+}
+
+#[test]
 fn local_creation_uses_let_and_assignment_requires_an_existing_local() {
     let value = foster::run(
         r#"

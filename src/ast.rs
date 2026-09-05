@@ -355,6 +355,12 @@ pub enum Expr {
         suspends: bool,
         body: ClosureBody,
     },
+    /// A call containing placeholder arguments. HIR lowering turns this into
+    /// a closure whose supplied operands are captured at creation time.
+    PartialApplication {
+        callee: Box<Expr>,
+        arguments: Vec<Expr>,
+    },
     Placeholder,
 }
 

@@ -962,6 +962,11 @@ the return type are not valid syntax.
 Declaration names are normalized to these positional modes before a callable is stored or erased,
 so indirect calls and partial applications do not lose ownership information.
 
+In `callable(fixed, _)`, the callable and `fixed` are evaluated and captured when the partial is
+created. Supplied operands are evaluated once from left to right; only placeholder operands are
+provided by each later invocation. Their copy, move, or borrow therefore begins at creation rather
+than at the first call.
+
 Foster has no surface keyword for callable erasure. `func(...) -> ...` always describes the
 required callable contract. The compiler decides whether a particular value remains a direct
 function, is specialized, or needs a representation-erased closure environment.

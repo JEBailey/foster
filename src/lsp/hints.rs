@@ -37,6 +37,7 @@ pub(super) fn inlay_hints(
         }
         let inferred = match local.kind {
             LocalKind::Binding => true,
+            LocalKind::CapturedValue => false,
             LocalKind::Parameter => {
                 let function = &compilation.hir.functions[local.function];
                 function

@@ -112,6 +112,11 @@ erasure. Indirect
 calls therefore require the same `move` as direct calls. Parameter modes describe what happens to
 the argument itself; group effects continue to describe access through references.
 
+Placeholder partial application captures its callee and every supplied operand at creation in
+source order. An owned supplied place is transferred then, a copy value is copied then, and a
+reference begins its loan then. Repeated calls evaluate new placeholder arguments but never
+reevaluate or recapture supplied operands.
+
 Closure captures make the choice visible:
 
 ```foster
@@ -434,11 +439,14 @@ values still cannot cross remote or task-message boundaries. Ownership MIR emits
 operations for named bindings in reverse declaration order on every ordinary function exit.
 Borrower escape is checked before destruction, and a destruction conflicts with any loan demanded
 after it. Runtime last-use drops may occur earlier only when observably equivalent. Ownership MIR
-gives borrowed non-place expressions explicit temporary roots. Those roots are initialized when
-materialized and destroyed in reverse creation order at the end of the full expression; return,
-`try`, `break`, and `continue` edges destroy any active expression temporaries before transferring
-control. Transferring an owned result into a destination does not transfer a borrow of a temporary
-origin, so a later use of that borrower is rejected.
+gives borrowed non-place expressions explicit temporary roots. A binding initializer, assignment,
+expression statement, assertion, or unguarded transfer establishes the outer full-expression
+boundary; nested call operands, aggregate elements, indexing, and branch evaluation share it. A
+postfix transfer guard has its own boundary. Temporary roots are initialized when materialized and
+destroyed in reverse creation order at the boundary; return, `try`, `break`, and `continue` edges
+destroy any active expression temporaries before transferring control. Transferring an owned result
+into a destination does not transfer a borrow of a temporary origin, so a later use of that borrower
+is rejected.
 
 Aggregate construction stores provenance at the corresponding field or constant-index projection
 instead of flattening it onto the whole destination. A non-copy branch result is materialized into

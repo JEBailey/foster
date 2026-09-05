@@ -161,6 +161,8 @@ pub struct Local {
 pub enum LocalKind {
     Parameter,
     Binding,
+    /// An environment slot initialized from a value-capture expression.
+    CapturedValue,
 }
 
 #[derive(Debug, Clone)]
@@ -269,8 +271,12 @@ pub enum Expr {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Capture {
+    /// Local used by the closure body for this environment slot.
     pub local: LocalId,
     pub mode: CaptureMode,
+    /// Expression evaluated when the closure is created. Ordinary lexical
+    /// captures read `local` directly; partial applications capture a value.
+    pub source: Option<ExprId>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

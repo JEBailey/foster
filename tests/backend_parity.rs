@@ -235,6 +235,63 @@ func main() -> Int {
 }
 
 #[test]
+fn partial_application_captures_operands_once_in_source_order() {
+    check(
+        "partial-application-timing",
+        r#"
+type Trace = { value: Int }
+type Sink = {}
+
+func Trace.mark(self: Trace, digit: Int) -> Int [mut self.value] {
+    self.value = self.value * 10 + digit
+    digit
+}
+
+func Trace.reset(self: Trace) -> () [mut self.value] {
+    self.value = 0
+    ()
+}
+
+func combine(left: Int, middle: Int, right: Int) -> Int {
+    left * 100 + middle * 10 + right
+}
+
+func Trace.callable(self: Trace) -> func(Int, Int, Int) -> Int [mut self.value] {
+    self.mark(1)
+    combine
+}
+
+func Trace.sink(self: Trace) -> Sink [mut self.value] {
+    self.mark(1)
+    Sink {}
+}
+
+func Sink.accept(self: Sink, prefix: Int, value: Int) -> Int { prefix * 10 + value }
+
+func main() -> Int {
+    let trace = Trace { value: 0 }
+    let combine_middle = trace.callable()(trace.mark(2), _, trace.mark(3))
+    assert(trace.value == 123)
+    assert(combine_middle(4) == 243)
+    assert(combine_middle(5) == 253)
+    assert(trace.value == 123)
+
+    trace.reset()
+    let accept_value = trace.sink().accept(trace.mark(2), _)
+    assert(trace.value == 12)
+    assert(accept_value(7) == 27)
+    assert(trace.value == 12)
+
+    let make_code_point = from_code_point(_)
+    assert(make_code_point(65) == 'A')
+    trace.value
+}
+"#,
+        Ok("12"),
+    );
+}
+
+#[test]
 fn minimum_integer_negation_is_a_language_error() {
     check(
         "negation",

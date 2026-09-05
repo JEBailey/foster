@@ -404,11 +404,15 @@ impl FunctionCompiler<'_> {
                 let captures = captures
                     .iter()
                     .map(|capture| {
-                        self.locals
-                            .get(&capture.local)
-                            .copied()
-                            .map(|register| (capture.mode, register))
-                            .ok_or_else(|| self.unsupported("closure capture"))
+                        let register = if let Some(source) = capture.source {
+                            self.expression(source)?
+                        } else {
+                            self.locals
+                                .get(&capture.local)
+                                .copied()
+                                .ok_or_else(|| self.unsupported("closure capture"))?
+                        };
+                        Ok::<_, FosterError>((capture.mode, register))
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 let destination = self.allocate();
@@ -813,11 +817,16 @@ impl FunctionCompiler<'_> {
         &self,
         function: hir::FunctionId,
     ) -> Result<Vec<(hir::CaptureMode, Register)>, FosterError> {
+        // Named nested functions only use lexical captures. Value captures are
+        // emitted by the closure expression that owns their source operands.
         self.closure_captures
             .get(&function)
             .into_iter()
             .flatten()
             .map(|capture| {
+                if capture.source.is_some() {
+                    return Err(self.unsupported("detached value-capturing function"));
+                }
                 self.locals
                     .get(&capture.local)
                     .copied()

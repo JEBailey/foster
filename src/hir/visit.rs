@@ -120,8 +120,14 @@ pub(crate) fn walk_expression<V: Visitor + ?Sized>(
                 visitor.visit_block(hir, &arm.body);
             }
         }
-        Expr::Closure { .. }
-        | Expr::Unit
+        Expr::Closure { captures, .. } => {
+            for capture in captures {
+                if let Some(source) = capture.source {
+                    visitor.visit_expression(hir, source);
+                }
+            }
+        }
+        Expr::Unit
         | Expr::Bool(_)
         | Expr::Integer(_)
         | Expr::Float(_)

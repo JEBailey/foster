@@ -381,14 +381,18 @@ Placeholder partial application is closure syntax sugar:
 let add_five = add(5, _)
 ```
 
-lowers before capture analysis to:
+has the conceptual result:
 
 ```foster
 let add_five = (value) -> add(5, value)
 ```
 
-Multiple placeholders become parameters in left-to-right order. Captured supplied arguments obey
-ordinary closure capture rules.
+The implementation retains value-capture expressions in HIR rather than duplicating the source
+expression inside the closure body. It evaluates the callee and supplied operands left to right
+when `add_five` is created, captures each result once, and only evaluates placeholder arguments when
+`add_five` is called. Multiple placeholders become parameters in left-to-right order. Copy,
+ownership transfer, and borrowing of supplied operands begin at creation under ordinary closure
+capture rules.
 
 ## Control-flow and diagnostics
 

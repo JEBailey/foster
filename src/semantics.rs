@@ -21,10 +21,21 @@ pub enum ExpressionCategory {
 pub enum MemberKind {
     /// A declared stored field. It is a place when rooted in a place.
     StoredPlace,
-    /// A computed value whose ordinary result type controls copy or ownership.
-    ComputedValue,
+    /// A computed value with an explicit transfer classification.
+    ComputedValue(ComputedValueKind),
     /// A callable member. Merely selecting it does not invoke it.
     Method,
+}
+
+/// Ownership behavior of a compiler-provided computed member result.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ComputedValueKind {
+    /// A built-in copy value such as a length, emptiness flag, byte, or code point.
+    Copy,
+    /// An independently owned result. Its representation may share immutable storage.
+    IndependentOwned,
+    /// A reference value whose origin remains governed by its declared group.
+    Borrowed,
 }
 
 /// Classifies an expression using the resolved member metadata produced by type checking.

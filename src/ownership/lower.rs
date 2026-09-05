@@ -138,26 +138,26 @@ impl<'a> Builder<'a> {
         match statement {
             hir::Stmt::Return { value, guard } => {
                 if let Some(guard) = guard {
-                    self.begin_temporary_scope();
+                    self.begin_full_expression();
                     self.expression(*guard, Context::Read);
-                    self.end_temporary_scope(self.span(*guard));
+                    self.end_full_expression(self.span(*guard));
                     let returned = self.block();
                     let continued = self.block();
                     self.terminate(Terminator::Branch(vec![returned, continued]));
                     self.current = returned;
-                    self.begin_temporary_scope();
+                    self.begin_full_expression();
                     self.expression(*value, Context::Consume);
                     self.emit_return(*value);
-                    self.end_temporary_scope(self.span(*value));
+                    self.end_full_expression(self.span(*value));
                     self.emit_active_temporary_destruction(self.span(*value));
                     self.emit_scope_destruction(self.span(*value));
                     self.terminate(Terminator::Return);
                     self.current = continued;
                 } else {
-                    self.begin_temporary_scope();
+                    self.begin_full_expression();
                     self.expression(*value, Context::Consume);
                     self.emit_return(*value);
-                    self.end_temporary_scope(self.span(*value));
+                    self.end_full_expression(self.span(*value));
                     self.emit_active_temporary_destruction(self.span(*value));
                     self.emit_scope_destruction(self.span(*value));
                     self.terminate(Terminator::Return);
@@ -165,7 +165,7 @@ impl<'a> Builder<'a> {
                 }
             }
             hir::Stmt::Assert { condition, message } => {
-                self.begin_temporary_scope();
+                self.begin_full_expression();
                 self.expression(*condition, Context::Read);
                 if let Some(message) = message {
                     self.expression(*message, Context::Read);
@@ -180,7 +180,7 @@ impl<'a> Builder<'a> {
                 self.emit_scope_destruction(span.clone());
                 self.terminate(Terminator::Fail);
                 self.current = continued;
-                self.end_temporary_scope(span);
+                self.end_full_expression(span);
             }
             hir::Stmt::Loop { body, .. } => {
                 let cfg = crate::control_flow::LoopCfg::new();
@@ -222,7 +222,7 @@ impl<'a> Builder<'a> {
                 self.loop_transfer(*guard, target);
             }
             hir::Stmt::Bind { local, value } => {
-                self.begin_temporary_scope();
+                self.begin_full_expression();
                 self.expression_into(*value, Context::Consume, Some(Self::local_place(*local)));
                 self.initialize(*local, self.span(*value));
                 if is_last {
@@ -232,16 +232,16 @@ impl<'a> Builder<'a> {
                         span: self.span(*value),
                     });
                 }
-                self.end_temporary_scope(self.span(*value));
+                self.end_full_expression(self.span(*value));
             }
             hir::Stmt::Assign { local, value } => {
-                self.begin_temporary_scope();
+                self.begin_full_expression();
                 self.expression_into(*value, Context::Consume, Some(Self::local_place(*local)));
                 self.initialize(*local, self.span(*value));
-                self.end_temporary_scope(self.span(*value));
+                self.end_full_expression(self.span(*value));
             }
             hir::Stmt::Expr(value) => {
-                self.begin_temporary_scope();
+                self.begin_full_expression();
                 self.expression(
                     *value,
                     if is_last {
@@ -253,10 +253,10 @@ impl<'a> Builder<'a> {
                 if is_last {
                     self.emit_return(*value);
                 }
-                self.end_temporary_scope(self.span(*value));
+                self.end_full_expression(self.span(*value));
             }
             hir::Stmt::Set { place, value } => {
-                self.begin_temporary_scope();
+                self.begin_full_expression();
                 let destination = self.owned_place(*place);
                 // Preserve the complete value before evaluating any dynamic
                 // component of the destination. The temporary also lets a
@@ -282,16 +282,16 @@ impl<'a> Builder<'a> {
                     });
                 }
                 self.place_use(*place, UseMode::Write);
-                self.end_temporary_scope(self.span(*value));
+                self.end_full_expression(self.span(*value));
             }
         }
     }
 
     fn loop_transfer(&mut self, guard: Option<ExprId>, target: BlockId) {
         if let Some(guard) = guard {
-            self.begin_temporary_scope();
+            self.begin_full_expression();
             self.expression(guard, Context::Read);
-            self.end_temporary_scope(self.span(guard));
+            self.end_full_expression(self.span(guard));
             let transferred = self.block();
             let continued = self.block();
             self.terminate(Terminator::Branch(vec![transferred, continued]));
@@ -493,6 +493,18 @@ impl<'a> Builder<'a> {
             }
             hir::Expr::Closure { captures, .. } => {
                 for capture in captures {
+                    if let Some(source) = capture.source {
+                        self.expression(
+                            source,
+                            match capture.mode {
+                                CaptureMode::Ref => Context::Borrow,
+                                CaptureMode::Copy | CaptureMode::Move | CaptureMode::Pending => {
+                                    Context::Consume
+                                }
+                            },
+                        );
+                        continue;
+                    }
                     let mode = match capture.mode {
                         CaptureMode::Copy => UseMode::Copy,
                         CaptureMode::Move | CaptureMode::Pending => UseMode::Move,
@@ -766,15 +778,27 @@ impl<'a> Builder<'a> {
             hir::Expr::Closure { captures, .. } => BorrowValue::Merge(
                 captures
                     .iter()
-                    .filter_map(|capture| match capture.mode {
-                        CaptureMode::Ref => {
+                    .filter_map(|capture| match (capture.mode, capture.source) {
+                        (CaptureMode::Ref, Some(source)) => {
+                            let origin = self
+                                .owned_place(source)
+                                .or_else(|| self.active_temporaries.get(&source).cloned())?;
+                            Some(self.issue_reborrow(origin, self.span(expression)))
+                        }
+                        (CaptureMode::Move | CaptureMode::Pending, Some(source)) => Some(
+                            self.owned_place(source)
+                                .map(BorrowValue::MovePlace)
+                                .unwrap_or_else(|| self.borrow_value(source)),
+                        ),
+                        (CaptureMode::Copy, Some(_)) => None,
+                        (CaptureMode::Ref, None) => {
                             let origin = Self::local_place(capture.local);
                             Some(self.issue_reborrow(origin, self.span(expression)))
                         }
-                        CaptureMode::Move | CaptureMode::Pending => {
+                        (CaptureMode::Move | CaptureMode::Pending, None) => {
                             Some(BorrowValue::MovePlace(Self::local_place(capture.local)))
                         }
-                        CaptureMode::Copy => None,
+                        (CaptureMode::Copy, None) => None,
                     })
                     .collect(),
             ),
@@ -953,11 +977,14 @@ impl<'a> Builder<'a> {
         });
     }
 
-    fn begin_temporary_scope(&mut self) {
+    /// Opens the lifetime boundary for every temporary created while
+    /// evaluating one complete source expression.
+    fn begin_full_expression(&mut self) {
         self.temporary_scopes.push(Vec::new());
     }
 
-    fn end_temporary_scope(&mut self, span: std::ops::Range<usize>) {
+    /// Destroys full-expression temporaries in reverse creation order.
+    fn end_full_expression(&mut self, span: std::ops::Range<usize>) {
         let temporaries = self
             .temporary_scopes
             .pop()

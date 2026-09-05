@@ -181,7 +181,10 @@ impl FunctionLowerer<'_> {
         }
     }
 
-    fn lower_expression(&mut self, expression: &ast::Expr) -> Result<ExprId, FosterError> {
+    pub(super) fn lower_expression(
+        &mut self,
+        expression: &ast::Expr,
+    ) -> Result<ExprId, FosterError> {
         if let ast::Expr::Spanned { expression, span } = expression {
             let lowered = self.lower_expression(expression).map_err(|mut error| {
                 if error.source_module.is_none() {
@@ -443,6 +446,9 @@ impl FunctionLowerer<'_> {
                     effects,
                     suspends: *suspends,
                 });
+            }
+            ast::Expr::PartialApplication { callee, arguments } => {
+                return self.lower_partial_application(callee, arguments);
             }
             ast::Expr::Placeholder => {
                 return Err(self.error("placeholder `_` is only valid as a call argument"));

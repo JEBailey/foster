@@ -184,7 +184,7 @@ impl Checker<'_> {
                 self.member_kinds.get(&callee),
                 Some(
                     crate::semantics::MemberKind::StoredPlace
-                        | crate::semantics::MemberKind::ComputedValue
+                        | crate::semantics::MemberKind::ComputedValue(_)
                 )
             );
             if !value_member {

@@ -1,13 +1,12 @@
 # Foster semantic specification
 
-Status: **draft normative specification**, revision 2, 2026-09-05.
+Status: **draft normative specification**, revision 3, 2026-09-05.
 Baseline: **language version 7, ownership-model version 3**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
-it does not change the language or ownership versions. Revision 2 records accepted remote lifecycle
-decisions pending implementation. It is not a complete formal semantics or
-a proof that either backend implements every rule.
+it does not change the language or ownership versions. It is not a complete formal semantics or a
+proof that either backend implements every rule.
 
 ## 1. Authority and terminology
 
@@ -113,6 +112,20 @@ immutable storage is an implementation detail and does not turn a computed resul
 Foster does not currently provide user-defined getter/setter declarations or implicit
 getter-modify-setter write-back; user-defined computations are methods.
 
+Compiler-provided members have the following resolved classifications. The type checker records
+the classification on each member expression; effects, ownership, the VM, and native lowering use
+that shared result rather than inferring ownership from the member's spelling.
+
+| Operation | Classification |
+| --- | --- |
+| Declared field | Stored place when its receiver is a place |
+| `empty?`, `whitespace?`, `length`, `capacity`, scalar `head` | Computed copy value |
+| `String.bytes`, owned `head`, and `rest` | Independent owned value; immutable storage may be shared |
+| A computed result whose declared type is a reference | Borrowed value retaining its group origin |
+| `iterator` selection | Method; calling it creates an independent owned cursor |
+| `List.at` and an index read used as a value | Copy or independent owned result according to the element type, while preserving borrower provenance contained by that element |
+| Indexing rooted in a place | Projected place |
+
 ## 4. Evaluation and control flow
 
 **S-09 — Sequencing.** Statements execute in source order. Ordinary binary operands evaluate
@@ -135,8 +148,11 @@ and member access evaluates its receiver before accessing the member. A branch e
 subject once, then considers tests and guards in source order. If an evaluation fails or transfers
 control, operands that follow it are not evaluated.
 
-Partial-application capture timing remains unresolved; it is not inferred from these general call
-rules.
+A partial application evaluates its callee first and then each supplied, non-placeholder operand
+from left to right when the partial is created. Those results are captured once. Copy, ownership
+transfer, and borrowing begin at creation according to ordinary closure-capture rules. A later
+invocation evaluates only the placeholder arguments and the resulting call; it does not reevaluate
+the captured operands.
 
 **S-10 — Selection and repetition.** A subject branch evaluates its subject once. Branch arms
 are considered in source order; the first matching arm executes and does not fall through.
@@ -224,8 +240,18 @@ assertions, bounds failures, arithmetic failures, or arbitrary host exceptions.
 ordinary continuation. Checked arithmetic and bounds failures likewise are language failures,
 not permission for invalid memory access. Exact diagnostic prose is not a portable semantic value.
 
-Borrowed non-place expressions have full-expression temporary storage. Temporaries are destroyed
-in reverse creation order at that boundary, including transfers that leave the expression.
+Borrowed non-place expressions have full-expression temporary storage. A full expression is the
+principal expression of one source statement: a binding initializer, assignment, expression
+statement, assertion, or unguarded transfer. Calls, their arguments, aggregate initializers,
+branch subjects, tests, guards and selected bodies nested inside that expression share its boundary.
+An assignment's right side and subsequently evaluated destination also share one boundary.
+
+A postfix `return`, `break`, or `continue` guard is a separate full expression because a false guard
+continues in the current function; a taken `return` then evaluates its result as another full
+expression. Temporaries are destroyed in reverse creation order at the boundary. A taken transfer,
+`try` error, assertion failure, or other modeled failure destroys every active temporary before
+leaving its current control path. A value successfully moved into a destination or closure
+environment is no longer owned by its temporary.
 Owned function storage is subject to the destruction rules in the ownership model; borrowed
 parameters do not destroy their caller's storage. Earlier last-use disposal is allowed only when
 observably equivalent. This draft does not introduce user-defined destructors or promise identical
@@ -304,8 +330,6 @@ explicitly rather than hidden by weakening an assertion. See [testing](testing.m
 
 These entries distinguish missing language decisions from missing implementation work:
 
-- **G-01 — Partial application timing (open decision/audit):** specify when supplied operands are
-  captured and when their ownership effects begin, with side-effect witnesses.
 - **G-02 — User-defined accessors (deferred feature):** stored fields, compiler-provided computed
   values, and methods have distinct semantics. A future property protocol must preserve those
   categories and cannot silently introduce implicit getter-modify-setter write-back.

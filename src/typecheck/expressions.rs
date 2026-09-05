@@ -398,7 +398,14 @@ impl Checker<'_> {
                 } else if matches!(self.resolved(member.clone()), Ty::Callable { .. }) {
                     crate::semantics::MemberKind::Method
                 } else {
-                    crate::semantics::MemberKind::ComputedValue
+                    let value_kind = if self.is_copy_type(&member) {
+                        crate::semantics::ComputedValueKind::Copy
+                    } else if matches!(self.resolved(member.clone()), Ty::Reference(_, _)) {
+                        crate::semantics::ComputedValueKind::Borrowed
+                    } else {
+                        crate::semantics::ComputedValueKind::IndependentOwned
+                    };
+                    crate::semantics::MemberKind::ComputedValue(value_kind)
                 };
                 self.member_kinds.insert(expression_id, kind);
                 if kind == crate::semantics::MemberKind::Method {
@@ -589,8 +596,21 @@ impl Checker<'_> {
                 result
             }
             hir::Expr::Closure {
-                function: closure, ..
+                function: closure,
+                captures,
             } => {
+                for capture in captures {
+                    let Some(source) = capture.source else {
+                        continue;
+                    };
+                    let ty = self.infer_expression(function, source)?;
+                    let group = match self.resolved(ty.clone()) {
+                        Ty::Reference(group, _) => group,
+                        _ => self.expression_group(source),
+                    };
+                    self.locals.insert(capture.local, ty);
+                    self.local_groups.insert(capture.local, group);
+                }
                 self.infer_partial_parameter_modes(closure)?;
                 let signature = &self.functions[&closure];
                 Ty::Callable {
@@ -791,10 +811,17 @@ impl Checker<'_> {
 
     pub(super) fn type_of_name(&mut self, name: ResolvedName) -> Result<Ty, FosterError> {
         Ok(match name {
-            ResolvedName::Local(local) => match &self.locals[&local] {
-                Ty::Reference(_, value) => (**value).clone(),
-                ty => ty.clone(),
-            },
+            ResolvedName::Local(local) => {
+                let ty = &self.locals[&local];
+                if self.hir.locals[local].kind == hir::LocalKind::CapturedValue {
+                    ty.clone()
+                } else {
+                    match ty {
+                        Ty::Reference(_, value) => (**value).clone(),
+                        ty => ty.clone(),
+                    }
+                }
+            }
             ResolvedName::Constant(constant) => self.constants[&constant].clone(),
             ResolvedName::Function(function) => {
                 let signature = self.functions[&function].clone();

@@ -1008,6 +1008,61 @@ func main() -> Int {
 }
 
 #[test]
+fn partial_application_begins_transfer_and_borrowing_at_creation() {
+    let moved = foster::compile(
+        r#"
+func combine(prefix: String, value: Int) -> Int { prefix.length + value }
+func main() -> Int {
+    let prefix = "captured"
+    let add_length = combine(prefix, _)
+    prefix.length
+}
+"#,
+    )
+    .unwrap_err();
+    assert!(
+        moved.message.contains("used after it was moved"),
+        "{moved:?}"
+    );
+
+    let borrowed = foster::compile(
+        r#"
+func observe[value: group Int](item: ref[value] Int, extra: Int) -> Int { item + extra }
+func main() -> Int {
+    let value = 1
+    let add_value = observe(ref value, _)
+    value = 2
+    add_value(3)
+}
+"#,
+    )
+    .unwrap_err();
+    assert_eq!(
+        borrowed.code.as_deref(),
+        Some(foster::ownership::diagnostics::INVALIDATED_LOAN),
+        "{borrowed:?}"
+    );
+
+    let temporary = foster::compile(
+        r#"
+func make() -> Int { 1 }
+func observe[value: group Int](item: ref[value] Int, extra: Int) -> Int { item + extra }
+func main() -> Int {
+    let add_value = observe(ref (make()), _)
+    add_value(3)
+}
+"#,
+    )
+    .unwrap_err();
+    assert_eq!(
+        temporary.code.as_deref(),
+        Some(foster::ownership::diagnostics::INVALIDATED_LOAN),
+        "{temporary:?}"
+    );
+    assert!(temporary.message.contains("temporary"), "{temporary:?}");
+}
+
+#[test]
 fn mutable_ref_capture_updates_the_original_place() {
     use foster::hir::{CaptureMode, Expr};
 
@@ -2355,13 +2410,15 @@ func main() -> Int {
 }
 
 #[test]
-fn temporary_borrow_remains_live_through_its_call() {
+fn full_expression_temporaries_span_all_arguments_and_destroy_in_reverse() {
     let source = r#"
-func observe[value: group Int](item: ref[value] Int) -> Int { item }
-func make() -> Int { 42 }
+func combine[left: group Int, right: group Int](first: ref[left] Int, second: ref[right] Int) -> Int {
+    first * 10 + second
+}
+func make(value: Int) -> Int { value }
 
 func main() -> Int {
-    observe(ref (make()))
+    combine(ref (make(4)), ref (make(2)))
 }
 "#;
     let compilation = foster::compile(source).unwrap();
@@ -2394,7 +2451,7 @@ func main() -> Int {
             _ => None,
         })
         .collect::<Vec<_>>();
-    assert_eq!(initialized.len(), 2);
+    assert_eq!(initialized.len(), 6);
     assert_eq!(
         destroyed,
         initialized.iter().rev().copied().collect::<Vec<_>>()

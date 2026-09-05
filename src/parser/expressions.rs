@@ -503,31 +503,7 @@ impl Parser {
         {
             return Expr::Call { callee, arguments };
         }
-        let mut parameters = Vec::new();
-        let arguments = arguments
-            .into_iter()
-            .map(|argument| {
-                if matches!(argument.unspanned(), Expr::Placeholder) {
-                    let name = format!("$partial{}", parameters.len());
-                    parameters.push(Parameter {
-                        span: argument.span().unwrap_or(0..0),
-                        name: name.clone(),
-                        ty: None,
-                        type_span: None,
-                    });
-                    Expr::Name(name)
-                } else {
-                    argument
-                }
-            })
-            .collect();
-        Expr::Closure {
-            captures: Vec::new(),
-            parameters,
-            effects: Vec::new(),
-            suspends: false,
-            body: ClosureBody::Expression(Box::new(Expr::Call { callee, arguments })),
-        }
+        Expr::PartialApplication { callee, arguments }
     }
 
     pub(super) fn branch(&mut self) -> Result<Expr, FosterError> {
