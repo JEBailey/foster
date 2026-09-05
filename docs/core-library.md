@@ -298,8 +298,10 @@ current contents. `(move buffer).freeze()` consumes it and transfers the content
 `Bytes`. Capacity is a non-observable allocation hint. Structural mutations invalidate outstanding
 element loans.
 
-Text conversion is explicit: `text.utf8` encodes a string, while `String.from_utf8(bytes)` returns
-`Result<String, Utf8Error>`. Filesystem and TCP modules provide parallel `read_bytes` and
+Text conversion is explicit: `text.bytes` exposes immutable UTF-8 bytes, while
+`String.from_utf8(move bytes)` (from `core.string`) validates and consumes bytes, returning
+`Result<String, Utf8Error>`. Native conversion shares managed storage without copying it.
+Filesystem and TCP modules provide parallel `read_bytes` and
 `write_bytes` operations without changing their existing UTF-8 text APIs.
 
 `std.io` defines `Reader<E>`, `Writer<E>`, `TextReader<E>`, and `TextWriter<E>` as generic

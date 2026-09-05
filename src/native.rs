@@ -38,6 +38,7 @@ use crate::vm::{
 
 pub mod abi;
 mod emission;
+mod text_boundary;
 use emission::{emit_object, ordered_entries};
 mod ownership;
 mod program;
@@ -517,9 +518,7 @@ fn verification_type_for_native(
             LayoutKind::Builtin { ty } => ty.clone(),
             LayoutKind::Opaque | LayoutKind::Closure { .. } => VerificationType::Unknown,
         },
-        NativeType::Opaque | NativeType::Arguments | NativeType::StringList => {
-            VerificationType::Unknown
-        }
+        NativeType::Opaque => VerificationType::Unknown,
     }
 }
 
@@ -940,11 +939,6 @@ fn native_type(
         }
         Type::Record { record, .. } if record_uses_dynamic_dispatch(compilation, record) => {
             Ok(NativeType::Object(layouts.opaque()))
-        }
-        Type::Record { .. }
-            if crate::entry::is_arguments_type(&compilation.hir, &compilation.types, ty) =>
-        {
-            Ok(NativeType::Arguments)
         }
         Type::Record { record, .. }
             if compilation.hir.records[record].name == "Bytes"
@@ -1546,11 +1540,7 @@ fn native_to_remote_word(
             builder.ins().uextend(types::I64, value)
         }
         NativeType::CodePoint => builder.ins().uextend(types::I64, value),
-        NativeType::String
-        | NativeType::Arguments
-        | NativeType::StringList
-        | NativeType::Object(_)
-        | NativeType::Opaque => {
+        NativeType::String | NativeType::Object(_) | NativeType::Opaque => {
             if module.target_config().pointer_type() == types::I64 {
                 value
             } else {
@@ -1575,11 +1565,7 @@ fn remote_word_to_native(
             builder.ins().ireduce(types::I8, value)
         }
         NativeType::CodePoint => builder.ins().ireduce(types::I32, value),
-        NativeType::String
-        | NativeType::Arguments
-        | NativeType::StringList
-        | NativeType::Object(_)
-        | NativeType::Opaque => {
+        NativeType::String | NativeType::Object(_) | NativeType::Opaque => {
             if module.target_config().pointer_type() == types::I64 {
                 value
             } else {
@@ -1617,9 +1603,7 @@ fn define_remote_thunks(
             builder.switch_to_block(entry);
             let state_word = builder.block_params(entry)[0];
             let state = remote_word_to_native(&mut builder, module, state_word, receiver_type);
-            if let NativeType::Object(layout) = receiver_type
-                && backend.objects.layouts.is_managed(layout)
-            {
+            if let Some(layout) = backend.objects.layouts.managed_layout(receiver_type) {
                 backend.objects.retain(&mut builder, state, layout);
             }
             let argument_data = builder.block_params(entry)[1];
@@ -1964,7 +1948,6 @@ fn infer_register_types(
             } => {
                 let object = register_type(&result, *object, function)?;
                 result[usize::from(destination.0)] = Some(match object {
-                    NativeType::StringList => NativeType::String,
                     NativeType::String => NativeType::CodePoint,
                     NativeType::Object(layout) => {
                         match &environment.physical_layouts.get(layout).kind {
@@ -2291,15 +2274,12 @@ fn field_type(
     field: &str,
 ) -> Result<NativeType, FosterError> {
     match (receiver, field) {
-        (NativeType::Arguments, "executable") => Ok(NativeType::String),
-        (NativeType::Arguments, "values") => Ok(NativeType::StringList),
-        (NativeType::StringList, "empty?") | (NativeType::String, "empty?") => Ok(NativeType::Bool),
-        (NativeType::StringList, "length") | (NativeType::String, "length") => Ok(NativeType::Int),
-        (NativeType::StringList, "head") => Ok(NativeType::String),
+        (NativeType::String, "empty?") => Ok(NativeType::Bool),
+        (NativeType::String, "length") => Ok(NativeType::Int),
         (NativeType::String, "head") => Ok(NativeType::CodePoint),
         (NativeType::String, "rest") => Ok(NativeType::String),
         (NativeType::String, "whitespace?") => Ok(NativeType::Bool),
-        (NativeType::String, "utf8" | "value") => layouts
+        (NativeType::String, "bytes" | "value") => layouts
             .builtin(&crate::vm::VerificationType::Bytes)
             .map(NativeType::Object)
             .ok_or_else(|| native_error("String byte storage has no native layout")),
@@ -2543,6 +2523,7 @@ fn lower_shared_to_native_ir(
     }
     let mut storage_hints = shared.storage_hints.clone();
     let mut blocks = Vec::with_capacity(shared.blocks.len());
+    let mut cleanup_edges = Vec::new();
 
     for block in &shared.blocks {
         let mut state = HashMap::<u16, ir::Value>::new();
@@ -2638,7 +2619,10 @@ fn lower_shared_to_native_ir(
             let returned = *returned;
             for value in state.values().copied().collect::<BTreeSet<_>>() {
                 if value != returned
-                    && matches!(value_types[value.0 as usize], NativeType::Object(_))
+                    && matches!(
+                        value_types[value.0 as usize],
+                        NativeType::Object(_) | NativeType::String
+                    )
                 {
                     instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Drop {
                         value,
@@ -2646,6 +2630,61 @@ fn lower_shared_to_native_ir(
                     spans.push(block.terminator_span.clone());
                 }
             }
+        }
+        // Pruned SSA block arguments no longer carry dead storage into the successor.
+        // Release that storage on the particular edge where its lifetime ends.
+        let owned = state.values().copied().collect::<BTreeSet<_>>();
+        let dying = |arguments: &[ir::Value]| {
+            owned
+                .iter()
+                .copied()
+                .filter(|value| !arguments.contains(value))
+                .filter(|value| {
+                    matches!(
+                        value_types[value.0 as usize],
+                        NativeType::Object(_) | NativeType::String
+                    )
+                })
+                .map(|value| ir::Instruction::Portable(ir::PortableInstruction::Drop { value }))
+                .collect::<Vec<_>>()
+        };
+        match &mut terminator {
+            ir::Terminator::Jump { arguments, .. } => {
+                for drop in dying(arguments) {
+                    instructions.push(drop);
+                    spans.push(block.terminator_span.clone());
+                }
+            }
+            ir::Terminator::Branch {
+                then_target,
+                then_arguments,
+                else_target,
+                else_arguments,
+                ..
+            } => {
+                for (target, arguments) in
+                    [(then_target, then_arguments), (else_target, else_arguments)]
+                {
+                    let drops = dying(arguments);
+                    if drops.is_empty() {
+                        continue;
+                    }
+                    let edge = ir::Block((shared.blocks.len() + cleanup_edges.len()) as u32);
+                    cleanup_edges.push(ir::BlockData {
+                        parameters: Vec::new(),
+                        instruction_spans: vec![block.terminator_span.clone(); drops.len()],
+                        instructions: drops,
+                        terminator: ir::Terminator::Jump {
+                            target: *target,
+                            arguments: arguments.clone(),
+                        },
+                        terminator_span: block.terminator_span.clone(),
+                    });
+                    *target = edge;
+                    arguments.clear();
+                }
+            }
+            ir::Terminator::Return(_) => {}
         }
         blocks.push(ir::BlockData {
             parameters: block.parameters.clone(),
@@ -2655,6 +2694,7 @@ fn lower_shared_to_native_ir(
             terminator_span: block.terminator_span.clone(),
         });
     }
+    blocks.extend(cleanup_edges);
 
     let mut parameters = shared.captures.clone();
     parameters.extend(&shared.parameters);
@@ -2808,8 +2848,6 @@ fn native_shared_type(ty: ir::Type) -> NativeType {
         ir::Type::CodePoint => NativeType::CodePoint,
         ir::Type::Byte => NativeType::Byte,
         ir::Type::String => NativeType::String,
-        ir::Type::Arguments => NativeType::Arguments,
-        ir::Type::StringList => NativeType::StringList,
         ir::Type::Object(layout) => NativeType::Object(layout),
     }
 }
@@ -3266,7 +3304,6 @@ fn lower_shared_instruction(
             index,
         } => {
             let helper = match ty(*object) {
-                NativeType::StringList => Some(abi::STRING_LIST_GET),
                 NativeType::String => Some(abi::STRING_GET),
                 NativeType::Object(layout)
                     if matches!(
@@ -3304,7 +3341,7 @@ fn lower_shared_instruction(
                     "native compilation does not support reference field `{field}`"
                 )));
             }
-            if ty(*object) == NativeType::String && matches!(field.as_str(), "utf8" | "value") {
+            if ty(*object) == NativeType::String && matches!(field.as_str(), "bytes" | "value") {
                 let bytes = environment
                     .layouts
                     .builtin(&crate::vm::VerificationType::Bytes)
@@ -3570,7 +3607,9 @@ fn shared_call_arguments(
             }
             continue;
         }
-        if *mode == ParameterMode::Borrow && matches!(ty, NativeType::Object(_)) {
+        if *mode == ParameterMode::Borrow
+            && matches!(ty, NativeType::Object(_) | NativeType::String)
+        {
             let retained = allocate_shared_value(value_types, storage_hints, ty);
             instructions.push((
                 ir::Instruction::Portable(ir::PortableInstruction::Move {
@@ -3691,7 +3730,7 @@ fn shared_capture_arguments(
                 consumed.push(*value);
             }
             crate::hir::CaptureMode::Copy => {
-                if matches!(ty, NativeType::Object(_)) {
+                if matches!(ty, NativeType::Object(_) | NativeType::String) {
                     let retained = allocate_shared_value(value_types, storage_hints, ty);
                     instructions.push((
                         ir::Instruction::Portable(ir::PortableInstruction::Move {
@@ -3749,9 +3788,7 @@ fn runtime_signature(
 
 fn native_field_helper(receiver: NativeType, field: &str) -> Result<&'static str, FosterError> {
     let receiver_kind = match receiver {
-        NativeType::Arguments => Some(crate::intrinsics::NativeReceiverKind::Arguments),
         NativeType::String => Some(crate::intrinsics::NativeReceiverKind::String),
-        NativeType::StringList => Some(crate::intrinsics::NativeReceiverKind::StringList),
         _ => None,
     };
     receiver_kind
@@ -3769,11 +3806,7 @@ fn reference_load_helper(ty: NativeType) -> &'static str {
         NativeType::CodePoint => abi::REF_LOAD_I32,
         NativeType::Int => abi::REF_LOAD_I64,
         NativeType::Float => abi::REF_LOAD_F64,
-        NativeType::String
-        | NativeType::Arguments
-        | NativeType::StringList
-        | NativeType::Object(_)
-        | NativeType::Opaque => abi::REF_LOAD_PTR,
+        NativeType::String | NativeType::Object(_) | NativeType::Opaque => abi::REF_LOAD_PTR,
     }
 }
 
@@ -3783,11 +3816,7 @@ fn reference_store_helper(ty: NativeType) -> &'static str {
         NativeType::CodePoint => abi::REF_STORE_I32,
         NativeType::Int => abi::REF_STORE_I64,
         NativeType::Float => abi::REF_STORE_F64,
-        NativeType::String
-        | NativeType::Arguments
-        | NativeType::StringList
-        | NativeType::Object(_)
-        | NativeType::Opaque => abi::REF_STORE_PTR,
+        NativeType::String | NativeType::Object(_) | NativeType::Opaque => abi::REF_STORE_PTR,
     }
 }
 
@@ -3901,7 +3930,7 @@ fn lower_native_ir(
                         ty: function.value_type(*subject),
                     },
                     pattern,
-                    backend.objects.layouts,
+                    backend.objects,
                     backend.ir.runtime_literal_indices,
                 )?;
                 if lowered_bindings.len() != bindings.len() {
@@ -3911,8 +3940,10 @@ fn lower_native_ir(
                 }
                 values.insert(*destination, matched);
                 for (binding, value) in bindings.iter().zip(lowered_bindings) {
-                    if let NativeType::Object(layout) = function.value_type(*binding)
-                        && backend.objects.layouts.is_managed(layout)
+                    if let Some(layout) = backend
+                        .objects
+                        .layouts
+                        .managed_layout(function.value_type(*binding))
                     {
                         let retain = builder.create_block();
                         let finish = builder.create_block();
@@ -3962,9 +3993,10 @@ fn lower_native_pattern(
     module: &mut ObjectModule,
     subject: PatternSubject,
     pattern: &Pattern,
-    layouts: NativeLayouts<'_>,
+    objects: ObjectRuntime<'_>,
     runtime_literal_indices: &HashMap<String, u64>,
 ) -> Result<(ClifValue, Vec<ClifValue>), FosterError> {
+    let layouts = objects.layouts;
     let true_value = |builder: &mut FunctionBuilder<'_>| builder.ins().iconst(types::I8, 1);
     match pattern.unspanned() {
         Pattern::Wildcard => Ok((true_value(builder), Vec::new())),
@@ -4027,6 +4059,7 @@ fn lower_native_pattern(
                 },
                 &[subject.value, expected],
             )?;
+            objects.release(builder, module, expected, layouts.string_layout())?;
             Ok((matched, Vec::new()))
         }
         Pattern::Variant { variant, fields } => {
@@ -4086,7 +4119,7 @@ fn lower_native_pattern(
                         ty: field_type,
                     },
                     pattern,
-                    layouts,
+                    objects,
                     runtime_literal_indices,
                 )?;
                 matched = builder.ins().band(matched, field_matched);
@@ -4151,9 +4184,7 @@ fn native_type_semantic(ty: NativeType, layouts: &LayoutRegistry) -> ValueSemant
             ValueSemantic::Reference
         }
         NativeType::Object(_) => ValueSemantic::Object,
-        NativeType::Opaque | NativeType::Arguments | NativeType::StringList => {
-            ValueSemantic::Opaque
-        }
+        NativeType::Opaque => ValueSemantic::Opaque,
     }
 }
 
@@ -4305,28 +4336,20 @@ fn lower_native_instruction(
             let NativeType::Object(layout) = function.value_type(*destination) else {
                 return Err(native_error("String bytes require an object layout"));
             };
-            let length = runtime_call(
-                builder,
-                module,
-                abi::STRING_BYTE_LENGTH,
-                &ir::Signature {
-                    parameters: vec![NativeType::String],
-                    result: NativeType::Int,
-                },
-                &[get(source)],
-            )?;
-            let (object, data) =
-                allocate_native_bytes(builder, module, backend.objects, layout, length)?;
-            runtime_call(
-                builder,
-                module,
-                abi::STRING_COPY_BYTES,
-                &ir::Signature {
-                    parameters: vec![NativeType::String, NativeType::Opaque],
-                    result: NativeType::Unit,
-                },
-                &[get(source), data],
-            )?;
+            let string_layout = backend.objects.layouts.string_layout();
+            let field = backend
+                .objects
+                .layouts
+                .physical
+                .record_field(string_layout, 0)
+                .ok_or_else(|| native_error("String requires byte storage"))?;
+            let object = builder.ins().load(
+                module.target_config().pointer_type(),
+                MemFlagsData::trusted(),
+                get(source),
+                field.offset as i32,
+            );
+            backend.objects.retain(builder, object, layout);
             object
         }
         ir::Instruction::BoxValue {
@@ -4348,8 +4371,10 @@ fn lower_native_instruction(
             let object = backend.objects.allocate(builder, module, layout)?;
             let value = get(source);
             store_physical_value(builder, object, value_offset, value);
-            let release = if let NativeType::Object(source_layout) = function.value_type(*source)
-                && backend.objects.layouts.is_managed(source_layout)
+            let release = if let Some(source_layout) = backend
+                .objects
+                .layouts
+                .managed_layout(function.value_type(*source))
             {
                 backend.objects.retain(builder, value, source_layout);
                 let release = module
@@ -4391,9 +4416,7 @@ fn lower_native_instruction(
                 get(source),
                 value_offset as i32,
             );
-            if let NativeType::Object(value_layout) = ty
-                && backend.objects.layouts.is_managed(value_layout)
-            {
+            if let Some(value_layout) = backend.objects.layouts.managed_layout(ty) {
                 backend.objects.retain(builder, value, value_layout);
             }
             value
@@ -4461,9 +4484,7 @@ fn lower_portable_native(
     let get = |value: &ir::Value| values[value];
     match instruction {
         ir::PortableInstruction::Drop { value } => {
-            if let NativeType::Object(layout) = function.value_type(*value)
-                && objects.layouts.is_managed(layout)
-            {
+            if let Some(layout) = objects.layouts.managed_layout(function.value_type(*value)) {
                 objects.release(builder, module, get(value), layout)?;
             }
             Ok(None)
@@ -4473,8 +4494,9 @@ fn lower_portable_native(
             source,
         } => {
             let value = get(source);
-            if let NativeType::Object(layout) = function.value_type(*destination)
-                && objects.layouts.is_managed(layout)
+            if let Some(layout) = objects
+                .layouts
+                .managed_layout(function.value_type(*destination))
             {
                 objects.retain(builder, value, layout);
             }
@@ -4503,12 +4525,13 @@ fn lower_portable_native(
             // A builder's unique storage can be mutated directly. Shared values still detach
             // before mutation so snapshots and borrowed callers retain value semantics.
             let pointer_type = module.target_config().pointer_type();
-            let count = builder.ins().load(
-                pointer_type,
-                MemFlagsData::trusted(),
-                source,
-                physical.header.strong_count_offset as i32,
-            );
+            let count_address = builder
+                .ins()
+                .iadd_imm_s(source, i64::from(physical.header.strong_count_offset));
+            let count =
+                builder
+                    .ins()
+                    .atomic_load(pointer_type, MemFlagsData::trusted(), count_address);
             let unique = builder.ins().icmp_imm_s(IntCC::Equal, count, 1);
             let detach = builder.create_block();
             let ready = builder.create_block();
@@ -4691,8 +4714,9 @@ fn lower_portable_native(
                 address,
                 0,
             );
-            if let NativeType::Object(pointee) = function.value_type(*destination)
-                && objects.layouts.is_managed(pointee)
+            if let Some(pointee) = objects
+                .layouts
+                .managed_layout(function.value_type(*destination))
             {
                 objects.retain(builder, value, pointee);
             }
@@ -4879,9 +4903,10 @@ fn lower_portable_native(
             type_arguments: _,
             fields: values_to_store,
         } => {
-            let NativeType::Object(layout) = function.value_type(*destination) else {
-                return Err(native_error("record result uses the wrong native layout"));
-            };
+            let layout = objects
+                .layouts
+                .managed_layout(function.value_type(*destination))
+                .ok_or_else(|| native_error("record result uses the wrong native layout"))?;
             let LayoutKind::Record {
                 record: layout_record,
                 ..
@@ -4904,7 +4929,8 @@ fn lower_portable_native(
                     ));
                 }
                 let value = get(source);
-                if let NativeType::Object(pointee) = function.value_type(*source) {
+                if let Some(pointee) = objects.layouts.managed_layout(function.value_type(*source))
+                {
                     objects.retain(builder, value, pointee);
                 }
                 store_physical_value(builder, object, field.offset, value);
@@ -4955,7 +4981,8 @@ fn lower_portable_native(
                 .store(MemFlagsData::trusted(), tag, object, *tag_offset as i32);
             for (source, field) in payload.iter().zip(&alternative.fields) {
                 let value = get(source);
-                if let NativeType::Object(pointee) = function.value_type(*source) {
+                if let Some(pointee) = objects.layouts.managed_layout(function.value_type(*source))
+                {
                     objects.retain(builder, value, pointee);
                 }
                 store_physical_value(builder, object, field.offset, value);
@@ -5295,7 +5322,10 @@ fn lower_portable_native(
                 physical.offset,
                 physical.value,
             );
-            if let NativeType::Object(pointee) = function.value_type(*destination) {
+            if let Some(pointee) = objects
+                .layouts
+                .managed_layout(function.value_type(*destination))
+            {
                 objects.retain(builder, result, pointee);
             }
             Ok(Some(result))
@@ -5334,7 +5364,7 @@ fn lower_portable_native(
                 objects.release(builder, module, old, pointee)?;
             }
             let source_value = get(source);
-            if let NativeType::Object(pointee) = function.value_type(*source) {
+            if let Some(pointee) = objects.layouts.managed_layout(function.value_type(*source)) {
                 objects.retain(builder, source_value, pointee);
             }
             store_physical_value(builder, get(object), physical.offset, source_value);
@@ -5472,36 +5502,6 @@ fn lower_portable_native(
                     )?;
                     copy_native_bytes(builder, module, data, source_data, length)?;
                     object
-                }
-                NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesDecodeUtf8) => {
-                    let NativeType::Object(source_layout) = function.value_type(arguments[0])
-                    else {
-                        return Err(native_error("UTF-8 decoding requires native Bytes"));
-                    };
-                    let (data_offset, length_offset) = native_bytes_layout(source_layout, objects)?;
-                    let word = module.target_config().pointer_type();
-                    let data = builder.ins().load(
-                        word,
-                        MemFlagsData::trusted(),
-                        lowered[0],
-                        data_offset as i32,
-                    );
-                    let length = builder.ins().load(
-                        word,
-                        MemFlagsData::trusted(),
-                        lowered[0],
-                        length_offset as i32,
-                    );
-                    runtime_call(
-                        builder,
-                        module,
-                        abi::STRING_FROM_UTF8,
-                        &ir::Signature {
-                            parameters: vec![NativeType::Opaque, NativeType::Int],
-                            result: NativeType::String,
-                        },
-                        &[data, length],
-                    )?
                 }
                 NativeIntrinsic::Runtime(helper) => runtime_call(
                     builder,
@@ -5707,9 +5707,7 @@ fn native_release_address(
     ty: NativeType,
     backend: &NativeBackend<'_>,
 ) -> ClifValue {
-    if let NativeType::Object(layout) = ty
-        && backend.objects.layouts.is_managed(layout)
-    {
+    if let Some(layout) = backend.objects.layouts.managed_layout(ty) {
         let release = module.declare_func_in_func(backend.release_thunks[&layout], builder.func);
         builder
             .ins()
@@ -5877,7 +5875,7 @@ fn lower_native_remote_call(
         *mode == ParameterMode::Borrow
             && matches!(
                 context.function.value_type(*argument),
-                NativeType::Object(_)
+                NativeType::Object(_) | NativeType::String
             )
     });
     let blocking = builder.ins().iconst(types::I8, i64::from(blocking));
@@ -7525,8 +7523,6 @@ fn write_native_value(
         NativeType::CodePoint => (abi::WRITE_CODE_POINT, vec![NativeType::CodePoint]),
         NativeType::Byte => (abi::WRITE_BYTE, vec![NativeType::Byte]),
         NativeType::String => (abi::WRITE_STRING, vec![NativeType::String]),
-        NativeType::Arguments => (abi::WRITE_ARGUMENTS, vec![NativeType::Arguments]),
-        NativeType::StringList => (abi::WRITE_STRING_LIST, vec![NativeType::StringList]),
         NativeType::Object(_) | NativeType::Opaque => (abi::WRITE_OBJECT, vec![NativeType::Opaque]),
     };
     let arguments = if parameters.is_empty() {

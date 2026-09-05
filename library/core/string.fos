@@ -15,6 +15,14 @@ pub type String = {
     value: Bytes
 }
 
+/// Validates UTF-8 in Foster and takes ownership of the immutable byte storage without decoding or copying it.
+pub func String.from_utf8(value: Bytes) -> Result<String, Utf8Error> [consume value] {
+    branch {
+        value.utf8_valid?() -> Result.Ok(String { value })
+        _ -> Result.Error(Utf8Error { offset: -1, message: "Bytes are not valid UTF-8" })
+    }
+}
+
 /// A Foster text builder that encodes code points and appends UTF-8 without prefix concatenation.
 pub type StringBuilder = {
     value: ByteBuffer
@@ -27,7 +35,7 @@ pub func StringBuilder.empty() -> StringBuilder {
 
 /// Appends validated text to this builder.
 pub func StringBuilder.append(self: StringBuilder, text: String) -> () [reshape self.value.value.items] {
-    self.value.extend(text.utf8)
+    self.value.extend(text.bytes)
 }
 
 /// Encodes one Unicode scalar into UTF-8; encoding policy stays in Foster.
@@ -60,7 +68,7 @@ pub func StringBuilder.finish(self: StringBuilder) -> String [consume self] {
 
 /// Decodes bytes produced by the text algorithms, retaining a checked construction boundary.
 func decode_bytes(data: Bytes) -> String {
-    branch String.from_utf8(data) {
+    branch String.from_utf8(move data) {
         Result.Ok(text) -> text
         Result.Error(_) -> {
             assert(false, "text construction must preserve valid UTF-8")
@@ -77,7 +85,7 @@ type TextCursor = {
 
 /// Creates a byte cursor over validated text.
 func cursor(text: String) -> TextCursor {
-    TextCursor { data: text.utf8, offset: 0 }
+    TextCursor { data: text.bytes, offset: 0 }
 }
 
 /// Returns the encoded width of a valid UTF-8 leading byte.
@@ -131,7 +139,7 @@ pub func String.last(self: String) -> Option<CodePoint> {
 
 /// Returns the string with its Unicode scalar values in reverse order.
 pub func String.reverse(self: String) -> String {
-    let data = self.utf8
+    let data = self.bytes
     let output = ByteBuffer.empty()
     let end = data.length
     loop {
@@ -166,21 +174,21 @@ func matches_at(data: Bytes, pattern: Bytes, start: Int) -> Bool {
 
 /// Returns whether the text begins with `prefix`.
 pub func String.starts_with?(self: String, prefix: String) -> Bool {
-    matches_at(self.utf8, prefix.utf8, 0)
+    matches_at(self.bytes, prefix.bytes, 0)
 }
 
 /// Returns whether the text ends with `suffix`, without reversing either string.
 pub func String.ends_with?(self: String, suffix: String) -> Bool {
-    let data = self.utf8
-    let pattern = suffix.utf8
+    let data = self.bytes
+    let pattern = suffix.bytes
     return false if pattern.length > data.length
     matches_at(data, pattern, data.length - pattern.length)
 }
 
 /// Searches validated UTF-8 byte ranges without constructing suffix strings.
 pub func String.contains?(self: String, fragment: String) -> Bool {
-    let data = self.utf8
-    let pattern = fragment.utf8
+    let data = self.bytes
+    let pattern = fragment.bytes
     return true if pattern.empty?
     let index = 0
     loop {
@@ -317,8 +325,8 @@ pub func String.slice(self: String, start: Int, end: Int) -> String {
 /// Splits around nonoverlapping separators, preserving empty fields.
 /// An empty separator produces one string per Unicode scalar.
 pub func String.split(self: String, separator: String) -> List<String> [consume self] {
-    let data = self.utf8
-    let pattern = separator.utf8
+    let data = self.bytes
+    let pattern = separator.bytes
     let output = []
     let start = 0
     let index = 0
@@ -362,7 +370,7 @@ pub func String.upper(self: String) -> String {
 
 /// Changes ASCII letters in one byte scan; multibyte UTF-8 scalars are copied unchanged.
 func ascii_case(text: String, lower: Bool) -> String {
-    let data = text.utf8
+    let data = text.bytes
     let output = ByteBuffer.empty()
     let index = 0
     loop {

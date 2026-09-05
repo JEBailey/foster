@@ -84,7 +84,6 @@ pub enum NativeInlineIntrinsic {
     IntegerToByte,
     BytesFromList,
     BytesToList,
-    BytesDecodeUtf8,
 }
 
 pub(crate) type DirectBuiltinHandler = fn(
@@ -199,9 +198,6 @@ macro_rules! native_builtin {
     };
     (BytesToList) => {
         NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesToList)
-    };
-    (BytesDecodeUtf8) => {
-        NativeIntrinsic::Inline(NativeInlineIntrinsic::BytesDecodeUtf8)
     };
     (IoReadText) => {
         NativeIntrinsic::Host
@@ -366,12 +362,10 @@ builtin_descriptors! {
         execution: Direct, signature: [Read Bytes] -> String;
     BytesFromHex = 13, source: None, intrinsic: None => None,
         execution: Direct, signature: [Read String] -> Any;
-    StringUtf8 = 14, source: None, intrinsic: None => None,
+    StringBytes = 14, source: None, intrinsic: None => None,
         execution: Direct, signature: [Read String] -> Bytes;
     BytesUtf8Valid = 15, source: None, intrinsic: None => None,
         execution: Direct, signature: [Read Bytes] -> Bool;
-    BytesDecodeUtf8 = 16, source: None, intrinsic: Some("bytes.decode_utf8") => Some("core.bytes"),
-        execution: Direct, signature: [Read Bytes] -> String;
     ByteBufferEmpty = 17, source: None, intrinsic: None => None,
         execution: Direct, signature: [] -> ByteBuffer;
     ByteBufferWithCapacity = 18, source: None, intrinsic: None => None,
@@ -504,19 +498,12 @@ impl Builtin {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeReceiverKind {
-    Arguments,
     String,
-    StringList,
 }
 
-/// Registry-owned runtime member lookup used only by legacy host-backed ABI views.
+/// Registry-owned primitive text property lookup.
 pub fn native_member_runtime(receiver: NativeReceiverKind, member: &str) -> Option<&'static str> {
     match (receiver, member) {
-        (NativeReceiverKind::Arguments, "executable") => Some(crate::native::abi::ARGS_EXECUTABLE),
-        (NativeReceiverKind::Arguments, "values") => Some(crate::native::abi::ARGS_VALUES),
-        (NativeReceiverKind::StringList, "empty?") => Some(crate::native::abi::STRING_LIST_EMPTY),
-        (NativeReceiverKind::StringList, "length") => Some(crate::native::abi::STRING_LIST_LENGTH),
-        (NativeReceiverKind::StringList, "head") => Some(crate::native::abi::STRING_LIST_HEAD),
         (NativeReceiverKind::String, "empty?") => Some(crate::native::abi::STRING_EMPTY),
         (NativeReceiverKind::String, "length") => Some(crate::native::abi::STRING_LENGTH),
         (NativeReceiverKind::String, "head") => Some(crate::native::abi::STRING_HEAD),
@@ -652,13 +639,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bytecode_tags_are_unique_contiguous_and_round_trip() {
+    fn bytecode_tags_are_unique_and_round_trip() {
         assert_eq!(
             BUILTINS.len(),
             usize::from(u8::try_from(BUILTINS.len()).unwrap())
         );
-        for (tag, descriptor) in BUILTINS.iter().enumerate() {
-            assert_eq!(usize::from(descriptor.bytecode_tag), tag);
+        let mut tags = std::collections::HashSet::new();
+        for descriptor in BUILTINS {
+            assert!(tags.insert(descriptor.bytecode_tag));
             assert_eq!(
                 Builtin::from_bytecode_tag(descriptor.bytecode_tag),
                 Some(descriptor.builtin)
@@ -769,7 +757,6 @@ mod tests {
                 Builtin::ByteUnchecked,
                 Builtin::BytesFromList,
                 Builtin::BytesToList,
-                Builtin::BytesDecodeUtf8,
             ]
         );
         for descriptor in BUILTINS {

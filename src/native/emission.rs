@@ -89,10 +89,7 @@ pub(super) fn emit_object(
         .collect::<HashSet<_>>();
     let remote_thunks = declare_remote_thunks(&mut module, instances, &method_receivers)?;
     let main_result = function_types[&main_instance.ir_function].result;
-    let exported_result_layout = match main_result {
-        NativeType::Object(layout) if native_layouts.is_managed(layout) => Some(layout),
-        _ => None,
-    };
+    let exported_result_layout = native_layouts.managed_layout(main_result);
     let release_thunks =
         declare_release_thunks(&mut module, native_layouts, exported_result_layout)?;
     define_layout_destructors(&mut module, native_layouts, &drop_ids)?;
@@ -121,6 +118,7 @@ pub(super) fn emit_object(
     }
     define_callable_thunks(&mut module, &backend)?;
     define_remote_thunks(&mut module, &backend)?;
+    text_boundary::define(&mut module, &backend)?;
 
     let bytes = module
         .finish()

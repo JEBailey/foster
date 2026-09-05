@@ -100,23 +100,17 @@ pub(super) fn info(id: Builtin) -> BuiltinInfo {
             &["value"],
             "Decodes an even-length hexadecimal string.",
         ),
-        Builtin::StringUtf8 => builtin(
-            "BytesHost.encode_utf8",
-            "BytesHost.encode_utf8(value: String) -> Bytes",
+        Builtin::StringBytes => builtin(
+            "String.bytes",
+            "String.bytes(value: String) -> Bytes",
             &["value"],
-            "Encodes a string as UTF-8 bytes.",
+            "Returns the immutable UTF-8 bytes of a string.",
         ),
         Builtin::BytesUtf8Valid => builtin(
             "BytesHost.utf8_valid",
             "BytesHost.utf8_valid(value: Bytes) -> Bool",
             &["value"],
             "Checks whether bytes contain valid UTF-8.",
-        ),
-        Builtin::BytesDecodeUtf8 => builtin(
-            "BytesHost.decode_utf8",
-            "BytesHost.decode_utf8(value: Bytes) -> String",
-            &["value"],
-            "Decodes bytes already validated as UTF-8.",
         ),
         Builtin::ByteBufferEmpty => builtin(
             "RawByteBuffer.empty",

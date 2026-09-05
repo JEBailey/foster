@@ -391,16 +391,17 @@ fn lowers_string_algorithms_and_descriptor_backed_bytes() {
     let compilation = foster::compile(
         r#"
 import core.byte
+import core.string
 import core.bytes
 import core.result
 
 func main() -> String {
-    let encoded = "Foster λ".utf8
+    let encoded = "Foster λ".bytes
     assert(encoded.length == 9)
     assert(encoded.head == Byte.unchecked(70))
-    assert(encoded.equal?("Foster λ".utf8))
-    assert(!encoded.equal?("Foster".utf8))
-    let decoded = branch String.from_utf8(encoded) {
+    assert(encoded.equal?("Foster λ".bytes))
+    assert(!encoded.equal?("Foster".bytes))
+    let decoded = branch String.from_utf8(move encoded) {
         Result.Ok(value) -> value
         Result.Error(_) -> "invalid"
     }
@@ -437,7 +438,7 @@ import core.bytes.buffer
 func main() -> String {
     let output = ByteBuffer.empty()
     output.push(Byte.unchecked(111))
-    output.extend("k".utf8)
+    output.extend("k".bytes)
     output.snapshot().hex()
 }
 "#,
@@ -736,7 +737,7 @@ func require_text(outcome: Result<String, IoError>) -> String [consume outcome] 
 func main() -> String {
     let cwd = require_text(environment::current_directory())
     let path = paths::join(cwd, "payload.bin")
-    require_unit(filesystem::write_bytes(path, "Foster".utf8))
+    require_unit(filesystem::write_bytes(path, "Foster".bytes))
     assert(filesystem::exists?(path))
     assert(filesystem::file?(path))
     assert(!filesystem::directory?(path))

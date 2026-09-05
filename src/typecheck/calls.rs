@@ -357,9 +357,8 @@ impl Checker<'_> {
                 vec![string.clone()],
                 self.host_result(bytes.clone(), "core.bytes", "HexError")?,
             ),
-            Builtin::StringUtf8 => (vec![string.clone()], bytes.clone()),
+            Builtin::StringBytes => (vec![string.clone()], bytes.clone()),
             Builtin::BytesUtf8Valid => (vec![bytes.clone()], Ty::Bool),
-            Builtin::BytesDecodeUtf8 => (vec![bytes.clone()], string.clone()),
             Builtin::ByteBufferEmpty => (Vec::new(), Ty::RawByteBuffer),
             Builtin::ByteBufferWithCapacity => (vec![Ty::Int], Ty::RawByteBuffer),
             Builtin::ByteBufferPush => (vec![Ty::RawByteBuffer, Ty::Byte], Ty::RawByteBuffer),
@@ -525,7 +524,7 @@ impl Checker<'_> {
                 "length" => Ok(Ty::Int),
                 "head" => Ok(Ty::CodePoint),
                 "rest" => Ok(self.string_type()),
-                "utf8" => Ok(self.bytes_type()),
+                "bytes" => Ok(self.bytes_type()),
                 "iterator" => self.collection_iterator_method(Ty::CodePoint, function),
                 member => {
                     self.primitive_method_type(function, self.string_type(), "core.string", member)

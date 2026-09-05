@@ -111,8 +111,8 @@ func main() -> Bool {
     assert([[1], [2]] == [[1], [2]])
     assert([0.0] == [-0.0])
     assert(empty() == empty())
-    assert("abc".utf8 == ("a" + "bc").utf8)
-    assert("abc".utf8 != "abd".utf8)
+    assert("abc".bytes == ("a" + "bc").bytes)
+    assert("abc".bytes != "abd".bytes)
     assert([Point { x: 1, label: "a" }].contains?(Point { x: 1, label: "a" }))
     let nan = 0.0 / 0.0
     assert([nan] != [nan])

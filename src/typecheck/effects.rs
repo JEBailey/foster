@@ -185,7 +185,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
         match &self.checker.hir.expressions[expression] {
             hir::Expr::Member { object, name }
                 if matches!(name.as_str(), "iterator" | "head" | "rest")
-                    || name == "utf8"
+                    || name == "bytes"
                         && self.checker.expressions.get(object).is_some_and(|ty| {
                             self.checker
                                 .is_string_type(&self.checker.resolved(ty.clone()))
@@ -193,7 +193,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             {
                 // Sequence views and Iterable cursors are borrowed projections;
                 // producing one does not transfer the source collection. String's computed
-                // UTF-8 view is also a value, unlike an ordinary stored field named `utf8`.
+                // UTF-8 view is also a value, unlike an ordinary stored field named `bytes`.
                 self.walk_expr(expression);
             }
             hir::Expr::Name(hir::ResolvedName::Local(local))

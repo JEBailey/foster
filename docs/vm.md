@@ -125,16 +125,14 @@ Foster resolves type, ownership, group, effect, namespace, and callable question
 lowering. Runtime checks therefore cover genuinely dynamic conditions rather than repeating static
 analysis.
 
-## Implemented evolution
+## Execution capabilities
 
 1. Explicit basic blocks, conditional branches, and an iterative call-frame stack.
 2. Lists, records, enums, field/index places, and pattern decisions.
 3. Closure environment layouts with explicit copy, move, and reference capture instructions.
 4. Move operations and liveness-driven deterministic register destruction points.
 5. Remote construction, remote calls, futures, and suspension.
-6. The legacy AST execution path was removed after the complete example and conformance suite ran
-   on the VM.
-7. A portable `.fbc` serialization with canonical map ordering and defensive decoding.
+6. A portable `.fbc` serialization with canonical map ordering and defensive decoding.
 
 ## Related native backend
 

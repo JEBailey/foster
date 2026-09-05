@@ -6,7 +6,7 @@ Baseline: **language version 7, ownership-model version 3**.
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
 it does not change the language or ownership versions. Revision 2 records accepted remote lifecycle
-decisions pending implementation and compatibility migration. It is not a complete formal semantics or
+decisions pending implementation. It is not a complete formal semantics or
 a proof that either backend implements every rule.
 
 ## 1. Authority and terminology
@@ -14,12 +14,12 @@ a proof that either backend implements every rule.
 **S-01 — Contract and conformance.** “Must” and “must not” identify requirements of this draft.
 Implementation gaps are listed in section 12; they do not create alternative language meanings.
 An unresolved question is not permission to rely on whichever behavior one backend happens to
-produce. Changes to established rules follow the [compatibility policy](compatibility.md).
+produce. Changes follow the [pre-release development policy](development-policy.md).
 
 The [language design](language-design.md) remains the syntax inventory. The detailed
 [ownership contract](ownership.md) and [effect rules](effect-derivation.md) supplement this
 specification. Conflicts must be reconciled explicitly, not resolved by silently changing code or
-treating this new document as a source-compatibility override.
+treating documentation alone as an implementation change.
 
 **S-02 — Semantic entities.** A *value* is typed data. A *place* is storage that may contain a
 value: a local, a field, an indexed element, or a place reached through a reference. An *owner*
@@ -90,8 +90,8 @@ The following are library contracts, not new syntax:
 - `List.at(index)` reads an independently consumable element without moving it out of the source.
   It must preserve any loans contained inside that element; an owned read is not lifetime erasure.
 - `values[index]` can designate a projected place, and `ref values[index]` borrows that place.
-- `String.utf8` produces byte data without consuming the string. An ordinary stored field named
-  `utf8` does not acquire that behavior merely from its spelling.
+- `String.bytes` produces byte data without consuming the string. An ordinary stored field named
+  `bytes` does not acquire that behavior merely from its spelling.
 - `List.slice` and `Bytes.slice` check half-open bounds and return range copies, not zero-copy views.
   `String.slice` uses clamped half-open code-point bounds, as specified by its library implementation.
 - Builder mutation accumulates output; consuming finalization returns an owned result. Allocation
@@ -279,14 +279,14 @@ These entries distinguish missing language decisions from missing implementation
 - **G-01 — Evaluation order (open decision/audit):** specify all call forms, assignment-target
   evaluation, aggregate initializers, and partial-application capture timing using side-effect
   witnesses. Do not infer a universal order from S-09's narrower rules.
-- **G-02 — Values and places (generalization work):** computed members such as `String.utf8` and
+- **G-02 — Values and places (generalization work):** computed members such as `String.bytes` and
   owned reads such as `List.at` have defined current behavior, but the general user-extensible
   property/projection protocol is not settled. Member-specific compiler handling is not that protocol.
 - **G-03 — Remote failure implementation:** native worker failures currently terminate the process
   rather than populating their futures, even for unawaited calls. Sticky failure and the planned
   typed remote outcomes require implementation and cross-backend witnesses.
-- **G-04 — Reclamation (implementation gap/open design):** legacy native String allocations can
-  remain until process exit. Full exceptional cleanup, user-visible resource destruction ordering,
+- **G-04 — Reclamation (implementation gap/open design):** native strings and argument containers
+  participate in managed destruction. Full exceptional cleanup, user-visible resource destruction ordering,
   and a general destructor protocol are not uniformly established. See [native gaps](native.md#known-runtime-correctness-gaps).
 - **G-05 — Generic sequence execution (implementation gap):** native `SequenceIterator` cannot
   yet resolve all erased sequence storage members. Head/rest adapters can copy tails; neither
@@ -299,6 +299,6 @@ These entries distinguish missing language decisions from missing implementation
   richer path facts remain conservative. Better precision may accept more safe programs but must
   not discard a real origin or lifetime dependency.
 
-Resolving an open decision requires a documented rule, compatibility assessment, and witnesses.
+Resolving an open decision requires a documented rule, implementation, and conformance tests.
 Fixing an implementation violation should restore the contract without redefining the violating
 behavior as valid Foster semantics.

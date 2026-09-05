@@ -29,7 +29,7 @@ func TcpHost.read(connection: Int, maximum: Int) -> Result<String, NetworkError>
 }
 /// Writes UTF-8 text to a host TCP connection.
 func TcpHost.write(connection: Int, contents: String) -> Result<(), NetworkError> {
-    TcpHost.write_bytes(connection, contents.utf8)
+    TcpHost.write_bytes(connection, contents.bytes)
 }
 /// Reads bytes from a host TCP connection.
 func TcpHost.read_bytes(connection: Int, maximum: Int) -> Result<Bytes, NetworkError> = intrinsic("tcp.read_bytes")

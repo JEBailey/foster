@@ -1,6 +1,5 @@
-//! Stable ownership diagnostic identifiers. Codes are compatibility surface:
-//! wording and labels may improve, but a code's semantic category does not
-//! change within an ownership-model version.
+//! Ownership diagnostic identifiers shared by compiler output, tooling, and tests.
+//! Keep the catalog and consumers synchronized when changing diagnostic categories.
 
 pub const USE_AFTER_MOVE: &str = "E0382";
 pub const INVALIDATED_LOAN: &str = "E0401";

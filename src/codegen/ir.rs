@@ -44,8 +44,6 @@ pub enum Type {
     CodePoint,
     Byte,
     String,
-    Arguments,
-    StringList,
     /// A descriptor-backed Foster allocation with a statically known physical layout.
     Object(LayoutId),
 }
@@ -58,9 +56,7 @@ impl Type {
             Self::CodePoint => Representation::I32,
             Self::Int => Representation::I64,
             Self::Float => Representation::F64,
-            Self::String | Self::Arguments | Self::StringList | Self::Object(_) => {
-                Representation::Pointer
-            }
+            Self::String | Self::Object(_) => Representation::Pointer,
         }
     }
 }
@@ -159,7 +155,7 @@ pub enum Instruction {
         destination: Value,
         source: Value,
     },
-    /// Copies a legacy process string into descriptor-backed immutable byte storage.
+    /// Retains the immutable Bytes storage owned by a managed String.
     StringToBytes {
         destination: Value,
         source: Value,

@@ -54,9 +54,8 @@ direct_builtin_handlers!(
     BytesToList,
     BytesHex,
     BytesFromHex,
-    StringUtf8,
+    StringBytes,
     BytesUtf8Valid,
-    BytesDecodeUtf8,
     ByteBufferEmpty,
     ByteBufferWithCapacity,
     ByteBufferSnapshot,
@@ -274,17 +273,12 @@ fn dispatch_core(
                 }),
             })
         }
-        (Builtin::StringUtf8, [value]) if value.string_bytes().is_some() => {
+        (Builtin::StringBytes, [value]) if value.string_bytes().is_some() => {
             Ok(Value::bytes(value.string_bytes().unwrap().to_vec()))
         }
         (Builtin::BytesUtf8Valid, [value]) if value.bytes_value().is_some() => Ok(Value::Bool(
             std::str::from_utf8(value.bytes_value().unwrap()).is_ok(),
         )),
-        (Builtin::BytesDecodeUtf8, [value]) if value.bytes_value().is_some() => {
-            std::str::from_utf8(value.bytes_value().unwrap())
-                .map(|value| Value::string(string_record, value.as_bytes().to_vec()))
-                .map_err(|_| RuntimeError::runtime("Bytes are not valid UTF-8"))
-        }
         (Builtin::ByteBufferEmpty, []) => Ok(Value::RawByteBuffer(Vec::new())),
         (Builtin::ByteBufferWithCapacity, [Value::Integer(capacity)]) => {
             let capacity = usize::try_from(*capacity)

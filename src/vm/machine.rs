@@ -1292,7 +1292,7 @@ fn member(
                 Ok(Value::string(string_record, bytes[offset..].to_vec()))
             }
             "whitespace?" => Ok(Value::Bool(text.chars().all(char::is_whitespace))),
-            "utf8" | "value" => Ok(Value::bytes(bytes.to_vec())),
+            "bytes" | "value" => Ok(Value::bytes(bytes.to_vec())),
             _ => Err(RuntimeError::runtime(format!(
                 "value has no field `{field}`"
             ))),

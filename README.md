@@ -382,7 +382,7 @@ remain build/run concerns, so ordinary library documents do not need a `main`. T
 - [Semantic specification and conformance gaps](docs/semantics.md)
 - [Remote lifecycle, cancellation, and failure contract](docs/remote-semantics.md)
 - [Language design and implemented syntax](docs/language-design.md)
-- [Source and ownership compatibility policy](docs/compatibility.md)
+- [Pre-release development policy](docs/development-policy.md)
 - [Roadmap](docs/roadmap.md)
 - [Ownership and borrowing](docs/ownership.md)
 - [Ownership verification](docs/ownership-verification.md)

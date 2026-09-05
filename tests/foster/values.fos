@@ -1,6 +1,7 @@
 //! Floats, code points, bytes, widening, and binary buffers.
 
 import core.byte
+import core.string
 import core.bytes
 import core.bytes.buffer as byte_buffer
 import core.result
@@ -52,11 +53,11 @@ test "byte buffers round trip UTF-8 and hexadecimal data" {
     let lower_x = byte_or(Byte.from(120), zero)
     let buffer = ByteBuffer.with_capacity(4)
     buffer.push(capital_a)
-    buffer.extend("BC".utf8)
+    buffer.extend("BC".bytes)
     buffer[1] = lower_x
     let data = buffer.snapshot()
-    assert(text_or(String.from_utf8(data)) == "AxC")
     assert(data.hex() == "417843")
+    assert(text_or(String.from_utf8(move data)) == "AxC")
 }
 
 test "invalid byte construction and UTF-8 return typed errors" {
@@ -66,7 +67,7 @@ test "invalid byte construction and UTF-8 return typed errors" {
     }
     branch Bytes.from_hex("ff") {
         Result.Error(_) -> require(false, "valid hexadecimal was rejected")
-        Result.Ok(data) -> branch String.from_utf8(data) {
+        Result.Ok(data) -> branch String.from_utf8(move data) {
             Result.Error(_) -> ()
             Result.Ok(_) -> require(false, "invalid UTF-8 was accepted")
         }

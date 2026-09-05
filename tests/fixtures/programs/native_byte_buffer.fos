@@ -5,6 +5,6 @@ import core.bytes.buffer
 func main() -> String {
     let output = ByteBuffer.empty()
     output.push(Byte.unchecked(111))
-    output.extend("k".utf8)
+    output.extend("k".bytes)
     output.snapshot().hex()
 }

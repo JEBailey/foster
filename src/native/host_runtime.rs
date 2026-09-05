@@ -94,7 +94,7 @@ static FOSTER_MONOTONIC_ORIGIN: OnceLock<Instant> = OnceLock::new();
 static FOSTER_NETWORK: OnceLock<Mutex<FosterNetwork>> = OnceLock::new();
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_initialize() -> u8 {
+extern "C" fn foster_rt_v2_host_initialize() -> u8 {
     FOSTER_HOST_DIRECTORY.get_or_init(|| std::env::current_dir().unwrap_or_default());
     FOSTER_MONOTONIC_ORIGIN.get_or_init(Instant::now);
     FOSTER_NETWORK.get_or_init(|| Mutex::new(FosterNetwork::default()));
@@ -131,7 +131,7 @@ fn foster_host_component(value: Option<&std::ffi::OsStr>) -> Result<String, Stri
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_call_nullary(operation: i64) -> usize {
+extern "C" fn foster_rt_v2_host_call_nullary(operation: i64) -> usize {
     let response = match operation {
         45 => foster_host_io(
             "current_directory",
@@ -159,7 +159,7 @@ extern "C" fn foster_rt_v1_host_call_nullary(operation: i64) -> usize {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_call_string(operation: i64, value: usize) -> usize {
+extern "C" fn foster_rt_v2_host_call_string(operation: i64, value: usize) -> usize {
     let value = unsafe { string_value(value) };
     let response = match operation {
         26 => foster_host_io(
@@ -231,7 +231,7 @@ extern "C" fn foster_rt_v1_host_call_string(operation: i64, value: usize) -> usi
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_call_strings(
+extern "C" fn foster_rt_v2_host_call_strings(
     operation: i64,
     first: usize,
     second: usize,
@@ -270,7 +270,7 @@ extern "C" fn foster_rt_v1_host_call_strings(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_call_string_ints(
+extern "C" fn foster_rt_v2_host_call_string_ints(
     operation: i64,
     text: usize,
     first: i64,
@@ -293,7 +293,7 @@ extern "C" fn foster_rt_v1_host_call_string_ints(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_call_int(operation: i64, value: i64) -> usize {
+extern "C" fn foster_rt_v2_host_call_int(operation: i64, value: i64) -> usize {
     let response = match operation {
         48 => foster_host_network(
             "accept",
@@ -317,7 +317,7 @@ extern "C" fn foster_rt_v1_host_call_int(operation: i64, value: i64) -> usize {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_call_ints(operation: i64, first: i64, second: i64) -> usize {
+extern "C" fn foster_rt_v2_host_call_ints(operation: i64, first: i64, second: i64) -> usize {
     let response = match operation {
         49 => foster_host_network(
             "read",
@@ -337,7 +337,7 @@ extern "C" fn foster_rt_v1_host_call_ints(operation: i64, first: i64, second: i6
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_call_string_bytes(
+extern "C" fn foster_rt_v2_host_call_string_bytes(
     operation: i64,
     text: usize,
     data: usize,
@@ -358,7 +358,7 @@ extern "C" fn foster_rt_v1_host_call_string_bytes(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_call_int_bytes(
+extern "C" fn foster_rt_v2_host_call_int_bytes(
     operation: i64,
     handle: i64,
     data: usize,
@@ -376,7 +376,7 @@ extern "C" fn foster_rt_v1_host_call_int_bytes(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_call_int_string(
+extern "C" fn foster_rt_v2_host_call_int_string(
     operation: i64,
     handle: i64,
     text: usize,
@@ -404,7 +404,7 @@ unsafe fn foster_host_input_bytes<'a>(data: usize, length: i64) -> &'a [u8] {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_require_ok(response: usize) -> u8 {
+extern "C" fn foster_rt_v2_host_require_ok(response: usize) -> u8 {
     let response = unsafe { foster_host_response_ref(response) };
     if !response.ok {
         eprintln!("error: {}", response.error_message);
@@ -414,12 +414,12 @@ extern "C" fn foster_rt_v1_host_require_ok(response: usize) -> u8 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_ok(response: usize) -> u8 {
+extern "C" fn foster_rt_v2_host_ok(response: usize) -> u8 {
     u8::from(unsafe { foster_host_response_ref(response).ok })
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_integer(response: usize, index: i64) -> i64 {
+extern "C" fn foster_rt_v2_host_integer(response: usize, index: i64) -> i64 {
     let response = unsafe { foster_host_response_ref(response) };
     usize::try_from(index)
         .ok()
@@ -429,12 +429,12 @@ extern "C" fn foster_rt_v1_host_integer(response: usize, index: i64) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_error_value(response: usize) -> i64 {
+extern "C" fn foster_rt_v2_host_error_value(response: usize) -> i64 {
     unsafe { foster_host_response_ref(response).error_value }
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_string(response: usize, field: i64, index: i64) -> usize {
+extern "C" fn foster_rt_v2_host_string(response: usize, field: i64, index: i64) -> usize {
     let response = unsafe { foster_host_response_ref(response) };
     let value = match field {
         0 => &response.text,
@@ -447,17 +447,17 @@ extern "C" fn foster_rt_v1_host_string(response: usize, field: i64, index: i64) 
             .unwrap_or_else(|| std::process::abort()),
         _ => std::process::abort(),
     };
-    Box::into_raw(Box::new(value.clone())) as usize
+    owned_string(value)
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_bytes_length(response: usize) -> i64 {
+extern "C" fn foster_rt_v2_host_bytes_length(response: usize) -> i64 {
     i64::try_from(unsafe { foster_host_response_ref(response).bytes.len() })
         .unwrap_or_else(|_| std::process::abort())
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_copy_bytes(response: usize, destination: usize) -> u8 {
+extern "C" fn foster_rt_v2_host_copy_bytes(response: usize, destination: usize) -> u8 {
     let bytes = unsafe { &foster_host_response_ref(response).bytes };
     if !bytes.is_empty() {
         if destination == 0 {
@@ -469,13 +469,13 @@ extern "C" fn foster_rt_v1_host_copy_bytes(response: usize, destination: usize) 
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_strings_length(response: usize) -> i64 {
+extern "C" fn foster_rt_v2_host_strings_length(response: usize) -> i64 {
     i64::try_from(unsafe { foster_host_response_ref(response).strings.len() })
         .unwrap_or_else(|_| std::process::abort())
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_host_release(response: usize) -> u8 {
+extern "C" fn foster_rt_v2_host_release(response: usize) -> u8 {
     unsafe { drop(Box::from_raw(response as *mut FosterHostResponse)) };
     0
 }
@@ -526,7 +526,7 @@ struct FosterFuture {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_remote_spawn(state: u64, release: usize, borrowed: u8) -> usize {
+extern "C" fn foster_rt_v2_remote_spawn(state: u64, release: usize, borrowed: u8) -> usize {
     let (sender, receiver) = mpsc::channel::<FosterRemoteMessage>();
     let worker = thread::spawn(move || {
         while let Ok(message) = receiver.recv() {
@@ -547,7 +547,7 @@ extern "C" fn foster_rt_v1_remote_spawn(state: u64, release: usize, borrowed: u8
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_remote_call(
+extern "C" fn foster_rt_v2_remote_call(
     remote: usize,
     callback: usize,
     arguments: usize,
@@ -594,7 +594,7 @@ extern "C" fn foster_rt_v1_remote_call(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_future_await(future: usize) -> u64 {
+extern "C" fn foster_rt_v2_future_await(future: usize) -> u64 {
     let future = unsafe { &*(future as *const FosterFuture) };
     let receiver = future
         .receiver
@@ -610,7 +610,7 @@ extern "C" fn foster_rt_v1_future_await(future: usize) -> u64 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_remote_release(remote: usize) -> u8 {
+extern "C" fn foster_rt_v2_remote_release(remote: usize) -> u8 {
     let remote = unsafe { Box::from_raw(remote as *mut FosterRemote) };
     let FosterRemote {
         sender,
@@ -627,7 +627,7 @@ extern "C" fn foster_rt_v1_remote_release(remote: usize) -> u8 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v1_future_release(future: usize) -> u8 {
+extern "C" fn foster_rt_v2_future_release(future: usize) -> u8 {
     unsafe { drop(Box::from_raw(future as *mut FosterFuture)) };
     0
 }

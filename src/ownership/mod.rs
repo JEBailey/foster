@@ -14,13 +14,10 @@ pub use mir::{
     ResultProvenance, ReturnKind, TemporaryId, Terminator, UseMode,
 };
 
-/// Source-language compatibility level. Increment for intentional breaking
-/// syntax or type-system changes.
+/// Current source-language revision; does not select older semantics.
 pub const LANGUAGE_VERSION: u16 = 7;
 
-/// Normative ownership-contract compatibility level. Increment whenever a
-/// previously accepted safe program is intentionally rejected or an ownership
-/// guarantee changes meaning.
+/// Current ownership-contract revision; does not select older semantics.
 pub const MODEL_VERSION: u16 = 3;
 
 use crate::error::FosterError;

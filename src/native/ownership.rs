@@ -8,7 +8,7 @@ pub enum MemoryManagement {
     Trivial,
     BorrowedAddress,
     ManagedObject(LayoutId),
-    /// Legacy String/Arguments and raw runtime pointers have no general retain/release protocol.
+    /// Raw host pointers have no Foster retain/release protocol.
     UnmanagedRuntime,
 }
 
@@ -27,20 +27,40 @@ impl NativeLayouts<'_> {
                 let object = self.logical.get(layout);
                 if matches!(object.kind, LayoutKind::Pointer { .. }) {
                     MemoryManagement::BorrowedAddress
-                } else if !object.materialized
-                    || matches!(object.kind,
-                    LayoutKind::Record { record, .. } if Some(record) == self.program.string_record)
-                {
+                } else if !object.materialized {
                     MemoryManagement::UnmanagedRuntime
                 } else {
                     MemoryManagement::ManagedObject(layout)
                 }
             }
-            NativeType::String
-            | NativeType::Arguments
-            | NativeType::StringList
-            | NativeType::Opaque => MemoryManagement::UnmanagedRuntime,
+            NativeType::String => MemoryManagement::ManagedObject(self.string_layout()),
+            NativeType::Opaque => MemoryManagement::UnmanagedRuntime,
             _ => MemoryManagement::Trivial,
+        }
+    }
+
+    pub(super) fn string_layout(self) -> LayoutId {
+        self.logical
+            .record(self.program.string_record.expect("native String schema"))
+            .expect("native String layout")
+    }
+
+    /// Symbol literals share the immutable text ABI while retaining their logical type.
+    /// Their stored pointer is a String, not an allocated Symbol wrapper.
+    pub(super) fn storage_layout(self, layout: LayoutId) -> LayoutId {
+        if matches!(self.logical.get(layout).kind,
+            LayoutKind::Record { record, .. } if Some(record) == self.program.symbol_record)
+        {
+            self.string_layout()
+        } else {
+            layout
+        }
+    }
+
+    pub(super) fn managed_layout(self, ty: NativeType) -> Option<LayoutId> {
+        match self.management(ty) {
+            MemoryManagement::ManagedObject(layout) => Some(layout),
+            _ => None,
         }
     }
 
@@ -82,7 +102,12 @@ impl ObjectRuntime<'_> {
         object: ClifValue,
         layout: LayoutId,
     ) {
-        retain_object(builder, object, layout, self.layouts.physical);
+        retain_object(
+            builder,
+            object,
+            self.layouts.storage_layout(layout),
+            self.layouts.physical,
+        );
     }
 
     pub(super) fn release(
@@ -96,7 +121,7 @@ impl ObjectRuntime<'_> {
             builder,
             module,
             object,
-            layout,
+            self.layouts.storage_layout(layout),
             self.layouts.physical,
             self.destructors,
         )
@@ -447,7 +472,7 @@ pub(super) fn define_release_thunks(
                 &mut builder,
                 module,
                 object,
-                layout,
+                layouts.storage_layout(layout),
                 layouts.physical,
                 destructors,
             )?;
@@ -523,7 +548,7 @@ pub(super) fn lower_drop_buffer(
             builder,
             module,
             value,
-            pointee,
+            layouts.storage_layout(pointee),
             layouts.physical,
             destructors,
         )?;
@@ -582,7 +607,7 @@ pub(super) fn lower_drop_fields(
             builder,
             module,
             child,
-            field.pointee,
+            layouts.storage_layout(field.pointee),
             layouts.physical,
             destructors,
         )?;
@@ -644,18 +669,16 @@ pub(super) fn retain_object(
 ) {
     let physical = physical_layouts.get(layout);
     let pointer_type = builder.func.dfg.value_type(object);
-    let count = builder.ins().load(
+    let address = builder
+        .ins()
+        .iadd_imm_s(object, i64::from(physical.header.strong_count_offset));
+    let one = builder.ins().iconst(pointer_type, 1);
+    builder.ins().atomic_rmw(
         pointer_type,
         MemFlagsData::trusted(),
-        object,
-        physical.header.strong_count_offset as i32,
-    );
-    let count = builder.ins().iadd_imm_s(count, 1);
-    builder.ins().store(
-        MemFlagsData::trusted(),
-        count,
-        object,
-        physical.header.strong_count_offset as i32,
+        cranelift_codegen::ir::AtomicRmwOp::Add,
+        address,
+        one,
     );
 }
 
@@ -669,20 +692,24 @@ pub(super) fn release_object(
 ) -> Result<(), FosterError> {
     let physical = physical_layouts.get(layout);
     let pointer_type = builder.func.dfg.value_type(object);
-    let count = builder.ins().load(
+    // SSA entry seeds and moved payload slots contain null, not an owned object.
+    let present = builder.create_block();
+    let finished = builder.create_block();
+    let is_null = builder.ins().icmp_imm_s(IntCC::Equal, object, 0);
+    builder.ins().brif(is_null, finished, &[], present, &[]);
+    builder.switch_to_block(present);
+    let address = builder
+        .ins()
+        .iadd_imm_s(object, i64::from(physical.header.strong_count_offset));
+    let one = builder.ins().iconst(pointer_type, 1);
+    let previous = builder.ins().atomic_rmw(
         pointer_type,
         MemFlagsData::trusted(),
-        object,
-        physical.header.strong_count_offset as i32,
+        cranelift_codegen::ir::AtomicRmwOp::Sub,
+        address,
+        one,
     );
-    let count = builder.ins().iadd_imm_s(count, -1);
-    builder.ins().store(
-        MemFlagsData::trusted(),
-        count,
-        object,
-        physical.header.strong_count_offset as i32,
-    );
-    let is_zero = builder.ins().icmp_imm_s(IntCC::Equal, count, 0);
+    let is_zero = builder.ins().icmp_imm_s(IntCC::Equal, previous, 1);
     let destroy = builder.create_block();
     let continuation = builder.create_block();
     builder.ins().brif(is_zero, destroy, &[], continuation, &[]);
@@ -691,5 +718,7 @@ pub(super) fn release_object(
     builder.ins().call(destructor, &[object]);
     builder.ins().jump(continuation, &[]);
     builder.switch_to_block(continuation);
+    builder.ins().jump(finished, &[]);
+    builder.switch_to_block(finished);
     Ok(())
 }

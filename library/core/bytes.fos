@@ -3,6 +3,7 @@
 import core.byte
 import core.list
 import core.result
+import core.string
 
 /// Private host-backed compact byte storage.
 intrinsic type RawBytes
@@ -14,8 +15,6 @@ type BytesHost = {}
 func BytesHost.from_list(values: List<Byte>) -> Bytes [consume values] = intrinsic("bytes.from_list")
 /// Expands compact storage into a Foster list.
 func BytesHost.to_list(values: Bytes) -> List<Byte> = intrinsic("bytes.to_list")
-/// Constructs text from bytes already validated by Foster code.
-func BytesHost.decode_utf8(value: Bytes) -> String = intrinsic("bytes.decode_utf8")
 
 /// Immutable binary data backed by compact private host storage.
 pub type Bytes = {
@@ -106,7 +105,13 @@ pub func Bytes.hex(self: Bytes) -> String {
         output.push(hex_digit(value - value / 16 * 16))
         index = index + 1
     }
-    BytesHost.decode_utf8(Bytes.from(move output))
+    branch String.from_utf8(Bytes.from(move output)) {
+        Result.Ok(text) -> text
+        Result.Error(_) -> {
+            assert(false, "hexadecimal output must be valid UTF-8")
+            ""
+        }
+    }
 }
 
 /// Returns whether two byte sequences contain identical values.
@@ -171,22 +176,14 @@ pub func Bytes.utf8_valid?(self: Bytes) -> Bool {
     true
 }
 
-/// Decodes valid UTF-8 or returns a typed error.
-pub func String.from_utf8(value: Bytes) -> Result<String, Utf8Error> {
-    branch {
-        value.utf8_valid?() -> Result.Ok(BytesHost.decode_utf8(value))
-        _ -> Result.Error(Utf8Error { offset: -1, message: "Bytes are not valid UTF-8" })
-    }
-}
-
 test "bytes round-trip UTF-8 and hexadecimal text" {
-    let encoded = "Foster λ".utf8
-    let valid = branch String.from_utf8(encoded) {
+    let encoded = "Foster λ".bytes
+    assert(encoded.hex() == "466f7374657220cebb")
+    let valid = branch String.from_utf8(move encoded) {
         Result.Ok(value) -> value == "Foster λ"
         Result.Error(_) -> false
     }
     assert(valid)
-    assert(encoded.hex() == "466f7374657220cebb")
 }
 
 /// Converts one hexadecimal digit to its integer nibble, or `-1` when invalid.
@@ -218,13 +215,13 @@ func hex_digit(value: Int) -> Byte {
 
 test "UTF-8 validation rejects invalid boundaries and truncated sequences" {
     assert(Bytes.from([Byte.unchecked(0)]).utf8_valid?())
-    assert("λ€🙂".utf8.utf8_valid?())
+    assert("λ€🙂".bytes.utf8_valid?())
     assert(!Bytes.from([Byte.unchecked(128)]).utf8_valid?())
     assert(!Bytes.from([Byte.unchecked(192), Byte.unchecked(128)]).utf8_valid?())
     assert(!Bytes.from([Byte.unchecked(224), Byte.unchecked(159), Byte.unchecked(191)]).utf8_valid?())
     assert(!Bytes.from([Byte.unchecked(237), Byte.unchecked(160), Byte.unchecked(128)]).utf8_valid?())
     assert(!Bytes.from([Byte.unchecked(244), Byte.unchecked(144), Byte.unchecked(128), Byte.unchecked(128)]).utf8_valid?())
     assert(!Bytes.from([Byte.unchecked(240), Byte.unchecked(159)]).utf8_valid?())
-    assert("abcdef".utf8.slice(2, 4).hex() == "6364")
+    assert("abcdef".bytes.slice(2, 4).hex() == "6364")
     ()
 }

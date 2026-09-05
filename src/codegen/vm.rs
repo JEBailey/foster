@@ -1772,9 +1772,7 @@ fn verification_type(ty: Type) -> VerificationType {
         Type::Float => VerificationType::Float,
         Type::CodePoint => VerificationType::CodePoint,
         Type::Byte => VerificationType::Byte,
-        Type::Opaque | Type::String | Type::Arguments | Type::StringList | Type::Object(_) => {
-            VerificationType::Unknown
-        }
+        Type::Opaque | Type::String | Type::Object(_) => VerificationType::Unknown,
     }
 }
 

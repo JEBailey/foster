@@ -1,5 +1,6 @@
 import core.bytes.buffer as byte_buffer
 import core.bytes
+import core.string
 import core.result
 
 func render(value: Result<Bytes, HexError>) -> String {
@@ -12,10 +13,10 @@ func render(value: Result<Bytes, HexError>) -> String {
 func buffer_and_decode(data: Bytes) -> String {
     let buffer = ByteBuffer.with_capacity(data.length + 1)
     buffer.extend(data)
-    buffer.extend("!".utf8)
+    buffer.extend("!".bytes)
     let encoded = (move buffer).freeze()
 
-    branch String.from_utf8(encoded) {
+    branch String.from_utf8(move encoded) {
         Result.Ok(text) -> text
         Result.Error(error) -> error.message
     }

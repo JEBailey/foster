@@ -149,6 +149,6 @@ Implementation must include witnesses for:
 - releasing remote read loans safely during cancellation; and
 - equivalent VM/native behavior with optimization enabled and disabled.
 
-Source compatibility and ownership-version gates apply when enforcement or the awaited result
-type changes. Cross-worker scheduling, fairness, deadlock freedom, exact host interruption latency,
+Implement enforcement and the awaited result type directly, without retaining the prior behavior
+or adding a compatibility mode. Cross-worker scheduling, fairness, deadlock freedom, exact host interruption latency,
 and process-wide shutdown ordering remain separate design work.

@@ -1,5 +1,6 @@
 import core.bytes.buffer as byte_buffer
 import core.bytes
+import core.string
 import core.result
 import std.io as stream
 
@@ -43,7 +44,7 @@ func MemoryWriter.flush(self: MemoryWriter) -> Result<(), StreamError> {
 func render(outcome: Result<Int, StreamError>, writer: MemoryWriter) -> String {
     branch outcome {
         Result.Error(error) -> error.message
-        Result.Ok(_) -> branch String.from_utf8(writer.contents) {
+        Result.Ok(_) -> branch String.from_utf8(move writer.contents) {
             Result.Error(error) -> error.message
             Result.Ok(text) -> text
         }
@@ -51,7 +52,7 @@ func render(outcome: Result<Int, StreamError>, writer: MemoryWriter) -> String {
 }
 
 func main() -> String {
-    let reader = MemoryReader { remaining: "Foster!".utf8 }
+    let reader = MemoryReader { remaining: "Foster!".bytes }
     let writer = MemoryWriter { contents: Bytes.empty() }
-    render(stream::copy(reader, writer), writer)
+    render(stream::copy(reader, writer), move writer)
 }

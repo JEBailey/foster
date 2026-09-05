@@ -76,6 +76,13 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
     let shared = vm::compile_shared(compilation)?;
     let mut program = shared.metadata;
     let mut layouts = crate::codegen::layout::legalize(&mut program)?;
+    if let Some(record) = program.string_record {
+        layouts.instantiate_type(&VerificationType::Record {
+            record,
+            arguments: Vec::new(),
+        })?;
+        layouts.instantiate_type(&VerificationType::Bytes)?;
+    }
     let main = program
         .main
         .ok_or_else(|| native_error("native compilation requires a `main` function"))?;
@@ -372,11 +379,13 @@ func main() -> Int {
                 .iter()
                 .any(|policy| matches!(policy, MemoryManagement::ManagedObject(_)))
         }));
-        assert!(prepared.functions().iter().any(|function| {
-            function
-                .management()
-                .contains(&MemoryManagement::UnmanagedRuntime)
-        }));
+        for function in prepared.functions() {
+            for (ty, management) in function.ir.value_types.iter().zip(function.management()) {
+                if *ty == NativeType::String {
+                    assert!(matches!(management, MemoryManagement::ManagedObject(_)));
+                }
+            }
+        }
         for function in prepared.functions() {
             assert_eq!(function.management().len(), function.ir.value_types.len());
             assert_eq!(

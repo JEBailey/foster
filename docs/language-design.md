@@ -101,7 +101,7 @@ arguments and return `()`:
 
 ```foster
 test "decoding preserves text" {
-    let decoded = decode("Foster".utf8)
+    let decoded = decode("Foster".bytes)
     println(decoded)
 }
 ```
@@ -738,7 +738,7 @@ let byte = Byte.from(255)
 let data = Bytes.from_hex("89504e47")
 
 let buffer = ByteBuffer.with_capacity(4096)
-buffer.extend("Foster".utf8)
+buffer.extend("Foster".bytes)
 let snapshot = buffer.snapshot()
 let finished = (move buffer).freeze()
 ```
@@ -754,8 +754,8 @@ separately as a cursor contract.
 Passing all three types borrows by default. A buffer mutation requires `mut` access, indexed loans
 are invalidated by structural changes, and converting a buffer without copying requires an
 explicit move through `(move buffer).freeze()`. `buffer.snapshot()` is the copying alternative.
-Strings never convert to bytes implicitly: `.utf8` encodes, and `String.from_utf8` performs checked
-decoding.
+Strings never convert to bytes implicitly: `.bytes` exposes immutable UTF-8 bytes, and
+`String.from_utf8(move bytes)` validates and transfers byte storage into a String.
 
 ## Resource identity and capabilities
 

@@ -17,7 +17,7 @@ func match_second(value: Int) -> Bool {
     value == 2
 }
 
-func read_bytes(value: String) -> Bytes [read value] { value.utf8 }
+func read_bytes(value: String) -> Bytes [read value] { value.bytes }
 
 func main() -> Int {
     let original = [Box { value: 42 }]
@@ -50,7 +50,7 @@ func main() -> Int {
     assert([[1], [], [2, 3]].flatten() == [1, 2, 3])
 
     let buffer = ByteBuffer.empty()
-    buffer.extend("abc".utf8)
+    buffer.extend("abc".bytes)
     let snapshot = buffer.snapshot()
     buffer.push(Byte.unchecked(100))
     assert(snapshot.hex() == "616263")

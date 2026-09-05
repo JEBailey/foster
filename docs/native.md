@@ -123,7 +123,7 @@ The backend separates program preparation (`native/program.rs`), object assembly
 (`native/emission.rs`), allocation and retain/release/destructor policy (`native/ownership.rs`),
 and runtime-shim generation and linking (`native/runtime.rs`). Ownership-bearing SSA instructions
 remain explicit; the management classification describes representation policy, not ownership of
-every SSA alias. Legacy runtime pointers are explicitly classified as unmanaged by the aggregate
+every SSA alias. Raw host pointers are explicitly classified as unmanaged by the aggregate
 retain/release protocol. Helper definitions are emitted in stable key order, so hash-map iteration
 does not change repeated object emission.
 
@@ -187,8 +187,9 @@ checked size arithmetic. Projected mutable fields use typed borrowed addresses; 
 contents updates the owning field rather than treating its address as an object.
 
 The object exports a C-ABI `foster_native_entry` symbol and, when needed, a result-release thunk. A
-generated, temporary Rust entry shim collects Unicode command arguments, supplies legacy
-argument/String views and typed platform imports, calls that symbol, supplies raw zeroed
+generated, temporary Rust entry shim collects Unicode command arguments, imports them into managed
+Foster `Arguments`, `List<String>`, and `String` storage, supplies typed platform imports,
+calls that symbol, supplies raw zeroed
 allocation/deallocation, formats its result, and supplies the platform startup, operating-system,
 actor-worker, and future services to the system linker. Filesystem paths resolve relative to the
 captured startup directory; TCP listeners and streams live behind typed integer handles owned by
@@ -199,21 +200,28 @@ are generated Cranelift code. Structural equality uses a shared runtime helper t
 descriptors and recursively compares initialized values, including IEEE floating-point equality.
 The authoritative intrinsic registry also declares each builtin's native policy:
 Foster replacement, inline scalar/representation primitive, typed runtime import, or unavailable.
-Native member helper selection for the legacy process/String ABI is registry-owned rather than an
-ad hoc backend switch.
+Strings use the ordinary String record descriptor and owned Bytes storage. Generated boundary
+adapters allocate and access this storage; Rust host responses copy text into it before releasing
+their temporary buffers. Static literals are borrowed UTF-8 source data, not Rust String objects.
+Argument field access and indexing use ordinary record/list instructions. `.bytes` retains the
+underlying immutable Bytes, and `String.from_utf8(move bytes)` validates and constructs a String
+in Foster without a decoding intrinsic or native storage copy. Native text property helpers remain
+registry-owned; Unicode classification and numeric text conversion still use runtime primitives.
+Branch-edge cleanup releases owned values omitted from successor SSA arguments. Generated
+retain/release operations use atomic reference counts, including text shared with remote workers.
 Temporary object and shim files are removed after linking; the resulting executable does not
 contain or invoke the Foster VM.
 
 The platform boundary is a stable, explicitly versioned C ABI. Imported symbols use the
-`foster_rt_v1_*` namespace, so an incompatible runtime fails at link time. Checked integer
+`foster_rt_v2_*` namespace, so an incompatible runtime fails at link time. Checked integer
 arithmetic, invalid shifts and conversions, division errors, and bounds failures call that ABI and
 produce friendly diagnostics rather than machine traps.
 
 `native/abi.rs` is the authoritative registry of runtime wire signatures and ownership contracts.
 Runtime imports are checked against it and Cranelift signatures are built from its wire types.
 Every linked Rust shim also contains compile-time function-pointer checks for all registered
-exports, catching drift on either side of the ABI. Payloads governed by callbacks and legacy text
-allocations are identified separately rather than claimed to have unconditional managed ownership.
+exports, catching drift on either side of the ABI. Text-producing helpers return managed owned
+values; callback-governed payloads retain their explicit transfer contracts.
 These checks establish signature compatibility; they do not by themselves prove runtime ownership
 behavior or eliminate the correctness gaps below.
 
@@ -223,8 +231,6 @@ The accepted [remote lifecycle contract](remote-semantics.md) also requires scop
 terminal failed workers, typed future error outcomes, and static request-lifetime checks. Existing
 native remote support must not be interpreted as implementing those new requirements.
 
-Legacy runtime-created String values do not yet participate in aggregate retain/release, so
-string-heavy native programs can retain allocations until process exit. Native failures inside
-remote methods also remain process-fatal rather than being stored on the returned future; even an
+Native failures inside remote methods remain process-fatal rather than being stored on the returned future; even an
 unawaited failing remote call can terminate the process. These are unresolved ownership and
 failure-propagation ABI issues, not guarantees established by the current parity suite.

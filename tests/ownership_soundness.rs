@@ -535,7 +535,7 @@ func main() -> Int {
 }
 
 #[test]
-fn ownership_compatibility_surface_is_stable() {
+fn ownership_revision_and_diagnostic_catalog_match_current_contract() {
     assert_eq!(foster::ownership::LANGUAGE_VERSION, 7);
     assert_eq!(foster::ownership::MODEL_VERSION, 3);
     assert_eq!(
@@ -548,7 +548,7 @@ fn ownership_compatibility_surface_is_stable() {
 }
 
 #[test]
-fn ownership_model_two_defines_expression_temporary_lifetimes() {
+fn expression_temporaries_live_through_the_borrowing_call() {
     let scoped = r#"
 func observe[value: group Int](item: ref[value] Int) -> Int { item }
 func make() -> Int { 42 }

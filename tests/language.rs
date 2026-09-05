@@ -470,7 +470,7 @@ fn symbols_and_bytes_use_foster_type_representations() {
     let compilation = foster::compile(
         r#"
 func symbol() -> Symbol { :ready }
-func bytes() -> Bytes { "data".utf8 }
+func bytes() -> Bytes { "data".bytes }
 func main() -> Symbol { symbol() }
 "#,
     )
@@ -495,7 +495,7 @@ func main() -> Symbol { symbol() }
         Some("ready")
     );
     assert_eq!(
-        foster::run("func main() { \"data\".utf8 }")
+        foster::run("func main() { \"data\".bytes }")
             .unwrap()
             .as_bytes(),
         Some(b"data".as_slice())
@@ -2741,6 +2741,7 @@ fn code_points_do_not_expose_a_value_member() {
 fn bytes_and_byte_buffers_enforce_bounds_and_round_trip_utf8() {
     let source = r#"
 import core.byte
+import core.string
 import core.bytes.buffer as byte_buffer
 import core.bytes
 import core.result
@@ -2766,11 +2767,12 @@ func main() -> String {
 
     let buffer = ByteBuffer.with_capacity(4)
     buffer.push(capital_a)
-    buffer.extend("BC".utf8)
+    buffer.extend("BC".bytes)
     buffer[1] = lower_x
 
     let data = buffer.snapshot()
-    text_or(String.from_utf8(data)) + ":" + data.hex()
+    let hex = data.hex()
+    text_or(String.from_utf8(move data)) + ":" + hex
 }
 "#;
 
@@ -2823,15 +2825,19 @@ func main() -> Int {
 #[test]
 fn bytes_decode_hex_and_report_invalid_utf8() {
     let source = r#"
+import core.string
 import core.bytes
 import core.result
 
 func decode(value: Result<Bytes, HexError>) -> String {
     branch value {
         Result.Error(error) -> error.message
-        Result.Ok(data) -> branch String.from_utf8(data) {
-            Result.Ok(text) -> text
-            Result.Error(_) -> data.hex()
+        Result.Ok(data) -> {
+            let hex = data.hex()
+            branch String.from_utf8(move data) {
+                Result.Ok(text) -> text
+                Result.Error(_) -> hex
+            }
         }
     }
 }
@@ -2913,7 +2919,7 @@ func main() -> Int {
     let buffer = ByteBuffer.empty()
     buffer.push(Byte.unchecked(1))
     let item = ref buffer[0]
-    buffer.extend("more".utf8)
+    buffer.extend("more".bytes)
     item.int
 }
 "#;
