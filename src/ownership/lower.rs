@@ -258,7 +258,29 @@ impl<'a> Builder<'a> {
             hir::Stmt::Set { place, value } => {
                 self.begin_temporary_scope();
                 let destination = self.owned_place(*place);
-                self.expression_into(*value, Context::Consume, destination);
+                // Preserve the complete value before evaluating any dynamic
+                // component of the destination. The temporary also lets a
+                // branch-valued right side join before selecting the place.
+                let value_temporary = self.reserve_assignment_temporary(*value);
+                self.expression_into(*value, Context::Consume, Some(value_temporary.clone()));
+                self.assignment_place_address(*place);
+                let copy = self.copy_expression(*value);
+                self.emit(Operation::Use {
+                    place: value_temporary.clone(),
+                    mode: if copy { UseMode::Copy } else { UseMode::Move },
+                    span: self.span(*value),
+                });
+                if let Some(destination) = destination {
+                    self.emit(Operation::StoreBorrower {
+                        destination,
+                        value: if copy {
+                            BorrowValue::Empty
+                        } else {
+                            BorrowValue::MovePlace(value_temporary)
+                        },
+                        span: self.span(*value),
+                    });
+                }
                 self.place_use(*place, UseMode::Write);
                 self.end_temporary_scope(self.span(*value));
             }
@@ -421,7 +443,9 @@ impl<'a> Builder<'a> {
             }
             hir::Expr::MoveOut(place) => {
                 self.place_use(*place, UseMode::Move);
-                if let Some(place) = hir::queries::expression_place(self.hir, *place) {
+                if let Some(place) =
+                    crate::semantics::expression_place(self.hir, &self.types.member_kinds, *place)
+                {
                     self.emit(Operation::Invalidate {
                         place: Place::from_hir(place),
                         kind: InvalidationKind::Consume,
@@ -676,6 +700,20 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// Evaluates only the expressions required to select an assignment place.
+    /// The caller invokes this after evaluating the right-hand value.
+    fn assignment_place_address(&mut self, expression: ExprId) {
+        match self.hir.expressions[expression] {
+            hir::Expr::Member { object, .. } => self.assignment_place_address(object),
+            hir::Expr::Index { object, index } => {
+                self.assignment_place_address(object);
+                self.expression(index, Context::Read);
+            }
+            hir::Expr::Reference(place) => self.assignment_place_address(place),
+            _ => {}
+        }
+    }
+
     fn borrow_value(&mut self, expression: ExprId) -> BorrowValue {
         if let Some(place) = self.active_temporaries.get(&expression) {
             return BorrowValue::Place(place.clone());
@@ -744,10 +782,12 @@ impl<'a> Builder<'a> {
                 self.call_result_borrow_value(*callee, arguments)
             }
             hir::Expr::Branch { .. } => BorrowValue::Empty,
-            hir::Expr::MoveOut(value) => hir::queries::expression_place(self.hir, *value)
-                .map(Place::from_hir)
-                .map(BorrowValue::MovePlace)
-                .unwrap_or(BorrowValue::Empty),
+            hir::Expr::MoveOut(value) => {
+                crate::semantics::expression_place(self.hir, &self.types.member_kinds, *value)
+                    .map(Place::from_hir)
+                    .map(BorrowValue::MovePlace)
+                    .unwrap_or(BorrowValue::Empty)
+            }
             hir::Expr::Remote(value)
             | hir::Expr::Await(value)
             | hir::Expr::Unary { operand: value, .. } => self.borrow_value(*value),
@@ -853,17 +893,8 @@ impl<'a> Builder<'a> {
     }
 
     fn owned_place(&self, expression: ExprId) -> Option<Place> {
-        let place = Place::from_hir(hir::queries::expression_place(self.hir, expression)?);
-        match &self.hir.expressions[expression] {
-            hir::Expr::Member { object, name } => {
-                let ty = self.types.expression_type(*object)?;
-                type_has_field(self.types, ty, name).then_some(place)
-            }
-            hir::Expr::Index { .. }
-            | hir::Expr::Name(ResolvedName::Local(_))
-            | hir::Expr::Reference(_) => Some(place),
-            _ => None,
-        }
+        crate::semantics::expression_place(self.hir, &self.types.member_kinds, expression)
+            .map(Place::from_hir)
     }
 
     fn copy_expression(&self, expression: ExprId) -> bool {
@@ -1003,6 +1034,23 @@ impl<'a> Builder<'a> {
         place
     }
 
+    fn reserve_assignment_temporary(&mut self, expression: ExprId) -> Place {
+        let place = Place::temporary(TemporaryId(self.next_temporary));
+        self.next_temporary += 1;
+        self.emit(Operation::Initialize {
+            place: place.clone(),
+            span: self.span(expression),
+        });
+        // Unlike an expression temporary, this is the destination into which
+        // the RHS is about to be evaluated. Caching it as the value of the RHS
+        // would make that value appear to borrow from itself.
+        self.temporary_scopes
+            .last_mut()
+            .expect("assignment temporary requires an expression scope")
+            .push((expression, place.clone()));
+        place
+    }
+
     fn pattern_has_bindings(pattern: &hir::Pattern) -> bool {
         match pattern.unspanned() {
             hir::Pattern::Binding(_) => true,
@@ -1111,18 +1159,5 @@ impl<'a> Builder<'a> {
         let id = self.blocks.len();
         self.blocks.push(BasicBlock::default());
         id
-    }
-}
-
-fn type_has_field(types: &TypeInformation, ty: crate::types::TypeId, name: &str) -> bool {
-    match &types.types[ty] {
-        crate::types::Type::Record { record, .. } => types
-            .record_fields
-            .get(record)
-            .is_some_and(|fields| fields.contains(name)),
-        crate::types::Type::Intersection(members) => members
-            .iter()
-            .any(|member| type_has_field(types, *member, name)),
-        _ => false,
     }
 }

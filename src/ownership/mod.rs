@@ -56,7 +56,7 @@ fn finish_check(
 ) -> Result<Program, FosterError> {
     program.requirements = regions::analyze_requirements(&program);
     check::check(hir, types, &program)?;
-    regions::validate(hir, &program)?;
+    regions::validate(hir, types, &program)?;
     Ok(program)
 }
 

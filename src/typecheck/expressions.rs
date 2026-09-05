@@ -186,9 +186,19 @@ impl Checker<'_> {
                 place,
                 value: value_expression,
             } => {
-                let place = self.infer_expression(function, *place)?;
+                let place_type = self.infer_expression(function, *place)?;
+                if crate::semantics::expression_category(self.hir, &self.member_kinds, *place)
+                    != crate::semantics::ExpressionCategory::Place
+                {
+                    return Err(self.error_at_expression(
+                        self.error(function, "left side of assignment is not a stored place"),
+                        function,
+                        *place,
+                        "this expression produces a value rather than designating storage",
+                    ));
+                }
                 let value = self
-                    .check_expression(function, *value_expression, place)
+                    .check_expression(function, *value_expression, place_type)
                     .map_err(|error| {
                         self.error_at_expression(
                             error,
@@ -383,7 +393,15 @@ impl Checker<'_> {
                 let object = self.infer_expression(function, object)?;
                 let stored_field = self.has_stored_member(&object, &name)?;
                 let member = self.infer_member(function, object, &name)?;
-                if !stored_field && matches!(self.resolved(member.clone()), Ty::Callable { .. }) {
+                let kind = if stored_field {
+                    crate::semantics::MemberKind::StoredPlace
+                } else if matches!(self.resolved(member.clone()), Ty::Callable { .. }) {
+                    crate::semantics::MemberKind::Method
+                } else {
+                    crate::semantics::MemberKind::ComputedValue
+                };
+                self.member_kinds.insert(expression_id, kind);
+                if kind == crate::semantics::MemberKind::Method {
                     self.bare_method_members.insert(expression_id);
                 }
                 member

@@ -1,38 +1,6 @@
 use crate::ast;
 
-use super::{Expr, ExprId, LocalId, PackageHir, Place, Projection, ResolvedName};
-
-pub(crate) fn expression_place(hir: &PackageHir, expression: ExprId) -> Option<Place> {
-    match &hir.expressions[expression] {
-        Expr::Name(ResolvedName::Local(root)) => Some(Place {
-            root: *root,
-            projections: Vec::new(),
-        }),
-        Expr::Member { object, name } => {
-            let mut place = expression_place(hir, *object)?;
-            place.projections.push(Projection::Field(name.clone()));
-            Some(place)
-        }
-        Expr::Index { object, index } => {
-            let mut place = expression_place(hir, *object)?;
-            let constant = match hir.expressions[*index] {
-                Expr::Integer(value) => Some(value),
-                _ => None,
-            };
-            place.projections.push(Projection::Index {
-                expression: *index,
-                constant,
-            });
-            Some(place)
-        }
-        Expr::Reference(object) => {
-            let mut place = expression_place(hir, *object)?;
-            place.projections.push(Projection::Dereference);
-            Some(place)
-        }
-        _ => None,
-    }
-}
+use super::{ExprId, LocalId, PackageHir};
 
 pub(crate) fn type_exposes_group(ty: Option<&ast::TypeExpr>, group: &str) -> bool {
     match ty {

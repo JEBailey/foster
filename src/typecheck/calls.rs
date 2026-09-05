@@ -180,8 +180,13 @@ impl Checker<'_> {
             } = self.resolved(callee_type.clone())
         {
             let object_type = self.infer_expression(function, object)?;
-            let value_member = self.has_stored_member(&object_type, &name)?
-                || name == "head" && self.list_element(&object_type).is_some();
+            let value_member = matches!(
+                self.member_kinds.get(&callee),
+                Some(
+                    crate::semantics::MemberKind::StoredPlace
+                        | crate::semantics::MemberKind::ComputedValue
+                )
+            );
             if !value_member {
                 let dispatch = self.method_key(&name, &parameters, &parameter_modes);
                 let slot = self.dispatch_slot(dispatch);
@@ -489,17 +494,8 @@ impl Checker<'_> {
     }
 
     fn argument_is_owned_place(&self, expression: ExprId) -> bool {
-        match self.hir.expressions[expression] {
-            hir::Expr::Name(ResolvedName::Local(_)) | hir::Expr::Index { .. } => true,
-            hir::Expr::Member { object, .. } => self.expressions.get(&object).is_some_and(|ty| {
-                !self.is_string_type(ty)
-                    && !self.is_bytes_type(ty)
-                    && !self.is_byte_buffer_type(ty)
-                    && self.list_element(ty).is_none()
-                    && matches!(self.resolved(ty.clone()), Ty::Record(_, _))
-            }),
-            _ => false,
-        }
+        crate::semantics::expression_category(self.hir, &self.member_kinds, expression)
+            == crate::semantics::ExpressionCategory::Place
     }
 
     pub(super) fn infer_member(

@@ -57,13 +57,13 @@ pub(crate) fn walk_statement<V: Visitor + ?Sized>(
             visitor.visit_local_definition(*local);
         }
         Stmt::Assign { local, value } => {
-            visitor.visit_local_use(*local);
             visitor.visit_expression(hir, *value);
+            visitor.visit_local_use(*local);
         }
         Stmt::Expr(value) => visitor.visit_expression(hir, *value),
         Stmt::Set { place, value } => {
-            visitor.visit_expression(hir, *place);
             visitor.visit_expression(hir, *value);
+            visitor.visit_expression(hir, *place);
         }
     }
 }

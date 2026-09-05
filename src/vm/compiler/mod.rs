@@ -707,6 +707,8 @@ impl FunctionCompiler<'_> {
                 }
                 hir::Stmt::Expr(value) => *result = self.expression(*value)?,
                 hir::Stmt::Set { place, value } => {
+                    // Foster assignments evaluate the complete right-hand side
+                    // before selecting the left-hand destination.
                     let value = self.expression(*value)?;
                     self.store_place(*place, value, span.clone())?;
                     *result = value;

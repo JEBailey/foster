@@ -2313,6 +2313,61 @@ func main() -> String {
 }
 
 #[test]
+fn stored_and_computed_members_have_distinct_place_semantics() {
+    let value = foster::run(
+        r#"
+type Storage = { bytes: String }
+func main() -> String {
+    let storage = Storage { bytes: "before" }
+    storage.bytes = "after"
+    storage.bytes
+}
+"#,
+    )
+    .unwrap();
+    assert_string(value, "after");
+
+    let assigned = foster::compile(
+        r#"
+func main() -> Bytes {
+    let text = "before"
+    text.bytes = "after".bytes
+    text.bytes
+}
+"#,
+    )
+    .unwrap_err();
+    assert!(
+        assigned.message.contains("not a stored place"),
+        "{assigned:?}"
+    );
+
+    let moved = foster::run(
+        r#"
+func main() -> Int {
+    let text = "text"
+    let data = move text.bytes
+    data.length + text.length
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(moved, Value::Integer(8));
+
+    let borrowed_temporary = foster::run(
+        r#"
+func length[value: group Bytes](value: ref[value] Bytes) -> Int { value.length }
+func main() -> Int {
+    let text = "λ"
+    length(ref text.bytes)
+}
+"#,
+    )
+    .unwrap();
+    assert_eq!(borrowed_temporary, Value::Integer(2));
+}
+
+#[test]
 fn local_creation_uses_let_and_assignment_requires_an_existing_local() {
     let value = foster::run(
         r#"

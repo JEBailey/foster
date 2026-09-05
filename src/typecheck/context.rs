@@ -57,6 +57,7 @@ pub(super) struct Checker<'a> {
     pub(super) local_groups: HashMap<LocalId, String>,
     pub(super) expressions: HashMap<ExprId, Ty>,
     pub(super) integer_promotions: HashSet<ExprId>,
+    pub(super) member_kinds: HashMap<ExprId, crate::semantics::MemberKind>,
     pub(super) bare_method_members: HashSet<ExprId>,
     pub(super) resolved_calls: HashMap<ExprId, crate::types::ResolvedCall>,
     pub(super) dispatch_slots: HashMap<MethodKey, DispatchSlot>,

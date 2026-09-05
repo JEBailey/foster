@@ -126,6 +126,115 @@ func main() -> Bool {
 }
 
 #[test]
+fn assignment_evaluates_the_value_before_the_destination() {
+    check(
+        "assignment-order",
+        r#"
+type Trace = { value: Int }
+
+func Trace.mark(self: Trace, digit: Int) -> Int [mut self.value] {
+    self.value = self.value * 10 + digit
+    digit
+}
+
+func main() -> Int {
+    let trace = Trace { value: 0 }
+    let values = [0]
+    values[trace.mark(2) - 2] = trace.mark(1)
+    trace.value * 100 + values[0]
+}
+"#,
+        Ok("1201"),
+    );
+}
+
+#[test]
+fn calls_aggregates_projections_and_branches_follow_source_order() {
+    check(
+        "evaluation-order",
+        r#"
+type Trace = { value: Int }
+type Sink = {}
+type Pair = { a: Int, z: Int }
+
+func Trace.mark(self: Trace, digit: Int) -> Int [mut self.value] {
+    self.value = self.value * 10 + digit
+    digit
+}
+
+func Trace.reset(self: Trace) -> () [mut self.value] {
+    self.value = 0
+    ()
+}
+func combine(left: Int, right: Int) -> Int { left * 10 + right }
+
+func Trace.callable(self: Trace) -> func(Int, Int) -> Int [mut self.value] {
+    self.mark(1)
+    combine
+}
+
+func Trace.sink(self: Trace) -> Sink [mut self.value] {
+    self.mark(1)
+    Sink {}
+}
+
+func Sink.accept(self: Sink, value: Int) -> Int { value }
+
+func Trace.values(self: Trace) -> List<Int> [mut self.value] {
+    self.mark(1)
+    [7]
+}
+
+func Trace.record(self: Trace, digit: Int, answer: Bool) -> Bool [mut self.value] {
+    self.mark(digit)
+    answer
+}
+
+func main() -> Int {
+    let trace = Trace { value: 0 }
+
+    assert(combine(trace.mark(1), trace.mark(2)) == 12)
+    assert(trace.value == 12)
+
+    trace.reset()
+    assert(trace.callable()(trace.mark(2), trace.mark(3)) == 23)
+    assert(trace.value == 123)
+
+    trace.reset()
+    assert(trace.sink().accept(trace.mark(2)) == 2)
+    assert(trace.value == 12)
+
+    trace.reset()
+    let values = [trace.mark(1), trace.mark(2)]
+    assert(values == [1, 2] && trace.value == 12)
+
+    trace.reset()
+    let pair = Pair { z: trace.mark(1), a: trace.mark(2) }
+    assert(pair.z == 1 && pair.a == 2 && trace.value == 12)
+
+    trace.reset()
+    assert(trace.mark(1) * 10 + trace.mark(2) == 12)
+    assert(trace.value == 12)
+
+    trace.reset()
+    assert(trace.values()[trace.mark(2) - 2] == 7)
+    assert(trace.value == 12)
+
+    trace.reset()
+    let selected = branch {
+        trace.record(1, false) -> 0
+        trace.record(2, true) -> 7
+        _ -> 9
+    }
+    assert(selected == 7 && trace.value == 12)
+    trace.value
+}
+"#,
+        Ok("12"),
+    );
+}
+
+#[test]
 fn minimum_integer_negation_is_a_language_error() {
     check(
         "negation",

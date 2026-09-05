@@ -74,6 +74,7 @@ impl<'a> Checker<'a> {
             local_groups: HashMap::new(),
             expressions: HashMap::new(),
             integer_promotions: HashSet::new(),
+            member_kinds: HashMap::new(),
             bare_method_members: HashSet::new(),
             resolved_calls: HashMap::new(),
             dispatch_slots: HashMap::new(),

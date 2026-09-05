@@ -96,6 +96,20 @@ private declaration in its public signature.
 `func` introduces a function. Type annotations may state parameter and result types; otherwise the
 compiler infers them. Local values use inference. The last expression in a function is its result.
 
+Assignment evaluates its complete right-hand expression before evaluating the left-hand place.
+The destination is then evaluated exactly once and replaced. For example,
+`values[index()] = replacement()` calls `replacement` before `index`.
+
+Other multi-operand expressions evaluate from left to right: callable before arguments, method
+receiver before arguments, collection before index, and aggregate initializers in source order.
+Failure or control transfer skips operands that have not yet begun.
+
+Locals, declared stored fields rooted in places, and indexed elements rooted in places designate
+storage. Compiler-provided computed members produce values even when their implementation shares
+storage. They cannot be assigned to. Moving from a stored place invalidates that place; applying
+`move` to an already-produced owned value only makes the transfer explicit. Foster currently uses
+methods for user-defined computation rather than getter/setter declarations.
+
 `test` introduces a private test declaration identified by a non-empty string. Tests take no
 arguments and return `()`:
 

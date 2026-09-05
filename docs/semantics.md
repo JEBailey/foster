@@ -33,6 +33,14 @@ values, loan origins and validity, and active invocations. Remote execution addi
 worker state, message queues, and future outcomes. Implementations need not represent this state
 literally.
 
+Expressions are classified by their resolved meaning, not by whether a backend represents their
+result with an address. A local is a place. A declared stored field rooted in a place and an indexed
+element rooted in a place are projected places. A reference expression produces a value that
+retains its origin place; stored projections through that reference can designate storage.
+Literals, operators, calls, constructors, branches, closures, and computed members produce values.
+A value may be materialized in temporary storage when a context needs a place, but that does not
+change the expression's category or extend the temporary's lifetime.
+
 ## 2. Names, types, and contracts
 
 **S-03 — Static meaning.** Names, types, overload choices, ownership modes, and effect contracts
@@ -98,6 +106,13 @@ The following are library contracts, not new syntax:
   reuse and capacity growth must not change the resulting values or invalidate fewer loans than
   the published effect contract requires.
 
+A resolved member is one of a stored place, a computed value, or a method. Stored-place status
+comes from a field declaration. Compiler-provided computed members produce values and cannot be
+assigned to; their ordinary result type determines whether the result is copied or owned. Sharing
+immutable storage is an implementation detail and does not turn a computed result into a place.
+Foster does not currently provide user-defined getter/setter declarations or implicit
+getter-modify-setter write-back; user-defined computations are methods.
+
 ## 4. Evaluation and control flow
 
 **S-09 — Sequencing.** Statements execute in source order. Ordinary binary operands evaluate
@@ -106,9 +121,22 @@ if the left is false. `!` and `not` have the same Boolean meaning. A guarded tra
 its guard before its transferred expression; a false guard does not evaluate that expression.
 Effects of an executed guard still occur on the fall-through path.
 
-This revision does not generalize these verified rules into a complete evaluation-order promise
-for every call form, record initializer, assignment target, or partial application. Those cases
-require the order audit identified in section 12.
+Assignment evaluates the complete right-hand expression first. It then evaluates the left-hand
+place once, including member receivers and index expressions, and replaces the selected value.
+The previous value is not replaced until both evaluations have completed successfully. Thus, in
+`values[index()] = replacement()`, `replacement()` runs before `index()`.
+
+Except for assignment and conditional evaluation stated above, multi-operand expressions evaluate
+operands from left to right. A call evaluates its callable first and then its arguments in source
+order. A method call evaluates its receiver before its arguments. List elements and record field
+initializers evaluate in source order; physical record layout does not affect that order. Enum
+payload expressions evaluate in source order. Indexing evaluates the collection before the index,
+and member access evaluates its receiver before accessing the member. A branch evaluates its
+subject once, then considers tests and guards in source order. If an evaluation fails or transfers
+control, operands that follow it are not evaluated.
+
+Partial-application capture timing remains unresolved; it is not inferred from these general call
+rules.
 
 **S-10 — Selection and repetition.** A subject branch evaluates its subject once. Branch arms
 are considered in source order; the first matching arm executes and does not fall through.
@@ -276,12 +304,11 @@ explicitly rather than hidden by weakening an assertion. See [testing](testing.m
 
 These entries distinguish missing language decisions from missing implementation work:
 
-- **G-01 — Evaluation order (open decision/audit):** specify all call forms, assignment-target
-  evaluation, aggregate initializers, and partial-application capture timing using side-effect
-  witnesses. Do not infer a universal order from S-09's narrower rules.
-- **G-02 — Values and places (generalization work):** computed members such as `String.bytes` and
-  owned reads such as `List.at` have defined current behavior, but the general user-extensible
-  property/projection protocol is not settled. Member-specific compiler handling is not that protocol.
+- **G-01 — Partial application timing (open decision/audit):** specify when supplied operands are
+  captured and when their ownership effects begin, with side-effect witnesses.
+- **G-02 — User-defined accessors (deferred feature):** stored fields, compiler-provided computed
+  values, and methods have distinct semantics. A future property protocol must preserve those
+  categories and cannot silently introduce implicit getter-modify-setter write-back.
 - **G-03 — Remote failure implementation:** native worker failures currently terminate the process
   rather than populating their futures, even for unawaited calls. Sticky failure and the planned
   typed remote outcomes require implementation and cross-backend witnesses.

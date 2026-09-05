@@ -316,16 +316,24 @@ impl FunctionCompiler<'_> {
                         return Ok(destination);
                     }
                 }
+                let resolved_function = self
+                    .types
+                    .resolved_call(*callee)
+                    .and_then(crate::types::ResolvedCall::function);
+                // A dynamic callable is itself an evaluated operand and comes
+                // before every argument. Direct function names have no runtime
+                // evaluation and are emitted through the resolved path below.
+                let callable = if resolved_function.is_none() {
+                    Some(self.expression(*callee)?)
+                } else {
+                    None
+                };
                 let argument_expressions = arguments.clone();
                 let arguments = arguments
                     .iter()
                     .map(|argument| self.expression(*argument))
                     .collect::<Result<Vec<_>, _>>()?;
                 let destination = self.allocate();
-                let resolved_function = self
-                    .types
-                    .resolved_call(*callee)
-                    .and_then(crate::types::ResolvedCall::function);
                 if let Some(function) = resolved_function {
                     if let Some((&receiver, method_arguments)) = arguments.split_first()
                         && self.lower_list_intrinsic(
@@ -381,11 +389,10 @@ impl FunctionCompiler<'_> {
                         );
                     }
                 } else {
-                    let callee = self.expression(*callee)?;
                     self.emit(
                         Instruction::CallValue {
                             destination,
-                            callee,
+                            callee: callable.expect("dynamic calls evaluate their callable"),
                             arguments,
                         },
                         span,
@@ -431,7 +438,9 @@ impl FunctionCompiler<'_> {
                 Ok(destination)
             }
             hir::Expr::Reference(place) => {
-                let Some(place) = crate::hir::queries::expression_place(self.hir, *place) else {
+                let Some(place) =
+                    crate::semantics::expression_place(self.hir, &self.types.member_kinds, *place)
+                else {
                     let object = self.expression(*place)?;
                     let pointee_type = self
                         .types
@@ -611,7 +620,12 @@ impl FunctionCompiler<'_> {
                 Ok(unwrapped)
             }
             hir::Expr::Record { record, fields } => {
-                let values = fields.iter().cloned().collect::<HashMap<_, _>>();
+                // Evaluate initializers in source order, independently of the
+                // physical field order selected for the record layout.
+                let values = fields
+                    .iter()
+                    .map(|(name, value)| Ok((name.clone(), self.expression(*value)?)))
+                    .collect::<Result<HashMap<_, _>, FosterError>>()?;
                 let mut layout = self.types.record_fields[record]
                     .iter()
                     .cloned()
@@ -623,7 +637,7 @@ impl FunctionCompiler<'_> {
                         let value = values
                             .get(name)
                             .ok_or_else(|| self.unsupported("record field layout"))?;
-                        Ok((name.clone(), self.expression(*value)?))
+                        Ok((name.clone(), *value))
                     })
                     .collect::<Result<Vec<_>, FosterError>>()?;
                 let destination = self.allocate();

@@ -31,7 +31,9 @@ pub(crate) fn call_invalidations(
                 _ => return None,
             };
             let mut target = if effect.target.root == "self" {
-                receiver.and_then(|receiver| hir::queries::expression_place(hir, receiver))
+                receiver.and_then(|receiver| {
+                    crate::semantics::borrow_origin_place(hir, &types.member_kinds, receiver)
+                })
             } else {
                 function.and_then(|function| {
                     let definition = &hir.functions[function];
@@ -49,9 +51,13 @@ pub(crate) fn call_invalidations(
                         })
                         .and_then(|(index, _)| {
                             let argument = index.checked_sub(usize::from(receiver.is_some()))?;
-                            arguments
-                                .get(argument)
-                                .and_then(|argument| hir::queries::expression_place(hir, *argument))
+                            arguments.get(argument).and_then(|argument| {
+                                crate::semantics::borrow_origin_place(
+                                    hir,
+                                    &types.member_kinds,
+                                    *argument,
+                                )
+                            })
                         })
                 })
             }?;

@@ -30,12 +30,14 @@ The central ideas are:
 ## Values, locals, and places
 
 A **value** is data such as an `Int`, `String`, list, record, closure, or remote handle. A local name
-identifies a **place** that can contain a value. Member and index projections extend a root place:
+identifies a **place** that can contain a value. A declared stored field or indexed element extends
+a root place, while a computed member produces a value:
 
 ```foster
 people             // root place
 person.name        // field place
 people[index]      // indexed place
+text.bytes         // computed Bytes value, not a place
 ```
 
 Ownership operations apply to the root and, where supported, its projection. This distinction is
@@ -55,8 +57,10 @@ The built-in copy types are currently:
 - `Symbol`
 
 Other values are ownership-bearing and default to move semantics when captured. Explicit move-out
-is represented in HIR as `MoveOut(place)`. Once a root has been moved, subsequent reads or writes
-through its projections are rejected. Assignment to the whole local may reinitialize it.
+is represented in HIR as `MoveOut(expression)`. Moving from a place invalidates that place, so
+subsequent reads or writes through its projections are rejected. Moving an already-computed owned
+value is an explicit transfer and has no source place to invalidate. Assignment to the whole local
+may reinitialize it.
 
 Function calls are different from closure capture: arguments are borrowed by default. A function
 that takes ownership names each ownership-taking parameter with a `consume` contract, and callers
@@ -486,11 +490,12 @@ The implementation is divided by responsibility:
   matched arms complete the branch without falling through to later tests.
 - `src/hir/lower/` resolves names and converts source references, moves, captures, and places into
   stable HIR IDs.
+- `src/semantics.rs` is the authoritative place/value and resolved-member classifier shared by
+  type checking, effect inference, ownership lowering, and bytecode lowering.
 - `src/typecheck/effects.rs` derives group access, consume, and suspension requirements.
 - `src/hir/ownership.rs` validates groups, resolves capture modes, and rejects use after a closure
   capture moved its source.
-- `src/hir/queries.rs` contains shared, policy-free place and expression queries used by the
-  ownership passes.
+- `src/hir/queries.rs` contains policy-free structural queries that do not require resolved types.
 - `src/ownership/` lowers typed HIR to ownership MIR basic blocks containing explicit
   read/copy/move/borrow/initialize operations, validates consuming call contracts, then checks
   initialization and partial-move state at control-flow joins. Ownership MIR also carries stable

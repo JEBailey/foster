@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::error::FosterError;
 use crate::hir::{FunctionId, PackageHir, Projection, VariantId};
+use crate::types::TypeInformation;
 
 use super::mir::{place_contains, places_overlap};
 use super::{
@@ -924,7 +925,11 @@ fn analyze_path_reachability(function: &Function) -> PathReachability {
     PathReachability { points }
 }
 
-pub(super) fn validate(hir: &PackageHir, program: &Program) -> Result<(), FosterError> {
+pub(super) fn validate(
+    hir: &PackageHir,
+    types: &TypeInformation,
+    program: &Program,
+) -> Result<(), FosterError> {
     for (function_id, function) in &program.functions {
         validate_storage_and_escape(
             hir,
@@ -936,6 +941,7 @@ pub(super) fn validate(hir: &PackageHir, program: &Program) -> Result<(), Foster
         validate_suspensions(hir, *function_id, function, requirements)?;
         if let Some(conflict) = find_conflict_with_hir(
             hir,
+            types,
             function,
             &program.provenance[function_id],
             requirements,
@@ -1224,15 +1230,24 @@ fn find_conflict(
 
 fn find_conflict_with_hir(
     hir: &PackageHir,
+    types: &TypeInformation,
     function: &Function,
     provenance: &ProvenanceAnalysis,
     requirements: &RequirementAnalysis,
 ) -> Option<InvalidationConflict> {
-    find_conflict_inner(Some(hir), function, provenance, requirements)
+    find_conflict_inner(
+        Some((hir, &types.member_kinds)),
+        function,
+        provenance,
+        requirements,
+    )
 }
 
 fn find_conflict_inner(
-    hir: Option<&PackageHir>,
+    semantics: Option<(
+        &PackageHir,
+        &std::collections::HashMap<crate::hir::ExprId, crate::semantics::MemberKind>,
+    )>,
     function: &Function,
     provenance: &ProvenanceAnalysis,
     requirements: &RequirementAnalysis,
@@ -1288,7 +1303,7 @@ fn find_conflict_inner(
                             reaching.iter().any(|reach| {
                                 reach.compatible_with(&condition)
                                     && !places_proven_disjoint(
-                                        hir,
+                                        semantics,
                                         place,
                                         &loan.origin,
                                         reach,
@@ -1318,13 +1333,16 @@ fn find_conflict_inner(
 }
 
 fn places_proven_disjoint(
-    hir: Option<&PackageHir>,
+    semantics: Option<(
+        &PackageHir,
+        &std::collections::HashMap<crate::hir::ExprId, crate::semantics::MemberKind>,
+    )>,
     left: &Place,
     right: &Place,
     reaching: &PathCondition,
     required: &PathCondition,
 ) -> bool {
-    let Some(hir) = hir else {
+    let Some((hir, members)) = semantics else {
         return false;
     };
     if left.root != right.root {
@@ -1334,10 +1352,10 @@ fn places_proven_disjoint(
         match (left_projection, right_projection) {
             (Projection::Field(left), Projection::Field(right)) if left != right => return true,
             (Projection::Index { .. }, Projection::Index { .. }) => {
-                let Some(left) = index_operand(hir, left_projection) else {
+                let Some(left) = index_operand(hir, members, left_projection) else {
                     continue;
                 };
-                let Some(right) = index_operand(hir, right_projection) else {
+                let Some(right) = index_operand(hir, members, right_projection) else {
                     continue;
                 };
                 if reaching.proves_unequal(&left, &right) || required.proves_unequal(&left, &right)
@@ -1353,7 +1371,11 @@ fn places_proven_disjoint(
     false
 }
 
-fn index_operand(hir: &PackageHir, projection: &Projection) -> Option<ComparisonOperand> {
+fn index_operand(
+    hir: &PackageHir,
+    members: &std::collections::HashMap<crate::hir::ExprId, crate::semantics::MemberKind>,
+    projection: &Projection,
+) -> Option<ComparisonOperand> {
     let Projection::Index {
         expression,
         constant,
@@ -1364,7 +1386,7 @@ fn index_operand(hir: &PackageHir, projection: &Projection) -> Option<Comparison
     if let Some(constant) = constant {
         return Some(ComparisonOperand::Integer(*constant));
     }
-    crate::hir::queries::expression_place(hir, *expression)
+    crate::semantics::expression_place(hir, members, *expression)
         .map(Place::from_hir)
         .map(ComparisonOperand::Place)
 }

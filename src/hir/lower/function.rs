@@ -171,10 +171,11 @@ impl FunctionLowerer<'_> {
                 ) {
                     return Err(self.error("left side of assignment is not a place"));
                 }
-                Ok(Stmt::Set {
-                    place: self.lower_expression(place)?,
-                    value: self.lower_expression(value)?,
-                })
+                // Keep HIR construction aligned with the language's assignment
+                // sequence: the value is evaluated before the destination.
+                let value = self.lower_expression(value)?;
+                let place = self.lower_expression(place)?;
+                Ok(Stmt::Set { place, value })
             }
             ast::Stmt::Expr(expression) => Ok(Stmt::Expr(self.lower_expression(expression)?)),
         }

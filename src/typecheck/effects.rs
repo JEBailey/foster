@@ -183,17 +183,12 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
 
     fn walk_consumed_expr(&mut self, expression: ExprId) {
         match &self.checker.hir.expressions[expression] {
-            hir::Expr::Member { object, name }
-                if matches!(name.as_str(), "iterator" | "head" | "rest")
-                    || name == "bytes"
-                        && self.checker.expressions.get(object).is_some_and(|ty| {
-                            self.checker
-                                .is_string_type(&self.checker.resolved(ty.clone()))
-                        }) =>
+            hir::Expr::Member { .. }
+                if self.checker.member_kinds.get(&expression)
+                    == Some(&crate::semantics::MemberKind::ComputedValue) =>
             {
-                // Sequence views and Iterable cursors are borrowed projections;
-                // producing one does not transfer the source collection. String's computed
-                // UTF-8 view is also a value, unlike an ordinary stored field named `bytes`.
+                // Computed members produce values. Consuming that result does
+                // not move from a same-named projection of the receiver.
                 self.walk_expr(expression);
             }
             hir::Expr::Name(hir::ResolvedName::Local(local))
@@ -202,8 +197,14 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 self.add(crate::ast::EffectKind::Consume, self.local_group(*local));
             }
             hir::Expr::Member { .. } | hir::Expr::Index { .. }
-                if !self.expression_is_copy(expression) =>
+                if !self.expression_is_copy(expression)
+                    && crate::semantics::expression_category(
+                        self.checker.hir,
+                        &self.checker.member_kinds,
+                        expression,
+                    ) == crate::semantics::ExpressionCategory::Place =>
             {
+                self.walk_place_address(expression);
                 self.add(
                     crate::ast::EffectKind::Consume,
                     self.place_group(expression),
@@ -296,13 +297,34 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                     .iter()
                     .for_each(|argument| self.walk_expr(*argument));
             }
-            hir::Expr::Member { .. } => {
-                self.add(crate::ast::EffectKind::Read, self.place_group(expression));
+            hir::Expr::Member { object, .. } => {
+                if self.checker.member_kinds.get(&expression)
+                    == Some(&crate::semantics::MemberKind::StoredPlace)
+                    && crate::semantics::expression_category(
+                        self.checker.hir,
+                        &self.checker.member_kinds,
+                        expression,
+                    ) == crate::semantics::ExpressionCategory::Place
+                {
+                    self.walk_place_address(expression);
+                    self.add(crate::ast::EffectKind::Read, self.place_group(expression));
+                } else {
+                    self.walk_expr(*object);
+                }
             }
             hir::Expr::Index { object, index } => {
-                let _ = object;
-                self.add(crate::ast::EffectKind::Read, self.place_group(expression));
-                self.walk_expr(*index);
+                if crate::semantics::expression_category(
+                    self.checker.hir,
+                    &self.checker.member_kinds,
+                    expression,
+                ) == crate::semantics::ExpressionCategory::Place
+                {
+                    self.walk_place_address(expression);
+                    self.add(crate::ast::EffectKind::Read, self.place_group(expression));
+                } else {
+                    self.walk_expr(*object);
+                    self.walk_expr(*index);
+                }
             }
             hir::Expr::Reference(place) => self.walk_place_address(*place),
             hir::Expr::MoveOut(place) => {
@@ -574,7 +596,16 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     fn place_group(&self, expression: ExprId) -> crate::ast::GroupPath {
         match self.checker.hir.expressions[expression] {
             hir::Expr::Name(ResolvedName::Local(local)) => self.local_group(local),
-            hir::Expr::Member { object, ref name } => self.place_group(object).child(name.clone()),
+            hir::Expr::Member { object, ref name } => {
+                let object = self.place_group(object);
+                if self.checker.member_kinds.get(&expression)
+                    == Some(&crate::semantics::MemberKind::StoredPlace)
+                {
+                    object.child(name.clone())
+                } else {
+                    object
+                }
+            }
             hir::Expr::Index { object, .. } => self.place_group(object).child("items"),
             hir::Expr::Reference(object) => self.place_group(object),
             _ => crate::ast::GroupPath::root(FRAME_GROUP),

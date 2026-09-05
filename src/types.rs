@@ -115,6 +115,8 @@ pub struct TypeInformation {
     pub types: Arena<Type>,
     pub expressions: HashMap<ExprId, TypeId>,
     pub integer_promotions: HashSet<ExprId>,
+    /// Resolved semantics for every member expression.
+    pub member_kinds: HashMap<ExprId, crate::semantics::MemberKind>,
     pub resolved_calls: HashMap<ExprId, ResolvedCall>,
     pub dispatch: HashMap<(NominalTypeId, DispatchSlot), FunctionId>,
     pub locals: HashMap<LocalId, TypeId>,
