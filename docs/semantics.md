@@ -1,11 +1,12 @@
 # Foster semantic specification
 
-Status: **draft normative specification**, revision 1, 2026-09-04.
+Status: **draft normative specification**, revision 2, 2026-09-05.
 Baseline: **language version 7, ownership-model version 3**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
-it does not change the language or ownership versions. It is not a complete formal semantics or
+it does not change the language or ownership versions. Revision 2 records accepted remote lifecycle
+decisions pending implementation and compatibility migration. It is not a complete formal semantics or
 a proof that either backend implements every rule.
 
 ## 1. Authority and terminology
@@ -209,8 +210,14 @@ distinguished in section 12.
 Messages to one worker execute in FIFO mailbox order; this is not a total order across workers
 or a scheduling guarantee among concurrent producers. A remote call returns a future without
 awaiting its completion. `await` suspends the caller until its outcome is available, and consumes
-the future once. VM remote invocation failures are delivered through the future; native deviation
-from this requirement is a conformance gap, not an alternative error model.
+the future once. The accepted lifecycle contract is specified by [remote rules R-01–R-09](remote-semantics.md).
+The owning remote value controls worker lifetime. Owner destruction cancels running and queued
+requests and resolves outstanding futures with shutdown errors; futures do not keep the worker
+alive. Statically established outstanding requests at owner exit must be rejected. Remote execution
+failure is contained, terminal for that worker, and resolves outstanding and subsequent requests
+with errors. The planned awaited outcome is `Result<T, RemoteError>`; that API and the new lifetime
+checks are pending implementation. Existing VM failure delivery does not establish this entire
+contract, and native process-fatal failures are a conformance gap.
 
 **S-20 — Remote loans.** Owned messages transfer only supported transferable values. Ordinary
 explicit references, closures, and futures cannot be transferred as owned mailbox arguments in
@@ -221,8 +228,9 @@ not when its future is awaited. Borrowed arguments cannot be mutated or retained
 `remote ref value` is a persistent read-only capability over live owner storage. Owner method
 mutation uses exclusive access and commits atomically with respect to those remote reads. This
 is not a blanket guarantee for unsynchronized mutation of arbitrary shared state. Loans across
-suspension must remain live and valid. Cancellation, fairness, deadlock freedom, and global shutdown
-ordering are not fully specified by this revision.
+suspension must remain live and valid. Cancellation must preserve storage needed by executing code
+and release loans safely. Fairness, deadlock freedom, host interruption latency, and global shutdown
+ordering remain open; owner-driven cancellation instead of draining is now an accepted decision.
 
 ## 10. Host and library boundary
 
@@ -274,16 +282,19 @@ These entries distinguish missing language decisions from missing implementation
 - **G-02 — Values and places (generalization work):** computed members such as `String.utf8` and
   owned reads such as `List.at` have defined current behavior, but the general user-extensible
   property/projection protocol is not settled. Member-specific compiler handling is not that protocol.
-- **G-03 — Native remote failures (implementation violation):** native worker failures currently
-  terminate the process rather than populating their futures, even for unawaited calls.
+- **G-03 — Remote failure implementation:** native worker failures currently terminate the process
+  rather than populating their futures, even for unawaited calls. Sticky failure and the planned
+  typed remote outcomes require implementation and cross-backend witnesses.
 - **G-04 — Reclamation (implementation gap/open design):** legacy native String allocations can
   remain until process exit. Full exceptional cleanup, user-visible resource destruction ordering,
   and a general destructor protocol are not uniformly established. See [native gaps](native.md#known-runtime-correctness-gaps).
 - **G-05 — Generic sequence execution (implementation gap):** native `SequenceIterator` cannot
   yet resolve all erased sequence storage members. Head/rest adapters can copy tails; neither
   structural conformance nor slicing promises zero-copy traversal.
-- **G-06 — Concurrency (open design):** specify cancellation delivery, dropping unawaited futures,
-  worker shutdown, cross-worker ordering, and liveness before treating them as portable guarantees.
+- **G-06 — Scoped remote lifetime (accepted, not implemented):** implement owner-exit cancellation,
+  completion tracking, and diagnostics under [the remote contract](remote-semantics.md). Dropping a
+  future does not discharge its request. Cross-worker scheduling, liveness, host interruption, and
+  process-wide shutdown ordering remain open.
 - **G-07 — Analysis precision (implementation limit):** indirect callable-result provenance and
   richer path facts remain conservative. Better precision may accept more safe programs but must
   not discard a real origin or lifetime dependency.

@@ -21,6 +21,7 @@ pub mod ownership;
 pub mod package;
 pub mod parser;
 pub mod project;
+pub mod remote;
 pub mod typecheck;
 pub mod types;
 pub mod vm;

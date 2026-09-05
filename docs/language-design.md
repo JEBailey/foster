@@ -482,6 +482,12 @@ shift, and arithmetic operators. Parentheses can make a different grouping expli
 
 ## Remote objects and virtual threads
 
+The section below describes the current executable interface. The accepted
+[remote lifecycle contract](remote-semantics.md) additionally requires owner-scoped cancellation,
+terminal failure containment, typed error outcomes, and compile-time outstanding-request checks.
+Those changes are pending implementation; the existing `await` examples do not demonstrate the
+planned outer `Result<T, RemoteError>` API.
+
 `remote` transfers a record into an isolated virtual thread. An owner-qualified function whose
 first parameter is the semantic `self` receiver is an instance method. Calling that method through a
 `Remote<T>` handle sends a FIFO mailbox message and returns `Future<R>`; `await` parks the current

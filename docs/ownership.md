@@ -291,6 +291,11 @@ borrower of itself and makes the runtime borrow graph non-owning and acyclic.
 
 ## Remote ownership boundary
 
+The accepted [remote lifecycle rules](remote-semantics.md) require the remote owner to outlive its
+outstanding requests. Owner destruction cancels pending work and resolves its futures as errors;
+statically established violations must be compilation errors. That completion analysis and scoped
+cancellation contract are not yet implemented. The following describes the existing loan boundary.
+
 `remote value` transfers an owned object to a worker. Calls on its remote handle enqueue messages
 and return futures. Ordinary explicit reference values cannot be transferred as owned mailbox
 values: that would connect two independently executing ownership domains without a loan protocol.

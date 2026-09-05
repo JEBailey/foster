@@ -219,6 +219,10 @@ behavior or eliminate the correctness gaps below.
 
 ## Known runtime correctness gaps
 
+The accepted [remote lifecycle contract](remote-semantics.md) also requires scoped cancellation,
+terminal failed workers, typed future error outcomes, and static request-lifetime checks. Existing
+native remote support must not be interpreted as implementing those new requirements.
+
 Legacy runtime-created String values do not yet participate in aggregate retain/release, so
 string-heavy native programs can retain allocations until process exit. Native failures inside
 remote methods also remain process-fatal rather than being stored on the returned future; even an
