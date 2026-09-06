@@ -1,0 +1,26 @@
+
+import core.drop
+import core.copy
+type Tracked = & Drop & Copy & { id: Int }
+impl Tracked {
+    func copy(self) -> self { Tracked { id: self.id + 10 } }
+    func deinit(self) -> () { println(self.id) }
+}
+type Outer = & Drop & { child: Tracked }
+impl Outer { func deinit(self) -> () { println(100) } }
+func finish_value(value: Tracked) -> () [consume value] { println(200) }
+func scope() -> () {
+    let value = Tracked { id: 1 }
+    let copied = value.copy()
+    finish_value(move copied)
+    println(300)
+    let moved = value
+    println(moved.id)
+    ()
+}
+func main() -> Int {
+    scope()
+    let outer = Outer { child: Tracked { id: 2 } }
+    println(400)
+    42
+}

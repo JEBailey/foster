@@ -1,0 +1,20 @@
+warn: could not canonicalize path: 'C:\Users\jason'
+   Compiling foster v0.1.0 (C:\Users\jason\git\foster)
+    Finished `release` profile [optimized] target(s) in 1m 02s
+     Running tests\backend_parity.rs (target\release\deps\backend_parity-01395161b0beef61.exe)
+
+running 1 test
+
+thread 'destructor_temporaries_survive_the_full_expression' (5124) panicked at tests\backend_parity.rs:99:50:
+called `Result::unwrap()` on an `Err` value: FosterError { message: "shared native lowering failed: invalid shared IR: branch v110 has type Unit/i8, expected String/ptr", line: 0, column: 0, code: None, source_module: None, labels: [], notes: [], help: None }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test destructor_temporaries_survive_the_full_expression ... FAILED
+
+failures:
+
+failures:
+    destructor_temporaries_survive_the_full_expression
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 5.77s
+
+error: test failed, to rerun pass `--test backend_parity`

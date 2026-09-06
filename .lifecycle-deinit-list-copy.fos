@@ -1,0 +1,27 @@
+
+import core.drop
+import core.copy
+import core.list
+import core.result
+type Item = & Drop & Copy & { id: Int }
+impl Item {
+    func copy(self) -> self { Item { id: self.id + 10 } }
+    func deinit(self) -> () { println(self.id) }
+}
+type Resource = & Drop & { id: Int }
+impl Resource { func deinit(self) -> () { println(self.id) } }
+func read_first<T>(values: List<T>) -> Result<T, ListReadError> { values.at(0) }
+func main() -> Int {
+    let values = [Item { id: 1 }]
+    let resources = [Resource { id: 2 }]
+    assert(resources.at(0) == Result.Error(ListReadError.NotCopyable))
+    branch read_first(values) {
+        Result.Ok(copied) -> { assert(copied.id == 11)
+ println(30)
+ () }
+        Result.Error(_) -> { assert(false)
+ () }
+    }
+    println(50)
+    42
+}

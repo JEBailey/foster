@@ -16,6 +16,7 @@ pub struct NativeFunction {
     pub(super) ir: ir::Function,
     pub(super) mutable_parameter_homes: HashSet<u16>,
     pub(super) home_types: std::collections::BTreeMap<u16, NativeType>,
+    pub(super) failure_cleanup: FailureCleanup,
     logical_signature: LogicalSignature,
     management: Vec<MemoryManagement>,
     // Compact logical evidence keyed by construction storage home, retaining CFG alternatives.
@@ -152,7 +153,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         }
         let source_states = &states.as_ref().unwrap().1;
         let environment = prepared.environment();
-        let lowered = lower_shared_to_native_ir(
+        let (lowered, failure_cleanup) = lower_shared_to_native_ir(
             &shared.functions[&instance.key.function],
             source,
             source_states,
@@ -228,6 +229,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
             ir: lowered,
             mutable_parameter_homes,
             home_types,
+            failure_cleanup,
             management,
             logical_signature: LogicalSignature {
                 captures: source.capture_types.iter().map(specialize).collect(),

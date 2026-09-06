@@ -36,6 +36,9 @@ pub type HexError = {
 }
 
 impl Bytes {
+    /// Returns an independent immutable byte value.
+    pub func copy(self: Bytes) -> self [read self] { BytesHost.from_list(BytesHost.to_list(self)) }
+
     /// Creates an empty immutable byte sequence.
     pub func empty() -> Bytes {
         BytesHost.from_list([])

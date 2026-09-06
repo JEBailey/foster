@@ -34,6 +34,8 @@ func main() -> Int { 0 }
 #[test]
 fn remote_objects_process_methods_on_virtual_threads() {
     let source = r#"
+import core.result as outcomes
+
 type Counter = {
     value: Int
 }
@@ -49,7 +51,7 @@ func main() -> Int {
     let counter = remote Counter { value: 0 }
     let first = counter.increment(2)
     let second = counter.increment(3)
-    await first + await second
+    (await first).unwrap_or(0) + (await second).unwrap_or(0)
 }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::Integer(7));
@@ -58,6 +60,8 @@ func main() -> Int {
 #[test]
 fn remote_objects_dispatch_overloaded_methods() {
     let source = r#"
+import core.result as outcomes
+
 type Formatter = {}
 
 impl Formatter {
@@ -72,7 +76,7 @@ impl Formatter {
 
 func main() -> Int {
     let formatter = remote Formatter {}
-    await formatter.render('x')
+    (await formatter.render('x')).unwrap_or(0)
 }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
@@ -81,6 +85,8 @@ func main() -> Int {
 #[test]
 fn remote_assertion_failures_are_delivered_through_futures() {
     let source = r#"
+import core.result
+import core.remote_error
 type Worker = {}
 
 impl Worker {
@@ -90,18 +96,26 @@ impl Worker {
     }
 }
 
-func main() -> Int {
+func main() -> String {
     let worker = remote Worker {}
-    await worker.check()
+    branch await worker.check() {
+        Result.Error(RemoteError.Failed(message)) -> message
+        _ -> "unexpected outcome"
+    }
 }
 "#;
-    let error = foster::run(source).unwrap_err();
-    assert_eq!(error.message, "assertion failed: remote assertion message");
+    let value = foster::run(source).unwrap();
+    assert_eq!(
+        value.as_string(),
+        Some("assertion failed: remote assertion message")
+    );
 }
 
 #[test]
 fn remote_read_loans_observe_owner_mutation() {
     let source = r#"
+import core.result as outcomes
+
 type Counter = {
     value: Int
 }
@@ -120,9 +134,9 @@ impl Counter {
 func main() -> Int {
     let counter = Counter { value: 0 }
     let reader = remote ref counter
-    let before = await reader.snapshot()
+    let before = (await reader.snapshot()).unwrap_or(0)
     counter.assign(42)
-    let after = await reader.snapshot()
+    let after = (await reader.snapshot()).unwrap_or(0)
     before + after
 }
 "#;
@@ -132,6 +146,8 @@ func main() -> Int {
 #[test]
 fn remote_read_loans_serialize_reads_with_owner_methods() {
     let source = r#"
+import core.result as outcomes
+
 type Pair = {
     left: Int
     right: Int
@@ -154,8 +170,8 @@ func main() -> Int {
     let reader = remote ref pair
     let pending = reader.total()
     pair.replace(21)
-    let observed = await pending
-    let after = await reader.total()
+    let observed = (await pending).unwrap_or(0)
+    let after = (await reader.total()).unwrap_or(0)
     branch observed {
         0 -> after
         42 -> after
@@ -195,6 +211,8 @@ func main() {
 #[test]
 fn remote_borrowed_arguments_are_live_read_only_loans() {
     let source = r#"
+import core.result as outcomes
+
 type Document = { value: Int }
 type Inspector = {}
 
@@ -214,9 +232,9 @@ impl Document {
 func main() -> Int {
     let document = Document { value: 0 }
     let inspector = remote Inspector {}
-    let before = await inspector.inspect(document)
+    let before = (await inspector.inspect(document)).unwrap_or(0)
     document.assign(42)
-    let after = await inspector.inspect(document)
+    let after = (await inspector.inspect(document)).unwrap_or(0)
     before + after
 }
 "#;
@@ -226,6 +244,8 @@ func main() -> Int {
 #[test]
 fn remote_borrowed_arguments_serialize_with_owner_mutation() {
     let source = r#"
+import core.result as outcomes
+
 type Pair = { left: Int, right: Int }
 type Inspector = {}
 
@@ -248,7 +268,7 @@ func main() -> Int {
     let inspector = remote Inspector {}
     let pending = inspector.total(pair)
     pair.replace(21)
-    let observed = await pending
+    let observed = (await pending).unwrap_or(0)
     branch observed {
         0 -> 42
         42 -> 42
@@ -380,12 +400,14 @@ func main() { 0 }
 #[test]
 fn derives_suspend_from_await_and_callee_contracts() {
     let source = r#"
+import core.result as outcomes
+
 type Worker = {}
 impl Worker {
     func value(self: Worker) -> Int { 1 }
 }
 func wait(worker: Remote<Worker>) -> Int {
-    await worker.value()
+    (await worker.value()).unwrap_or(0)
 }
 func main() { 0 }
 "#;
@@ -398,12 +420,14 @@ func main() { 0 }
 #[test]
 fn accepts_declared_suspension() {
     let source = r#"
+import core.result as outcomes
+
 type Worker = {}
 impl Worker {
     func value(self: Worker) -> Int { 1 }
 }
 func wait(worker: Remote<Worker>) -> Int [suspend] {
-    await worker.value()
+    (await worker.value()).unwrap_or(0)
 }
 func main() { 0 }
 "#;
@@ -647,8 +671,8 @@ func main() { 0 }
 fn discovers_implicit_and_companion_modules() {
     let compilation = foster::check_package(Path::new("tests/fixtures/modules")).unwrap();
     let package = &compilation.package;
-    assert_eq!(package.modules.len(), 12);
-    assert_eq!(package.explicit_module_count(), 9);
+    assert_eq!(package.modules.len(), 16);
+    assert_eq!(package.explicit_module_count(), 13);
     assert_eq!(package.implicit_module_count(), 3);
     assert_eq!(package.input_module_count(), 6);
     assert_eq!(package.input_explicit_module_count(), 4);
@@ -2332,6 +2356,8 @@ func main() -> Int {
 #[test]
 fn ownership_mir_models_loans_across_suspend_and_scope_destruction() {
     let source = r#"
+import core.result as outcomes
+
 type Worker = {}
 impl Worker {
     func value(self: Worker) -> Int { 1 }
@@ -2340,7 +2366,7 @@ impl Worker {
 func wait(worker: Remote<Worker>) -> Int {
     let values = [10, 20]
     let selected = ref values[0]
-    let waited = await worker.value()
+    let waited = (await worker.value()).unwrap_or(0)
     selected + waited
 }
 
@@ -2707,4 +2733,22 @@ func main() -> Int { consume_value("owned") + inspect("borrowed") }
             ))
     );
     assert_eq!(foster::run(source).unwrap(), Value::Integer(13));
+}
+
+#[test]
+fn remote_await_requires_handling_the_outer_result() {
+    let error = foster::compile(
+        r#"
+import core.result as outcomes
+
+type Worker = {}
+impl Worker { func value(self) -> Int { 42 } }
+func main() -> Int {
+    let worker = remote Worker {}
+    await worker.value()
+}
+"#,
+    )
+    .unwrap_err();
+    assert!(error.message.contains("Result"), "{error}");
 }

@@ -16,6 +16,9 @@ pub type String = {
 }
 
 impl String {
+    /// Returns an independent text value; immutable byte storage may be shared.
+    pub func copy(self: String) -> self [read self] { self + "" }
+
     /// Validates UTF-8 in Foster and takes ownership of the immutable byte storage without decoding or copying it.
     pub func from_utf8(value: Bytes) -> Result<String, Utf8Error> [consume value] {
         branch {

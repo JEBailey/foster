@@ -310,9 +310,23 @@ fn seal_function_with_types(
                         instructions.push(ir::Instruction::Portable(
                             ir::PortableInstruction::Drop { value },
                         ));
-                        instruction_spans.push(source_span);
+                        instruction_spans.push(source_span.clone());
                     }
-                    state[usize::from(register.0)] = None;
+                    if liveness.live_out[source_index].contains(register) {
+                        // A later ownership boundary can drop the same home on another
+                        // path. Carry an empty value along that edge, never its old owner.
+                        let empty = allocate_lifted_value(
+                            &mut value_types,
+                            &mut storage_hints,
+                            hints[usize::from(register.0)],
+                            *register,
+                        );
+                        storage_hints[empty.0 as usize] = None;
+                        entry_seeds.push(empty);
+                        state[usize::from(register.0)] = Some(empty);
+                    } else {
+                        state[usize::from(register.0)] = None;
+                    }
                 }
                 vm::Instruction::LoadField {
                     destination,
@@ -863,9 +877,11 @@ fn portable_instruction(
             field: field.clone(),
         },
         vm::Instruction::MoveOut {
+            by_reference,
             destination: output,
             source: input,
         } => ir::PortableInstruction::MoveOut {
+            by_reference: *by_reference,
             destination: destination(output),
             source: source(input),
         },
@@ -1082,6 +1098,21 @@ pub fn lower_function(
     }
     let mut emissions = Vec::new();
     let mut labels = vec![None; function.blocks.len()];
+
+    for seed in &function.entry_seeds {
+        if function.storage_hints[seed.0 as usize].is_none() {
+            lower_instruction(
+                &ir::Instruction::Constant {
+                    destination: *seed,
+                    value: ir::Constant::Unit,
+                },
+                &registers,
+                constants,
+                &mut emissions,
+                Range::default(),
+            )?;
+        }
+    }
 
     emit_copies(
         &mut emissions,
@@ -1594,9 +1625,11 @@ fn lower_portable(
             field: field.clone(),
         },
         ir::PortableInstruction::MoveOut {
+            by_reference,
             destination,
             source,
         } => vm::Instruction::MoveOut {
+            by_reference: *by_reference,
             destination: get(destination),
             source: get(source),
         },

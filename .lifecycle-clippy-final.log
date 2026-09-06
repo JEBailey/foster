@@ -1,0 +1,3 @@
+warn: could not canonicalize path: 'C:\Users\jason'
+    Checking foster v0.1.0 (C:\Users\jason\git\foster)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.05s

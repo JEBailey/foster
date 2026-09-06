@@ -862,6 +862,8 @@ func main() -> String {{
 fn lowers_native_remote_workers_and_blocking_await() {
     let compilation = foster::compile(
         r#"
+import core.result as outcomes
+
 type Counter = {
     value: Int
 }
@@ -901,24 +903,24 @@ func main() -> Int {
     let counter = remote Counter { value: 0 }
     let first = counter.increment(2)
     let second = counter.increment(3)
-    let ordered = await first + await second
-    let snapshot = await counter.snapshot_record()
+    let ordered = (await first).unwrap_or(0) + (await second).unwrap_or(0)
+    let snapshot = (await counter.snapshot_record()).unwrap_or(Snapshot { value: 0 })
 
     let local = Counter { value: 0 }
     let reader = remote ref local
-    let before = await reader.snapshot()
+    let before = (await reader.snapshot()).unwrap_or(0)
     local.assign(42)
-    let after = await reader.snapshot()
+    let after = (await reader.snapshot()).unwrap_or(0)
 
     let inspected = Counter { value: 0 }
     let inspector = remote Inspector {}
     let pending = inspector.inspect(inspected)
     inspected.assign(42)
-    let inspected_before = await pending
-    let inspected_after = await inspector.inspect(inspected)
+    let inspected_before = (await pending).unwrap_or(0)
+    let inspected_after = (await inspector.inspect(inspected)).unwrap_or(0)
 
     let echo = remote Echo {}
-    let generic = await echo.tag(1) + await echo.tag(1.5)
+    let generic = (await echo.tag(1)).unwrap_or(0) + (await echo.tag(1.5)).unwrap_or(0)
     ordered + snapshot.value + before + after + inspected_before + inspected_after + generic
 }
 "#,

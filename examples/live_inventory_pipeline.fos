@@ -4,6 +4,9 @@
 // The owner then restocks the inventory while a persistent remote read loan
 // observes the updated state. A report actor serializes the final aggregation.
 
+import core.result
+import core.remote_error
+
 type Inventory = {
     apples: Int
     bolts: Int
@@ -81,7 +84,7 @@ impl Report {
     }
 }
 
-func main() -> Int {
+func main() -> Result<Int, RemoteError> {
     let inventory = Inventory { apples: 2, bolts: 1, version: 1 }
     let policy = Policy { minimum_apples: 5, minimum_bolts: 4 }
 
@@ -98,20 +101,20 @@ func main() -> Int {
     let first_future = auditor_a.evaluate(inventory, policy)
     let second_future = auditor_b.evaluate(inventory, policy)
 
-    let first = await first_future
-    let second = await second_future
-    await report.submit(first)
-    await report.submit(second)
+    let first = try await first_future
+    let second = try await second_future
+    try await report.submit(first)
+    try await report.submit(second)
 
     // This owner mutation is atomic relative to remote readers.
     inventory.restock(5, 4)
 
-    let final_assessment = await auditor_a.evaluate(inventory, policy)
-    await report.submit(final_assessment)
+    let final_assessment = try await auditor_a.evaluate(inventory, policy)
+    try await report.submit(final_assessment)
 
-    let live_total = await dashboard.total()
-    let summary = await report.result()
+    let live_total = try await dashboard.total()
+    let summary = try await report.result()
 
     // 1 healthy audit, 2 alerts, weighted shortage 30, live inventory total 12.
-    summary + live_total
+    Result.Ok(summary + live_total)
 }

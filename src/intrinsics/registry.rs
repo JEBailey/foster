@@ -515,7 +515,8 @@ pub fn native_member_runtime(receiver: NativeReceiverKind, member: &str) -> Opti
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OpcodeIntrinsic {
-    ListAt,
+    ListCanCopyAt,
+    ListCopyAt,
     ListPush,
     ListAppend,
 }
@@ -542,8 +543,18 @@ pub struct OpcodeIntrinsicDescriptor {
 
 pub const OPCODE_INTRINSICS: &[OpcodeIntrinsicDescriptor] = &[
     OpcodeIntrinsicDescriptor {
-        intrinsic: OpcodeIntrinsic::ListAt,
-        intrinsic_key: "list.at",
+        intrinsic: OpcodeIntrinsic::ListCanCopyAt,
+        intrinsic_key: "list.can_copy_at",
+        module: "core.list",
+        receiver: IntrinsicReceiverMode::Read,
+        signature: IntrinsicSignature {
+            parameters: intrinsic_parameters!([Read Any, Read Integer]),
+            result: IntrinsicType::Bool,
+        },
+    },
+    OpcodeIntrinsicDescriptor {
+        intrinsic: OpcodeIntrinsic::ListCopyAt,
+        intrinsic_key: "list.copy_at",
         module: "core.list",
         receiver: IntrinsicReceiverMode::Read,
         signature: IntrinsicSignature {
@@ -720,7 +731,7 @@ mod tests {
     #[test]
     fn opcode_receiver_modes_are_explicit() {
         assert_eq!(
-            Intrinsic::Opcode(OpcodeIntrinsic::ListAt).receiver_mode(),
+            Intrinsic::Opcode(OpcodeIntrinsic::ListCopyAt).receiver_mode(),
             Some(IntrinsicReceiverMode::Read)
         );
         assert_eq!(

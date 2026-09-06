@@ -383,6 +383,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
 
     fn walk_call(&mut self, callee: ExprId, arguments: &[ExprId]) {
         if let hir::Expr::Member { object, .. } = &self.checker.hir.expressions[callee] {
+            self.walk_place_address(*object);
             let receiver = self
                 .checker
                 .resolved(self.checker.expressions[object].clone());
@@ -602,7 +603,8 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 self.walk_expr(index);
             }
             hir::Expr::Reference(place) => self.walk_place_address(place),
-            _ => {}
+            hir::Expr::Name(_) => {}
+            _ => self.walk_expr(expression),
         }
     }
 

@@ -36,6 +36,64 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
             "bytecode without `main` cannot accept command arguments",
         ));
     }
+    let remote_used = program.functions.values().any(|function| {
+        function.instructions.iter().any(|instruction| {
+            matches!(
+                instruction,
+                Instruction::RemoteCall { .. } | Instruction::Await { .. }
+            )
+        })
+    });
+    if remote_used || program.remote_result.is_some() || program.remote_error.is_some() {
+        let invalid = || FosterError::runtime("bytecode has invalid remote outcome metadata");
+        let result = program.remote_result.ok_or_else(invalid)?;
+        let error = program.remote_error.ok_or_else(invalid)?;
+        if result == error {
+            return Err(invalid());
+        }
+        for (parent, name, parameters, cases) in [
+            (result, "Result", 2, vec![("Ok", 1), ("Error", 1)]),
+            (
+                error,
+                "RemoteError",
+                0,
+                vec![("Failed", 1), ("Shutdown", 0)],
+            ),
+        ] {
+            let variants = program
+                .variants
+                .values()
+                .filter(|variant| variant.parent == parent)
+                .collect::<Vec<_>>();
+            if variants.len() != cases.len() {
+                return Err(invalid());
+            }
+            for (case, arity) in cases {
+                let variant = variants
+                    .iter()
+                    .find(|variant| variant.alternative.as_ref() == case)
+                    .ok_or_else(invalid)?;
+                if variant.type_name.as_ref() != name
+                    || variant.parameters.len() != parameters
+                    || variant.payload.len() != arity
+                {
+                    return Err(invalid());
+                }
+                let expected = match case {
+                    "Ok" => Some(VerificationType::Generic(variant.parameters[0].clone())),
+                    "Error" => Some(VerificationType::Generic(variant.parameters[1].clone())),
+                    "Failed" => Some(VerificationType::Record {
+                        record: program.string_record.ok_or_else(invalid)?,
+                        arguments: vec![],
+                    }),
+                    _ => None,
+                };
+                if variant.payload.first() != expected.as_ref() {
+                    return Err(invalid());
+                }
+            }
+        }
+    }
     for record in [program.string_record, program.symbol_record]
         .into_iter()
         .flatten()
@@ -68,7 +126,7 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
             verify_metadata_type(program, ty, 0)?;
         }
     }
-    for ((nominal, _), target) in &program.dispatch {
+    for ((nominal, slot), target) in &program.dispatch {
         let Some(target) = program.functions.get(target) else {
             return Err(FosterError::runtime(
                 "bytecode dispatch table references a missing function",
@@ -78,6 +136,28 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
             return Err(FosterError::runtime(
                 "bytecode dispatch table references a non-executable intrinsic declaration",
             ));
+        }
+        if *slot == crate::types::CAN_COPY_SLOT {
+            return Err(FosterError::runtime(
+                "the copy capability query slot cannot be implemented",
+            ));
+        }
+        if *slot == crate::types::COPY_SLOT || *slot == crate::types::DEINIT_SLOT {
+            let result_valid = if *slot == crate::types::COPY_SLOT {
+                target.parameter_types.first() == Some(&target.result_type)
+            } else {
+                target.result_type == VerificationType::Unit
+            };
+            if target.parameters != 1
+                || target.captures != 0
+                || target.parameter_modes != [ParameterMode::Borrow]
+                || target.mutable_parameters != [false]
+                || !result_valid
+            {
+                return Err(FosterError::runtime(
+                    "invalid Copy or Drop capability signature in bytecode dispatch",
+                ));
+            }
         }
         let nominal_exists = match nominal {
             NominalTypeId::Record(record) => program.records.contains_key(record),
@@ -914,10 +994,24 @@ fn transfer(
             )?;
         }
         Instruction::MoveOut {
+            by_reference,
             destination,
             source,
         } => {
-            let ty = take_type(function, index, &mut state, *source)?;
+            let ty = if *by_reference {
+                match bound_type(function, index, &state, *source)? {
+                    VerificationType::Reference(pointee) => *pointee,
+                    _ => {
+                        return invalid_instruction(
+                            function,
+                            index,
+                            "projected move requires a reference",
+                        );
+                    }
+                }
+            } else {
+                take_type(function, index, &mut state, *source)?
+            };
             write_type(function, index, &mut state, *destination, ty)?;
         }
         Instruction::Push {
@@ -1094,7 +1188,9 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Future(Box::new(target.result_type.specialize(&specialization))),
+                VerificationType::Future(Box::new(
+                    program.remote_outcome_type(target.result_type.specialize(&specialization)),
+                )),
             )?;
         }
         Instruction::Await {
@@ -1294,6 +1390,29 @@ fn transfer(
             ..
         } => {
             let receiver_type = read_type(function, index, &state, *receiver)?;
+            if *slot == crate::types::DEINIT_SLOT {
+                return invalid_instruction(
+                    function,
+                    index,
+                    "deinit can only be invoked by ownership cleanup",
+                );
+            }
+            if *slot == crate::types::CAN_COPY_SLOT || *slot == crate::types::COPY_SLOT {
+                if !arguments.is_empty() {
+                    return invalid_instruction(
+                        function,
+                        index,
+                        "copy capability does not accept arguments",
+                    );
+                }
+                let result = if *slot == crate::types::CAN_COPY_SLOT {
+                    VerificationType::Bool
+                } else {
+                    receiver_type
+                };
+                write_type(function, index, &mut state, *destination, result)?;
+                return Ok(vec![(index + 1, state)]);
+            }
             let nominal = match receiver_type {
                 VerificationType::Record { record, .. } => Some(NominalTypeId::Record(record)),
                 VerificationType::Variant { variant, .. } => Some(NominalTypeId::Variant(variant)),

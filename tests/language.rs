@@ -36,7 +36,7 @@ func main() -> Result<Bool, Int> { propagate(false) }
             panic!("try success returned a non-Result value");
         };
         assert_eq!(alternative.as_ref(), "Ok");
-        assert_eq!(payload, vec![Value::Bool(true)]);
+        assert_eq!(payload.as_slice(), [Value::Bool(true)]);
 
         let failure_source = source.replace("propagate(false)", "propagate(true)");
         let failure =
@@ -51,7 +51,7 @@ func main() -> Result<Bool, Int> { propagate(false) }
             panic!("try failure returned a non-Result value");
         };
         assert_eq!(alternative.as_ref(), "Error");
-        assert_eq!(payload, vec![Value::Integer(7)]);
+        assert_eq!(payload.as_slice(), [Value::Integer(7)]);
     }
 }
 

@@ -1,0 +1,5 @@
+//! Outcomes of remote execution, distinct from method domain errors.
+
+/// A worker execution failure, or the reserved outcome for owner-driven cancellation.
+pub enum RemoteError = Failed(String)
+    | Shutdown

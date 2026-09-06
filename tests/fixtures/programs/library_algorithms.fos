@@ -10,6 +10,9 @@ import core.string
 type Box = { value: Int }
 type Storage = { items: List<Int> }
 
+impl Box { func copy(self) -> self { Box { value: self.value } } }
+impl Storage { func copy(self) -> self { Storage { items: self.items.slice(0, self.items.length) } } }
+
 func consume_box(value: Box) -> Int [consume value] { value.value }
 
 func match_second(value: Int) -> Bool {
@@ -20,17 +23,24 @@ func match_second(value: Int) -> Bool {
 func read_bytes(value: String) -> Bytes [read value] { value.bytes }
 
 func main() -> Int {
+    branch algorithms() {
+        Result.Ok(value) -> value
+        Result.Error(_) -> -1
+    }
+}
+
+func algorithms() -> Result<Int, ListReadError> {
     let original = [Box { value: 42 }]
-    assert(consume_box(original.at(0)) == 42)
-    assert(original.at(0).value == 42)
+    assert(consume_box(try original.at(0)) == 42)
+    assert((try original.at(0)).value == 42)
     let stored = [Storage { items: [1] }]
-    let detached = stored.at(0)
+    let detached = try stored.at(0)
     detached.items.push(2)
     assert(detached.items == [1, 2], "detached field must receive the appended element")
-    assert(stored.at(0).items == [1], "shared source field must remain unchanged")
+    assert((try stored.at(0)).items == [1], "shared source field must remain unchanged")
     let selected = original.get(0)
     assert(selected == Option.Some(Box { value: 42 }))
-    assert(original.at(0).value == 42)
+    assert((try original.at(0)).value == 42)
     assert([1, 2, 3].find(match_second) == Option.Some(2))
     assert([1, 2, 3].any?(match_second))
 
@@ -42,8 +52,8 @@ func main() -> Int {
         index = index + 1
     }
     assert(values.fold(0, (sum: Int, value: Int) -> sum + value) == 8386560)
-    assert(values.reverse().at(0) == 4095)
-    assert(values.map((value: Int) -> value + 1).at(4095) == 4096)
+    assert((try values.reverse().at(0)) == 4095)
+    assert((try values.map((value: Int) -> value + 1).at(4095)) == 4096)
     assert(values.filter((value: Int) -> value < 2) == [0, 1])
     assert(values.slice(2048, 2050) == [2048, 2049])
     assert(values.length == 4096)
@@ -101,5 +111,5 @@ func main() -> Int {
             ()
         }
     }
-    42
+    Result.Ok(42)
 }

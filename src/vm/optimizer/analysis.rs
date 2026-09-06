@@ -77,7 +77,7 @@ pub(crate) fn definitions(instruction: &Instruction) -> Vec<Register> {
 pub(crate) fn uses(instruction: &Instruction) -> Vec<Register> {
     let mut uses = Vec::new();
     match instruction {
-        Instruction::Drop { .. } => {}
+        Instruction::Drop { register } => uses.push(*register),
         Instruction::Move { source, .. } => uses.push(*source),
         Instruction::Unary { operand, .. } => uses.push(*operand),
         Instruction::Binary { left, right, .. } => {

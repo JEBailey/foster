@@ -99,8 +99,9 @@ Invalid checked indexing is a language failure, not unchecked memory access.
 
 The following are library contracts, not new syntax:
 
-- `List.at(index)` reads an independently consumable element without moving it out of the source.
-  It must preserve any loans contained inside that element; an owned read is not lifetime erasure.
+- `List.at(index) -> Result<T, ListReadError>` checks bounds, then checks the concrete element's
+  `Copy` capability. It returns `OutOfBounds`, `NotCopyable`, or `Ok(element.copy())` without
+  moving out of the list. Bounds take precedence over capability checks.
 - `values[index]` can designate a projected place, and `ref values[index]` borrows that place.
 - `String.bytes` produces byte data without consuming the string. An ordinary stored field named
   `bytes` does not acquire that behavior merely from its spelling.
@@ -130,7 +131,8 @@ that shared result rather than inferring ownership from the member's spelling.
 | `String.bytes`, owned `head`, and `rest` | Independent owned value; immutable storage may be shared |
 | A computed result whose declared type is a reference | Borrowed value retaining its group origin |
 | `iterator` selection | Method; calling it creates an independent owned cursor |
-| `List.at` and an index read used as a value | Copy or independent owned result according to the element type, while preserving borrower provenance contained by that element |
+| `List.at` | `Result<T, ListReadError>` containing an explicit copy or a typed bounds/capability error |
+| An index read used as a value | Reads the projected place; taking ownership moves its contents |
 | Indexing rooted in a place | Projected place |
 
 ## 4. Evaluation and control flow
@@ -185,8 +187,10 @@ local can reinitialize it; using a field through an unavailable parent cannot. A
 invalidates the moved part and overlapping uses, not provably disjoint initialized siblings.
 
 The built-in copy types are `()`, `Bool`, `Int`, `Float`, `Byte`, `CodePoint`, and `Symbol`.
-Copying one preserves the source. There is no general user-defined `Copy` or `Clone` protocol in
-this baseline, and shared runtime representations do not confer source-level copy permission.
+Copying one preserves the source. `core.copy.Copy` declares `func copy(self) -> self`: a
+non-suspending read of the receiver that returns an independent value of its concrete type.
+Implementing it enables explicit `.copy()` and checked `List.at()` reads; assignment and capture
+classification remain unchanged. Shared runtime storage does not confer copy permission.
 
 **S-12 — Calls.** Parameters borrow by default. A consuming parameter receives ownership; callers
 must use `move` when transferring an existing ownership-bearing place. Copy values and fresh owned
@@ -267,9 +271,14 @@ leaving its current control path. A value successfully moved into a destination 
 environment is no longer owned by its temporary.
 Owned function storage is subject to the destruction rules in the ownership model; borrowed
 parameters do not destroy their caller's storage. Earlier last-use disposal is allowed only when
-observably equivalent. This draft does not introduce user-defined destructors or promise identical
-allocator reclamation timing across backends. VM failure teardown and native cleanup gaps are
-distinguished in section 12.
+observably equivalent. `core.drop.Drop` declares `func deinit(self) -> ()`. A matching method
+runs automatically once when ownership ends, before owned fields and payloads are released.
+It borrows the complete receiver, cannot suspend, and cannot be called directly. Locals are cleaned
+up in reverse binding order on scope exit; replacement cleans the old value after evaluating the
+new one. Moves transfer the cleanup obligation; explicit copies have separate obligations.
+Moving a field out of a value with `deinit` is rejected. Cleanup continues after a destructor
+fails, preserving an already active failure. Sibling field/element cleanup order and allocator
+reclamation timing are not specified.
 
 ## 9. Remote execution
 
@@ -282,9 +291,8 @@ The owning remote value controls worker lifetime. Owner destruction cancels runn
 requests and resolves outstanding futures with shutdown errors; futures do not keep the worker
 alive. Statically established outstanding requests at owner exit must be rejected. Remote execution
 failure is contained, terminal for that worker, and resolves outstanding and subsequent requests
-with errors. The planned awaited outcome is `Result<T, RemoteError>`; that API and the new lifetime
-checks are pending implementation. Existing VM failure delivery does not establish this entire
-contract, and native process-fatal failures are a conformance gap.
+with errors. The awaited outcome is `Result<T, RemoteError>` in both backends, including an outer Result
+when the method returns a domain Result. Owner cancellation and lifetime checks remain G-06.
 
 **S-20 — Remote loans.** Owned messages transfer only supported transferable values. Ordinary
 explicit references, closures, and futures cannot be transferred as owned mailbox arguments in
@@ -348,12 +356,18 @@ These entries distinguish missing language decisions from missing implementation
 (evaluation order) is closed by S-09, and `G-02` (member/accessor classification) is closed by
 S-08. Their decisions are normative rules above rather than open entries:
 
-- **G-03 — Remote failure implementation:** native worker failures currently terminate the process
-  rather than populating their futures, even for unawaited calls. Sticky failure and the planned
-  typed remote outcomes require implementation and cross-backend witnesses.
-- **G-04 — Reclamation (implementation gap/open design):** native strings and argument containers
-  participate in managed destruction. Full exceptional cleanup, user-visible resource destruction ordering,
-  and a general destructor protocol are not uniformly established. See [native gaps](native.md#known-runtime-correctness-gaps).
+- **G-03 — Remote failure implementation (closed):** both backends contain execution failures,
+  reject queued and later execution after failure, and deliver `Result<T, RemoteError>` outcomes.
+  Cross-backend tests cover discarded failures, completed results, domain errors, and nested failures
+  with optimization enabled and disabled. Owner cancellation
+  and lifetime checking remain G-06.
+- **G-04 — Reclamation (closed):** modeled native failures release live managed values and
+  active temporaries while generated frames return from callee to caller. Both backends invoke
+  user-defined `deinit` at ownership end, before releasing fields, and preserve the original error
+  while continuing cleanup. Explicit `Copy`, typed `List.at` failures, moves, replacement, loop
+  exits, enum payloads, remote argument transfer, and failure cleanup have backend parity tests.
+  Scoped remote owner cancellation remains G-06; host wrappers need a `deinit` implementation to
+  close their external resources automatically.
 - **G-05 — Generic sequence execution (implementation gap):** native `SequenceIterator` cannot
   yet resolve all erased sequence storage members. Head/rest adapters can copy tails; neither
   structural conformance nor slicing promises zero-copy traversal.
@@ -364,6 +378,12 @@ S-08. Their decisions are normative rules above rather than open entries:
 - **G-07 — Analysis precision (implementation limit):** indirect callable-result provenance and
   richer path facts remain conservative. Better precision may accept more safe programs but must
   not discard a real origin or lifetime dependency.
+- **G-08 — Nested indexed assignment (implementation violation):** both backends currently lower
+  `items[0].field = value` through an owned index read, so the write can affect a detached temporary
+  and leave the list element unchanged. For example, a list containing `{ text: "before" }` still
+  reads `"before"` after `items[0].text = "after"`. S-08 and S-09 require this rooted indexing to
+  preserve its projected place and update the selected field. Direct `items[0] = replacement`
+  works; the nested write must be fixed without changing the language contract.
 
 Resolving an open decision requires a documented rule, implementation, and conformance tests.
 Fixing an implementation violation should restore the contract without redefining the violating

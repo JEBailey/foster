@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 21, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 23, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -26,23 +26,36 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `21` |
+| version | `u16` | `23` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
+| drops inserted | `bool` | whether automatic register cleanup has already been inserted |
 | main | optional `FunctionId` | entry point |
 | main arguments | `bool` | whether `main` receives `std.process.Arguments` |
 | string record | optional `RecordId` | String wrapper |
 | symbol record | optional `RecordId` | Symbol wrapper |
+| remote result | optional `VariantTypeId` | nominal `core.result.Result` for remote outcomes |
+| remote error | optional `VariantTypeId` | nominal `core.remote_error.RemoteError` for remote failures |
 | records | `vector<(RecordId, string, vector<string> parameters, vector<(string, VerificationType)>)>` | runtime name, generic parameters, and typed indexed field layout |
 | dispatch | `vector<(NominalTypeId, u32 slot, FunctionId)>` | record and enum dispatch |
 | enum cases | `vector<(VariantId, VariantTypeId, string, vector<string> parameters, string, vector<VerificationType>)>` | parent enum, generic parameters, case label, and declared payload layout |
+
+Remote outcome IDs identify the actual Result and RemoteError enums, independently of similarly
+named user types. The verifier checks their cases, generic arity, and payload types before
+accepting remote calls or awaits.
 
 Dispatch slots are program-local `u32` identifiers assigned to the contract signatures selected by
 type checking. The type checker also resolves every concrete record and enum implementation for
 each used slot. Runtime lookup is therefore a direct `(concrete type, slot)` table access and does
 not repeat signature matching. A `NominalTypeId` is tag `0` followed by a `RecordId`, or tag `1`
 followed by a `VariantTypeId`.
+
+The three highest slots are reserved: `0xffffffff` invokes Copy, `0xfffffffe` queries Copy,
+and `0xfffffffd` identifies Drop. The query has no implementation entry. Copy/Drop entries
+must have one borrowed receiver, no captures, and respectively the receiver type or unit result.
+Only ownership cleanup may invoke Drop. Version 23 also records whether automatic drops were
+inserted, and distinguishes moving a register from taking the pointee of a generated reference.
 
 A function is `string name`, `bool intrinsic_stub`, `u16 parameter_count`,
 `vector<VerificationType> parameter_types`, `vector<ParameterMode> parameter_modes`,
@@ -74,7 +87,7 @@ nominal parameter names, concrete construction arguments, and deterministic gene
 on statically resolved calls; instruction and type tags remain unchanged.
 Version 20 adds the same deterministic generic substitutions to closure construction and
 specialized closure calls, so code and environment layout share one monomorphization identity.
-Version 21 adds concrete element types to `MakeList` and concrete pointee types to reference
+Version 22 adds concrete element types to `MakeList` and concrete pointee types to reference
 construction. This preserves empty generic-list and projected-reference layouts through the shared
 SSA, bytecode, and native boundaries.
 
@@ -108,7 +121,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 10 | StoreField | `R object, string, R source` |
 | 11 | StoreIndex | `R object, R index, R source` |
 | 12 | MakeReference | `R destination, VerificationType pointee, R object, R index` |
-| 13 | MoveOut | `R destination, R source` |
+| 13 | MoveOut | `bool by_reference, R destination, R source` |
 | 14 | Push | `R destination, R object, R value` |
 | 15 | Append | `R destination, R object, R value` |
 | 16 | Contains | `R destination, R value, regs` |
@@ -133,7 +146,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 21 readers accept only version 21 with zero flags. Development bytecode from another version
+Version 23 readers accept only version 23 with zero flags. Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
 canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of

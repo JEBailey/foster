@@ -1,0 +1,15 @@
+
+import core.drop
+type Item = & Drop & { id: Int }
+impl Item { func deinit(self) -> () { println(self.id) } }
+type Box = { child: Item }
+func finish_value(value: Item) -> () [consume value] { println(10) }
+func main() -> Int {
+    let box = Box { child: Item { id: 1 } }
+    finish_value(move box.child)
+    println(20)
+    let values = [Item { id: 2 }]
+    finish_value(move values[0])
+    println(30)
+    42
+}

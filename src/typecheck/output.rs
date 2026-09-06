@@ -120,6 +120,13 @@ impl Checker<'_> {
                 .transpose()?
                 .map(|ty| intern_type(&mut information, &mut interner, ty));
             information.variant_payloads.insert(variant_id, payload);
+            if let Some(payload) = payload {
+                information
+                    .variant_field_types
+                    .entry(variant.parent)
+                    .or_default()
+                    .push(payload);
+            }
         }
 
         for (expression, ty) in &self.expressions {
@@ -163,6 +170,63 @@ impl Checker<'_> {
                     suspends: self.hir.functions[*function].suspends,
                 },
             );
+        }
+        for (function, definition) in self.hir.functions.iter() {
+            let Some(owner) = definition.owner.as_deref() else {
+                continue;
+            };
+            let Some(member) = definition.name.strip_prefix(&format!("{owner}.")) else {
+                continue;
+            };
+            let slot = match member {
+                "copy" => crate::types::COPY_SLOT,
+                "deinit" => crate::types::DEINIT_SLOT,
+                _ => continue,
+            };
+            let signature = &information.functions[&function];
+            if definition.receiver.is_none()
+                || signature.parameters.len() != 1
+                || signature.parameter_modes[0] != crate::ast::ParameterMode::Borrow
+                || definition.suspends
+                || definition
+                    .effects
+                    .iter()
+                    .any(|effect| effect.kind != crate::ast::EffectKind::Read)
+            {
+                if member == "deinit" {
+                    return Err(self.error(
+                        function,
+                        "deinit must borrow only self, must not suspend, and may only read self",
+                    ));
+                }
+                continue;
+            }
+            let valid_result = if slot == crate::types::COPY_SLOT {
+                signature.result == signature.parameters[0]
+            } else {
+                matches!(information.types[signature.result], Type::Unit)
+            };
+            if !valid_result {
+                if member == "deinit" {
+                    return Err(self.error(function, "deinit must return ()"));
+                }
+                continue;
+            }
+            let nominal = match information.types[signature.parameters[0]] {
+                Type::Record { record, .. } => NominalTypeId::Record(record),
+                Type::Variant { variant, .. } => NominalTypeId::Variant(variant),
+                _ => continue,
+            };
+            if information
+                .dispatch
+                .insert((nominal, slot), function)
+                .is_some()
+            {
+                return Err(self.error(
+                    function,
+                    format!("ambiguous `{member}` capability implementation"),
+                ));
+            }
         }
         for (index, dispatch) in self.dispatch_keys.iter().enumerate() {
             let slot = DispatchSlot(index as u32);

@@ -36,14 +36,129 @@ pub enum Value {
         variant: Option<crate::hir::VariantTypeId>,
         type_name: Arc<str>,
         alternative: Arc<str>,
-        payload: Vec<Value>,
+        payload: VariantPayload,
     },
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecordFields {
     layout: Arc<RecordLayout>,
-    values: Rc<Vec<Value>>,
+    values: Rc<OwnedFields>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct VariantPayload(Rc<OwnedFields>);
+
+impl From<Vec<Value>> for VariantPayload {
+    fn from(values: Vec<Value>) -> Self {
+        Self(Rc::new(OwnedFields::new(values)))
+    }
+}
+
+impl std::ops::Deref for VariantPayload {
+    type Target = Vec<Value>;
+    fn deref(&self) -> &Self::Target {
+        &self.0.values
+    }
+}
+
+impl std::ops::DerefMut for VariantPayload {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut Rc::make_mut(&mut self.0).values
+    }
+}
+
+impl IntoIterator for VariantPayload {
+    type Item = Value;
+    type IntoIter = std::vec::IntoIter<Value>;
+    fn into_iter(self) -> Self::IntoIter {
+        Rc::try_unwrap(self.0)
+            .unwrap_or_else(|values| (*values).clone())
+            .into_values()
+            .into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a VariantPayload {
+    type Item = &'a Value;
+    type IntoIter = std::slice::Iter<'a, Value>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.values.iter()
+    }
+}
+
+impl VariantPayload {
+    pub(super) fn set_cleanup(&self, cleanup: super::machine::Cleanup) {
+        *self.0.cleanup.borrow_mut() = Some(cleanup);
+    }
+    fn take_cleanup(&self) -> Option<super::machine::Cleanup> {
+        self.0
+            .cleanup
+            .borrow_mut()
+            .take()
+            .and_then(super::machine::Cleanup::into_owned)
+    }
+}
+
+#[derive(Debug)]
+struct OwnedFields {
+    values: Vec<Value>,
+    cleanup: RefCell<Option<super::machine::Cleanup>>,
+}
+
+impl OwnedFields {
+    fn new(values: Vec<Value>) -> Self {
+        Self {
+            values,
+            cleanup: RefCell::new(None),
+        }
+    }
+    fn into_values(mut self) -> Vec<Value> {
+        self.cleanup.get_mut().take();
+        std::mem::take(&mut self.values)
+    }
+}
+
+impl Clone for OwnedFields {
+    fn clone(&self) -> Self {
+        Self {
+            values: self.values.clone(),
+            cleanup: RefCell::new(
+                self.cleanup
+                    .borrow_mut()
+                    .take()
+                    .and_then(super::machine::Cleanup::into_owned),
+            ),
+        }
+    }
+}
+
+impl PartialEq for OwnedFields {
+    fn eq(&self, other: &Self) -> bool {
+        self.values == other.values
+    }
+}
+
+impl std::ops::Deref for OwnedFields {
+    type Target = Vec<Value>;
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+
+impl std::ops::DerefMut for OwnedFields {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.values
+    }
+}
+
+impl Drop for OwnedFields {
+    fn drop(&mut self) {
+        if let Some(cleanup) = self.cleanup.get_mut().take() {
+            cleanup.run(std::mem::take(&mut self.values));
+        }
+        while self.values.pop().is_some() {}
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -76,7 +191,7 @@ impl RecordFields {
         }
         Ok(Self {
             layout,
-            values: Rc::new(values),
+            values: Rc::new(OwnedFields::new(values)),
         })
     }
 
@@ -84,12 +199,24 @@ impl RecordFields {
         let (names, values) = fields.into_iter().unzip();
         Self {
             layout: Arc::new(RecordLayout::new(names)),
-            values: Rc::new(values),
+            values: Rc::new(OwnedFields::new(values)),
         }
     }
 
     pub fn get(&self, name: &str) -> Option<&Value> {
         self.index(name).and_then(|index| self.values.get(index))
+    }
+
+    pub(super) fn set_cleanup(&self, cleanup: super::machine::Cleanup) {
+        *self.values.cleanup.borrow_mut() = Some(cleanup);
+    }
+
+    fn take_cleanup(&self) -> Option<super::machine::Cleanup> {
+        self.values
+            .cleanup
+            .borrow_mut()
+            .take()
+            .and_then(super::machine::Cleanup::into_owned)
     }
 
     pub(crate) fn get_mut(&mut self, name: &str) -> Option<&mut Value> {
@@ -106,7 +233,9 @@ impl RecordFields {
     }
 
     pub(crate) fn into_pairs(self) -> impl Iterator<Item = (String, Value)> {
-        let values = Rc::try_unwrap(self.values).unwrap_or_else(|values| (*values).clone());
+        let values = Rc::try_unwrap(self.values)
+            .unwrap_or_else(|values| (*values).clone())
+            .into_values();
         self.layout.names.clone().into_iter().zip(values)
     }
 
@@ -153,7 +282,7 @@ fn value_layout() -> Arc<RecordLayout> {
 fn value_fields(value: Value) -> RecordFields {
     RecordFields {
         layout: value_layout(),
-        values: Rc::new(vec![value]),
+        values: Rc::new(OwnedFields::new(vec![value])),
     }
 }
 
@@ -710,6 +839,7 @@ fn ensure_generation(
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum WireValue {
+    Owned(Arc<WireOwned>),
     Unit,
     Bool(bool),
     Integer(i64),
@@ -733,6 +863,39 @@ pub(crate) enum WireValue {
     Remote(RemoteValue),
 }
 
+#[derive(Debug)]
+pub(crate) struct WireOwned {
+    pub(super) value: Mutex<Option<WireValue>>,
+    pub(super) cleanup: Mutex<Option<super::machine::Cleanup>>,
+}
+
+impl PartialEq for WireOwned {
+    fn eq(&self, other: &Self) -> bool {
+        let left = self.value.lock().unwrap().clone();
+        let right = other.value.lock().unwrap().clone();
+        left == right
+    }
+}
+
+impl Drop for WireOwned {
+    fn drop(&mut self) {
+        let cleanup = self.cleanup.get_mut().unwrap().take();
+        let value = self.value.get_mut().unwrap().take();
+        if let (Some(cleanup), Some(value)) = (cleanup, value)
+            && let Ok(value) = Value::from_wire(value)
+        {
+            let values = match value {
+                Value::Record { fields, .. } => {
+                    fields.into_pairs().map(|(_, value)| value).collect()
+                }
+                Value::Variant { payload, .. } => payload.into_iter().collect(),
+                _ => Vec::new(),
+            };
+            cleanup.run(values);
+        }
+    }
+}
+
 pub(crate) type WireResult = Result<WireValue, String>;
 pub(crate) type FutureReceiver = may::sync::mpsc::Receiver<WireResult>;
 
@@ -742,6 +905,7 @@ pub(crate) enum RemoteArgument {
 }
 
 pub(crate) struct RemoteMessage {
+    pub(crate) request: u64,
     pub(crate) function: crate::hir::FunctionId,
     pub(crate) arguments: Vec<RemoteArgument>,
     pub(crate) response: may::sync::mpsc::Sender<WireResult>,
@@ -751,6 +915,7 @@ pub(crate) struct RemoteMessage {
 pub struct RemoteValue {
     pub(crate) id: u64,
     pub(crate) sender: may::sync::mpsc::Sender<RemoteMessage>,
+    pub(crate) control: Arc<crate::remote::Control>,
 }
 
 impl fmt::Debug for RemoteValue {
@@ -952,7 +1117,12 @@ impl Value {
     }
 
     pub(crate) fn into_wire(self) -> Result<WireValue, RuntimeError> {
-        Ok(match self {
+        let cleanup = match &self {
+            Self::Record { fields, .. } => fields.take_cleanup(),
+            Self::Variant { payload, .. } => payload.take_cleanup(),
+            _ => None,
+        };
+        let value = match self {
             Self::Unit => WireValue::Unit,
             Self::Bool(value) => WireValue::Bool(value),
             Self::Integer(value) => WireValue::Integer(value),
@@ -999,11 +1169,43 @@ impl Value {
                     "value cannot cross a remote-object boundary",
                 ));
             }
+        };
+        Ok(if let Some(cleanup) = cleanup {
+            WireValue::Owned(Arc::new(WireOwned {
+                value: Mutex::new(Some(value)),
+                cleanup: Mutex::new(Some(cleanup)),
+            }))
+        } else {
+            value
         })
     }
 
     pub(crate) fn from_wire(value: WireValue) -> Result<Self, RuntimeError> {
         Ok(match value {
+            WireValue::Owned(owner) => {
+                let value = owner
+                    .value
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .expect("live wire ownership")
+                    .clone();
+                let cleanup = owner
+                    .cleanup
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .map(|cleanup| cleanup.with_proxy(owner.clone()));
+                let value = Self::from_wire(value)?;
+                if let Some(cleanup) = cleanup {
+                    match &value {
+                        Self::Record { fields, .. } => fields.set_cleanup(cleanup),
+                        Self::Variant { payload, .. } => payload.set_cleanup(cleanup),
+                        _ => unreachable!("wire cleanup belongs to a nominal value"),
+                    }
+                }
+                value
+            }
             WireValue::Unit => Self::Unit,
             WireValue::Bool(value) => Self::Bool(value),
             WireValue::Integer(value) => Self::Integer(value),
@@ -1044,7 +1246,8 @@ impl Value {
                 payload: payload
                     .into_iter()
                     .map(Self::from_wire)
-                    .collect::<Result<_, _>>()?,
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into(),
             },
             WireValue::Remote(remote) => Self::Remote(remote),
         })

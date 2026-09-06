@@ -62,6 +62,34 @@ subsequent reads or writes through its projections are rejected. Moving an alrea
 value is an explicit transfer and has no source place to invalidate. Assignment to the whole local
 may reinitialize it.
 
+`core.copy.Copy` adds explicit copying for ownership-bearing values:
+
+```foster
+import core.copy
+import core.drop
+
+type Item = & Copy & Drop & { id: Int }
+impl Item {
+    func copy(self) -> self { Item { id: self.id } }
+    func deinit(self) -> () { println(self.id) }
+}
+```
+
+The result spelling `self` denotes the concrete receiver type. A copy borrows the original and
+creates an independent owner; it does not make assignment or capture implicitly copy the value.
+`String` and `Bytes` support explicit copying, as do the scalar modules. A type without a matching
+`copy` method remains noncopyable; `File`, for example, has no such implementation.
+
+`deinit` is automatic, non-suspending, returns `()`, and may read its complete receiver. It runs
+once when ownership ends: locals in reverse binding order, old values at replacement, consumed
+parameters at function exit, and temporaries when their full expression ends. Moves transfer this
+obligation, and copies own separate obligations. A parent's callback runs before its fields or
+payload are released. Partial moves out of a parent with `deinit` are rejected. Calling `deinit`
+directly is an error; fallible explicit closing can use a separate method returning `Result`.
+Cleanup continues after errors and preserves an existing failure over a later destructor failure.
+Sibling field/element destruction order is unspecified. Embedders use `vm::release_value` to
+release returned values and report any destructor failure; the CLI does this automatically.
+
 Function calls are different from closure capture: arguments are borrowed by default. A function
 that takes ownership names each ownership-taking parameter with a `consume` contract, and callers
 write `move` when transferring an existing place:
@@ -409,7 +437,7 @@ program outside the implemented model. The current status is:
 | Rules | Status | Production requirement |
 | --- | --- | --- |
 | 1-4, 6-7, 9-10, 14, 16 | Enforced, with bounded comparison-based dynamic-index disjointness and conservative erased callable calls | Maintain compile-pass and compile-fail coverage for every rule and CFG shape. |
-| 5, 8, 11, 13 | Enforced for named locals, consumed parameters, expression temporaries, ordinary and guarded return, assertion failure, `try`, loop transfer, `await`, and cancellation; arbitrary runtime-error MIR edges and resource destructors remain partial | Finish generalized failure-edge lowering and define destructor execution before stable release. |
+| 5, 8, 11, 13 | Enforced for named locals, consumed parameters, expression temporaries, ordinary and guarded return, assertion failure, `try`, loop transfer, `await`, and cancellation; arbitrary runtime-error MIR edges remain partial | Finish generalized failure-edge lowering; runtime cleanup already invokes deinit. |
 | 12 | Partial | Loans remain governed by task ownership and effects; crossing-task storage and exclusivity still require a complete specification. |
 | 15 | Unsupported as a general boundary | Host and foreign interfaces must not retain references until retention contracts are implemented. |
 
@@ -470,6 +498,13 @@ parameters participate in function cleanup, while borrowed parameters do not inv
 caller's storage. At runtime, failure unwinds invocation frames from callee to caller and detaches
 each frame's registers in reverse allocation order. This deterministic frame teardown applies to
 all VM errors even where ownership MIR does not yet carry an explicit exceptional successor.
+
+Native preparation retains live ownership at each instruction, including ABI argument copies and
+conversions. Generated failure paths release those values using the ordinary layout destructors,
+then return through callers that perform their own cleanup. A call's transferred arguments belong
+to its callee; borrowed addresses never release caller-owned pointees. This applies to checked
+arithmetic, bounds checks, assertions, host-response failures, and nested invocation failures on
+both main and remote threads. Opaque host response buffers are released before frame-owned values.
 
 ## Compiler implementation
 
@@ -580,18 +615,18 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   summaries are propagated to a fixed point across chains of direct calls. Indirect and erased
   callable results remain conservative until callable types carry equivalent parameter/result
   provenance metadata.
-- Copy behavior is currently a built-in type classification. User-defined copy types have not been
-  designed.
+- Implicit copy behavior is a built-in classification. The structural `Copy` capability supports
+  explicit user-defined copying without changing assignment or capture semantics.
 - Runtime values still use managed host representations in the VM. Records now use shared layouts
   with dense indexed fields, and enums share their runtime names. Ordinary registers are inline
   and promote to stable slots only when their identity becomes observable. The bytecode compiler
-  emits deterministic `Drop` instructions after register last use, while observable shared slots
-  remain alive through frame teardown. Borrow edges are weak and therefore do not create reference
+  anchors observable cleanup to ownership boundaries and emits `Drop` instructions for remaining
+  temporaries after their last use. Borrow edges are weak and therefore do not create reference
   cycles. Target-aware native object layouts and ownership drop plans are calculated and emitted as
   object descriptors. Cranelift record/enum code now executes strong retain/release, copy-on-write,
-  and recursive tag-aware destruction plans. Collection/reference/closure destruction, arbitrary
-  cyclic owned graphs, resource destructors, and a language-level destructor ordering contract
-  remain backend work.
+  and recursive tag-aware destruction plans, including collections, closures, and exceptional
+  frame exits. Both backends invoke `deinit` before releasing child values. Arbitrary cyclic owned
+  graphs and scoped remote cancellation remain open.
 - Explicit assertion failures are represented in ownership MIR. Other dynamic failures, such as
   bounds errors and host-operation errors, use deterministic runtime frame teardown but do not yet
   have per-operation exceptional successors in ownership MIR.

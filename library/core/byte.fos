@@ -3,6 +3,9 @@
 import core.result
 
 impl Byte {
+    /// Explicitly copies this scalar value.
+    pub func copy(self: Byte) -> self [read self] { self }
+
     /// Returns whether an integer fits in a byte.
     pub func valid(value: Int) -> Bool {
         value >= 0 && value <= 255

@@ -253,3 +253,38 @@ func main() -> Bool {
         crate::vm::Value::Bool(true)
     );
 }
+
+#[test]
+fn remote_outcomes_round_trip_with_nominal_metadata() {
+    let compilation = crate::compile(
+        r#"
+import core.result
+import core.remote_error
+type Worker = {}
+impl Worker {
+    func fail(self) -> Int {
+        assert(false, "remote")
+        42
+    }
+}
+func main() -> Bool {
+    let worker = remote Worker {}
+    (await worker.fail()) == Result.Error(RemoteError.Failed("assertion failed: remote"))
+}
+"#,
+    )
+    .unwrap();
+    let program = compile(&compilation).unwrap();
+    let decoded = decode_program(&encode_program(&program).unwrap()).unwrap();
+    assert_eq!(decoded, program);
+    assert_eq!(
+        Machine::new(&decoded).run_main().unwrap(),
+        crate::vm::Value::Bool(true)
+    );
+    let mut malformed = program.clone();
+    malformed.remote_error = None;
+    assert!(crate::vm::verify(&malformed).is_err());
+    let mut malformed = program;
+    malformed.remote_error = malformed.remote_result;
+    assert!(crate::vm::verify(&malformed).is_err());
+}

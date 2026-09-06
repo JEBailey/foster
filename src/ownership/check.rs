@@ -83,6 +83,11 @@ fn check_function(
                         return Err(error);
                     }
                     if *mode == UseMode::Move {
+                        if moves_out_of_drop(types, place) {
+                            return Err(FosterError::runtime("cannot move a field or payload out of a value with deinit; copy it or move the whole value")
+                                .with_source_module(hir.modules[hir.functions[function].module].name.clone())
+                                .with_primary_label(span.clone(), "deinit needs the complete value until ownership ends"));
+                        }
                         if let Some(local) = place.local_root()
                             && hir.functions[function].parameters.contains(&local)
                             && !parameter_can_be_consumed(hir, types, function, local)
@@ -165,6 +170,47 @@ fn check_function(
         }
     }
     Ok(())
+}
+
+fn moves_out_of_drop(types: &TypeInformation, place: &Place) -> bool {
+    use crate::hir::Projection;
+    use crate::types::{DEINIT_SLOT, NominalTypeId, Type};
+    let Some(mut ty) = place.local_root().and_then(|local| types.local_type(local)) else {
+        return false;
+    };
+    for projection in &place.projections {
+        let nominal = match types.types[ty] {
+            Type::Record { record, .. } => Some(NominalTypeId::Record(record)),
+            Type::Variant { variant, .. } => Some(NominalTypeId::Variant(variant)),
+            _ => None,
+        };
+        if nominal.is_some_and(|nominal| types.dispatch.contains_key(&(nominal, DEINIT_SLOT))) {
+            return true;
+        }
+        let next = match (&types.types[ty], projection) {
+            (Type::Reference { value, .. }, Projection::Dereference) => Some(*value),
+            (Type::Record { record, .. }, Projection::Field(name)) => {
+                types.record_field_types.get(record).and_then(|fields| {
+                    fields
+                        .iter()
+                        .find(|(field, _)| field == name)
+                        .map(|(_, ty)| *ty)
+                })
+            }
+            (Type::Record { record, arguments }, Projection::Index { .. })
+                if types.record_names[record] == "List" =>
+            {
+                arguments.first().copied()
+            }
+            (Type::RawList(element) | Type::Sequence(element), Projection::Index { .. }) => {
+                Some(*element)
+            }
+            _ => None,
+        };
+        let Some(next) = next else { return false };
+        ty = next;
+    }
+    false
 }
 
 fn parameter_can_be_consumed(

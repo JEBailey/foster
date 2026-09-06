@@ -92,7 +92,13 @@ pub(super) fn emit_object(
     let exported_result_layout = native_layouts.managed_layout(main_result);
     let release_thunks =
         declare_release_thunks(&mut module, native_layouts, exported_result_layout)?;
-    define_layout_destructors(&mut module, native_layouts, &drop_ids)?;
+    define_layout_destructors(
+        &mut module,
+        native_layouts,
+        &drop_ids,
+        prepared.environment(),
+        &native_ids,
+    )?;
     define_release_thunks(&mut module, native_layouts, &drop_ids, &release_thunks)?;
 
     let backend = NativeBackend {

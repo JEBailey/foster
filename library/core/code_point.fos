@@ -3,6 +3,9 @@
 import core.option
 
 impl CodePoint {
+    /// Explicitly copies this scalar value.
+    pub func copy(self: CodePoint) -> self [read self] { self }
+
     /// Returns the Unicode scalar value represented by this code point.
     pub func as_int(self: CodePoint) -> Int {
         self

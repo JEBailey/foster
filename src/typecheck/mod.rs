@@ -502,6 +502,11 @@ impl<'a> Checker<'a> {
                 }
             }
             let result = match function.return_type.as_ref() {
+                Some(crate::ast::TypeExpr::Named(name, arguments))
+                    if name == "self" && arguments.is_empty() && function.receiver.is_some() =>
+                {
+                    parameters[0].clone()
+                }
                 Some(annotation) => self.annotation_type(module, annotation, &generics)?,
                 None => self.fresh(),
             };

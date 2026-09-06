@@ -1,0 +1,15 @@
+
+running 1 test
+
+thread 'destructor_temporaries_survive_the_full_expression' (34452) panicked at tests\backend_parity.rs:99:50:
+called `Result::unwrap()` on an `Err` value: FosterError { message: "bytecode function `materialize_table_child` instruction 18 consumes unavailable r0 in MoveOut { by_reference: false, destination: Register(13), source: Register(0) }", line: 0, column: 0, code: None, source_module: None, labels: [], notes: [], help: None }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test destructor_temporaries_survive_the_full_expression ... FAILED
+
+failures:
+
+failures:
+    destructor_temporaries_survive_the_full_expression
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 27 filtered out; finished in 5.97s
+

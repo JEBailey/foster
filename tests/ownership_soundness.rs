@@ -35,6 +35,8 @@ func main() -> Int {
         (
             "rule-5-frame-loan-across-await",
             r#"
+import core.result as outcomes
+
 type Worker = {}
 impl Worker {
     func value(self: Worker) -> Int { 1 }
@@ -42,7 +44,7 @@ impl Worker {
 func wait(worker: Remote<Worker>) -> Int {
     let values = [10]
     let selected = ref values[0]
-    let waited = await worker.value()
+    let waited = (await worker.value()).unwrap_or(0)
     selected + waited
 }
 func main() { 0 }

@@ -433,6 +433,29 @@ impl Package {
         self.install_list_bootstrap(cache)?;
         self.install_string_bootstrap(cache)?;
         self.install_symbol_bootstrap(cache)?;
+        self.install_bootstrap(
+            BootstrapModule::full("core.copy", include_str!("../library/core/copy.fos")),
+            cache,
+        )?;
+        self.install_bootstrap(
+            BootstrapModule::full("core.drop", include_str!("../library/core/drop.fos")),
+            cache,
+        )?;
+        self.install_bootstrap(
+            BootstrapModule::types_only(
+                "core.result",
+                include_str!("../library/core/result.fos"),
+                &["Result"],
+            ),
+            cache,
+        )?;
+        self.install_bootstrap(
+            BootstrapModule::full(
+                "core.remote_error",
+                include_str!("../library/core/remote_error.fos"),
+            ),
+            cache,
+        )?;
         self.validate()
             .map_err(|error| self.locate_compiler_error(error))
     }
@@ -499,7 +522,11 @@ impl Package {
         cache: &mut Option<&mut ModuleCache>,
     ) -> Result<(), FosterError> {
         self.install_bootstrap(
-            BootstrapModule::full("core.symbol", include_str!("../library/core/symbol.fos")),
+            BootstrapModule::types_only(
+                "core.symbol",
+                include_str!("../library/core/symbol.fos"),
+                &["Symbol"],
+            ),
             cache,
         )
     }
@@ -531,7 +558,9 @@ impl Package {
         {
             program.imports.clear();
             program.constants.clear();
-            program.variants.clear();
+            program
+                .variants
+                .retain(|variant| types.contains(&variant.name.as_str()));
             match bootstrap.mode {
                 BootstrapMode::TypesAndFunctions { functions, .. } => program
                     .functions
@@ -548,7 +577,7 @@ impl Package {
             program
                 .records
                 .retain(|record| types.contains(&record.name.as_str()));
-            if program.records.len() != types.len() {
+            if program.records.len() + program.variants.len() != types.len() {
                 return Err(FosterError::runtime(format!(
                     "embedded `{}` must define bootstrap types {}",
                     bootstrap.name,
@@ -1046,7 +1075,13 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
         "std.collections",
         include_str!("../library/std/collections.fos"),
     ),
+    (
+        "core.remote_error",
+        include_str!("../library/core/remote_error.fos"),
+    ),
     ("core.result", include_str!("../library/core/result.fos")),
+    ("core.copy", include_str!("../library/core/copy.fos")),
+    ("core.drop", include_str!("../library/core/drop.fos")),
     (
         "core.ordering",
         include_str!("../library/core/ordering.fos"),

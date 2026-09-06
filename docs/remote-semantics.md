@@ -1,11 +1,11 @@
 # Remote ownership, requests, and failure
 
-Status: **accepted semantic direction; implementation pending**, 2026-09-05.
+Status: **failure containment and typed outcomes implemented; scoped cancellation and lifetime analysis pending**, 2026-09-06.
 
 This document encapsulates the remote lifecycle decisions accompanying
 [S-19 and S-20 of the semantic specification](semantics.md#9-remote-execution).
-It specifies required behavior, not a claim that the current compiler or either runtime already
-enforces it. No runtime, syntax, or language-version change is made by documenting these decisions.
+It specifies required behavior. The implementation status below distinguishes working failure
+containment from the remaining owner-lifetime and cancellation work.
 
 ## Ownership and request lifetime
 
@@ -62,18 +62,18 @@ not established by this decision.
 ## Typed outcomes
 
 **R-06 — One outcome type.** Success and remote failure must be expressible through one static
-result contract. The planned representation is a future whose awaited value is
-`Result<T, RemoteError>`, where `T` is the method's declared result type. `RemoteError.Shutdown`
-denotes owner-driven cancellation; remote execution failure needs a separate error category.
-These names describe the intended API and are not declarations currently available in the library.
+result contract. A remote call returns `Future<Result<T, RemoteError>>`; its awaited value is
+`Result<T, RemoteError>`, where `T` is the method's declared result type. `RemoteError.Failed(String)` describes an execution failure. `RemoteError` is declared in
+`core.remote_error`; `Result` is declared in `core.result`. `RemoteError.Shutdown` reserves
+the distinct owner-cancellation outcome; owner-driven cancellation is still G-06.
 
 If a method already returns `Result<T, E>`, the outer remote outcome remains separate:
 `Result<Result<T, E>, RemoteError>`. Remote execution failure must not be silently converted into
 the method's domain error type. Ordinary Result handling, rather than an unrelated sometimes-returned
 error object, determines how callers inspect the outcome.
 
-The current `Future<T>`/`await` behavior must be migrated deliberately when this representation is
-implemented. This document does not claim that existing examples already type-check with that API.
+Use ordinary Result matching, transformations, or `try await` to handle remote outcomes.
+Successful method results are wrapped even when the method already returns a Result.
 
 ## Compile-time lifetime requirement
 
@@ -128,13 +128,17 @@ may be erased by retaining a future or adapting the receiver to another contract
 The [shared lifecycle controller](../src/remote.rs) now implements terminal-state arbitration,
 owner-triggered cancellation callbacks, and exactly-once request completion independently of an
 execution engine. Its unit tests cover sticky failure, later request rejection, owner destruction,
-and completion/shutdown races. It is not yet connected to the VM or native workers and does not
-by itself enforce Foster owner lifetimes or provide Foster `RemoteError` values.
+and completion/shutdown races. Both workers use it to register requests and arbitrate completion
+versus failure. Outstanding failures are published before queued-argument reclamation.
+Owner-driven cancellation is not yet connected, so it does not enforce Foster owner lifetimes.
 
-The current VM has remote failure delivery, but that alone does not establish terminal worker
-failure, scoped cancellation, or the new typed outcome API. Native remote execution failures are
-currently process-fatal. The owner/request completion analysis and proposed diagnostic are not
-implemented. See [native runtime gaps](native.md#known-runtime-correctness-gaps).
+Both runtimes contain execution failures, retain the first failure for subsequent requests,
+and deliver typed outcomes. Completed results are preserved; domain errors leave the worker live.
+Native generated calls propagate a thread-local failure flag by ordinary returns, releasing live
+managed frame values without unwinding through generated frames. Rejected native messages release
+their transferred arguments. General resource destruction remains open under G-04.
+Owner-triggered cancellation, completion analysis, and the proposed
+diagnostic remain G-06. See [native runtime gaps](native.md#known-runtime-correctness-gaps).
 
 Implementation must include witnesses for:
 
@@ -149,6 +153,5 @@ Implementation must include witnesses for:
 - releasing remote read loans safely during cancellation; and
 - equivalent VM/native behavior with optimization enabled and disabled.
 
-Implement enforcement and the awaited result type directly, without retaining the prior behavior
-or adding a compatibility mode. Cross-worker scheduling, fairness, deadlock freedom, exact host interruption latency,
+Implement the remaining lifetime enforcement directly, without adding a compatibility mode. Cross-worker scheduling, fairness, deadlock freedom, exact host interruption latency,
 and process-wide shutdown ordering remain separate design work.

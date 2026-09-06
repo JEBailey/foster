@@ -4,6 +4,16 @@ use crate::intrinsics::{Builtin, Intrinsic, IntrinsicReceiverMode};
 impl FunctionCompiler<'_> {
     pub(super) fn expression(&mut self, id: ExprId) -> Result<Register, FosterError> {
         let source = self.expression_unwrapped(id)?;
+        if self.observable_cleanup
+            && !self.locals.values().any(|local| *local == source)
+            && self
+                .types
+                .expression_type(id)
+                .is_some_and(|ty| !self.types.is_copy(ty))
+            && let Some(temporaries) = self.temporary_scopes.last_mut()
+        {
+            temporaries.push(source);
+        }
         if !self.types.integer_promotions.contains(&id) {
             return Ok(source);
         }
@@ -22,6 +32,127 @@ impl FunctionCompiler<'_> {
                 operator: crate::ast::BinaryOp::Add,
                 left: zero,
                 right: source,
+            },
+            span,
+        );
+        Ok(destination)
+    }
+
+    pub(super) fn reference_expression(
+        &mut self,
+        place: ExprId,
+        span: std::ops::Range<usize>,
+    ) -> Result<Register, FosterError> {
+        let Some(place) =
+            crate::semantics::expression_place(self.hir, &self.types.member_kinds, place)
+        else {
+            let object = self.expression(place)?;
+            let pointee_type = self
+                .types
+                .expression_type(place)
+                .map(|ty| layout_verification_type(self.hir, self.types, ty, 0))
+                .unwrap_or(VerificationType::Unknown);
+            let destination = self.allocate();
+            self.emit(
+                Instruction::MakeWholeReference {
+                    destination,
+                    pointee_type,
+                    object,
+                },
+                span,
+            );
+            return Ok(destination);
+        };
+        let mut object = self.locals[&place.root];
+        let mut object_type = self
+            .types
+            .local_type(place.root)
+            .map(|ty| layout_verification_type(self.hir, self.types, ty, 0))
+            .unwrap_or(VerificationType::Unknown);
+        if place.projections.is_empty() {
+            let pointee_type = match object_type {
+                VerificationType::Reference(pointee) => *pointee,
+                value => value,
+            };
+            let destination = self.allocate();
+            self.emit(
+                Instruction::MakeWholeReference {
+                    destination,
+                    pointee_type,
+                    object,
+                },
+                span,
+            );
+            return Ok(destination);
+        }
+        for projection in place.projections {
+            if matches!(&projection, hir::Projection::Dereference) {
+                object_type = match object_type {
+                    VerificationType::Reference(pointee) => *pointee,
+                    _ => VerificationType::Unknown,
+                };
+                continue;
+            }
+            let destination = self.allocate();
+            let instruction = match projection {
+                hir::Projection::Field(field) => {
+                    object_type = projected_field_verification_type(
+                        self.hir,
+                        self.types,
+                        &object_type,
+                        &field,
+                    )
+                    .unwrap_or(VerificationType::Unknown);
+                    Instruction::MakeFieldReference {
+                        destination,
+                        pointee_type: object_type.clone(),
+                        object,
+                        field,
+                    }
+                }
+                hir::Projection::Index {
+                    expression: index, ..
+                } => {
+                    object_type = object_type
+                        .indexed_element()
+                        .unwrap_or(VerificationType::Unknown);
+                    Instruction::MakeReference {
+                        destination,
+                        pointee_type: object_type.clone(),
+                        object,
+                        index: self.expression(index)?,
+                    }
+                }
+                hir::Projection::Dereference => unreachable!(),
+            };
+            self.emit(instruction, span.clone());
+            object = destination;
+        }
+        Ok(object)
+    }
+
+    pub(super) fn move_expression(
+        &mut self,
+        expression: ExprId,
+        span: std::ops::Range<usize>,
+    ) -> Result<Register, FosterError> {
+        let Some(place) =
+            crate::semantics::expression_place(self.hir, &self.types.member_kinds, expression)
+        else {
+            return self.expression(expression);
+        };
+        let by_reference = !place.projections.is_empty();
+        let source = if by_reference {
+            self.reference_expression(expression, span.clone())?
+        } else {
+            self.locals[&place.root]
+        };
+        let destination = self.allocate();
+        self.emit(
+            Instruction::MoveOut {
+                by_reference,
+                destination,
+                source,
             },
             span,
         );
@@ -54,7 +185,7 @@ impl FunctionCompiler<'_> {
             hir::Expr::List(items) => {
                 let elements = items
                     .iter()
-                    .map(|item| self.expression(*item))
+                    .map(|item| self.owned_expression(*item))
                     .collect::<Result<Vec<_>, _>>()?;
                 let destination = self.allocate();
                 let element_type = self
@@ -152,7 +283,7 @@ impl FunctionCompiler<'_> {
                 {
                     let payload = arguments
                         .iter()
-                        .map(|argument| self.expression(*argument))
+                        .map(|argument| self.owned_expression(*argument))
                         .collect::<Result<Vec<_>, _>>()?;
                     let destination = self.allocate();
                     self.emit(
@@ -441,114 +572,8 @@ impl FunctionCompiler<'_> {
                 );
                 Ok(destination)
             }
-            hir::Expr::Reference(place) => {
-                let Some(place) =
-                    crate::semantics::expression_place(self.hir, &self.types.member_kinds, *place)
-                else {
-                    let object = self.expression(*place)?;
-                    let pointee_type = self
-                        .types
-                        .expression_type(id)
-                        .map(|ty| layout_verification_type(self.hir, self.types, ty, 0))
-                        .and_then(|ty| match ty {
-                            VerificationType::Reference(pointee) => Some(*pointee),
-                            _ => None,
-                        })
-                        .unwrap_or(VerificationType::Unknown);
-                    let destination = self.allocate();
-                    self.emit(
-                        Instruction::MakeWholeReference {
-                            destination,
-                            pointee_type,
-                            object,
-                        },
-                        span,
-                    );
-                    return Ok(destination);
-                };
-                let mut object = self.locals[&place.root];
-                let mut object_type = self
-                    .types
-                    .local_type(place.root)
-                    .map(|ty| layout_verification_type(self.hir, self.types, ty, 0))
-                    .unwrap_or(VerificationType::Unknown);
-                if place.projections.is_empty() {
-                    let pointee_type = match object_type {
-                        VerificationType::Reference(pointee) => *pointee,
-                        value => value,
-                    };
-                    let destination = self.allocate();
-                    self.emit(
-                        Instruction::MakeWholeReference {
-                            destination,
-                            pointee_type,
-                            object,
-                        },
-                        span,
-                    );
-                    return Ok(destination);
-                }
-                for projection in place.projections {
-                    if matches!(&projection, hir::Projection::Dereference) {
-                        object_type = match object_type {
-                            VerificationType::Reference(pointee) => *pointee,
-                            _ => VerificationType::Unknown,
-                        };
-                        continue;
-                    }
-                    let destination = self.allocate();
-                    let instruction = match projection {
-                        hir::Projection::Field(field) => {
-                            object_type = projected_field_verification_type(
-                                self.hir,
-                                self.types,
-                                &object_type,
-                                &field,
-                            )
-                            .unwrap_or(VerificationType::Unknown);
-                            Instruction::MakeFieldReference {
-                                destination,
-                                pointee_type: object_type.clone(),
-                                object,
-                                field,
-                            }
-                        }
-                        hir::Projection::Index {
-                            expression: index, ..
-                        } => {
-                            object_type = object_type
-                                .indexed_element()
-                                .unwrap_or(VerificationType::Unknown);
-                            Instruction::MakeReference {
-                                destination,
-                                pointee_type: object_type.clone(),
-                                object,
-                                index: self.expression(index)?,
-                            }
-                        }
-                        hir::Projection::Dereference => unreachable!(),
-                    };
-                    self.emit(instruction, span.clone());
-                    object = destination;
-                }
-                Ok(object)
-            }
-            hir::Expr::MoveOut(place) => {
-                if let hir::Expr::Name(ResolvedName::Local(local)) = self.hir.expressions[*place] {
-                    let source = self.locals[&local];
-                    let destination = self.allocate();
-                    self.emit(
-                        Instruction::MoveOut {
-                            destination,
-                            source,
-                        },
-                        span,
-                    );
-                    Ok(destination)
-                } else {
-                    self.expression(*place)
-                }
-            }
+            hir::Expr::Reference(place) => self.reference_expression(*place, span),
+            hir::Expr::MoveOut(place) => self.move_expression(*place, span),
             hir::Expr::Remote(value) => {
                 if let hir::Expr::Reference(place) = self.hir.expressions[*value]
                     && let hir::Expr::Name(ResolvedName::Local(local)) = self.hir.expressions[place]
@@ -628,7 +653,7 @@ impl FunctionCompiler<'_> {
                 // physical field order selected for the record layout.
                 let values = fields
                     .iter()
-                    .map(|(name, value)| Ok((name.clone(), self.expression(*value)?)))
+                    .map(|(name, value)| Ok((name.clone(), self.owned_expression(*value)?)))
                     .collect::<Result<HashMap<_, _>, FosterError>>()?;
                 let mut layout = self.types.record_fields[record]
                     .iter()
@@ -764,10 +789,7 @@ impl FunctionCompiler<'_> {
         let Some(intrinsic) = self.intrinsic(function).and_then(Intrinsic::opcode) else {
             return Ok(false);
         };
-        self.emit(
-            super::opcode_intrinsic_instruction(intrinsic, destination, receiver, *value),
-            span,
-        );
+        self.emit_list_intrinsic(intrinsic, destination, receiver, *value, span);
         Ok(true)
     }
 

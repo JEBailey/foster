@@ -140,7 +140,7 @@ function is sealed into SSA; that unsealed form is never optimized, serialized, 
 Before backend-specific emission, logical layout legalization reduces values to scalars or pointers
 and builds deterministic descriptions for record field slots and declared types, enum alternative
 tags and payloads, closure environments and capture ownership, reference place handles, and
-runtime-backed structural values. Portable bytecode version 21 retains generic identities, nominal
+runtime-backed structural values. Portable bytecode version 23 retains generic identities, nominal
 parameters and arguments, and sorted substitutions at statically resolved calls and closure
 construction. Native
 reachability is keyed by function plus substitutions; it materializes concrete signatures and
@@ -209,11 +209,18 @@ in Foster without a decoding intrinsic or native storage copy. Native text prope
 registry-owned; Unicode classification and numeric text conversion still use runtime primitives.
 Branch-edge cleanup releases owned values omitted from successor SSA arguments. Generated
 retain/release operations use atomic reference counts, including text shared with remote workers.
+Preparation also retains the live ownership set at each native instruction. Modeled failure paths
+release that set before returning to the caller: transferred arguments belong to the callee, borrowed
+addresses do not own their pointees, and ABI argument copies remain owned until transferred.
+Cleanup uses the same generated release functions and recursive layout destructors as normal exits.
+Unused managed ABI parameters are released at entry, even when SSA removes their storage homes.
+Host response buffers and private collection copies created inside an instruction are released
+before its frame cleanup.
 Temporary object and shim files are removed after linking; the resulting executable does not
 contain or invoke the Foster VM.
 
 The platform boundary is a stable, explicitly versioned C ABI. Imported symbols use the
-`foster_rt_v2_*` namespace, so an incompatible runtime fails at link time. Checked integer
+`foster_rt_v4_*` namespace, so an incompatible runtime fails at link time. Checked integer
 arithmetic, invalid shifts and conversions, division errors, and bounds failures call that ABI and
 produce friendly diagnostics rather than machine traps.
 
@@ -227,10 +234,24 @@ behavior or eliminate the correctness gaps below.
 
 ## Known runtime correctness gaps
 
-The accepted [remote lifecycle contract](remote-semantics.md) also requires scoped cancellation,
-terminal failed workers, typed future error outcomes, and static request-lifetime checks. Existing
-native remote support must not be interpreted as implementing those new requirements.
+The accepted [remote lifecycle contract](remote-semantics.md) still requires scoped cancellation
+and static request-lifetime checks (G-06). Native workers now contain language execution failures
+and deliver `Result<T, RemoteError>` through futures. Failure is terminal for the worker, including
+when the failing future is discarded. Queued and later calls receive the original failure without
+invoking their methods; rejected messages release transferred arguments.
 
-Native failures inside remote methods remain process-fatal rather than being stored on the returned future; even an
-unawaited failing remote call can terminate the process. These are unresolved ownership and
-failure-propagation ABI issues, not guarantees established by the current parity suite.
+Generated calls check a thread-local failure flag before using their results and release live
+managed values as they return through generated frames. Main-thread failures follow the same
+cleanup path before the entry shim reports a diagnostic and exits. This avoids unwinding through
+Cranelift frames or treating placeholder return values as owned results. Allocation-census tests
+exercise successful exits and failures in both optimization modes, checking for leaks and duplicate
+deallocation, including opaque host response buffers.
+
+G-04 is implemented: `deinit(self) -> ()` runs once at ownership end before child values are
+released. Compiler-owned Copy/Drop dispatch slots select concrete implementations, and generated
+layout destructors invoke the callback while the receiver is intact. A header flag transfers the
+cleanup obligation across internal copy-on-write updates and prevents recursive invocation.
+Cleanup saves and restores an existing language failure while running subsequent callbacks.
+Host wrappers close external resources automatically only when they implement `deinit`; scoped
+remote cancellation and process shutdown ordering remain under G-06. Host-fatal events such as allocation failure and invalid compiler/runtime metadata are
+outside modeled language failure cleanup.

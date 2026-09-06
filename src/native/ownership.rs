@@ -198,6 +198,8 @@ pub(super) fn define_layout_destructors(
     module: &mut ObjectModule,
     layouts: NativeLayouts<'_>,
     destructors: &HashMap<LayoutId, FuncId>,
+    environment: NativeIrEnvironment<'_>,
+    functions: &HashMap<FunctionId, FuncId>,
 ) -> Result<(), FosterError> {
     for layout in layouts
         .physical
@@ -221,6 +223,60 @@ pub(super) fn define_layout_destructors(
             builder.append_block_params_for_function_params(entry);
             builder.switch_to_block(entry);
             let object = builder.block_params(entry)[0];
+            if let Some(candidate) = contract_candidates(
+                crate::types::DEINIT_SLOT,
+                NativeType::Object(layout.id),
+                &[],
+                environment,
+            )?
+            .into_iter()
+            .find(|candidate| candidate.layout == layout.id)
+            {
+                // A detached representation transfers its cleanup obligation to the replacement.
+                // The retained receiver used inside deinit must not recursively destroy itself.
+                let flags = builder.ins().load(
+                    types::I32,
+                    MemFlagsData::trusted(),
+                    object,
+                    layout.header.flags_offset as i32,
+                );
+                let active = builder.ins().icmp_imm_s(IntCC::Equal, flags, 0);
+                let call = builder.create_block();
+                let fields = builder.create_block();
+                builder.ins().brif(active, call, &[], fields, &[]);
+                builder.switch_to_block(call);
+                let one = builder.ins().iconst(types::I32, 1);
+                store_physical_value(&mut builder, object, layout.header.flags_offset, one);
+                let two = builder
+                    .ins()
+                    .iconst(module.target_config().pointer_type(), 2);
+                store_physical_value(&mut builder, object, layout.header.strong_count_offset, two);
+                runtime_call(
+                    &mut builder,
+                    module,
+                    abi::BEGIN_CLEANUP,
+                    &ir::Signature {
+                        parameters: vec![],
+                        result: NativeType::Unit,
+                    },
+                    &[],
+                )?;
+                let target =
+                    module.declare_func_in_func(functions[&candidate.function], builder.func);
+                builder.ins().call(target, &[object]);
+                runtime_call(
+                    &mut builder,
+                    module,
+                    abi::END_CLEANUP,
+                    &ir::Signature {
+                        parameters: vec![],
+                        result: NativeType::Unit,
+                    },
+                    &[],
+                )?;
+                builder.ins().jump(fields, &[]);
+                builder.switch_to_block(fields);
+            }
             match &layout.drop_plan {
                 DropPlan::Fields(fields) => {
                     lower_drop_fields(&mut builder, module, object, fields, layouts, destructors)?;

@@ -360,6 +360,7 @@ pub enum Instruction {
         field: String,
     },
     MoveOut {
+        by_reference: bool,
         destination: Register,
         source: Register,
     },
@@ -574,6 +575,7 @@ impl Instruction {
             Self::MoveOut {
                 destination,
                 source,
+                ..
             } => {
                 visit(*destination);
                 visit(*source);
@@ -730,6 +732,7 @@ pub struct BytecodeFunction {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Program {
+    pub drops_inserted: bool,
     pub constants: Vec<Constant>,
     pub functions: HashMap<FunctionId, BytecodeFunction>,
     pub main: Option<FunctionId>,
@@ -737,6 +740,8 @@ pub struct Program {
     pub main_arguments: bool,
     pub string_record: Option<RecordId>,
     pub symbol_record: Option<RecordId>,
+    pub remote_result: Option<VariantTypeId>,
+    pub remote_error: Option<VariantTypeId>,
     pub records: HashMap<RecordId, RuntimeRecord>,
     pub dispatch: HashMap<(NominalTypeId, DispatchSlot), FunctionId>,
     pub variants: HashMap<VariantId, RuntimeVariant>,
@@ -772,6 +777,18 @@ pub struct ProgramMetrics {
 }
 
 impl Program {
+    pub(crate) fn remote_outcome_type(&self, result: VerificationType) -> VerificationType {
+        VerificationType::Variant {
+            variant: self.remote_result.expect("verified remote Result metadata"),
+            arguments: vec![
+                result,
+                VerificationType::Variant {
+                    variant: self.remote_error.expect("verified RemoteError metadata"),
+                    arguments: vec![],
+                },
+            ],
+        }
+    }
     pub fn metrics(&self) -> ProgramMetrics {
         ProgramMetrics {
             functions: self.functions.len(),

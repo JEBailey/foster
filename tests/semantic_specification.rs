@@ -44,6 +44,6 @@ fn settled_semantic_decisions_are_not_listed_as_open_gaps() {
         .filter_map(|line| line.strip_prefix("- **G-"))
         .map(|line| line.split_whitespace().next().unwrap())
         .collect::<Vec<_>>();
-    let expected = (3..=7).map(|id| format!("{id:02}")).collect::<Vec<_>>();
+    let expected = (3..=8).map(|id| format!("{id:02}")).collect::<Vec<_>>();
     assert_eq!(identifiers, expected);
 }

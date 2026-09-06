@@ -375,10 +375,12 @@ impl Writer {
                 self.reg(*object);
             }
             Instruction::MoveOut {
+                by_reference,
                 destination,
                 source,
             } => {
                 self.u8(13);
+                self.u8(u8::from(*by_reference));
                 self.reg(*destination);
                 self.reg(*source);
             }

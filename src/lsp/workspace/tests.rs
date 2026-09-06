@@ -1174,7 +1174,12 @@ func main() -> Int {
             .unwrap()
             .join("library/core/int.fos")
     );
-    assert_eq!(location.range.start, Position::new(71, 13));
+    let core = include_str!("../../../library/core/int.fos");
+    let line = core
+        .lines()
+        .position(|line| line.contains("pub func power("))
+        .unwrap() as u32;
+    assert_eq!(location.range.start, Position::new(line, 13));
 }
 
 #[test]
@@ -1243,7 +1248,7 @@ fn examples_compile_in_their_own_document_context() {
     };
     let position = TextDocumentPositionParams::new(
         lsp_types::TextDocumentIdentifier::new(uri),
-        Position::new(45, 30),
+        Position::new(48, 30),
     );
 
     let hover = workspace.hover(&position).unwrap();

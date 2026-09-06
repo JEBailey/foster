@@ -10,6 +10,9 @@ impl FloatHost {
 }
 
 impl Float {
+    /// Explicitly copies this scalar value.
+    pub func copy(self: Float) -> self [read self] { self }
+
     /// Formats a binary64 value as round-trippable decimal text.
     pub func as_string(self: Float) -> String { FloatHost.format(self) }
 

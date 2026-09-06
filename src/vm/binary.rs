@@ -16,7 +16,7 @@ use crate::intrinsics::Builtin;
 use crate::types::{DispatchSlot, NominalTypeId};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 21;
+pub const FORMAT_VERSION: u16 = 23;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -60,10 +60,13 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
         w.id(*id);
         w.function(function)?;
     }
+    w.u8(u8::from(program.drops_inserted));
     w.option_id(program.main);
     w.u8(u8::from(program.main_arguments));
     w.option_id(program.string_record);
     w.option_id(program.symbol_record);
+    w.option_id(program.remote_result);
+    w.option_id(program.remote_error);
 
     let mut records: Vec<_> = program.records.iter().collect();
     records.sort_by_key(|(id, _)| raw(**id));
@@ -131,10 +134,13 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
     }
     let constants = r.vec(|r| r.constant())?;
     let functions = r.map(|r| Ok((r.id::<Function>()?, r.function()?)))?;
+    let drops_inserted = r.bool()?;
     let main = r.option_id::<Function>()?;
     let main_arguments = r.bool()?;
     let string_record = r.option_id::<Record>()?;
     let symbol_record = r.option_id::<Record>()?;
+    let remote_result = r.option_id::<crate::hir::VariantType>()?;
+    let remote_error = r.option_id::<crate::hir::VariantType>()?;
     let records = r.map(|r| {
         let id = r.id::<Record>()?;
         let name = r.string()?;
@@ -175,12 +181,15 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         ));
     }
     let program = Program {
+        drops_inserted,
         constants,
         functions,
         main,
         main_arguments,
         string_record,
         symbol_record,
+        remote_result,
+        remote_error,
         records,
         dispatch,
         variants,

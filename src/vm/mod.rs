@@ -25,7 +25,7 @@ pub use ir::{
     BytecodeFunction, Constant, Instruction, Program, ProgramMetrics, Register, RuntimeRecord,
     RuntimeVariant, Specialization, VerificationType,
 };
-pub use machine::Machine;
+pub use machine::{Machine, release_value};
 pub use optimizer::optimize;
 pub use runtime::Capture;
 #[cfg(test)]
@@ -653,7 +653,7 @@ func main() -> Int {
         assert!(matches!(
             run(&variant).unwrap(),
             Value::Variant { type_name, alternative, payload, .. }
-                if type_name.as_ref() == "Answer" && alternative.as_ref() == "Value" && payload == [Value::Integer(42)]
+                if type_name.as_ref() == "Answer" && alternative.as_ref() == "Value" && payload.as_slice() == [Value::Integer(42)]
         ));
     }
 

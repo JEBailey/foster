@@ -35,11 +35,6 @@ fn opcode_intrinsic_instruction(
     value: Register,
 ) -> Instruction {
     match intrinsic {
-        OpcodeIntrinsic::ListAt => Instruction::Index {
-            destination,
-            object: receiver,
-            index: value,
-        },
         OpcodeIntrinsic::ListPush => Instruction::Push {
             destination,
             object: receiver,
@@ -50,6 +45,9 @@ fn opcode_intrinsic_instruction(
             object: receiver,
             value,
         },
+        OpcodeIntrinsic::ListCanCopyAt | OpcodeIntrinsic::ListCopyAt => {
+            unreachable!("copy dispatch uses two instructions")
+        }
     }
 }
 
@@ -225,6 +223,14 @@ fn compile_construction(compilation: &Compilation) -> Result<Program, FosterErro
         .module_named("core.symbol")
         .and_then(|module| compilation.hir.record_named(module, "Symbol"));
     compiler.program.dispatch = compilation.types.dispatch.clone();
+    compiler.program.remote_result = compilation
+        .hir
+        .module_named("core.result")
+        .and_then(|module| compilation.hir.variant_type_named(module, "Result"));
+    compiler.program.remote_error = compilation
+        .hir
+        .module_named("core.remote_error")
+        .and_then(|module| compilation.hir.variant_type_named(module, "RemoteError"));
     let variant_type_names = compilation
         .hir
         .variant_types
@@ -325,9 +331,13 @@ struct FunctionCompiler<'a> {
     spans: Vec<std::ops::Range<usize>>,
     next_register: u16,
     loops: Vec<LoopContext>,
+    scopes: Vec<Vec<Register>>,
+    temporary_scopes: Vec<Vec<Register>>,
+    observable_cleanup: bool,
 }
 
 struct LoopContext {
+    scope_depth: usize,
     start: usize,
     breaks: Vec<usize>,
 }
@@ -346,6 +356,13 @@ impl Compiler<'_> {
             spans: Vec::new(),
             next_register: 0,
             loops: Vec::new(),
+            scopes: vec![Vec::new()],
+            temporary_scopes: Vec::new(),
+            observable_cleanup: self
+                .types
+                .dispatch
+                .keys()
+                .any(|(_, slot)| *slot == crate::types::DEINIT_SLOT),
         };
         let captures = self
             .closure_captures
@@ -373,9 +390,19 @@ impl Compiler<'_> {
             let register = lower.allocate();
             lower.locals.insert(capture.local, register);
         }
-        for parameter in &function.parameters {
+        for (index, parameter) in function.parameters.iter().enumerate() {
             let register = lower.allocate();
             lower.locals.insert(*parameter, register);
+            if lower.observable_cleanup
+                && self
+                    .types
+                    .function_type(function_id)
+                    .is_some_and(|signature| {
+                        signature.parameter_modes[index] == crate::ast::ParameterMode::Consume
+                    })
+            {
+                lower.scopes[0].push(register);
+            }
         }
         let intrinsic = function.intrinsic.as_deref().and_then(Intrinsic::from_key);
         let result = match intrinsic.and_then(Intrinsic::opcode) {
@@ -387,13 +414,13 @@ impl Compiler<'_> {
                     )));
                 };
                 let destination = lower.allocate();
-                let instruction = opcode_intrinsic_instruction(
+                lower.emit_list_intrinsic(
                     opcode,
                     destination,
                     lower.locals[receiver],
                     lower.locals[value],
+                    function.span.clone(),
                 );
-                lower.emit(instruction, function.span.clone());
                 destination
             }
             _ => {
@@ -407,6 +434,7 @@ impl Compiler<'_> {
             Some(hir::Stmt::Return { guard: None, .. })
         );
         if !ends_with_unconditional_return {
+            lower.end_scopes(0, Some(result), function.span.clone());
             lower.emit(
                 Instruction::Return { source: result },
                 function.span.clone(),
@@ -590,7 +618,18 @@ fn verification_type_inner(
                 Some("Bytes") => VerificationType::Bytes,
                 // Method-only records are structural contracts and carry no unique runtime
                 // representation. Their conformance proof has already been checked.
-                _ if hir.records[*record].fields.is_empty() => VerificationType::Unknown,
+                _ if hir.records[*record].fields.is_empty()
+                    && ![crate::types::COPY_SLOT, crate::types::DEINIT_SLOT]
+                        .iter()
+                        .any(|slot| {
+                            information.dispatch.contains_key(&(
+                                crate::types::NominalTypeId::Record(*record),
+                                *slot,
+                            ))
+                        }) =>
+                {
+                    VerificationType::Unknown
+                }
                 _ => VerificationType::Record {
                     record: *record,
                     arguments: arguments.iter().copied().map(nested).collect(),
@@ -611,13 +650,120 @@ fn verification_type_inner(
 }
 
 impl FunctionCompiler<'_> {
+    fn end_temporaries(
+        &mut self,
+        all: bool,
+        preserved: Option<Register>,
+        span: std::ops::Range<usize>,
+    ) {
+        if !self.observable_cleanup {
+            return;
+        }
+        let depth = if all {
+            0
+        } else {
+            self.temporary_scopes.len().saturating_sub(1)
+        };
+        let registers: Vec<_> = self.temporary_scopes[depth..]
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        for register in registers.into_iter().rev() {
+            if Some(register) != preserved && seen.insert(register) {
+                self.emit(Instruction::Drop { register }, span.clone());
+            }
+        }
+    }
+    fn end_scopes(
+        &mut self,
+        depth: usize,
+        preserved: Option<Register>,
+        span: std::ops::Range<usize>,
+    ) {
+        if !self.observable_cleanup {
+            return;
+        }
+        let registers: Vec<_> = self.scopes[depth..].iter().flatten().copied().collect();
+        for register in registers.into_iter().rev() {
+            if Some(register) != preserved {
+                self.emit(Instruction::Drop { register }, span.clone());
+            }
+        }
+    }
+
+    fn owned_expression(&mut self, expression: ExprId) -> Result<Register, FosterError> {
+        if self.observable_cleanup
+            && self
+                .types
+                .expression_type(expression)
+                .is_some_and(|ty| self.types.has_cleanup(ty))
+        {
+            let span = self
+                .hir
+                .expression_spans
+                .get(&expression)
+                .cloned()
+                .unwrap_or_else(|| self.hir.functions[self.function].span.clone());
+            self.move_expression(expression, span)
+        } else {
+            self.expression(expression)
+        }
+    }
+    fn emit_list_intrinsic(
+        &mut self,
+        intrinsic: OpcodeIntrinsic,
+        destination: Register,
+        receiver: Register,
+        index: Register,
+        span: std::ops::Range<usize>,
+    ) {
+        if matches!(
+            intrinsic,
+            OpcodeIntrinsic::ListCanCopyAt | OpcodeIntrinsic::ListCopyAt
+        ) {
+            let value = self.allocate();
+            self.emit(
+                Instruction::Index {
+                    destination: value,
+                    object: receiver,
+                    index,
+                },
+                span.clone(),
+            );
+            let (slot, name) = if intrinsic == OpcodeIntrinsic::ListCanCopyAt {
+                (crate::types::CAN_COPY_SLOT, "can_copy?")
+            } else {
+                (crate::types::COPY_SLOT, "copy")
+            };
+            self.emit(
+                Instruction::CallContractMethod {
+                    destination,
+                    receiver: value,
+                    slot,
+                    name: name.into(),
+                    arguments: Vec::new(),
+                },
+                span,
+            );
+        } else {
+            self.emit(
+                opcode_intrinsic_instruction(intrinsic, destination, receiver, index),
+                span,
+            );
+        }
+    }
+
     pub(super) fn compile_statements(
         &mut self,
         statements: &crate::block::Block<hir::Stmt>,
         fallback_span: &std::ops::Range<usize>,
         result: &mut Register,
     ) -> Result<(), FosterError> {
+        self.scopes.push(Vec::new());
         for (statement, statement_span) in statements.iter_spanned() {
+            self.temporary_scopes.push(Vec::new());
             let span = if statement_span.is_empty() {
                 fallback_span.clone()
             } else {
@@ -634,12 +780,16 @@ impl FunctionCompiler<'_> {
                             },
                             span.clone(),
                         );
-                        *result = self.expression(*value)?;
+                        *result = self.owned_expression(*value)?;
+                        self.end_temporaries(true, Some(*result), span.clone());
+                        self.end_scopes(0, Some(*result), span.clone());
                         self.emit(Instruction::Return { source: *result }, span);
                         let target = self.instructions.len();
                         self.patch_target(jump, target)?;
                     } else {
-                        *result = self.expression(*value)?;
+                        *result = self.owned_expression(*value)?;
+                        self.end_temporaries(true, Some(*result), span.clone());
+                        self.end_scopes(0, Some(*result), span.clone());
                         self.emit(Instruction::Return { source: *result }, span);
                     }
                 }
@@ -657,6 +807,7 @@ impl FunctionCompiler<'_> {
                     offsets[cfg.header.0] = self.instructions.len();
                     offsets[cfg.body.0] = self.instructions.len();
                     self.loops.push(LoopContext {
+                        scope_depth: self.scopes.len(),
                         start: offsets[cfg.header.0],
                         breaks: Vec::new(),
                     });
@@ -683,19 +834,30 @@ impl FunctionCompiler<'_> {
                 hir::Stmt::Bind { local, value } => {
                     let destination = self.allocate();
                     self.locals.insert(*local, destination);
-                    let value = self.expression(*value)?;
+                    let value = self.owned_expression(*value)?;
+                    if self.observable_cleanup {
+                        self.scopes.last_mut().unwrap().push(destination);
+                    }
                     self.emit(
                         Instruction::Move {
                             destination,
                             source: value,
                         },
-                        span,
+                        span.clone(),
                     );
                     *result = destination;
                 }
                 hir::Stmt::Assign { local, value } => {
-                    let value = self.expression(*value)?;
+                    let value = self.owned_expression(*value)?;
                     let destination = self.locals[local];
+                    if self.observable_cleanup {
+                        self.emit(
+                            Instruction::Drop {
+                                register: destination,
+                            },
+                            span.clone(),
+                        );
+                    }
                     self.emit(
                         Instruction::Move {
                             destination,
@@ -709,12 +871,28 @@ impl FunctionCompiler<'_> {
                 hir::Stmt::Set { place, value } => {
                     // Foster assignments evaluate the complete right-hand side
                     // before selecting the left-hand destination.
-                    let value = self.expression(*value)?;
+                    let value = self.owned_expression(*value)?;
                     self.store_place(*place, value, span.clone())?;
                     *result = value;
                 }
             }
+            self.end_temporaries(false, Some(*result), statement_span.clone());
+            self.temporary_scopes.pop();
         }
+        if self.observable_cleanup && self.scopes.last().unwrap().contains(result) {
+            let destination = self.allocate();
+            self.emit(
+                Instruction::MoveOut {
+                    by_reference: false,
+                    destination,
+                    source: *result,
+                },
+                fallback_span.clone(),
+            );
+            *result = destination;
+        }
+        self.end_scopes(self.scopes.len() - 1, Some(*result), fallback_span.clone());
+        self.scopes.pop();
         Ok(())
     }
 
@@ -738,6 +916,8 @@ impl FunctionCompiler<'_> {
         self.loops
             .last()
             .ok_or_else(|| FosterError::runtime("loop transfer has no enclosing loop"))?;
+        self.end_temporaries(false, None, span.clone());
+        self.end_scopes(self.loops.last().unwrap().scope_depth, None, span.clone());
         let jump = self.emit(Instruction::Jump { target: 0 }, span);
         self.loops
             .last_mut()
@@ -772,6 +952,8 @@ impl FunctionCompiler<'_> {
             .last()
             .ok_or_else(|| FosterError::runtime("continue has no enclosing loop"))?
             .start;
+        self.end_temporaries(false, None, span.clone());
+        self.end_scopes(self.loops.last().unwrap().scope_depth, None, span.clone());
         self.emit(Instruction::Jump { target }, span);
         if let Some(skip) = skip {
             self.patch_target(skip, self.instructions.len())?;
@@ -784,8 +966,46 @@ impl FunctionCompiler<'_> {
         arm: &hir::BranchArm,
         fallback_span: &std::ops::Range<usize>,
     ) -> Result<Register, FosterError> {
+        let mut bindings = Vec::new();
+        if let hir::BranchTest::Pattern(pattern) = &arm.test {
+            fn collect(
+                pattern: &hir::Pattern,
+                locals: &HashMap<LocalId, Register>,
+                registers: &mut Vec<Register>,
+            ) {
+                match pattern.unspanned() {
+                    hir::Pattern::Binding(local) => {
+                        if let Some(register) = locals.get(local) {
+                            registers.push(*register);
+                        }
+                    }
+                    hir::Pattern::Variant { fields, .. } => {
+                        for field in fields {
+                            collect(field, locals, registers);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            collect(pattern, &self.locals, &mut bindings);
+        }
+        self.scopes.push(bindings);
         let mut result = self.load_constant(Constant::Unit, fallback_span.clone())?;
         self.compile_statements(&arm.body, fallback_span, &mut result)?;
+        if self.observable_cleanup && self.scopes.last().unwrap().contains(&result) {
+            let destination = self.allocate();
+            self.emit(
+                Instruction::MoveOut {
+                    by_reference: false,
+                    destination,
+                    source: result,
+                },
+                fallback_span.clone(),
+            );
+            result = destination;
+        }
+        self.end_scopes(self.scopes.len() - 1, Some(result), fallback_span.clone());
+        self.scopes.pop();
         Ok(result)
     }
 }

@@ -173,7 +173,117 @@ pub struct Machine {
     host: Arc<super::host::HostContext>,
 }
 
+thread_local! {
+    static CLEANUP_FAILURE: std::cell::RefCell<Option<RuntimeError>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Releases a value returned to the embedding application and reports a failing deinit.
+pub fn release_value(value: Value) -> Result<(), FosterError> {
+    drop(value);
+    CLEANUP_FAILURE
+        .with(|failure| failure.borrow_mut().take())
+        .map_or(Ok(()), |error| Err(error.into()))
+}
+
+#[derive(Clone)]
+pub(super) struct Cleanup {
+    program: Arc<Program>,
+    host: Arc<super::host::HostContext>,
+    function: FunctionId,
+    record: Option<crate::hir::RecordId>,
+    variant: Option<(crate::hir::VariantTypeId, Arc<str>, Arc<str>)>,
+    proxy: Option<Arc<super::value::WireOwned>>,
+}
+
+impl std::fmt::Debug for Cleanup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Cleanup").field(&self.function).finish()
+    }
+}
+
+impl Cleanup {
+    pub(super) fn with_proxy(mut self, proxy: Arc<super::value::WireOwned>) -> Self {
+        self.proxy = Some(proxy);
+        self
+    }
+
+    pub(super) fn into_owned(mut self) -> Option<Self> {
+        if let Some(proxy) = self.proxy.take() {
+            proxy.cleanup.lock().unwrap().take()
+        } else {
+            Some(self)
+        }
+    }
+
+    pub(super) fn run(mut self, values: Vec<Value>) {
+        if let Some(proxy) = self.proxy.take() {
+            if Arc::strong_count(&proxy) == 1 {
+                let cleanup = proxy.cleanup.lock().unwrap().take();
+                if let Some(cleanup) = cleanup {
+                    cleanup.run(values);
+                }
+            }
+            return;
+        }
+        let receiver = if let Some((variant, type_name, alternative)) = self.variant {
+            Value::Variant {
+                variant: Some(variant),
+                type_name,
+                alternative,
+                payload: values.into(),
+            }
+        } else {
+            let record = self.record.expect("record cleanup identity");
+            let metadata = &self.program.records[&record];
+            Value::Record {
+                record: Some(record),
+                name: metadata.name.clone(),
+                fields: RecordFields::new(metadata.layout.clone(), values)
+                    .expect("cleanup retains the record layout"),
+            }
+        };
+        let machine = Machine {
+            program: self.program,
+            host: self.host,
+        };
+        let original = CLEANUP_FAILURE.with(|failure| failure.borrow_mut().take());
+        let result = machine.execute(
+            self.function,
+            Vec::new(),
+            Vec::new(),
+            Some(Slot::new(receiver)),
+        );
+        let error = result.err();
+        CLEANUP_FAILURE.with(|failure| {
+            let nested = failure.borrow_mut().take();
+            *failure.borrow_mut() = original.or(error).or(nested);
+        });
+    }
+}
+
 impl Machine {
+    fn remote_variant(
+        &self,
+        parent: Option<crate::hir::VariantTypeId>,
+        alternative: &str,
+        value: Value,
+    ) -> Result<Value, RuntimeError> {
+        let metadata = self
+            .program
+            .variants
+            .values()
+            .find(|variant| {
+                Some(variant.parent) == parent && variant.alternative.as_ref() == alternative
+            })
+            .ok_or_else(|| RuntimeError::runtime("missing remote outcome metadata"))?;
+        Ok(Value::Variant {
+            variant: Some(metadata.parent),
+            type_name: metadata.type_name.clone(),
+            alternative: metadata.alternative.clone(),
+            payload: vec![value].into(),
+        })
+    }
+
     pub fn new(program: &Program) -> Self {
         let host = super::host::HostContext::current()
             .unwrap_or_else(|_| super::host::HostContext::new("."));
@@ -262,6 +372,22 @@ impl Machine {
         receiver: Option<Rc<Slot>>,
         argument_leases: Vec<AccessLease>,
     ) -> Result<(Value, Option<Value>), RuntimeError> {
+        let result = self.execute_frames(entry, captures, arguments, receiver, argument_leases);
+        let cleanup_error = CLEANUP_FAILURE.with(|failure| failure.borrow_mut().take());
+        match (result, cleanup_error) {
+            (Err(error), _) | (_, Some(error)) => Err(error),
+            (Ok(value), None) => Ok(value),
+        }
+    }
+
+    fn execute_frames(
+        &self,
+        entry: FunctionId,
+        captures: Vec<Capture>,
+        arguments: Vec<Value>,
+        receiver: Option<Rc<Slot>>,
+        argument_leases: Vec<AccessLease>,
+    ) -> Result<(Value, Option<Value>), RuntimeError> {
         let mut frames = FrameStack(vec![if let Some(receiver) = receiver.clone() {
             self.method_frame(entry, receiver, arguments, None)?
         } else {
@@ -270,6 +396,9 @@ impl Machine {
         frames[0].argument_leases = argument_leases;
 
         loop {
+            if let Some(error) = CLEANUP_FAILURE.with(|failure| failure.borrow_mut().take()) {
+                return Err(error);
+            }
             let frame = frames.last_mut().expect("the VM retains its entry frame");
             let function = frame.function;
             let instruction = function
@@ -390,6 +519,24 @@ impl Machine {
                         .collect::<Result<Vec<_>, RuntimeError>>()?;
                     let metadata = &self.program.records[record];
                     let fields = RecordFields::new(metadata.layout.clone(), values)?;
+                    if let Some(function) = self
+                        .program
+                        .dispatch
+                        .get(&(
+                            crate::types::NominalTypeId::Record(*record),
+                            crate::types::DEINIT_SLOT,
+                        ))
+                        .copied()
+                    {
+                        fields.set_cleanup(Cleanup {
+                            program: self.program.clone(),
+                            host: self.host.clone(),
+                            function,
+                            record: Some(*record),
+                            variant: None,
+                            proxy: None,
+                        });
+                    }
                     write(
                         frame,
                         *destination,
@@ -407,11 +554,34 @@ impl Machine {
                     ..
                 } => {
                     let metadata = &self.program.variants[variant];
-                    let payload = payload
+                    let payload: Vec<_> = payload
                         .iter()
                         .copied()
                         .map(|register| read(frame, register))
                         .collect::<Result<_, _>>()?;
+                    let payload = super::value::VariantPayload::from(payload);
+                    if let Some(function) = self
+                        .program
+                        .dispatch
+                        .get(&(
+                            crate::types::NominalTypeId::Variant(metadata.parent),
+                            crate::types::DEINIT_SLOT,
+                        ))
+                        .copied()
+                    {
+                        payload.set_cleanup(Cleanup {
+                            program: self.program.clone(),
+                            host: self.host.clone(),
+                            function,
+                            record: None,
+                            variant: Some((
+                                metadata.parent,
+                                metadata.type_name.clone(),
+                                metadata.alternative.clone(),
+                            )),
+                            proxy: None,
+                        });
+                    }
                     write(
                         frame,
                         *destination,
@@ -538,10 +708,18 @@ impl Machine {
                     write(frame, *destination, Value::Reference(reference))?;
                 }
                 &Instruction::MoveOut {
+                    by_reference,
                     destination,
                     source,
                 } => {
-                    let value = frame.registers[source.0 as usize].replace(Value::Unit);
+                    let value = if by_reference {
+                        let source = place(frame, source);
+                        let value = source.read()?;
+                        source.write(Value::Unit)?;
+                        value
+                    } else {
+                        frame.registers[source.0 as usize].replace(Value::Unit)
+                    };
                     write(frame, destination, value)?;
                 }
                 &Instruction::Push {
@@ -762,6 +940,57 @@ impl Machine {
                 } => {
                     let receiver = place(frame, *receiver);
                     let value = receiver.read()?;
+                    if *slot == crate::types::CAN_COPY_SLOT || *slot == crate::types::COPY_SLOT {
+                        let nominal = match &value {
+                            Value::Record {
+                                record: Some(record),
+                                ..
+                            } => Some(crate::types::NominalTypeId::Record(*record)),
+                            Value::Variant {
+                                variant: Some(variant),
+                                ..
+                            } => Some(crate::types::NominalTypeId::Variant(*variant)),
+                            _ => None,
+                        };
+                        let implementation = nominal
+                            .and_then(|nominal| {
+                                self.program
+                                    .dispatch
+                                    .get(&(nominal, crate::types::COPY_SLOT))
+                            })
+                            .copied();
+                        let trivial = matches!(
+                            value,
+                            Value::Unit
+                                | Value::Bool(_)
+                                | Value::Integer(_)
+                                | Value::Float(_)
+                                | Value::CodePoint(_)
+                                | Value::Byte(_)
+                        ) || value.symbol_bytes().is_some();
+                        if *slot == crate::types::CAN_COPY_SLOT {
+                            write(
+                                frame,
+                                *destination,
+                                Value::Bool(trivial || implementation.is_some()),
+                            )?;
+                        } else if trivial {
+                            write(frame, *destination, value)?;
+                        } else {
+                            let target = implementation.ok_or_else(|| {
+                                RuntimeError::runtime("value does not implement Copy")
+                            })?;
+                            let next = self.method_call_frame(
+                                target,
+                                receiver,
+                                frame,
+                                &[],
+                                Some(*destination),
+                            )?;
+                            frames.push(next);
+                        }
+                        continue;
+                    }
                     if let Value::Record { fields, .. } = &value
                         && arguments.is_empty()
                         && let Some(field) = fields.get(name)
@@ -915,10 +1144,15 @@ impl Machine {
                     let program = self.program.clone();
                     let host = self.host.clone();
                     let id = next_remote_id();
+                    let control = Arc::new(crate::remote::Control::default());
+                    let worker_control = control.clone();
                     let _handle = may::go_with!(1024 * 1024, move || {
                         let machine = Machine { program, host };
                         let mut state = state;
                         while let Ok(message) = inbox.recv() {
+                            if worker_control.error().is_some() {
+                                continue;
+                            }
                             let result = (|| {
                                 let receiver = Slot::new(
                                     Value::from_wire(state.clone())
@@ -942,13 +1176,25 @@ impl Machine {
                                     .map_err(|error| error.message)?;
                                 value.into_wire().map_err(|error| error.message)
                             })();
-                            let _ = message.response.send(result);
+                            match result {
+                                Err(error) => worker_control
+                                    .terminate(crate::remote::RemoteError::Failed(error)),
+                                Ok(value) => {
+                                    if worker_control.complete(message.request) {
+                                        let _ = message.response.send(Ok(value));
+                                    }
+                                }
+                            }
                         }
                     });
                     write(
                         frame,
                         destination,
-                        Value::Remote(RemoteValue { id, sender }),
+                        Value::Remote(RemoteValue {
+                            id,
+                            sender,
+                            control,
+                        }),
                     )?;
                 }
                 &Instruction::SpawnRemoteBorrow {
@@ -960,9 +1206,14 @@ impl Machine {
                     let program = self.program.clone();
                     let host = self.host.clone();
                     let id = next_remote_id();
+                    let control = Arc::new(crate::remote::Control::default());
+                    let worker_control = control.clone();
                     let _handle = may::go_with!(1024 * 1024, move || {
                         let machine = Machine { program, host };
                         while let Ok(message) = inbox.recv() {
+                            if worker_control.error().is_some() {
+                                continue;
+                            }
                             let result = (|| {
                                 let (_lease, state) =
                                     shared.read_snapshot().map_err(|error| error.message)?;
@@ -983,13 +1234,25 @@ impl Machine {
                                     .map_err(|error| error.message)?;
                                 value.into_wire().map_err(|error| error.message)
                             })();
-                            let _ = message.response.send(result);
+                            match result {
+                                Err(error) => worker_control
+                                    .terminate(crate::remote::RemoteError::Failed(error)),
+                                Ok(value) => {
+                                    if worker_control.complete(message.request) {
+                                        let _ = message.response.send(Ok(value));
+                                    }
+                                }
+                            }
                         }
                     });
                     write(
                         frame,
                         destination,
-                        Value::Remote(RemoteValue { id, sender }),
+                        Value::Remote(RemoteValue {
+                            id,
+                            sender,
+                            control,
+                        }),
                     )?;
                 }
                 Instruction::RemoteCall {
@@ -1019,14 +1282,29 @@ impl Machine {
                         })
                         .collect::<Result<Vec<_>, _>>()?;
                     let (sender, receiver) = may::sync::mpsc::channel();
-                    remote
-                        .sender
-                        .send(RemoteMessage {
-                            function: *function,
-                            arguments,
-                            response: sender,
-                        })
-                        .map_err(|_| RuntimeError::runtime("remote object is closed"))?;
+                    let cancelled = sender.clone();
+                    let request = remote.control.register(move |error| {
+                        let message = match error {
+                            crate::remote::RemoteError::Failed(message) => message,
+                            crate::remote::RemoteError::Shutdown => error.to_string(),
+                        };
+                        let _ = cancelled.send(Err(message));
+                    });
+                    if let Some(request) = request
+                        && remote
+                            .sender
+                            .send(RemoteMessage {
+                                request,
+                                function: *function,
+                                arguments,
+                                response: sender,
+                            })
+                            .is_err()
+                    {
+                        remote.control.terminate(crate::remote::RemoteError::Failed(
+                            "remote object is closed".into(),
+                        ));
+                    }
                     write(
                         frame,
                         *destination,
@@ -1049,13 +1327,25 @@ impl Machine {
                         .map_err(|_| RuntimeError::runtime("future lock was poisoned"))?
                         .take()
                         .ok_or_else(|| RuntimeError::runtime("future has already been awaited"))?;
-                    let value = receiver
-                        .recv()
-                        .map_err(|_| {
-                            RuntimeError::runtime("remote object terminated before replying")
-                        })?
-                        .map_err(RuntimeError::runtime)?;
-                    write(frame, destination, Value::from_wire(value)?)?;
+                    let value = receiver.recv().map_err(|_| {
+                        RuntimeError::runtime("remote object terminated before replying")
+                    })?;
+                    let outcome = match value {
+                        Ok(value) => self.remote_variant(
+                            self.program.remote_result,
+                            "Ok",
+                            Value::from_wire(value)?,
+                        )?,
+                        Err(error) => {
+                            let error = self.remote_variant(
+                                self.program.remote_error,
+                                "Failed",
+                                Value::string(self.program.string_record, error.into_bytes()),
+                            )?;
+                            self.remote_variant(self.program.remote_result, "Error", error)?
+                        }
+                    };
+                    write(frame, destination, outcome)?;
                 }
                 &Instruction::Return { source } => {
                     let value = if function.returns_reference {

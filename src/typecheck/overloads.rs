@@ -574,7 +574,7 @@ impl Checker<'_> {
         Ok(Ty::Callable {
             parameters,
             parameter_modes,
-            result: Box::new(Ty::Future(result)),
+            result: Box::new(self.remote_future_type(caller, *result)?),
             erased,
             effects: Vec::new(),
             suspends: false,

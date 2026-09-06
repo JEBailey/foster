@@ -506,6 +506,7 @@ fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     if value != foster::vm::Value::Unit {
         println!("{value}");
     }
+    foster::vm::release_value(value)?;
     Ok(())
 }
 

@@ -1,0 +1,10 @@
+warn: could not canonicalize path: 'C:\Users\jason'
+   Compiling foster v0.1.0 (C:\Users\jason\git\foster)
+    Finished `release` profile [optimized] target(s) in 1m 01s
+     Running tests\backend_parity.rs (target\release\deps\backend_parity-01395161b0beef61.exe)
+
+running 1 test
+test destructor_temporaries_survive_the_full_expression ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 10.25s
+

@@ -63,6 +63,36 @@ type Parser = {
     errors: List<TomlError>
 }
 
+impl PathPart {
+    /// Copies a path component while preserving the original path.
+    func copy(self) -> self {
+        branch self {
+            PathPart.Key(key) -> PathPart.Key(key.copy())
+            PathPart.ArrayItem(item) -> PathPart.ArrayItem(PathItem { key: item.key.copy(), index: item.index })
+        }
+    }
+}
+
+impl TomlEntry {
+    /// Copies this entry and its complete TOML value.
+    pub func copy(self) -> self { TomlEntry { key: self.key.copy(), value: self.value.copy() } }
+}
+
+impl TomlValue {
+    /// Copies the complete TOML tree without consuming the source.
+    pub func copy(self) -> self {
+        branch self {
+            TomlValue.String(value) -> TomlValue.String(value.copy())
+            TomlValue.Int(value) -> TomlValue.Int(value)
+            TomlValue.Float(value) -> TomlValue.Float(value)
+            TomlValue.Bool(value) -> TomlValue.Bool(value)
+            TomlValue.DateTime(value) -> TomlValue.DateTime(value.copy())
+            TomlValue.Array(values) -> TomlValue.Array(values.map((value: TomlValue) -> value.copy()))
+            TomlValue.Table(entries) -> TomlValue.Table(entries.map((entry: TomlEntry) -> entry.copy()))
+        }
+    }
+}
+
 /// Parses source text into a typed TOML document.
 pub func parse(source: String) -> Result<TomlDocument, TomlError> {
     let parser = Parser {

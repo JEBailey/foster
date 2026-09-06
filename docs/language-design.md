@@ -517,14 +517,15 @@ shift, and arithmetic operators. Parentheses can make a different grouping expli
 
 The section below describes the current executable interface. The accepted
 [remote lifecycle contract](remote-semantics.md) additionally requires owner-scoped cancellation,
-terminal failure containment, typed error outcomes, and compile-time outstanding-request checks.
-Those changes are pending implementation; the existing `await` examples do not demonstrate the
-planned outer `Result<T, RemoteError>` API.
+and compile-time outstanding-request checks. Those lifetime requirements remain pending.
+Both runtimes implement terminal failure containment and typed error outcomes.
 
 `remote` transfers a record into an isolated virtual thread. An owner-qualified function whose
 first parameter is the semantic `self` receiver is an instance method. Calling that method through a
-`Remote<T>` handle sends a FIFO mailbox message and returns `Future<R>`; `await` parks the current
-virtual thread until the reply arrives.
+`Remote<T>` handle sends a FIFO mailbox message and returns `Future<Result<R, RemoteError>>`; `await` parks the current
+virtual thread until the reply arrives. `Result.Ok` contains the method result, while
+`Result.Error(RemoteError.Failed(message))` describes an execution failure. Import `core.result`
+and `core.remote_error` to name these variants. Domain Result errors remain inside the outer Ok.
 
 ```foster
 impl Counter {
@@ -929,6 +930,12 @@ func enqueue(job: Job) -> () [consume job] { /* ... */ }
 
 enqueue(move pending_job)
 ```
+
+Explicit user-defined copying is available through `core.copy.Copy`, whose method is
+`func copy(self) -> self`. The return type `self` means the concrete receiver type. The separate
+`core.drop.Drop` contract declares `func deinit(self) -> ()`, called automatically at ownership
+end before child values are released. Copies create independent owners; moves transfer ownership
+and its cleanup obligation. Neither protocol changes implicit scalar copy classification.
 
 Copy values and fresh temporaries do not require `move`. Named `ref[group] T` types are reserved
 for borrows that participate in first-class references, escaping relationships, captures, or group

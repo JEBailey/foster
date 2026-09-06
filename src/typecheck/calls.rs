@@ -1,6 +1,35 @@
 use super::*;
 
 impl Checker<'_> {
+    pub(super) fn remote_future_type(
+        &self,
+        caller: FunctionId,
+        result: Ty,
+    ) -> Result<Ty, FosterError> {
+        let result_module = self
+            .hir
+            .module_named("core.result")
+            .ok_or_else(|| self.error(caller, "remote calls require core.result"))?;
+        let remote_module = self
+            .hir
+            .module_named("core.remote_error")
+            .ok_or_else(|| self.error(caller, "remote calls require core.remote_error"))?;
+        let result_type = self
+            .hir
+            .variant_type_named(result_module, "Result")
+            .ok_or_else(|| self.error(caller, "remote calls require core.result.Result"))?;
+        let error_type = self
+            .hir
+            .variant_type_named(remote_module, "RemoteError")
+            .ok_or_else(|| {
+                self.error(caller, "remote calls require core.remote_error.RemoteError")
+            })?;
+        Ok(Ty::Future(Box::new(Ty::Variant(
+            result_type,
+            vec![result, Ty::Variant(error_type, vec![])],
+        ))))
+    }
+
     pub(super) fn infer_call(
         &mut self,
         function: FunctionId,
@@ -63,6 +92,9 @@ impl Checker<'_> {
         }
 
         if let hir::Expr::Member { object, name } = self.hir.expressions[callee].clone() {
+            if name == "deinit" {
+                return Err(self.error(function, "deinit is called automatically when ownership ends; it cannot be called directly"));
+            }
             let object_type = self.infer_expression(function, object)?;
             if name == "freeze"
                 && self.is_byte_buffer_type(&object_type)
@@ -1074,7 +1106,7 @@ impl Checker<'_> {
             ));
         }
         let result = if remote {
-            Ty::Future(Box::new(result))
+            self.remote_future_type(caller, result)?
         } else {
             result
         };

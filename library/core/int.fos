@@ -3,6 +3,9 @@
 import core.ordering
 
 impl Int {
+    /// Explicitly copies this scalar value.
+    pub func copy(self: Int) -> self [read self] { self }
+
     /// Returns the absolute value of this integer.
     pub func absolute(self: Int) -> Int {
         branch {

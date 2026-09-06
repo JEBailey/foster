@@ -16,6 +16,7 @@ pub(super) struct EffectiveMethod {
     pub(super) parameters: Vec<Ty>,
     pub(super) parameter_modes: Vec<crate::ast::ParameterMode>,
     pub(super) result: Ty,
+    pub(super) returns_self: bool,
     pub(super) effects: Vec<crate::ast::Effect>,
     pub(super) suspends: bool,
     pub(super) requirement: Option<(RecordId, usize)>,
@@ -64,7 +65,10 @@ impl Checker<'_> {
                 )?;
                 Self::merge_variant_method(&definition.name, &mut methods, method)?;
             }
-            for method in &methods {
+            for method in &mut methods {
+                if method.returns_self {
+                    method.result = Ty::Variant(variant, arguments.clone());
+                }
                 self.check_variant_method_implementation(variant, &arguments, method)?;
             }
         }
@@ -130,6 +134,7 @@ impl Checker<'_> {
         };
         if existing.parameter_modes != incoming.parameter_modes
             || existing.result != incoming.result
+            || existing.returns_self != incoming.returns_self
             || existing.effects != incoming.effects
             || existing.suspends != incoming.suspends
         {
@@ -300,7 +305,13 @@ impl Checker<'_> {
         record: RecordId,
         arguments: &[Ty],
     ) -> Result<Vec<EffectiveMethod>, FosterError> {
-        self.collect_record_methods(record, arguments, &mut HashSet::new())
+        let mut methods = self.collect_record_methods(record, arguments, &mut HashSet::new())?;
+        for method in &mut methods {
+            if method.returns_self {
+                method.result = Ty::Record(record, arguments.to_vec());
+            }
+        }
+        Ok(methods)
     }
 
     fn collect_record_fields(
@@ -430,6 +441,7 @@ impl Checker<'_> {
                             parameters: Vec::new(),
                             parameter_modes: Vec::new(),
                             result,
+                            returns_self: false,
                             effects: Vec::new(),
                             suspends: false,
                             requirement: None,
@@ -503,9 +515,12 @@ impl Checker<'_> {
                 }
             })
             .collect();
+        let returns_self = matches!(requirement.return_type.as_ref(),
+            Some(crate::ast::TypeExpr::Named(name, arguments)) if name == "self" && arguments.is_empty());
         let result = requirement
             .return_type
             .as_ref()
+            .filter(|_| !returns_self)
             .map(|ty| self.annotation_type(owner_module, ty, record_generics))
             .transpose()?
             .unwrap_or(Ty::Unit);
@@ -515,6 +530,7 @@ impl Checker<'_> {
             parameters,
             parameter_modes,
             result,
+            returns_self,
             effects: requirement.effects.clone(),
             suspends: requirement.suspends,
             requirement: origin,
@@ -689,6 +705,7 @@ impl Checker<'_> {
         };
         let compatible = existing.parameter_modes == incoming.parameter_modes
             && existing.result == incoming.result
+            && existing.returns_self == incoming.returns_self
             && existing.effects == incoming.effects
             && existing.suspends == incoming.suspends;
         if !compatible {

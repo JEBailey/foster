@@ -1,0 +1,18 @@
+warning[unused-effect]: in `std.net.tcp.Listener.accept`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+warning[unused-effect]: in `std.net.tcp.Listener.accept`: declared `read self.location` is overly broad; the function body requires only `read self.location.address_value`, `read self.location.port_value`
+warning[unused-effect]: in `std.net.tcp.Connection.read`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+warning[unused-effect]: in `std.net.tcp.Connection.write`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+warning[unused-effect]: in `std.net.tcp.Connection.flush`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+warning[unused-effect]: in `std.net.tcp.Connection.read_text`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+warning[unused-effect]: in `std.net.tcp.Connection.write_text`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+warning[unused-effect]: in `std.net.tcp.Connection.set_timeout`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+warning[unused-effect]: in `std.random.SystemRandom.bytes`: declared `mut self` is not required by the function body
+warning[unused-effect]: in `std.toml.Parser.take_crlf`: declared `mut self` is overly broad; the function body requires only `mut self.remaining`, `mut self.line`, `mut self.column`
+warning[unused-effect]: in `std.toml.Parser.take_lf`: declared `mut self` is overly broad; the function body requires only `mut self.remaining`, `mut self.line`, `mut self.column`
+warning[unused-effect]: in `std.toml.Parser.take`: declared `mut self` is overly broad; the function body requires only `mut self.remaining`, `mut self.column`
+warning[unused-effect]: in `std.toml.Parser.fail`: declared `mut self` is overly broad; the function body requires only `consume self.errors`, `read self.line`, `read self.column`, `mut self.errors`
+warning[unused-effect]: in `std.toml.Parser.fail_at`: declared `mut self` is overly broad; the function body requires only `consume self.errors`, `mut self.errors`
+20
+11
+1
+42

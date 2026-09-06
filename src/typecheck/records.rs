@@ -424,7 +424,15 @@ impl Checker<'_> {
                     .all(|(expected, actual)| self.unify(expected, actual, function).is_ok());
                 if parameters_match
                     && self
-                        .coerce(method.result.clone(), *result, function)
+                        .coerce(
+                            if method.returns_self {
+                                actual.clone()
+                            } else {
+                                method.result.clone()
+                            },
+                            *result,
+                            function,
+                        )
                         .is_ok()
                 {
                     matched = Some((self.substitutions.clone(), self.next_variable));

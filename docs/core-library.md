@@ -29,6 +29,8 @@ being added accidentally.
 
 | Module | Purpose |
 | --- | --- |
+| `core.copy` | Explicit copying into an independent value of the concrete receiver type |
+| `core.drop` | Automatic `deinit(self) -> ()` at ownership end |
 | `core.functions` | Reusable predicate, consuming consumer, and supplier callable type aliases |
 | `core.option` | Optional values, mapping, chaining, eager and lazy fallbacks, flattening, and presence queries |
 | `std.iter` | Stateful `Iterator<T>` and repeatable `Iterable<T>` callable contracts |
@@ -43,6 +45,7 @@ being added accidentally.
 | `std.collections.deque` | Double-ended `Deque<T>` |
 | `std.collections.stack` | Last-in, first-out `Stack<T>` |
 | `core.range` | Generic reusable `Range<T>` sequence view |
+| `core.remote_error` | Remote execution failures and the reserved shutdown outcome |
 | `core.result` | Success/error values, transformations, recovery, eager and lazy fallbacks, flattening, and queries |
 | `core.ordering` | Equality, total-ordering, and hashing contracts plus `Less`, `Equal`, and `Greater` |
 | `std.sequence` | Shared map, filter, fold, search, slicing, and query algorithms for strings and lists |
@@ -74,6 +77,24 @@ Primitive `CodePoint` operations are owner-qualified in `core.code_point`. After
 module, `character.as_int()` and `character.as_string()` call the corresponding `CodePoint`
 instance methods, while `CodePoint.from(value)` performs checked construction. Go to Definition on
 a `CodePoint` type annotation opens that module even when it has not yet been imported.
+
+## Explicit copies and indexed reads
+
+`List.at(index)` returns `Result<T, ListReadError>`. It checks the index first, returning
+`OutOfBounds` if invalid, then returns `NotCopyable` if the concrete element has no `Copy`
+implementation. Success calls `copy()` and returns its independently owned result. The source
+list remains intact. Use `try values.at(index)` from a compatible Result-returning function, or
+branch on the result. `get`, `first`, and `last` return `None` for either unavailable case.
+
+Borrowing algorithms such as `map`, `contains?`, `any?`, and `all?` can inspect noncopyable
+elements. Algorithms that preserve the source while producing owned elements, including slicing
+and filtering, require each selected element to support Copy and fail an assertion otherwise.
+Lists do not provide a shallow Copy implementation for arbitrary elements.
+
+`Copy` and `Drop` are structural contracts imported from their respective modules. Matching
+methods can also be declared on a concrete type without explicitly composing the contract.
+`deinit` is called by ownership cleanup; ordinary code cannot call it directly. It runs before
+child values are released and must be a non-suspending read of `self` returning `()`.
 
 ## Boundary with the runtime
 

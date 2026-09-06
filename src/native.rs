@@ -16,7 +16,7 @@ use cranelift_codegen::ir::{
 };
 use cranelift_codegen::ir::{condcodes::FloatCC, condcodes::IntCC};
 use cranelift_codegen::settings::{self, Configurable};
-use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext};
+use cranelift_frontend::FunctionBuilderContext;
 use cranelift_module::{DataDescription, DataId, FuncId, Linkage, Module, default_libcall_names};
 use cranelift_object::{ObjectBuilder, ObjectModule};
 use la_arena::RawIdx;
@@ -37,6 +37,9 @@ use crate::vm::{
 };
 
 pub mod abi;
+mod cleanup;
+mod copy;
+use cleanup::{FailureCleanup, NativeBuilder as FunctionBuilder};
 mod emission;
 mod text_boundary;
 use emission::{emit_object, ordered_entries};
@@ -162,7 +165,7 @@ fn reachable_instances(
 ) -> Result<Vec<NativeInstance>, FosterError> {
     let mut reachable = BTreeSet::new();
     let mut concrete_nominals = BTreeSet::new();
-    let mut contract_calls = BTreeSet::new();
+    let mut contract_calls = BTreeSet::from([(crate::types::DEINIT_SLOT, Vec::new())]);
     let mut pending = vec![SpecializationKey {
         function: main,
         substitutions: Vec::new(),
@@ -234,7 +237,14 @@ fn reachable_instances(
                                 })
                         })
                         .collect::<Result<Vec<_>, _>>()?;
-                    contract_calls.insert((*slot, argument_types));
+                    contract_calls.insert((
+                        if *slot == crate::types::CAN_COPY_SLOT {
+                            crate::types::COPY_SLOT
+                        } else {
+                            *slot
+                        },
+                        argument_types,
+                    ));
                 }
                 Instruction::RemoteCall {
                     remote,
@@ -1414,7 +1424,7 @@ fn declare_remote_thunks(
     let thunk_signature = signature(
         module,
         &ir::Signature {
-            parameters: vec![NativeType::Int, NativeType::Opaque],
+            parameters: vec![NativeType::Int, NativeType::Opaque, NativeType::Bool],
             result: NativeType::Int,
         },
     );
@@ -1507,6 +1517,7 @@ fn define_callable_thunks(
             arguments.extend_from_slice(&inputs[1..]);
             let target = module.declare_func_in_func(backend.functions[&target], builder.func);
             let call = builder.ins().call(target, &arguments);
+            propagate_native_failure(&mut builder, module)?;
             let results = builder.inst_results(call).to_vec();
             builder.ins().return_(&results);
             builder.seal_all_blocks();
@@ -1590,7 +1601,7 @@ fn define_remote_thunks(
         context.func.signature = signature(
             module,
             &ir::Signature {
-                parameters: vec![NativeType::Int, NativeType::Opaque],
+                parameters: vec![NativeType::Int, NativeType::Opaque, NativeType::Bool],
                 result: NativeType::Int,
             },
         );
@@ -1603,9 +1614,6 @@ fn define_remote_thunks(
             builder.switch_to_block(entry);
             let state_word = builder.block_params(entry)[0];
             let state = remote_word_to_native(&mut builder, module, state_word, receiver_type);
-            if let Some(layout) = backend.objects.layouts.managed_layout(receiver_type) {
-                backend.objects.retain(&mut builder, state, layout);
-            }
             let argument_data = builder.block_params(entry)[1];
             let mut arguments = Vec::with_capacity(target_signature.parameters.len());
             arguments.push(state);
@@ -1625,8 +1633,31 @@ fn define_remote_thunks(
                 );
                 arguments.push(remote_word_to_native(&mut builder, module, word, ty));
             }
+            let execute = builder.block_params(entry)[2];
+            let run = builder.create_block();
+            let discard = builder.create_block();
+            builder.ins().brif(execute, run, &[], discard, &[]);
+            builder.switch_to_block(discard);
+            for (value, ty) in arguments
+                .iter()
+                .skip(1)
+                .zip(target_signature.parameters.iter().skip(1))
+            {
+                if let Some(layout) = backend.objects.layouts.managed_layout(*ty) {
+                    backend
+                        .objects
+                        .release(&mut builder, module, *value, layout)?;
+                }
+            }
+            let zero = builder.ins().iconst(types::I64, 0);
+            builder.ins().return_(&[zero]);
+            builder.switch_to_block(run);
+            if let Some(layout) = backend.objects.layouts.managed_layout(receiver_type) {
+                backend.objects.retain(&mut builder, state, layout);
+            }
             let target = module.declare_func_in_func(backend.functions[&target], builder.func);
             let call = builder.ins().call(target, &arguments);
+            propagate_native_failure(&mut builder, module)?;
             let result = builder.inst_results(call)[0];
             let result =
                 native_to_remote_word(&mut builder, module, result, target_signature.result);
@@ -2004,12 +2035,16 @@ fn infer_register_types(
                 result[usize::from(destination.0)] = Some(NativeType::Object(layout));
             }
             Instruction::MoveOut {
+                by_reference,
                 destination,
                 source,
             } => {
                 let source_type = register_type(&result, *source, function)?;
-                result[usize::from(destination.0)] =
-                    Some(dereference_native_type(source_type, environment)?);
+                result[usize::from(destination.0)] = Some(if *by_reference {
+                    dereference_native_type(source_type, environment)?
+                } else {
+                    source_type
+                });
             }
             Instruction::Push { destination, .. } => {
                 result[usize::from(destination.0)] = Some(NativeType::Unit);
@@ -2056,7 +2091,9 @@ fn infer_register_types(
                 let call = remote_calls
                     .get(&destination.0)
                     .ok_or_else(|| native_error("remote call has no verified specialization"))?;
-                let future = VerificationType::Future(Box::new(call.result.clone()));
+                let future = VerificationType::Future(Box::new(
+                    environment.program.remote_outcome_type(call.result.clone()),
+                ));
                 let layout = environment.layouts.builtin(&future).ok_or_else(|| {
                     native_error(format!(
                         "future in `{}` has no concrete native layout",
@@ -2100,6 +2137,15 @@ fn infer_register_types(
                 ..
             } => {
                 let receiver = register_type(&result, *receiver, function)?;
+                if *slot == crate::types::CAN_COPY_SLOT || *slot == crate::types::COPY_SLOT {
+                    result[usize::from(destination.0)] =
+                        Some(if *slot == crate::types::CAN_COPY_SLOT {
+                            NativeType::Bool
+                        } else {
+                            receiver
+                        });
+                    continue;
+                }
                 let argument_types = arguments
                     .iter()
                     .map(|argument| register_type(&result, *argument, function))
@@ -2466,7 +2512,7 @@ fn lower_shared_to_native_ir(
     function_signature: &ir::Signature,
     instance: &SpecializationKey,
     environment: NativeIrEnvironment<'_>,
-) -> Result<ir::Function, FosterError> {
+) -> Result<(ir::Function, FailureCleanup), FosterError> {
     let remote_calls = verified_remote_calls(metadata, source_states, instance, environment)?;
     let external_values = shared.captures.iter().chain(&shared.parameters);
     let external_types = metadata
@@ -2533,9 +2579,11 @@ fn lower_shared_to_native_ir(
     let mut storage_hints = shared.storage_hints.clone();
     let mut blocks = Vec::with_capacity(shared.blocks.len());
     let mut cleanup_edges = Vec::new();
+    let mut failure_cleanup = FailureCleanup::default();
 
-    for block in &shared.blocks {
+    for (block_index, block) in shared.blocks.iter().enumerate() {
         let mut state = HashMap::<u16, ir::Value>::new();
+        let mut temporaries = BTreeSet::new();
         for value in &block.parameters {
             if let Some(home) = shared.storage_hints[value.0 as usize] {
                 state.insert(home, *value);
@@ -2563,12 +2611,46 @@ fn lower_shared_to_native_ir(
                 {
                     continue;
                 }
+                if let ir::Instruction::Portable(ir::PortableInstruction::Drop { value }) =
+                    &instruction
+                {
+                    temporaries.remove(value);
+                }
                 for value in consumed {
                     remove_shared_home(&mut state, &storage_hints, value);
+                    temporaries.remove(&value);
                 }
+                // ABI argument copies and conversions have no construction home,
+                // but own references until transferred to a call or closure.
+                let live = state
+                    .iter()
+                    .filter(|(home, _)| !reference_homes.contains_key(home))
+                    .map(|(_, value)| *value)
+                    .chain(temporaries.iter().copied())
+                    .filter(|value| {
+                        matches!(
+                            value_types[value.0 as usize],
+                            NativeType::String | NativeType::Object(_)
+                        )
+                    })
+                    .collect::<BTreeSet<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect();
+                failure_cleanup
+                    .values
+                    .insert((block_index, instructions.len()), live);
                 for destination in instruction.destinations() {
                     if let Some(home) = storage_hints[destination.0 as usize] {
                         state.insert(home, destination);
+                    } else if !matches!(
+                        &instruction,
+                        ir::Instruction::RuntimeCall {
+                            helper: abi::REF_LOAD_PTR,
+                            ..
+                        }
+                    ) {
+                        temporaries.insert(destination);
                     }
                 }
                 instructions.push(instruction);
@@ -2626,13 +2708,38 @@ fn lower_shared_to_native_ir(
                 unreachable!()
             };
             let returned = *returned;
-            for value in state.values().copied().collect::<BTreeSet<_>>() {
+            for value in state
+                .values()
+                .copied()
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .rev()
+            {
                 if value != returned
                     && matches!(
                         value_types[value.0 as usize],
                         NativeType::Object(_) | NativeType::String
                     )
                 {
+                    remove_shared_home(&mut state, &storage_hints, value);
+                    let live = state
+                        .iter()
+                        .filter(|(home, _)| !reference_homes.contains_key(home))
+                        .map(|(_, value)| *value)
+                        .chain(temporaries.iter().copied())
+                        .filter(|value| {
+                            matches!(
+                                value_types[value.0 as usize],
+                                NativeType::Object(_) | NativeType::String
+                            )
+                        })
+                        .collect::<BTreeSet<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect();
+                    failure_cleanup
+                        .values
+                        .insert((block_index, instructions.len()), live);
                     instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Drop {
                         value,
                     }));
@@ -2707,12 +2814,36 @@ fn lower_shared_to_native_ir(
 
     let mut parameters = shared.captures.clone();
     parameters.extend(&shared.parameters);
+    // Pruned entry arguments never reach block-local ownership state. The ABI
+    // still transfers these references, including an unused method receiver.
+    let unused_parameters = parameters
+        .iter()
+        .copied()
+        .filter(|value| !shared.entry_arguments.contains(value))
+        .filter(|value| {
+            matches!(
+                value_types[value.0 as usize],
+                NativeType::String | NativeType::Object(_)
+            )
+        })
+        .collect::<Vec<_>>();
     let mut entry = shared.entry;
     let mut entry_arguments = shared.entry_arguments.clone();
-    if !reference_homes.is_empty() {
+    if !reference_homes.is_empty() || !unused_parameters.is_empty() {
+        failure_cleanup.values = failure_cleanup
+            .values
+            .into_iter()
+            .map(|((block, instruction), values)| ((block + 1, instruction), values))
+            .collect();
         let mut loaded_captures = HashMap::new();
         let mut prologue_instructions = Vec::new();
         let mut prologue_spans = Vec::new();
+        for value in unused_parameters.into_iter().rev() {
+            prologue_instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Drop {
+                value,
+            }));
+            prologue_spans.push(Range::default());
+        }
         for (input, input_type) in shared.captures.iter().chain(&shared.parameters).zip(
             metadata
                 .capture_types
@@ -2776,19 +2907,22 @@ fn lower_shared_to_native_ir(
         entry = ir::Block(0);
         entry_arguments = Vec::new();
     }
-    Ok(ir::Function {
-        name: shared.name.clone(),
-        signature: function_signature.clone(),
-        parameters,
-        captures: Vec::new(),
-        capture_types: Vec::new(),
-        entry_seeds: shared.entry_seeds.clone(),
-        entry,
-        entry_arguments,
-        value_types,
-        storage_hints,
-        blocks,
-    })
+    Ok((
+        ir::Function {
+            name: shared.name.clone(),
+            signature: function_signature.clone(),
+            parameters,
+            captures: Vec::new(),
+            capture_types: Vec::new(),
+            entry_seeds: shared.entry_seeds.clone(),
+            entry,
+            entry_arguments,
+            value_types,
+            storage_hints,
+            blocks,
+        },
+        failure_cleanup,
+    ))
 }
 
 fn result_error_conversion(
@@ -3023,7 +3157,8 @@ fn lower_shared_instruction(
                     Vec::new(),
                 ));
                 right = extended;
-            } else if value_types[right.0 as usize] == NativeType::Int
+            } else if !matches!(operator, BinaryOp::ShiftLeft | BinaryOp::ShiftRight)
+                && value_types[right.0 as usize] == NativeType::Int
                 && matches!(
                     value_types[left.0 as usize],
                     NativeType::Byte | NativeType::CodePoint
@@ -3308,9 +3443,14 @@ fn lower_shared_instruction(
                 payload: payload.clone(),
             },
         ))),
-        ir::PortableInstruction::MoveOut { source, .. } => {
-            Ok(vec![(instruction.clone(), vec![*source])])
-        }
+        ir::PortableInstruction::MoveOut {
+            source,
+            by_reference,
+            ..
+        } => Ok(vec![(
+            instruction.clone(),
+            if *by_reference { vec![] } else { vec![*source] },
+        )]),
         ir::PortableInstruction::Index {
             destination,
             object,
@@ -3410,6 +3550,9 @@ fn lower_shared_instruction(
             arguments,
             ..
         } => {
+            if *slot == crate::types::CAN_COPY_SLOT || *slot == crate::types::COPY_SLOT {
+                return Ok(one(instruction.clone()));
+            }
             let argument_types = arguments
                 .iter()
                 .map(|argument| ty(*argument))
@@ -3639,6 +3782,11 @@ fn shared_call_arguments(
             }
         }
     }
+    consumed.extend(
+        lowered
+            .iter()
+            .filter(|value| storage_hints[value.0 as usize].is_none()),
+    );
     Ok((lowered, consumed))
 }
 
@@ -3782,6 +3930,11 @@ fn shared_capture_arguments(
             }
         }
     }
+    consumed.extend(
+        lowered
+            .iter()
+            .filter(|value| storage_hints[value.0 as usize].is_none()),
+    );
     Ok((lowered, consumed))
 }
 
@@ -3927,7 +4080,21 @@ fn lower_native_ir(
                     .stack_store(pointer_type, lowered, homes[&home], 0);
             }
         }
-        for instruction in &block.instructions {
+        for (instruction_index, instruction) in block.instructions.iter().enumerate() {
+            builder.cleanup = prepared
+                .failure_cleanup
+                .values
+                .get(&(index, instruction_index))
+                .into_iter()
+                .flatten()
+                .filter_map(|value| {
+                    backend
+                        .objects
+                        .layouts
+                        .managed_layout(function.value_type(*value))
+                        .map(|layout| (values[value], backend.release_thunks[&layout]))
+                })
+                .collect();
             if let ir::Instruction::Portable(ir::PortableInstruction::MatchPattern {
                 destination,
                 subject,
@@ -4140,7 +4307,8 @@ fn lower_native_pattern(
             }
             builder.append_block_param(join_block, types::I8);
             for binding in &bindings {
-                builder.append_block_param(join_block, builder.func.dfg.value_type(*binding));
+                let ty = builder.func.dfg.value_type(*binding);
+                builder.append_block_param(join_block, ty);
             }
             let mut success_arguments = vec![matched.into()];
             success_arguments.extend(
@@ -4292,6 +4460,7 @@ fn lower_native_instruction(
             let reference = module.declare_func_in_func(backend.functions[function], builder.func);
             let arguments = arguments.iter().map(get).collect::<Vec<_>>();
             let call = builder.ins().call(reference, &arguments);
+            propagate_native_failure(builder, module)?;
             builder.inst_results(call)[0]
         }
         ir::Instruction::WrapCallable {
@@ -4499,6 +4668,7 @@ fn lower_portable_native(
         ir::PortableInstruction::Drop { value } => {
             if let Some(layout) = objects.layouts.managed_layout(function.value_type(*value)) {
                 objects.release(builder, module, get(value), layout)?;
+                propagate_native_failure(builder, module)?;
             }
             Ok(None)
         }
@@ -4556,6 +4726,18 @@ fn lower_portable_native(
             let copied = match &physical.kind {
                 PhysicalKind::Record { fields, .. } => {
                     let copied = objects.allocate(builder, module, layout)?;
+                    if contract_candidates(crate::types::DEINIT_SLOT, object_type, &[], backend.ir)?
+                        .iter()
+                        .any(|candidate| candidate.layout == layout)
+                    {
+                        let inactive = builder.ins().iconst(types::I32, 1);
+                        store_physical_value(
+                            builder,
+                            source,
+                            physical.header.flags_offset,
+                            inactive,
+                        );
+                    }
                     for field in fields {
                         let value =
                             load_physical_value(builder, module, source, field.offset, field.value);
@@ -4886,14 +5068,9 @@ fn lower_portable_native(
         ir::PortableInstruction::MoveOut {
             destination,
             source,
+            by_reference,
         } => {
-            let source_type = function.value_type(*source);
-            let is_reference = matches!(
-                source_type,
-                NativeType::Object(layout)
-                    if matches!(objects.layouts.logical.get(layout).kind, LayoutKind::Pointer { .. })
-            );
-            if !is_reference {
+            if !by_reference {
                 return Ok(Some(get(source)));
             }
             let ty = function.value_type(*destination);
@@ -5107,6 +5284,7 @@ fn lower_portable_native(
                 );
                 let signature = builder.func.import_signature(signature);
                 let call = builder.ins().call_indirect(signature, code, &lowered);
+                propagate_native_failure(builder, module)?;
                 return Ok(Some(builder.inst_results(call)[0]));
             }
             let LayoutKind::Closure {
@@ -5154,7 +5332,25 @@ fn lower_portable_native(
             let signature = signature(module, &backend.ir.function_types[&target]);
             let signature = builder.func.import_signature(signature);
             let call = builder.ins().call_indirect(signature, code, &lowered);
+            propagate_native_failure(builder, module)?;
             Ok(Some(builder.inst_results(call)[0]))
+        }
+        ir::PortableInstruction::CallContractMethod {
+            destination,
+            receiver,
+            slot,
+            name,
+            arguments,
+        } if *slot == crate::types::CAN_COPY_SLOT || *slot == crate::types::COPY_SLOT => {
+            copy::lower(
+                builder,
+                module,
+                get(receiver),
+                function.value_type(*receiver),
+                *slot == crate::types::CAN_COPY_SLOT,
+                backend,
+            )
+            .map(Some)
         }
         ir::PortableInstruction::CallContractMethod {
             destination,
@@ -5615,6 +5811,7 @@ fn lower_contract_dispatch(
         let target =
             module.declare_func_in_func(backend.functions[&candidate.function], builder.func);
         let call = builder.ins().call(target, &lowered);
+        propagate_native_failure(builder, module)?;
         let result = builder.inst_results(call)[0];
         builder.ins().jump(join, &[result.into()]);
         builder.switch_to_block(next);
@@ -5624,6 +5821,15 @@ fn lower_contract_dispatch(
         .iconst(types::I64, abi::failure::CONTRACT_DISPATCH);
     let detail = builder.ins().iconst(types::I64, i64::from(slot.0));
     let limit = zero_i64(builder);
+    // No candidate accepted these arguments, so their ABI ownership was not
+    // transferred to a callee on this path.
+    for (argument, ty) in arguments.iter().zip(argument_types).rev() {
+        if let Some(layout) = backend.objects.layouts.managed_layout(*ty) {
+            backend
+                .objects
+                .release(builder, module, *argument, layout)?;
+        }
+    }
     runtime_call(
         builder,
         module,
@@ -5958,12 +6164,111 @@ fn lower_native_await(
         },
         &[handle],
     )?;
-    Ok(remote_word_to_native(
+    let error = runtime_call(
         builder,
         module,
-        value,
-        context.function.value_type(destination),
-    ))
+        abi::FUTURE_ERROR,
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque],
+            result: NativeType::String,
+        },
+        &[handle],
+    )?;
+    let NativeType::Object(result_layout) = context.function.value_type(destination) else {
+        return Err(native_error("remote outcome requires Result layout"));
+    };
+    let LayoutKind::Variant { arguments, .. } = &context.backend.ir.layouts.get(result_layout).kind
+    else {
+        return Err(native_error("remote outcome must be a variant"));
+    };
+    let success_type = native_verification_type(
+        context.backend.ir.program,
+        context.backend.ir.layouts,
+        &arguments[0],
+        None,
+    )?;
+    let NativeType::Object(error_layout) = native_verification_type(
+        context.backend.ir.program,
+        context.backend.ir.layouts,
+        &arguments[1],
+        None,
+    )?
+    else {
+        return Err(native_error("remote error requires variant layout"));
+    };
+    let failed = builder.create_block();
+    let success = builder.create_block();
+    let join = builder.create_block();
+    builder.append_block_param(join, module.target_config().pointer_type());
+    builder.ins().brif(error, failed, &[], success, &[]);
+    builder.switch_to_block(success);
+    let value = remote_word_to_native(builder, module, value, success_type);
+    let outcome =
+        native_outcome_variant(builder, module, result_layout, "Ok", value, context.backend)?;
+    builder.ins().jump(join, &[outcome.into()]);
+    builder.switch_to_block(failed);
+    let error = native_outcome_variant(
+        builder,
+        module,
+        error_layout,
+        "Failed",
+        error,
+        context.backend,
+    )?;
+    let outcome = native_outcome_variant(
+        builder,
+        module,
+        result_layout,
+        "Error",
+        error,
+        context.backend,
+    )?;
+    builder.ins().jump(join, &[outcome.into()]);
+    builder.switch_to_block(join);
+    Ok(builder.block_params(join)[0])
+}
+
+/// Transfer a freshly owned payload into a remote outcome variant.
+fn native_outcome_variant(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    layout: LayoutId,
+    name: &str,
+    payload: ClifValue,
+    backend: &NativeBackend<'_>,
+) -> Result<ClifValue, FosterError> {
+    let LayoutKind::Variant { alternatives, .. } = &backend.ir.layouts.get(layout).kind else {
+        return Err(native_error("remote outcome has no variant layout"));
+    };
+    let tag = alternatives
+        .iter()
+        .find(|alternative| {
+            backend.ir.program.variants[&alternative.variant]
+                .alternative
+                .as_ref()
+                == name
+        })
+        .ok_or_else(|| native_error("missing remote outcome alternative"))?
+        .tag;
+    let PhysicalKind::Variant {
+        tag_offset,
+        alternatives,
+        ..
+    } = &backend.objects.layouts.physical.get(layout).kind
+    else {
+        return Err(native_error(
+            "remote outcome has no physical variant layout",
+        ));
+    };
+    let alternative = alternatives
+        .iter()
+        .find(|alternative| alternative.tag == tag)
+        .ok_or_else(|| native_error("missing remote outcome physical alternative"))?;
+    let object = backend.objects.allocate(builder, module, layout)?;
+    let tag_value = builder.ins().iconst(types::I32, i64::from(tag));
+    store_physical_value(builder, object, *tag_offset, tag_value);
+    store_physical_value(builder, object, alternative.fields[0].offset, payload);
+    Ok(object)
 }
 
 fn lower_result_error_conversion(
@@ -6680,6 +6985,21 @@ fn require_native_host_response(
         },
         &[response],
     )?;
+    // This opaque response is owned inside the current IR instruction, so it
+    // needs a failure-only release in addition to that instruction's live values.
+    let release_signature = signature(
+        module,
+        &ir::Signature {
+            parameters: vec![NativeType::Opaque],
+            result: NativeType::Unit,
+        },
+    );
+    let release = module
+        .declare_function(abi::HOST_RELEASE, Linkage::Import, &release_signature)
+        .map_err(|error| native_error(format!("cannot declare host response cleanup: {error}")))?;
+    builder.cleanup.insert(0, (response, release));
+    propagate_native_failure(builder, module)?;
+    builder.cleanup.remove(0);
     Ok(())
 }
 
@@ -7087,7 +7407,13 @@ fn append_native_buffer(
     objects: ObjectRuntime<'_>,
 ) -> Result<ClifValue, FosterError> {
     let target = clone_native_buffer(builder, module, source, layout, objects)?;
+    // The new buffer is still private to this instruction if capacity checking
+    // fails. Its unique reference can be destroyed before cleaning the frame.
+    builder
+        .cleanup
+        .insert(0, (target, objects.destructors[&layout]));
     push_native_buffer(builder, module, target, value, layout, objects)?;
+    builder.cleanup.remove(0);
     Ok(target)
 }
 
@@ -7419,7 +7745,7 @@ fn lower_binary(
             let invalid = builder
                 .ins()
                 .icmp_imm_u(IntCC::UnsignedGreaterThan, right, 7);
-            let detail = builder.ins().uextend(types::I64, right);
+            let detail = right;
             let limit = builder.ins().iconst(types::I64, 7);
             fail_if(
                 builder,
@@ -7485,7 +7811,49 @@ fn runtime_call(
         })?;
     let reference = module.declare_func_in_func(function, builder.func);
     let call = builder.ins().call(reference, arguments);
-    Ok(builder.inst_results(call)[0])
+    let result = builder.inst_results(call)[0];
+    if matches!(
+        name,
+        abi::ASSERT | abi::FAIL | abi::STRING_HEAD | abi::STRING_GET | abi::PARSE_FLOAT
+    ) {
+        propagate_native_failure(builder, module)?;
+    }
+    Ok(result)
+}
+
+/// Generated frames return normally on failure: no unwinding through Cranelift frames.
+/// The thread retains the error; callers check it before treating a return as a result.
+fn propagate_native_failure(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+) -> Result<(), FosterError> {
+    let pending = runtime_call(
+        builder,
+        module,
+        abi::FAILURE_PENDING,
+        &ir::Signature {
+            parameters: vec![],
+            result: NativeType::Bool,
+        },
+        &[],
+    )?;
+    let failed = builder.create_block();
+    let continuation = builder.create_block();
+    builder.ins().brif(pending, failed, &[], continuation, &[]);
+    builder.switch_to_block(failed);
+    for (value, release) in builder.cleanup.clone() {
+        let release = module.declare_func_in_func(release, builder.func);
+        builder.ins().call(release, &[value]);
+    }
+    let ty = builder.func.signature.returns[0].value_type;
+    let placeholder = if ty == types::F64 {
+        builder.ins().f64const(0.0)
+    } else {
+        builder.ins().iconst(ty, 0)
+    };
+    builder.ins().return_(&[placeholder]);
+    builder.switch_to_block(continuation);
+    Ok(())
 }
 
 fn fail_if(
@@ -7711,13 +8079,15 @@ struct TemporaryDirectory {
 
 impl TemporaryDirectory {
     fn create() -> Result<Self, FosterError> {
+        static NEXT_DIRECTORY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let unique = format!(
-            "foster-native-{}-{}",
+            "foster-native-{}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|error| native_error(format!("system clock error: {error}")))?
-                .as_nanos()
+                .as_nanos(),
+            NEXT_DIRECTORY.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         );
         let path = std::env::temp_dir().join(unique);
         fs::create_dir(&path).map_err(|error| {

@@ -1,0 +1,993 @@
+warn: could not canonicalize path: 'C:\Users\jason'
+   Compiling foster v0.1.0 (C:\Users\jason\git\foster)
+    Finished `release` profile [optimized] target(s) in 1m 25s
+     Running unittests src\lib.rs (target\release\deps\foster-859d4c7bf0188d17.exe)
+
+running 185 tests
+test archive::tests::total_resource_limit_counts_expanded_bytes ... ok
+test codegen::ir::tests::verifier_rejects_non_dominating_values ... ok
+test codegen::layout::physical::tests::descriptors_are_deterministic_and_include_field_offsets ... ok
+test codegen::layout::physical::tests::thirty_two_bit_layout_uses_four_byte_pointer_slots ... ok
+test codegen::layout::physical::tests::variant_payload_starts_after_a_fixed_tag ... ok
+test codegen::ir::tests::verifier_rejects_mistyped_entry_arguments ... ok
+test codegen::layout::tests::logical_layout_ids_do_not_depend_on_hash_map_insertion_order ... ok
+test codegen::layout::physical::tests::record_offsets_are_target_aware_and_aligned ... ok
+test codegen::layout::physical::tests::scalar_alignment_is_independent_of_pointer_alignment ... ok
+test codegen::layout::tests::record_fields_are_legalized_to_layout_order ... ok
+test codegen::layout::tests::runtime_backed_types_receive_concrete_physical_layouts ... ok
+test codegen::vm::tests::parallel_copy_cycles_use_one_temporary ... ok
+test codegen::vm::tests::branch_edges_receive_distinct_parallel_copies ... ok
+test codegen::vm::tests::program_sealing_restores_functions_after_an_error ... ok
+test codegen::vm::tests::de_ssa_bytecode_verifies_and_executes ... ok
+test control_flow::tests::branch_cfg_omits_completion_edges_after_unconditional_transfers ... ok
+test control_flow::tests::branch_cfg_routes_completed_bodies_to_the_exit ... ok
+test diagnostic::tests::converts_character_positions_to_byte_ranges ... ok
+test documentation::render::tests::documentation_is_escaped_and_inline_code_is_rendered ... ok
+test documentation::render::tests::documentation_supports_common_markdown_structures ... ok
+test diagnostic::tests::renders_codes_labels_notes_and_help ... ok
+test documentation::server::tests::request_paths_cannot_escape_the_documentation_root ... ok
+test formatter::tests::formats_indentation_and_preserves_comments_and_literals ... ok
+test formatter::tests::formats_loops_and_guarded_transfers ... ok
+test formatter::tests::formats_multiline_enum_declarations ... ok
+test formatter::tests::formats_multiline_branch_arms ... ok
+test formatter::tests::formats_multiline_type_composition ... ok
+test formatter::tests::formats_test_declarations ... ok
+test formatter::tests::formats_try_expressions ... ok
+test formatter::tests::preserves_the_canonical_inline_first_enum_case ... ok
+test formatter::tests::rejects_invalid_source ... ok
+test intrinsics::registry::tests::bytecode_tags_are_unique_and_round_trip ... ok
+test intrinsics::registry::tests::foster_replacements_are_not_source_intrinsics ... ok
+test intrinsics::registry::tests::intrinsic_keys_are_unique_and_owned_by_one_module ... ok
+test intrinsics::registry::tests::native_intrinsic_policies_are_explicit ... ok
+test intrinsics::registry::tests::opcode_receiver_modes_are_explicit ... ok
+test intrinsics::registry::tests::ownership_modes_agree_with_execution_policy ... ok
+test lsp::scheduling_tests::repeated_changes_postpone_diagnostics_until_after_the_latest_change ... ok
+test lsp::scheduling_tests::shutdown_allows_cancellation_notifications_before_exit ... ok
+test lsp::scheduling_tests::work_tags_require_the_current_generation_and_document_version ... ok
+test lsp::builtins::tests::source_builtin_tooling_metadata_matches_the_intrinsic_registry ... ok
+test lsp::tests::produces_zero_based_utf16_diagnostics ... ok
+test codegen::layout::tests::generic_schemas_are_not_executable_layouts ... ok
+test lsp::tests::call_argument_type_errors_point_to_the_argument ... ok
+test lsp::tests::duplicate_enum_case_names_point_to_the_conflicting_case ... ok
+test lsp::tests::duplicate_payloadless_enum_cases_point_to_the_second_case ... ok
+test lsp::tests::consuming_call_errors_point_to_the_argument ... ok
+test lsp::tests::unknown_parameter_types_point_to_the_annotation ... ok
+test lsp::tests::publishes_compiler_warnings ... ok
+test lsp::scheduling_tests::workspace_worker_supersedes_stale_and_cancelled_requests ... ok
+test lsp::tests::valid_documents_have_no_diagnostics ... ok
+test lsp::workspace::tests::code_point_type_definition_opens_its_core_module ... ok
+test lsp::workspace::tests::arguments_completion_adds_the_required_import_when_compilation_fails ... ok
+test lsp::workspace::tests::callable_contract_members_provide_hover_signature_and_definition ... ok
+test lsp::workspace::tests::associated_function_navigation_uses_the_type_namespace ... ok
+test lsp::compilation::tests::invalidates_every_snapshot_containing_a_shared_module ... ok
+test lsp::workspace::tests::compilation_cache_reuses_snapshots_and_invalidates_on_change ... ok
+test lsp::workspace::tests::compilation_cache_preserves_unrelated_snapshots_on_change ... ok
+test lsp::workspace::tests::definition_resolves_enum_instance_methods ... ok
+test lsp::workspace::tests::definition_resolves_an_imported_function_to_its_file ... ok
+test lsp::tests::every_compile_error_has_a_source_location ... ok
+test lsp::workspace::tests::completion_uses_scope_and_import_visibility ... ok
+test lsp::workspace::tests::diagnostics_are_limited_to_workspace_and_explicitly_opened_sources ... ok
+test lsp::workspace::tests::constants_have_symbols_hover_and_cross_module_definitions ... ok
+test lsp::workspace::tests::definition_resolves_instance_methods_from_receiver_types ... ok
+test lsp::workspace::tests::definition_resolves_question_mark_instance_methods ... ok
+test lsp::workspace::tests::definition_uses_the_exact_nested_pattern_binding_range ... ok
+test lsp::workspace::tests::diagnostic_publication_includes_every_recovered_syntax_error ... ok
+test lsp::workspace::tests::empty_non_unit_body_recovers_without_hiding_healthy_functions ... ok
+test lsp::workspace::tests::document_symbols_use_open_buffer_overlays ... ok
+test lsp::workspace::tests::enum_hover_renders_case_labels_and_payload_types ... ok
+test lsp::workspace::tests::hover_and_completion_publish_declaration_documentation ... ok
+test lsp::workspace::tests::failed_compilations_are_cached_until_the_document_changes ... ok
+test lsp::workspace::tests::inlay_hints_report_inferred_types_and_argument_names ... ok
+test lsp::workspace::tests::hover_reports_inferred_local_and_function_types ... ok
+test lsp::workspace::tests::impl_member_rename_from_its_declaration_preserves_other_owners ... ok
+test lsp::tests::missing_module_members_point_to_the_member_expression ... ok
+test lsp::workspace::tests::inlay_hints_survive_an_error_in_another_function_without_stale_positions ... ok
+test lsp::workspace::tests::malformed_function_does_not_hide_later_function_semantics ... ok
+test lsp::workspace::tests::overloaded_contract_calls_use_the_selected_requirement_for_lsp_features ... ok
+test lsp::workspace::tests::partial_application_value_captures_do_not_leak_into_lsp_locals ... ok
+test lsp::workspace::tests::overload_calls_hover_navigate_and_show_the_selected_signature ... ok
+test lsp::workspace::tests::record_signatures_show_declared_type_composition ... ok
+test lsp::workspace::tests::rename_returns_edits_for_a_local_identity_only ... ok
+test lsp::workspace::tests::references_follow_resolved_symbols_across_modules ... ok
+test lsp::workspace::tests::recompiling_a_package_only_reparses_the_changed_module ... ok
+test lsp::workspace::tests::semantic_error_in_one_function_does_not_hide_later_function_types ... ok
+test lsp::workspace::tests::semantic_features_reuse_unchanged_function_snapshots_after_an_error ... ok
+test lsp::workspace::tests::source_builtins_provide_docs_navigation_and_parameter_hints ... ok
+test lsp::workspace::tests::signature_help_selects_the_active_argument_and_shows_docs ... ok
+test lsp::workspace::tests::semantic_recovery_reports_multiple_failing_functions ... ok
+test native::abi::tests::rejects_unknown_helpers_and_mismatched_wire_types ... ok
+test native::abi::tests::contracts_have_unique_versioned_symbols_and_pointer_ownership ... ok
+test lsp::workspace::tests::semantic_navigation_survives_a_failed_document_compilation ... ok
+test native::program::tests::missing_entry_is_rejected_by_preparation ... ok
+test lsp::workspace::tests::union_hover_renders_complete_member_types ... ok
+test native::program::tests::prepared_functions_retain_logical_identity_and_management_policy ... ok
+test native::tests::native_ir_is_ssa_and_control_flow_carries_block_arguments ... ok
+test ownership::model::tests::reference_model_observes_last_use_and_reissuance ... ok
+test ownership::regions::tests::backward_demand_ends_a_loan_after_its_last_use ... ok
+test ownership::regions::tests::backward_demand_finds_three_site_invalidation_conflicts ... ok
+test ownership::regions::tests::branch_overwrite_does_not_keep_the_replaced_definition ... ok
+test ownership::regions::tests::cfg_checker_matches_reference_model_for_bounded_event_histories ... ok
+test ownership::regions::tests::constant_indices_are_disjoint_while_dynamic_indices_overlap ... ok
+test ownership::regions::tests::field_replacement_preserves_disjoint_borrower_contents ... ok
+test ownership::regions::tests::harmless_cfg_splitting_preserves_the_ownership_decision ... ok
+test ownership::regions::tests::mutually_exclusive_invalidation_and_use_do_not_conflict ... ok
+test ownership::regions::tests::ownership_decision_is_sensitive_to_invalidating_event_mutations ... ok
+test ownership::regions::tests::path_limit_widens_to_common_facts ... ok
+test ownership::regions::tests::replacement_kills_old_contents_and_joins_reaching_loans ... ok
+test parser::tests::recovery_always_advances_on_unexpected_top_level_tokens ... ok
+test parser::tests::recovery_keeps_later_declarations_and_reports_independent_errors ... ok
+test parser::tests::strict_parser_still_rejects_a_damaged_module ... ok
+test native::program::tests::one_prepared_program_renders_and_emits_without_mutating_its_ir ... ok
+test project::tests::loads_and_discovers_a_manifest_source_root ... FAILED
+test project::tests::rejects_conflicting_transitive_dependency_names ... FAILED
+test lsp::workspace::tests::compilation_uses_the_manifest_source_root ... FAILED
+test lsp::workspace::tests::compilation_includes_manifest_path_dependencies ... FAILED
+test project::tests::rejects_manifest_paths_that_escape_the_project ... FAILED
+test remote::tests::completed_requests_are_not_cancelled_or_completed_twice ... ok
+test project::tests::rejects_path_dependency_cycles ... FAILED
+test remote::tests::dropping_owner_cancels_requests_even_when_worker_retains_control ... ok
+test remote::tests::failure_is_sticky_and_later_requests_resolve_without_execution ... ok
+test project::tests::rejects_invalid_manifest_shapes_with_specific_messages ... FAILED
+test vm::binary::tests::decoder_rejects_a_forged_specialized_method_return_type ... ok
+test vm::binary::tests::rejects_invalid_envelopes ... ok
+test project::tests::resolves_transitive_path_dependencies_in_stable_order ... FAILED
+test vm::binary::tests::round_trips_a_reference_to_an_expression_temporary ... ok
+test remote::tests::completion_racing_shutdown_has_exactly_one_winner ... ok
+test vm::binary::tests::round_trips_and_executes_compiled_program ... ok
+test vm::binary::tests::round_trips_generic_aggregate_layout_metadata ... ok
+test vm::binary::tests::round_trips_generic_closure_specializations ... ok
+test vm::builtins::tests::core_builtins_do_not_require_host_access ... ok
+test vm::builtins::tests::host_builtins_cross_the_capability_boundary ... ok
+test vm::host::tests::contexts_isolate_network_handles ... ok
+test vm::host::tests::relative_paths_resolve_from_the_context_directory ... ok
+test vm::ir::verification_type_tests::substitutions_walk_nested_types_consistently ... ok
+test vm::machine::register_storage_tests::assigning_to_a_read_only_borrow_detaches_the_parameter ... ok
+test vm::machine::register_storage_tests::consuming_an_inline_register_transfers_its_value ... ok
+test vm::machine::register_storage_tests::ordinary_registers_remain_inline_until_their_place_is_observed ... ok
+test lsp::workspace::tests::examples_compile_in_their_own_document_context ... ok
+test vm::optimizer::closures::tests::refuses_to_specialize_a_redefined_closure_register ... ok
+test vm::optimizer::drops::tests::drops_a_condition_on_both_branch_edges ... ok
+test vm::optimizer::drops::tests::retains_the_origin_of_a_field_loaded_by_reference ... ok
+test vm::tests::emits_register_drops_with_and_without_optimization ... ok
+test vm::tests::executes_closure_captures_and_dynamic_calls ... ok
+test lsp::workspace::tests::definition_opens_embedded_core_source_when_available ... ok
+test vm::tests::executes_control_flow_lists_records_and_variants ... ok
+test vm::tests::executes_copy_move_and_reference_capture_modes ... ok
+test vm::tests::executes_subject_branches_with_atomic_pattern_bindings ... ok
+test vm::tests::executes_typed_hir_through_shared_ssa_and_register_bytecode ... ok
+test vm::tests::inlines_small_leaf_functions_into_the_caller ... ok
+test vm::tests::executes_self_recursive_closures_and_deep_vm_frames ... ok
+test vm::tests::optimizer_reduces_representative_bytecode ... ok
+test vm::tests::optimizes_constants_branches_registers_and_spans ... ok
+test vm::tests::propagates_binding_copies_and_reuses_dead_registers ... ok
+test vm::tests::returned_reference_to_destroyed_frame_storage_expires_safely ... ok
+test vm::tests::optimized_and_unoptimized_programs_are_semantically_equivalent ... ok
+test vm::tests::returned_references_keep_structural_generation_checks ... ok
+test vm::tests::returned_references_preserve_their_live_origin ... ok
+test vm::tests::verifier_rejects_a_call_argument_with_the_wrong_type ... ok
+test vm::tests::verifier_rejects_a_read_after_a_consuming_call ... ok
+test vm::tests::verifier_rejects_a_read_after_drop ... ok
+test vm::tests::specializes_non_escaping_closure_calls_without_losing_captures ... ok
+test vm::tests::verifier_rejects_a_register_initialized_on_only_one_cfg_edge ... ok
+test vm::value::tests::byte_buffer_index_tracks_its_foster_storage_field ... ok
+test vm::value::tests::capturing_a_reference_flattens_its_wrapper_slot ... ok
+test vm::value::tests::expired_place_handles_fail_safely ... ok
+test vm::value::tests::nested_projections_share_one_weak_root_without_retaining_wrappers ... ok
+test vm::tests::verifier_rejects_out_of_frame_registers ... ok
+test vm::tests::verifier_rejects_a_return_with_the_wrong_type ... ok
+test vm::value::tests::projected_reshape_preserves_disjoint_field_references ... ok
+test vm::value::tests::nested_reshape_invalidates_an_older_index_projection ... ok
+test vm::value::tests::record_clones_share_aggregate_storage_until_mutation ... ok
+test vm::value::tests::record_values_share_their_indexed_layout ... ok
+test vm::value::tests::reference_captures_do_not_retain_their_origin_cycle ... ok
+test lsp::workspace::tests::definition_resolves_primitive_instance_methods ... FAILED
+test documentation::render::tests::site_omits_embedded_modules ... ok
+test lsp::workspace::tests::string_method_hover_publishes_library_documentation ... ok
+test native::runtime::tests::managed_text_and_arguments_release_all_native_allocations ... ok
+test native::runtime::tests::failures_release_native_frames_and_transferred_arguments ... ok
+test lsp::workspace::tests::method_hover_survives_an_error_in_another_function ... ok
+test vm::binary::tests::time_clock_builtins_survive_bytecode_round_trips ... ok
+test vm::binary::tests::foster_toml_parser_survives_bytecode_round_trips ... FAILED
+test vm::binary::tests::remote_outcomes_round_trip_with_nominal_metadata ... ok
+
+failures:
+
+---- project::tests::loads_and_discovers_a_manifest_source_root stdout ----
+
+thread 'project::tests::loads_and_discovers_a_manifest_source_root' (28472) panicked at src\project.rs:556:56:
+called `Result::unwrap()` on an `Err` value: FosterError { message: "assertion failed: list element does not implement Copy", line: 0, column: 0, code: None, source_module: None, labels: [], notes: [], help: None }
+
+---- project::tests::rejects_conflicting_transitive_dependency_names stdout ----
+
+thread 'project::tests::rejects_conflicting_transitive_dependency_names' (35580) panicked at src\project.rs:723:14:
+called `Result::unwrap()` on an `Err` value: FosterError { message: "assertion failed: list element does not implement Copy", line: 0, column: 0, code: None, source_module: None, labels: [], notes: [], help: None }
+
+---- lsp::workspace::tests::compilation_uses_the_manifest_source_root stdout ----
+
+thread 'lsp::workspace::tests::compilation_uses_the_manifest_source_root' (760) panicked at src\lsp\workspace\tests.rs:1599:51:
+called `Result::unwrap()` on an `Err` value: FosterError { message: "assertion failed: list element does not implement Copy", line: 0, column: 0, code: None, source_module: None, labels: [], notes: [], help: None }
+
+---- lsp::workspace::tests::compilation_includes_manifest_path_dependencies stdout ----
+
+thread 'lsp::workspace::tests::compilation_includes_manifest_path_dependencies' (31480) panicked at src\lsp\workspace\tests.rs:1649:51:
+called `Result::unwrap()` on an `Err` value: FosterError { message: "assertion failed: list element does not implement Copy", line: 0, column: 0, code: None, source_module: None, labels: [], notes: [], help: None }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- project::tests::rejects_manifest_paths_that_escape_the_project stdout ----
+
+thread 'project::tests::rejects_manifest_paths_that_escape_the_project' (28920) panicked at src\project.rs:574:9:
+assertion failed: error.message.contains("relative path contained by the project")
+
+---- project::tests::rejects_path_dependency_cycles stdout ----
+
+thread 'project::tests::rejects_path_dependency_cycles' (32456) panicked at src\project.rs:685:14:
+called `Result::unwrap()` on an `Err` value: FosterError { message: "assertion failed: list element does not implement Copy", line: 0, column: 0, code: None, source_module: None, labels: [], notes: [], help: None }
+
+---- project::tests::rejects_invalid_manifest_shapes_with_specific_messages stdout ----
+
+thread 'project::tests::rejects_invalid_manifest_shapes_with_specific_messages' (12544) panicked at src\project.rs:620:13:
+expected ``package.name`` in `assertion failed: list element does not implement Copy`
+
+---- project::tests::resolves_transitive_path_dependencies_in_stable_order stdout ----
+
+thread 'project::tests::resolves_transitive_path_dependencies_in_stable_order' (14524) panicked at src\project.rs:653:44:
+called `Result::unwrap()` on an `Err` value: FosterError { message: "assertion failed: list element does not implement Copy", line: 0, column: 0, code: None, source_module: None, labels: [], notes: [], help: None }
+
+---- lsp::workspace::tests::definition_resolves_primitive_instance_methods stdout ----
+
+thread 'lsp::workspace::tests::definition_resolves_primitive_instance_methods' (27056) panicked at src\lsp\workspace\tests.rs:1177:5:
+assertion `left == right` failed
+  left: Position { line: 74, character: 13 }
+ right: Position { line: 71, character: 13 }
+
+---- vm::binary::tests::foster_toml_parser_survives_bytecode_round_trips stdout ----
+
+thread 'vm::binary::tests::foster_toml_parser_survives_bytecode_round_trips' (9520) panicked at src\vm\binary\tests.rs:230:43:
+called `Result::unwrap()` on an `Err` value: FosterError { message: "assertion failed: list element does not implement Copy", line: 0, column: 0, code: None, source_module: None, labels: [], notes: [], help: None }
+
+
+failures:
+    lsp::workspace::tests::compilation_includes_manifest_path_dependencies
+    lsp::workspace::tests::compilation_uses_the_manifest_source_root
+    lsp::workspace::tests::definition_resolves_primitive_instance_methods
+    project::tests::loads_and_discovers_a_manifest_source_root
+    project::tests::rejects_conflicting_transitive_dependency_names
+    project::tests::rejects_invalid_manifest_shapes_with_specific_messages
+    project::tests::rejects_manifest_paths_that_escape_the_project
+    project::tests::rejects_path_dependency_cycles
+    project::tests::resolves_transitive_path_dependencies_in_stable_order
+    vm::binary::tests::foster_toml_parser_survives_bytecode_round_trips
+
+test result: FAILED. 175 passed; 10 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.42s
+
+error: test failed, to rerun pass `--lib`
+     Running unittests src\main.rs (target\release\deps\foster-32c2c830894813a9.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\foster-bench.rs (target\release\deps\foster_bench-d8d6215e4de5ae1b.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\backend_parity.rs (target\release\deps\backend_parity-01395161b0beef61.exe)
+
+running 26 tests
+test assertions_are_language_errors ... FAILED
+test discarded_remote_failures_do_not_terminate_the_application ... ok
+test calls_aggregates_projections_and_branches_follow_source_order ... ok
+test generic_calls_preserve_values ... ok
+test borrowed_temporaries_share_the_complete_full_expression ... ok
+test assignment_evaluates_the_value_before_the_destination ... ok
+test minimum_integer_negation_is_a_language_error ... ok
+test implicit_unit_results_agree_in_both_backends ... ok
+test aggregates_compare_by_value ... ok
+test borrowed_remote_failure_releases_access_and_remains_terminal ... ok
+test enum_destructors_observe_the_live_payload ... ok
+test destructors_follow_ownership_and_run_before_fields ... ok
+test destructors_handle_replacement_branches_and_loop_exits ... ok
+test foster_library_loops_slices_and_builders_agree ... ok
+test verifier_rejects_inconsistent_specialized_call_results ... ok
+test partial_application_captures_operands_once_in_source_order ... ok
+test list_at_copy_results_have_independent_cleanup ... ok
+test generic_remote_calls_preserve_logical_types ... ok
+test overloaded_remote_methods_deliver_typed_outcomes ... ok
+test owned_list_reads_return_copy_or_a_typed_error_in_both_backends ... ok
+test ownership_and_remote_ordering_agree ... ok
+test destructors_continue_after_failure_and_preserve_the_original_error has been running for over 60 seconds
+test projected_moves_transfer_cleanup_to_the_new_owner ... ok
+test remote_consumed_arguments_run_deinit_before_completion ... ok
+test destructors_continue_after_failure_and_preserve_the_original_error ... ok
+test remote_failures_are_contained_sticky_and_typed ... ok
+test remote_runtime_failures_stop_nested_execution has been running for over 60 seconds
+test remote_runtime_failures_stop_nested_execution ... ok
+
+failures:
+
+---- assertions_are_language_errors stdout ----
+
+thread 'assertions_are_language_errors' (31732) panicked at tests\backend_parity.rs:244:14:
+called `Result::unwrap()` on an `Err` value: FosterError { message: "cannot create native build directory `C:\\Users\\jason\\AppData\\Local\\Temp\\foster-native-31272-1788734214717892800`: Cannot create a file when that file already exists. (os error 183)", line: 0, column: 0, code: Some("E0900"), source_module: None, labels: [], notes: [], help: None }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    assertions_are_language_errors
+
+test result: FAILED. 25 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 132.39s
+
+error: test failed, to rerun pass `--test backend_parity`
+     Running tests\cli.rs (target\release\deps\cli-66db19c8885be1df.exe)
+
+running 21 tests
+test docs_rejects_server_only_options_without_serve ... ok
+test docs_generates_a_static_site_from_resolved_declarations ... ok
+test build_can_emit_deterministic_typed_native_ir ... ok
+test check_can_dump_deterministic_ownership_state ... ok
+test help_describes_commands_and_important_options ... ok
+test build_writes_runnable_compiled_bytecode ... ok
+test fmt_formats_files_and_supports_check_mode ... ok
+test project_errors_render_their_source_locations ... ok
+test run_rejects_unknown_optimizer_settings ... ok
+test test_discovers_and_runs_foster_test_declarations ... ok
+test test_reports_runtime_failures_and_continues ... ok
+test run_accepts_explicit_optimizer_settings ... ok
+test native_float_uses_a_typed_entry_abi ... ok
+test build_native_writes_runnable_host_executable ... ok
+test native_assertions_exit_with_their_message ... ok
+test project_dependencies_do_not_silently_replace_application_modules ... FAILED
+test projects_compile_and_run_transitive_path_dependencies ... FAILED
+test init_creates_a_project_that_commands_discover_from_nested_directories ... FAILED
+test project_manifest_errors_are_actionable ... FAILED
+test pack_writes_deterministic_runnable_archive_with_resources ... ok
+test command_arguments_flow_through_source_bytecode_and_native_execution ... ok
+
+failures:
+
+---- project_dependencies_do_not_silently_replace_application_modules stdout ----
+
+thread 'project_dependencies_do_not_silently_replace_application_modules' (10088) panicked at tests\cli.rs:217:5:
+error: assertion failed: list element does not implement Copy
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- projects_compile_and_run_transitive_path_dependencies stdout ----
+
+thread 'projects_compile_and_run_transitive_path_dependencies' (30892) panicked at tests\cli.rs:164:5:
+error: assertion failed: list element does not implement Copy
+
+
+---- init_creates_a_project_that_commands_discover_from_nested_directories stdout ----
+
+thread 'init_creates_a_project_that_commands_discover_from_nested_directories' (8204) panicked at tests\cli.rs:98:5:
+error: assertion failed: list element does not implement Copy
+
+
+---- project_manifest_errors_are_actionable stdout ----
+
+thread 'project_manifest_errors_are_actionable' (33316) panicked at tests\cli.rs:271:5:
+error: assertion failed: list element does not implement Copy
+
+
+
+failures:
+    init_creates_a_project_that_commands_discover_from_nested_directories
+    project_dependencies_do_not_silently_replace_application_modules
+    project_manifest_errors_are_actionable
+    projects_compile_and_run_transitive_path_dependencies
+
+test result: FAILED. 17 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 21.12s
+
+error: test failed, to rerun pass `--test cli`
+     Running tests\core_host.rs (target\release\deps\core_host-117ec3758cf35531.exe)
+
+running 14 tests
+test resource_identifiers_preserve_provider_kinds_and_reject_accidental_matches ... ok
+test foster_toml_parser_handles_toml_1_1_structures ... FAILED
+test tcp_endpoints_are_uri_shaped_resource_identifiers ... ok
+test filesystem_positioned_reads_and_appends_stream_binary_chunks ... ok
+test core_io_preserves_arbitrary_binary_files ... ok
+test standard_path_and_environment_modules_share_io_errors ... ok
+test core_tcp_accepts_reads_and_writes_a_connection ... ok
+test typed_files_implement_location_based_resource_capabilities ... ok
+test every_standard_library_function_has_attached_documentation ... FAILED
+test standard_time_clocks_cross_the_host_boundary_with_canonical_readings ... ok
+test core_io_reads_writes_and_inspects_host_files ... ok
+test standard_randomness_crosses_the_host_boundary_through_public_contracts ... ok
+test filesystem_mutation_operations_create_copy_move_and_remove_entries ... ok
+test uri_is_a_parsed_resource_identifier_without_implicit_io ... ok
+
+failures:
+
+---- foster_toml_parser_handles_toml_1_1_structures stdout ----
+
+thread 'foster_toml_parser_handles_toml_1_1_structures' (28408) panicked at tests\core_host.rs:275:37:
+called `Result::unwrap()` on an `Err` value: FosterError { message: "assertion failed: list element does not implement Copy", line: 0, column: 0, code: None, source_module: None, labels: [], notes: [], help: None }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- every_standard_library_function_has_attached_documentation stdout ----
+
+thread 'every_standard_library_function_has_attached_documentation' (25060) panicked at tests\core_host.rs:110:9:
+core.list.List.can_copy_at is missing documentation
+
+
+failures:
+    every_standard_library_function_has_attached_documentation
+    foster_toml_parser_handles_toml_1_1_structures
+
+test result: FAILED. 12 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.61s
+
+error: test failed, to rerun pass `--test core_host`
+     Running tests\foster.rs (target\release\deps\foster-08c160ec1fa10438.exe)
+
+running 4 tests
+test test_sources_do_not_depend_on_reader_examples ... ok
+test public_library_modules_declare_tests_or_have_external_coverage ... ok
+test standard_library_suite_passes_with_and_without_optimization ... FAILED
+test portable_language_suite_passes_with_and_without_optimization ... ok
+
+failures:
+
+---- standard_library_suite_passes_with_and_without_optimization stdout ----
+
+thread 'standard_library_suite_passes_with_and_without_optimization' (14004) panicked at tests\foster.rs:13:5:
+foster test library failed with optimize=false
+stdout:
+running 61 test(s)
+test core.bool: boolean helpers implement their truth tables ... ok
+test core.byte: byte conversion preserves values in range ... ok
+test core.bytes: UTF-8 validation rejects invalid boundaries and truncated sequences ... ok
+test core.bytes: bytes round-trip UTF-8 and hexadecimal text ... ok
+test core.bytes.buffer: byte buffers append snapshot and freeze contents ... ok
+test core.code_point: code points round-trip Unicode scalar values ... ok
+test core.float: floating-point helpers clamp and compare values ... ok
+test core.int: integer helpers cover signs ranges and powers ... ok
+test core.list: list algorithms transform and aggregate values ... ok
+test core.option: option transformations preserve presence and absence ... ok
+test core.ordering: reversing an ordering exchanges less and greater ... ok
+test core.result: result mapping transforms successful values ... ok
+test core.string: string algorithms preserve Unicode text ... ok
+test core.string: text builders encode every UTF-8 width ... ok
+test core.symbol: symbols support explicit copying ... ok
+test std.collections.deque: deques accept values at both ends ... ok
+test std.collections.map: maps replace values without duplicating keys ... FAILED
+test std.collections.queue: queues retain pushed values ... ok
+test std.collections.set: sets preserve insertion order while removing duplicates ... ok
+test std.collections.stack: stacks retain pushed values ... ok
+test std.io: generic streams handle partial IO and EOF ... ok
+test std.iter: iterator consumers process every remaining value ... ok
+test std.iter: iterator predicates stop before pulling later values ... ok
+test std.iter.filter: filtered iterators retain matching values ... ok
+test std.iter.map: mapped iterators transform lazily ... ok
+test std.iter.skip: skipping removes an iterator prefix ... ok
+test std.iter.take: taking limits iterator output ... ok
+test std.path: typed paths preserve their resource identity ... ok
+test std.random: system randomness returns bounded values and requested bytes ... ok
+test std.random: uniform integer operations use half-open bounds and validate requests ... ok
+test std.random.distribution: Bernoulli and weighted distributions validate probability models ... ok
+test std.random.distribution: uniform distributions stay inside their half-open ranges ... ok
+test std.random.generator: fast generators satisfy seeded and splittable contracts ... ok
+test std.random.generator: named portable generators reproduce their sequence and can be reseeded ... ok
+test std.random.secure: secure entropy produces exact byte and token lengths ... ok
+test std.random.sequence: choice reports empty input and returns a present list member ... ok
+test std.random.sequence: shuffle and sample preserve membership without replacement ... ok
+test std.sequence: sequence algorithms operate on lists without conversion ... ok
+test std.time: exact durations normalize negative and fractional values ... ok
+test std.time: exact values validate canonical parts and preserve ordering ... ok
+test std.time: instants intervals and monotonic readings preserve exact elapsed time ... ok
+test std.time: interval construction rejects reverse ranges and reports boundaries ... ok
+test std.time: wall and continuous clocks return values in their separate domains ... ok
+test std.time.civil: ISO calendar time fields and partial dates validate their domains ... ok
+test std.time.civil: calendar spans and civil intervals keep non-exact units explicit ... ok
+test std.time.civil: calendar spans distinguish constraining and rejecting month arithmetic ... ok
+test std.time.civil: civil date-times carry clock overflow into their date ... ok
+test std.time.civil: civil dates round trip epoch days and expose ISO calendar facts ... ok
+test std.time.format: ISO civil values parse and format without losing precision ... ok
+test std.time.format: ISO formatters cover partial offsets and zoned annotations ... ok
+test std.time.format: RFC-3339 instants normalize numeric offsets ... ok
+test std.time.format: portable parsers reject invalid calendar and offset fields ... ok
+test std.time.zone: fixed offsets preserve exact and civil representations ... ok
+test std.time.zone: fixed zones implement the complete time-zone contract ... ok
+test std.time.zone: local resolution policies expose overlaps and gaps explicitly ... ok
+test std.time.zone: offsets validate compare and convert both directions ... ok
+test std.toml: TOML parses queries renders and reports positioned errors ... ok
+test std.toml: TOML rejects common malformed inputs with positions ... ok
+test std.toml: TOML renderer rejects invalid date-time values ... ok
+test std.toml: TOML round trips every value category ... ok
+test std.uri: URIs parse schemes paths and invalid inputs ... ok
+
+stderr:
+[33m[unused-effect] Warning:[0m in `std.net.tcp.Listener.accept`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\net\tcp.fos:162:74 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m162 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mp[0m[38;5;249mu[0m[38;5;249mb[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249mc[0m[38;5;249mc[0m[38;5;249me[0m[38;5;249mp[0m[38;5;249mt[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mL[0m[38;5;249mi[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249mR[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249mu[0m[38;5;249ml[0m[38;5;249mt[0m[38;5;249m<[0m[38;5;249mC[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249mc[0m[38;5;249mt[0m[38;5;249mi[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mN[0m[38;5;249me[0m[38;5;249mt[0m[38;5;249mw[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mk[0m[38;5;249mE[0m[38;5;249mr[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[33m.[0m[33mh[0m[33ma[0m[33mn[0m[33md[0m[33ml[0m[33me[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mr[0m[38;5;249me[0m[38;5;249ma[0m[38;5;249md[0m[38;5;249m [0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m.[0m[38;5;249ml[0m[38;5;249mo[0m[38;5;249mc[0m[38;5;249ma[0m[38;5;249mt[0m[38;5;249mi[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                                                          [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                                                                 [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+[33m[unused-effect] Warning:[0m in `std.net.tcp.Listener.accept`: declared `read self.location` is overly broad; the function body requires only `read self.location.address_value`, `read self.location.port_value`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\net\tcp.fos:162:91 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m162 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mp[0m[38;5;249mu[0m[38;5;249mb[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249ma[0m[38;5;249mc[0m[38;5;249mc[0m[38;5;249me[0m[38;5;249mp[0m[38;5;249mt[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mL[0m[38;5;249mi[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249mR[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249mu[0m[38;5;249ml[0m[38;5;249mt[0m[38;5;249m<[0m[38;5;249mC[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249mc[0m[38;5;249mt[0m[38;5;249mi[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mN[0m[38;5;249me[0m[38;5;249mt[0m[38;5;249mw[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mk[0m[38;5;249mE[0m[38;5;249mr[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m[[0m[38;5;249mm[0m[38;5;249mu[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m.[0m[38;5;249mh[0m[38;5;249ma[0m[38;5;249mn[0m[38;5;249md[0m[38;5;249ml[0m[38;5;249me[0m[38;5;249m,[0m[38;5;249m [0m[33mr[0m[33me[0m[33ma[0m[33md[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[33m.[0m[33ml[0m[33mo[0m[33mc[0m[33ma[0m[33mt[0m[33mi[0m[33mo[0m[33mn[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                                                                           [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                                                                                    [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+[33m[unused-effect] Warning:[0m in `std.net.tcp.Connection.read`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\net\tcp.fos:176:83 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m176 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mp[0m[38;5;249mu[0m[38;5;249mb[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249mr[0m[38;5;249me[0m[38;5;249ma[0m[38;5;249md[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mC[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249mc[0m[38;5;249mt[0m[38;5;249mi[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mm[0m[38;5;249ma[0m[38;5;249mx[0m[38;5;249mi[0m[38;5;249mm[0m[38;5;249mu[0m[38;5;249mm[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mI[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249mR[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249mu[0m[38;5;249ml[0m[38;5;249mt[0m[38;5;249m<[0m[38;5;249mB[0m[38;5;249my[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mN[0m[38;5;249me[0m[38;5;249mt[0m[38;5;249mw[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mk[0m[38;5;249mE[0m[38;5;249mr[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[33m.[0m[33mh[0m[33ma[0m[33mn[0m[33md[0m[33ml[0m[33me[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                                                                   [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                                                                          [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+[33m[unused-effect] Warning:[0m in `std.net.tcp.Connection.write`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\net\tcp.fos:181:85 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m181 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mp[0m[38;5;249mu[0m[38;5;249mb[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249mw[0m[38;5;249mr[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mC[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249mc[0m[38;5;249mt[0m[38;5;249mi[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249ms[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mB[0m[38;5;249my[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249mR[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249mu[0m[38;5;249ml[0m[38;5;249mt[0m[38;5;249m<[0m[38;5;249mI[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mN[0m[38;5;249me[0m[38;5;249mt[0m[38;5;249mw[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mk[0m[38;5;249mE[0m[38;5;249mr[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[33m.[0m[33mh[0m[33ma[0m[33mn[0m[33md[0m[33ml[0m[33me[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                                                                     [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                                                                            [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+[33m[unused-effect] Warning:[0m in `std.net.tcp.Connection.flush`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\net\tcp.fos:186:67 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m186 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mp[0m[38;5;249mu[0m[38;5;249mb[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249ml[0m[38;5;249mu[0m[38;5;249ms[0m[38;5;249mh[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mC[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249mc[0m[38;5;249mt[0m[38;5;249mi[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249mR[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249mu[0m[38;5;249ml[0m[38;5;249mt[0m[38;5;249m<[0m[38;5;249m([0m[38;5;249m)[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mN[0m[38;5;249me[0m[38;5;249mt[0m[38;5;249mw[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mk[0m[38;5;249mE[0m[38;5;249mr[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[33m.[0m[33mh[0m[33ma[0m[33mn[0m[33md[0m[33ml[0m[33me[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                                                   [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                                                          [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+[33m[unused-effect] Warning:[0m in `std.net.tcp.Connection.read_text`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\net\tcp.fos:191:89 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m191 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mp[0m[38;5;249mu[0m[38;5;249mb[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249mr[0m[38;5;249me[0m[38;5;249ma[0m[38;5;249md[0m[38;5;249m_[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mx[0m[38;5;249mt[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mC[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249mc[0m[38;5;249mt[0m[38;5;249mi[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mm[0m[38;5;249ma[0m[38;5;249mx[0m[38;5;249mi[0m[38;5;249mm[0m[38;5;249mu[0m[38;5;249mm[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mI[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249mR[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249mu[0m[38;5;249ml[0m[38;5;249mt[0m[38;5;249m<[0m[38;5;249mS[0m[38;5;249mt[0m[38;5;249mr[0m[38;5;249mi[0m[38;5;249mn[0m[38;5;249mg[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mN[0m[38;5;249me[0m[38;5;249mt[0m[38;5;249mw[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mk[0m[38;5;249mE[0m[38;5;249mr[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[33m.[0m[33mh[0m[33ma[0m[33mn[0m[33md[0m[33ml[0m[33me[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                                                                         [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                                                                                [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+[33m[unused-effect] Warning:[0m in `std.net.tcp.Connection.write_text`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\net\tcp.fos:196:86 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m196 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mp[0m[38;5;249mu[0m[38;5;249mb[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249mw[0m[38;5;249mr[0m[38;5;249mi[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249m_[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mx[0m[38;5;249mt[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mC[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249mc[0m[38;5;249mt[0m[38;5;249mi[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mx[0m[38;5;249mt[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mS[0m[38;5;249mt[0m[38;5;249mr[0m[38;5;249mi[0m[38;5;249mn[0m[38;5;249mg[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249mR[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249mu[0m[38;5;249ml[0m[38;5;249mt[0m[38;5;249m<[0m[38;5;249m([0m[38;5;249m)[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mN[0m[38;5;249me[0m[38;5;249mt[0m[38;5;249mw[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mk[0m[38;5;249mE[0m[38;5;249mr[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[33m.[0m[33mh[0m[33ma[0m[33mn[0m[33md[0m[33ml[0m[33me[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                                                                      [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                                                                             [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+[33m[unused-effect] Warning:[0m in `std.net.tcp.Connection.set_timeout`: declared `mut self.handle` is overly broad; the function body requires only `read self.handle`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\net\tcp.fos:211:92 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m211 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mp[0m[38;5;249mu[0m[38;5;249mb[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249ms[0m[38;5;249me[0m[38;5;249mt[0m[38;5;249m_[0m[38;5;249mt[0m[38;5;249mi[0m[38;5;249mm[0m[38;5;249me[0m[38;5;249mo[0m[38;5;249mu[0m[38;5;249mt[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mC[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249mc[0m[38;5;249mt[0m[38;5;249mi[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mm[0m[38;5;249mi[0m[38;5;249ml[0m[38;5;249ml[0m[38;5;249mi[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249md[0m[38;5;249ms[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mI[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249mR[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249mu[0m[38;5;249ml[0m[38;5;249mt[0m[38;5;249m<[0m[38;5;249m([0m[38;5;249m)[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mN[0m[38;5;249me[0m[38;5;249mt[0m[38;5;249mw[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249mk[0m[38;5;249mE[0m[38;5;249mr[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[33m.[0m[33mh[0m[33ma[0m[33mn[0m[33md[0m[33ml[0m[33me[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                                                                            [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                                                                                   [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+[33m[unused-effect] Warning:[0m in `std.random.SystemRandom.bytes`: declared `mut self` is not required by the function body
+    [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\random.fos:57:83 [38;5;246m][0m
+    [38;5;246m│[0m
+ [38;5;246m57 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mp[0m[38;5;249mu[0m[38;5;249mb[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249mb[0m[38;5;249my[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mS[0m[38;5;249my[0m[38;5;249ms[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249mm[0m[38;5;249mR[0m[38;5;249ma[0m[38;5;249mn[0m[38;5;249md[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mI[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249mR[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249mu[0m[38;5;249ml[0m[38;5;249mt[0m[38;5;249m<[0m[38;5;249mB[0m[38;5;249my[0m[38;5;249mt[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mR[0m[38;5;249ma[0m[38;5;249mn[0m[38;5;249md[0m[38;5;249mo[0m[38;5;249mm[0m[38;5;249mE[0m[38;5;249mr[0m[38;5;249mr[0m[38;5;249mo[0m[38;5;249mr[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m   │[0m                                                                                   [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m   │[0m                                                                                       [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect is not used by the function body
+[38;5;246m────╯[0m
+[33m[unused-effect] Warning:[0m in `std.toml.Parser.take_crlf`: declared `mut self` is overly broad; the function body requires only `mut self.remaining`, `mut self.line`, `mut self.column`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\toml.fos:273:41 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m273 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249mt[0m[38;5;249ma[0m[38;5;249mk[0m[38;5;249me[0m[38;5;249m_[0m[38;5;249mc[0m[38;5;249mr[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249ma[0m[38;5;249mr[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m([0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                         [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                             [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+[33m[unused-effect] Warning:[0m in `std.toml.Parser.take_lf`: declared `mut self` is overly broad; the function body requires only `mut self.remaining`, `mut self.line`, `mut self.column`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\toml.fos:281:39 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m281 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249mt[0m[38;5;249ma[0m[38;5;249mk[0m[38;5;249me[0m[38;5;249m_[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249ma[0m[38;5;249mr[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m([0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                       [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                           [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+[33m[unused-effect] Warning:[0m in `std.toml.Parser.take`: declared `mut self` is overly broad; the function body requires only `mut self.remaining`, `mut self.column`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\toml.fos:297:43 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m297 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249mt[0m[38;5;249ma[0m[38;5;249mk[0m[38;5;249me[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249ma[0m[38;5;249mr[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249mC[0m[38;5;249mo[0m[38;5;249md[0m[38;5;249me[0m[38;5;249mP[0m[38;5;249mo[0m[38;5;249mi[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                           [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                               [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+[33m[unused-effect] Warning:[0m in `std.toml.Parser.fail`: declared `mut self` is overly broad; the function body requires only `consume self.errors`, `read self.line`, `read self.column`, `mut self.errors`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\toml.fos:308:53 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m308 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249ma[0m[38;5;249mi[0m[38;5;249ml[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249ma[0m[38;5;249mr[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mm[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249ms[0m[38;5;249ma[0m[38;5;249mg[0m[38;5;249me[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mS[0m[38;5;249mt[0m[38;5;249mr[0m[38;5;249mi[0m[38;5;249mn[0m[38;5;249mg[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m([0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mu[0m[38;5;249mm[0m[38;5;249me[0m[38;5;249m [0m[38;5;249mm[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249ms[0m[38;5;249ma[0m[38;5;249mg[0m[38;5;249me[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                                     [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                                         [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+[33m[unused-effect] Warning:[0m in `std.toml.Parser.fail_at`: declared `mut self` is overly broad; the function body requires only `consume self.errors`, `mut self.errors`
+     [38;5;246m╭[0m[38;5;246m─[0m[38;5;246m[[0m C:\Users\jason\git\foster\library\std\toml.fos:319:80 [38;5;246m][0m
+     [38;5;246m│[0m
+ [38;5;246m319 │[0m [38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249m [0m[38;5;249mf[0m[38;5;249mu[0m[38;5;249mn[0m[38;5;249mc[0m[38;5;249m [0m[38;5;249mf[0m[38;5;249ma[0m[38;5;249mi[0m[38;5;249ml[0m[38;5;249m_[0m[38;5;249ma[0m[38;5;249mt[0m[38;5;249m([0m[38;5;249ms[0m[38;5;249me[0m[38;5;249ml[0m[38;5;249mf[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mP[0m[38;5;249ma[0m[38;5;249mr[0m[38;5;249ms[0m[38;5;249me[0m[38;5;249mr[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mm[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249ms[0m[38;5;249ma[0m[38;5;249mg[0m[38;5;249me[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mS[0m[38;5;249mt[0m[38;5;249mr[0m[38;5;249mi[0m[38;5;249mn[0m[38;5;249mg[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249ml[0m[38;5;249mi[0m[38;5;249mn[0m[38;5;249me[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mI[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249ml[0m[38;5;249mu[0m[38;5;249mm[0m[38;5;249mn[0m[38;5;249m:[0m[38;5;249m [0m[38;5;249mI[0m[38;5;249mn[0m[38;5;249mt[0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m-[0m[38;5;249m>[0m[38;5;249m [0m[38;5;249m([0m[38;5;249m)[0m[38;5;249m [0m[38;5;249m[[0m[33mm[0m[33mu[0m[33mt[0m[33m [0m[33ms[0m[33me[0m[33ml[0m[33mf[0m[38;5;249m,[0m[38;5;249m [0m[38;5;249mc[0m[38;5;249mo[0m[38;5;249mn[0m[38;5;249ms[0m[38;5;249mu[0m[38;5;249mm[0m[38;5;249me[0m[38;5;249m [0m[38;5;249mm[0m[38;5;249me[0m[38;5;249ms[0m[38;5;249ms[0m[38;5;249ma[0m[38;5;249mg[0m[38;5;249me[0m[38;5;249m][0m[38;5;249m [0m[38;5;249m{[0m
+ [38;5;240m    │[0m                                                                                [33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m┬[0m[33m─[0m[33m─[0m[33m─[0m  
+ [38;5;240m    │[0m                                                                                    [33m╰[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m[33m─[0m this declared effect grants broader access than the function body requires
+[38;5;246m─────╯[0m
+
+failures:
+    std.collections.map: maps replace values without duplicating keys: value Unit has no field `length`
+
+test result: FAILED. 1 failed
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    standard_library_suite_passes_with_and_without_optimization
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.51s
+
+error: test failed, to rerun pass `--test foster`
+     Running tests\impl_blocks.rs (target\release\deps\impl_blocks-71a83d3c0696c651.exe)
+
+running 5 tests
+test recovery_does_not_leak_members_from_a_damaged_block ... ok
+test formatter_keeps_member_documentation_inside_the_block ... ok
+test enum_blocks_support_inferred_receivers ... ok
+test generic_blocks_supply_receiver_types_and_preserve_member_generics ... ok
+test rejects_invalid_block_structure_and_old_member_declarations ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\language.rs (target\release\deps\language-5c04f2ff5f1bec80.exe)
+
+running 128 tests
+test any_is_an_ordinary_identifier_not_a_language_keyword ... ok
+test assignment_reinitializes_a_moved_local ... ok
+test bare_intersection_parameters_unify_independent_of_member_order ... ok
+test associated_functions_construct_private_record_representations ... ok
+test branch_arm_unit_results_must_match_and_continue_requires_a_loop ... ok
+test branch_arms_support_statement_blocks ... ok
+test callable_contract_members_dispatch_through_structural_types ... ok
+test borrows_arguments_by_default_and_requires_explicit_moves_for_consuming_calls ... ok
+test assertions_stop_the_current_invocation_with_an_optional_message ... ok
+test code_points_do_not_expose_a_value_member ... ok
+test code_point_literals_are_distinct_copy_values ... ok
+test code_points_promote_through_integer_operators ... ok
+test calls_functions_associated_with_record_types ... ok
+test command_main_rejects_non_arguments_parameters ... ok
+test composed_contracts_merge_and_dispatch_overloaded_requirements ... ok
+test composed_contracts_require_callable_members_when_instantiated ... ok
+test conditional_branches_require_a_wildcard_arm ... ok
+test constructs_and_exhaustively_matches_closed_variants ... ok
+test constructs_reads_and_mutates_nominal_records ... ok
+test consuming_a_structural_view_moves_the_original_value ... ok
+test continue_inside_a_branch_targets_the_enclosing_loop ... ok
+test code_point_core_methods_support_instance_and_associated_calls ... ok
+test declarations_are_private_by_default_across_public_modules ... ok
+test declared_composition_rejects_incompatible_contract_members ... ok
+test bytes_are_iterable_collections ... ok
+test enforces_record_and_field_visibility_across_modules ... ok
+test enum_cases_are_labels_with_explicit_payload_types ... ok
+test enum_cases_carry_at_most_one_payload_type ... ok
+test enum_cases_carry_record_values_without_expanding_their_fields ... ok
+test enum_construction_preserves_builtin_record_values ... ok
+test enum_declarations_construct_and_match_tagged_cases ... ok
+test enum_shared_bodies_reject_stored_fields ... ok
+test enum_values_require_an_explicit_constructor ... ok
+test bytes_and_byte_buffers_enforce_bounds_and_round_trip_utf8 ... ok
+test expected_enum_types_flow_into_branches_and_lists ... ok
+test expresses_consuming_parameters_in_callable_types ... ok
+test builtin_sequences_adapt_to_collection_and_iterable ... ok
+test computed_member_metadata_records_result_ownership ... ok
+test bytes_decode_hex_and_report_invalid_utf8 ... ok
+test core_iterator_adapts_sequences_and_advances_in_place ... ok
+test byte_and_code_point_widen_to_int_in_expected_type_contexts ... ok
+test generic_contract_methods_use_structural_dispatch_keys ... ok
+test generic_functions_are_rigid_and_instantiate_per_call ... ok
+test generic_single_member_type_declarations_are_transparent_aliases ... ok
+test generic_syntax_uses_angles_while_indexing_uses_brackets ... ok
+test guard_return_and_implicit_result ... ok
+test infers_generic_record_arguments ... ok
+test instance_methods_overload_by_arity_and_parameter_type ... ok
+test checks_explicit_import_core_library_usage ... ok
+test integer_widening_preserves_generic_inference_and_container_invariance ... ok
+test integer_widening_does_not_apply_in_reverse ... ok
+test byte_construction_rejects_out_of_range_integers ... ok
+test joins_move_state_across_branch_arms ... ok
+test byte_bitwise_operators_preserve_byte_values ... ok
+test declared_type_composition_conforms_without_runtime_conversion ... ok
+test local_creation_uses_let_and_assignment_requires_an_existing_local ... ok
+test logical_operators_require_boolean_operands ... ok
+test foster_written_iterator_consumers_process_remaining_elements ... ok
+test loop_transfers_require_an_enclosing_loop_and_boolean_guards ... ok
+test loops_support_nearest_break_and_continue_with_postfix_guards ... ok
+test logical_operators_short_circuit_and_obey_precedence ... ok
+test matches_payloadless_variants_and_wildcards ... ok
+test matching_contracts_conform_without_an_explicit_composition_clause ... ok
+test mutable_effect_allows_extracting_children_but_not_consuming_the_owner ... ok
+test mutable_ref_capture_can_update_record_fields ... ok
+test overloads_reject_duplicate_parameters_and_ambiguous_conversions ... ok
+test owner_qualified_methods_do_not_reserve_builtin_member_names ... ok
+test parses_stable_intrinsic_keys_and_opaque_intrinsic_types ... ok
+test permits_disjoint_field_use_after_a_partial_move ... ok
+test permits_storing_a_value_derived_from_a_borrower ... ok
+test postfix_guard_falls_through_to_a_parameter_result ... ok
+test postfix_guards_conditionally_transfer_control ... ok
+test postfix_guards_only_apply_to_control_statements ... ok
+test postfix_guards_require_boolean_conditions ... ok
+test preserves_consuming_parameters_through_callable_values ... ok
+test preserves_consuming_parameters_through_partial_application ... ok
+test private_record_fields_prevent_cross_module_structural_adaptation ... ok
+test public_overloads_are_visible_when_a_private_overload_is_declared_first ... ok
+test recursive_type_aliases_are_rejected ... ok
+test refutable_payload_patterns_do_not_cover_an_entire_alternative ... ok
+test rejects_duplicate_and_colliding_function_parameters ... ok
+test rejects_incomplete_and_duplicate_record_initialization ... ok
+test rejects_non_exhaustive_variant_branches ... ok
+test rejects_positional_payload_syntax_in_union_declarations ... ok
+test rejects_private_types_in_public_signatures ... ok
+test functions_overload_by_arity_and_parameter_type ... ok
+test rejects_private_variants_in_public_apis ... ok
+test rejects_storing_a_borrower_into_its_own_origin ... ok
+test foster_collections_and_range_share_collection_contract ... ok
+test requires_qualification_for_ambiguous_imported_names ... ok
+test single_member_type_declarations_accept_their_member_type ... ok
+test foster_written_iterator_adaptors_build_lazy_pipelines ... ok
+test stored_and_computed_members_have_distinct_place_semantics ... ok
+test strings_use_the_foster_record_representation ... ok
+test structural_adaptation_reports_missing_and_incompatible_fields ... ok
+test resource_identifiers_do_not_implicitly_gain_read_capability ... ok
+test structural_return_conversion_moves_and_narrows_the_value ... ok
+test structurally_adapts_records_containing_the_required_value ... ok
+test equality_ordering_and_hashing_contracts_compose_and_dispatch ... ok
+test supports_line_block_and_documentation_comments ... ok
+test structurally_adapts_records_with_additional_public_fields ... ok
+test symbols_and_arithmetic ... ok
+test test_declarations_compile_as_isolated_unit_functions ... ok
+test test_declarations_require_descriptions_and_unit_results ... ok
+test symbols_and_bytes_use_foster_type_representations ... ok
+test intersection_parameters_require_every_composed_contract ... ok
+test type_definitions_use_equals_and_aligned_composition ... ok
+test union_contracts_accept_any_member_without_runtime_construction ... ok
+test union_contracts_do_not_synthesize_constructors ... ok
+test union_contracts_widen_when_each_source_member_satisfies_the_target ... ok
+test union_declarations_reject_a_leading_pipe ... ok
+test union_declarations_separate_member_types_with_inline_pipes ... ok
+test uses_empty_parentheses_as_the_only_unit_type_and_value_syntax ... ok
+test variants_compose_method_only_contracts ... ok
+test variants_support_shared_contract_bodies_and_instance_methods ... ok
+test wildcard_branch_arms_do_not_reach_later_tests ... ok
+test zero_argument_methods_require_call_parentheses ... ok
+test iterator_and_iterable_contracts_dispatch_stateful_iteration ... ok
+test try_requires_compatible_result_types ... ok
+test command_main_receives_the_typed_arguments_record ... ok
+test lists_and_byte_buffers_use_foster_type_representations ... ok
+test freezing_a_byte_buffer_produces_bytes_and_consumes_the_buffer has been running for over 60 seconds
+test list_operations_resolve_through_owner_qualified_methods has been running for over 60 seconds
+test freezing_a_byte_buffer_produces_bytes_and_consumes_the_buffer ... ok
+test map_is_an_iterable_collection_of_public_entries ... ok
+test structural_byte_buffer_mutation_invalidates_element_loans ... ok
+test strings_and_lists_implement_sequence_without_conversion ... ok
+test reusable_function_aliases_preserve_callable_ownership ... ok
+test list_operations_resolve_through_owner_qualified_methods ... ok
+test try_unwraps_success_and_returns_errors_early has been running for over 60 seconds
+test try_unwraps_success_and_returns_errors_early ... ok
+
+test result: ok. 128 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 120.07s
+
+     Running tests\language_ownership.rs (target\release\deps\language_ownership-092367475a630934.exe)
+
+running 112 tests
+test carries_exact_nested_pattern_binding_spans_into_hir ... ok
+test assigning_a_boolean_forgets_earlier_branch_facts ... ok
+test branch_arm_blocks_preserve_mutable_capture_effects ... ok
+test checks_qualified_call_arguments ... ok
+test classifies_copy_and_move_captures ... ok
+test comparison_correlation_still_rejects_a_feasible_invalidation ... ok
+test assertion_failure_has_an_explicit_reverse_cleanup_path ... ok
+test assigning_a_comparison_operand_forgets_earlier_facts ... ok
+test assigning_a_variant_forgets_earlier_branch_facts ... ok
+test carries_source_spans_into_package_hir ... ok
+test boolean_path_correlation_propagates_through_reborrow_ancestors ... ok
+test correlates_false_boolean_patterns_across_branch_joins ... ok
+test checks_callable_effect_bounds ... ok
+test binding_a_projected_reference_preserves_its_live_place ... ok
+test computed_bytes_borrows_text_but_stored_bytes_fields_keep_move_effects ... ok
+test correlated_boolean_conditions_still_reject_a_feasible_invalidation ... ok
+test correlated_variant_patterns_still_reject_a_feasible_invalidation ... ok
+test conservatively_joins_branch_invalidation ... ok
+test correlates_payload_variant_patterns_across_branch_joins ... ok
+test correlates_stable_variant_patterns_across_branch_joins ... ok
+test direct_calls_propagate_inferred_result_provenance_to_a_fixpoint ... ok
+test direct_owned_call_results_do_not_inherit_argument_provenance ... ok
+test correlates_stable_boolean_condition_arms_across_branch_joins ... ok
+test correlates_stable_comparisons_across_branch_joins ... ok
+test direct_borrowed_call_results_substitute_parameter_provenance ... ok
+test correlates_stable_boolean_conditions_across_branch_joins ... ok
+test derives_and_checks_group_mutation_effects ... ok
+test derives_consume_from_move_out ... ok
+test discovers_implicit_and_companion_modules ... FAILED
+test equal_and_not_equal_comparisons_share_one_path_fact ... ok
+test distinct_variant_patterns_are_mutually_exclusive ... ok
+test executes_nested_and_anonymous_closures ... ok
+test dynamic_indices_still_overlap_without_a_live_inequality_fact ... ok
+test expression_temporaries_are_destroyed_on_loop_transfer_paths ... ok
+test dynamic_list_projection_conservatively_reads_every_element_provenance ... ok
+test full_expression_temporaries_span_all_arguments_and_destroy_in_reverse ... ok
+test function_cleanup_destroys_owned_but_not_borrowed_parameters ... ok
+test honors_explicit_copy_and_move_captures ... ok
+test imports_public_constants_directly_and_by_qualifier ... ok
+test live_reborrow_restricts_consuming_its_source ... ok
+test function_contracts_accept_multiple_parameter_and_path_effects ... ok
+test guarded_return_value_reshape_does_not_invalidate_the_continuation ... ok
+test instantiates_multiple_groups_independently ... ok
+test list_aggregate_provenance_distinguishes_constant_indices ... ok
+test inequality_facts_distinguish_dynamic_indices ... ok
+test infers_types_across_function_calls ... ok
+test mutable_ref_capture_updates_the_original_place ... ok
+test module_constants_are_private_by_default ... ok
+test nested_branch_results_preserve_aggregate_provenance ... ok
+test nested_reborrow_of_parameter_is_not_a_local_escape ... ok
+test overbroad_parent_effect_warnings_name_required_field_effects ... ok
+test module_constants_run_with_and_without_optimization ... ok
+test ownership_mir_emits_typed_reshape_invalidations ... ok
+test mutable_ref_capture_can_reshape_a_list ... ok
+test ownership_mir_materializes_borrowed_expression_temporaries ... ok
+test ownership_mir_preserves_dotted_invalidation_paths ... ok
+test partial_application_begins_transfer_and_borrowing_at_creation ... ok
+test passes_projected_references_to_group_parameterized_functions ... ok
+test ownership_mir_records_loan_identity_and_forward_provenance ... ok
+test ownership_mir_records_reborrow_parent_relationships ... ok
+test permits_reshape_of_a_disjoint_record_field ... ok
+test ownership_mir_records_result_provenance_summaries ... ok
+test ownership_mir_tracks_disjoint_fields_and_move_transfer ... ok
+test reacquiring_a_projected_reference_replaces_invalid_loan_state ... ok
+test permits_structural_mutation_after_a_borrows_last_use ... ok
+test reborrow_allows_parent_reads_and_releases_parent_after_last_use ... ok
+test preserves_group_effects_when_callable_representation_is_inferred ... ok
+test projected_reference_capture_works_before_invalidation ... ok
+test rejects_a_borrow_that_escapes_its_expression_temporary ... ok
+test propagates_declared_effects_through_calls ... ok
+test propagates_projected_borrow_invalidation_through_records ... ok
+test rejects_direct_reference_use_after_structural_invalidation ... ok
+test rejects_escaping_borrow_of_a_local ... ok
+test rejects_call_after_structural_capture_invalidation ... ok
+test rejects_non_constant_initializers ... ok
+test rejects_cyclic_constants ... ok
+test rejects_returning_a_reference_into_a_frame_local ... ok
+test rejects_explicit_copy_of_non_copy_value ... ok
+test rejects_assignment_to_a_module_constant ... ok
+test rejects_return_type_mismatches ... ok
+test rejects_mixed_int_and_float_arithmetic ... ok
+test rejects_unknown_imports ... ok
+test rejects_unknown_qualified_members ... ok
+test rejects_unknown_type_names ... ok
+test rejects_use_after_move_capture ... ok
+test remote_calls_reject_borrowed_messages ... ok
+test remote_calls_require_moves_for_consumed_messages ... ok
+test remote_await_requires_handling_the_outer_result ... ok
+test remote_borrowed_arguments_reject_mutation ... ok
+test remote_read_loans_reject_mutating_methods ... ok
+test reports_overdeclared_effect_and_suspend_warnings ... ok
+test resolves_qualified_function_names_into_hir_ids ... ok
+test result_provenance_is_inferred_from_reachable_mir_returns ... ok
+test returned_ref_capture_uses_the_original_projected_place ... ok
+test runs_a_package_main_module ... ok
+test strings_do_not_expose_utf8_property_alias ... ok
+test supports_dotted_effects_and_rejects_non_method_self_effects ... ok
+test supports_explicit_closure_effect_contracts ... ok
+test supports_float_literals_types_arithmetic_and_closures ... ok
+test supports_placeholder_partial_application ... ok
+test variant_pattern_bindings_inherit_payload_provenance ... ok
+test expression_temporaries_are_destroyed_on_try_return_paths ... ok
+test remote_borrowed_arguments_are_live_read_only_loans ... ok
+test remote_objects_process_methods_on_virtual_threads ... ok
+test remote_objects_dispatch_overloaded_methods ... ok
+test accepts_declared_suspension ... ok
+test ownership_mir_models_loans_across_suspend_and_scope_destruction ... ok
+test remote_assertion_failures_are_delivered_through_futures ... ok
+test remote_read_loans_serialize_reads_with_owner_methods ... ok
+test derives_suspend_from_await_and_callee_contracts ... ok
+test remote_read_loans_observe_owner_mutation ... ok
+test remote_borrowed_arguments_serialize_with_owner_mutation ... ok
+
+failures:
+
+---- discovers_implicit_and_companion_modules stdout ----
+
+thread 'discovers_implicit_and_companion_modules' (33316) panicked at tests\language_ownership.rs:674:5:
+assertion `left == right` failed
+  left: 16
+ right: 14
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    discovers_implicit_and_companion_modules
+
+test result: FAILED. 111 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.01s
+
+error: test failed, to rerun pass `--test language_ownership`
+     Running tests\local_declaration_diagnostics.rs (target\release\deps\local_declaration_diagnostics-a82aec2507dacedc.exe)
+
+running 1 test
+test rejects_invalid_local_declarations_and_assignments_with_actionable_messages ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.09s
+
+     Running tests\native.rs (target\release\deps\native-d1b56cbae6c5abeb.exe)
+
+running 23 tests
+test compiles_reachable_primitive_functions_to_an_object ... ok
+test compiles_lossless_integer_widening_to_an_int_result ... ok
+test formats_and_releases_descriptor_backed_main_results ... ok
+test lowers_erased_union_arguments_through_owned_boxes ... ok
+test dispatches_contract_methods_with_arguments ... ok
+test lowers_erased_callable_parameters_through_uniform_thunks ... ok
+test dispatches_contracts_to_tagged_variants ... ok
+test compiles_symbol_literals_with_the_immutable_text_abi ... ok
+test lowers_native_reference_captures ... ok
+test dispatches_generic_contract_implementations ... ok
+test lowers_printing_and_string_and_symbol_patterns ... ok
+test lowers_variant_tags_payloads_and_pattern_bindings_to_cranelift ... ok
+test lowers_records_and_copy_on_write_field_updates_to_cranelift ... ok
+test monomorphizes_generic_functions_and_record_layouts ... ok
+test reports_native_arithmetic_failures_without_traps ... ok
+test specializes_closure_environments_and_capture_destructors ... ok
+test compiles_the_command_arguments_entry_abi ... ok
+test lowers_native_lists_and_core_list_algorithms ... ok
+test lowers_native_path_environment_filesystem_clock_and_entropy_services ... ok
+test lowers_foster_written_byte_buffers_over_native_lists ... ok
+test lowers_string_algorithms_and_descriptor_backed_bytes ... ok
+test lowers_native_remote_workers_and_blocking_await ... ok
+test lowers_native_tcp_resource_handles ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 64.94s
+
+     Running tests\ownership_soundness.rs (target\release\deps\ownership_soundness-d268dd3ad601f0af.exe)
+
+running 16 tests
+test bounded_compiler_input_fuzzing_never_panics ... ok
+test language_version_seven_reserves_not_as_logical_negation ... ok
+test language_version_three_reserves_loop_control_transfers ... ok
+test mutable_ref_parameter_runtime_witness_updates_the_caller ... ok
+test language_version_two_reserves_assert_for_immediate_failures ... ok
+test language_version_six_separates_qualification_from_member_access ... ok
+test language_version_four_reserves_continue_for_loops ... ok
+test expression_temporaries_live_through_the_borrowing_call ... ok
+test loop_edges_preserve_move_state ... ok
+test equivalent_cfg_rewrites_keep_the_same_ownership_decision ... ok
+test ownership_revision_and_diagnostic_catalog_match_current_contract ... ok
+test ownership_dump_and_diagnostics_are_deterministic ... ok
+test loop_continue_inside_a_branch_preserves_move_state ... ok
+test whole_place_mutable_ref_parameter_survives_optimization ... ok
+test language_version_five_reserves_try_for_result_propagation ... ok
+test ownership_rules_have_indexed_compile_pass_and_compile_fail_witnesses ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 14.85s
+
+     Running tests\semantic_specification.rs (target\release\deps\semantic_specification-dee9e9613781585b.exe)
+
+running 4 tests
+test semantic_specification_has_unique_ordered_rule_ids ... ok
+test semantic_specification_tracks_the_language_and_ownership_baseline ... ok
+test settled_semantic_decisions_are_not_listed_as_open_gaps ... FAILED
+test semantic_specification_link_paths_exist ... ok
+
+failures:
+
+---- settled_semantic_decisions_are_not_listed_as_open_gaps stdout ----
+
+thread 'settled_semantic_decisions_are_not_listed_as_open_gaps' (12532) panicked at tests\semantic_specification.rs:48:5:
+assertion `left == right` failed
+  left: ["03", "04", "05", "06", "07", "08"]
+ right: ["03", "04", "05", "06", "07"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    settled_semantic_decisions_are_not_listed_as_open_gaps
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `--test semantic_specification`
+   Doc-tests foster
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: 7 targets failed:
+    `--lib`
+    `--test backend_parity`
+    `--test cli`
+    `--test core_host`
+    `--test foster`
+    `--test language_ownership`
+    `--test semantic_specification`

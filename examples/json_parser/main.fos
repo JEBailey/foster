@@ -2,6 +2,9 @@
 
 import parser
 
+import core.result as outcomes
+import core.remote_error
+
 type ParserWorker = {}
 
 type Statistics = {
@@ -46,7 +49,7 @@ impl Statistics {
     }
 }
 
-func main() -> PipelineReport {
+func main() -> Result<PipelineReport, RemoteError> {
     let parser_a = remote ParserWorker {}
     let parser_b = remote ParserWorker {}
     let statistics = remote Statistics { processed: 0, failed: 0 }
@@ -55,12 +58,12 @@ func main() -> PipelineReport {
     let second = parser_b.parse_document("[1,2,3,4]")
     let third = parser_a.parse_document("{broken json}")
 
-    let first_recorded = statistics.record_result(await first)
-    let second_recorded = statistics.record_result(await second)
-    let third_recorded = statistics.record_result(await third)
+    let first_recorded = statistics.record_result(try await first)
+    let second_recorded = statistics.record_result(try await second)
+    let third_recorded = statistics.record_result(try await third)
 
-    await first_recorded
-    await second_recorded
-    await third_recorded
+    try await first_recorded
+    try await second_recorded
+    try await third_recorded
     await statistics.snapshot()
 }

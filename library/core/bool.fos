@@ -1,6 +1,9 @@
 //! Boolean logic helpers.
 
 impl Bool {
+    /// Explicitly copies this scalar value.
+    pub func copy(self: Bool) -> self [read self] { self }
+
     /// Returns true when exactly one value is true.
     pub func xor(self: Bool, right: Bool) -> Bool {
         self != right

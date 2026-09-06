@@ -257,6 +257,7 @@ impl<'a> Reader<'a> {
                 index: r!(),
             },
             13 => Instruction::MoveOut {
+                by_reference: self.bool()?,
                 destination: r!(),
                 source: r!(),
             },

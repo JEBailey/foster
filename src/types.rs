@@ -81,6 +81,11 @@ pub struct MethodKey {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DispatchSlot(pub u32);
 
+/// Compiler-owned capability dispatch; source method slots occupy the lower range.
+pub const COPY_SLOT: DispatchSlot = DispatchSlot(u32::MAX);
+pub const CAN_COPY_SLOT: DispatchSlot = DispatchSlot(u32::MAX - 1);
+pub const DEINIT_SLOT: DispatchSlot = DispatchSlot(u32::MAX - 2);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NominalTypeId {
     Record(RecordId),
@@ -130,9 +135,48 @@ pub struct TypeInformation {
     pub variant_names: HashMap<VariantTypeId, String>,
     /// Declared enum-case payload types. `None` denotes a payload-free case.
     pub variant_payloads: HashMap<VariantId, Option<TypeId>>,
+    pub variant_field_types: HashMap<VariantTypeId, Vec<TypeId>>,
 }
 
 impl TypeInformation {
+    /// Whether retaining an internal alias could postpone observable resource cleanup.
+    pub(crate) fn has_cleanup(&self, ty: TypeId) -> bool {
+        fn visit(types: &TypeInformation, ty: TypeId, seen: &mut HashSet<TypeId>) -> bool {
+            if !seen.insert(ty) {
+                return false;
+            }
+            match &types.types[ty] {
+                Type::Generic(_) | Type::Function(_) | Type::Remote(_) | Type::Future(_) => true,
+                Type::Record { record, arguments } if types.record_names[record] == "List" => {
+                    arguments.iter().any(|ty| visit(types, *ty, seen))
+                }
+                Type::Record { record, arguments } => {
+                    types
+                        .dispatch
+                        .contains_key(&(NominalTypeId::Record(*record), DEINIT_SLOT))
+                        || arguments.iter().any(|ty| visit(types, *ty, seen))
+                        || types.record_field_types.get(record).is_some_and(|fields| {
+                            fields.iter().any(|(_, ty)| visit(types, *ty, seen))
+                        })
+                }
+                Type::Variant { variant, arguments } => {
+                    types
+                        .dispatch
+                        .contains_key(&(NominalTypeId::Variant(*variant), DEINIT_SLOT))
+                        || arguments.iter().any(|ty| visit(types, *ty, seen))
+                        || types
+                            .variant_field_types
+                            .get(variant)
+                            .is_some_and(|fields| fields.iter().any(|ty| visit(types, *ty, seen)))
+                }
+                Type::RawList(element) | Type::Sequence(element) => visit(types, *element, seen),
+                Type::Intersection(members) => members.iter().any(|ty| visit(types, *ty, seen)),
+                _ => false,
+            }
+        }
+        visit(self, ty, &mut HashSet::new())
+    }
+
     pub fn is_copy(&self, ty: TypeId) -> bool {
         matches!(
             self.types[ty],

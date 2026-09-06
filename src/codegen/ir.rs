@@ -268,6 +268,7 @@ pub enum PortableInstruction {
         field: String,
     },
     MoveOut {
+        by_reference: bool,
         destination: Value,
         source: Value,
     },
@@ -901,7 +902,12 @@ impl<'a> Verifier<'a> {
                 right,
             } => {
                 let operand_type = self.value_type(*left)?;
-                self.require_type(*right, operand_type, "binary right operand")?;
+                let shift = matches!(operator, BinaryOp::ShiftLeft | BinaryOp::ShiftRight);
+                self.require_type(
+                    *right,
+                    if shift { Type::Int } else { operand_type },
+                    "binary right operand",
+                )?;
                 let equality = matches!(operator, BinaryOp::Equal | BinaryOp::NotEqual);
                 let ordering = matches!(
                     operator,

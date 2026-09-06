@@ -816,7 +816,7 @@ fn result_ok(value: Value) -> Value {
         variant: None,
         type_name,
         alternative,
-        payload: vec![value],
+        payload: vec![value].into(),
     }
 }
 
@@ -826,7 +826,7 @@ fn result_error(error: Value) -> Value {
         variant: None,
         type_name,
         alternative,
-        payload: vec![error],
+        payload: vec![error].into(),
     }
 }
 

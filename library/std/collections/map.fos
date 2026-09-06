@@ -22,7 +22,7 @@ impl Map {
     }
 
     /// Consumes the map and returns the value associated with `key`, if present.
-    pub func get<K, V>(self: Map<K, V>, key: K) -> Option<V> {
+    pub func get<K, V>(self: Map<K, V>, key: K) -> Option<V> [consume self] {
         get_entries(move self.entries, key)
     }
 }
@@ -54,7 +54,7 @@ func contains_entries?<K, V>(entries: List<Entry<K, V>>, key: K) -> Bool {
 
 impl Map {
     /// Returns a map with `key` associated with `value`, replacing an existing entry when present.
-    pub func put<K, V>(self: Map<K, V>, key: K, value: V) -> Map<K, V> {
+    pub func put<K, V>(self: Map<K, V>, key: K, value: V) -> Map<K, V> [consume self, consume key, consume value] {
         Map { entries: put_entries(move self.entries, move key, move value) }
     }
 }
@@ -63,8 +63,16 @@ impl Map {
 func put_entries<K, V>(entries: List<Entry<K, V>>, key: K, value: V) -> List<Entry<K, V>> {
     branch {
         entries.empty? -> [Entry { key, value }]
-        entries.head.key == key -> [Entry { key, value }].concat(entries.rest)
-        _ -> [entries.head].concat(put_entries(entries.rest, move key, move value))
+        entries.head.key == key -> append_entries(entries.rest, [Entry { key, value }])
+        _ -> append_entries(put_entries(entries.rest, move key, move value), [entries.head])
+    }
+}
+
+/// Transfers an owned entry sequence into the result without requesting copies of its elements.
+func append_entries<K, V>(remaining: List<Entry<K, V>>, result: List<Entry<K, V>>) -> List<Entry<K, V>> [consume remaining, consume result] {
+    branch {
+        remaining.empty? -> result
+        _ -> append_entries(remaining.rest, result.append(remaining.head))
     }
 }
 
@@ -85,7 +93,7 @@ impl Map {
     }
 
     /// Consumes the map and returns its keys in storage order.
-    pub func keys<K, V>(self: Map<K, V>) -> List<K> {
+    pub func keys<K, V>(self: Map<K, V>) -> List<K> [consume self] {
         keys_into(move self.entries, [])
     }
 }
@@ -100,22 +108,22 @@ func keys_into<K, V>(entries: List<Entry<K, V>>, result: List<K>) -> List<K> {
 
 impl Map {
     /// Consumes the map and returns its values in storage order.
-    pub func values<K, V>(self: Map<K, V>) -> List<V> {
+    pub func values<K, V>(self: Map<K, V>) -> List<V> [consume self] {
         values_into(move self.entries, [])
     }
 }
 
 test "maps replace values without duplicating keys" {
     let values = Map.empty().put("a", 1).put("a", 2)
-    let found = branch values.get("a") {
-        Option.Some(value) -> value == 2
-        Option.None -> false
-    }
-    assert(found)
     assert(values.length() == 1)
     assert(not values.empty?())
     assert(values.contains_key?("a"))
     assert(not values.contains_key?("missing"))
+    let found = branch (move values).get("a") {
+        Option.Some(value) -> value == 2
+        Option.None -> false
+    }
+    assert(found)
     let keys = Map.empty().put("a", 2).put("b", 3).keys()
     assert(keys.length == 2)
     assert(keys[0] == "a")

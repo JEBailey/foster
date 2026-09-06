@@ -4,10 +4,14 @@ use super::super::{BytecodeFunction, Instruction, Program, Register};
 use super::analysis::{definitions, liveness, uses};
 
 pub(super) fn insert(program: &mut Program) {
+    if program.drops_inserted {
+        return;
+    }
     let mut protected = protected_slots(program);
     for (id, function) in &mut program.functions {
         insert_function(function, protected.remove(id).unwrap_or_default());
     }
+    program.drops_inserted = true;
 }
 
 fn protected_slots(program: &Program) -> HashMap<crate::hir::FunctionId, HashSet<Register>> {
@@ -84,12 +88,7 @@ fn protect_reference_origins(function: &BytecodeFunction, protected: &mut HashSe
 }
 
 fn insert_function(function: &mut BytecodeFunction, protected: HashSet<Register>) {
-    if function.instructions.is_empty()
-        || function
-            .instructions
-            .iter()
-            .any(|instruction| matches!(instruction, Instruction::Drop { .. }))
-    {
+    if function.instructions.is_empty() {
         return;
     }
 
@@ -117,6 +116,10 @@ fn insert_function(function: &mut BytecodeFunction, protected: HashSet<Register>
 
         let dying = dying_registers(&instruction, &live.live_out[index], &protected);
         match instruction {
+            Instruction::Drop { register } => {
+                instructions.push(Instruction::Drop { register });
+                spans.push(span);
+            }
             Instruction::Jump { target } => {
                 let emitted = instructions.len();
                 instructions.push(Instruction::Jump { target: usize::MAX });

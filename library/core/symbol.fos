@@ -6,3 +6,13 @@
 pub type Symbol = {
     value: String
 }
+
+impl Symbol {
+    /// Explicitly copies this immutable identifier.
+    pub func copy(self: Symbol) -> self [read self] { self }
+}
+
+test "symbols support explicit copying" {
+    let value = :ready
+    assert(value.copy() == value)
+}

@@ -94,7 +94,7 @@ static FOSTER_MONOTONIC_ORIGIN: OnceLock<Instant> = OnceLock::new();
 static FOSTER_NETWORK: OnceLock<Mutex<FosterNetwork>> = OnceLock::new();
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_initialize() -> u8 {
+extern "C" fn foster_rt_v4_host_initialize() -> u8 {
     FOSTER_HOST_DIRECTORY.get_or_init(|| std::env::current_dir().unwrap_or_default());
     FOSTER_MONOTONIC_ORIGIN.get_or_init(Instant::now);
     FOSTER_NETWORK.get_or_init(|| Mutex::new(FosterNetwork::default()));
@@ -131,7 +131,7 @@ fn foster_host_component(value: Option<&std::ffi::OsStr>) -> Result<String, Stri
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_call_nullary(operation: i64) -> usize {
+extern "C" fn foster_rt_v4_host_call_nullary(operation: i64) -> usize {
     let response = match operation {
         45 => foster_host_io(
             "current_directory",
@@ -159,7 +159,7 @@ extern "C" fn foster_rt_v2_host_call_nullary(operation: i64) -> usize {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_call_string(operation: i64, value: usize) -> usize {
+extern "C" fn foster_rt_v4_host_call_string(operation: i64, value: usize) -> usize {
     let value = unsafe { string_value(value) };
     let response = match operation {
         26 => foster_host_io(
@@ -231,7 +231,7 @@ extern "C" fn foster_rt_v2_host_call_string(operation: i64, value: usize) -> usi
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_call_strings(
+extern "C" fn foster_rt_v4_host_call_strings(
     operation: i64,
     first: usize,
     second: usize,
@@ -270,7 +270,7 @@ extern "C" fn foster_rt_v2_host_call_strings(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_call_string_ints(
+extern "C" fn foster_rt_v4_host_call_string_ints(
     operation: i64,
     text: usize,
     first: i64,
@@ -293,7 +293,7 @@ extern "C" fn foster_rt_v2_host_call_string_ints(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_call_int(operation: i64, value: i64) -> usize {
+extern "C" fn foster_rt_v4_host_call_int(operation: i64, value: i64) -> usize {
     let response = match operation {
         48 => foster_host_network(
             "accept",
@@ -317,7 +317,7 @@ extern "C" fn foster_rt_v2_host_call_int(operation: i64, value: i64) -> usize {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_call_ints(operation: i64, first: i64, second: i64) -> usize {
+extern "C" fn foster_rt_v4_host_call_ints(operation: i64, first: i64, second: i64) -> usize {
     let response = match operation {
         49 => foster_host_network(
             "read",
@@ -337,7 +337,7 @@ extern "C" fn foster_rt_v2_host_call_ints(operation: i64, first: i64, second: i6
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_call_string_bytes(
+extern "C" fn foster_rt_v4_host_call_string_bytes(
     operation: i64,
     text: usize,
     data: usize,
@@ -358,7 +358,7 @@ extern "C" fn foster_rt_v2_host_call_string_bytes(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_call_int_bytes(
+extern "C" fn foster_rt_v4_host_call_int_bytes(
     operation: i64,
     handle: i64,
     data: usize,
@@ -376,7 +376,7 @@ extern "C" fn foster_rt_v2_host_call_int_bytes(
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_call_int_string(
+extern "C" fn foster_rt_v4_host_call_int_string(
     operation: i64,
     handle: i64,
     text: usize,
@@ -404,22 +404,21 @@ unsafe fn foster_host_input_bytes<'a>(data: usize, length: i64) -> &'a [u8] {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_require_ok(response: usize) -> u8 {
+extern "C" fn foster_rt_v4_host_require_ok(response: usize) -> u8 {
     let response = unsafe { foster_host_response_ref(response) };
     if !response.ok {
-        eprintln!("error: {}", response.error_message);
-        std::process::exit(2);
+        foster_execution_failure(response.error_message.clone());
     }
     0
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_ok(response: usize) -> u8 {
+extern "C" fn foster_rt_v4_host_ok(response: usize) -> u8 {
     u8::from(unsafe { foster_host_response_ref(response).ok })
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_integer(response: usize, index: i64) -> i64 {
+extern "C" fn foster_rt_v4_host_integer(response: usize, index: i64) -> i64 {
     let response = unsafe { foster_host_response_ref(response) };
     usize::try_from(index)
         .ok()
@@ -429,12 +428,12 @@ extern "C" fn foster_rt_v2_host_integer(response: usize, index: i64) -> i64 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_error_value(response: usize) -> i64 {
+extern "C" fn foster_rt_v4_host_error_value(response: usize) -> i64 {
     unsafe { foster_host_response_ref(response).error_value }
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_string(response: usize, field: i64, index: i64) -> usize {
+extern "C" fn foster_rt_v4_host_string(response: usize, field: i64, index: i64) -> usize {
     let response = unsafe { foster_host_response_ref(response) };
     let value = match field {
         0 => &response.text,
@@ -451,13 +450,13 @@ extern "C" fn foster_rt_v2_host_string(response: usize, field: i64, index: i64) 
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_bytes_length(response: usize) -> i64 {
+extern "C" fn foster_rt_v4_host_bytes_length(response: usize) -> i64 {
     i64::try_from(unsafe { foster_host_response_ref(response).bytes.len() })
         .unwrap_or_else(|_| std::process::abort())
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_copy_bytes(response: usize, destination: usize) -> u8 {
+extern "C" fn foster_rt_v4_host_copy_bytes(response: usize, destination: usize) -> u8 {
     let bytes = unsafe { &foster_host_response_ref(response).bytes };
     if !bytes.is_empty() {
         if destination == 0 {
@@ -469,18 +468,55 @@ extern "C" fn foster_rt_v2_host_copy_bytes(response: usize, destination: usize) 
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_strings_length(response: usize) -> i64 {
+extern "C" fn foster_rt_v4_host_strings_length(response: usize) -> i64 {
     i64::try_from(unsafe { foster_host_response_ref(response).strings.len() })
         .unwrap_or_else(|_| std::process::abort())
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_host_release(response: usize) -> u8 {
+extern "C" fn foster_rt_v4_host_release(response: usize) -> u8 {
     unsafe { drop(Box::from_raw(response as *mut FosterHostResponse)) };
     0
 }
 
-type FosterRemoteCallback = unsafe extern "C" fn(u64, usize) -> u64;
+thread_local! {
+    static FOSTER_EXECUTION: std::cell::RefCell<Option<String>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+fn foster_execution_failure(message: String) {
+    FOSTER_EXECUTION.with(|execution| {
+        let mut execution = execution.borrow_mut();
+        if execution.is_none() { *execution = Some(message); }
+    });
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_failure_pending() -> u8 {
+    FOSTER_EXECUTION.with(|execution| u8::from(execution.borrow().is_some()))
+}
+
+thread_local! {
+    static FOSTER_CLEANUP_FAILURES: std::cell::RefCell<Vec<Option<String>>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_begin_cleanup() -> u8 {
+    let pending = FOSTER_EXECUTION.with(|execution| execution.borrow_mut().take());
+    FOSTER_CLEANUP_FAILURES.with(|failures| failures.borrow_mut().push(pending));
+    0
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_end_cleanup() -> u8 {
+    if let Some(Some(original)) = FOSTER_CLEANUP_FAILURES.with(|failures| failures.borrow_mut().pop()) {
+        FOSTER_EXECUTION.with(|execution| *execution.borrow_mut() = Some(original));
+    }
+    0
+}
+
+type FosterRemoteCallback = unsafe extern "C" fn(u64, usize, u8) -> u64;
 type FosterReleaseCallback = unsafe extern "C" fn(usize) -> u8;
 
 fn foster_remote_abort(message: &str) -> ! {
@@ -509,37 +545,53 @@ impl Drop for FosterRemoteCompletion {
 }
 
 struct FosterRemoteMessage {
+    request: Option<u64>,
     callback: FosterRemoteCallback,
     arguments: Vec<u64>,
     result_release: usize,
-    response: mpsc::Sender<FosterRemoteCompletion>,
+    response: mpsc::Sender<Result<FosterRemoteCompletion, String>>,
 }
 
 struct FosterRemote {
+    control: Arc<remote_lifecycle::Control>,
     sender: mpsc::Sender<FosterRemoteMessage>,
     borrowed: bool,
     worker: Option<thread::JoinHandle<()>>,
 }
 
 struct FosterFuture {
-    receiver: Mutex<Option<mpsc::Receiver<FosterRemoteCompletion>>>,
+    error: Mutex<Option<String>>,
+    receiver: Mutex<Option<mpsc::Receiver<Result<FosterRemoteCompletion, String>>>>,
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_remote_spawn(state: u64, release: usize, borrowed: u8) -> usize {
+extern "C" fn foster_rt_v4_remote_spawn(state: u64, release: usize, borrowed: u8) -> usize {
     let (sender, receiver) = mpsc::channel::<FosterRemoteMessage>();
+    let control = Arc::new(remote_lifecycle::Control::default());
+    let worker_control = control.clone();
     let worker = thread::spawn(move || {
         while let Ok(message) = receiver.recv() {
+            if worker_control.error().is_some() || message.request.is_none() {
+                unsafe { (message.callback)(state, message.arguments.as_ptr() as usize, 0) };
+                continue;
+            }
             let arguments = message.arguments.as_ptr() as usize;
-            let value = unsafe { (message.callback)(state, arguments) };
-            let _ = message.response.send(FosterRemoteCompletion {
-                value,
-                release: message.result_release,
-            });
+            let value = unsafe { (message.callback)(state, arguments, 1) };
+            let failure = FOSTER_EXECUTION.with(|execution| execution.borrow_mut().take());
+            if let Some(error) = failure {
+                // Publish every outstanding failure before reclaiming queued arguments.
+                worker_control.terminate(remote_lifecycle::RemoteError::Failed(error));
+            } else {
+                let completion = FosterRemoteCompletion { value, release: message.result_release };
+                if worker_control.complete(message.request.unwrap()) {
+                    let _ = message.response.send(Ok(completion));
+                }
+            }
         }
         unsafe { foster_release_word(state, release) };
     });
     Box::into_raw(Box::new(FosterRemote {
+        control,
         sender,
         borrowed: borrowed != 0,
         worker: Some(worker),
@@ -547,7 +599,7 @@ extern "C" fn foster_rt_v2_remote_spawn(state: u64, release: usize, borrowed: u8
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_remote_call(
+extern "C" fn foster_rt_v4_remote_call(
     remote: usize,
     callback: usize,
     arguments: usize,
@@ -567,15 +619,17 @@ extern "C" fn foster_rt_v2_remote_call(
         unsafe { std::slice::from_raw_parts(arguments as *const u64, argument_count) }.to_vec()
     };
     let (response, receiver) = mpsc::channel();
-    remote
-        .sender
-        .send(FosterRemoteMessage {
-            callback,
-            arguments,
-            result_release,
-            response,
-        })
-        .unwrap_or_else(|_| foster_remote_abort("remote object is closed"));
+    let cancelled = response.clone();
+    let request = remote.control.register(move |error| {
+        let message = match error {
+            remote_lifecycle::RemoteError::Failed(message) => message,
+            remote_lifecycle::RemoteError::Shutdown => error.to_string(),
+        };
+        let _ = cancelled.send(Err(message));
+    });
+    remote.sender.send(FosterRemoteMessage {
+        request, callback, arguments, result_release, response,
+    }).unwrap_or_else(|_| foster_remote_abort("remote object is closed"));
     let receiver = if blocking != 0 || remote.borrowed {
         let completion = receiver
             .recv()
@@ -589,12 +643,13 @@ extern "C" fn foster_rt_v2_remote_call(
         receiver
     };
     Box::into_raw(Box::new(FosterFuture {
+        error: Mutex::new(None),
         receiver: Mutex::new(Some(receiver)),
     })) as usize
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_future_await(future: usize) -> u64 {
+extern "C" fn foster_rt_v4_future_await(future: usize) -> u64 {
     let future = unsafe { &*(future as *const FosterFuture) };
     let receiver = future
         .receiver
@@ -602,17 +657,26 @@ extern "C" fn foster_rt_v2_future_await(future: usize) -> u64 {
         .unwrap_or_else(|_| foster_remote_abort("future lock was poisoned"))
         .take()
         .unwrap_or_else(|| foster_remote_abort("future has already been awaited"));
-    let mut completion = receiver
-        .recv()
-        .unwrap_or_else(|_| foster_remote_abort("remote object terminated before replying"));
-    completion.release = 0;
-    completion.value
+    match receiver.recv().unwrap_or_else(|_| Err("remote object terminated before replying".into())) {
+        Ok(mut completion) => {
+            completion.release = 0;
+            completion.value
+        }
+        Err(error) => { *future.error.lock().unwrap() = Some(error); 0 }
+    }
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_remote_release(remote: usize) -> u8 {
+extern "C" fn foster_rt_v4_future_error(future: usize) -> usize {
+    let future = unsafe { &*(future as *const FosterFuture) };
+    future.error.lock().unwrap().take().map_or(0, |error| owned_string(&error))
+}
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_remote_release(remote: usize) -> u8 {
     let remote = unsafe { Box::from_raw(remote as *mut FosterRemote) };
     let FosterRemote {
+        control: _,
         sender,
         worker,
         borrowed: _,
@@ -627,7 +691,7 @@ extern "C" fn foster_rt_v2_remote_release(remote: usize) -> u8 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v2_future_release(future: usize) -> u8 {
+extern "C" fn foster_rt_v4_future_release(future: usize) -> u8 {
     unsafe { drop(Box::from_raw(future as *mut FosterFuture)) };
     0
 }
