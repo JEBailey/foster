@@ -1,7 +1,7 @@
-//! Assemble the linked platform runtime and executable entry shim.
+//! Assemble a reusable platform runtime and a small, program-specific entry shim.
 use super::*;
 
-pub(super) fn entry_source(
+fn main_source(
     result: NativeType,
     accepts_arguments: bool,
     runtime_strings: &[String],
@@ -60,6 +60,23 @@ pub(super) fn entry_source(
     } else {
         ""
     };
+    format!(
+        r#"{declaration}
+{release_declaration}
+
+fn main() {{
+    foster_runtime_initialize(&[{constants}]);
+    {invocation}
+    foster_runtime_check_execution();
+    {print}
+    {release}
+    foster_runtime_check_execution();
+}}
+"#
+    )
+}
+
+fn runtime_source() -> String {
     let runtime_abi_version = abi::VERSION;
     let host_runtime = host_runtime::SOURCE;
     let remote_lifecycle = include_str!("../remote.rs");
@@ -77,11 +94,26 @@ mod remote_lifecycle {{
 {remote_lifecycle}
 }}
 
-fn constants() -> &'static [&'static str] {{
-    &[{constants}]
+static FOSTER_CONSTANTS: OnceLock<&'static [&'static str]> = OnceLock::new();
+
+#[inline(never)]
+pub fn foster_runtime_initialize(constants: &'static [&'static str]) {{
+    FOSTER_CONSTANTS.set(constants).expect("runtime already initialized");
+    foster_rt_v4_host_initialize();
 }}
 
-fn unicode_argument(value: OsString) -> String {{
+pub fn foster_runtime_check_execution() {{
+    if let Some(message) = FOSTER_EXECUTION.with(|execution| execution.borrow_mut().take()) {{
+        eprintln!("error: {{message}}");
+        std::process::exit(2);
+    }}
+}}
+
+fn constants() -> &'static [&'static str] {{
+    FOSTER_CONSTANTS.get().expect("runtime not initialized")
+}}
+
+pub fn unicode_argument(value: OsString) -> String {{
     value.into_string().unwrap_or_else(|_| {{
         eprintln!("error: command arguments must be valid Unicode");
         std::process::exit(2);
@@ -146,7 +178,7 @@ unsafe extern "C" {{
     fn foster_native_string_length(value: usize) -> i64;
 }}
 
-fn owned_string(text: &str) -> usize {{
+pub fn owned_string(text: &str) -> usize {{
     unsafe {{ foster_native_string(text.as_ptr() as usize, text.len() as i64) }}
 }}
 
@@ -347,34 +379,34 @@ unsafe fn render_object(object: usize) {{
 }}
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_write_unit() -> u8 {{ print!("()"); 0 }}
+pub extern "C" fn foster_rt_v4_write_unit() -> u8 {{ print!("()"); 0 }}
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_write_bool(value: u8) -> u8 {{ print!("{{}}", value != 0); 0 }}
+pub extern "C" fn foster_rt_v4_write_bool(value: u8) -> u8 {{ print!("{{}}", value != 0); 0 }}
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_write_int(value: i64) -> u8 {{ print!("{{value}}"); 0 }}
+pub extern "C" fn foster_rt_v4_write_int(value: i64) -> u8 {{ print!("{{value}}"); 0 }}
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_write_float(value: f64) -> u8 {{ print!("{{value}}"); 0 }}
+pub extern "C" fn foster_rt_v4_write_float(value: f64) -> u8 {{ print!("{{value}}"); 0 }}
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_write_code_point(value: u32) -> u8 {{
+pub extern "C" fn foster_rt_v4_write_code_point(value: u32) -> u8 {{
     print!("{{}}", char::from_u32(value).unwrap_or(char::REPLACEMENT_CHARACTER));
     0
 }}
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_write_byte(value: u8) -> u8 {{ print!("{{value}}"); 0 }}
+pub extern "C" fn foster_rt_v4_write_byte(value: u8) -> u8 {{ print!("{{value}}"); 0 }}
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_write_string(value: usize) -> u8 {{
+pub extern "C" fn foster_rt_v4_write_string(value: usize) -> u8 {{
     print!("{{}}", unsafe {{ string_value(value) }});
     0
 }}
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_write_object(value: usize) -> u8 {{
+pub extern "C" fn foster_rt_v4_write_object(value: usize) -> u8 {{
     unsafe {{ render_object(value) }};
     0
 }}
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_write_separator() -> u8 {{ print!(" "); 0 }}
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_write_newline() -> u8 {{ println!(); 0 }}
+pub extern "C" fn foster_rt_v4_write_newline() -> u8 {{ println!(); 0 }}
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_string_constant(index: i64) -> usize {{
@@ -514,26 +546,19 @@ extern "C" fn foster_rt_v4_ref_store_ptr(reference: usize, value: usize) -> u8 {
 {host_runtime}
 {equality_runtime}
 {runtime_assertions}
-
-{declaration}
-{release_declaration}
-
-fn main() {{
-    foster_rt_v4_host_initialize();
-    {invocation}
-    if let Some(message) = FOSTER_EXECUTION.with(|execution| execution.borrow_mut().take()) {{
-        eprintln!("error: {{message}}");
-        std::process::exit(2);
-    }}
-    {print}
-    {release}
-    if let Some(message) = FOSTER_EXECUTION.with(|execution| execution.borrow_mut().take()) {{
-        eprintln!("error: {{message}}");
-        std::process::exit(2);
-    }}
-}}
 "#
     )
+}
+
+// Allocation-census tests instrument a complete runtime, independently of the production cache.
+#[cfg(test)]
+fn entry_source(
+    result: NativeType,
+    accepts_arguments: bool,
+    runtime_strings: &[String],
+    releases_result: bool,
+) -> String {
+    runtime_source() + &main_source(result, accepts_arguments, runtime_strings, releases_result)
 }
 
 pub(super) fn link_executable(
@@ -541,13 +566,16 @@ pub(super) fn link_executable(
     output: &Path,
     options: CompileOptions,
 ) -> Result<(), FosterError> {
-    let source = entry_source(
-        artifact.result,
-        artifact.accepts_arguments,
-        &artifact.runtime_strings,
-        artifact.releases_result,
-    );
-    link_source(artifact, output, options, &source)
+    let source = "use foster_native_runtime::*;\n".to_owned()
+        + &main_source(
+            artifact.result,
+            artifact.accepts_arguments,
+            &artifact.runtime_strings,
+            artifact.releases_result,
+        );
+    let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    let library = runtime_cache::library(&rustc, &runtime_source(), options)?;
+    link_source(artifact, output, options, &source, Some(&library))
 }
 
 fn link_source(
@@ -555,6 +583,7 @@ fn link_source(
     output: &Path,
     options: CompileOptions,
     source: &str,
+    library: Option<&Path>,
 ) -> Result<(), FosterError> {
     let output = absolute_path(output)?;
     if let Some(parent) = output.parent() {
@@ -578,7 +607,13 @@ fn link_source(
         .map_err(|error| native_error(format!("cannot write linker shim: {error}")))?;
 
     let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
-    let result = Command::new(&rustc)
+    let mut command = Command::new(&rustc);
+    if let Some(library) = library {
+        command
+            .arg("--extern")
+            .arg(format!("foster_native_runtime={}", library.display()));
+    }
+    let result = command
         .arg("--edition=2024")
         .arg(&shim)
         .arg("-C")
@@ -761,7 +796,7 @@ func main(args: Arguments) -> String {
                 "failure-{optimize}{}",
                 std::env::consts::EXE_SUFFIX
             ));
-            link_source(artifact, &executable, options, &source).unwrap();
+            link_source(artifact, &executable, options, &source, None).unwrap();
             let vm_program =
                 vm::compile_with_options(&compilation, vm::CompileOptions { optimize }).unwrap();
             vm::verify(&vm_program).unwrap();
@@ -896,7 +931,7 @@ func main(args: Arguments) -> String {
             let executable = temporary
                 .path
                 .join(format!("text-{optimize}{}", std::env::consts::EXE_SUFFIX));
-            link_source(artifact, &executable, options, &source).unwrap();
+            link_source(artifact, &executable, options, &source, None).unwrap();
             for argument in [None, Some(""), Some("λ")] {
                 let output = Command::new(&executable).args(argument).output().unwrap();
                 assert!(

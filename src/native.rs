@@ -46,6 +46,7 @@ use emission::{emit_object, ordered_entries};
 mod ownership;
 mod program;
 mod runtime;
+mod runtime_cache;
 pub use ownership::MemoryManagement;
 use ownership::*;
 pub use program::{LogicalSignature, NativeFunction, NativeProgram, prepare};

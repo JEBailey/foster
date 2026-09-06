@@ -432,6 +432,67 @@ fn build_native_writes_runnable_host_executable() {
 }
 
 #[test]
+fn native_builds_reuse_the_runtime_across_processes() {
+    let directory = temporary_directory("runtime cache");
+    fs::create_dir_all(&directory).unwrap();
+    let cache = directory.join("shared runtime");
+    let mut cached_archive = None;
+    let mut programs = Vec::new();
+    for (name, text) in [("first", "first λ"), ("second", "different 🦀 constants")] {
+        let source = directory.join(format!("{name}.fos"));
+        let executable = directory.join(format!("{name}{}", std::env::consts::EXE_SUFFIX));
+        fs::write(&source, format!("func main() -> String {{ {text:?} }}\n")).unwrap();
+        let build = foster()
+            .env("FOSTER_NATIVE_CACHE_DIR", &cache)
+            .args(["build", "--native", "--no-optimize"])
+            .arg(&source)
+            .arg("--output")
+            .arg(&executable)
+            .output()
+            .unwrap();
+        assert!(
+            build.status.success(),
+            "{}",
+            String::from_utf8_lossy(&build.stderr)
+        );
+        let entries: Vec<_> = fs::read_dir(&cache)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        assert_eq!(
+            entries.len(),
+            1,
+            "program constants must not create a new runtime"
+        );
+        let archive = entries[0].join("libfoster_native_runtime.rlib");
+        let stamp = (
+            archive.clone(),
+            fs::metadata(&archive).unwrap().modified().unwrap(),
+        );
+        if let Some(previous) = &cached_archive {
+            assert_eq!(
+                &stamp, previous,
+                "a second compiler process rebuilt the runtime"
+            );
+        }
+        cached_archive = Some(stamp);
+        programs.push((executable, text));
+    }
+    // Executables must remain standalone and retain their own constants after cache removal.
+    fs::remove_dir_all(&cache).unwrap();
+    for (executable, expected) in programs {
+        let run = Command::new(executable).output().unwrap();
+        assert!(
+            run.status.success(),
+            "{}",
+            String::from_utf8_lossy(&run.stderr)
+        );
+        assert_eq!(String::from_utf8(run.stdout).unwrap().trim(), expected);
+    }
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn native_float_uses_a_typed_entry_abi() {
     let mut output_path = std::env::temp_dir().join(format!(
         "foster-native-float-{}-{}",

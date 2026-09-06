@@ -19,6 +19,19 @@ Without `-o`, a source file produces a sibling executable with the source extens
 directory package produces `main` (or `main.exe` on Windows) inside that directory. `--optimize`
 is the default; `--no-optimize` disables both Cranelift and linker optimization.
 
+The shared Rust runtime is compiled once per runtime source, Rust toolchain/host, and optimization
+mode, then reused across native builds and compiler processes. Each executable still compiles its
+own Foster object and a small startup shim containing its string constants and entry signature.
+The runtime is linked statically, so the resulting executable does not need the cache to run.
+
+By default, runtime archives live in `%LOCALAPPDATA%/foster/native-runtime` on Windows and
+`$XDG_CACHE_HOME/foster/native-runtime` (or `$HOME/.cache/foster/native-runtime`) elsewhere.
+Set `FOSTER_NATIVE_CACHE_DIR` to select another directory, for example a CI cache or
+`target/native-runtime-cache`. Removing that directory forces a rebuild on the next native build.
+Concurrent builds share a lock for each runtime version; failed builds are retried rather than
+published as usable cache entries. Allocation-instrumented runtime tests build their own runtime
+and do not use this production cache.
+
 Use `--emit native-ir` to print the deterministic, verified code-generation IR without linking:
 
 ```powershell
@@ -121,7 +134,8 @@ also calculated during preparation rather than reconstructed during emission.
 
 The backend separates program preparation (`native/program.rs`), object assembly
 (`native/emission.rs`), allocation and retain/release/destructor policy (`native/ownership.rs`),
-and runtime-shim generation and linking (`native/runtime.rs`). Ownership-bearing SSA instructions
+runtime-shim generation and linking (`native/runtime.rs`), and shared runtime caching
+(`native/runtime_cache.rs`). Ownership-bearing SSA instructions
 remain explicit; the management classification describes representation policy, not ownership of
 every SSA alias. Raw host pointers are explicitly classified as unmanaged by the aggregate
 retain/release protocol. Helper definitions are emitted in stable key order, so hash-map iteration
