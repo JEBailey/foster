@@ -154,6 +154,7 @@ impl FunctionLowerer<'_> {
             body: crate::block::Block::new(),
         });
         let source = ast::Function {
+            body_is_recovery_stub: false,
             span: 0..0,
             documentation: None,
             name: source_name.to_owned(),

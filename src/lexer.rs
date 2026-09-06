@@ -20,6 +20,7 @@ pub enum TokenKind {
     DocComment(String),
     ModuleDocComment(String),
     Func,
+    Impl,
     Test,
     Const,
     Let,
@@ -574,6 +575,7 @@ impl<'a> Lexer<'a> {
         let name = self.take_identifier();
         let kind = match name.as_str() {
             "func" | "function" => TokenKind::Func,
+            "impl" => TokenKind::Impl,
             "test" => TokenKind::Test,
             "const" => TokenKind::Const,
             "let" => TokenKind::Let,

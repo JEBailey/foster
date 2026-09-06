@@ -12,262 +12,264 @@ pub type List<T> = {
     value: RawList<T>
 }
 
-/// Appends `value` to this list in place.
-pub func List.push<T>(self: List<T>, value: T) -> () [reshape self.items] = intrinsic("list.push")
+impl List {
+    /// Appends `value` to this list in place.
+    pub func push<T>(self: List<T>, value: T) -> () [reshape self.items] = intrinsic("list.push")
 
-/// Returns this list with `value` appended.
-pub func List.append<T>(self: List<T>, value: T) -> List<T> [consume self] = intrinsic("list.append")
+    /// Returns this list with `value` appended.
+    pub func append<T>(self: List<T>, value: T) -> List<T> [consume self] = intrinsic("list.append")
 
-/// Reads an owned element without moving it out of the list; traps on an invalid index.
-/// Unlike a projected place, the result can be consumed independently of the source.
-pub func List.at<T>(self: List<T>, index: Int) -> T [read self] = intrinsic("list.at")
+    /// Reads an owned element without moving it out of the list; traps on an invalid index.
+    /// Unlike a projected place, the result can be consumed independently of the source.
+    pub func at<T>(self: List<T>, index: Int) -> T [read self] = intrinsic("list.at")
 
-/// Returns whether this list contains `expected`.
-pub func List.contains?<T>(self: List<T>, expected: T) -> Bool {
-    let index = 0
-    loop {
-        return false if index >= self.length
-        return true if self.at(index) == expected
-        index = index + 1
-    }
-    false
-}
-
-/// Returns the first element, or `None` when the list is empty.
-pub func List.first<T>(self: List<T>) -> Option<T> {
-    self.get(0)
-}
-
-/// Returns the final element, or `None` when the list is empty.
-pub func List.last<T>(self: List<T>) -> Option<T> {
-    self.get(self.length - 1)
-}
-
-/// Applies `transform` to every element, from left to right.
-pub func List.map<T, U>(self: List<T>, transform: func(T) -> U) -> List<U> {
-    let result = []
-    let index = 0
-    loop {
-        break if index >= self.length
-        result.push(transform(self.at(index)))
-        index = index + 1
-    }
-    result
-}
-
-/// Returns the elements for which `include` evaluates to true.
-pub func List.filter<T>(self: List<T>, include: Predicate<T>) -> List<T> {
-    let result = []
-    let index = 0
-    loop {
-        break if index >= self.length
-        let value = self.at(index)
-        branch {
-            include(value) -> result.push(value)
-            _ -> ()
+    /// Returns whether this list contains `expected`.
+    pub func contains?<T>(self: List<T>, expected: T) -> Bool {
+        let index = 0
+        loop {
+            return false if index >= self.length
+            return true if self.at(index) == expected
+            index = index + 1
         }
-        index = index + 1
+        false
     }
-    result
-}
 
-/// Reduces the list from left to right, beginning with `initial`.
-pub func List.fold<T, U>(self: List<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [read self, consume initial] {
-    let result = move initial
-    let index = 0
-    loop {
-        break if index >= self.length
-        result = combine(move result, self.at(index))
-        index = index + 1
+    /// Returns the first element, or `None` when the list is empty.
+    pub func first<T>(self: List<T>) -> Option<T> {
+        self.get(0)
     }
-    result
-}
 
-/// Returns the first matching element; stops evaluating the predicate at that element.
-pub func List.find<T>(self: List<T>, predicate: Predicate<T>) -> Option<T> {
-    let index = 0
-    loop {
-        break if index >= self.length
-        let value = self.at(index)
-        return Option.Some(value) if predicate(value)
-        index = index + 1
+    /// Returns the final element, or `None` when the list is empty.
+    pub func last<T>(self: List<T>) -> Option<T> {
+        self.get(self.length - 1)
     }
-    Option.None
-}
 
-/// Returns whether at least one element satisfies `predicate`.
-pub func List.any?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
-    let index = 0
-    loop {
-        return false if index >= self.length
-        return true if predicate(self.at(index))
-        index = index + 1
+    /// Applies `transform` to every element, from left to right.
+    pub func map<T, U>(self: List<T>, transform: func(T) -> U) -> List<U> {
+        let result = []
+        let index = 0
+        loop {
+            break if index >= self.length
+            result.push(transform(self.at(index)))
+            index = index + 1
+        }
+        result
     }
-    false
-}
 
-/// Returns whether every element satisfies `predicate`.
-pub func List.all?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
-    let index = 0
-    loop {
-        return true if index >= self.length
-        return false if !predicate(self.at(index))
-        index = index + 1
-    }
-    true
-}
-
-/// Builds a reversed list without materializing intermediate tails.
-pub func List.reverse<T>(self: List<T>) -> List<T> {
-    let result = []
-    let index = self.length
-    loop {
-        break if index <= 0
-        index = index - 1
-        result.push(self.at(index))
-    }
-    result
-}
-
-/// Appends every element of `right`, consuming the left list.
-pub func List.concat<T>(self: List<T>, right: List<T>) -> List<T> [consume self, read right] {
-    let result = move self
-    let index = 0
-    loop {
-        break if index >= right.length
-        result.push(right.at(index))
-        index = index + 1
-    }
-    result
-}
-
-/// Returns the element at `index`, or `None` when the index is outside the list.
-pub func List.get<T>(self: List<T>, index: Int) -> Option<T> [read self] {
-    branch {
-        index < 0 || index >= self.length -> Option.None
-        _ -> {
+    /// Returns the elements for which `include` evaluates to true.
+    pub func filter<T>(self: List<T>, include: Predicate<T>) -> List<T> {
+        let result = []
+        let index = 0
+        loop {
+            break if index >= self.length
             let value = self.at(index)
-            Option.Some(value)
-        }
-    }
-}
-
-/// Copies only the elements in the checked half-open range `start..end`.
-pub func List.slice<T>(self: List<T>, start: Int, end: Int) -> List<T> {
-    assert(start >= 0 && end >= start && end <= self.length, "list slice is out of bounds")
-    let result = []
-    let index = start
-    loop {
-        break if index >= end
-        result.push(self.at(index))
-        index = index + 1
-    }
-    result
-}
-
-/// Returns at most the first `count` elements; a nonpositive count returns an empty list.
-pub func List.take<T>(self: List<T>, count: Int) -> List<T> {
-    let end = branch {
-        count < 0 -> 0
-        count > self.length -> self.length
-        _ -> count
-    }
-    self.slice(0, end)
-}
-
-/// Consumes the list and returns the elements after the first `count` entries.
-pub func List.drop<T>(self: List<T>, count: Int) -> List<T> [consume self] {
-    return self if count <= 0
-    return [] if count >= self.length
-    self.slice(count, self.length)
-}
-
-/// Maps each element to a list and appends its elements to one output buffer.
-pub func List.flat_map<T, U>(self: List<T>, transform: func(T) -> List<U>) -> List<U> {
-    let result = []
-    let index = 0
-    loop {
-        break if index >= self.length
-        let mapped = transform(self.at(index))
-        let item = 0
-        loop {
-            break if item >= mapped.length
-            result.push(mapped.at(item))
-            item = item + 1
-        }
-        index = index + 1
-    }
-    result
-}
-
-/// Concatenates nested lists in source order without constructing intermediate tails.
-pub func List.flatten<T>(self: List<List<T>>) -> List<T> {
-    let result = []
-    let index = 0
-    loop {
-        break if index >= self.length
-        let values = self.at(index)
-        let item = 0
-        loop {
-            break if item >= values.length
-            result.push(values.at(item))
-            item = item + 1
-        }
-        index = index + 1
-    }
-    result
-}
-
-/// Counts the elements satisfying `predicate`.
-pub func List.count<T>(self: List<T>, predicate: Predicate<T>) -> Int {
-    let count = 0
-    let index = 0
-    loop {
-        break if index >= self.length
-        branch {
-            predicate(self.at(index)) -> {
-                count = count + 1
-                ()
+            branch {
+                include(value) -> result.push(value)
+                _ -> ()
             }
-            _ -> ()
+            index = index + 1
         }
-        index = index + 1
+        result
     }
-    count
-}
 
-/// Returns whether no element satisfies `predicate`.
-pub func List.none?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
-    !self.any?(predicate)
-}
-
-/// Combines a nonempty list into one value, or returns `None` for an empty list.
-pub func List.reduce<T>(self: List<T>, combine: func(T, T) -> T) -> Option<T> {
-    return Option.None if self.empty?
-    let result = self.at(0)
-    let index = 1
-    loop {
-        break if index >= self.length
-        result = combine(result, self.at(index))
-        index = index + 1
+    /// Reduces the list from left to right, beginning with `initial`.
+    pub func fold<T, U>(self: List<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [read self, consume initial] {
+        let result = move initial
+        let index = 0
+        loop {
+            break if index >= self.length
+            result = combine(move result, self.at(index))
+            index = index + 1
+        }
+        result
     }
-    Option.Some(result)
-}
 
-/// Joins strings into one byte builder, inserting separators only between elements.
-pub func List.join(self: List<String>, separator: String) -> String {
-    let output = StringBuilder.empty()
-    let index = 0
-    loop {
-        break if index >= self.length
+    /// Returns the first matching element; stops evaluating the predicate at that element.
+    pub func find<T>(self: List<T>, predicate: Predicate<T>) -> Option<T> {
+        let index = 0
+        loop {
+            break if index >= self.length
+            let value = self.at(index)
+            return Option.Some(value) if predicate(value)
+            index = index + 1
+        }
+        Option.None
+    }
+
+    /// Returns whether at least one element satisfies `predicate`.
+    pub func any?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
+        let index = 0
+        loop {
+            return false if index >= self.length
+            return true if predicate(self.at(index))
+            index = index + 1
+        }
+        false
+    }
+
+    /// Returns whether every element satisfies `predicate`.
+    pub func all?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
+        let index = 0
+        loop {
+            return true if index >= self.length
+            return false if !predicate(self.at(index))
+            index = index + 1
+        }
+        true
+    }
+
+    /// Builds a reversed list without materializing intermediate tails.
+    pub func reverse<T>(self: List<T>) -> List<T> {
+        let result = []
+        let index = self.length
+        loop {
+            break if index <= 0
+            index = index - 1
+            result.push(self.at(index))
+        }
+        result
+    }
+
+    /// Appends every element of `right`, consuming the left list.
+    pub func concat<T>(self: List<T>, right: List<T>) -> List<T> [consume self, read right] {
+        let result = move self
+        let index = 0
+        loop {
+            break if index >= right.length
+            result.push(right.at(index))
+            index = index + 1
+        }
+        result
+    }
+
+    /// Returns the element at `index`, or `None` when the index is outside the list.
+    pub func get<T>(self: List<T>, index: Int) -> Option<T> [read self] {
         branch {
-            index > 0 -> output.append(separator)
-            _ -> ()
+            index < 0 || index >= self.length -> Option.None
+            _ -> {
+                let value = self.at(index)
+                Option.Some(value)
+            }
         }
-        output.append(self.at(index))
-        index = index + 1
     }
-    (move output).finish()
+
+    /// Copies only the elements in the checked half-open range `start..end`.
+    pub func slice<T>(self: List<T>, start: Int, end: Int) -> List<T> {
+        assert(start >= 0 && end >= start && end <= self.length, "list slice is out of bounds")
+        let result = []
+        let index = start
+        loop {
+            break if index >= end
+            result.push(self.at(index))
+            index = index + 1
+        }
+        result
+    }
+
+    /// Returns at most the first `count` elements; a nonpositive count returns an empty list.
+    pub func take<T>(self: List<T>, count: Int) -> List<T> {
+        let end = branch {
+            count < 0 -> 0
+            count > self.length -> self.length
+            _ -> count
+        }
+        self.slice(0, end)
+    }
+
+    /// Consumes the list and returns the elements after the first `count` entries.
+    pub func drop<T>(self: List<T>, count: Int) -> List<T> [consume self] {
+        return self if count <= 0
+        return [] if count >= self.length
+        self.slice(count, self.length)
+    }
+
+    /// Maps each element to a list and appends its elements to one output buffer.
+    pub func flat_map<T, U>(self: List<T>, transform: func(T) -> List<U>) -> List<U> {
+        let result = []
+        let index = 0
+        loop {
+            break if index >= self.length
+            let mapped = transform(self.at(index))
+            let item = 0
+            loop {
+                break if item >= mapped.length
+                result.push(mapped.at(item))
+                item = item + 1
+            }
+            index = index + 1
+        }
+        result
+    }
+
+    /// Concatenates nested lists in source order without constructing intermediate tails.
+    pub func flatten<T>(self: List<List<T>>) -> List<T> {
+        let result = []
+        let index = 0
+        loop {
+            break if index >= self.length
+            let values = self.at(index)
+            let item = 0
+            loop {
+                break if item >= values.length
+                result.push(values.at(item))
+                item = item + 1
+            }
+            index = index + 1
+        }
+        result
+    }
+
+    /// Counts the elements satisfying `predicate`.
+    pub func count<T>(self: List<T>, predicate: Predicate<T>) -> Int {
+        let count = 0
+        let index = 0
+        loop {
+            break if index >= self.length
+            branch {
+                predicate(self.at(index)) -> {
+                    count = count + 1
+                    ()
+                }
+                _ -> ()
+            }
+            index = index + 1
+        }
+        count
+    }
+
+    /// Returns whether no element satisfies `predicate`.
+    pub func none?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
+        !self.any?(predicate)
+    }
+
+    /// Combines a nonempty list into one value, or returns `None` for an empty list.
+    pub func reduce<T>(self: List<T>, combine: func(T, T) -> T) -> Option<T> {
+        return Option.None if self.empty?
+        let result = self.at(0)
+        let index = 1
+        loop {
+            break if index >= self.length
+            result = combine(result, self.at(index))
+            index = index + 1
+        }
+        Option.Some(result)
+    }
+
+    /// Joins strings into one byte builder, inserting separators only between elements.
+    pub func join(self: List<String>, separator: String) -> String {
+        let output = StringBuilder.empty()
+        let index = 0
+        loop {
+            break if index >= self.length
+            branch {
+                index > 0 -> output.append(separator)
+                _ -> ()
+            }
+            output.append(self.at(index))
+            index = index + 1
+        }
+        (move output).finish()
+    }
 }
 
 test "list algorithms transform and aggregate values" {

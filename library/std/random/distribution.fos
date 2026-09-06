@@ -17,21 +17,23 @@ pub type UniformInt = & Distribution<Int> & {
     end_value: Int
 }
 
-/// Validates and constructs a uniform integer distribution over `[start, end)`.
-pub func UniformInt.from(start: Int, end: Int) -> Result<UniformInt, RandomError> {
-    return failure("uniform_int", end, "uniform integer range must be nonempty") if start >= end
-    Result.Ok(UniformInt { start_value: start, end_value: end })
-}
+impl UniformInt {
+    /// Validates and constructs a uniform integer distribution over `[start, end)`.
+    pub func from(start: Int, end: Int) -> Result<UniformInt, RandomError> {
+        return failure("uniform_int", end, "uniform integer range must be nonempty") if start >= end
+        Result.Ok(UniformInt { start_value: start, end_value: end })
+    }
 
-/// Returns the inclusive lower bound.
-pub func UniformInt.start(self: UniformInt) -> Int { self.start_value }
+    /// Returns the inclusive lower bound.
+    pub func start(self: UniformInt) -> Int { self.start_value }
 
-/// Returns the exclusive upper bound.
-pub func UniformInt.end(self: UniformInt) -> Int { self.end_value }
+    /// Returns the exclusive upper bound.
+    pub func end(self: UniformInt) -> Int { self.end_value }
 
-/// Draws one uniformly distributed integer in this distribution's range.
-pub func UniformInt.sample(self: UniformInt, source: RandomSource) -> Result<Int, RandomError> [read self.start_value, read self.end_value, mut source] {
-    random::between_with(source, self.start_value, self.end_value)
+    /// Draws one uniformly distributed integer in this distribution's range.
+    pub func sample(self: UniformInt, source: RandomSource) -> Result<Int, RandomError> [read self.start_value, read self.end_value, mut source] {
+        random::between_with(source, self.start_value, self.end_value)
+    }
 }
 
 /// A uniform floating-point distribution over one half-open finite range.
@@ -40,24 +42,26 @@ pub type UniformFloat = & Distribution<Float> & {
     end_value: Float
 }
 
-/// Validates and constructs a uniform floating-point distribution over `[start, end)`.
-pub func UniformFloat.from(start: Float, end: Float) -> Result<UniformFloat, RandomError> {
-    return failure("uniform_float", 0, "uniform float bounds must be ordered finite numbers") if not finite?(start) || not finite?(end) || start >= end
-    Result.Ok(UniformFloat { start_value: start, end_value: end })
-}
+impl UniformFloat {
+    /// Validates and constructs a uniform floating-point distribution over `[start, end)`.
+    pub func from(start: Float, end: Float) -> Result<UniformFloat, RandomError> {
+        return failure("uniform_float", 0, "uniform float bounds must be ordered finite numbers") if not finite?(start) || not finite?(end) || start >= end
+        Result.Ok(UniformFloat { start_value: start, end_value: end })
+    }
 
-/// Returns the inclusive floating-point lower bound.
-pub func UniformFloat.start(self: UniformFloat) -> Float { self.start_value }
+    /// Returns the inclusive floating-point lower bound.
+    pub func start(self: UniformFloat) -> Float { self.start_value }
 
-/// Returns the exclusive floating-point upper bound.
-pub func UniformFloat.end(self: UniformFloat) -> Float { self.end_value }
+    /// Returns the exclusive floating-point upper bound.
+    pub func end(self: UniformFloat) -> Float { self.end_value }
 
-/// Draws one uniformly distributed floating-point value in this distribution's range.
-pub func UniformFloat.sample(self: UniformFloat, source: RandomSource) -> Result<Float, RandomError> [read self.start_value, read self.end_value, mut source] {
-    let capacity = try source_capacity(source, "uniform_float")
-    let raw = try random::below_with(source, capacity)
-    let unit = parse_float(raw.as_string()) / parse_float(capacity.as_string())
-    Result.Ok(self.start_value + (self.end_value - self.start_value) * unit)
+    /// Draws one uniformly distributed floating-point value in this distribution's range.
+    pub func sample(self: UniformFloat, source: RandomSource) -> Result<Float, RandomError> [read self.start_value, read self.end_value, mut source] {
+        let capacity = try source_capacity(source, "uniform_float")
+        let raw = try random::below_with(source, capacity)
+        let unit = parse_float(raw.as_string()) / parse_float(capacity.as_string())
+        Result.Ok(self.start_value + (self.end_value - self.start_value) * unit)
+    }
 }
 
 /// A Bernoulli distribution returning true with a configured probability.
@@ -65,23 +69,25 @@ pub type Bernoulli = & Distribution<Bool> & {
     probability_value: Float
 }
 
-/// Validates and constructs a Bernoulli probability from zero through one.
-pub func Bernoulli.from(probability: Float) -> Result<Bernoulli, RandomError> {
-    return failure("bernoulli", 0, "Bernoulli probability must be between zero and one") if probability != probability || probability < 0.0 || probability > 1.0
-    Result.Ok(Bernoulli { probability_value: probability })
-}
+impl Bernoulli {
+    /// Validates and constructs a Bernoulli probability from zero through one.
+    pub func from(probability: Float) -> Result<Bernoulli, RandomError> {
+        return failure("bernoulli", 0, "Bernoulli probability must be between zero and one") if probability != probability || probability < 0.0 || probability > 1.0
+        Result.Ok(Bernoulli { probability_value: probability })
+    }
 
-/// Returns the probability of drawing true.
-pub func Bernoulli.probability(self: Bernoulli) -> Float { self.probability_value }
+    /// Returns the probability of drawing true.
+    pub func probability(self: Bernoulli) -> Float { self.probability_value }
 
-/// Draws one Boolean with the configured probability of true.
-pub func Bernoulli.sample(self: Bernoulli, source: RandomSource) -> Result<Bool, RandomError> [read self.probability_value, mut source] {
-    return Result.Ok(false) if self.probability_value == 0.0
-    return Result.Ok(true) if self.probability_value == 1.0
-    let capacity = try source_capacity(source, "bernoulli")
-    let raw = try random::below_with(source, capacity)
-    let unit = parse_float(raw.as_string()) / parse_float(capacity.as_string())
-    Result.Ok(unit < self.probability_value)
+    /// Draws one Boolean with the configured probability of true.
+    pub func sample(self: Bernoulli, source: RandomSource) -> Result<Bool, RandomError> [read self.probability_value, mut source] {
+        return Result.Ok(false) if self.probability_value == 0.0
+        return Result.Ok(true) if self.probability_value == 1.0
+        let capacity = try source_capacity(source, "bernoulli")
+        let raw = try random::below_with(source, capacity)
+        let unit = parse_float(raw.as_string()) / parse_float(capacity.as_string())
+        Result.Ok(unit < self.probability_value)
+    }
 }
 
 /// A discrete distribution returning an index in proportion to nonnegative integer weights.
@@ -90,23 +96,25 @@ pub type WeightedIndex = & Distribution<Int> & {
     total_value: Int
 }
 
-/// Validates nonnegative weights and constructs a discrete index distribution.
-pub func WeightedIndex.from(weights: List<Int>) -> Result<WeightedIndex, RandomError> [consume weights] {
-    let total = try weight_total(weights, 0, 0)
-    return failure("weighted", total, "weighted distribution requires a positive total weight") if total == 0
-    Result.Ok(WeightedIndex { weights_value: move weights, total_value: total })
-}
+impl WeightedIndex {
+    /// Validates nonnegative weights and constructs a discrete index distribution.
+    pub func from(weights: List<Int>) -> Result<WeightedIndex, RandomError> [consume weights] {
+        let total = try weight_total(weights, 0, 0)
+        return failure("weighted", total, "weighted distribution requires a positive total weight") if total == 0
+        Result.Ok(WeightedIndex { weights_value: move weights, total_value: total })
+    }
 
-/// Returns the number of weighted outcomes.
-pub func WeightedIndex.length(self: WeightedIndex) -> Int { self.weights_value.length }
+    /// Returns the number of weighted outcomes.
+    pub func length(self: WeightedIndex) -> Int { self.weights_value.length }
 
-/// Returns the sum of all configured weights.
-pub func WeightedIndex.total(self: WeightedIndex) -> Int { self.total_value }
+    /// Returns the sum of all configured weights.
+    pub func total(self: WeightedIndex) -> Int { self.total_value }
 
-/// Draws one index in proportion to its configured weight.
-pub func WeightedIndex.sample(self: WeightedIndex, source: RandomSource) -> Result<Int, RandomError> [read self.weights_value, read self.total_value, mut source] {
-    let target = try random::below_with(source, self.total_value)
-    Result.Ok(weighted_index(self.weights_value, target, 0, 0))
+    /// Draws one index in proportion to its configured weight.
+    pub func sample(self: WeightedIndex, source: RandomSource) -> Result<Int, RandomError> [read self.weights_value, read self.total_value, mut source] {
+        let target = try random::below_with(source, self.total_value)
+        Result.Ok(weighted_index(self.weights_value, target, 0, 0))
+    }
 }
 
 /// Accumulates validated weights without exceeding the portable source capacity.

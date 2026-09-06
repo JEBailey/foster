@@ -5,7 +5,7 @@ use crate::vm::{CompileOptions, Machine, compile, compile_with_options};
 #[test]
 fn decoder_rejects_a_forged_specialized_method_return_type() {
     let compilation = crate::compile(
-        "type Echo<T> = { value: T }\nfunc Echo.get<T>(self: Echo<T>) -> T { self.value }\nfunc main() -> Bool { Echo { value: true }.get() }",
+        "type Echo<T> = { value: T }\nimpl Echo {\n    func get<T>(self: Echo<T>) -> T { self.value }\n}\nfunc main() -> Bool { Echo { value: true }.get() }",
     ).unwrap();
     let program = compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
     let mut bytes = encode_program(&program).unwrap();

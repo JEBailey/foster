@@ -64,9 +64,8 @@ fn public_library_modules_declare_tests_or_have_external_coverage() {
             continue;
         }
         let source = std::fs::read_to_string(entry.path()).unwrap();
-        if !source.lines().any(|line| line.starts_with("pub func "))
-            || source.lines().any(|line| line.starts_with("test \""))
-        {
+        let program = foster::parse(&source).unwrap();
+        if !program.functions.iter().any(|function| function.public) || !program.tests.is_empty() {
             continue;
         }
         let relative = entry

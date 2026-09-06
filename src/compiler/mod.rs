@@ -46,7 +46,7 @@ pub fn check(package: Package) -> Result<Compilation, FosterError> {
 
 /// Check a package for interactive tooling, recovering from failures confined to function bodies.
 ///
-/// A failed body is replaced with an empty body while its declaration and signature remain in the
+/// A failed body is replaced with a recovery stub while its declaration and signature remain in the
 /// package. The pipeline is then restarted, so unrelated functions receive type information from
 /// the current source rather than from the language server's last-good snapshot. Strict compiler
 /// entry points continue to reject the original program.
@@ -124,11 +124,12 @@ fn recover_function_body(
     let program = module.program.as_mut()?;
 
     if let Some(function) = program.functions.iter_mut().find(|function| {
-        !function.body.is_empty()
+        !function.body_is_recovery_stub
             && function.span.start <= range.start
             && range.start < function.span.end
     }) {
         function.body = crate::block::Block::new();
+        function.body_is_recovery_stub = true;
         return Some((module_name.to_owned(), function.span.clone()));
     }
     if let Some(test) = program.tests.iter_mut().find(|test| {

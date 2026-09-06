@@ -15,11 +15,13 @@ pub type String = {
     value: Bytes
 }
 
-/// Validates UTF-8 in Foster and takes ownership of the immutable byte storage without decoding or copying it.
-pub func String.from_utf8(value: Bytes) -> Result<String, Utf8Error> [consume value] {
-    branch {
-        value.utf8_valid?() -> Result.Ok(String { value })
-        _ -> Result.Error(Utf8Error { offset: -1, message: "Bytes are not valid UTF-8" })
+impl String {
+    /// Validates UTF-8 in Foster and takes ownership of the immutable byte storage without decoding or copying it.
+    pub func from_utf8(value: Bytes) -> Result<String, Utf8Error> [consume value] {
+        branch {
+            value.utf8_valid?() -> Result.Ok(String { value })
+            _ -> Result.Error(Utf8Error { offset: -1, message: "Bytes are not valid UTF-8" })
+        }
     }
 }
 
@@ -28,42 +30,44 @@ pub type StringBuilder = {
     value: ByteBuffer
 }
 
-/// Creates an empty text builder.
-pub func StringBuilder.empty() -> StringBuilder {
-    StringBuilder { value: ByteBuffer.empty() }
-}
+impl StringBuilder {
+    /// Creates an empty text builder.
+    pub func empty() -> StringBuilder {
+        StringBuilder { value: ByteBuffer.empty() }
+    }
 
-/// Appends validated text to this builder.
-pub func StringBuilder.append(self: StringBuilder, text: String) -> () [reshape self.value.value.items] {
-    self.value.extend(text.bytes)
-}
+    /// Appends validated text to this builder.
+    pub func append(self: StringBuilder, text: String) -> () [reshape self.value.value.items] {
+        self.value.extend(text.bytes)
+    }
 
-/// Encodes one Unicode scalar into UTF-8; encoding policy stays in Foster.
-pub func StringBuilder.push(self: StringBuilder, character: CodePoint) -> () [reshape self.value.value.items] {
-    let scalar = character.as_int()
-    branch {
-        scalar < 128 -> self.value.push(Byte.unchecked(scalar))
-        scalar < 2048 -> {
-            self.value.push(Byte.unchecked(192 + scalar / 64))
-            self.value.push(Byte.unchecked(128 + scalar - scalar / 64 * 64))
-        }
-        scalar < 65536 -> {
-            self.value.push(Byte.unchecked(224 + scalar / 4096))
-            self.value.push(Byte.unchecked(128 + scalar / 64 - scalar / 4096 * 64))
-            self.value.push(Byte.unchecked(128 + scalar - scalar / 64 * 64))
-        }
-        _ -> {
-            self.value.push(Byte.unchecked(240 + scalar / 262144))
-            self.value.push(Byte.unchecked(128 + scalar / 4096 - scalar / 262144 * 64))
-            self.value.push(Byte.unchecked(128 + scalar / 64 - scalar / 4096 * 64))
-            self.value.push(Byte.unchecked(128 + scalar - scalar / 64 * 64))
+    /// Encodes one Unicode scalar into UTF-8; encoding policy stays in Foster.
+    pub func push(self: StringBuilder, character: CodePoint) -> () [reshape self.value.value.items] {
+        let scalar = character.as_int()
+        branch {
+            scalar < 128 -> self.value.push(Byte.unchecked(scalar))
+            scalar < 2048 -> {
+                self.value.push(Byte.unchecked(192 + scalar / 64))
+                self.value.push(Byte.unchecked(128 + scalar - scalar / 64 * 64))
+            }
+            scalar < 65536 -> {
+                self.value.push(Byte.unchecked(224 + scalar / 4096))
+                self.value.push(Byte.unchecked(128 + scalar / 64 - scalar / 4096 * 64))
+                self.value.push(Byte.unchecked(128 + scalar - scalar / 64 * 64))
+            }
+            _ -> {
+                self.value.push(Byte.unchecked(240 + scalar / 262144))
+                self.value.push(Byte.unchecked(128 + scalar / 4096 - scalar / 262144 * 64))
+                self.value.push(Byte.unchecked(128 + scalar / 64 - scalar / 4096 * 64))
+                self.value.push(Byte.unchecked(128 + scalar - scalar / 64 * 64))
+            }
         }
     }
-}
 
-/// Consumes the builder and constructs one validated immutable String.
-pub func StringBuilder.finish(self: StringBuilder) -> String [consume self] {
-    decode_bytes((move self.value).freeze())
+    /// Consumes the builder and constructs one validated immutable String.
+    pub func finish(self: StringBuilder) -> String [consume self] {
+        decode_bytes((move self.value).freeze())
+    }
 }
 
 /// Decodes bytes produced by the text algorithms, retaining a checked construction boundary.
@@ -98,66 +102,70 @@ func scalar_width(first: Int) -> Int {
     }
 }
 
-/// Reads one scalar and advances the byte offset; callers ensure the cursor is nonempty.
-func TextCursor.next_scalar(self: TextCursor) -> CodePoint {
-    let first = self.data[self.offset].int
-    let width = scalar_width(first)
-    let scalar = branch {
-        width == 1 -> first
-        width == 2 -> first - 192
-        width == 3 -> first - 224
-        _ -> first - 240
-    }
-    let index = 1
-    loop {
-        break if index >= width
-        scalar = scalar * 64 + self.data[self.offset + index].int - 128
-        index = index + 1
-    }
-    self.offset = self.offset + width
-    from_code_point(scalar)
-}
-
-/// Returns the first code point, or `None` when the string is empty.
-pub func String.first(self: String) -> Option<CodePoint> {
-    branch {
-        self.empty? -> Option.None
-        _ -> Option.Some(self.head)
-    }
-}
-
-/// Returns the final code point without allocating intermediate suffixes.
-pub func String.last(self: String) -> Option<CodePoint> {
-    let source = cursor(self)
-    let last = Option.None
-    loop {
-        break if source.offset >= source.data.length
-        last = Option.Some(source.next_scalar())
-    }
-    last
-}
-
-/// Returns the string with its Unicode scalar values in reverse order.
-pub func String.reverse(self: String) -> String {
-    let data = self.bytes
-    let output = ByteBuffer.empty()
-    let end = data.length
-    loop {
-        break if end == 0
-        let start = end - 1
-        loop {
-            break if start == 0 || data[start].int < 128 || data[start].int >= 192
-            start = start - 1
+impl TextCursor {
+    /// Reads one scalar and advances the byte offset; callers ensure the cursor is nonempty.
+    func next_scalar(self: TextCursor) -> CodePoint {
+        let first = self.data[self.offset].int
+        let width = scalar_width(first)
+        let scalar = branch {
+            width == 1 -> first
+            width == 2 -> first - 192
+            width == 3 -> first - 224
+            _ -> first - 240
         }
-        let index = start
+        let index = 1
         loop {
-            break if index >= end
-            output.push(data[index])
+            break if index >= width
+            scalar = scalar * 64 + self.data[self.offset + index].int - 128
             index = index + 1
         }
-        end = start
+        self.offset = self.offset + width
+        from_code_point(scalar)
     }
-    decode_bytes((move output).freeze())
+}
+
+impl String {
+    /// Returns the first code point, or `None` when the string is empty.
+    pub func first(self: String) -> Option<CodePoint> {
+        branch {
+            self.empty? -> Option.None
+            _ -> Option.Some(self.head)
+        }
+    }
+
+    /// Returns the final code point without allocating intermediate suffixes.
+    pub func last(self: String) -> Option<CodePoint> {
+        let source = cursor(self)
+        let last = Option.None
+        loop {
+            break if source.offset >= source.data.length
+            last = Option.Some(source.next_scalar())
+        }
+        last
+    }
+
+    /// Returns the string with its Unicode scalar values in reverse order.
+    pub func reverse(self: String) -> String {
+        let data = self.bytes
+        let output = ByteBuffer.empty()
+        let end = data.length
+        loop {
+            break if end == 0
+            let start = end - 1
+            loop {
+                break if start == 0 || data[start].int < 128 || data[start].int >= 192
+                start = start - 1
+            }
+            let index = start
+            loop {
+                break if index >= end
+                output.push(data[index])
+                index = index + 1
+            }
+            end = start
+        }
+        decode_bytes((move output).freeze())
+    }
 }
 
 /// Compares a candidate byte range with a complete validated UTF-8 pattern.
@@ -172,200 +180,202 @@ func matches_at(data: Bytes, pattern: Bytes, start: Int) -> Bool {
     true
 }
 
-/// Returns whether the text begins with `prefix`.
-pub func String.starts_with?(self: String, prefix: String) -> Bool {
-    matches_at(self.bytes, prefix.bytes, 0)
-}
-
-/// Returns whether the text ends with `suffix`, without reversing either string.
-pub func String.ends_with?(self: String, suffix: String) -> Bool {
-    let data = self.bytes
-    let pattern = suffix.bytes
-    return false if pattern.length > data.length
-    matches_at(data, pattern, data.length - pattern.length)
-}
-
-/// Searches validated UTF-8 byte ranges without constructing suffix strings.
-pub func String.contains?(self: String, fragment: String) -> Bool {
-    let data = self.bytes
-    let pattern = fragment.bytes
-    return true if pattern.empty?
-    let index = 0
-    loop {
-        break if pattern.length > data.length - index
-        return true if matches_at(data, pattern, index)
-        index = index + 1
+impl String {
+    /// Returns whether the text begins with `prefix`.
+    pub func starts_with?(self: String, prefix: String) -> Bool {
+        matches_at(self.bytes, prefix.bytes, 0)
     }
-    false
-}
 
-/// Consumes the string and removes leading Unicode whitespace.
-pub func String.trim_start(self: String) -> String [consume self] {
-    let source = cursor(self)
-    let start = 0
-    loop {
-        break if source.offset >= source.data.length
-        break if !source.next_scalar().whitespace?
-        start = source.offset
+    /// Returns whether the text ends with `suffix`, without reversing either string.
+    pub func ends_with?(self: String, suffix: String) -> Bool {
+        let data = self.bytes
+        let pattern = suffix.bytes
+        return false if pattern.length > data.length
+        matches_at(data, pattern, data.length - pattern.length)
     }
-    decode_bytes(source.data.slice(start, source.data.length))
-}
 
-/// Removes trailing Unicode whitespace, copying the retained range once.
-pub func String.trim_end(self: String) -> String {
-    let source = cursor(self)
-    let end = 0
-    loop {
-        break if source.offset >= source.data.length
-        branch {
-            !source.next_scalar().whitespace? -> {
-                end = source.offset
-                ()
+    /// Searches validated UTF-8 byte ranges without constructing suffix strings.
+    pub func contains?(self: String, fragment: String) -> Bool {
+        let data = self.bytes
+        let pattern = fragment.bytes
+        return true if pattern.empty?
+        let index = 0
+        loop {
+            break if pattern.length > data.length - index
+            return true if matches_at(data, pattern, index)
+            index = index + 1
+        }
+        false
+    }
+
+    /// Consumes the string and removes leading Unicode whitespace.
+    pub func trim_start(self: String) -> String [consume self] {
+        let source = cursor(self)
+        let start = 0
+        loop {
+            break if source.offset >= source.data.length
+            break if !source.next_scalar().whitespace?
+            start = source.offset
+        }
+        decode_bytes(source.data.slice(start, source.data.length))
+    }
+
+    /// Removes trailing Unicode whitespace, copying the retained range once.
+    pub func trim_end(self: String) -> String {
+        let source = cursor(self)
+        let end = 0
+        loop {
+            break if source.offset >= source.data.length
+            branch {
+                !source.next_scalar().whitespace? -> {
+                    end = source.offset
+                    ()
+                }
+                _ -> ()
             }
+        }
+        decode_bytes(source.data.slice(0, end))
+    }
+
+    /// Removes both whitespace boundaries in one Unicode scan.
+    pub func trim(self: String) -> String [consume self] {
+        let source = cursor(self)
+        let start = 0
+        let end = 0
+        let leading = true
+        loop {
+            break if source.offset >= source.data.length
+            let whitespace = source.next_scalar().whitespace?
+            branch {
+                leading && whitespace -> {
+                    start = source.offset
+                    ()
+                }
+                !whitespace -> {
+                    leading = false
+                    end = source.offset
+                    ()
+                }
+                _ -> ()
+            }
+        }
+        return "" if leading
+        decode_bytes(source.data.slice(start, end))
+    }
+
+    /// Materializes Unicode scalar values by scanning the UTF-8 bytes once.
+    pub func code_points(self: String) -> List<CodePoint> {
+        let source = cursor(self)
+        let output = []
+        loop {
+            break if source.offset >= source.data.length
+            output.push(source.next_scalar())
+        }
+        output
+    }
+
+    /// Concatenates a sequence of Unicode scalar values using one UTF-8 builder.
+    pub func from_code_points(characters: List<CodePoint>) -> String {
+        let output = StringBuilder.empty()
+        let index = 0
+        loop {
+            break if index >= characters.length
+            output.push(characters[index])
+            index = index + 1
+        }
+        (move output).finish()
+    }
+
+    /// Concatenates a general head/rest sequence without recursive calls or prefix concatenation.
+    pub func from_code_points(characters: Sequence<CodePoint>) -> String {
+        let remaining = characters
+        let output = StringBuilder.empty()
+        loop {
+            break if remaining.empty?()
+            output.push(remaining.head())
+            remaining = remaining.rest()
+        }
+        (move output).finish()
+    }
+
+    /// Returns the longest matching prefix, evaluating predicates once and from left to right.
+    pub func take_while(self: String, predicate: Predicate<CodePoint>) -> String {
+        let source = cursor(self)
+        let end = 0
+        loop {
+            break if source.offset >= source.data.length
+            break if !predicate(source.next_scalar())
+            end = source.offset
+        }
+        decode_bytes(source.data.slice(0, end))
+    }
+
+    /// Returns a clamped half-open range measured in Unicode scalar values.
+    pub func slice(self: String, start: Int, end: Int) -> String {
+        return "" if end <= 0 || end <= start
+        let source = cursor(self)
+        let index = 0
+        let first = 0
+        loop {
+            break if source.offset >= source.data.length || index >= end
+            source.next_scalar()
+            index = index + 1
+            branch {
+                index <= start -> {
+                    first = source.offset
+                    ()
+                }
+                _ -> ()
+            }
+        }
+        decode_bytes(source.data.slice(first, source.offset))
+    }
+
+    /// Splits around nonoverlapping separators, preserving empty fields.
+    /// An empty separator produces one string per Unicode scalar.
+    pub func split(self: String, separator: String) -> List<String> [consume self] {
+        let data = self.bytes
+        let pattern = separator.bytes
+        let output = []
+        let start = 0
+        let index = 0
+        loop {
+            break if index >= data.length
+            branch {
+                pattern.empty? -> {
+                    let end = index + scalar_width(data[index].int)
+                    output.push(decode_bytes(data.slice(index, end)))
+                    index = end
+                    ()
+                }
+                matches_at(data, pattern, index) -> {
+                    output.push(decode_bytes(data.slice(start, index)))
+                    index = index + pattern.length
+                    start = index
+                    ()
+                }
+                _ -> {
+                    index = index + 1
+                    ()
+                }
+            }
+        }
+        branch {
+            !pattern.empty? -> output.push(decode_bytes(data.slice(start, data.length)))
             _ -> ()
         }
+        output
     }
-    decode_bytes(source.data.slice(0, end))
-}
 
-/// Removes both whitespace boundaries in one Unicode scan.
-pub func String.trim(self: String) -> String [consume self] {
-    let source = cursor(self)
-    let start = 0
-    let end = 0
-    let leading = true
-    loop {
-        break if source.offset >= source.data.length
-        let whitespace = source.next_scalar().whitespace?
-        branch {
-            leading && whitespace -> {
-                start = source.offset
-                ()
-            }
-            !whitespace -> {
-                leading = false
-                end = source.offset
-                ()
-            }
-            _ -> ()
-        }
+    /// Returns ASCII-lowercase text while preserving every non-ASCII byte.
+    pub func lower(self: String) -> String {
+        ascii_case(self, true)
     }
-    return "" if leading
-    decode_bytes(source.data.slice(start, end))
-}
 
-/// Materializes Unicode scalar values by scanning the UTF-8 bytes once.
-pub func String.code_points(self: String) -> List<CodePoint> {
-    let source = cursor(self)
-    let output = []
-    loop {
-        break if source.offset >= source.data.length
-        output.push(source.next_scalar())
+    /// Returns ASCII-uppercase text while preserving every non-ASCII byte.
+    pub func upper(self: String) -> String {
+        ascii_case(self, false)
     }
-    output
-}
-
-/// Concatenates a sequence of Unicode scalar values using one UTF-8 builder.
-pub func String.from_code_points(characters: List<CodePoint>) -> String {
-    let output = StringBuilder.empty()
-    let index = 0
-    loop {
-        break if index >= characters.length
-        output.push(characters[index])
-        index = index + 1
-    }
-    (move output).finish()
-}
-
-/// Concatenates a general head/rest sequence without recursive calls or prefix concatenation.
-pub func String.from_code_points(characters: Sequence<CodePoint>) -> String {
-    let remaining = characters
-    let output = StringBuilder.empty()
-    loop {
-        break if remaining.empty?()
-        output.push(remaining.head())
-        remaining = remaining.rest()
-    }
-    (move output).finish()
-}
-
-/// Returns the longest matching prefix, evaluating predicates once and from left to right.
-pub func String.take_while(self: String, predicate: Predicate<CodePoint>) -> String {
-    let source = cursor(self)
-    let end = 0
-    loop {
-        break if source.offset >= source.data.length
-        break if !predicate(source.next_scalar())
-        end = source.offset
-    }
-    decode_bytes(source.data.slice(0, end))
-}
-
-/// Returns a clamped half-open range measured in Unicode scalar values.
-pub func String.slice(self: String, start: Int, end: Int) -> String {
-    return "" if end <= 0 || end <= start
-    let source = cursor(self)
-    let index = 0
-    let first = 0
-    loop {
-        break if source.offset >= source.data.length || index >= end
-        source.next_scalar()
-        index = index + 1
-        branch {
-            index <= start -> {
-                first = source.offset
-                ()
-            }
-            _ -> ()
-        }
-    }
-    decode_bytes(source.data.slice(first, source.offset))
-}
-
-/// Splits around nonoverlapping separators, preserving empty fields.
-/// An empty separator produces one string per Unicode scalar.
-pub func String.split(self: String, separator: String) -> List<String> [consume self] {
-    let data = self.bytes
-    let pattern = separator.bytes
-    let output = []
-    let start = 0
-    let index = 0
-    loop {
-        break if index >= data.length
-        branch {
-            pattern.empty? -> {
-                let end = index + scalar_width(data[index].int)
-                output.push(decode_bytes(data.slice(index, end)))
-                index = end
-                ()
-            }
-            matches_at(data, pattern, index) -> {
-                output.push(decode_bytes(data.slice(start, index)))
-                index = index + pattern.length
-                start = index
-                ()
-            }
-            _ -> {
-                index = index + 1
-                ()
-            }
-        }
-    }
-    branch {
-        !pattern.empty? -> output.push(decode_bytes(data.slice(start, data.length)))
-        _ -> ()
-    }
-    output
-}
-
-/// Returns ASCII-lowercase text while preserving every non-ASCII byte.
-pub func String.lower(self: String) -> String {
-    ascii_case(self, true)
-}
-
-/// Returns ASCII-uppercase text while preserving every non-ASCII byte.
-pub func String.upper(self: String) -> String {
-    ascii_case(self, false)
 }
 
 /// Changes ASCII letters in one byte scan; multibyte UTF-8 scalars are copied unchanged.
@@ -387,9 +397,11 @@ func ascii_case(text: String, lower: Bool) -> String {
     decode_bytes((move output).freeze())
 }
 
-/// Returns the number of bytes required by the UTF-8 encoding.
-pub func String.byte_length(self: String) -> Int {
-    self.value.length
+impl String {
+    /// Returns the number of bytes required by the UTF-8 encoding.
+    pub func byte_length(self: String) -> Int {
+        self.value.length
+    }
 }
 
 /// Returns whether a code point is an ASCII decimal digit.

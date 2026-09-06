@@ -340,6 +340,7 @@ impl PackageHir {
             for (index, test) in program.tests.iter().enumerate() {
                 let function = test_functions[&(module, index)];
                 let source = ast::Function {
+                    body_is_recovery_stub: false,
                     span: test.span.clone(),
                     documentation: None,
                     name: hir.functions[function].name.clone(),

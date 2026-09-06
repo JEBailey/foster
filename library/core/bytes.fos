@@ -11,10 +11,12 @@ intrinsic type RawBytes
 /// Private namespace for host-backed byte operations.
 type BytesHost = {}
 
-/// Packs a Foster byte list into compact storage.
-func BytesHost.from_list(values: List<Byte>) -> Bytes [consume values] = intrinsic("bytes.from_list")
-/// Expands compact storage into a Foster list.
-func BytesHost.to_list(values: Bytes) -> List<Byte> = intrinsic("bytes.to_list")
+impl BytesHost {
+    /// Packs a Foster byte list into compact storage.
+    func from_list(values: List<Byte>) -> Bytes [consume values] = intrinsic("bytes.from_list")
+    /// Expands compact storage into a Foster list.
+    func to_list(values: Bytes) -> List<Byte> = intrinsic("bytes.to_list")
+}
 
 /// Immutable binary data backed by compact private host storage.
 pub type Bytes = {
@@ -33,147 +35,149 @@ pub type HexError = {
     pub message: String
 }
 
-/// Creates an empty immutable byte sequence.
-pub func Bytes.empty() -> Bytes {
-    BytesHost.from_list([])
-}
-
-/// Packs a list of bytes into compact immutable storage.
-pub func Bytes.from(values: List<Byte>) -> Bytes [consume values] {
-    BytesHost.from_list(move values)
-}
-
-/// Decodes an even-length hexadecimal string.
-pub func Bytes.from_hex(value: String) -> Result<Bytes, HexError> {
-    let characters = value.code_points()
-    let output = []
-    let offset = 0
-    loop {
-        break if offset >= characters.length
-        return Result.Error(HexError {
-            offset: offset + 1
-            message: "hexadecimal byte text must have even length"
-        }) if offset + 1 == characters.length
-        let high = hex_nibble(characters[offset])
-        return invalid_hex(offset, characters[offset]) if high < 0
-        let low = hex_nibble(characters[offset + 1])
-        return invalid_hex(offset + 1, characters[offset + 1]) if low < 0
-        output.push(Byte.unchecked(high * 16 + low))
-        offset = offset + 2
+impl Bytes {
+    /// Creates an empty immutable byte sequence.
+    pub func empty() -> Bytes {
+        BytesHost.from_list([])
     }
-    Result.Ok(Bytes.from(move output))
-}
 
-/// Concatenates two immutable byte sequences.
-pub func Bytes.concat(self: Bytes, other: Bytes) -> Bytes {
-    let output = self.list()
-    let index = 0
-    loop {
-        break if index >= other.length
-        output.push(other[index])
-        index = index + 1
+    /// Packs a list of bytes into compact immutable storage.
+    pub func from(values: List<Byte>) -> Bytes [consume values] {
+        BytesHost.from_list(move values)
     }
-    Bytes.from(move output)
-}
 
-/// Returns bytes in the half-open range `start..end`.
-pub func Bytes.slice(self: Bytes, start: Int, end: Int) -> Bytes {
-    assert(start >= 0 && end >= start && end <= self.length, "byte slice is out of bounds")
-    let output = []
-    let index = start
-    loop {
-        break if index >= end
-        output.push(self[index])
-        index = index + 1
-    }
-    Bytes.from(move output)
-}
-
-/// Expands compact bytes into a Foster list.
-pub func Bytes.list(self: Bytes) -> List<Byte> {
-    BytesHost.to_list(self)
-}
-
-/// Encodes bytes as lowercase hexadecimal text.
-pub func Bytes.hex(self: Bytes) -> String {
-    let output = []
-    let index = 0
-    loop {
-        break if index >= self.length
-        let value = self[index].int
-        output.push(hex_digit(value / 16))
-        output.push(hex_digit(value - value / 16 * 16))
-        index = index + 1
-    }
-    branch String.from_utf8(Bytes.from(move output)) {
-        Result.Ok(text) -> text
-        Result.Error(_) -> {
-            assert(false, "hexadecimal output must be valid UTF-8")
-            ""
+    /// Decodes an even-length hexadecimal string.
+    pub func from_hex(value: String) -> Result<Bytes, HexError> {
+        let characters = value.code_points()
+        let output = []
+        let offset = 0
+        loop {
+            break if offset >= characters.length
+            return Result.Error(HexError {
+                offset: offset + 1
+                message: "hexadecimal byte text must have even length"
+            }) if offset + 1 == characters.length
+            let high = hex_nibble(characters[offset])
+            return invalid_hex(offset, characters[offset]) if high < 0
+            let low = hex_nibble(characters[offset + 1])
+            return invalid_hex(offset + 1, characters[offset + 1]) if low < 0
+            output.push(Byte.unchecked(high * 16 + low))
+            offset = offset + 2
         }
+        Result.Ok(Bytes.from(move output))
     }
-}
 
-/// Returns whether two byte sequences contain identical values.
-pub func Bytes.equal?(self: Bytes, other: Bytes) -> Bool {
-    return false if self.length != other.length
-    let index = 0
-    loop {
-        break if index >= self.length
-        return false if self[index] != other[index]
-        index = index + 1
-    }
-    true
-}
-
-/// Computes a deterministic hash over the byte sequence.
-pub func Bytes.hash(self: Bytes) -> Int {
-    let state = 17
-    let index = 0
-    loop {
-        break if index >= self.length
-        state = state + self[index]
-        index = index + 1
-    }
-    state
-}
-
-/// Checks UTF-8 scalar boundaries without allocating decoded text or copied suffixes.
-pub func Bytes.utf8_valid?(self: Bytes) -> Bool {
-    let index = 0
-    loop {
-        break if index >= self.length
-        let first = self[index].int
-        let width = branch {
-            first <= 127 -> 1
-            first >= 194 && first <= 223 -> 2
-            first >= 224 && first <= 239 -> 3
-            first >= 240 && first <= 244 -> 4
-            _ -> 0
+    /// Concatenates two immutable byte sequences.
+    pub func concat(self: Bytes, other: Bytes) -> Bytes {
+        let output = self.list()
+        let index = 0
+        loop {
+            break if index >= other.length
+            output.push(other[index])
+            index = index + 1
         }
-        return false if width == 0 || width > self.length - index
-        branch {
-            width > 1 -> {
-                let second = self[index + 1].int
-                return false if second < 128 || second > 191
-                return false if first == 224 && second < 160
-                return false if first == 237 && second > 159
-                return false if first == 240 && second < 144
-                return false if first == 244 && second > 143
-                let tail = 2
-                loop {
-                    break if tail >= width
-                    let continuation = self[index + tail].int
-                    return false if continuation < 128 || continuation > 191
-                    tail = tail + 1
-                }
-                ()
+        Bytes.from(move output)
+    }
+
+    /// Returns bytes in the half-open range `start..end`.
+    pub func slice(self: Bytes, start: Int, end: Int) -> Bytes {
+        assert(start >= 0 && end >= start && end <= self.length, "byte slice is out of bounds")
+        let output = []
+        let index = start
+        loop {
+            break if index >= end
+            output.push(self[index])
+            index = index + 1
+        }
+        Bytes.from(move output)
+    }
+
+    /// Expands compact bytes into a Foster list.
+    pub func list(self: Bytes) -> List<Byte> {
+        BytesHost.to_list(self)
+    }
+
+    /// Encodes bytes as lowercase hexadecimal text.
+    pub func hex(self: Bytes) -> String {
+        let output = []
+        let index = 0
+        loop {
+            break if index >= self.length
+            let value = self[index].int
+            output.push(hex_digit(value / 16))
+            output.push(hex_digit(value - value / 16 * 16))
+            index = index + 1
+        }
+        branch String.from_utf8(Bytes.from(move output)) {
+            Result.Ok(text) -> text
+            Result.Error(_) -> {
+                assert(false, "hexadecimal output must be valid UTF-8")
+                ""
             }
-            _ -> ()
         }
-        index = index + width
     }
-    true
+
+    /// Returns whether two byte sequences contain identical values.
+    pub func equal?(self: Bytes, other: Bytes) -> Bool {
+        return false if self.length != other.length
+        let index = 0
+        loop {
+            break if index >= self.length
+            return false if self[index] != other[index]
+            index = index + 1
+        }
+        true
+    }
+
+    /// Computes a deterministic hash over the byte sequence.
+    pub func hash(self: Bytes) -> Int {
+        let state = 17
+        let index = 0
+        loop {
+            break if index >= self.length
+            state = state + self[index]
+            index = index + 1
+        }
+        state
+    }
+
+    /// Checks UTF-8 scalar boundaries without allocating decoded text or copied suffixes.
+    pub func utf8_valid?(self: Bytes) -> Bool {
+        let index = 0
+        loop {
+            break if index >= self.length
+            let first = self[index].int
+            let width = branch {
+                first <= 127 -> 1
+                first >= 194 && first <= 223 -> 2
+                first >= 224 && first <= 239 -> 3
+                first >= 240 && first <= 244 -> 4
+                _ -> 0
+            }
+            return false if width == 0 || width > self.length - index
+            branch {
+                width > 1 -> {
+                    let second = self[index + 1].int
+                    return false if second < 128 || second > 191
+                    return false if first == 224 && second < 160
+                    return false if first == 237 && second > 159
+                    return false if first == 240 && second < 144
+                    return false if first == 244 && second > 143
+                    let tail = 2
+                    loop {
+                        break if tail >= width
+                        let continuation = self[index + tail].int
+                        return false if continuation < 128 || continuation > 191
+                        tail = tail + 1
+                    }
+                    ()
+                }
+                _ -> ()
+            }
+            index = index + width
+        }
+        true
+    }
 }
 
 test "bytes round-trip UTF-8 and hexadecimal text" {

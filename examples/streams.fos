@@ -16,29 +16,33 @@ type MemoryWriter = & Writer<StreamError> & {
     contents: Bytes
 }
 
-func MemoryReader.read(self: MemoryReader, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining] {
-    let amount = branch {
-        self.remaining.length < maximum -> self.remaining.length
-        _ -> maximum
+impl MemoryReader {
+    func read(self: MemoryReader, maximum: Int) -> Result<Bytes, StreamError> [mut self.remaining] {
+        let amount = branch {
+            self.remaining.length < maximum -> self.remaining.length
+            _ -> maximum
+        }
+        let chunk = self.remaining.slice(0, amount)
+        self.remaining = self.remaining.slice(amount, self.remaining.length)
+        Result.Ok(chunk)
     }
-    let chunk = self.remaining.slice(0, amount)
-    self.remaining = self.remaining.slice(amount, self.remaining.length)
-    Result.Ok(chunk)
 }
 
-func MemoryWriter.write(self: MemoryWriter, contents: Bytes) -> Result<Int, StreamError> [mut self.contents] {
-    // Deliberately accept at most two bytes to exercise partial-write retrying.
-    let amount = branch {
-        contents.length < 2 -> contents.length
-        _ -> 2
+impl MemoryWriter {
+    func write(self: MemoryWriter, contents: Bytes) -> Result<Int, StreamError> [mut self.contents] {
+        // Deliberately accept at most two bytes to exercise partial-write retrying.
+        let amount = branch {
+            contents.length < 2 -> contents.length
+            _ -> 2
+        }
+        self.contents = self.contents.concat(contents.slice(0, amount))
+        Result.Ok(amount)
     }
-    self.contents = self.contents.concat(contents.slice(0, amount))
-    Result.Ok(amount)
-}
 
-func MemoryWriter.flush(self: MemoryWriter) -> Result<(), StreamError> {
-    let scratch = ByteBuffer.empty()
-    Result.Ok(scratch.reserve(0))
+    func flush(self: MemoryWriter) -> Result<(), StreamError> {
+        let scratch = ByteBuffer.empty()
+        Result.Ok(scratch.reserve(0))
+    }
 }
 
 func render(outcome: Result<Int, StreamError>, writer: MemoryWriter) -> String {

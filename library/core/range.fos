@@ -11,32 +11,34 @@ pub type Range<T> = & Sequence<T> & Collection<T> & {
     values: List<T>
 }
 
-/// Creates a range view over `values`.
-pub func Range.from<T>(values: List<T>) -> Range<T> [consume values] {
-    Range { values: move values }
-}
+impl Range {
+    /// Creates a range view over `values`.
+    pub func from<T>(values: List<T>) -> Range<T> [consume values] {
+        Range { values: move values }
+    }
 
-/// Returns whether the range is empty.
-pub func Range.empty?<T>(self: Range<T>) -> Bool {
-    self.values.empty?
-}
+    /// Returns whether the range is empty.
+    pub func empty?<T>(self: Range<T>) -> Bool {
+        self.values.empty?
+    }
 
-/// Returns the number of values remaining in the range.
-pub func Range.length<T>(self: Range<T>) -> Int {
-    self.values.length
-}
+    /// Returns the number of values remaining in the range.
+    pub func length<T>(self: Range<T>) -> Int {
+        self.values.length
+    }
 
-/// Returns the first range value.
-pub func Range.head<T>(self: Range<T>) -> T {
-    self.values.head
-}
+    /// Returns the first range value.
+    pub func head<T>(self: Range<T>) -> T {
+        self.values.head
+    }
 
-/// Returns a sequence containing all values after the head.
-pub func Range.rest<T>(self: Range<T>) -> Sequence<T> {
-    self.values.rest
-}
+    /// Returns a sequence containing all values after the head.
+    pub func rest<T>(self: Range<T>) -> Sequence<T> {
+        self.values.rest
+    }
 
-/// Creates an independent iterator over the range values.
-pub func Range.iterator<T>(self: Range<T>) -> Iterator<T> {
-    self.values.iterator()
+    /// Creates an independent iterator over the range values.
+    pub func iterator<T>(self: Range<T>) -> Iterator<T> {
+        self.values.iterator()
+    }
 }

@@ -206,7 +206,9 @@ enum Maybe<T> = Some(T) | None
 
 func identity<T>(value: T) -> T [consume value] { value }
 func boxed<T>(value: T) -> Boxed<T> [consume value] { Boxed { value } }
-func Boxed.unbox<T>(self: Boxed<T>) -> T [consume self] { self.value }
+impl Boxed {
+    func unbox<T>(self: Boxed<T>) -> T [consume self] { self.value }
+}
 func value_or<T>(value: Maybe<T>, fallback: T) -> T [consume value, consume fallback] {
     branch value {
         Some(found) -> found
@@ -472,10 +474,14 @@ type Identified = {
 type User = & Identified & { value: Int }
 type Device = & Identified & { value: Int }
 
-func User.id(self: User) -> Int { self.value }
-func User.offset(self: User, amount: Int) -> Int { self.value + amount }
-func Device.id(self: Device) -> Int { self.value }
-func Device.offset(self: Device, amount: Int) -> Int { self.value + amount }
+impl User {
+    func id(self: User) -> Int { self.value }
+    func offset(self: User, amount: Int) -> Int { self.value + amount }
+}
+impl Device {
+    func id(self: Device) -> Int { self.value }
+    func offset(self: Device, amount: Int) -> Int { self.value + amount }
+}
 
 func increment_id(value: Identified) -> Int {
     value.id() + value.offset(2)
@@ -514,8 +520,10 @@ type Renderer<T> = {
 
 type Formatter<T> = & Renderer<T> & {}
 
-func Formatter.render<T>(self: Formatter<T>, value: T) -> String {
-    "generic"
+impl Formatter {
+    func render<T>(self: Formatter<T>, value: T) -> String {
+        "generic"
+    }
 }
 
 func render(value: Renderer<Int>) -> String { value.render(42) }
@@ -549,10 +557,12 @@ enum Choice = Number(Int)
     | Empty
     & Scored
 
-func Choice.score(self: Choice) -> Int {
-    branch self {
-        Choice.Number(value) -> value
-        Choice.Empty -> 0
+impl Choice {
+    func score(self: Choice) -> Int {
+        branch self {
+            Choice.Number(value) -> value
+            Choice.Empty -> 0
+        }
     }
 }
 
@@ -860,25 +870,31 @@ type Inspector = {}
 type Snapshot = { value: Int }
 type Echo = {}
 
-func Counter.increment(self: Counter, amount: Int) -> Int [mut self] {
-    self.value = self.value + amount
-    self.value
-}
+impl Counter {
+    func increment(self: Counter, amount: Int) -> Int [mut self] {
+        self.value = self.value + amount
+        self.value
+    }
 
-func Counter.snapshot(self: Counter) -> Int [read self.value] { self.value }
-func Counter.assign(self: Counter, value: Int) -> Int [mut self] {
-    self.value = value
-    self.value
+    func snapshot(self: Counter) -> Int [read self.value] { self.value }
+    func assign(self: Counter, value: Int) -> Int [mut self] {
+        self.value = value
+        self.value
+    }
+    func snapshot_record(self: Counter) -> Snapshot [read self.value] {
+        Snapshot { value: self.value }
+    }
 }
-func Counter.snapshot_record(self: Counter) -> Snapshot [read self.value] {
-    Snapshot { value: self.value }
+impl Inspector {
+    func inspect(self: Inspector, counter: Counter) -> Int [read counter.value] {
+        counter.value
+    }
 }
-func Inspector.inspect(self: Inspector, counter: Counter) -> Int [read counter.value] {
-    counter.value
-}
-func Echo.tag<T>(self: Echo, value: T) -> Int {
-    value
-    1
+impl Echo {
+    func tag<T>(self: Echo, value: T) -> Int {
+        value
+        1
+    }
 }
 
 func main() -> Int {

@@ -254,7 +254,7 @@ func main() -> Int {
 }
 
 #[test]
-fn branch_arm_blocks_require_a_result_and_continue_requires_a_loop() {
+fn branch_arm_unit_results_must_match_and_continue_requires_a_loop() {
     let missing_result = r#"
 func main() -> Int {
     branch {
@@ -266,7 +266,10 @@ func main() -> Int {
 }
 "#;
     let error = foster::compile(missing_result).unwrap_err();
-    assert!(error.message.contains("must end with a value"), "{error:?}");
+    assert!(
+        error.message.contains("()") && error.message.contains("Int"),
+        "{error:?}"
+    );
 
     let no_loop = r#"
 func main() -> Int {
@@ -567,7 +570,7 @@ func main() -> List<Int> { list() }
 #[test]
 fn parses_stable_intrinsic_keys_and_opaque_intrinsic_types() {
     let program = foster::parse(
-        "intrinsic type HostValue\nfunc HostValue.create() -> HostValue = intrinsic(\"host.create\")",
+        "intrinsic type HostValue\nimpl HostValue {\n    func create() -> HostValue = intrinsic(\"host.create\")\n}",
     )
     .unwrap();
     assert!(program.records[0].intrinsic);
@@ -1072,8 +1075,10 @@ fn calls_functions_associated_with_record_types() {
     let source = r#"
 type Box<T> = { value: T }
 
-func Box.create<T>(value: T) -> Box<T> {
-    Box { value }
+impl Box {
+    func create<T>(value: T) -> Box<T> {
+        Box { value }
+    }
 }
 
 func main() -> Int {
@@ -1090,14 +1095,19 @@ func main() -> Int {
     );
     assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
 
-    let unknown = foster::compile("func Missing.create() { 1 }\nfunc main() { 0 }").unwrap_err();
-    assert!(unknown.message.contains("unknown record type `Missing`"));
+    let unknown = foster::compile("impl Missing {\n    func create() { 1 }\n}\nfunc main() { 0 }")
+        .unwrap_err();
+    assert!(unknown.message.contains("unknown type `Missing`"));
 
     let methods = r#"
 type Left = { value: Int }
 type Right = { value: Int }
-func Left.read(self: Left) -> Int { self.value }
-func Right.read(self: Right) -> Int { self.value + 1 }
+impl Left {
+    func read(self: Left) -> Int { self.value }
+}
+impl Right {
+    func read(self: Right) -> Int { self.value + 1 }
+}
 func main() -> Int { Left { value: 20 }.read() + Right { value: 20 }.read() }
 "#;
     let compilation = foster::compile(methods).unwrap();
@@ -1114,14 +1124,14 @@ func main() -> Int { Left { value: 20 }.read() + Right { value: 20 }.read() }
         "type Box = { value: Int }\nfunc read(self: Box) { self.value }\nfunc main() { 0 }",
     )
     .unwrap_err();
-    assert!(bare.message.contains("must qualify its name"));
+    assert!(bare.message.contains("inside an `impl` block"));
 
     let misplaced =
         foster::compile("func read(value: Int, self: Int) {}\nfunc main() { 0 }").unwrap_err();
     assert!(misplaced.message.contains("must be the first parameter"));
 
     let mismatch = foster::compile(
-        "type Box = {}\ntype Other = {}\nfunc Box.read(self: Other) {}\nfunc main() { 0 }",
+        "type Box = {}\ntype Other = {}\nimpl Box {\n    func read(self: Other) {}\n}\nfunc main() { 0 }",
     )
     .unwrap_err();
     assert!(
@@ -1138,9 +1148,15 @@ type Bucket = { base: Int }
 type Text = { base: Int }
 type Matcher = { base: Int }
 
-func Bucket.push(self: Bucket, value: Int) -> Int { self.base + value }
-func Text.append(self: Text, value: Int) -> Int { self.base * value }
-func Matcher.in?(self: Matcher, value: Int) -> Int { self.base - value }
+impl Bucket {
+    func push(self: Bucket, value: Int) -> Int { self.base + value }
+}
+impl Text {
+    func append(self: Text, value: Int) -> Int { self.base * value }
+}
+impl Matcher {
+    func in?(self: Matcher, value: Int) -> Int { self.base - value }
+}
 
 func main() -> Int {
     let pushed = Bucket { base: 10 }.push(2)
@@ -1157,7 +1173,9 @@ fn zero_argument_methods_require_call_parentheses() {
     let source = r#"
 type Counter = { value: Int }
 
-func Counter.read(self: Counter) -> Int { self.value }
+impl Counter {
+    func read(self: Counter) -> Int { self.value }
+}
 
 func main() {
     let value = Counter { value: 42 }.read
@@ -1697,10 +1715,12 @@ type TextSlice = & Sequence<CodePoint> & {
     text: String
 }
 
-func TextSlice.empty?(self: TextSlice) -> Bool { self.text.empty? }
-func TextSlice.length(self: TextSlice) -> Int { self.text.length }
-func TextSlice.head(self: TextSlice) -> CodePoint { self.text.head }
-func TextSlice.rest(self: TextSlice) -> String { self.text.slice(1, self.text.length) }
+impl TextSlice {
+    func empty?(self: TextSlice) -> Bool { self.text.empty? }
+    func length(self: TextSlice) -> Int { self.text.length }
+    func head(self: TextSlice) -> CodePoint { self.text.head }
+    func rest(self: TextSlice) -> String { self.text.slice(1, self.text.length) }
+}
 
 func first(values: Sequence<CodePoint>) -> CodePoint {
     values.head()
@@ -1727,12 +1747,14 @@ type User = & Identified & {
     value: Int
 }
 
-func User.id(self: User) -> Int {
-    self.value
-}
+impl User {
+    func id(self: User) -> Int {
+        self.value
+    }
 
-func User.offset(self: User, amount: Int) -> Int {
-    self.value + amount
+    func offset(self: User, amount: Int) -> Int {
+        self.value + amount
+    }
 }
 
 func increment_id(value: Identified) -> Int {
@@ -1748,7 +1770,7 @@ func main() -> Int {
     let missing = source
         .replace("type User = & Identified &", "type User =")
         .replace(
-            "func User.id(self: User) -> Int {\n    self.value\n}\n\nfunc User.offset(self: User, amount: Int) -> Int {\n    self.value + amount\n}\n",
+            "impl User {\n    func id(self: User) -> Int {\n        self.value\n    }\n\n    func offset(self: User, amount: Int) -> Int {\n        self.value + amount\n    }\n}\n",
             "",
         );
     let error = foster::compile(&missing).unwrap_err();
@@ -1786,12 +1808,14 @@ type Counter = & Iterator<Int> & {
     end: Int
 }
 
-func Counter.next(self: Counter) -> Option<Int> {
-    let value = self.current
-    self.current = self.current + 1
-    branch {
-        value >= self.end -> Option.None
-        _ -> Option.Some(value)
+impl Counter {
+    func next(self: Counter) -> Option<Int> {
+        let value = self.current
+        self.current = self.current + 1
+        branch {
+            value >= self.end -> Option.None
+            _ -> Option.Some(value)
+        }
     }
 }
 
@@ -1800,8 +1824,10 @@ type Range = & Iterable<Int> & {
     end: Int
 }
 
-func Range.iterator(self: Range) -> Iterator<Int> {
-    Counter { current: self.start, end: self.end }
+impl Range {
+    func iterator(self: Range) -> Iterator<Int> {
+        Counter { current: self.start, end: self.end }
+    }
 }
 
 func value_or(candidate: Option<Int>, fallback: Int) -> Int {
@@ -2003,8 +2029,10 @@ fn mutable_effect_allows_extracting_children_but_not_consuming_the_owner() {
     let source = r#"
 type Resource = { value: String }
 
-func Resource.invalid(self: Resource) -> Resource [mut self] {
-    move self
+impl Resource {
+    func invalid(self: Resource) -> Resource [mut self] {
+        move self
+    }
 }
 
 func main() -> Int { 0 }
@@ -2023,20 +2051,22 @@ type Key = & Ordered<Key> & Hashing & {
     value: Int
 }
 
-func Key.equal?(self: Key, other: Key) -> Bool {
-    self.value == other.value
-}
-
-func Key.compare(self: Key, other: Key) -> Ordering {
-    branch {
-        self.value < other.value -> Ordering.Less
-        self.value > other.value -> Ordering.Greater
-        _ -> Ordering.Equal
+impl Key {
+    func equal?(self: Key, other: Key) -> Bool {
+        self.value == other.value
     }
-}
 
-func Key.hash(self: Key) -> Int {
-    self.value * 31
+    func compare(self: Key, other: Key) -> Ordering {
+        branch {
+            self.value < other.value -> Ordering.Less
+            self.value > other.value -> Ordering.Greater
+            _ -> Ordering.Equal
+        }
+    }
+
+    func hash(self: Key) -> Int {
+        self.value * 31
+    }
 }
 
 func equality_score(left: Equality<Key>, right: Key) -> Int {
@@ -2074,7 +2104,7 @@ func main() -> Int {
     }
 
     let missing_equality = source.replace(
-        "func Key.equal?(self: Key, other: Key) -> Bool {\n    self.value == other.value\n}\n\n",
+        "    func equal?(self: Key, other: Key) -> Bool {\n        self.value == other.value\n    }\n\n",
         "",
     );
     let error = foster::compile(&missing_equality).unwrap_err();
@@ -2119,10 +2149,12 @@ type TextSlice = & Named & Sequence<CodePoint> & {
     text: String
 }
 
-func TextSlice.empty?(self: TextSlice) -> Bool { self.text.empty? }
-func TextSlice.length(self: TextSlice) -> Int { self.text.length }
-func TextSlice.head(self: TextSlice) -> CodePoint { self.text.head }
-func TextSlice.rest(self: TextSlice) -> String { self.text.slice(1, self.text.length) }
+impl TextSlice {
+    func empty?(self: TextSlice) -> Bool { self.text.empty? }
+    func length(self: TextSlice) -> Int { self.text.length }
+    func head(self: TextSlice) -> CodePoint { self.text.head }
+    func rest(self: TextSlice) -> String { self.text.slice(1, self.text.length) }
+}
 
 func describe(value: Named & Sequence<CodePoint>) -> String {
     value.name + value.head().string
@@ -2175,8 +2207,10 @@ type WithoutRecordBody = & Reads & Writes
 
 type Device = { value: Int }
 
-func Device.read(self: Device) -> Int { self.value }
-func Device.write(self: Device, value: Int) -> Int { self.value + value }
+impl Device {
+    func read(self: Device) -> Int { self.value }
+    func write(self: Device, value: Int) -> Int { self.value + value }
+}
 
 func through_empty(value: WithEmptyRecord) -> Int { value.read() + value.write(1) }
 func through_omitted(value: WithoutRecordBody) -> Int { value.read() + value.write(2) }
@@ -2237,10 +2271,12 @@ enum Choice = Number(Int)
     & {
         pub func score(self) -> Int
     }
-func Choice.score(self: Choice) -> Int {
-    branch self {
-        Choice.Number(value) -> value
-        Choice.Empty -> 0
+impl Choice {
+    func score(self: Choice) -> Int {
+        branch self {
+            Choice.Number(value) -> value
+            Choice.Empty -> 0
+        }
     }
 }
 
@@ -2268,13 +2304,18 @@ enum Choice = Number(Int)
     | Empty
     & Scored
 
-func Choice.score(self: Choice) -> Int { 42 }
+impl Choice {
+    func score(self: Choice) -> Int { 42 }
+}
 func score_of(value: Scored) -> Int { value.score() }
 func main() -> Int { score_of(Choice.Empty) }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
 
-    let missing = source.replace("func Choice.score(self: Choice) -> Int { 42 }\n", "");
+    let missing = source.replace(
+        "impl Choice {\n    func score(self: Choice) -> Int { 42 }\n}\n",
+        "",
+    );
     let error = foster::compile(&missing).unwrap_err();
     assert!(error.message.contains("missing required method `score`"));
 }
@@ -2562,6 +2603,16 @@ func main() -> Int { value(Named { value: 7 }) }
 
 #[test]
 fn uses_empty_parentheses_as_the_only_unit_type_and_value_syntax() {
+    for source in [
+        "func main() -> Int {}",
+        "func main() -> Int { return 42 if false }",
+    ] {
+        assert!(
+            foster::compile(source).is_err(),
+            "accepted non-unit fallthrough: {source}"
+        );
+    }
+    assert_eq!(foster::run("func main() {}").unwrap(), Value::Unit);
     assert_eq!(
         foster::run("func main() -> () { () }").unwrap(),
         Value::Unit
@@ -3145,9 +3196,11 @@ fn instance_methods_overload_by_arity_and_parameter_type() {
     let source = r#"
 type Formatter = {}
 
-func Formatter.render(self: Formatter, value: Int) -> String { "int" }
-func Formatter.render(self: Formatter, value: CodePoint) -> String { "code point" }
-func Formatter.render(self: Formatter, left: Int, right: Int) -> String { "pair" }
+impl Formatter {
+    func render(self: Formatter, value: Int) -> String { "int" }
+    func render(self: Formatter, value: CodePoint) -> String { "code point" }
+    func render(self: Formatter, left: Int, right: Int) -> String { "pair" }
+}
 
 func main() -> String {
     let formatter = Formatter {}
@@ -3174,8 +3227,10 @@ type Renderer = & IntegerRenderer & CodePointRenderer & {}
 
 type Formatter = & Renderer & {}
 
-func Formatter.render(self: Formatter, value: Int) -> String { "int" }
-func Formatter.render(self: Formatter, value: CodePoint) -> String { "code point" }
+impl Formatter {
+    func render(self: Formatter, value: Int) -> String { "int" }
+    func render(self: Formatter, value: CodePoint) -> String { "code point" }
+}
 
 func render(value: Renderer) -> String {
     value.render(42) + ":" + value.render('x')
@@ -3196,8 +3251,10 @@ type Renderer<T> = {
 
 type Formatter<T> = & Renderer<T> & {}
 
-func Formatter.render<T>(self: Formatter<T>, value: T) -> String {
-    "generic"
+impl Formatter {
+    func render<T>(self: Formatter<T>, value: T) -> String {
+        "generic"
+    }
 }
 
 func render(value: Renderer<Int>) -> String {

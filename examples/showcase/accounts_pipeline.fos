@@ -17,14 +17,16 @@ func create_account(owner: String, opening_balance: Int) -> AccountResult {
     Created(Account { owner, balance: opening_balance, transactions: [] })
 }
 
-func Account.deposit(self: Account, amount: Int) -> Int {
-    self.balance = self.balance + amount
-    self.transactions = self.transactions.append(amount)
-    self.balance
-}
+impl Account {
+    func deposit(self: Account, amount: Int) -> Int {
+        self.balance = self.balance + amount
+        self.transactions = self.transactions.append(amount)
+        self.balance
+    }
 
-func Account.summary(self: Account) -> String {
-    self.owner + " account"
+    func summary(self: Account) -> String {
+        self.owner + " account"
+    }
 }
 
 func multiplier(factor: Int) -> func(Int) -> Int {

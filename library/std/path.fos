@@ -7,16 +7,18 @@ import std.resource
 
 type PathHost = {}
 
-/// Joins two host path components.
-func PathHost.join(left: String, right: String) -> String = intrinsic("io.join")
-/// Returns a host path's parent sentinel.
-func PathHost.parent(path: String) -> String = intrinsic("io.parent")
-/// Returns a host path's file-name sentinel.
-func PathHost.file_name(path: String) -> String = intrinsic("io.file_name")
-/// Returns a host path's extension sentinel.
-func PathHost.extension(path: String) -> String = intrinsic("io.extension")
-/// Canonicalizes a host path.
-func PathHost.canonicalize(path: String) -> Result<String, IoError> = intrinsic("io.canonicalize")
+impl PathHost {
+    /// Joins two host path components.
+    func join(left: String, right: String) -> String = intrinsic("io.join")
+    /// Returns a host path's parent sentinel.
+    func parent(path: String) -> String = intrinsic("io.parent")
+    /// Returns a host path's file-name sentinel.
+    func file_name(path: String) -> String = intrinsic("io.file_name")
+    /// Returns a host path's extension sentinel.
+    func extension(path: String) -> String = intrinsic("io.extension")
+    /// Canonicalizes a host path.
+    func canonicalize(path: String) -> Result<String, IoError> = intrinsic("io.canonicalize")
+}
 
 /// A typed host-filesystem path.
 ///
@@ -26,43 +28,45 @@ pub type Path = & ResourceIdentifier & {
     value: String
 }
 
-/// Wraps host path text in a typed path value.
-pub func Path.from(value: String) -> Path { Path { value } }
+impl Path {
+    /// Wraps host path text in a typed path value.
+    pub func from(value: String) -> Path { Path { value } }
 
-/// Returns the host path text.
-pub func Path.as_string(self: Path) -> String { self.value.slice(0, self.value.length) }
+    /// Returns the host path text.
+    pub func as_string(self: Path) -> String { self.value.slice(0, self.value.length) }
 
-/// Returns the stable identifier supplied to the filesystem provider.
-pub func Path.resource_id(self: Path) -> String { self.as_string() }
+    /// Returns the stable identifier supplied to the filesystem provider.
+    pub func resource_id(self: Path) -> String { self.as_string() }
 
-/// Joins this path with another typed path.
-pub func Path.join(self: Path, right: Path) -> Path {
-    Path.from(PathHost.join(self.value, right.value))
-}
+    /// Joins this path with another typed path.
+    pub func join(self: Path, right: Path) -> Path {
+        Path.from(PathHost.join(self.value, right.value))
+    }
 
-/// Joins one textual path component onto this path.
-pub func Path.child(self: Path, component: String) -> Path {
-    Path.from(PathHost.join(self.value, component))
-}
+    /// Joins one textual path component onto this path.
+    pub func child(self: Path, component: String) -> Path {
+        Path.from(PathHost.join(self.value, component))
+    }
 
-/// Returns this path's parent, or `None` when no parent component exists.
-pub func Path.parent(self: Path) -> Option<Path> {
-    path_option(PathHost.parent(self.value))
-}
+    /// Returns this path's parent, or `None` when no parent component exists.
+    pub func parent(self: Path) -> Option<Path> {
+        path_option(PathHost.parent(self.value))
+    }
 
-/// Returns this path's final component, or `None` when it is absent.
-pub func Path.file_name(self: Path) -> Option<String> {
-    optional_component(PathHost.file_name(self.value))
-}
+    /// Returns this path's final component, or `None` when it is absent.
+    pub func file_name(self: Path) -> Option<String> {
+        optional_component(PathHost.file_name(self.value))
+    }
 
-/// Returns this path's final extension without its separator.
-pub func Path.extension(self: Path) -> Option<String> {
-    optional_component(PathHost.extension(self.value))
-}
+    /// Returns this path's final extension without its separator.
+    pub func extension(self: Path) -> Option<String> {
+        optional_component(PathHost.extension(self.value))
+    }
 
-/// Resolves this path to an absolute canonical path.
-pub func Path.canonical(self: Path) -> Result<Path, IoError> {
-    path_result(PathHost.canonicalize(self.value))
+    /// Resolves this path to an absolute canonical path.
+    pub func canonical(self: Path) -> Result<Path, IoError> {
+        path_result(PathHost.canonicalize(self.value))
+    }
 }
 
 /// Joins two platform path components.

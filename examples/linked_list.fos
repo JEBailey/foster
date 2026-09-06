@@ -18,63 +18,81 @@ type LinkedListItem<T> = {
 }
 
 // Creates an empty linked list for any element type.
-func LinkedList.empty<T>() -> LinkedList<T> {
-    LinkedList { head: Link.End, size: 0 }
+impl LinkedList {
+    func empty<T>() -> LinkedList<T> {
+        LinkedList { head: Link.End, size: 0 }
+    }
 }
 
 // Returns the number of elements in constant time.
-func LinkedList.length<T>(self: LinkedList<T>) -> Int {
-    self.size
+impl LinkedList {
+    func length<T>(self: LinkedList<T>) -> Int {
+        self.size
+    }
 }
 
 // Returns whether this list contains no elements.
-func LinkedList.empty?<T>(self: LinkedList<T>) -> Bool {
-    self.size == 0
+impl LinkedList {
+    func empty?<T>(self: LinkedList<T>) -> Bool {
+        self.size == 0
+    }
 }
 
 // Consumes the list and adds `value` at its front in constant time.
-func LinkedList.prepend<T>(self: LinkedList<T>, value: T) -> LinkedList<T> [consume self, consume value] {
-    LinkedList {
-        head: Link.Node(Node { value, next: self.head })
-        size: self.size + 1
+impl LinkedList {
+    func prepend<T>(self: LinkedList<T>, value: T) -> LinkedList<T> [consume self, consume value] {
+        LinkedList {
+            head: Link.Node(Node { value, next: self.head })
+            size: self.size + 1
+        }
     }
 }
 
 // Consumes the list and returns its first value together with the remaining list.
-func LinkedList.pop_front<T>(self: LinkedList<T>) -> Option<LinkedListItem<T>> [consume self] {
-    branch self.head {
-        Link.End -> Option.None
-        Link.Node(node) -> Option.Some(LinkedListItem {
-            value: move node.value
-            remaining: LinkedList { head: move node.next, size: self.size - 1 }
-        })
+impl LinkedList {
+    func pop_front<T>(self: LinkedList<T>) -> Option<LinkedListItem<T>> [consume self] {
+        branch self.head {
+            Link.End -> Option.None
+            Link.Node(node) -> Option.Some(LinkedListItem {
+                value: move node.value
+                remaining: LinkedList { head: move node.next, size: self.size - 1 }
+            })
+        }
     }
 }
 
 // Consumes this list and returns its elements in reverse order.
-func LinkedList.reverse<T>(self: LinkedList<T>) -> LinkedList<T> [consume self] {
-    LinkedList {
-        head: reverse_links(move self.head, Link.End)
-        size: self.size
+impl LinkedList {
+    func reverse<T>(self: LinkedList<T>) -> LinkedList<T> [consume self] {
+        LinkedList {
+            head: reverse_links(move self.head, Link.End)
+            size: self.size
+        }
     }
 }
 
 // Consumes this list and transforms every element without using the built-in `List<T>` type.
-func LinkedList.map<T, U>(self: LinkedList<T>, transform: func(consume T) -> U) -> LinkedList<U> [consume self] {
-    LinkedList {
-        head: map_links(move self.head, transform)
-        size: self.size
+impl LinkedList {
+    func map<T, U>(self: LinkedList<T>, transform: func(consume T) -> U) -> LinkedList<U> [consume self] {
+        LinkedList {
+            head: map_links(move self.head, transform)
+            size: self.size
+        }
     }
 }
 
 // Consumes this list and combines its values from front to back.
-func LinkedList.fold<T, U>(self: LinkedList<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [consume self, consume initial] {
-    fold_links(move self.head, move initial, combine)
+impl LinkedList {
+    func fold<T, U>(self: LinkedList<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [consume self, consume initial] {
+        fold_links(move self.head, move initial, combine)
+    }
 }
 
 // Consumes this linked list and materializes a built-in list in the same order.
-func LinkedList.to_list<T>(self: LinkedList<T>) -> List<T> [consume self] {
-    collect_links(move self.head, [])
+impl LinkedList {
+    func to_list<T>(self: LinkedList<T>) -> List<T> [consume self] {
+        collect_links(move self.head, [])
+    }
 }
 
 // Reverses owned links into the accumulating chain.

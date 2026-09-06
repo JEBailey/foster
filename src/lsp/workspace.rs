@@ -439,7 +439,7 @@ impl Workspace {
                 );
             }
             for keyword in [
-                "assert", "await", "branch", "break", "continue", "copy", "false", "func",
+                "assert", "await", "branch", "break", "continue", "copy", "false", "func", "impl",
                 "import", "let", "loop", "move", "not", "pub", "ref", "remote", "return", "true",
                 "type", "enum", "try",
             ] {
@@ -738,9 +738,8 @@ fn symbol_at(
             .rsplit('.')
             .next()
             .unwrap_or(&definition.name);
-        let source_name = source_function_name(definition);
         if declared_name == name
-            && find_name(source, definition.span.clone(), &source_name)
+            && find_name(source, definition.span.clone(), declared_name)
                 .is_some_and(|span| span.start <= offset && offset <= span.end)
         {
             return Some(SymbolIdentity::Function(function));
@@ -893,12 +892,8 @@ fn symbol_locations(
             continue;
         };
         let name = symbol_name(compilation, symbol);
-        let source_name = name.to_owned();
-        let ranges = if source_name.contains('.') {
-            qualified_name_ranges(source, &source_name)
-        } else {
-            identifier_ranges(source, &source_name).collect()
-        };
+        let source_name = name.rsplit('.').next().unwrap_or(name).to_owned();
+        let ranges = identifier_ranges(source, &source_name).collect::<Vec<_>>();
         for range in ranges {
             let lookup_offset = source_name
                 .rsplit_once('.')
@@ -917,22 +912,6 @@ fn symbol_locations(
         }
     }
     locations
-}
-
-fn qualified_name_ranges(source: &str, expected: &str) -> Vec<std::ops::Range<usize>> {
-    let mut ranges = Vec::new();
-    let mut offset = 0;
-    while let Some(relative) = source[offset..].find(expected) {
-        let start = offset + relative;
-        let end = start + expected.len();
-        let starts_at_boundary = start == 0 || !is_ident(source.as_bytes()[start - 1]);
-        let ends_at_boundary = end == source.len() || !is_ident(source.as_bytes()[end]);
-        if starts_at_boundary && ends_at_boundary {
-            ranges.push(start..end);
-        }
-        offset = end;
-    }
-    ranges
 }
 
 fn symbol_name(compilation: &crate::compiler::Compilation, symbol: SymbolIdentity) -> &str {
@@ -1562,11 +1541,15 @@ pub(super) fn function_signature(
         })
         .collect::<Vec<_>>();
     let groups = square_parameters(&group_entries);
-    format!(
-        "{}func {}{generics}{groups}({parameters}) -> {result}{effects}",
+    let name = function.name.rsplit('.').next().unwrap_or(&function.name);
+    let signature = format!(
+        "{}func {name}{generics}{groups}({parameters}) -> {result}{effects}",
         if function.public { "pub " } else { "" },
-        source_function_name(function)
-    )
+    );
+    match &function.owner {
+        Some(owner) => format!("impl {owner} {{\n    {signature}\n}}"),
+        None => signature,
+    }
 }
 
 fn source_function_name(function: &crate::hir::Function) -> String {
@@ -1892,7 +1875,7 @@ fn symbol(
     span: std::ops::Range<usize>,
 ) -> DocumentSymbol {
     let range = byte_range_to_lsp(source, span.clone());
-    let selection = find_name(source, span, name)
+    let selection = find_name(source, span, name.rsplit('.').next().unwrap_or(name))
         .map(|span| byte_range_to_lsp(source, span))
         .unwrap_or(range);
     #[allow(deprecated)]

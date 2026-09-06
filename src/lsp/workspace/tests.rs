@@ -125,6 +125,21 @@ fn semantic_error_in_one_function_does_not_hide_later_function_types() {
 }
 
 #[test]
+fn empty_non_unit_body_recovers_without_hiding_healthy_functions() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    workspace.open(
+        uri.clone(),
+        "func broken() -> Int {}\nfunc healthy() -> Int { 42 }\n".into(),
+        1,
+    );
+    let compilation = workspace.compile_for(&uri).unwrap();
+    assert_eq!(compilation.diagnostics.len(), 1);
+    let module = module_for_uri(&compilation, &uri).unwrap();
+    let healthy = compilation.hir.function_named(module, "healthy").unwrap();
+    assert!(compilation.types.function_type(healthy).is_some());
+}
+
+#[test]
 fn semantic_recovery_reports_multiple_failing_functions() {
     let path = std::env::current_dir()
         .unwrap()
@@ -210,8 +225,8 @@ fn associated_function_navigation_uses_the_type_namespace() {
         uri_to_path(&location.uri).unwrap(),
         root.join("collection.fos")
     );
-    assert_eq!(location.range.start, Position::new(4, 13));
-    assert_eq!(location.range.end, Position::new(4, 19));
+    assert_eq!(location.range.start, Position::new(5, 13));
+    assert_eq!(location.range.end, Position::new(5, 19));
 
     let references = workspace
         .references(&ReferenceParams {
@@ -402,7 +417,7 @@ fn string_method_hover_publishes_library_documentation() {
     assert!(
         hover
             .value
-            .contains("func String.slice(self: String, start: Int, end: Int) -> String"),
+            .contains("func slice(self: String, start: Int, end: Int) -> String"),
         "{}",
         hover.value
     );
@@ -952,7 +967,9 @@ fn callable_contract_members_provide_hover_signature_and_definition() {
 }
 
 type User = & Identified & { value: Int }
-func User.offset(self: User, amount: Int) -> Int { self.value + amount }
+impl User {
+    func offset(self: User, amount: Int) -> Int { self.value + amount }
+}
 
 func apply(value: Identified) -> Int {
     value.offset(2)
@@ -962,7 +979,7 @@ func main() -> Int { apply(User { value: 40 }) }
     workspace.open(uri.clone(), source.into(), 1);
     let position = TextDocumentPositionParams::new(
         lsp_types::TextDocumentIdentifier::new(uri.clone()),
-        Position::new(9, 12),
+        Position::new(11, 12),
     );
 
     let hover = workspace.hover(&position).unwrap();
@@ -986,7 +1003,7 @@ func main() -> Int { apply(User { value: 40 }) }
             context: None,
             text_document_position_params: TextDocumentPositionParams::new(
                 lsp_types::TextDocumentIdentifier::new(uri),
-                Position::new(9, 19),
+                Position::new(11, 19),
             ),
             work_done_progress_params: Default::default(),
         })
@@ -1000,6 +1017,39 @@ func main() -> Int { apply(User { value: 40 }) }
         &help.signatures[0].documentation,
         Some(Documentation::MarkupContent(contents)) if contents.value.contains("Adds an amount")
     ));
+}
+
+#[test]
+fn impl_member_rename_from_its_declaration_preserves_other_owners() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = "type Left = {}\ntype Right = {}\nimpl Left {\n    func read(self) -> Int { 20 }\n}\nimpl Right {\n    func read(self) -> Int { 22 }\n}\nfunc main() -> Int { Left {}.read() + Right {}.read() }\n";
+    workspace.open(uri.clone(), source.into(), 1);
+    let edit = workspace
+        .rename(&RenameParams {
+            text_document_position: TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri.clone()),
+                Position::new(3, 10),
+            ),
+            new_name: "value".into(),
+            work_done_progress_params: Default::default(),
+        })
+        .unwrap();
+    let Some(DocumentChanges::Edits(documents)) = edit.document_changes else {
+        panic!("expected versioned edits");
+    };
+    let edits = &documents
+        .iter()
+        .find(|document| document.text_document.uri == uri)
+        .unwrap()
+        .edits;
+    assert_eq!(edits.len(), 2);
+    for edit in edits {
+        let OneOf::Left(edit) = edit else {
+            panic!("expected text edit");
+        };
+        assert!(edit.range.start.line == 3 || edit.range.start.line == 8);
+        assert_eq!(edit.new_text, "value");
+    }
 }
 
 #[test]
@@ -1025,7 +1075,7 @@ fn definition_resolves_instance_methods_from_receiver_types() {
         uri_to_path(&location.uri).unwrap(),
         root.join("collection.fos")
     );
-    assert_eq!(location.range.start, Position::new(8, 13));
+    assert_eq!(location.range.start, Position::new(9, 13));
 }
 
 #[test]
@@ -1033,15 +1083,17 @@ fn definition_resolves_question_mark_instance_methods() {
     let (mut workspace, uri, _) = fixture_workspace();
     let source = r#"type Parser = { remaining: String }
 
-func Parser.peek?(self: Parser, expected: CodePoint) -> Bool { false }
-func Parser.newline?(self: Parser) -> Bool { false }
+impl Parser {
+    func peek?(self: Parser, expected: CodePoint) -> Bool { false }
+    func newline?(self: Parser) -> Bool { false }
 
-func Parser.skip(self: Parser) -> Bool {
-    self.peek?('#')
-}
+    func skip(self: Parser) -> Bool {
+        self.peek?('#')
+    }
 
-func Parser.line(self: Parser) -> Bool {
-    self.newline?()
+    func line(self: Parser) -> Bool {
+        self.newline?()
+    }
 }
 
 func main() -> Bool { Parser { remaining: "" }.skip() }
@@ -1049,8 +1101,8 @@ func main() -> Bool { Parser { remaining: "" }.skip() }
     workspace.open(uri.clone(), source.into(), 2);
 
     for (position, declaration) in [
-        (Position::new(6, 13), Position::new(2, 12)),
-        (Position::new(10, 16), Position::new(3, 12)),
+        (Position::new(7, 17), Position::new(3, 9)),
+        (Position::new(11, 20), Position::new(4, 9)),
     ] {
         let location = workspace
             .definition(&TextDocumentPositionParams::new(
@@ -1068,11 +1120,13 @@ fn definition_resolves_enum_instance_methods() {
     let (mut workspace, uri, _) = fixture_workspace();
     let source = r#"enum Choice<T> = Value(T) | Empty
 
-/// Returns whether this choice contains a value.
-func Choice.present?<T>(self: Choice<T>) -> Bool {
-    branch self {
-        Choice.Value(_) -> true
-        Choice.Empty -> false
+impl Choice {
+    /// Returns whether this choice contains a value.
+    func present?<T>(self: Choice<T>) -> Bool {
+        branch self {
+            Choice.Value(_) -> true
+            Choice.Empty -> false
+        }
     }
 }
 
@@ -1083,12 +1137,12 @@ func main() -> Bool {
     workspace.open(uri.clone(), source.into(), 1);
     let position = TextDocumentPositionParams::new(
         lsp_types::TextDocumentIdentifier::new(uri.clone()),
-        Position::new(11, 23),
+        Position::new(13, 23),
     );
 
     let location = workspace.definition(&position).unwrap();
     assert_eq!(location.uri, uri);
-    assert_eq!(location.range.start, Position::new(3, 12));
+    assert_eq!(location.range.start, Position::new(4, 9));
 
     let hover = workspace.hover(&position).unwrap();
     let HoverContents::Markup(contents) = hover.contents else {
@@ -1120,7 +1174,7 @@ func main() -> Int {
             .unwrap()
             .join("library/core/int.fos")
     );
-    assert_eq!(location.range.start, Position::new(70, 13));
+    assert_eq!(location.range.start, Position::new(71, 13));
 }
 
 #[test]
@@ -1150,9 +1204,9 @@ fn definition_opens_embedded_core_source_when_available() {
     );
     let declaration_line = include_str!("../../../library/core/list.fos")
         .lines()
-        .position(|line| line.starts_with("pub func List.map<"))
+        .position(|line| line.trim_start().starts_with("pub func map<"))
         .unwrap() as u32;
-    assert_eq!(location.range.start, Position::new(declaration_line, 14));
+    assert_eq!(location.range.start, Position::new(declaration_line, 13));
 }
 
 #[test]
@@ -1189,7 +1243,7 @@ fn examples_compile_in_their_own_document_context() {
     };
     let position = TextDocumentPositionParams::new(
         lsp_types::TextDocumentIdentifier::new(uri),
-        Position::new(44, 26),
+        Position::new(45, 30),
     );
 
     let hover = workspace.hover(&position).unwrap();
@@ -1401,8 +1455,10 @@ type Renderer = & IntegerRenderer & CodePointRenderer & {
 
 type Formatter = & Renderer & {}
 
-func Formatter.render(self: Formatter, value: Int) -> String { "integer" }
-func Formatter.render(self: Formatter, value: CodePoint) -> String { "code point" }
+impl Formatter {
+    func render(self: Formatter, value: Int) -> String { "integer" }
+    func render(self: Formatter, value: CodePoint) -> String { "code point" }
+}
 
 func inspect(value: Renderer) -> String {
     value.render('x')
@@ -1413,7 +1469,7 @@ func main() -> String { inspect(Formatter {}) }
     workspace.open(uri.clone(), source.into(), 1);
     let position = TextDocumentPositionParams::new(
         lsp_types::TextDocumentIdentifier::new(uri.clone()),
-        Position::new(20, 12),
+        Position::new(22, 12),
     );
 
     let hover = workspace.hover(&position).unwrap();
@@ -1435,7 +1491,7 @@ func main() -> String { inspect(Formatter {}) }
             context: None,
             text_document_position_params: TextDocumentPositionParams::new(
                 lsp_types::TextDocumentIdentifier::new(uri),
-                Position::new(20, 20),
+                Position::new(22, 20),
             ),
             work_done_progress_params: Default::default(),
         })

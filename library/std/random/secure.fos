@@ -16,22 +16,24 @@ pub type SecureRandom = & RandomSource & EntropySource & {
     source_value: SystemRandom
 }
 
-/// Constructs a secure source backed by the operating system.
-pub func SecureRandom.new() -> SecureRandom {
-    SecureRandom { source_value: SystemRandom.new() }
-}
+impl SecureRandom {
+    /// Constructs a secure source backed by the operating system.
+    pub func new() -> SecureRandom {
+        SecureRandom { source_value: SystemRandom.new() }
+    }
 
-/// Returns the next uniformly distributed secure 31-bit integer.
-pub func SecureRandom.next(self: SecureRandom) -> Result<Int, RandomError> [mut self.source_value] {
-    self.source_value.next()
-}
+    /// Returns the next uniformly distributed secure 31-bit integer.
+    pub func next(self: SecureRandom) -> Result<Int, RandomError> [mut self.source_value] {
+        self.source_value.next()
+    }
 
-/// Returns the inclusive maximum secure integer value.
-pub func SecureRandom.maximum(self: SecureRandom) -> Int { self.source_value.maximum() }
+    /// Returns the inclusive maximum secure integer value.
+    pub func maximum(self: SecureRandom) -> Int { self.source_value.maximum() }
 
-/// Returns exactly `count` operating-system entropy bytes.
-pub func SecureRandom.bytes(self: SecureRandom, count: Int) -> Result<Bytes, RandomError> [mut self.source_value] {
-    self.source_value.bytes(count)
+    /// Returns exactly `count` operating-system entropy bytes.
+    pub func bytes(self: SecureRandom, count: Int) -> Result<Bytes, RandomError> [mut self.source_value] {
+        self.source_value.bytes(count)
+    }
 }
 
 /// Returns exactly `count` operating-system entropy bytes.

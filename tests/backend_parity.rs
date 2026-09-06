@@ -2,6 +2,15 @@
 use foster::{native, vm};
 
 #[test]
+fn implicit_unit_results_agree_in_both_backends() {
+    check(
+        "unit-results",
+        include_str!("fixtures/programs/unit_results.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn foster_library_loops_slices_and_builders_agree() {
     check(
         "library-algorithms",
@@ -132,9 +141,11 @@ fn assignment_evaluates_the_value_before_the_destination() {
         r#"
 type Trace = { value: Int }
 
-func Trace.mark(self: Trace, digit: Int) -> Int [mut self.value] {
-    self.value = self.value * 10 + digit
-    digit
+impl Trace {
+    func mark(self: Trace, digit: Int) -> Int [mut self.value] {
+        self.value = self.value * 10 + digit
+        digit
+    }
 }
 
 func main() -> Int {
@@ -157,37 +168,45 @@ type Trace = { value: Int }
 type Sink = {}
 type Pair = { a: Int, z: Int }
 
-func Trace.mark(self: Trace, digit: Int) -> Int [mut self.value] {
-    self.value = self.value * 10 + digit
-    digit
-}
+impl Trace {
+    func mark(self: Trace, digit: Int) -> Int [mut self.value] {
+        self.value = self.value * 10 + digit
+        digit
+    }
 
-func Trace.reset(self: Trace) -> () [mut self.value] {
-    self.value = 0
-    ()
+    func reset(self: Trace) -> () [mut self.value] {
+        self.value = 0
+        ()
+    }
 }
 func combine(left: Int, right: Int) -> Int { left * 10 + right }
 
-func Trace.callable(self: Trace) -> func(Int, Int) -> Int [mut self.value] {
-    self.mark(1)
-    combine
+impl Trace {
+    func callable(self: Trace) -> func(Int, Int) -> Int [mut self.value] {
+        self.mark(1)
+        combine
+    }
+
+    func sink(self: Trace) -> Sink [mut self.value] {
+        self.mark(1)
+        Sink {}
+    }
 }
 
-func Trace.sink(self: Trace) -> Sink [mut self.value] {
-    self.mark(1)
-    Sink {}
+impl Sink {
+    func accept(self: Sink, value: Int) -> Int { value }
 }
 
-func Sink.accept(self: Sink, value: Int) -> Int { value }
+impl Trace {
+    func values(self: Trace) -> List<Int> [mut self.value] {
+        self.mark(1)
+        [7]
+    }
 
-func Trace.values(self: Trace) -> List<Int> [mut self.value] {
-    self.mark(1)
-    [7]
-}
-
-func Trace.record(self: Trace, digit: Int, answer: Bool) -> Bool [mut self.value] {
-    self.mark(digit)
-    answer
+    func record(self: Trace, digit: Int, answer: Bool) -> Bool [mut self.value] {
+        self.mark(digit)
+        answer
+    }
 }
 
 func main() -> Int {
@@ -242,31 +261,37 @@ fn partial_application_captures_operands_once_in_source_order() {
 type Trace = { value: Int }
 type Sink = {}
 
-func Trace.mark(self: Trace, digit: Int) -> Int [mut self.value] {
-    self.value = self.value * 10 + digit
-    digit
-}
+impl Trace {
+    func mark(self: Trace, digit: Int) -> Int [mut self.value] {
+        self.value = self.value * 10 + digit
+        digit
+    }
 
-func Trace.reset(self: Trace) -> () [mut self.value] {
-    self.value = 0
-    ()
+    func reset(self: Trace) -> () [mut self.value] {
+        self.value = 0
+        ()
+    }
 }
 
 func combine(left: Int, middle: Int, right: Int) -> Int {
     left * 100 + middle * 10 + right
 }
 
-func Trace.callable(self: Trace) -> func(Int, Int, Int) -> Int [mut self.value] {
-    self.mark(1)
-    combine
+impl Trace {
+    func callable(self: Trace) -> func(Int, Int, Int) -> Int [mut self.value] {
+        self.mark(1)
+        combine
+    }
+
+    func sink(self: Trace) -> Sink [mut self.value] {
+        self.mark(1)
+        Sink {}
+    }
 }
 
-func Trace.sink(self: Trace) -> Sink [mut self.value] {
-    self.mark(1)
-    Sink {}
+impl Sink {
+    func accept(self: Sink, prefix: Int, value: Int) -> Int { prefix * 10 + value }
 }
-
-func Sink.accept(self: Sink, prefix: Int, value: Int) -> Int { prefix * 10 + value }
 
 func main() -> Int {
     let trace = Trace { value: 0 }
@@ -334,9 +359,11 @@ fn ownership_and_remote_ordering_agree() {
         "ownership-remote",
         r#"
 type Counter = { value: Int }
-func Counter.increment(self: Counter, amount: Int) -> Int [mut self] {
-    self.value = self.value + amount
-    self.value
+impl Counter {
+    func increment(self: Counter, amount: Int) -> Int [mut self] {
+        self.value = self.value + amount
+        self.value
+    }
 }
 func set[g: group Int](value: ref[g] Int, replacement: Int) -> Int [mut g] {
     value = replacement
@@ -366,7 +393,9 @@ fn generic_calls_preserve_values() {
         "generics",
         r#"
 type Echo<T> = { value: T }
-func Echo.get<T>(self: Echo<T>) -> T { self.value }
+impl Echo {
+    func get<T>(self: Echo<T>) -> T { self.value }
+}
 func identity<T>(value: T) -> T { value }
 func main() -> Bool { identity(Echo { value: true }.get()) }
 "#,
@@ -380,8 +409,10 @@ fn generic_remote_calls_preserve_logical_types() {
         "remote-generics",
         r#"
 type Echo = {}
-func Echo.identity<T>(self: Echo, value: T) -> T { value }
-func Echo.tag<T>(self: Echo, value: T) -> Int { 1 }
+impl Echo {
+    func identity<T>(self: Echo, value: T) -> T { value }
+    func tag<T>(self: Echo, value: T) -> Int { 1 }
+}
 func main() -> Int {
     let worker = remote Echo {}
     let number = await worker.identity(41)
@@ -397,7 +428,7 @@ func main() -> Int {
 #[test]
 fn verifier_rejects_inconsistent_specialized_call_results() {
     for source in [
-        "type Echo<T> = { value: T }\nfunc Echo.get<T>(self: Echo<T>) -> T { self.value }\nfunc main() -> Bool { Echo { value: true }.get() }",
+        "type Echo<T> = { value: T }\nimpl Echo {\n    func get<T>(self: Echo<T>) -> T { self.value }\n}\nfunc main() -> Bool { Echo { value: true }.get() }",
         "func identity<T>(value: T) -> T { value }\nfunc main() -> Bool { identity(true) }",
     ] {
         let compilation = foster::compile(source).unwrap();

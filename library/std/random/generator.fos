@@ -21,30 +21,32 @@ pub type LehmerRandom = & SeedableRandom & SplittableRandom & {
     state: Int
 }
 
-/// Constructs the portable generator from any integer seed.
-pub func LehmerRandom.from_seed(seed: Int) -> LehmerRandom {
-    LehmerRandom { state: normalized_seed(seed) }
-}
+impl LehmerRandom {
+    /// Constructs the portable generator from any integer seed.
+    pub func from_seed(seed: Int) -> LehmerRandom {
+        LehmerRandom { state: normalized_seed(seed) }
+    }
 
-/// Returns the next portable zero-based generator value.
-pub func LehmerRandom.next(self: LehmerRandom) -> Result<Int, RandomError> [mut self.state] {
-    self.state = lehmer_step(self.state)
-    Result.Ok(self.state - 1)
-}
+    /// Returns the next portable zero-based generator value.
+    pub func next(self: LehmerRandom) -> Result<Int, RandomError> [mut self.state] {
+        self.state = lehmer_step(self.state)
+        Result.Ok(self.state - 1)
+    }
 
-/// Returns the inclusive maximum portable generator value.
-pub func LehmerRandom.maximum(self: LehmerRandom) -> Int { LEHMER_MAXIMUM }
+    /// Returns the inclusive maximum portable generator value.
+    pub func maximum(self: LehmerRandom) -> Int { LEHMER_MAXIMUM }
 
-/// Resets the portable sequence from any integer seed.
-pub func LehmerRandom.reseed(self: LehmerRandom, seed: Int) -> () [mut self.state] {
-    self.state = normalized_seed(seed)
-    ()
-}
+    /// Resets the portable sequence from any integer seed.
+    pub func reseed(self: LehmerRandom, seed: Int) -> () [mut self.state] {
+        self.state = normalized_seed(seed)
+        ()
+    }
 
-/// Derives another owned portable stream while advancing this generator.
-pub func LehmerRandom.split(self: LehmerRandom) -> RandomSource [mut self.state] {
-    self.state = lehmer_step(self.state)
-    LehmerRandom.from_seed(self.state + 104729)
+    /// Derives another owned portable stream while advancing this generator.
+    pub func split(self: LehmerRandom) -> RandomSource [mut self.state] {
+        self.state = lehmer_step(self.state)
+        LehmerRandom.from_seed(self.state + 104729)
+    }
 }
 
 /// The standard fast deterministic generator.
@@ -55,36 +57,38 @@ pub type FastRandom = & SeedableRandom & SplittableRandom & {
     state: Int
 }
 
-/// Constructs the default fast generator from a deterministic seed.
-pub func FastRandom.from_seed(seed: Int) -> FastRandom {
-    FastRandom { state: normalized_seed(seed) }
-}
+impl FastRandom {
+    /// Constructs the default fast generator from a deterministic seed.
+    pub func from_seed(seed: Int) -> FastRandom {
+        FastRandom { state: normalized_seed(seed) }
+    }
 
-/// Seeds the default fast generator from operating-system randomness.
-pub func FastRandom.from_system() -> Result<FastRandom, RandomError> {
-    let seed = try SystemRandom.new().next()
-    Result.Ok(FastRandom.from_seed(seed))
-}
+    /// Seeds the default fast generator from operating-system randomness.
+    pub func from_system() -> Result<FastRandom, RandomError> {
+        let seed = try SystemRandom.new().next()
+        Result.Ok(FastRandom.from_seed(seed))
+    }
 
-/// Returns the next default-generator value.
-pub func FastRandom.next(self: FastRandom) -> Result<Int, RandomError> [mut self.state] {
-    self.state = lehmer_step(self.state)
-    Result.Ok(self.state - 1)
-}
+    /// Returns the next default-generator value.
+    pub func next(self: FastRandom) -> Result<Int, RandomError> [mut self.state] {
+        self.state = lehmer_step(self.state)
+        Result.Ok(self.state - 1)
+    }
 
-/// Returns the inclusive maximum default-generator value.
-pub func FastRandom.maximum(self: FastRandom) -> Int { LEHMER_MAXIMUM }
+    /// Returns the inclusive maximum default-generator value.
+    pub func maximum(self: FastRandom) -> Int { LEHMER_MAXIMUM }
 
-/// Resets the default generator from any integer seed.
-pub func FastRandom.reseed(self: FastRandom, seed: Int) -> () [mut self.state] {
-    self.state = normalized_seed(seed)
-    ()
-}
+    /// Resets the default generator from any integer seed.
+    pub func reseed(self: FastRandom, seed: Int) -> () [mut self.state] {
+        self.state = normalized_seed(seed)
+        ()
+    }
 
-/// Derives another owned default stream while advancing this generator.
-pub func FastRandom.split(self: FastRandom) -> RandomSource [mut self.state] {
-    self.state = lehmer_step(self.state)
-    FastRandom.from_seed(self.state + 104729)
+    /// Derives another owned default stream while advancing this generator.
+    pub func split(self: FastRandom) -> RandomSource [mut self.state] {
+        self.state = lehmer_step(self.state)
+        FastRandom.from_seed(self.state + 104729)
+    }
 }
 
 /// Advances one Lehmer state without overflowing Foster's checked `Int` arithmetic.

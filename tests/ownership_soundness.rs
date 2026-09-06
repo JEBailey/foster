@@ -36,7 +36,9 @@ func main() -> Int {
             "rule-5-frame-loan-across-await",
             r#"
 type Worker = {}
-func Worker.value(self: Worker) -> Int { 1 }
+impl Worker {
+    func value(self: Worker) -> Int { 1 }
+}
 func wait(worker: Remote<Worker>) -> Int {
     let values = [10]
     let selected = ref values[0]
@@ -634,7 +636,9 @@ fn language_version_six_separates_qualification_from_member_access() {
     let new_case = r#"
 enum Choice = Value(Int)
 type Box = { value: Choice }
-func Box.make(value: Choice) -> Box { Box { value } }
+impl Box {
+    func make(value: Choice) -> Box { Box { value } }
+}
 func main() -> Choice { Box.make(Choice.Value(1)).value }
 "#;
     assert!(foster::compile(new_case).is_ok());

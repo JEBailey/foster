@@ -9,12 +9,14 @@ type RangeIterator = & Iterator<Int> & {
     end: Int
 }
 
-func RangeIterator.next(self: RangeIterator) -> Option<Int> {
-    let value = self.current
-    self.current = self.current + 1
-    branch {
-        value >= self.end -> Option.None
-        _ -> Option.Some(value)
+impl RangeIterator {
+    func next(self: RangeIterator) -> Option<Int> {
+        let value = self.current
+        self.current = self.current + 1
+        branch {
+            value >= self.end -> Option.None
+            _ -> Option.Some(value)
+        }
     }
 }
 
@@ -23,8 +25,10 @@ type Range = & Iterable<Int> & {
     end: Int
 }
 
-func Range.iterator(self: Range) -> Iterator<Int> {
-    RangeIterator { current: self.start, end: self.end }
+impl Range {
+    func iterator(self: Range) -> Iterator<Int> {
+        RangeIterator { current: self.start, end: self.end }
+    }
 }
 
 func value_or(candidate: Option<Int>, fallback: Int) -> Int {

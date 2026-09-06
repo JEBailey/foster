@@ -1,0 +1,44 @@
+type Counter = { value: Int }
+
+impl Counter {
+    func empty(self) {}
+    func done() {}
+    func set(self, value: Int) { self.value = value }
+}
+
+func empty() {}
+func binding() { let value = 42 }
+func assignment() {
+    let value = 1
+    value = 42
+}
+func assertion() { assert(true) }
+func loop_result() { loop { break } }
+func guarded(stop: Bool) {
+    let previous = 42
+    return () if stop
+}
+
+func main() -> Int {
+    assert(empty() == ())
+    assert(binding() == 42)
+    assert(assignment() == 42)
+    assert(assertion() == ())
+    assert(loop_result() == ())
+    assert(guarded(true) == ())
+    assert(guarded(false) == ())
+    let counter = Counter { value: 0 }
+    assert(counter.empty() == ())
+    assert(Counter.done() == ())
+    assert(counter.set(42) == 42)
+    assert(counter.value == 42)
+    let closure = () -> {}
+    assert(closure() == ())
+    let arm = branch {
+        true -> { counter.value = 43 }
+        _ -> {}
+    }
+    assert(arm == ())
+    assert(counter.value == 43)
+    42
+}

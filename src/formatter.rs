@@ -101,9 +101,11 @@ pub fn format(source: &str) -> Result<String, FosterError> {
 
 fn begins_declaration(line: &str) -> bool {
     let line = line.strip_prefix("pub ").unwrap_or(line);
-    ["import ", "const ", "type ", "enum ", "func ", "test "]
-        .iter()
-        .any(|prefix| line.starts_with(prefix))
+    [
+        "import ", "const ", "type ", "enum ", "impl ", "func ", "test ",
+    ]
+    .iter()
+    .any(|prefix| line.starts_with(prefix))
 }
 
 #[derive(Default)]

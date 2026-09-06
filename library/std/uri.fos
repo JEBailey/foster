@@ -20,12 +20,14 @@ pub type Uri = & ResourceIdentifier & {
     path_value: String
 }
 
-/// Parses an absolute URI with a non-empty RFC-style scheme.
-pub func Uri.parse(value: String) -> Result<Uri, UriError> {
-    branch {
-        value.empty? -> invalid_uri(move value, "URI must not be empty")
-        not scheme_start?(value.head) -> invalid_uri(move value, "URI scheme must begin with an ASCII letter")
-        _ -> begin_scheme(move value)
+impl Uri {
+    /// Parses an absolute URI with a non-empty RFC-style scheme.
+    pub func parse(value: String) -> Result<Uri, UriError> {
+        branch {
+            value.empty? -> invalid_uri(move value, "URI must not be empty")
+            not scheme_start?(value.head) -> invalid_uri(move value, "URI scheme must begin with an ASCII letter")
+            _ -> begin_scheme(move value)
+        }
     }
 }
 
@@ -35,22 +37,24 @@ func begin_scheme(value: String) -> Result<Uri, UriError> [consume value] {
     parse_scheme(move value, remaining, 1)
 }
 
-/// Builds a URI from an already separated scheme and resource path.
-pub func Uri.from_parts(scheme: String, path: String) -> Result<Uri, UriError> {
-    Uri.parse(scheme + ":" + path)
+impl Uri {
+    /// Builds a URI from an already separated scheme and resource path.
+    pub func from_parts(scheme: String, path: String) -> Result<Uri, UriError> {
+        Uri.parse(scheme + ":" + path)
+    }
+
+    /// Returns the complete URI text.
+    pub func as_string(self: Uri) -> String { self.value.slice(0, self.value.length) }
+
+    /// Returns the stable identifier supplied to a protocol provider.
+    pub func resource_id(self: Uri) -> String { self.as_string() }
+
+    /// Returns the scheme spelling supplied to the parser.
+    pub func scheme(self: Uri) -> String { self.scheme_value.slice(0, self.scheme_value.length) }
+
+    /// Returns the resource portion following the URI scheme separator.
+    pub func path(self: Uri) -> String { self.path_value.slice(0, self.path_value.length) }
 }
-
-/// Returns the complete URI text.
-pub func Uri.as_string(self: Uri) -> String { self.value.slice(0, self.value.length) }
-
-/// Returns the stable identifier supplied to a protocol provider.
-pub func Uri.resource_id(self: Uri) -> String { self.as_string() }
-
-/// Returns the scheme spelling supplied to the parser.
-pub func Uri.scheme(self: Uri) -> String { self.scheme_value.slice(0, self.scheme_value.length) }
-
-/// Returns the resource portion following the URI scheme separator.
-pub func Uri.path(self: Uri) -> String { self.path_value.slice(0, self.path_value.length) }
 
 /// Scans the URI scheme until its separator.
 func parse_scheme(value: String, remaining: String, index: Int) -> Result<Uri, UriError> {

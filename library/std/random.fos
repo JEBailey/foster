@@ -37,35 +37,39 @@ pub type SplittableRandom = & RandomSource & {
 /// Private namespace for operating-system entropy.
 type RandomHost = {}
 
-/// Reads bytes from the operating system's secure entropy source.
-func RandomHost.bytes(count: Int) -> Result<Bytes, RandomError> = intrinsic("random.bytes")
+impl RandomHost {
+    /// Reads bytes from the operating system's secure entropy source.
+    func bytes(count: Int) -> Result<Bytes, RandomError> = intrinsic("random.bytes")
+}
 
 /// A stateless view of the operating system's secure random source.
 pub type SystemRandom = & RandomSource & {
     marker: Symbol
 }
 
-/// Constructs an operating-system-backed random source.
-pub func SystemRandom.new() -> SystemRandom {
-    SystemRandom { marker: :system_random }
-}
+impl SystemRandom {
+    /// Constructs an operating-system-backed random source.
+    pub func new() -> SystemRandom {
+        SystemRandom { marker: :system_random }
+    }
 
-/// Returns up to 1,048,576 bytes from the operating system's secure entropy source.
-pub func SystemRandom.bytes(self: SystemRandom, count: Int) -> Result<Bytes, RandomError> [mut self] {
-    return failure("bytes", count, "random byte count must not be negative") if count < 0
-    return failure("bytes", count, "random byte count must not exceed 1048576") if count > 1048576
-    RandomHost.bytes(count)
-}
+    /// Returns up to 1,048,576 bytes from the operating system's secure entropy source.
+    pub func bytes(self: SystemRandom, count: Int) -> Result<Bytes, RandomError> [mut self] {
+        return failure("bytes", count, "random byte count must not be negative") if count < 0
+        return failure("bytes", count, "random byte count must not exceed 1048576") if count > 1048576
+        RandomHost.bytes(count)
+    }
 
-/// Returns a uniformly distributed 31-bit nonnegative integer from operating-system entropy.
-pub func SystemRandom.next(self: SystemRandom) -> Result<Int, RandomError> [mut self] {
-    let entropy = try self.bytes(4)
-    let first = entropy[0].int.modulo(128)
-    Result.Ok(((first * 256 + entropy[1].int) * 256 + entropy[2].int) * 256 + entropy[3].int)
-}
+    /// Returns a uniformly distributed 31-bit nonnegative integer from operating-system entropy.
+    pub func next(self: SystemRandom) -> Result<Int, RandomError> [mut self] {
+        let entropy = try self.bytes(4)
+        let first = entropy[0].int.modulo(128)
+        Result.Ok(((first * 256 + entropy[1].int) * 256 + entropy[2].int) * 256 + entropy[3].int)
+    }
 
-/// Returns the largest value produced by `SystemRandom.next`.
-pub func SystemRandom.maximum(self: SystemRandom) -> Int { 2147483647 }
+    /// Returns the largest value produced by `SystemRandom.next`.
+    pub func maximum(self: SystemRandom) -> Int { 2147483647 }
+}
 
 /// Returns an unbiased value from `source` in the half-open range `[0, count)`.
 pub func below_with(source: RandomSource, count: Int) -> Result<Int, RandomError> [mut source] {
@@ -134,15 +138,17 @@ type RandomTestSource = & RandomSource & {
     maximum_value: Int
 }
 
-/// Returns the current test value and advances cyclically.
-func RandomTestSource.next(self: RandomTestSource) -> Result<Int, RandomError> [mut self.value, read self.maximum_value] {
-    let value = self.value
-    self.value = branch { value >= self.maximum_value -> 0 _ -> value + 1 }
-    Result.Ok(value)
-}
+impl RandomTestSource {
+    /// Returns the current test value and advances cyclically.
+    func next(self: RandomTestSource) -> Result<Int, RandomError> [mut self.value, read self.maximum_value] {
+        let value = self.value
+        self.value = branch { value >= self.maximum_value -> 0 _ -> value + 1 }
+        Result.Ok(value)
+    }
 
-/// Returns the configured test-source maximum.
-func RandomTestSource.maximum(self: RandomTestSource) -> Int { self.maximum_value }
+    /// Returns the configured test-source maximum.
+    func maximum(self: RandomTestSource) -> Int { self.maximum_value }
+}
 
 test "uniform integer operations use half-open bounds and validate requests" {
     // Six and seven are rejected for a count of three, proving modulo bias is avoided.

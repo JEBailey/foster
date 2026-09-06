@@ -29,12 +29,14 @@ func find_file(files: List<File>, path: String) -> Response {
     }
 }
 
-func FileServer.handle(self: FileServer, method: String, target: String) -> Response {
-    branch {
-        method != "GET" -> response(405, "Method Not Allowed", "text/plain", "method not allowed")
-        target == "/../private.txt" -> response(403, "Forbidden", "text/plain", "path escapes document root")
-        target == "/" -> find_file(self.files, "/index.html")
-        _ -> find_file(self.files, target)
+impl FileServer {
+    func handle(self: FileServer, method: String, target: String) -> Response {
+        branch {
+            method != "GET" -> response(405, "Method Not Allowed", "text/plain", "method not allowed")
+            target == "/../private.txt" -> response(403, "Forbidden", "text/plain", "path escapes document root")
+            target == "/" -> find_file(self.files, "/index.html")
+            _ -> find_file(self.files, target)
+        }
     }
 }
 

@@ -8,24 +8,28 @@ type SkipIterator<T> = & Iterator<T> & {
     remaining: Int
 }
 
-/// Discards the configured prefix before yielding source values.
-func SkipIterator.next<T>(self: SkipIterator<T>) -> Option<T> {
-    loop {
-        break if self.remaining <= 0
-        branch self.source.next() {
-            Option.Some(_) -> {
-                self.remaining = self.remaining - 1
-                ()
+impl SkipIterator {
+    /// Discards the configured prefix before yielding source values.
+    func next<T>(self: SkipIterator<T>) -> Option<T> {
+        loop {
+            break if self.remaining <= 0
+            branch self.source.next() {
+                Option.Some(_) -> {
+                    self.remaining = self.remaining - 1
+                    ()
+                }
+                Option.None -> { return Option.None }
             }
-            Option.None -> { return Option.None }
         }
+        self.source.next()
     }
-    self.source.next()
 }
 
-/// Lazily discards the first `amount` remaining elements.
-pub func Iterator.skip<T>(self: Iterator<T>, amount: Int) -> Iterator<T> [consume self] {
-    SkipIterator { source: move self, remaining: amount }
+impl Iterator {
+    /// Lazily discards the first `amount` remaining elements.
+    pub func skip<T>(self: Iterator<T>, amount: Int) -> Iterator<T> [consume self] {
+        SkipIterator { source: move self, remaining: amount }
+    }
 }
 
 test "skipping removes an iterator prefix" {

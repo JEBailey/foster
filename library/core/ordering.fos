@@ -30,12 +30,14 @@ pub type Hashing = {
     pub func hash(self) -> Int
 }
 
-/// Reverses an ordering, exchanging `Less` and `Greater` while preserving `Equal`.
-pub func Ordering.reverse(self: Ordering) -> Ordering {
-    branch self {
-        Ordering.Less -> Ordering.Greater
-        Ordering.Equal -> Ordering.Equal
-        Ordering.Greater -> Ordering.Less
+impl Ordering {
+    /// Reverses an ordering, exchanging `Less` and `Greater` while preserving `Equal`.
+    pub func reverse(self: Ordering) -> Ordering {
+        branch self {
+            Ordering.Less -> Ordering.Greater
+            Ordering.Equal -> Ordering.Equal
+            Ordering.Greater -> Ordering.Less
+        }
     }
 }
 

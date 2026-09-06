@@ -539,6 +539,12 @@ impl Package {
                 _ => program.functions.clear(),
             }
             program.tests.clear();
+            program.implementations.retain(|implementation| {
+                program.functions.iter().any(|function| {
+                    implementation.span.start <= function.span.start
+                        && function.span.end <= implementation.span.end
+                })
+            });
             program
                 .records
                 .retain(|record| types.contains(&record.name.as_str()));
@@ -841,6 +847,67 @@ impl Package {
                     return Err(FosterError::runtime(format!(
                         "module `{}` defines `{}` more than once",
                         module.name, variant.name
+                    )));
+                }
+            }
+            for implementation in &program.implementations {
+                let owner = &implementation.owner;
+                let arity = program
+                    .records
+                    .iter()
+                    .find(|record| &record.name == owner)
+                    .map(|record| record.parameters.len())
+                    .or_else(|| {
+                        program
+                            .variants
+                            .iter()
+                            .find(|variant| &variant.name == owner)
+                            .map(|variant| variant.parameters.len())
+                    })
+                    .or_else(|| {
+                        program.imports.iter().find_map(|import| {
+                            let imported =
+                                self.modules.get(&import.path.join("."))?.program.as_ref()?;
+                            imported
+                                .records
+                                .iter()
+                                .find(|record| record.public && &record.name == owner)
+                                .map(|record| record.parameters.len())
+                                .or_else(|| {
+                                    imported
+                                        .variants
+                                        .iter()
+                                        .find(|variant| variant.public && &variant.name == owner)
+                                        .map(|variant| variant.parameters.len())
+                                })
+                        })
+                    })
+                    .or_else(|| {
+                        matches!(
+                            owner.as_str(),
+                            "Bool"
+                                | "Int"
+                                | "Float"
+                                | "Byte"
+                                | "Bytes"
+                                | "ByteBuffer"
+                                | "CodePoint"
+                                | "String"
+                                | "Symbol"
+                        )
+                        .then_some(0)
+                    });
+                let Some(arity) = arity else {
+                    return Err(FosterError::runtime(format!(
+                        "impl block names unknown type `{owner}` in module `{}`",
+                        module.name
+                    )));
+                };
+                if !implementation.parameters.is_empty() && implementation.parameters.len() != arity
+                {
+                    return Err(FosterError::runtime(format!(
+                        "impl `{owner}` expects {arity} type parameters, received {}",
+                        implementation.parameters.len()
                     )));
                 }
             }

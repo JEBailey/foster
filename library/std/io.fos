@@ -129,25 +129,29 @@ type IoTestWriter = & Writer<IoTestError> & {
     chunk_size: Int
 }
 
-/// Reads a bounded chunk for the generic stream contract test.
-func IoTestReader.read(self: IoTestReader, maximum: Int) -> Result<Bytes, IoTestError> [mut self.remaining, read self.chunk_size] {
-    let limit = branch { maximum < self.chunk_size -> maximum _ -> self.chunk_size }
-    let amount = branch { limit < self.remaining.length -> limit _ -> self.remaining.length }
-    let chunk = self.remaining.slice(0, amount)
-    self.remaining = self.remaining.slice(amount, self.remaining.length)
-    Result.Ok(chunk)
+impl IoTestReader {
+    /// Reads a bounded chunk for the generic stream contract test.
+    func read(self: IoTestReader, maximum: Int) -> Result<Bytes, IoTestError> [mut self.remaining, read self.chunk_size] {
+        let limit = branch { maximum < self.chunk_size -> maximum _ -> self.chunk_size }
+        let amount = branch { limit < self.remaining.length -> limit _ -> self.remaining.length }
+        let chunk = self.remaining.slice(0, amount)
+        self.remaining = self.remaining.slice(amount, self.remaining.length)
+        Result.Ok(chunk)
+    }
 }
 
-/// Accepts a bounded chunk for the generic stream contract test.
-func IoTestWriter.write(self: IoTestWriter, contents: Bytes) -> Result<Int, IoTestError> [mut self.contents, read self.chunk_size] {
-    let amount = branch { self.chunk_size < contents.length -> self.chunk_size _ -> contents.length }
-    self.contents = self.contents.concat(contents.slice(0, amount))
-    Result.Ok(amount)
-}
+impl IoTestWriter {
+    /// Accepts a bounded chunk for the generic stream contract test.
+    func write(self: IoTestWriter, contents: Bytes) -> Result<Int, IoTestError> [mut self.contents, read self.chunk_size] {
+        let amount = branch { self.chunk_size < contents.length -> self.chunk_size _ -> contents.length }
+        self.contents = self.contents.concat(contents.slice(0, amount))
+        Result.Ok(amount)
+    }
 
-/// Completes a test writer flush.
-func IoTestWriter.flush(self: IoTestWriter) -> Result<(), IoTestError> {
-    Result.Ok(())
+    /// Completes a test writer flush.
+    func flush(self: IoTestWriter) -> Result<(), IoTestError> {
+        Result.Ok(())
+    }
 }
 
 /// Extracts valid hexadecimal bytes for stream fixtures.

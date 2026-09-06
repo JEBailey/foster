@@ -21,119 +21,123 @@ type SequenceIterator<T> = & Iterator<T> & {
     remaining: Sequence<T>
 }
 
-/// Advances a sequence-backed iterator unless it has been exhausted.
-func SequenceIterator.next<T>(self: SequenceIterator<T>) -> Option<T> {
-    branch {
-        self.remaining.empty?() -> Option.None
-        _ -> self.advance()
-    }
-}
-
-/// Removes and returns the current head of a non-empty sequence cursor.
-func SequenceIterator.advance<T>(self: SequenceIterator<T>) -> Option<T> {
-    let value = self.remaining.head()
-    self.remaining = self.remaining.rest()
-    Option.Some(value)
-}
-
-/// Consumes a sequence into an independent stateful iterator.
-pub func Iterator.from_sequence<T>(values: Sequence<T>) -> Iterator<T> [consume values] {
-    SequenceIterator { remaining: move values }
-}
-
-/// Calls `action` once for every remaining element without growing the call stack.
-pub func Iterator.for_each<T>(self: Iterator<T>, action: Consumer<T>) -> () [mut self] {
-    loop {
-        branch self.next() {
-            Option.Some(value) -> action(move value)
-            Option.None -> { break }
+impl SequenceIterator {
+    /// Advances a sequence-backed iterator unless it has been exhausted.
+    func next<T>(self: SequenceIterator<T>) -> Option<T> {
+        branch {
+            self.remaining.empty?() -> Option.None
+            _ -> self.advance()
         }
     }
-    ()
+
+    /// Removes and returns the current head of a non-empty sequence cursor.
+    func advance<T>(self: SequenceIterator<T>) -> Option<T> {
+        let value = self.remaining.head()
+        self.remaining = self.remaining.rest()
+        Option.Some(value)
+    }
 }
 
-/// Reduces every remaining element into one owned accumulator, from left to right.
-pub func Iterator.fold<T, U>(self: Iterator<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [mut self, consume initial] {
-    let accumulated = move initial
-    loop {
-        branch self.next() {
-            Option.Some(value) -> {
-                accumulated = combine(move accumulated, move value)
-                ()
+impl Iterator {
+    /// Consumes a sequence into an independent stateful iterator.
+    pub func from_sequence<T>(values: Sequence<T>) -> Iterator<T> [consume values] {
+        SequenceIterator { remaining: move values }
+    }
+
+    /// Calls `action` once for every remaining element without growing the call stack.
+    pub func for_each<T>(self: Iterator<T>, action: Consumer<T>) -> () [mut self] {
+        loop {
+            branch self.next() {
+                Option.Some(value) -> action(move value)
+                Option.None -> { break }
             }
-            Option.None -> { break }
         }
+        ()
     }
-    accumulated
-}
 
-/// Returns the first match, leaving later elements unconsumed.
-pub func Iterator.find<T>(self: Iterator<T>, predicate: Predicate<T>) -> Option<T> [mut self] {
-    loop {
-        branch self.next() {
-            Option.Some(value) -> {
-                return Option.Some(value) if predicate(value)
-                ()
+    /// Reduces every remaining element into one owned accumulator, from left to right.
+    pub func fold<T, U>(self: Iterator<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [mut self, consume initial] {
+        let accumulated = move initial
+        loop {
+            branch self.next() {
+                Option.Some(value) -> {
+                    accumulated = combine(move accumulated, move value)
+                    ()
+                }
+                Option.None -> { break }
             }
-            Option.None -> { break }
         }
+        accumulated
     }
-    Option.None
-}
 
-/// Stops pulling as soon as an element satisfies `predicate`.
-pub func Iterator.any?<T>(self: Iterator<T>, predicate: Predicate<T>) -> Bool [mut self] {
-    loop {
-        branch self.next() {
-            Option.Some(value) -> {
-                return true if predicate(value)
-                ()
+    /// Returns the first match, leaving later elements unconsumed.
+    pub func find<T>(self: Iterator<T>, predicate: Predicate<T>) -> Option<T> [mut self] {
+        loop {
+            branch self.next() {
+                Option.Some(value) -> {
+                    return Option.Some(value) if predicate(value)
+                    ()
+                }
+                Option.None -> { break }
             }
-            Option.None -> { break }
         }
+        Option.None
     }
-    false
-}
 
-/// Stops pulling as soon as an element fails `predicate`.
-pub func Iterator.all?<T>(self: Iterator<T>, predicate: Predicate<T>) -> Bool [mut self] {
-    loop {
-        branch self.next() {
-            Option.Some(value) -> {
-                return false if !predicate(value)
-                ()
+    /// Stops pulling as soon as an element satisfies `predicate`.
+    pub func any?<T>(self: Iterator<T>, predicate: Predicate<T>) -> Bool [mut self] {
+        loop {
+            branch self.next() {
+                Option.Some(value) -> {
+                    return true if predicate(value)
+                    ()
+                }
+                Option.None -> { break }
             }
-            Option.None -> { break }
         }
+        false
     }
-    true
-}
 
-/// Counts every remaining element and leaves the iterator exhausted.
-pub func Iterator.count<T>(self: Iterator<T>) -> Int [mut self] {
-    let total = 0
-    loop {
-        branch self.next() {
-            Option.Some(_) -> {
-                total = total + 1
-                ()
+    /// Stops pulling as soon as an element fails `predicate`.
+    pub func all?<T>(self: Iterator<T>, predicate: Predicate<T>) -> Bool [mut self] {
+        loop {
+            branch self.next() {
+                Option.Some(value) -> {
+                    return false if !predicate(value)
+                    ()
+                }
+                Option.None -> { break }
             }
-            Option.None -> { break }
         }
+        true
     }
-    total
-}
 
-/// Collects the remaining elements into one growing list.
-pub func Iterator.collect<T>(self: Iterator<T>) -> List<T> [mut self] {
-    let output = []
-    loop {
-        branch self.next() {
-            Option.Some(value) -> output.push(value)
-            Option.None -> { break }
+    /// Counts every remaining element and leaves the iterator exhausted.
+    pub func count<T>(self: Iterator<T>) -> Int [mut self] {
+        let total = 0
+        loop {
+            branch self.next() {
+                Option.Some(_) -> {
+                    total = total + 1
+                    ()
+                }
+                Option.None -> { break }
+            }
         }
+        total
     }
-    output
+
+    /// Collects the remaining elements into one growing list.
+    pub func collect<T>(self: Iterator<T>) -> List<T> [mut self] {
+        let output = []
+        loop {
+            branch self.next() {
+                Option.Some(value) -> output.push(value)
+                Option.None -> { break }
+            }
+        }
+        output
+    }
 }
 
 test "iterator consumers process every remaining value" {

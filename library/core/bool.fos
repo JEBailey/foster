@@ -1,14 +1,16 @@
 //! Boolean logic helpers.
 
-/// Returns true when exactly one value is true.
-pub func Bool.xor(self: Bool, right: Bool) -> Bool {
-    self != right
-}
+impl Bool {
+    /// Returns true when exactly one value is true.
+    pub func xor(self: Bool, right: Bool) -> Bool {
+        self != right
+    }
 
-/// Returns a singleton list containing `value` when `condition` is true, or an empty list otherwise.
-pub func Bool.then<T>(self: Bool, value: T) -> List<T> [read self, consume value] {
-    return [value] if self
-    []
+    /// Returns a singleton list containing `value` when `condition` is true, or an empty list otherwise.
+    pub func then<T>(self: Bool, value: T) -> List<T> [read self, consume value] {
+        return [value] if self
+        []
+    }
 }
 
 test "boolean helpers implement their truth tables" {

@@ -68,12 +68,10 @@
     "declarations": {
       "patterns": [
         {
-          "match": "\\b(func)\\s+([A-Za-z_][A-Za-z0-9_?]*)(\\.)([A-Za-z_][A-Za-z0-9_?]*)",
+          "match": "\\b(impl)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
-            "1": { "name": "storage.type.function.foster" },
-            "2": { "name": "entity.name.type.foster" },
-            "3": { "name": "punctuation.accessor.foster" },
-            "4": { "name": "entity.name.function.foster" }
+            "1": { "name": "keyword.declaration.foster" },
+            "2": { "name": "entity.name.type.foster" }
           }
         },
         {
@@ -96,7 +94,7 @@
       "patterns": [
         { "name": "keyword.operator.logical.foster", "match": "\\bnot\\b" },
         { "name": "keyword.control.foster", "match": "\\b(?:assert|branch|break|continue|if|loop|return|await|try)\\b" },
-        { "name": "keyword.declaration.foster", "match": "\\b(?:func|type|pub|import|as|let)\\b" },
+        { "name": "keyword.declaration.foster", "match": "\\b(?:func|impl|type|pub|import|as|let)\\b" },
         { "name": "keyword.other.foster", "match": "\\b(?:copy|move|ref|remote|group|read|mut|reshape|consume|suspend)\\b" }
       ]
     },

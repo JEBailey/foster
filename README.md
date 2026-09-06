@@ -125,7 +125,7 @@ The current implementation includes:
   when an assignment, argument, field, branch, or result expects `Int`;
 - generic records, associated factories, and arity- and parameter-type-based function/method
   overloads, with exact matches preferred over lossless widening and ambiguous calls rejected;
-- instance methods, private-by-default declarations,
+- `impl` blocks for associated functions and instance methods, private-by-default declarations,
   untagged union contracts, and tagged enums with exhaustive pattern branches;
 - statically checked structural record adaptation, declaration-side composition such as
   `type Text = & Sequence<CodePoint> & { ... }`, and intersection contracts such as

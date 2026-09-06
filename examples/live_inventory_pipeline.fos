@@ -38,41 +38,47 @@ func shortage(current: Int, minimum: Int) -> Int {
     }
 }
 
-func Auditor.evaluate(self: Auditor, inventory: Inventory, policy: Policy) -> Assessment {
-    let missing = shortage(inventory.apples, policy.minimum_apples) + shortage(inventory.bolts, policy.minimum_bolts)
-    Assessment {
-        version: inventory.version
-        missing: missing
-        weighted: missing * self.weight
+impl Auditor {
+    func evaluate(self: Auditor, inventory: Inventory, policy: Policy) -> Assessment {
+        let missing = shortage(inventory.apples, policy.minimum_apples) + shortage(inventory.bolts, policy.minimum_bolts)
+        Assessment {
+            version: inventory.version
+            missing: missing
+            weighted: missing * self.weight
+        }
     }
 }
 
-func Inventory.restock(self: Inventory, apples: Int, bolts: Int) -> Int {
-    self.apples = self.apples + apples
-    self.bolts = self.bolts + bolts
-    self.version = self.version + 1
-    self.version
-}
-
-func Inventory.total(self: Inventory) -> Int {
-    self.apples + self.bolts
-}
-
-func Report.submit(self: Report, assessment: Assessment) -> Int {
-    self.alerts = self.alerts + branch {
-        assessment.missing == 0 -> 0
-        _ -> 1
+impl Inventory {
+    func restock(self: Inventory, apples: Int, bolts: Int) -> Int {
+        self.apples = self.apples + apples
+        self.bolts = self.bolts + bolts
+        self.version = self.version + 1
+        self.version
     }
-    self.healthy = self.healthy + branch {
-        assessment.missing == 0 -> 1
-        _ -> 0
+
+    func total(self: Inventory) -> Int {
+        self.apples + self.bolts
     }
-    self.score = self.score + assessment.weighted
-    self.score
 }
 
-func Report.result(self: Report) -> Int {
-    self.healthy * 1000 + self.alerts * 100 + self.score
+impl Report {
+    func submit(self: Report, assessment: Assessment) -> Int {
+        self.alerts = self.alerts + branch {
+            assessment.missing == 0 -> 0
+            _ -> 1
+        }
+        self.healthy = self.healthy + branch {
+            assessment.missing == 0 -> 1
+            _ -> 0
+        }
+        self.score = self.score + assessment.weighted
+        self.score
+    }
+
+    func result(self: Report) -> Int {
+        self.healthy * 1000 + self.alerts * 100 + self.score
+    }
 }
 
 func main() -> Int {

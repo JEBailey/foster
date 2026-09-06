@@ -48,6 +48,11 @@ one. Declarations are private unless made public. Module qualification uses `::`
 associated functions, and enum cases use `.`. Imports do not run application initialization code.
 Module constants have compile-time initializers; cyclic constant dependencies are rejected.
 
+Methods and associated functions are declared in module-scope `impl Type { ... }` blocks.
+The block supplies the member owner and optional shared type parameters. An unannotated first
+`self` parameter receives the block's type. Blocks share the existing member namespace and do
+not declare conformance; visibility remains per member. Module functions remain at module scope.
+
 **S-04 — Conformance.** Structural conformance requires compatible accessible fields and methods,
 including their ownership modes, effects, and suspension requirements. It does not require nominal
 inheritance. Adapting a value to a narrower contract must preserve its ownership and loan origins;
@@ -156,10 +161,16 @@ transfer, and borrowing begin at creation according to ordinary closure-capture 
 invocation evaluates only the placeholder arguments and the resulting call; it does not reevaluate
 the captured operands.
 
+Empty function, method, closure, and test bodies produce the unit value `()`. Function bodies
+retain their final statement's value, including bound values, assigned values, and declared
+functions. Assertions and completed loops yield `()`. A guarded return's fallthrough path yields
+`()` when no subsequent statement supplies a result. Unconditional control transfers leave the
+body instead of manufacturing a result.
+
 **S-10 — Selection and repetition.** A subject branch evaluates its subject once. Branch arms
 are considered in source order; the first matching arm executes and does not fall through.
 Enum coverage must account for refutable payload patterns, not merely mention each case name.
-A branch-arm block that falls through must supply a final value expression.
+A branch-arm block that completes without a final value expression produces `()`.
 
 `loop` repeats its body. `break` exits the nearest enclosing loop and `continue` begins that loop's
 next iteration. Neither targets a branch. Both are invalid outside loops. `return` leaves the

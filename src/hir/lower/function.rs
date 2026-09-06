@@ -39,12 +39,35 @@ impl FunctionLowerer<'_> {
             })?;
             body.push(lowered, statement_span.clone());
         }
+        if source.intrinsic.is_none() && !source.body_is_recovery_stub {
+            self.complete_unit_result(&mut body, false);
+        }
         self.hir.functions[self.function].parameters = parameters;
         self.hir.functions[self.function].receiver = source
             .receiver
             .then(|| self.hir.functions[self.function].parameters[0]);
         self.hir.functions[self.function].body = body;
         Ok(())
+    }
+
+    /// Materialize implicit unit results before type, ownership, and backend analysis.
+    fn complete_unit_result(
+        &mut self,
+        body: &mut crate::block::Block<Stmt>,
+        expression_result_only: bool,
+    ) {
+        if body.is_empty()
+            || (crate::control_flow::summarize_arm(body).falls_through
+                && (expression_result_only || matches!(body.last(), Some(Stmt::Return { .. }))))
+        {
+            let end = body.last_span().map_or(
+                self.hir.functions[self.function].span.end.saturating_sub(1),
+                |span| span.end,
+            );
+            let unit = self.alloc_expression(Expr::Unit);
+            self.hir.expression_spans.insert(unit, end..end);
+            body.push(Stmt::Expr(unit), end..end);
+        }
     }
 
     fn lower_statement(&mut self, statement: &ast::Stmt) -> Result<Stmt, FosterError> {
@@ -421,6 +444,7 @@ impl FunctionLowerer<'_> {
                             })?;
                         body.push(lowered_statement, statement_span.clone());
                     }
+                    self.complete_unit_result(&mut body, true);
                     lowered.push(BranchArm { test, body });
                     self.locals = locals;
                 }

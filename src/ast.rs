@@ -6,7 +6,16 @@ pub struct Program {
     pub records: Vec<RecordDecl>,
     pub variants: Vec<VariantDecl>,
     pub functions: Vec<Function>,
+    pub implementations: Vec<Implementation>,
     pub tests: Vec<TestDecl>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Implementation {
+    pub span: std::ops::Range<usize>,
+    pub owner_span: std::ops::Range<usize>,
+    pub owner: String,
+    pub parameters: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -109,6 +118,8 @@ pub struct Import {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
+    /// Interactive checking may preserve a signature after discarding an invalid body.
+    pub body_is_recovery_stub: bool,
     pub span: std::ops::Range<usize>,
     pub documentation: Option<String>,
     pub name: String,

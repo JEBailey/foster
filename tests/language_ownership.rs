@@ -38,9 +38,11 @@ type Counter = {
     value: Int
 }
 
-func Counter.increment(self: Counter, amount: Int) -> Int [mut self] {
-    self.value = self.value + amount
-    self.value
+impl Counter {
+    func increment(self: Counter, amount: Int) -> Int [mut self] {
+        self.value = self.value + amount
+        self.value
+    }
 }
 
 func main() -> Int {
@@ -58,12 +60,14 @@ fn remote_objects_dispatch_overloaded_methods() {
     let source = r#"
 type Formatter = {}
 
-func Formatter.render(self: Formatter, value: Int) -> Int {
-    value
-}
+impl Formatter {
+    func render(self: Formatter, value: Int) -> Int {
+        value
+    }
 
-func Formatter.render(self: Formatter, value: CodePoint) -> Int {
-    42
+    func render(self: Formatter, value: CodePoint) -> Int {
+        42
+    }
 }
 
 func main() -> Int {
@@ -79,9 +83,11 @@ fn remote_assertion_failures_are_delivered_through_futures() {
     let source = r#"
 type Worker = {}
 
-func Worker.check(self: Worker) -> Int {
-    assert(false, "remote assertion message")
-    42
+impl Worker {
+    func check(self: Worker) -> Int {
+        assert(false, "remote assertion message")
+        42
+    }
 }
 
 func main() -> Int {
@@ -100,13 +106,15 @@ type Counter = {
     value: Int
 }
 
-func Counter.snapshot(self: Counter) -> Int [read self.value] {
-    self.value
-}
+impl Counter {
+    func snapshot(self: Counter) -> Int [read self.value] {
+        self.value
+    }
 
-func Counter.assign(self: Counter, value: Int) -> Int [mut self] {
-    self.value = value
-    self.value
+    func assign(self: Counter, value: Int) -> Int [mut self] {
+        self.value = value
+        self.value
+    }
 }
 
 func main() -> Int {
@@ -129,14 +137,16 @@ type Pair = {
     right: Int
 }
 
-func Pair.total(self: Pair) -> Int [read self.left, read self.right] {
-    self.left + self.right
-}
+impl Pair {
+    func total(self: Pair) -> Int [read self.left, read self.right] {
+        self.left + self.right
+    }
 
-func Pair.replace(self: Pair, value: Int) -> Int [mut self] {
-    self.left = value
-    self.right = value
-    self.left + self.right
+    func replace(self: Pair, value: Int) -> Int [mut self] {
+        self.left = value
+        self.right = value
+        self.left + self.right
+    }
 }
 
 func main() -> Int {
@@ -161,9 +171,11 @@ fn remote_read_loans_reject_mutating_methods() {
     let source = r#"
 type Counter = { value: Int }
 
-func Counter.increment(self: Counter) -> Int [mut self] {
-    self.value = self.value + 1
-    self.value
+impl Counter {
+    func increment(self: Counter) -> Int [mut self] {
+        self.value = self.value + 1
+        self.value
+    }
 }
 
 func main() {
@@ -186,13 +198,17 @@ fn remote_borrowed_arguments_are_live_read_only_loans() {
 type Document = { value: Int }
 type Inspector = {}
 
-func Inspector.inspect(self: Inspector, document: Document) -> Int [read document.value] {
-    document.value
+impl Inspector {
+    func inspect(self: Inspector, document: Document) -> Int [read document.value] {
+        document.value
+    }
 }
 
-func Document.assign(self: Document, value: Int) -> Int [mut self] {
-    self.value = value
-    self.value
+impl Document {
+    func assign(self: Document, value: Int) -> Int [mut self] {
+        self.value = value
+        self.value
+    }
 }
 
 func main() -> Int {
@@ -213,14 +229,18 @@ fn remote_borrowed_arguments_serialize_with_owner_mutation() {
 type Pair = { left: Int, right: Int }
 type Inspector = {}
 
-func Inspector.total(self: Inspector, pair: Pair) -> Int [read pair.left, read pair.right] {
-    pair.left + pair.right
+impl Inspector {
+    func total(self: Inspector, pair: Pair) -> Int [read pair.left, read pair.right] {
+        pair.left + pair.right
+    }
 }
 
-func Pair.replace(self: Pair, value: Int) -> Int [mut self] {
-    self.left = value
-    self.right = value
-    self.left + self.right
+impl Pair {
+    func replace(self: Pair, value: Int) -> Int [mut self] {
+        self.left = value
+        self.right = value
+        self.left + self.right
+    }
 }
 
 func main() -> Int {
@@ -245,9 +265,11 @@ fn remote_borrowed_arguments_reject_mutation() {
 type Document = { value: Int }
 type Worker = {}
 
-func Worker.rewrite(self: Worker, document: Document) -> Int [mut document] {
-    document.value = 42
-    document.value
+impl Worker {
+    func rewrite(self: Worker, document: Document) -> Int [mut document] {
+        document.value = 42
+        document.value
+    }
 }
 
 func main() {
@@ -269,8 +291,10 @@ fn remote_calls_reject_borrowed_messages() {
     let source = r#"
 type Box = { value: Int }
 
-func Box.read[g: group Int](self: Box, value: ref[g] Int) -> Int {
-    value
+impl Box {
+    func read[g: group Int](self: Box, value: ref[g] Int) -> Int {
+        value
+    }
 }
 
 func main() {
@@ -292,8 +316,10 @@ fn remote_calls_require_moves_for_consumed_messages() {
     let source = r#"
 type Worker = {}
 
-func Worker.submit(self: Worker, message: String) -> () [consume message] {
-    println(message)
+impl Worker {
+    func submit(self: Worker, message: String) -> () [consume message] {
+        println(message)
+    }
 }
 
 func main() {
@@ -355,7 +381,9 @@ func main() { 0 }
 fn derives_suspend_from_await_and_callee_contracts() {
     let source = r#"
 type Worker = {}
-func Worker.value(self: Worker) -> Int { 1 }
+impl Worker {
+    func value(self: Worker) -> Int { 1 }
+}
 func wait(worker: Remote<Worker>) -> Int {
     await worker.value()
 }
@@ -371,7 +399,9 @@ func main() { 0 }
 fn accepts_declared_suspension() {
     let source = r#"
 type Worker = {}
-func Worker.value(self: Worker) -> Int { 1 }
+impl Worker {
+    func value(self: Worker) -> Int { 1 }
+}
 func wait(worker: Remote<Worker>) -> Int [suspend] {
     await worker.value()
 }
@@ -509,7 +539,9 @@ fn reports_overdeclared_effect_and_suspend_warnings() {
     let source = r#"
 // λ keeps token ranges byte-accurate
 type Box = { value: Int }
-func Box.inspect(self: Box) -> Int [mut self, suspend] { self.value }
+impl Box {
+    func inspect(self: Box) -> Int [mut self, suspend] { self.value }
+}
 func main() { 0 }
 "#;
     let compilation = foster::compile(source).unwrap();
@@ -585,10 +617,12 @@ type Cursor = {
     column: Int
 }
 
-func Cursor.advance(self: Cursor) -> () [mut self] {
-    self.remaining = self.remaining.rest
-    self.column = self.column + 1
-    ()
+impl Cursor {
+    func advance(self: Cursor) -> () [mut self] {
+        self.remaining = self.remaining.rest
+        self.column = self.column + 1
+        ()
+    }
 }
 
 func main() { 0 }
@@ -2299,7 +2333,9 @@ func main() -> Int {
 fn ownership_mir_models_loans_across_suspend_and_scope_destruction() {
     let source = r#"
 type Worker = {}
-func Worker.value(self: Worker) -> Int { 1 }
+impl Worker {
+    func value(self: Worker) -> Int { 1 }
+}
 
 func wait(worker: Remote<Worker>) -> Int {
     let values = [10, 20]

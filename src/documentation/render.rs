@@ -481,13 +481,17 @@ fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
         .join(", ");
     let result = signature
         .map(|sig| compilation.types.display(sig.result))
-        .unwrap_or_else(|| "Unit".into());
+        .unwrap_or_else(|| "()".into());
     let effects = signature.map_or_else(String::new, |sig| effects(&sig.effects, sig.suspends));
-    format!(
-        "{}func {}{generics}{groups}({parameters}) -> {result}{effects}",
+    let name = function.name.rsplit('.').next().unwrap_or(&function.name);
+    let signature = format!(
+        "{}func {name}{generics}{groups}({parameters}) -> {result}{effects}",
         if function.public { "pub " } else { "" },
-        source_function_name(function)
-    )
+    );
+    match &function.owner {
+        Some(owner) => format!("impl {owner} {{\n    {signature}\n}}"),
+        None => signature,
+    }
 }
 
 fn source_function_name(function: &crate::hir::Function) -> String {
@@ -534,7 +538,7 @@ fn record_signature(record: &crate::hir::Record) -> String {
             .return_type
             .as_ref()
             .map(type_expr)
-            .unwrap_or_else(|| "Unit".into());
+            .unwrap_or_else(|| "()".into());
         format!(
             "    {}func {}{}({parameters}) -> {result}{}",
             if method.public { "pub " } else { "" },

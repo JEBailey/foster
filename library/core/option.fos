@@ -6,67 +6,69 @@ import core.functions
 pub enum Option<T> = Some(T)
     | None
 
-/// Applies `transform` to a present value and preserves `None`.
-pub func Option.map<T, U>(self: Option<T>, transform: func(T) -> U) -> Option<U> {
-    branch self {
-        Option.Some(value) -> Option.Some(transform(value))
-        Option.None -> Option.None
+impl Option {
+    /// Applies `transform` to a present value and preserves `None`.
+    pub func map<T, U>(self: Option<T>, transform: func(T) -> U) -> Option<U> {
+        branch self {
+            Option.Some(value) -> Option.Some(transform(value))
+            Option.None -> Option.None
+        }
     }
-}
 
-/// Applies an optional-producing transform to a present value and flattens the result.
-pub func Option.and_then<T, U>(self: Option<T>, transform: func(T) -> Option<U>) -> Option<U> {
-    branch self {
-        Option.Some(value) -> transform(value)
-        Option.None -> Option.None
+    /// Applies an optional-producing transform to a present value and flattens the result.
+    pub func and_then<T, U>(self: Option<T>, transform: func(T) -> Option<U>) -> Option<U> {
+        branch self {
+            Option.Some(value) -> transform(value)
+            Option.None -> Option.None
+        }
     }
-}
 
-/// Returns the contained value, or `fallback` when the option is `None`.
-pub func Option.unwrap_or<T>(self: Option<T>, fallback: T) -> T {
-    branch self {
-        Option.Some(value) -> value
-        Option.None -> fallback
+    /// Returns the contained value, or `fallback` when the option is `None`.
+    pub func unwrap_or<T>(self: Option<T>, fallback: T) -> T {
+        branch self {
+            Option.Some(value) -> value
+            Option.None -> fallback
+        }
     }
-}
 
-/// Returns whether the option contains a value.
-pub func Option.present?<T>(self: Option<T>) -> Bool {
-    branch self {
-        Option.Some(_) -> true
-        Option.None -> false
+    /// Returns whether the option contains a value.
+    pub func present?<T>(self: Option<T>) -> Bool {
+        branch self {
+            Option.Some(_) -> true
+            Option.None -> false
+        }
     }
-}
 
-/// Returns whether the option contains no value.
-pub func Option.absent?<T>(self: Option<T>) -> Bool {
-    branch self {
-        Option.Some(_) -> false
-        Option.None -> true
+    /// Returns whether the option contains no value.
+    pub func absent?<T>(self: Option<T>) -> Bool {
+        branch self {
+            Option.Some(_) -> false
+            Option.None -> true
+        }
     }
-}
 
-/// Returns the contained value, or computes a fallback when the option is `None`.
-pub func Option.unwrap_or_else<T>(self: Option<T>, fallback: Supplier<T>) -> T {
-    branch self {
-        Option.Some(value) -> value
-        Option.None -> fallback()
+    /// Returns the contained value, or computes a fallback when the option is `None`.
+    pub func unwrap_or_else<T>(self: Option<T>, fallback: Supplier<T>) -> T {
+        branch self {
+            Option.Some(value) -> value
+            Option.None -> fallback()
+        }
     }
-}
 
-/// Preserves a present value, or computes another option when this option is `None`.
-pub func Option.or_else<T>(self: Option<T>, fallback: Supplier<Option<T>>) -> Option<T> {
-    branch self {
-        Option.Some(value) -> Option.Some(value)
-        Option.None -> fallback()
+    /// Preserves a present value, or computes another option when this option is `None`.
+    pub func or_else<T>(self: Option<T>, fallback: Supplier<Option<T>>) -> Option<T> {
+        branch self {
+            Option.Some(value) -> Option.Some(value)
+            Option.None -> fallback()
+        }
     }
-}
 
-/// Removes one layer from a nested option.
-pub func Option.flatten<T>(self: Option<Option<T>>) -> Option<T> {
-    branch self {
-        Option.Some(value) -> value
-        Option.None -> Option.None
+    /// Removes one layer from a nested option.
+    pub func flatten<T>(self: Option<Option<T>>) -> Option<T> {
+        branch self {
+            Option.Some(value) -> value
+            Option.None -> Option.None
+        }
     }
 }
 

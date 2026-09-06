@@ -14,7 +14,8 @@ struct FunctionMapping {
 }
 
 /// Maps positions between a last-good semantic document and the current editor text. When the
-/// texts differ, only complete functions whose source is unchanged participate in the mapping.
+/// texts differ, only unchanged complete functions or impl blocks participate in the mapping.
+/// Mapping whole impl blocks keeps member identities tied to their owner and generic context.
 pub(super) struct SemanticSnapshot<'a> {
     semantic_source: &'a str,
     current_source: &'a str,
@@ -40,7 +41,19 @@ impl<'a> SemanticSnapshot<'a> {
             program
                 .functions
                 .iter()
+                .filter(|function| {
+                    !program.implementations.iter().any(|implementation| {
+                        implementation.span.start <= function.span.start
+                            && function.span.end <= implementation.span.end
+                    })
+                })
                 .map(|function| &function.span)
+                .chain(
+                    program
+                        .implementations
+                        .iter()
+                        .map(|implementation| &implementation.span),
+                )
                 .chain(program.tests.iter().map(|test| &test.span))
                 .filter_map(|span| {
                     unchanged_function_mapping(semantic_source, current_source, span)

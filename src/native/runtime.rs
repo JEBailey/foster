@@ -612,7 +612,9 @@ type Box = { text: String }
 type Token = { symbol: Symbol }
 type Echo = { text: String }
 func identity(text: String) -> String { String.from_utf8(text.bytes).unwrap_or("invalid") }
-func Echo.read(self: Echo) -> String { identity(self.text) }
+impl Echo {
+    func read(self: Echo) -> String { identity(self.text) }
+}
 func main(args: Arguments) -> String {
     return "" if args.values.empty?
     assert(String.from_utf8(Bytes.from([Byte.unchecked(255)])).error?())

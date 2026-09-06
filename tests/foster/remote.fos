@@ -6,22 +6,26 @@ type Counter = {
 
 type Inspector = {}
 
-func Counter.increment(self: Counter, amount: Int) -> Int [mut self] {
-    self.value = self.value + amount
-    self.value
+impl Counter {
+    func increment(self: Counter, amount: Int) -> Int [mut self] {
+        self.value = self.value + amount
+        self.value
+    }
+
+    func snapshot(self: Counter) -> Int [read self.value] {
+        self.value
+    }
+
+    func assign(self: Counter, value: Int) -> Int [mut self] {
+        self.value = value
+        self.value
+    }
 }
 
-func Counter.snapshot(self: Counter) -> Int [read self.value] {
-    self.value
-}
-
-func Counter.assign(self: Counter, value: Int) -> Int [mut self] {
-    self.value = value
-    self.value
-}
-
-func Inspector.inspect(self: Inspector, counter: Counter) -> Int [read counter.value] {
-    counter.value
+impl Inspector {
+    func inspect(self: Inspector, counter: Counter) -> Int [read counter.value] {
+        counter.value
+    }
 }
 
 test "remote objects process messages in FIFO order" {

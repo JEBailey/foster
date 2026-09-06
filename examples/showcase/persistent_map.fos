@@ -12,8 +12,10 @@ pub type Map = {
 enum Lookup = Found(Int)
     | Missing
 
-pub func Map.empty() -> Map {
-    Map { entries: [] }
+impl Map {
+    pub func empty() -> Map {
+        Map { entries: [] }
+    }
 }
 
 func get_entries(entries: List<Entry>, key: Symbol) -> Lookup {
@@ -24,8 +26,10 @@ func get_entries(entries: List<Entry>, key: Symbol) -> Lookup {
     }
 }
 
-func Map.get(self: Map, key: Symbol) -> Lookup {
-    get_entries(self.entries, key)
+impl Map {
+    func get(self: Map, key: Symbol) -> Lookup {
+        get_entries(self.entries, key)
+    }
 }
 
 func put_entries(entries: List<Entry>, key: Symbol, value: Int) -> List<Entry> {
@@ -36,8 +40,10 @@ func put_entries(entries: List<Entry>, key: Symbol, value: Int) -> List<Entry> {
     }
 }
 
-func Map.put(self: Map, key: Symbol, value: Int) -> Map {
-    Map { entries: put_entries(move self.entries, key, value) }
+impl Map {
+    func put(self: Map, key: Symbol, value: Int) -> Map {
+        Map { entries: put_entries(move self.entries, key, value) }
+    }
 }
 
 func value_or_zero(value: Lookup) -> Int {

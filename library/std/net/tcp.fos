@@ -14,33 +14,35 @@ import std.uri
 /// Private namespace for TCP host operations.
 type TcpHost = {}
 
-/// Binds a host TCP listener.
-func TcpHost.listen(address: String, port: Int) -> Result<Int, NetworkError> = intrinsic("tcp.listen")
-/// Connects a host TCP stream.
-func TcpHost.connect(address: String, port: Int) -> Result<Int, NetworkError> = intrinsic("tcp.connect")
-/// Accepts a host TCP connection.
-func TcpHost.accept(listener: Int) -> Result<Int, NetworkError> = intrinsic("tcp.accept")
-/// Reads UTF-8 text from a host TCP connection.
-func TcpHost.read(connection: Int, maximum: Int) -> Result<String, NetworkError> {
-    branch TcpHost.read_bytes(connection, maximum) {
-        Result.Error(error) -> Result.Error(error)
-        Result.Ok(contents) -> decode_text(move contents)
+impl TcpHost {
+    /// Binds a host TCP listener.
+    func listen(address: String, port: Int) -> Result<Int, NetworkError> = intrinsic("tcp.listen")
+    /// Connects a host TCP stream.
+    func connect(address: String, port: Int) -> Result<Int, NetworkError> = intrinsic("tcp.connect")
+    /// Accepts a host TCP connection.
+    func accept(listener: Int) -> Result<Int, NetworkError> = intrinsic("tcp.accept")
+    /// Reads UTF-8 text from a host TCP connection.
+    func read(connection: Int, maximum: Int) -> Result<String, NetworkError> {
+        branch TcpHost.read_bytes(connection, maximum) {
+            Result.Error(error) -> Result.Error(error)
+            Result.Ok(contents) -> decode_text(move contents)
+        }
     }
+    /// Writes UTF-8 text to a host TCP connection.
+    func write(connection: Int, contents: String) -> Result<(), NetworkError> {
+        TcpHost.write_bytes(connection, contents.bytes)
+    }
+    /// Reads bytes from a host TCP connection.
+    func read_bytes(connection: Int, maximum: Int) -> Result<Bytes, NetworkError> = intrinsic("tcp.read_bytes")
+    /// Writes bytes to a host TCP connection.
+    func write_bytes(connection: Int, contents: Bytes) -> Result<(), NetworkError> = intrinsic("tcp.write_bytes")
+    /// Sets host TCP read and write timeouts.
+    func set_timeout(connection: Int, milliseconds: Int) -> Result<(), NetworkError> = intrinsic("tcp.set_timeout")
+    /// Closes a host TCP listener.
+    func close_listener(listener: Int) -> Result<(), NetworkError> = intrinsic("tcp.close_listener")
+    /// Closes a host TCP connection.
+    func close_connection(connection: Int) -> Result<(), NetworkError> = intrinsic("tcp.close_connection")
 }
-/// Writes UTF-8 text to a host TCP connection.
-func TcpHost.write(connection: Int, contents: String) -> Result<(), NetworkError> {
-    TcpHost.write_bytes(connection, contents.bytes)
-}
-/// Reads bytes from a host TCP connection.
-func TcpHost.read_bytes(connection: Int, maximum: Int) -> Result<Bytes, NetworkError> = intrinsic("tcp.read_bytes")
-/// Writes bytes to a host TCP connection.
-func TcpHost.write_bytes(connection: Int, contents: Bytes) -> Result<(), NetworkError> = intrinsic("tcp.write_bytes")
-/// Sets host TCP read and write timeouts.
-func TcpHost.set_timeout(connection: Int, milliseconds: Int) -> Result<(), NetworkError> = intrinsic("tcp.set_timeout")
-/// Closes a host TCP listener.
-func TcpHost.close_listener(listener: Int) -> Result<(), NetworkError> = intrinsic("tcp.close_listener")
-/// Closes a host TCP connection.
-func TcpHost.close_connection(connection: Int) -> Result<(), NetworkError> = intrinsic("tcp.close_connection")
 
 /// Validates received bytes before exposing them as text.
 func decode_text(contents: Bytes) -> Result<String, NetworkError> [consume contents] {
@@ -68,38 +70,40 @@ pub type TcpEndpoint = & ResourceIdentifier & {
     port_value: Int
 }
 
-/// Associates a host address and port with a typed TCP endpoint identifier.
-pub func TcpEndpoint.at(address: String, port: Int) -> TcpEndpoint [consume address] {
-    TcpEndpoint { address_value: move address, port_value: port }
-}
-
-/// Parses a `tcp://host:port` URI into a TCP endpoint.
-pub func TcpEndpoint.from_uri(value: Uri) -> Result<TcpEndpoint, NetworkError> {
-    branch {
-        value.scheme().lower() != "tcp" -> invalid_endpoint(value.as_string(), "URI scheme must be tcp")
-        !value.path().starts_with?("//") -> invalid_endpoint(value.as_string(), "TCP URI must use //host:port")
-        _ -> parse_authority(value.as_string(), value.path().slice(2, value.path().length))
+impl TcpEndpoint {
+    /// Associates a host address and port with a typed TCP endpoint identifier.
+    pub func at(address: String, port: Int) -> TcpEndpoint [consume address] {
+        TcpEndpoint { address_value: move address, port_value: port }
     }
-}
 
-/// Returns this endpoint's URI spelling.
-pub func TcpEndpoint.as_string(self: TcpEndpoint) -> String {
-    branch {
-        self.address_value.contains?(":") -> "tcp://[" + self.address_value + "]:" + self.port_value.as_string()
-        _ -> "tcp://" + self.address_value + ":" + self.port_value.as_string()
+    /// Parses a `tcp://host:port` URI into a TCP endpoint.
+    pub func from_uri(value: Uri) -> Result<TcpEndpoint, NetworkError> {
+        branch {
+            value.scheme().lower() != "tcp" -> invalid_endpoint(value.as_string(), "URI scheme must be tcp")
+            !value.path().starts_with?("//") -> invalid_endpoint(value.as_string(), "TCP URI must use //host:port")
+            _ -> parse_authority(value.as_string(), value.path().slice(2, value.path().length))
+        }
     }
+
+    /// Returns this endpoint's URI spelling.
+    pub func as_string(self: TcpEndpoint) -> String {
+        branch {
+            self.address_value.contains?(":") -> "tcp://[" + self.address_value + "]:" + self.port_value.as_string()
+            _ -> "tcp://" + self.address_value + ":" + self.port_value.as_string()
+        }
+    }
+
+    /// Returns the stable endpoint identifier supplied to the TCP provider.
+    pub func resource_id(self: TcpEndpoint) -> String { self.as_string() }
+
+    /// Returns the host address without URI brackets.
+    pub func address(self: TcpEndpoint) -> String {
+        self.address_value.slice(0, self.address_value.length)
+    }
+
+    /// Returns the TCP port.
+    pub func port(self: TcpEndpoint) -> Int { self.port_value }
 }
-
-/// Returns the stable endpoint identifier supplied to the TCP provider.
-pub func TcpEndpoint.resource_id(self: TcpEndpoint) -> String { self.as_string() }
-
-/// Returns the host address without URI brackets.
-pub func TcpEndpoint.address(self: TcpEndpoint) -> String {
-    self.address_value.slice(0, self.address_value.length)
-}
-
-/// Returns the TCP port.
-pub func TcpEndpoint.port(self: TcpEndpoint) -> Int { self.port_value }
 
 /// An opaque connected TCP stream associated with the endpoint that created it.
 pub type Connection = & Resource<TcpEndpoint> & Duplex<NetworkError> & Closable<NetworkError> & {
@@ -153,10 +157,12 @@ func wrap_listener(endpoint: TcpEndpoint, outcome: Result<Int, NetworkError>) ->
     Ok(Listener { location: move endpoint, handle })
 }
 
-/// Waits for and accepts one incoming connection.
-pub func Listener.accept(self: Listener) -> Result<Connection, NetworkError> [mut self.handle, read self.location] {
-    let endpoint = TcpEndpoint.at(self.location.address(), self.location.port())
-    wrap_connection(move endpoint, TcpHost.accept(self.handle))
+impl Listener {
+    /// Waits for and accepts one incoming connection.
+    pub func accept(self: Listener) -> Result<Connection, NetworkError> [mut self.handle, read self.location] {
+        let endpoint = TcpEndpoint.at(self.location.address(), self.location.port())
+        wrap_connection(move endpoint, TcpHost.accept(self.handle))
+    }
 }
 
 /// Converts a successful connection handle into an opaque `Connection`.
@@ -165,54 +171,60 @@ func wrap_connection(endpoint: TcpEndpoint, outcome: Result<Int, NetworkError>) 
     Ok(Connection { location: move endpoint, handle })
 }
 
-/// Reads at most `maximum` bytes, returning empty bytes after an orderly peer shutdown.
-pub func Connection.read(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [mut self.handle] {
-    TcpHost.read_bytes(self.handle, maximum)
+impl Connection {
+    /// Reads at most `maximum` bytes, returning empty bytes after an orderly peer shutdown.
+    pub func read(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [mut self.handle] {
+        TcpHost.read_bytes(self.handle, maximum)
+    }
+
+    /// Writes the complete byte sequence and reports its length.
+    pub func write(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [mut self.handle] {
+        written_bytes(TcpHost.write_bytes(self.handle, contents), contents.length)
+    }
+
+    /// Flushes the TCP stream's host writer.
+    pub func flush(self: Connection) -> Result<(), NetworkError> [mut self.handle] {
+        TcpHost.write_bytes(self.handle, Bytes.empty())
+    }
+
+    /// Reads at most `maximum` bytes of UTF-8 text from a connection.
+    pub func read_text(self: Connection, maximum: Int) -> Result<String, NetworkError> [mut self.handle] {
+        TcpHost.read(self.handle, maximum)
+    }
+
+    /// Writes the complete UTF-8 string to a connection.
+    pub func write_text(self: Connection, text: String) -> Result<(), NetworkError> [mut self.handle] {
+        TcpHost.write(self.handle, text)
+    }
+
+    /// Compatibility spelling for binary `read`.
+    pub func read_bytes(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [mut self.handle] {
+        self.read(maximum)
+    }
+
+    /// Explicit binary spelling for `write`.
+    pub func write_bytes(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [mut self.handle] {
+        self.write(contents)
+    }
+
+    /// Sets the connection's read and write timeout in milliseconds.
+    pub func set_timeout(self: Connection, milliseconds: Int) -> Result<(), NetworkError> [mut self.handle] {
+        TcpHost.set_timeout(self.handle, milliseconds)
+    }
 }
 
-/// Writes the complete byte sequence and reports its length.
-pub func Connection.write(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [mut self.handle] {
-    written_bytes(TcpHost.write_bytes(self.handle, contents), contents.length)
+impl Listener {
+    /// Closes a listening socket.
+    pub func close(self: Listener) -> Result<(), NetworkError> [consume self] {
+        TcpHost.close_listener(self.handle)
+    }
 }
 
-/// Flushes the TCP stream's host writer.
-pub func Connection.flush(self: Connection) -> Result<(), NetworkError> [mut self.handle] {
-    TcpHost.write_bytes(self.handle, Bytes.empty())
-}
-
-/// Reads at most `maximum` bytes of UTF-8 text from a connection.
-pub func Connection.read_text(self: Connection, maximum: Int) -> Result<String, NetworkError> [mut self.handle] {
-    TcpHost.read(self.handle, maximum)
-}
-
-/// Writes the complete UTF-8 string to a connection.
-pub func Connection.write_text(self: Connection, text: String) -> Result<(), NetworkError> [mut self.handle] {
-    TcpHost.write(self.handle, text)
-}
-
-/// Compatibility spelling for binary `read`.
-pub func Connection.read_bytes(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [mut self.handle] {
-    self.read(maximum)
-}
-
-/// Explicit binary spelling for `write`.
-pub func Connection.write_bytes(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [mut self.handle] {
-    self.write(contents)
-}
-
-/// Sets the connection's read and write timeout in milliseconds.
-pub func Connection.set_timeout(self: Connection, milliseconds: Int) -> Result<(), NetworkError> [mut self.handle] {
-    TcpHost.set_timeout(self.handle, milliseconds)
-}
-
-/// Closes a listening socket.
-pub func Listener.close(self: Listener) -> Result<(), NetworkError> [consume self] {
-    TcpHost.close_listener(self.handle)
-}
-
-/// Closes a connected TCP stream.
-pub func Connection.close(self: Connection) -> Result<(), NetworkError> [consume self] {
-    TcpHost.close_connection(self.handle)
+impl Connection {
+    /// Closes a connected TCP stream.
+    pub func close(self: Connection) -> Result<(), NetworkError> [consume self] {
+        TcpHost.close_connection(self.handle)
+    }
 }
 
 /// Converts a completed host write into the stream writer's byte count.

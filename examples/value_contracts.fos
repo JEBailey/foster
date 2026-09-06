@@ -4,20 +4,22 @@ type Version = & Ordered<Version> & Hashing & {
     number: Int
 }
 
-func Version.equal?(self: Version, other: Version) -> Bool {
-    self.number == other.number
-}
-
-func Version.compare(self: Version, other: Version) -> Ordering {
-    branch {
-        self.number < other.number -> Ordering.Less
-        self.number > other.number -> Ordering.Greater
-        _ -> Ordering.Equal
+impl Version {
+    func equal?(self: Version, other: Version) -> Bool {
+        self.number == other.number
     }
-}
 
-func Version.hash(self: Version) -> Int {
-    self.number * 31
+    func compare(self: Version, other: Version) -> Ordering {
+        branch {
+            self.number < other.number -> Ordering.Less
+            self.number > other.number -> Ordering.Greater
+            _ -> Ordering.Equal
+        }
+    }
+
+    func hash(self: Version) -> Int {
+        self.number * 31
+    }
 }
 
 func compare_score(left: Ordered<Version>, right: Version) -> Int {

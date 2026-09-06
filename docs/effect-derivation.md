@@ -100,9 +100,11 @@ ordinary mutation of a local record does not force a source annotation.
 named `self`:
 
 ```foster
-func Counter.increment(self: Counter, amount: Int) -> Int [mut self] {
-    self.value = self.value + amount
-    self.value
+impl Counter {
+    func increment(self: Counter, amount: Int) -> Int [mut self] {
+        self.value = self.value + amount
+        self.value
+    }
 }
 ```
 

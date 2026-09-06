@@ -11,61 +11,63 @@ pub type ByteBuffer = {
     value: List<Byte>
 }
 
-/// Creates an empty mutable byte buffer.
-pub func ByteBuffer.empty() -> ByteBuffer {
-    ByteBuffer { value: [] }
-}
-
-/// Creates an empty buffer with an allocation hint.
-pub func ByteBuffer.with_capacity(capacity: Int) -> ByteBuffer {
-    assert(capacity >= 0, "ByteBuffer capacity cannot be negative")
-    ByteBuffer.empty()
-}
-
-/// Appends one byte.
-pub func ByteBuffer.push(self: ByteBuffer, value: Byte) -> () [reshape self.value.items] {
-    self.value.push(value)
-    ()
-}
-
-/// Appends an immutable byte sequence.
-pub func ByteBuffer.extend(self: ByteBuffer, values: Bytes) -> () [reshape self.value.items] {
-    let index = 0
-    loop {
-        break if index >= values.length
-        self.value.push(values[index])
-        index = index + 1
+impl ByteBuffer {
+    /// Creates an empty mutable byte buffer.
+    pub func empty() -> ByteBuffer {
+        ByteBuffer { value: [] }
     }
-    ()
-}
 
-/// Removes every buffered byte.
-pub func ByteBuffer.clear(self: ByteBuffer) -> () [mut self.value] {
-    self.value = []
-    ()
-}
+    /// Creates an empty buffer with an allocation hint.
+    pub func with_capacity(capacity: Int) -> ByteBuffer {
+        assert(capacity >= 0, "ByteBuffer capacity cannot be negative")
+        ByteBuffer.empty()
+    }
 
-/// Keeps at most the first `length` buffered bytes.
-pub func ByteBuffer.truncate(self: ByteBuffer, length: Int) -> () [mut self.value] {
-    assert(length >= 0, "truncate length cannot be negative")
-    self.value = self.value.take(length)
-    ()
-}
+    /// Appends one byte.
+    pub func push(self: ByteBuffer, value: Byte) -> () [reshape self.value.items] {
+        self.value.push(value)
+        ()
+    }
 
-/// Accepts an allocation hint without exposing storage capacity as semantics.
-pub func ByteBuffer.reserve(self: ByteBuffer, additional: Int) -> () {
-    assert(additional >= 0, "reserve amount cannot be negative")
-    ()
-}
+    /// Appends an immutable byte sequence.
+    pub func extend(self: ByteBuffer, values: Bytes) -> () [reshape self.value.items] {
+        let index = 0
+        loop {
+            break if index >= values.length
+            self.value.push(values[index])
+            index = index + 1
+        }
+        ()
+    }
 
-/// Consumes the buffer and packs its values into immutable bytes.
-pub func ByteBuffer.freeze(self: ByteBuffer) -> Bytes [consume self] {
-    Bytes.from(move self.value)
-}
+    /// Removes every buffered byte.
+    pub func clear(self: ByteBuffer) -> () [mut self.value] {
+        self.value = []
+        ()
+    }
 
-/// Copies the current values into immutable bytes.
-pub func ByteBuffer.snapshot(self: ByteBuffer) -> Bytes {
-    Bytes.from(self.value.map((value: Byte) -> value))
+    /// Keeps at most the first `length` buffered bytes.
+    pub func truncate(self: ByteBuffer, length: Int) -> () [mut self.value] {
+        assert(length >= 0, "truncate length cannot be negative")
+        self.value = self.value.take(length)
+        ()
+    }
+
+    /// Accepts an allocation hint without exposing storage capacity as semantics.
+    pub func reserve(self: ByteBuffer, additional: Int) -> () {
+        assert(additional >= 0, "reserve amount cannot be negative")
+        ()
+    }
+
+    /// Consumes the buffer and packs its values into immutable bytes.
+    pub func freeze(self: ByteBuffer) -> Bytes [consume self] {
+        Bytes.from(move self.value)
+    }
+
+    /// Copies the current values into immutable bytes.
+    pub func snapshot(self: ByteBuffer) -> Bytes {
+        Bytes.from(self.value.map((value: Byte) -> value))
+    }
 }
 
 test "byte buffers append snapshot and freeze contents" {

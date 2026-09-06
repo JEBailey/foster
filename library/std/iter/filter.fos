@@ -9,23 +9,27 @@ type FilterIterator<T> = & Iterator<T> & {
     predicate: Predicate<T>
 }
 
-/// Pulls until a filtered iterator finds a matching value or reaches exhaustion.
-func FilterIterator.next<T>(self: FilterIterator<T>) -> Option<T> {
-    loop {
-        branch self.source.next() {
-            Option.Some(value) -> {
-                return Option.Some(value) if self.predicate(value)
-                ()
+impl FilterIterator {
+    /// Pulls until a filtered iterator finds a matching value or reaches exhaustion.
+    func next<T>(self: FilterIterator<T>) -> Option<T> {
+        loop {
+            branch self.source.next() {
+                Option.Some(value) -> {
+                    return Option.Some(value) if self.predicate(value)
+                    ()
+                }
+                Option.None -> { break }
             }
-            Option.None -> { break }
         }
+        Option.None
     }
-    Option.None
 }
 
-/// Lazily retains this iterator's remaining elements that satisfy `predicate`.
-pub func Iterator.filter<T>(self: Iterator<T>, predicate: Predicate<T>) -> Iterator<T> [consume self, consume predicate] {
-    FilterIterator { source: move self, predicate: move predicate }
+impl Iterator {
+    /// Lazily retains this iterator's remaining elements that satisfy `predicate`.
+    pub func filter<T>(self: Iterator<T>, predicate: Predicate<T>) -> Iterator<T> [consume self, consume predicate] {
+        FilterIterator { source: move self, predicate: move predicate }
+    }
 }
 
 test "filtered iterators retain matching values" {

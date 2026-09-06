@@ -9,6 +9,7 @@ impl Parser {
             records: Vec::new(),
             variants: Vec::new(),
             functions: Vec::new(),
+            implementations: Vec::new(),
             tests: Vec::new(),
         };
         let mut diagnostics = Vec::new();
@@ -58,7 +59,11 @@ impl Parser {
         documentation: Option<String>,
         program: &mut Program,
     ) -> Result<(), FosterError> {
-        if self.at(&TokenKind::Import) {
+        if self.at(&TokenKind::Impl) {
+            let (implementation, functions) = self.implementation(documentation)?;
+            program.implementations.push(implementation);
+            program.functions.extend(functions);
+        } else if self.at(&TokenKind::Import) {
             program.imports.push(self.import()?);
         } else if self.at(&TokenKind::Let) {
             return Err(self.error(
@@ -116,6 +121,7 @@ impl Parser {
         let mut records = Vec::new();
         let mut variants = Vec::new();
         let mut functions = Vec::new();
+        let mut implementations = Vec::new();
         let mut tests = Vec::new();
         self.newlines();
         let module_documentation = self.module_documentation();
@@ -129,7 +135,11 @@ impl Parser {
             documentation = self.documentation();
         }
         while !self.at(&TokenKind::Eof) {
-            if self.at(&TokenKind::Let) {
+            if self.at(&TokenKind::Impl) {
+                let (implementation, members) = self.implementation(documentation.take())?;
+                implementations.push(implementation);
+                functions.extend(members);
+            } else if self.at(&TokenKind::Let) {
                 return Err(self.error(
                     "local declarations are only allowed inside function, closure, or test bodies",
                 ));
@@ -174,6 +184,7 @@ impl Parser {
             records,
             variants,
             functions,
+            implementations,
             tests,
         })
     }
@@ -531,27 +542,78 @@ impl Parser {
         &mut self,
         documentation: Option<String>,
     ) -> Result<Function, FosterError> {
+        self.member_function(documentation, None, &[])
+    }
+
+    fn implementation(
+        &mut self,
+        documentation: Option<String>,
+    ) -> Result<(Implementation, Vec<Function>), FosterError> {
+        if documentation.is_some() {
+            return Err(self.error("document the type or individual members, not the impl block"));
+        }
+        let start = self.peek().range.start;
+        self.expect(&TokenKind::Impl, "expected `impl`")?;
+        let owner_span = self.peek().range.clone();
+        let owner = self.expect_ident("expected type name after `impl`")?;
+        let (type_parameters, groups) = self.function_parameters()?;
+        let mut seen = std::collections::HashSet::new();
+        if type_parameters.iter().any(|name| !seen.insert(name)) {
+            return Err(self.error("duplicate impl type parameter"));
+        }
+        if !groups.is_empty() {
+            return Err(self.error("group parameters belong on individual functions"));
+        }
+        self.newlines();
+        self.expect(&TokenKind::LBrace, "expected `{` after impl type")?;
+        self.newlines();
+        let mut functions = Vec::new();
+        while !self.at(&TokenKind::RBrace) && !self.at(&TokenKind::Eof) {
+            let documentation = self.documentation();
+            functions.push(self.member_function(documentation, Some(&owner), &type_parameters)?);
+            self.newlines();
+        }
+        self.expect(&TokenKind::RBrace, "expected `}` after impl members")?;
+        Ok((
+            Implementation {
+                span: start..self.tokens[self.current.saturating_sub(1)].range.end,
+                owner_span,
+                owner,
+                parameters: type_parameters,
+            },
+            functions,
+        ))
+    }
+
+    fn member_function(
+        &mut self,
+        documentation: Option<String>,
+        impl_owner: Option<&str>,
+        impl_parameters: &[String],
+    ) -> Result<Function, FosterError> {
         let start = self.peek().range.start;
         let public = self.take(&TokenKind::Pub);
         self.expect(&TokenKind::Func, "expected `func`")?;
-        let first_name = self.expect_ident("expected function name")?;
-        let mut owner = None;
-        let mut name = first_name.clone();
-        if self.take(&TokenKind::Dot) {
-            let member = self.expect_member_ident("expected associated function name after `.`")?;
-            owner = Some(first_name.clone());
-            name = format!("{first_name}.{member}");
-            if self.at(&TokenKind::Dot) {
-                return Err(
-                    self.error("associated function declarations accept one type qualifier")
-                );
-            }
-        } else if self.at(&TokenKind::DoubleColon) {
+        let member = if impl_owner.is_some() {
+            self.expect_member_ident("expected function name")?
+        } else {
+            self.expect_ident("expected function name")?
+        };
+        if self.at(&TokenKind::Dot) || self.at(&TokenKind::DoubleColon) {
+            return Err(self.error("associated functions and methods must be declared inside an `impl` block without a type qualifier"));
+        }
+        let owner = impl_owner.map(str::to_owned);
+        let name = impl_owner.map_or_else(|| member.clone(), |owner| format!("{owner}.{member}"));
+        let (mut type_parameters, groups) = self.function_parameters()?;
+        if type_parameters
+            .iter()
+            .any(|name| impl_parameters.contains(name))
+        {
             return Err(
-                self.error("associated function declarations use `.`; replace `::` with `.`")
+                self.error("function type parameters must not redeclare impl type parameters")
             );
         }
-        let (type_parameters, groups) = self.function_parameters()?;
+        type_parameters.splice(0..0, impl_parameters.iter().cloned());
         self.expect(&TokenKind::LParen, "expected `(` after function name")?;
         let mut parameters = Vec::new();
         if !self.at(&TokenKind::RParen) {
@@ -564,6 +626,22 @@ impl Parser {
         }
         self.expect(&TokenKind::RParen, "expected `)` after parameters")?;
         let receiver = self.receiver_parameter(&parameters)?;
+        if receiver {
+            let Some(owner) = impl_owner else {
+                return Err(
+                    self.error("methods with `self` must be declared inside an `impl` block")
+                );
+            };
+            if parameters[0].ty.is_none() {
+                parameters[0].ty = Some(TypeExpr::Named(
+                    owner.to_owned(),
+                    impl_parameters
+                        .iter()
+                        .map(|name| TypeExpr::Named(name.clone(), Vec::new()))
+                        .collect(),
+                ));
+            }
+        }
         self.newlines();
         let return_type = if self.take(&TokenKind::Arrow) {
             Some(self.type_expr()?)
@@ -600,6 +678,7 @@ impl Parser {
         };
         let end = self.tokens[self.current.saturating_sub(1)].range.end;
         Ok(Function {
+            body_is_recovery_stub: false,
             span: start..end,
             documentation,
             name,
@@ -948,6 +1027,7 @@ fn is_declaration_boundary(kind: &TokenKind) -> bool {
     matches!(
         kind,
         TokenKind::Import
+            | TokenKind::Impl
             | TokenKind::Const
             | TokenKind::Pub
             | TokenKind::Type

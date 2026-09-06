@@ -94,7 +94,12 @@ private declaration in its public signature.
 ## Functions and evaluation
 
 `func` introduces a function. Type annotations may state parameter and result types; otherwise the
-compiler infers them. Local values use inference. The last expression in a function is its result.
+compiler infers them. Local values use inference. The final statement's value is the function
+result: expressions provide their value, bindings and assignments provide the bound or assigned
+value, and nested function declarations provide the declared function. Assertions and completed
+loops provide `()`. Empty function, method, closure, and test bodies also produce `()`.
+A guarded return that does not transfer control and has no following result produces `()`;
+use `return ()` for an explicit early unit return. Declared result types must match these values.
 
 Assignment evaluates its complete right-hand expression before evaluating the left-hand place.
 The destination is then evaluated exactly once and replaced. For example,
@@ -328,28 +333,41 @@ constructed inside its defining module. Field mutation is controlled by ownershi
 not by a `var` marker on the field. Generic records such as `Parsed<T>` participate in ordinary
 constraint inference.
 
-Functions may be associated with a record's type namespace by qualifying their declarations. They
-do not receive an instance and are called through the type:
+Methods and associated functions are declared inside `impl Type { ... }` blocks. The block
+supplies the owning type; member names are unqualified. A first `self` parameter makes a member
+an instance method. Its type may be omitted when the block supplies the complete receiver type.
+A record member without `self` is an associated function, called through the type:
 
 ```foster
-pub type Map<K, V> = {
-    entries: List<Entry<K, V>>
+pub type Box<T> = { value: T }
+
+impl Box<T> {
+    pub func new(value: T) -> Box<T> { Box { value } }
+    pub func get(self) -> T { self.value }
+    pub func map<U>(self, transform: func(T) -> U) -> Box<U> {
+        Box { value: transform(self.value) }
+    }
 }
 
-pub func Map.empty<K, V>() -> Map<K, V> {
-    Map { entries: [] }
-}
-
-let scores = Map.empty()
+func example() -> Int { Box.new(42).get() }
 ```
 
+Block type parameters are available to every member and precede member-specific type parameters.
+A member cannot redeclare a block parameter. A block may also omit type parameters, with generic
+members declaring their own parameters and explicitly annotating `self`, such as
+`impl Box { func get<T>(self: Box<T>) -> T { self.value } }`.
+
+Multiple blocks may group different operations for the same type. They share the type's member
+namespace and the ordinary overload and duplicate-declaration rules. Visibility and documentation
+belong to individual members; a block does not change access or structural conformance. Blocks
+contain function declarations only, including intrinsic bindings, and appear at module scope.
+Ordinary module functions remain outside blocks. Qualified declarations such as `func Box.get`
+are rejected.
+
 Associated functions are declared in the record's defining module, so they may construct records
-whose representation contains private fields. The qualifier must name a record in that module.
-An owner-qualified declaration with no `self` receiver is an associated function; one beginning
-with `self` is an instance method, such as
-`func Map.get(self: Map<K, V>, key: K)`. The qualifier is part of method identity, so different
-types in one module may declare the same member name. Both directly imported `Map.empty()` and
-explicitly module-qualified `map::Map.empty()` calls resolve to the same function.
+whose representation contains private fields. Existing method ownership and import rules also
+apply inside blocks. Calls retain their existing spelling: `Box.new(42)`, `value.get()`, or
+`module::Box.new(42)`. Callable requirements remain in type declarations.
 
 ## Union contracts and enums
 
@@ -402,7 +420,7 @@ The trailing intersection applies to the enum value itself, independent of which
 it. Consequently, every `Foo` value satisfies `SomeContract` and provides `describe`. The defining
 module implements a shared requirement with an
 ordinary instance function whose receiver is the enum type, such as
-`func Foo.describe(self: Foo) -> String`. Its body may branch on `self` when cases need
+`func describe(self) -> String` inside `impl Foo { ... }`. Its body may branch on `self` when cases need
 different behavior. An enum can be structurally adapted to the method-only contracts it satisfies,
 and calls through such a contract dispatch to the original enum value.
 
@@ -473,8 +491,9 @@ loop {
 ```
 
 `continue` always targets the nearest enclosing loop; branch arms never fall through to later arms.
-An arm block that falls through must end in a value expression; it does not acquire an implicit
-value from a preceding binding, assignment, or assertion.
+An arm block that completes without a final value expression produces `()`. Unlike function bodies, branch-arm blocks do not
+use a trailing binding or assignment as their result. An unconditional control transfer
+leaves the arm instead of producing a result.
 
 ## Logical operators
 
@@ -508,9 +527,11 @@ first parameter is the semantic `self` receiver is an instance method. Calling t
 virtual thread until the reply arrives.
 
 ```foster
-func Counter.increment(self: Counter, amount: Int) -> Int {
-    self.value = self.value + amount
-    self.value
+impl Counter {
+    func increment(self: Counter, amount: Int) -> Int {
+        self.value = self.value + amount
+        self.value
+    }
 }
 
 let counter = remote Counter { value: 0 }
@@ -942,9 +963,11 @@ is stored in typed HIR and callable bytecode information, so later ownership che
 and VM lowering retain the contract without source-level suffixes:
 
 ```foster
-func Inventory.restock(self: Inventory, amount: Int) -> Int {
-    self.count = self.count + amount
-    self.count
+impl Inventory {
+    func restock(self: Inventory, amount: Int) -> Int {
+        self.count = self.count + amount
+        self.count
+    }
 }
 ```
 

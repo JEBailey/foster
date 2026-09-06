@@ -26,12 +26,14 @@ type Formatter = {}
 
 type Number = Int
 
-func User.id(self: User) -> Int {
-    self.value
-}
+impl User {
+    func id(self: User) -> Int {
+        self.value
+    }
 
-func User.offset(self: User, amount: Int) -> Int {
-    self.value + amount
+    func offset(self: User, amount: Int) -> Int {
+        self.value + amount
+    }
 }
 
 func identify(value: Identified) -> Int {
@@ -42,16 +44,18 @@ func number() -> Number {
     42
 }
 
-func Formatter.render(self: Formatter, value: Int) -> String {
-    "int"
-}
+impl Formatter {
+    func render(self: Formatter, value: Int) -> String {
+        "int"
+    }
 
-func Formatter.render(self: Formatter, value: CodePoint) -> String {
-    "code point"
-}
+    func render(self: Formatter, value: CodePoint) -> String {
+        "code point"
+    }
 
-func Formatter.render(self: Formatter, left: Int, right: Int) -> String {
-    "pair"
+    func render(self: Formatter, left: Int, right: Int) -> String {
+        "pair"
+    }
 }
 
 test "records support construction access and mutation" {

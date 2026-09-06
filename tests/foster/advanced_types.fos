@@ -36,10 +36,12 @@ func name_size(value: Named) -> Int {
     value.name.length
 }
 
-func ScoredChoice.score(self: ScoredChoice) -> Int {
-    branch self {
-        ScoredChoice.Number(value) -> value
-        ScoredChoice.Empty -> 0
+impl ScoredChoice {
+    func score(self: ScoredChoice) -> Int {
+        branch self {
+            ScoredChoice.Number(value) -> value
+            ScoredChoice.Empty -> 0
+        }
     }
 }
 
