@@ -316,7 +316,10 @@ impl FunctionCompiler<'_> {
                     return Ok(destination);
                 }
                 if let hir::Expr::Member { object, name } = &self.hir.expressions[*callee] {
-                    if name == "iterator" && self.sequence_type(*object) && arguments.is_empty() {
+                    if name == "iterator"
+                        && arguments.is_empty()
+                        && let Some((module_name, factory)) = self.iterator_factory(*object)
+                    {
                         let source = self.expression(*object)?;
                         // Each iterator call materializes an independent cursor over
                         // a read-only snapshot of the sequence.
@@ -331,12 +334,12 @@ impl FunctionCompiler<'_> {
                         let destination = self.allocate();
                         let module = self
                             .hir
-                            .module_named("std.iter")
-                            .ok_or_else(|| self.unsupported("std.iter module"))?;
+                            .module_named(module_name)
+                            .ok_or_else(|| self.unsupported(module_name))?;
                         let function = self
                             .hir
-                            .function_named(module, "Iterator.from_sequence")
-                            .ok_or_else(|| self.unsupported("Iterator.from_sequence"))?;
+                            .function_named(module, factory)
+                            .ok_or_else(|| self.unsupported(factory))?;
                         self.emit(
                             Instruction::Call {
                                 destination,
@@ -441,6 +444,12 @@ impl FunctionCompiler<'_> {
                                 slot: *slot,
                                 name: name.clone(),
                                 arguments,
+                                result_type: verification_type(
+                                    self.hir,
+                                    self.types,
+                                    self.types.expression_type(id).expect("typed contract call"),
+                                    0,
+                                ),
                             },
                             span,
                         );
@@ -804,26 +813,27 @@ impl FunctionCompiler<'_> {
         self.intrinsic(function).and_then(Intrinsic::builtin)
     }
 
-    fn sequence_type(&self, expression: ExprId) -> bool {
-        self.types
-            .expression_type(expression)
-            .is_some_and(|ty| match self.types.types[ty] {
-                crate::types::Type::RawList(_)
-                | crate::types::Type::Sequence(_)
-                | crate::types::Type::RawBytes => true,
-                crate::types::Type::Record { record, .. } => {
-                    matches!(
-                        (
-                            self.hir.modules[self.hir.records[record].module]
-                                .name
-                                .as_str(),
-                            self.hir.records[record].name.as_str(),
-                        ),
-                        ("core.bytes", "Bytes") | ("core.list", "List")
-                    )
+    fn iterator_factory(&self, expression: ExprId) -> Option<(&'static str, &'static str)> {
+        let ty = self.types.expression_type(expression)?;
+        match self.types.types[ty] {
+            crate::types::Type::RawList(_) => Some(("std.iter", "Iterator.from_list")),
+            crate::types::Type::RawBytes => Some(("std.iter", "Iterator.from_bytes")),
+            crate::types::Type::Sequence(_) => Some(("std.iter", "Iterator.from_sequence")),
+            crate::types::Type::Record { record, .. } => {
+                match (
+                    self.hir.modules[self.hir.records[record].module]
+                        .name
+                        .as_str(),
+                    self.hir.records[record].name.as_str(),
+                ) {
+                    ("core.list", "List") => Some(("std.iter", "Iterator.from_list")),
+                    ("core.bytes", "Bytes") => Some(("std.iter", "Iterator.from_bytes")),
+                    ("core.string", "String") => Some(("core.string", "String.iterator")),
+                    _ => None,
                 }
-                _ => false,
-            })
+            }
+            _ => None,
+        }
     }
 
     fn read_only_method(&self, function: hir::FunctionId) -> bool {

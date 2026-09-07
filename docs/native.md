@@ -87,6 +87,17 @@ use the target pointer type. It supports:
 - printing scalar or aggregate results from `main`, followed by ownership-correct release of a
   managed aggregate result.
 
+Generic `Sequence<T>` values retain erased storage across function calls and stored fields. Native
+contract dispatch selects `empty?`, `length`, `head`, and `rest` from the concrete descriptor,
+including built-in lists, strings and bytes and user-defined implementations. Contract result
+types survive specialization, so iterators with different element types can coexist in one
+program. A custom `rest` implementation may return another conforming representation.
+Collection `.iterator()` calls use list/byte indices and a UTF-8 byte offset for strings in both
+backends. Each cursor retains one stable snapshot; advancing does not construct suffix collections.
+`Iterator.from_sequence` and `.iterator()` on an erased `Sequence<T>` retain the generic head/rest
+adapter, whose cost depends on the source's `rest` implementation. Lazy pipelines use either kind
+of cursor without changing their API. This does not introduce borrowed views or consuming iteration.
+
 Only functions statically reachable from `main` are compiled. An unused function may therefore use
 the complete VM language without preventing native compilation.
 
@@ -154,7 +165,7 @@ function is sealed into SSA; that unsealed form is never optimized, serialized, 
 Before backend-specific emission, logical layout legalization reduces values to scalars or pointers
 and builds deterministic descriptions for record field slots and declared types, enum alternative
 tags and payloads, closure environments and capture ownership, reference place handles, and
-runtime-backed structural values. Portable bytecode version 23 retains generic identities, nominal
+runtime-backed structural values. Portable bytecode version 24 retains generic identities, nominal
 parameters and arguments, and sorted substitutions at statically resolved calls and closure
 construction. Native
 reachability is keyed by function plus substitutions; it materializes concrete signatures and

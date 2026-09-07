@@ -937,6 +937,7 @@ impl Machine {
                     slot,
                     name,
                     arguments,
+                    ..
                 } => {
                     let receiver = place(frame, *receiver);
                     let value = receiver.read()?;

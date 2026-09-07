@@ -136,7 +136,8 @@ Both runtimes contain execution failures, retain the first failure for subsequen
 and deliver typed outcomes. Completed results are preserved; domain errors leave the worker live.
 Native generated calls propagate a thread-local failure flag by ordinary returns, releasing live
 managed frame values without unwinding through generated frames. Rejected native messages release
-their transferred arguments. General resource destruction remains open under G-04.
+their transferred arguments. G-04 is closed: both backends invoke `deinit` at ownership end,
+before releasing owned fields, and continue cleanup while preserving the original failure.
 Owner-triggered cancellation, completion analysis, and the proposed
 diagnostic remain G-06. See [native runtime gaps](native.md#known-runtime-correctness-gaps).
 

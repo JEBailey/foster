@@ -39,6 +39,7 @@ use crate::vm::{
 pub mod abi;
 mod cleanup;
 mod copy;
+mod dispatch;
 use cleanup::{FailureCleanup, NativeBuilder as FunctionBuilder};
 mod emission;
 mod text_boundary;
@@ -800,6 +801,10 @@ fn instruction_layout_type(
 ) -> Option<crate::vm::VerificationType> {
     use crate::vm::VerificationType;
     match instruction {
+        Instruction::CallContractMethod { result_type, .. } => {
+            Some(result_type.specialize(specialization))
+        }
+
         Instruction::MakeRecord {
             record,
             type_arguments,
@@ -1074,9 +1079,9 @@ fn specialized_verification_type(
         Type::RawBytes => VerificationType::Bytes,
         Type::RawByteBuffer => VerificationType::ByteBuffer,
         Type::Reference { value, .. } => VerificationType::Reference(Box::new(nested(*value)?)),
-        Type::RawList(value) | Type::Sequence(value) => {
-            VerificationType::List(Box::new(nested(*value)?))
-        }
+        Type::RawList(value) => VerificationType::List(Box::new(nested(*value)?)),
+        // Sequence is a behavioral view, not a promise of list storage.
+        Type::Sequence(_) => VerificationType::Unknown,
         Type::Remote(value) => VerificationType::Remote(Box::new(nested(*value)?)),
         Type::Future(value) => VerificationType::Future(Box::new(nested(*value)?)),
         Type::Function(function) => VerificationType::Function {
@@ -2133,8 +2138,7 @@ fn infer_register_types(
                 destination,
                 receiver,
                 slot,
-                name,
-                arguments,
+                result_type,
                 ..
             } => {
                 let receiver = register_type(&result, *receiver, function)?;
@@ -2147,49 +2151,13 @@ fn infer_register_types(
                         });
                     continue;
                 }
-                let argument_types = arguments
-                    .iter()
-                    .map(|argument| register_type(&result, *argument, function))
-                    .collect::<Result<Vec<_>, _>>()?;
-                let candidates =
-                    contract_candidates(*slot, receiver, &argument_types, environment)?;
-                if let Some(first) = candidates.first() {
-                    let signature = &environment.function_types[&first.function];
-                    if signature.parameters.len() != arguments.len() + 1 {
-                        return Err(native_error(format!(
-                            "contract implementation for `{name}` has an inconsistent arity"
-                        )));
-                    }
-                    if candidates.iter().any(|candidate| {
-                        environment.function_types[&candidate.function].result != signature.result
-                    }) {
-                        return Err(native_error(format!(
-                            "contract implementations for `{name}` disagree on their native result ABI"
-                        )));
-                    }
-                    result[usize::from(destination.0)] = Some(signature.result);
-                } else {
-                    if !arguments.is_empty() {
-                        return Err(native_error(format!(
-                            "value has no native implementation of required method `{name}`"
-                        )));
-                    }
-                    result[usize::from(destination.0)] = Some(
-                        field_type(
-                            environment.program,
-                            environment.layouts,
-                            environment.physical_layouts,
-                            receiver,
-                            name,
-                        )
-                        .map_err(|error| {
-                            native_error(format!(
-                                "{} while resolving contract `{name}` in `{}`",
-                                error.message, function.name
-                            ))
-                        })?,
-                    );
-                }
+                let concrete = result_type.specialize(&instance.substitutions);
+                result[usize::from(destination.0)] = Some(native_verification_type(
+                    environment.program,
+                    environment.layouts,
+                    &concrete,
+                    None,
+                )?);
             }
             Instruction::MatchPattern {
                 destination,
@@ -3549,18 +3517,21 @@ fn lower_shared_instruction(
             slot,
             name,
             arguments,
-            ..
+            result_type,
         } => {
-            if *slot == crate::types::CAN_COPY_SLOT || *slot == crate::types::COPY_SLOT {
-                return Ok(one(instruction.clone()));
-            }
+            let result_type = result_type.specialize(&instance.substitutions);
             let argument_types = arguments
                 .iter()
                 .map(|argument| ty(*argument))
                 .collect::<Vec<_>>();
-            let candidates =
-                contract_candidates(*slot, ty(*receiver), &argument_types, environment)?;
-            if let Some(first) = candidates.first() {
+            let candidates = contract_candidates(
+                *slot,
+                dereference_native_type(ty(*receiver), environment)?,
+                &argument_types,
+                environment,
+            )?;
+            let mut lowered = Vec::new();
+            let (arguments, consumed) = if let Some(first) = candidates.first() {
                 let target = &environment.function_types[&first.function];
                 let modes = &environment.program.functions[&first.implementation].parameter_modes;
                 if target.parameters.len() != arguments.len() + 1
@@ -3570,8 +3541,7 @@ fn lower_shared_instruction(
                         "contract implementation for `{name}` has an inconsistent arity"
                     )));
                 }
-                let mut lowered = Vec::new();
-                let (arguments, consumed) = shared_call_arguments(
+                shared_call_arguments(
                     arguments,
                     &modes[1..],
                     &target.parameters[1..],
@@ -3579,37 +3549,22 @@ fn lower_shared_instruction(
                     value_types,
                     storage_hints,
                     &mut lowered,
-                )?;
-                lowered.push((
-                    ir::Instruction::Portable(ir::PortableInstruction::CallContractMethod {
-                        destination: *destination,
-                        receiver: *receiver,
-                        slot: *slot,
-                        name: name.clone(),
-                        arguments,
-                    }),
-                    consumed,
-                ));
-                return Ok(lowered);
-            }
-            if matches!(ty(*receiver), NativeType::Object(_)) {
-                return Ok(one(ir::Instruction::Portable(
-                    ir::PortableInstruction::LoadField {
-                        destination: *destination,
-                        object: *receiver,
-                        field: name.clone(),
-                        by_reference: false,
-                    },
-                )));
-            }
-            let helper = native_field_helper(ty(*receiver), name)?;
-            let arguments = vec![*receiver];
-            Ok(one(ir::Instruction::RuntimeCall {
-                destination: *destination,
-                helper,
-                signature: runtime_signature(*destination, &arguments, value_types),
-                arguments,
-            }))
+                )?
+            } else {
+                (arguments.clone(), Vec::new())
+            };
+            lowered.push((
+                ir::Instruction::Portable(ir::PortableInstruction::CallContractMethod {
+                    destination: *destination,
+                    receiver: *receiver,
+                    slot: *slot,
+                    name: name.clone(),
+                    arguments,
+                    result_type,
+                }),
+                consumed,
+            ));
+            Ok(lowered)
         }
         ir::PortableInstruction::Builtin {
             destination,
@@ -5342,6 +5297,7 @@ fn lower_portable_native(
             slot,
             name,
             arguments,
+            ..
         } if *slot == crate::types::CAN_COPY_SLOT || *slot == crate::types::COPY_SLOT => {
             copy::lower(
                 builder,
@@ -5359,7 +5315,8 @@ fn lower_portable_native(
             slot,
             name,
             arguments,
-        } => lower_contract_dispatch(
+            ..
+        } => dispatch::lower(
             builder,
             module,
             get(receiver),
@@ -5380,166 +5337,16 @@ fn lower_portable_native(
             object,
             field,
             by_reference: false,
-        } => {
-            let NativeType::Object(layout) = function.value_type(*object) else {
-                return Err(native_error("native field load requires a Foster object"));
-            };
-            if matches!(
-                objects.layouts.logical.get(layout).kind,
-                LayoutKind::Builtin {
-                    ty: crate::vm::VerificationType::Bytes
-                }
-            ) {
-                let (data_offset, length_offset) = native_bytes_layout(layout, objects)?;
-                let word = module.target_config().pointer_type();
-                let length = builder.ins().load(
-                    word,
-                    MemFlagsData::trusted(),
-                    get(object),
-                    length_offset as i32,
-                );
-                let result = match field.as_str() {
-                    "empty?" => builder.ins().icmp_imm_s(IntCC::Equal, length, 0),
-                    "length" => length,
-                    "head" => {
-                        let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
-                        let index = zero_i64(builder);
-                        fail_if(
-                            builder,
-                            module,
-                            empty,
-                            abi::failure::INDEX_OUT_OF_BOUNDS,
-                            index,
-                            length,
-                        )?;
-                        let data = builder.ins().load(
-                            word,
-                            MemFlagsData::trusted(),
-                            get(object),
-                            data_offset as i32,
-                        );
-                        builder
-                            .ins()
-                            .load(types::I8, MemFlagsData::trusted(), data, 0)
-                    }
-                    "rest" => native_bytes_tail(builder, module, get(object), layout, objects)?,
-                    _ => return Err(native_error(format!("native Bytes has no field `{field}`"))),
-                };
-                return Ok(Some(result));
-            }
-            if matches!(
-                objects.layouts.logical.get(layout).kind,
-                LayoutKind::Builtin {
-                    ty: crate::vm::VerificationType::ByteBuffer
-                }
-            ) {
-                let (_, length_offset, capacity_offset, _) = native_buffer_layout(layout, objects)?;
-                let offset = match field.as_str() {
-                    "length" => length_offset,
-                    "capacity" => capacity_offset,
-                    "empty?" => {
-                        let length = builder.ins().load(
-                            module.target_config().pointer_type(),
-                            MemFlagsData::trusted(),
-                            get(object),
-                            length_offset as i32,
-                        );
-                        return Ok(Some(builder.ins().icmp_imm_s(IntCC::Equal, length, 0)));
-                    }
-                    _ => {
-                        return Err(native_error(format!(
-                            "native ByteBuffer has no field `{field}`"
-                        )));
-                    }
-                };
-                return Ok(Some(builder.ins().load(
-                    module.target_config().pointer_type(),
-                    MemFlagsData::trusted(),
-                    get(object),
-                    offset as i32,
-                )));
-            }
-            if matches!(
-                objects.layouts.logical.get(layout).kind,
-                LayoutKind::Builtin {
-                    ty: crate::vm::VerificationType::List(_)
-                }
-            ) {
-                let (data_offset, length_offset, _, element) =
-                    native_buffer_layout(layout, objects)?;
-                let word = module.target_config().pointer_type();
-                let length = builder.ins().load(
-                    word,
-                    MemFlagsData::trusted(),
-                    get(object),
-                    length_offset as i32,
-                );
-                let result = match field.as_str() {
-                    "empty?" => builder.ins().icmp_imm_s(IntCC::Equal, length, 0),
-                    "length" => length,
-                    "head" => {
-                        let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
-                        let index = zero_i64(builder);
-                        fail_if(
-                            builder,
-                            module,
-                            empty,
-                            abi::failure::INDEX_OUT_OF_BOUNDS,
-                            index,
-                            length,
-                        )?;
-                        let data = builder.ins().load(
-                            word,
-                            MemFlagsData::trusted(),
-                            get(object),
-                            data_offset as i32,
-                        );
-                        let value = builder.ins().load(
-                            physical_cranelift_type(element.kind, word),
-                            MemFlagsData::trusted(),
-                            data,
-                            0,
-                        );
-                        if let Some(pointee) = element.pointee
-                            && objects.layouts.is_managed(pointee)
-                        {
-                            objects.retain(builder, value, pointee);
-                        }
-                        value
-                    }
-                    "rest" => native_buffer_tail(builder, module, get(object), layout, objects)?,
-                    _ => return Err(native_error(format!("native list has no field `{field}`"))),
-                };
-                return Ok(Some(result));
-            }
-            let LayoutKind::Record { fields, .. } = &objects.layouts.logical.get(layout).kind
-            else {
-                return Err(native_error("native field load requires a record or list"));
-            };
-            let slot = fields
-                .iter()
-                .find(|slot| slot.name == *field)
-                .ok_or_else(|| native_error(format!("record has no field `{field}`")))?;
-            let physical = objects
-                .layouts
-                .physical
-                .record_field(layout, slot.index)
-                .ok_or_else(|| native_error("record field has no physical slot"))?;
-            let result = load_physical_value(
-                builder,
-                module,
-                get(object),
-                physical.offset,
-                physical.value,
-            );
-            if let Some(pointee) = objects
-                .layouts
-                .managed_layout(function.value_type(*destination))
-            {
-                objects.retain(builder, result, pointee);
-            }
-            Ok(Some(result))
-        }
+        } => lower_native_field(
+            builder,
+            module,
+            get(object),
+            function.value_type(*object),
+            function.value_type(*destination),
+            field,
+            objects,
+        )
+        .map(Some),
         ir::PortableInstruction::StoreField {
             object,
             field,
@@ -5747,108 +5554,158 @@ fn lower_portable_native(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn lower_contract_dispatch(
+fn lower_native_field(
     builder: &mut FunctionBuilder<'_>,
     module: &mut ObjectModule,
     receiver: ClifValue,
     receiver_type: NativeType,
     result_type: NativeType,
-    slot: crate::types::DispatchSlot,
-    name: &str,
-    arguments: &[ClifValue],
-    argument_types: &[NativeType],
-    backend: &NativeBackend<'_>,
+    field: &str,
+    objects: ObjectRuntime<'_>,
 ) -> Result<ClifValue, FosterError> {
-    let candidates = contract_candidates(slot, receiver_type, argument_types, backend.ir)?;
-    if candidates.is_empty() {
-        return Err(native_error(format!(
-            "value has no native implementation of required method `{name}`"
-        )));
-    }
-    let word = module.target_config().pointer_type();
-    let payload = match receiver_type {
-        NativeType::Object(layout)
-            if matches!(backend.ir.layouts.get(layout).kind, LayoutKind::Opaque) =>
-        {
-            let PhysicalKind::Opaque { value_offset, .. } =
-                backend.ir.physical_layouts.get(layout).kind
-            else {
-                return Err(native_error(
-                    "contract receiver has an invalid erased layout",
-                ));
-            };
-            builder
-                .ins()
-                .load(word, MemFlagsData::trusted(), receiver, value_offset as i32)
-        }
-        NativeType::Object(_) => receiver,
-        _ => {
-            return Err(native_error(
-                "native contract dispatch requires a descriptor-backed object",
-            ));
-        }
+    let NativeType::Object(layout) = receiver_type else {
+        return Err(native_error("native field load requires a Foster object"));
     };
-    let descriptor = builder.ins().load(
-        word,
-        MemFlagsData::trusted(),
-        payload,
-        backend.ir.physical_layouts.header().descriptor_offset as i32,
-    );
-    let join = builder.create_block();
-    builder.append_block_param(join, cranelift_type(result_type, word));
-    for candidate in candidates {
-        let call_block = builder.create_block();
-        let next = builder.create_block();
-        let expected = module
-            .declare_data_in_func(backend.objects.descriptors[&candidate.layout], builder.func);
-        let expected = builder.ins().symbol_value(word, expected);
-        let matches = builder.ins().icmp(IntCC::Equal, descriptor, expected);
-        builder.ins().brif(matches, call_block, &[], next, &[]);
-        builder.switch_to_block(call_block);
-        backend.objects.retain(builder, payload, candidate.layout);
-        let mut lowered = Vec::with_capacity(arguments.len() + 1);
-        lowered.push(payload);
-        lowered.extend_from_slice(arguments);
-        let target =
-            module.declare_func_in_func(backend.functions[&candidate.function], builder.func);
-        let call = builder.ins().call(target, &lowered);
-        propagate_native_failure(builder, module)?;
-        let result = builder.inst_results(call)[0];
-        builder.ins().jump(join, &[result.into()]);
-        builder.switch_to_block(next);
-    }
-    let kind = builder
-        .ins()
-        .iconst(types::I64, abi::failure::CONTRACT_DISPATCH);
-    let detail = builder.ins().iconst(types::I64, i64::from(slot.0));
-    let limit = zero_i64(builder);
-    // No candidate accepted these arguments, so their ABI ownership was not
-    // transferred to a callee on this path.
-    for (argument, ty) in arguments.iter().zip(argument_types).rev() {
-        if let Some(layout) = backend.objects.layouts.managed_layout(*ty) {
-            backend
-                .objects
-                .release(builder, module, *argument, layout)?;
+    if matches!(
+        objects.layouts.logical.get(layout).kind,
+        LayoutKind::Builtin {
+            ty: crate::vm::VerificationType::Bytes
         }
+    ) {
+        let (data_offset, length_offset) = native_bytes_layout(layout, objects)?;
+        let word = module.target_config().pointer_type();
+        let length = builder.ins().load(
+            word,
+            MemFlagsData::trusted(),
+            receiver,
+            length_offset as i32,
+        );
+        let result = match field {
+            "empty?" => builder.ins().icmp_imm_s(IntCC::Equal, length, 0),
+            "length" => length,
+            "head" => {
+                let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
+                let index = zero_i64(builder);
+                fail_if(
+                    builder,
+                    module,
+                    empty,
+                    abi::failure::INDEX_OUT_OF_BOUNDS,
+                    index,
+                    length,
+                )?;
+                let data =
+                    builder
+                        .ins()
+                        .load(word, MemFlagsData::trusted(), receiver, data_offset as i32);
+                builder
+                    .ins()
+                    .load(types::I8, MemFlagsData::trusted(), data, 0)
+            }
+            "rest" => native_bytes_tail(builder, module, receiver, layout, objects)?,
+            _ => return Err(native_error(format!("native Bytes has no field `{field}`"))),
+        };
+        return Ok(result);
     }
-    runtime_call(
-        builder,
-        module,
-        abi::FAIL,
-        &ir::Signature {
-            parameters: vec![NativeType::Int, NativeType::Int, NativeType::Int],
-            result: NativeType::Unit,
-        },
-        &[kind, detail, limit],
-    )?;
-    let fallback = if result_type == NativeType::Float {
-        builder.ins().f64const(0.0)
-    } else {
-        builder.ins().iconst(cranelift_type(result_type, word), 0)
+    if matches!(
+        objects.layouts.logical.get(layout).kind,
+        LayoutKind::Builtin {
+            ty: crate::vm::VerificationType::ByteBuffer
+        }
+    ) {
+        let (_, length_offset, capacity_offset, _) = native_buffer_layout(layout, objects)?;
+        let offset = match field {
+            "length" => length_offset,
+            "capacity" => capacity_offset,
+            "empty?" => {
+                let length = builder.ins().load(
+                    module.target_config().pointer_type(),
+                    MemFlagsData::trusted(),
+                    receiver,
+                    length_offset as i32,
+                );
+                return Ok(builder.ins().icmp_imm_s(IntCC::Equal, length, 0));
+            }
+            _ => {
+                return Err(native_error(format!(
+                    "native ByteBuffer has no field `{field}`"
+                )));
+            }
+        };
+        return Ok(builder.ins().load(
+            module.target_config().pointer_type(),
+            MemFlagsData::trusted(),
+            receiver,
+            offset as i32,
+        ));
+    }
+    if matches!(
+        objects.layouts.logical.get(layout).kind,
+        LayoutKind::Builtin {
+            ty: crate::vm::VerificationType::List(_)
+        }
+    ) {
+        let (data_offset, length_offset, _, element) = native_buffer_layout(layout, objects)?;
+        let word = module.target_config().pointer_type();
+        let length = builder.ins().load(
+            word,
+            MemFlagsData::trusted(),
+            receiver,
+            length_offset as i32,
+        );
+        let result = match field {
+            "empty?" => builder.ins().icmp_imm_s(IntCC::Equal, length, 0),
+            "length" => length,
+            "head" => {
+                let empty = builder.ins().icmp_imm_s(IntCC::Equal, length, 0);
+                let index = zero_i64(builder);
+                fail_if(
+                    builder,
+                    module,
+                    empty,
+                    abi::failure::INDEX_OUT_OF_BOUNDS,
+                    index,
+                    length,
+                )?;
+                let data =
+                    builder
+                        .ins()
+                        .load(word, MemFlagsData::trusted(), receiver, data_offset as i32);
+                let value = builder.ins().load(
+                    physical_cranelift_type(element.kind, word),
+                    MemFlagsData::trusted(),
+                    data,
+                    0,
+                );
+                if let Some(pointee) = element.pointee
+                    && objects.layouts.is_managed(pointee)
+                {
+                    objects.retain(builder, value, pointee);
+                }
+                value
+            }
+            "rest" => native_buffer_tail(builder, module, receiver, layout, objects)?,
+            _ => return Err(native_error(format!("native list has no field `{field}`"))),
+        };
+        return Ok(result);
+    }
+    let LayoutKind::Record { fields, .. } = &objects.layouts.logical.get(layout).kind else {
+        return Err(native_error("native field load requires a record or list"));
     };
-    builder.ins().jump(join, &[fallback.into()]);
-    builder.switch_to_block(join);
-    Ok(builder.block_params(join)[0])
+    let slot = fields
+        .iter()
+        .find(|slot| slot.name == field)
+        .ok_or_else(|| native_error(format!("record has no field `{field}`")))?;
+    let physical = objects
+        .layouts
+        .physical
+        .record_field(layout, slot.index)
+        .ok_or_else(|| native_error("record field has no physical slot"))?;
+    let result = load_physical_value(builder, module, receiver, physical.offset, physical.value);
+    if let Some(pointee) = objects.layouts.managed_layout(result_type) {
+        objects.retain(builder, result, pointee);
+    }
+    Ok(result)
 }
 
 fn native_reference_receiver(

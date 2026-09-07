@@ -873,11 +873,13 @@ func main(args: Arguments) -> String {
         let compilation = crate::compile(
             r#"
 import core.string
+import core.option
 import core.result
 import core.list
 import core.byte
 import core.bytes
 import std.process
+import std.iter
 type Box = { text: String }
 impl Box { func deinit(self) -> () { assert(self.text.length >= 0) } }
 type Token = { symbol: Symbol }
@@ -893,6 +895,15 @@ func main(args: Arguments) -> String {
     assert(tokens[0].symbol == :ready)
     let text = args.values[0].copy()
     let box = Box { text: identity(text) }
+    let cursor = [Box { text: identity(text) }, Box { text: "unvisited" }].iterator()
+    branch cursor.next() {
+        Option.Some(value) -> { assert(value.text == text) }
+        Option.None -> { assert(false) }
+    }
+    let letters = (text + "λ🙂").iterator()
+    assert(letters.next() == Option.Some('λ'))
+    let octets = (text + "λ").bytes.iterator()
+    assert(octets.next() == Option.Some(Byte.unchecked(206)))
     let worker = remote Echo { text: identity(text) }
     let index = 0
     loop {

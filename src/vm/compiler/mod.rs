@@ -744,6 +744,11 @@ impl FunctionCompiler<'_> {
                     slot,
                     name: name.into(),
                     arguments: Vec::new(),
+                    result_type: if slot == crate::types::CAN_COPY_SLOT {
+                        VerificationType::Bool
+                    } else {
+                        VerificationType::Unknown
+                    },
                 },
                 span,
             );

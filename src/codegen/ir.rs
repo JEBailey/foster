@@ -339,6 +339,7 @@ pub enum PortableInstruction {
         slot: DispatchSlot,
         name: String,
         arguments: Vec<Value>,
+        result_type: crate::vm::VerificationType,
     },
     MakeClosure {
         destination: Value,

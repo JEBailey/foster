@@ -89,6 +89,43 @@ fn runtime_benchmarks(criterion: &mut Criterion) {
     benchmark_workload(criterion, "bytes", BYTES_SOURCE);
     benchmark_workload(criterion, "byte_buffer", BYTE_BUFFER_SOURCE);
     benchmark_workload(criterion, "list", LIST_SOURCE);
+    // Compare cursor traversal with the generic adapter over the same snapshots.
+    for (kind, input, initial_count, growth) in [
+        ("list", "[]", 0, "values.push(count)\ncount = count + 1"),
+        (
+            "string",
+            "\"aλ€🦀aλ€🦀\"",
+            8,
+            "values = values + values\ncount = count * 2",
+        ),
+    ] {
+        for size in [2048, 4096] {
+            for (strategy, expression) in [
+                ("tail", "Iterator.from_sequence(move values).count()"),
+                ("cursor", "values.iterator().count()"),
+            ] {
+                let source = format!(
+                    r#"
+import std.iter
+func main() -> Int {{
+    let values = {input}
+    let count = {initial_count}
+    loop {{
+        break if count == {size}
+        {growth}
+    }}
+    {expression}
+}}
+"#
+                );
+                benchmark_workload(
+                    criterion,
+                    &format!("iterator/{kind}/{size}/{strategy}"),
+                    &source,
+                );
+            }
+        }
+    }
     // Keep the former shrinking-tail strategy as a comparison, with identical input building.
     for (name, expression) in [
         ("list_fold/reference_tail", "sum_tail(values, 0)"),

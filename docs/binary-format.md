@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 23, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 24, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -135,7 +135,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 24 | JumpIfFalse | `R condition, u32 target` |
 | 25 | Call | `R destination, F, vector<(string, VerificationType)> substitutions, regs` |
 | 26 | CallMethod | `R destination, R receiver, F, vector<(string, VerificationType)> substitutions, regs` |
-| 27 | CallContractMethod | `R destination, R receiver, u32 slot, string name, regs` |
+| 27 | CallContractMethod | `R destination, R receiver, u32 slot, string name, regs, VerificationType result` |
 | 28 | MakeClosure | `R destination, F, vector<(string, VerificationType)> substitutions, vector<(CaptureMode, R)>` |
 | 29 | CallValue | `R destination, R callee, regs` |
 | 30 | CallClosure | `R destination, F, vector<(string, VerificationType)> substitutions, vector<(CaptureMode, R)>, regs` |
@@ -146,7 +146,9 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 23 readers accept only version 23 with zero flags. Development bytecode from another version
+Version 24 readers accept only version 24 with zero flags. Contract calls retain their checked
+generic result type, including when the receiver's concrete representation is erased.
+Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A
 canonical encoder emits sorted maps, exact lengths, no
 duplicates, and no trailing data. Thus identical programs produce identical bytes independent of

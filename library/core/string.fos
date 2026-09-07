@@ -8,6 +8,7 @@ import core.functions
 import core.list
 import core.option
 import core.result
+import std.iter
 
 /// Immutable Unicode text stored as validated UTF-8 bytes.
 /// Private storage preserves the validity invariant across every construction path.
@@ -85,7 +86,7 @@ func decode_bytes(data: Bytes) -> String {
 }
 
 /// A cursor over one stable UTF-8 byte snapshot, never over copied suffix strings.
-type TextCursor = {
+type TextCursor = & Iterator<CodePoint> & {
     data: Bytes
     offset: Int
 }
@@ -93,6 +94,13 @@ type TextCursor = {
 /// Creates a byte cursor over validated text.
 func cursor(text: String) -> TextCursor {
     TextCursor { data: text.bytes, offset: 0 }
+}
+
+impl String {
+    /// Creates an independent UTF-8 cursor over a stable byte snapshot.
+    pub func iterator(self: String) -> Iterator<CodePoint> [read self] {
+        cursor(self)
+    }
 }
 
 /// Returns the encoded width of a valid UTF-8 leading byte.
@@ -106,6 +114,14 @@ func scalar_width(first: Int) -> Int {
 }
 
 impl TextCursor {
+    /// Returns the next complete Unicode scalar, or None after exhaustion.
+    func next(self: TextCursor) -> Option<CodePoint> {
+        branch {
+            self.offset >= self.data.length -> Option.None
+            _ -> Option.Some(self.next_scalar())
+        }
+    }
+
     /// Reads one scalar and advances the byte offset; callers ensure the cursor is nonempty.
     func next_scalar(self: TextCursor) -> CodePoint {
         let first = self.data[self.offset].int

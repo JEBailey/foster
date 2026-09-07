@@ -46,9 +46,9 @@ strategies in the same build, not two historical releases; timings are machine-d
 
 ## Foster library algorithms
 
-Concrete list algorithms use indexed loops and one output list. `List.at` is the low-level checked
-storage read that returns an owned element without moving it out of the source; it lowers to the
-existing indexing instruction in both backends. `List.slice` and `Bytes.slice` copy only their
+Concrete list algorithms use indexed loops and one output list. `List.at` checks bounds and Copy
+capability, returning a `Result` containing an independent element copy or a typed read error.
+`List.slice` and `Bytes.slice` copy only their
 selected half-open ranges once; these APIs are value copies, not zero-copy slice views.
 
 String algorithms scan one UTF-8 byte snapshot. Trimming and code-point slicing select byte
@@ -63,11 +63,25 @@ Allocation, storage access, and platform operations remain low-level primitives.
 collection algorithm has been moved into a Rust runtime helper.
 
 Iterator consumers, filtering, and skipping use loops and preserve short-circuit consumption.
-Their behavior is covered by the Foster VM suite; native lowering of the generic
-`SequenceIterator` adapter still cannot resolve its erased sequence's storage members.
-General `Sequence` head/rest adapters still inherit their source's tail-copy costs; they are not
-zero-copy indexed cursors. The concrete List overload of `String.from_code_points` avoids that
-cost. More specialized collections and parsers remain candidates for later algorithm work.
+The generic `SequenceIterator` adapter resolves erased sequence accessors in both backends;
+parity tests cover built-in and user-defined sources, lazy pipelines, and exhaustion.
+Concrete list and byte `.iterator()` calls use an index; strings reuse the library's UTF-8 byte
+cursor. Advancing these cursors does not allocate suffix collections. Snapshot creation may still
+copy backing data, and the snapshot remains owned until the cursor is released. General `Sequence`
+head/rest adapters still inherit their source's tail-copy costs, including explicit
+`Iterator.from_sequence` calls. The runtime benchmark group `vm/iterator` compares concrete cursors
+with that adapter at 2,048 and 4,096 elements for lists and Unicode strings, using identical input
+construction. Run `cargo bench --bench runtime -- vm/iterator` to reproduce the comparison.
+
+A local Windows release run on 2026-09-06 measured these optimized VM times (including input
+construction; these are measurements, not CI thresholds or native-backend timings):
+
+| Input | Elements | Head/rest adapter | Collection cursor |
+| --- | ---: | ---: | ---: |
+| List | 2,048 | 28.2 ms | 7.25 ms |
+| List | 4,096 | 91.0 ms | 14.2 ms |
+| Unicode string | 2,048 | 22.4 ms | 15.5 ms |
+| Unicode string | 4,096 | 68.1 ms | 31.0 ms |
 
 ## Lua comparison harness
 

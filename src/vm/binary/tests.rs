@@ -3,6 +3,51 @@ use super::*;
 use crate::vm::{CompileOptions, Machine, compile, compile_with_options};
 
 #[test]
+fn round_trips_and_executes_generic_contract_result_types() {
+    let compilation = crate::compile(
+        "func first<T>(values: Sequence<T>) -> T { values.head() }\nfunc main() -> Int { first([42]) }",
+    ).unwrap();
+    for optimize in [false, true] {
+        let program = compile_with_options(&compilation, CompileOptions { optimize }).unwrap();
+        let decoded = decode_program(&encode_program(&program).unwrap()).unwrap();
+        assert_eq!(program, decoded);
+        assert_eq!(
+            Machine::new(&decoded).run_main().unwrap(),
+            crate::vm::Value::Integer(42)
+        );
+    }
+}
+
+#[test]
+fn rejects_contract_result_metadata_that_disagrees_with_its_use() {
+    let compilation = crate::compile(
+        "func first(values: Sequence<Int>) -> Int { values.head() }\nfunc main() -> Int { first([42]) }",
+    ).unwrap();
+    let mut program =
+        compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
+    let result = program
+        .functions
+        .values_mut()
+        .flat_map(|function| &mut function.instructions)
+        .find_map(|instruction| match instruction {
+            Instruction::CallContractMethod {
+                name, result_type, ..
+            } if name == "head" => Some(result_type),
+            _ => None,
+        })
+        .unwrap();
+    *result = VerificationType::Bool;
+    let error = verify(&program).unwrap_err();
+    assert!(
+        error
+            .message
+            .contains("return value type Bool, expected Integer"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn decoder_rejects_a_forged_specialized_method_return_type() {
     let compilation = crate::compile(
         "type Echo<T> = { value: T }\nimpl Echo {\n    func get<T>(self: Echo<T>) -> T { self.value }\n}\nfunc main() -> Bool { Echo { value: true }.get() }",

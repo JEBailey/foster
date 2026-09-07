@@ -514,6 +514,7 @@ impl Writer {
                 slot,
                 name,
                 arguments,
+                result_type,
             } => {
                 self.u8(27);
                 self.reg(*destination);
@@ -521,6 +522,7 @@ impl Writer {
                 self.u32_value(slot.0);
                 self.string(name)?;
                 self.regs(arguments)?;
+                self.verification_type(result_type)?;
             }
             Instruction::MakeClosure {
                 destination,

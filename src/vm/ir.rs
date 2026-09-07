@@ -438,6 +438,7 @@ pub enum Instruction {
         slot: DispatchSlot,
         name: String,
         arguments: Vec<Register>,
+        result_type: VerificationType,
     },
     MakeClosure {
         destination: Register,

@@ -2,6 +2,9 @@
 
 import core.functions
 import core.option
+import core.list
+import core.bytes
+import core.byte
 
 /// A stateful source that yields one value at a time.
 ///
@@ -19,6 +22,46 @@ pub type Iterable<T> = {
 
 type SequenceIterator<T> = & Iterator<T> & {
     remaining: Sequence<T>
+}
+
+/// Keeps one stable list snapshot and advances without constructing suffix lists.
+type ListIterator<T> = & Iterator<T> & {
+    values: List<T>
+    index: Int
+}
+
+impl ListIterator {
+    /// Reads the next indexed element, retaining the backing snapshot until release.
+    func next<T>(self: ListIterator<T>) -> Option<T> {
+        branch {
+            self.index >= self.values.length -> Option.None
+            _ -> {
+                let value = self.values[self.index]
+                self.index = self.index + 1
+                Option.Some(value)
+            }
+        }
+    }
+}
+
+/// Advances through one immutable byte snapshot.
+type BytesIterator = & Iterator<Byte> & {
+    data: Bytes
+    index: Int
+}
+
+impl BytesIterator {
+    /// Returns the next byte, or None after exhaustion.
+    func next(self: BytesIterator) -> Option<Byte> {
+        branch {
+            self.index >= self.data.length -> Option.None
+            _ -> {
+                let value = self.data[self.index]
+                self.index = self.index + 1
+                Option.Some(value)
+            }
+        }
+    }
 }
 
 impl SequenceIterator {
@@ -39,6 +82,16 @@ impl SequenceIterator {
 }
 
 impl Iterator {
+    /// Compiler-selected constructor for a list snapshot.
+    func from_list<T>(values: List<T>) -> Iterator<T> [consume values] {
+        ListIterator { values: move values, index: 0 }
+    }
+
+    /// Compiler-selected constructor for a byte snapshot.
+    func from_bytes(values: Bytes) -> Iterator<Byte> [consume values] {
+        BytesIterator { data: move values, index: 0 }
+    }
+
     /// Consumes a sequence into an independent stateful iterator.
     pub func from_sequence<T>(values: Sequence<T>) -> Iterator<T> [consume values] {
         SequenceIterator { remaining: move values }

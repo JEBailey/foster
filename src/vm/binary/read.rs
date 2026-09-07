@@ -331,6 +331,7 @@ impl<'a> Reader<'a> {
                 slot: DispatchSlot(self.u32()?),
                 name: self.string()?,
                 arguments: self.regs()?,
+                result_type: self.verification_type(0)?,
             },
             28 => Instruction::MakeClosure {
                 destination: r!(),

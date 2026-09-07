@@ -1387,8 +1387,11 @@ fn transfer(
             receiver,
             slot,
             arguments,
+            result_type,
+            name,
             ..
         } => {
+            verify_metadata_type(program, result_type, 0)?;
             let receiver_type = read_type(function, index, &state, *receiver)?;
             if *slot == crate::types::DEINIT_SLOT {
                 return invalid_instruction(
@@ -1413,15 +1416,29 @@ fn transfer(
                 write_type(function, index, &mut state, *destination, result)?;
                 return Ok(vec![(index + 1, state)]);
             }
-            let nominal = match receiver_type {
-                VerificationType::Record { record, .. } => Some(NominalTypeId::Record(record)),
-                VerificationType::Variant { variant, .. } => Some(NominalTypeId::Variant(variant)),
+            let nominal = match &receiver_type {
+                VerificationType::Record { record, .. } => Some(NominalTypeId::Record(*record)),
+                VerificationType::Variant { variant, .. } => Some(NominalTypeId::Variant(*variant)),
                 _ => None,
             };
             if let Some(target) = nominal
                 .and_then(|nominal| program.dispatch.get(&(nominal, *slot)))
                 .and_then(|target| program.functions.get(target))
             {
+                let mut substitutions = std::collections::BTreeMap::new();
+                if let Some(parameter) = target.parameter_types.first() {
+                    parameter.infer_specialization(&receiver_type, &mut substitutions);
+                }
+                for (parameter, argument) in target.parameter_types.iter().skip(1).zip(arguments) {
+                    parameter.infer_specialization(
+                        &read_type(function, index, &state, *argument)?,
+                        &mut substitutions,
+                    );
+                }
+                let concrete = target
+                    .result_type
+                    .specialize(&substitutions.into_iter().collect());
+                require_type(function, index, &concrete, result_type, "contract result")?;
                 verify_arguments(
                     function,
                     index,
@@ -1440,9 +1457,20 @@ fn transfer(
                     index,
                     &mut state,
                     *destination,
-                    target.result_type.clone(),
+                    result_type.clone(),
                 )?;
             } else {
+                if arguments.is_empty()
+                    && let Some(concrete) = verification_field_type(program, &receiver_type, name)
+                {
+                    require_type(
+                        function,
+                        index,
+                        &concrete,
+                        result_type,
+                        "contract accessor result",
+                    )?;
+                }
                 for argument in arguments {
                     read_type(function, index, &state, *argument)?;
                 }
@@ -1451,7 +1479,7 @@ fn transfer(
                     index,
                     &mut state,
                     *destination,
-                    VerificationType::Unknown,
+                    result_type.clone(),
                 )?;
             }
         }

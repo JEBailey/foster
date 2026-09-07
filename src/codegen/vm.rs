@@ -1001,12 +1001,14 @@ fn portable_instruction(
             slot,
             name,
             arguments,
+            result_type,
         } => ir::PortableInstruction::CallContractMethod {
             destination: destination(output),
             receiver: source(receiver),
             slot: *slot,
             name: name.clone(),
             arguments: arguments.iter().map(source).collect(),
+            result_type: result_type.clone(),
         },
         vm::Instruction::MakeClosure {
             destination: output,
@@ -1748,12 +1750,14 @@ fn lower_portable(
             slot,
             name,
             arguments,
+            result_type,
         } => vm::Instruction::CallContractMethod {
             destination: get(destination),
             receiver: get(receiver),
             slot: *slot,
             name: name.clone(),
             arguments: arguments.iter().map(get).collect(),
+            result_type: result_type.clone(),
         },
         ir::PortableInstruction::MakeClosure {
             destination,

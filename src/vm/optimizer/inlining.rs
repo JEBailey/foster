@@ -67,7 +67,7 @@ fn inline_calls(
             destination,
             function,
             arguments,
-            ..
+            specialization,
         } = &instruction
         else {
             instructions.push(instruction);
@@ -101,6 +101,9 @@ fn inline_calls(
         }
         for callee_instruction in &callee.instructions[..callee.instructions.len() - 1] {
             let mut callee_instruction = callee_instruction.clone();
+            if let Instruction::CallContractMethod { result_type, .. } = &mut callee_instruction {
+                *result_type = result_type.specialize(specialization);
+            }
             rewrite_registers(&mut callee_instruction, &mapping);
             instructions.push(callee_instruction);
             spans.push(span.clone());

@@ -325,6 +325,198 @@ fn check(name: &str, source: &str, expected: Result<&str, &str>) {
 }
 
 #[test]
+fn collection_cursors_release_visited_and_unvisited_values_on_failure() {
+    check_process_output(
+        "cursor-cleanup",
+        r#"
+import std.iter
+import core.option
+import core.drop
+type Held = & Drop & { id: Int }
+impl Held { func deinit(self) -> () { println(self.id) } }
+func main() -> Int {
+    let cursor = [Held { id: 1 }, Held { id: 2 }].iterator()
+    branch cursor.next() {
+        Option.Some(value) -> { assert(value.id == 1) }
+        Option.None -> { assert(false) }
+    }
+    assert(false, "cursor failure")
+    0
+}
+"#,
+        "1\n2",
+        Some("cursor failure"),
+    );
+}
+
+#[test]
+fn collection_cursors_preserve_snapshots_and_decode_utf8() {
+    check(
+        "collection-cursors",
+        r#"
+import std.iter
+import std.iter.map
+import std.iter.take
+import core.option
+import core.string
+import core.byte
+func saved() -> Iterator<String> {
+    let source = ["first", "second"]
+    source.iterator()
+}
+func empty_list() -> List<Int> { [] }
+func main() -> Bool {
+    let source = [1, 2, 3]
+    let first = source.iterator()
+    let second = source.iterator()
+    source.push(4)
+    source[0] = 99
+    assert(first.next() == Option.Some(1))
+    assert(second.collect() == [1, 2, 3])
+    assert(first.collect() == [2, 3])
+    assert(first.next() == Option.None)
+    assert(first.next() == Option.None)
+    assert(source == [99, 2, 3, 4])
+    assert(saved().collect() == ["first", "second"])
+    assert(empty_list().iterator().count() == 0)
+    let text = "aλ€🦀"
+    let letters = text.iterator()
+    let other = text.iterator()
+    text = "changed"
+    assert(letters.next() == Option.Some('a'))
+    assert(letters.next() == Option.Some('λ'))
+    assert(letters.next() == Option.Some('€'))
+    assert(letters.next() == Option.Some('🦀'))
+    assert(letters.next() == Option.None)
+    assert(letters.next() == Option.None)
+    assert(other.collect() == ['a', 'λ', '€', '🦀'])
+    assert("".iterator().count() == 0)
+    assert("aλ€🦀".iterator().map((value: CodePoint) -> value).take(3).collect() == ['a', 'λ', '€'])
+    let octets = "ab".bytes.iterator()
+    assert(octets.next() == Option.Some(Byte.unchecked(97)))
+    assert(octets.next() == Option.Some(Byte.unchecked(98)))
+    assert(octets.next() == Option.None)
+    assert("".bytes.iterator().count() == 0)
+    true
+}
+"#,
+        Ok("true"),
+    );
+}
+
+#[test]
+fn generic_sequence_iterators_dispatch_all_builtin_representations() {
+    check(
+        "sequence-iterators",
+        r#"
+import std.iter
+import core.option
+import core.bytes
+import core.byte
+import std.iter.map
+import std.iter.filter
+import std.iter.skip
+import std.iter.take
+func iterator<T>(values: Sequence<T>) -> Iterator<T> [consume values] {
+    Iterator.from_sequence(move values)
+}
+func main() -> Bool {
+    let numbers = iterator([7, 8])
+    assert(numbers.next() == Option.Some(7))
+    assert(numbers.next() == Option.Some(8))
+    assert(numbers.next() == Option.None)
+    assert(numbers.next() == Option.None)
+    let text = iterator("λ🦀")
+    assert(text.next() == Option.Some('λ'))
+    assert(text.next() == Option.Some('🦀'))
+    assert(text.next() == Option.None)
+    let characters = iterator(['λ', '🦀'])
+    assert(characters.collect() == ['λ', '🦀'])
+    let octets = iterator("ab".bytes)
+    assert(octets.next() == Option.Some(Byte.unchecked(97)))
+    assert(octets.next() == Option.Some(Byte.unchecked(98)))
+    assert(octets.next() == Option.None)
+    let values = [1, 2, 3]
+    let first = values.iterator()
+    let second = values.iterator()
+    assert(first.next() == Option.Some(1))
+    assert(second.next() == Option.Some(1))
+    assert(first.count() == 2)
+    assert(second.count() == 2)
+    assert(values == [1, 2, 3])
+    let words = iterator(["one", "two"])
+    assert(words.collect() == ["one", "two"])
+    assert(iterator("").count() == 0)
+    let pipeline = [1, 2, 3, 4, 5].iterator().map((value: Int) -> value * 2).filter((value: Int) -> value > 4).skip(1).take(2).collect()
+    assert(pipeline == [8, 10])
+    true
+}
+"#,
+        Ok("true"),
+    );
+}
+
+#[test]
+fn generic_sequence_user_accessors_can_change_tail_representation() {
+    check(
+        "sequence-user-accessors",
+        r#"
+import std.iter
+import std.sequence
+import core.string
+type TextSlice = & Sequence<CodePoint> & { text: String }
+impl TextSlice {
+    func empty?(self) -> Bool { self.text.empty? }
+    func length(self) -> Int { self.text.length }
+    func head(self) -> CodePoint { self.text.head }
+    func rest(self) -> String { self.text.rest }
+}
+func letters(values: Sequence<CodePoint>) -> List<CodePoint> [consume values] {
+    let cursor = Iterator.from_sequence(move values)
+    cursor.collect()
+}
+func measure<T>(values: Sequence<T>) -> Int { values.length() }
+func main() -> Bool {
+    assert(letters(TextSlice { text: "λ🦀!" }) == ['λ', '🦀', '!'])
+    assert(letters(TextSlice { text: "" }) == "".code_points())
+    assert(letters(['a', 'b']) == ['a', 'b'])
+    assert(measure(TextSlice { text: "λ🦀!" }) == 3)
+    assert(measure([1, 2]) == 2)
+    assert(sequence::count("banana", (value: CodePoint) -> value == 'a') == 3)
+    assert(sequence::count([1, 2, 3], (value: Int) -> value > 1) == 2)
+    true
+}
+"#,
+        Ok("true"),
+    );
+}
+
+#[test]
+fn generic_sequence_failure_releases_the_callers_values() {
+    check_process_output(
+        "sequence-failure",
+        r#"
+import std.iter
+import std.iter.map
+import core.drop
+type Held = & Drop & { text: String }
+impl Held { func deinit(self) -> () { println(self.text) } }
+func main() -> Int {
+    let held = Held { text: "cleaned" }
+    let cursor = [1, 2, 3].iterator().map((value: Int) -> {
+        assert(value < 2, "sequence failure")
+        value
+    })
+    cursor.collect()
+    0
+}
+"#,
+        "cleaned",
+        Some("sequence failure"),
+    );
+}
+
+#[test]
 fn aggregates_compare_by_value() {
     check(
         "equality",

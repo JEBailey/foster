@@ -135,6 +135,12 @@ that shared result rather than inferring ownership from the member's spelling.
 | An index read used as a value | Reads the projected place; taking ownership moves its contents |
 | Indexing rooted in a place | Projected place |
 
+List, byte, and string `.iterator()` calls retain an independent snapshot and advance an index
+or UTF-8 byte offset. Later source mutations do not affect that snapshot. Repeated `next()` calls
+after exhaustion return `Option.None`. The cursor retains its backing snapshot until the cursor's
+ownership ends, including values already visited; normal unwinding releases it on failure as well.
+Generic `Sequence<T>` iteration and `Iterator.from_sequence` retain the head/rest adapter.
+
 ## 4. Evaluation and control flow
 
 **S-09 — Sequencing.** Statements execute in source order. Ordinary binary operands evaluate
@@ -368,9 +374,11 @@ S-08. Their decisions are normative rules above rather than open entries:
   exits, enum payloads, remote argument transfer, and failure cleanup have backend parity tests.
   Scoped remote owner cancellation remains G-06; host wrappers need a `deinit` implementation to
   close their external resources automatically.
-- **G-05 — Generic sequence execution (implementation gap):** native `SequenceIterator` cannot
-  yet resolve all erased sequence storage members. Head/rest adapters can copy tails; neither
-  structural conformance nor slicing promises zero-copy traversal.
+- **G-05 — Generic sequence execution (closed):** native contract dispatch resolves sequence
+  accessors through erased stored values, preserving checked generic result types. Built-in
+  lists, strings, bytes, user-defined sequences, mixed iterator element types, lazy adapters,
+  exhaustion, and failure cleanup have VM/native parity coverage. Head/rest adapters can still
+  copy tails; structural conformance and slicing do not promise zero-copy traversal.
 - **G-06 — Scoped remote lifetime (accepted, not implemented):** implement owner-exit cancellation,
   completion tracking, and diagnostics under [the remote contract](remote-semantics.md). Dropping a
   future does not discharge its request. Cross-worker scheduling, liveness, host interruption, and
