@@ -703,6 +703,7 @@ import core.result
 import core.list
 import std.process
 import std.path
+import std.iter
 type Box = { text: String }
 impl Box { func copy(self) -> self { Box { text: self.text.copy() } } }
 func crash(kind: String, text: String) -> String {
@@ -719,6 +720,10 @@ func crash(kind: String, text: String) -> String {
 }
 func reference[g: group Box](box: ref[g] Box, kind: String) -> String {
     crash(kind, box.text)
+}
+func nested[g: group List<Box>](items: ref[g] List<Box>, text: String) -> String [mut g] {
+    items[0].text = text + "replacement"
+    crash("assert", text)
 }
 func combine(box: Box, text: String) -> String { box.text + text }
 func boxed(box: Box) -> Result<Box, String> { Result.Ok(box) }
@@ -748,6 +753,12 @@ func fail(kind: String, borrowed: String, owned: Box) -> String [consume owned, 
             local[0] = Box { text: borrowed + "changed" }
             assert(saved.text != local[0].text)
             crash(kind, local[0].text)
+        }
+        "nested-reference" -> {
+            let snapshot = local.iterator()
+            let outcome_text = nested(ref local, borrowed)
+            snapshot.next()
+            outcome_text
         }
         "reference" -> reference(ref (Box { text: borrowed + "temporary" }), kind)
         "pending" -> {
@@ -822,6 +833,7 @@ func main(args: Arguments) -> String {
                     "refclosure",
                     "update",
                     "reference",
+                    "nested-reference",
                     "pending",
                     "partial",
                     "recursive",

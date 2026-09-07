@@ -2752,3 +2752,20 @@ func main() -> Int {
     .unwrap_err();
     assert!(error.message.contains("Result"), "{error}");
 }
+
+#[test]
+fn nested_indexed_field_replacement_preserves_disjoint_loans() {
+    let source = r#"
+type Item = { left: List<Int>, right: List<Int> }
+func main() -> Int {
+    let items = [Item { left: [10], right: [20] }]
+    let selected = ref items[0].left[0]
+    items[0].right = [42]
+    selected
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(10));
+    let error =
+        foster::compile(&source.replace("items[0].right =", "items[0].left =")).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"), "{error:?}");
+}

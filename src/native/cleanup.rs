@@ -12,6 +12,9 @@ pub(super) struct FailureCleanup {
 pub(super) struct NativeBuilder<'a> {
     inner: cranelift_frontend::FunctionBuilder<'a>,
     pub cleanup: Vec<(ClifValue, FuncId)>,
+    /// Address-taken owners may be replaced by a failing call. Reload these
+    /// homes on the failure edge instead of releasing their pre-call values.
+    pub cleanup_homes: HashMap<ClifValue, StackSlot>,
 }
 
 impl<'a> NativeBuilder<'a> {
@@ -22,6 +25,7 @@ impl<'a> NativeBuilder<'a> {
         Self {
             inner: cranelift_frontend::FunctionBuilder::new(function, context),
             cleanup: Vec::new(),
+            cleanup_homes: HashMap::new(),
         }
     }
 

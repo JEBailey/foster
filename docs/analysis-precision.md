@@ -131,7 +131,7 @@ complete for this scope when the acceptance criteria above pass; it does not mea
 can prove every safe program.
 
 This work does not change ownership transfer, `Copy`, `Drop`, group syntax, or runtime lifetime
-rules. G-08's nested indexed writes are a separate correctness bug. G-06's pending remote-request
+rules. G-08's nested indexed writes were corrected separately. G-06's pending remote-request
 transfers need request/owner relationships in addition to ordinary loan provenance; improving a
 callable's loan summary alone must not remove those restrictions. Unbounded theorem proving,
 general arithmetic/alias analysis, and remote scheduling are outside this issue.

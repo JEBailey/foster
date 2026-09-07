@@ -2634,6 +2634,12 @@ fn lower_shared_to_native_ir(
                     &instruction
                 {
                     temporaries.remove(value);
+                    if storage_hints[value.0 as usize]
+                        .is_some_and(|home| reference_homes.contains_key(&home))
+                    {
+                        // A loaded reference parameter never owns its caller's value.
+                        continue;
+                    }
                 }
                 for value in consumed {
                     remove_shared_home(&mut state, &storage_hints, value);
@@ -2744,8 +2750,9 @@ fn lower_shared_to_native_ir(
             };
             let returned = *returned;
             for value in state
-                .values()
-                .copied()
+                .iter()
+                .filter(|(home, _)| !reference_homes.contains_key(home))
+                .map(|(_, value)| *value)
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .rev()
@@ -2784,7 +2791,11 @@ fn lower_shared_to_native_ir(
         }
         // Pruned SSA block arguments no longer carry dead storage into the successor.
         // Release that storage on the particular edge where its lifetime ends.
-        let owned = state.values().copied().collect::<BTreeSet<_>>();
+        let owned = state
+            .iter()
+            .filter(|(home, _)| !reference_homes.contains_key(home))
+            .map(|(_, value)| *value)
+            .collect::<BTreeSet<_>>();
         let dying = |arguments: &[ir::Value]| {
             owned
                 .iter()
@@ -3086,7 +3097,12 @@ fn lower_shared_instruction(
     let mut wrappers = Vec::new();
     let mut prefix = Vec::new();
     if let ir::Instruction::Portable(portable) = &mut adapted {
-        let object_layout = |value: ir::Value| match value_types[value.0 as usize] {
+        let object_layout = |value: ir::Value| match dereference_native_type(
+            value_types[value.0 as usize],
+            environment,
+        )
+        .ok()?
+        {
             NativeType::Object(layout) => Some(layout),
             _ => None,
         };
@@ -3240,6 +3256,42 @@ fn lower_shared_instruction(
                 destination: *destination,
                 value,
             }))
+        }
+        ir::PortableInstruction::CopyOnWrite {
+            destination,
+            source,
+        } => {
+            let Some(reference) = storage_hints[source.0 as usize]
+                .and_then(|home| facts.reference_homes.get(&home).copied())
+            else {
+                return Ok(one(instruction.clone()));
+            };
+            // The SSA home holds a loaded parameter value. Detach through the
+            // original address so replacing storage updates the caller as well.
+            let reference_type = ty(reference);
+            let value_type = ty(*destination);
+            let unique = allocate_shared_value(value_types, storage_hints, reference_type);
+            Ok(vec![
+                (
+                    ir::Instruction::Portable(ir::PortableInstruction::CopyOnWrite {
+                        destination: unique,
+                        source: reference,
+                    }),
+                    Vec::new(),
+                ),
+                (
+                    ir::Instruction::RuntimeCall {
+                        destination: *destination,
+                        helper: reference_load_helper(value_type),
+                        signature: ir::Signature {
+                            parameters: vec![reference_type],
+                            result: value_type,
+                        },
+                        arguments: vec![unique],
+                    },
+                    Vec::new(),
+                ),
+            ])
         }
         ir::PortableInstruction::MakeWholeReference {
             destination,
@@ -4212,9 +4264,9 @@ fn lower_native_ir(
     backend: &NativeBackend<'_>,
 ) -> Result<(), FosterError> {
     let function = &prepared.ir;
-    // Scalar locals whose address escapes are memory-backed. A call can
-    // change their home without producing a new SSA definition.
-    let referenced_scalar_homes = function
+    // Address-taken locals are memory-backed. A call can replace an aggregate
+    // as well as mutate a scalar without producing a new SSA definition.
+    let referenced_homes = function
         .blocks
         .iter()
         .flat_map(|block| &block.instructions)
@@ -4222,17 +4274,7 @@ fn lower_native_ir(
             ir::Instruction::Portable(ir::PortableInstruction::MakeWholeReference {
                 object,
                 ..
-            }) if matches!(
-                function.value_type(*object),
-                NativeType::Int
-                    | NativeType::Bool
-                    | NativeType::Byte
-                    | NativeType::CodePoint
-                    | NativeType::Float
-            ) =>
-            {
-                function.storage_hints[object.0 as usize]
-            }
+            }) => function.storage_hints[object.0 as usize],
             _ => None,
         })
         .collect::<HashSet<_>>();
@@ -4326,7 +4368,7 @@ fn lower_native_ir(
         for (instruction_index, instruction) in block.instructions.iter().enumerate() {
             for operand in instruction.operands() {
                 if let Some(home) = function.storage_hints[operand.0 as usize]
-                    && referenced_scalar_homes.contains(&home)
+                    && referenced_homes.contains(&home)
                 {
                     let loaded = builder.ins().stack_load(
                         pointer_type,
@@ -4337,6 +4379,19 @@ fn lower_native_ir(
                     values.insert(operand, loaded);
                 }
             }
+            builder.cleanup_homes = prepared
+                .failure_cleanup
+                .values
+                .get(&(index, instruction_index))
+                .into_iter()
+                .flatten()
+                .filter_map(|value| {
+                    let home = function.storage_hints[value.0 as usize]?;
+                    referenced_homes
+                        .contains(&home)
+                        .then(|| (values[value], homes[&home]))
+                })
+                .collect();
             builder.cleanup = prepared
                 .failure_cleanup
                 .values
@@ -4435,7 +4490,7 @@ fn lower_native_ir(
         };
         for operand in operands {
             if let Some(home) = function.storage_hints[operand.0 as usize]
-                && referenced_scalar_homes.contains(&home)
+                && referenced_homes.contains(&home)
             {
                 let loaded = builder.ins().stack_load(
                     pointer_type,
@@ -5217,13 +5272,20 @@ fn lower_portable_native(
             index,
             source,
         } => {
-            let NativeType::Object(layout) = function.value_type(*object) else {
+            let (receiver, receiver_type) = native_reference_receiver(
+                builder,
+                module,
+                get(object),
+                function.value_type(*object),
+                backend,
+            )?;
+            let NativeType::Object(layout) = receiver_type else {
                 return Err(native_error("native indexed store requires a buffer"));
             };
             let (address, element) = native_buffer_element_address(
                 builder,
                 module,
-                get(object),
+                receiver,
                 get(index),
                 layout,
                 objects,
@@ -5691,7 +5753,14 @@ fn lower_portable_native(
             field,
             source,
         } => {
-            let NativeType::Object(layout) = function.value_type(*object) else {
+            let (receiver, receiver_type) = native_reference_receiver(
+                builder,
+                module,
+                get(object),
+                function.value_type(*object),
+                backend,
+            )?;
+            let NativeType::Object(layout) = receiver_type else {
                 return Err(native_error("native field store requires a Foster object"));
             };
             let LayoutKind::Record { fields, .. } = &objects.layouts.logical.get(layout).kind
@@ -5710,20 +5779,15 @@ fn lower_portable_native(
             if let Some(pointee) = physical.value.pointee
                 && objects.layouts.is_managed(pointee)
             {
-                let old = load_physical_value(
-                    builder,
-                    module,
-                    get(object),
-                    physical.offset,
-                    physical.value,
-                );
+                let old =
+                    load_physical_value(builder, module, receiver, physical.offset, physical.value);
                 objects.release(builder, module, old, pointee)?;
             }
             let source_value = get(source);
             if let Some(pointee) = objects.layouts.managed_layout(function.value_type(*source)) {
                 objects.retain(builder, source_value, pointee);
             }
-            store_physical_value(builder, get(object), physical.offset, source_value);
+            store_physical_value(builder, receiver, physical.offset, source_value);
             Ok(None)
         }
         ir::PortableInstruction::Builtin {
@@ -8068,6 +8132,14 @@ fn propagate_native_failure(
     builder.ins().brif(pending, failed, &[], continuation, &[]);
     builder.switch_to_block(failed);
     for (value, release) in builder.cleanup.clone() {
+        let value = if let Some(home) = builder.cleanup_homes.get(&value).copied() {
+            let pointer_type = module.target_config().pointer_type();
+            builder
+                .ins()
+                .stack_load(pointer_type, pointer_type, home, 0)
+        } else {
+            value
+        };
         let release = module.declare_func_in_func(release, builder.func);
         builder.ins().call(release, &[value]);
     }

@@ -444,6 +444,16 @@ impl Machine {
                     destination,
                     source,
                 } => {
+                    // SSA copy-on-write values can share their source register.
+                    // VM containers detach during mutation; a self-copy must not
+                    // write through a projected reference and invalidate loans.
+                    if destination == source
+                        && frame.registers[usize::from(destination.0)]
+                            .reference()
+                            .is_some()
+                    {
+                        continue;
+                    }
                     let value = if frame.registers[usize::from(destination.0)]
                         .reference()
                         .is_some()
@@ -630,6 +640,11 @@ impl Machine {
                     field,
                     source,
                 } => {
+                    if frame.registers[usize::from(object.0)].reference().is_some() {
+                        let target = PlaceHandle::field(place(frame, *object), field.clone())?;
+                        target.write(read(frame, *source)?)?;
+                        continue;
+                    }
                     let mut value = read(frame, *object)?;
                     let Value::Record { fields, .. } = &mut value else {
                         return Err(RuntimeError::runtime("field assignment requires a record"));
@@ -651,6 +666,11 @@ impl Machine {
                     let index = usize::try_from(index)
                         .map_err(|_| RuntimeError::runtime("index is out of bounds"))?;
                     let source = read(frame, source)?;
+                    if frame.registers[usize::from(object.0)].reference().is_some() {
+                        let target = PlaceHandle::indexed(place(frame, object), index)?;
+                        target.write(source)?;
+                        continue;
+                    }
                     match &mut value {
                         value if value.list_value().is_some() => {
                             let values = value.list_value_mut().unwrap();

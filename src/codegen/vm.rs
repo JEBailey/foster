@@ -191,6 +191,38 @@ fn seal_function_with_types(
             _ => {}
         }
     }
+    // Writable projection chains must detach shared parents before taking
+    // child addresses; detaching only the final record would mutate a shared list.
+    let mut writable = std::collections::HashSet::new();
+    for instruction in &function.instructions {
+        if let vm::Instruction::StoreField { object, .. }
+        | vm::Instruction::StoreIndex { object, .. } = instruction
+        {
+            writable.insert(*object);
+        }
+    }
+    loop {
+        let mut changed = false;
+        for instruction in function.instructions.iter().rev() {
+            if let vm::Instruction::MakeReference {
+                destination,
+                object,
+                ..
+            }
+            | vm::Instruction::MakeFieldReference {
+                destination,
+                object,
+                ..
+            } = instruction
+                && writable.contains(destination)
+            {
+                changed |= writable.insert(*object);
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
     let liveness = crate::vm::optimizer::analysis::liveness_with_exit_uses(function, &origins);
     let mut value_types = Vec::new();
     let mut storage_hints = Vec::new();
@@ -277,6 +309,34 @@ fn seal_function_with_types(
                 .get(source_index)
                 .cloned()
                 .unwrap_or_default();
+            if let vm::Instruction::MakeReference {
+                destination,
+                object,
+                ..
+            }
+            | vm::Instruction::MakeFieldReference {
+                destination,
+                object,
+                ..
+            } = operation
+                && writable.contains(destination)
+            {
+                let old = lifted_register(&state, *object, function)?;
+                let unique = allocate_lifted_value(
+                    &mut value_types,
+                    &mut storage_hints,
+                    hints[usize::from(object.0)],
+                    *object,
+                );
+                instructions.push(ir::Instruction::Portable(
+                    ir::PortableInstruction::CopyOnWrite {
+                        destination: unique,
+                        source: old,
+                    },
+                ));
+                instruction_spans.push(source_span.clone());
+                state[usize::from(object.0)] = Some(unique);
+            }
             match operation {
                 vm::Instruction::Jump { target } => {
                     terminator_span = source_span;

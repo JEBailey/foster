@@ -1341,3 +1341,175 @@ func main() -> Int {
         Ok("32"),
     );
 }
+
+#[test]
+fn nested_indexed_assignments_update_the_original_place() {
+    check(
+        "nested-indexed-writes",
+        r#"
+type Item = { text: String, number: Int }
+type Box = { items: List<Item> }
+func main() -> Int {
+    let items = [Item { text: "before", number: 1 }]
+    items[0].text = "after"
+    assert(items[0].text == "after")
+    let nested = [[Item { text: "before", number: 2 }]]
+    nested[0][0].number = 42
+    assert(nested[0][0].number == 42)
+    let box = Box { items: [Item { text: "before", number: 3 }] }
+    box.items[0].text = "changed"
+    assert(box.items[0].text == "changed")
+    let matrix = [[1, 2]]
+    matrix[0][1] = 42
+    assert(matrix[0][1] == 42)
+    let alias = ref items
+    alias[0].number = 42
+    assert(items[0].number == 42)
+    42
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
+fn nested_indexed_writes_preserve_iterator_snapshots() {
+    check(
+        "nested-index-snapshot",
+        r#"
+import std.iter
+import core.option
+import core.string
+type Item = { text: String, number: Int }
+impl Item { func copy(self) -> self { Item { text: self.text.copy(), number: self.number } } }
+func rename[g: group List<Item>](items: ref[g] List<Item>) -> () [mut g] {
+    items[0].text = "after"
+    ()
+}
+func main() -> Bool {
+    let items = [Item { text: "before", number: 1 }]
+    let snapshot = items.iterator()
+    items[0].text = "after"
+    assert(items[0].text == "after")
+    let passed = [Item { text: "before", number: 2 }]
+    let passed_snapshot = passed.iterator()
+    rename(ref passed)
+    assert(passed[0].text == "after")
+    assert(branch passed_snapshot.next() { Option.Some(item) -> item.text == "before"
+ _ -> false })
+    branch snapshot.next() { Option.Some(item) -> item.text == "before"
+ _ -> false }
+}
+"#,
+        Ok("true"),
+    );
+}
+
+#[test]
+fn nested_indexed_writes_evaluate_rhs_then_each_index_once() {
+    check_stdout(
+        "nested-index-order",
+        r#"
+type Item = { number: Int }
+func index(label: String) -> Int { println(label)
+0 }
+func value() -> Int { println("rhs")
+42 }
+func main() -> Int {
+    let items = [[Item { number: 0 }]]
+    items[index("outer")][index("inner")].number = value()
+    items[0][0].number
+}
+"#,
+        "rhs\nouter\ninner\n42",
+    );
+}
+
+#[test]
+fn nested_indexed_writes_replace_owned_fields_and_drop_them_once() {
+    check_stdout(
+        "nested-index-drop",
+        r#"
+import core.drop
+type Resource = & Drop & { id: Int }
+impl Resource { func deinit(self) -> () { println(self.id) } }
+type Item = { resource: Resource }
+func main() -> Int {
+    let items = [Item { resource: Resource { id: 1 } }]
+    items[0].resource = Resource { id: 2 }
+    println(10)
+    42
+}
+"#,
+        "1\n10\n2\n42",
+    );
+}
+
+#[test]
+fn nested_indexed_writes_keep_bounds_checks_and_failure_order() {
+    for (outer, inner, trace) in [
+        (0, -1, "rhs\nouter\ninner"),
+        (0, 1, "rhs\nouter\ninner"),
+        (1, 0, "rhs\nouter"),
+    ] {
+        let source = format!(
+            r#"
+type Item = {{ number: Int }}
+func index(label: String, value: Int) -> Int {{ println(label)
+value }}
+func value() -> Int {{ println("rhs")
+42 }}
+func main() -> Int {{
+    let items = [[Item {{ number: 0 }}]]
+    items[index("outer", {outer})][index("inner", {inner})].number = value()
+    0
+}}
+"#
+        );
+        check_process_output("nested-index-bounds", &source, trace, Some("index"));
+    }
+}
+
+#[test]
+fn nested_indexed_writes_support_generic_and_callable_fields() {
+    check(
+        "nested-index-generic",
+        r#"
+type Box<T> = { value: T }
+func set<T>[g: group List<Box<T>>](items: ref[g] List<Box<T>>, value: T) -> () [mut g, consume value] { items[0].value = value
+() }
+func first(value: Int) -> Int { value }
+func second(value: Int) -> Int { value + 1 }
+func main() -> Int {
+    let items = [Box { value: 0 }]
+    set(ref items, 41)
+    assert(items[0].value == 41)
+    let words = [Box { value: "before" }]
+    set(ref words, "after")
+    assert(words[0].value == "after")
+    let callbacks = [Box { value: first }]
+    callbacks[0].value = second
+    callbacks[0].value(items[0].value)
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
+fn nested_indexed_writes_preserve_disjoint_loans() {
+    check(
+        "nested-index-disjoint",
+        r#"
+type Item = { left: List<Int>, right: List<Int> }
+func main() -> Int {
+    let items = [Item { left: [10], right: [20] }]
+    let selected = ref items[0].left[0]
+    items[0].right = [42]
+    assert(items[0].right[0] == 42)
+    selected + 0
+}
+"#,
+        Ok("10"),
+    );
+}

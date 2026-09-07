@@ -390,12 +390,13 @@ S-08. Their decisions are normative rules above rather than open entries:
   preserve supported dependencies; unknown targets and hidden environments remain conservative.
   Bounded compound boolean path reasoning supports `&&`, `||`, and `not`, preserving short-circuit
   effects and forgetting facts after operand mutation. See [supported forms and limits](analysis-precision.md).
-- **G-08 — Nested indexed assignment (implementation violation):** both backends currently lower
-  `items[0].field = value` through an owned index read, so the write can affect a detached temporary
-  and leave the list element unchanged. For example, a list containing `{ text: "before" }` still
-  reads `"before"` after `items[0].text = "after"`. S-08 and S-09 require this rooted indexing to
-  preserve its projected place and update the selected field. Direct `items[0] = replacement`
-  works; the nested write must be fixed without changing the language contract.
+- **G-08 — Nested indexed assignment (closed):** rooted field/index assignments preserve
+  their projected place in both backends, so `items[0].field = value` updates the original
+  element. Writable ancestors detach shared storage before taking child addresses, preserving
+  iterator snapshots. Writes through reference parameters update their caller's storage without
+  taking ownership of it. Regression tests cover mixed projections, generic and callable fields,
+  RHS-before-index evaluation with each index evaluated once, bounds failures, replacement/drop
+  order, and preservation of disjoint loans. Overlapping structural replacements remain rejected.
 
 Resolving an open decision requires a documented rule, implementation, and conformance tests.
 Fixing an implementation violation should restore the contract without redefining the violating

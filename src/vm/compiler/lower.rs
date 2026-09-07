@@ -726,7 +726,7 @@ impl FunctionCompiler<'_> {
                 );
             }
             hir::Expr::Member { object, name } => {
-                let object = self.expression(*object)?;
+                let object = self.assignment_receiver(*object, span.clone())?;
                 self.emit(
                     Instruction::StoreField {
                         object,
@@ -737,7 +737,7 @@ impl FunctionCompiler<'_> {
                 );
             }
             hir::Expr::Index { object, index } => {
-                let object = self.expression(*object)?;
+                let object = self.assignment_receiver(*object, span.clone())?;
                 let index = self.expression(*index)?;
                 self.emit(
                     Instruction::StoreIndex {
@@ -751,6 +751,22 @@ impl FunctionCompiler<'_> {
             _ => return Err(self.unsupported("assignment place")),
         }
         Ok(())
+    }
+
+    // An assignment's receiver is storage, even when reaching it traverses
+    // indexed values. An owned read here would detach the eventual write.
+    fn assignment_receiver(
+        &mut self,
+        expression: ExprId,
+        span: std::ops::Range<usize>,
+    ) -> Result<Register, FosterError> {
+        if crate::semantics::expression_place(self.hir, &self.types.member_kinds, expression)
+            .is_some_and(|place| !place.projections.is_empty())
+        {
+            self.reference_expression(expression, span)
+        } else {
+            self.expression(expression)
+        }
     }
 
     fn method_receiver(&mut self, id: ExprId) -> Result<Register, FosterError> {
