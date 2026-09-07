@@ -269,6 +269,13 @@ impl Checker<'_> {
                 Some(_) => self.infer_expression(function, *argument),
             })
             .collect::<Result<Vec<_>, _>>()?;
+        // Preserve the relation between callable parameter/result groups before
+        // multiple caller places collapse to the same frame group.
+        if let Ty::Callable { parameters, .. } | Ty::Function(parameters, _) = &callee_type {
+            for (expected, actual) in parameters.iter().zip(&argument_types) {
+                self.check_callable_result_origins(expected, actual, function)?;
+            }
+        }
         let callee_type = instantiate_call_groups(callee_type, &argument_types);
         self.check_argument_modes(function, &callee_type, arguments, &argument_types)?;
         let remote_call =

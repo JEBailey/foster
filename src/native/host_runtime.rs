@@ -480,6 +480,7 @@ extern "C" fn foster_rt_v4_host_release(response: usize) -> u8 {
 }
 
 thread_local! {
+    static FOSTER_CANCELLATION: std::cell::RefCell<Option<Arc<remote_lifecycle::Control>>> = const { std::cell::RefCell::new(None) };
     static FOSTER_EXECUTION: std::cell::RefCell<Option<String>> = const {
         std::cell::RefCell::new(None)
     };
@@ -494,6 +495,10 @@ fn foster_execution_failure(message: String) {
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_failure_pending() -> u8 {
+    let cleaning = FOSTER_CLEANUP_FAILURES.with(|failures| !failures.borrow().is_empty());
+    if !cleaning && let Some(error) = FOSTER_CANCELLATION.with(|control| control.borrow().as_ref().and_then(|control| control.error())) {
+        foster_execution_failure(error.to_string());
+    }
     FOSTER_EXECUTION.with(|execution| u8::from(execution.borrow().is_some()))
 }
 
@@ -515,6 +520,9 @@ extern "C" fn foster_rt_v4_end_cleanup() -> u8 {
     }
     0
 }
+
+#[unsafe(no_mangle)]
+extern "C" fn foster_rt_v4_cancellation_point() -> u8 { foster_rt_v4_failure_pending() }
 
 type FosterRemoteCallback = unsafe extern "C" fn(u64, usize, u8) -> u64;
 type FosterReleaseCallback = unsafe extern "C" fn(usize) -> u8;
@@ -549,7 +557,7 @@ struct FosterRemoteMessage {
     callback: FosterRemoteCallback,
     arguments: Vec<u64>,
     result_release: usize,
-    response: mpsc::Sender<Result<FosterRemoteCompletion, String>>,
+    response: mpsc::Sender<Result<FosterRemoteCompletion, remote_lifecycle::RemoteError>>,
 }
 
 struct FosterRemote {
@@ -560,8 +568,8 @@ struct FosterRemote {
 }
 
 struct FosterFuture {
-    error: Mutex<Option<String>>,
-    receiver: Mutex<Option<mpsc::Receiver<Result<FosterRemoteCompletion, String>>>>,
+    error: Mutex<Option<remote_lifecycle::RemoteError>>,
+    receiver: Mutex<Option<mpsc::Receiver<Result<FosterRemoteCompletion, remote_lifecycle::RemoteError>>>>,
 }
 
 #[unsafe(no_mangle)]
@@ -570,6 +578,7 @@ extern "C" fn foster_rt_v4_remote_spawn(state: u64, release: usize, borrowed: u8
     let control = Arc::new(remote_lifecycle::Control::default());
     let worker_control = control.clone();
     let worker = thread::spawn(move || {
+        FOSTER_CANCELLATION.with(|slot| *slot.borrow_mut() = Some(worker_control.clone()));
         while let Ok(message) = receiver.recv() {
             if worker_control.error().is_some() || message.request.is_none() {
                 unsafe { (message.callback)(state, message.arguments.as_ptr() as usize, 0) };
@@ -588,6 +597,7 @@ extern "C" fn foster_rt_v4_remote_spawn(state: u64, release: usize, borrowed: u8
                 }
             }
         }
+        FOSTER_CANCELLATION.with(|slot| slot.borrow_mut().take());
         unsafe { foster_release_word(state, release) };
     });
     Box::into_raw(Box::new(FosterRemote {
@@ -621,11 +631,7 @@ extern "C" fn foster_rt_v4_remote_call(
     let (response, receiver) = mpsc::channel();
     let cancelled = response.clone();
     let request = remote.control.register(move |error| {
-        let message = match error {
-            remote_lifecycle::RemoteError::Failed(message) => message,
-            remote_lifecycle::RemoteError::Shutdown => error.to_string(),
-        };
-        let _ = cancelled.send(Err(message));
+        let _ = cancelled.send(Err(error));
     });
     remote.sender.send(FosterRemoteMessage {
         request, callback, arguments, result_release, response,
@@ -657,7 +663,15 @@ extern "C" fn foster_rt_v4_future_await(future: usize) -> u64 {
         .unwrap_or_else(|_| foster_remote_abort("future lock was poisoned"))
         .take()
         .unwrap_or_else(|| foster_remote_abort("future has already been awaited"));
-    match receiver.recv().unwrap_or_else(|_| Err("remote object terminated before replying".into())) {
+    let outcome = loop {
+        if foster_rt_v4_failure_pending() != 0 { return 0; }
+        match receiver.recv_timeout(std::time::Duration::from_millis(1)) {
+            Ok(value) => break value,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(_) => break Err(remote_lifecycle::RemoteError::Failed("remote object terminated before replying".into())),
+        }
+    };
+    match outcome {
         Ok(mut completion) => {
             completion.release = 0;
             completion.value
@@ -669,24 +683,27 @@ extern "C" fn foster_rt_v4_future_await(future: usize) -> u64 {
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_future_error(future: usize) -> usize {
     let future = unsafe { &*(future as *const FosterFuture) };
-    future.error.lock().unwrap().take().map_or(0, |error| owned_string(&error))
+    future.error.lock().unwrap().take().map_or(0, |error| match error {
+        remote_lifecycle::RemoteError::Shutdown => 1,
+        remote_lifecycle::RemoteError::Failed(message) => owned_string(&message),
+    })
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_remote_release(remote: usize) -> u8 {
     let remote = unsafe { Box::from_raw(remote as *mut FosterRemote) };
     let FosterRemote {
-        control: _,
+        control,
         sender,
         worker,
         borrowed: _,
     } = *remote;
+    let idle = !control.has_pending();
+    control.terminate(remote_lifecycle::RemoteError::Shutdown);
     drop(sender);
-    if let Some(worker) = worker
-        && worker.thread().id() != thread::current().id()
-    {
-        let _ = worker.join();
-    }
+    // Worker storage belongs to the worker until its safe cancellation point.
+    // Detaching here never waits for an arbitrary host operation to return.
+    if idle && let Some(worker) = worker && worker.thread().id() != thread::current().id() { let _ = worker.join(); }
     0
 }
 

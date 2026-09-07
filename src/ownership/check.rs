@@ -122,6 +122,13 @@ fn check_function(
                 Operation::StoreBorrower { .. }
                 | Operation::ReturnBorrower { .. }
                 | Operation::Invalidate { .. }
+                | Operation::RemoteScopeEnd { .. }
+                | Operation::RemoteConsume { .. }
+                | Operation::ForgetPathFacts { .. }
+                | Operation::ForgetCallableTargets
+                | Operation::RemoteOwner { .. }
+                | Operation::RemoteRequest { .. }
+                | Operation::RemoteComplete { .. }
                 | Operation::Suspend { .. } => {}
                 Operation::Destroy { place, .. } => {
                     state.initialized.remove(&place.root);

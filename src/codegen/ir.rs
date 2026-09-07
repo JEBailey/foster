@@ -515,7 +515,7 @@ impl Instruction {
         }
     }
 
-    fn operands(&self) -> Vec<Value> {
+    pub(crate) fn operands(&self) -> Vec<Value> {
         match self {
             Self::Constant { .. } => Vec::new(),
             Self::Unary { operand, .. }

@@ -259,8 +259,8 @@ behavior or eliminate the correctness gaps below.
 
 ## Known runtime correctness gaps
 
-The accepted [remote lifecycle contract](remote-semantics.md) still requires scoped cancellation
-and static request-lifetime checks (G-06). Native workers now contain language execution failures
+The [remote lifecycle contract](remote-semantics.md) implements scoped cancellation and conservative
+request-lifetime checks (G-06). Native workers contain language execution failures
 and deliver `Result<T, RemoteError>` through futures. Failure is terminal for the worker, including
 when the failing future is discarded. Queued and later calls receive the original failure without
 invoking their methods; rejected messages release transferred arguments.
@@ -278,5 +278,14 @@ layout destructors invoke the callback while the receiver is intact. A header fl
 cleanup obligation across internal copy-on-write updates and prevents recursive invocation.
 Cleanup saves and restores an existing language failure while running subsequent callbacks.
 Host wrappers close external resources automatically only when they implement `deinit`; scoped
-remote cancellation and process shutdown ordering remain under G-06. Host-fatal events such as allocation failure and invalid compiler/runtime metadata are
+remote cancellation is implemented, while process shutdown ordering remains open. Host-fatal events
+such as allocation failure and invalid compiler/runtime metadata are
 outside modeled language failure cleanup.
+
+Scalar locals passed by reference retain addressable storage across control-flow edges. Native
+instruction operands and branch arguments reload that storage after possible alias mutations, so
+short-circuit RHS calls update the same value later reads observe in the VM.
+
+SSA sealing also preserves the drop planner's protection of weak-reference origins across joins,
+while explicit ownership drops still clear their storage. Copying a reference into a value-typed
+branch result loads the pointee before releasing its origin.

@@ -362,7 +362,12 @@ impl Compiler<'_> {
                 .types
                 .dispatch
                 .keys()
-                .any(|(_, slot)| *slot == crate::types::DEINIT_SLOT),
+                .any(|(_, slot)| *slot == crate::types::DEINIT_SLOT)
+                || self
+                    .types
+                    .types
+                    .iter()
+                    .any(|(_, ty)| matches!(ty, crate::types::Type::Remote(_))),
         };
         let captures = self
             .closure_captures
@@ -599,7 +604,20 @@ fn verification_type_inner(
         crate::types::Type::RawList(value) => VerificationType::List(Box::new(nested(*value))),
         // Sequence is a structural view implemented by multiple runtime representations.
         crate::types::Type::Sequence(_) => VerificationType::Unknown,
-        crate::types::Type::Remote(value) => VerificationType::Remote(Box::new(nested(*value))),
+        crate::types::Type::Remote(value) => {
+            let receiver = match &information.types[*value] {
+                crate::types::Type::Record { record, arguments }
+                    if hir.records[*record].fields.is_empty() =>
+                {
+                    VerificationType::Record {
+                        record: *record,
+                        arguments: arguments.iter().copied().map(nested).collect(),
+                    }
+                }
+                _ => nested(*value),
+            };
+            VerificationType::Remote(Box::new(receiver))
+        }
         crate::types::Type::Future(value) => VerificationType::Future(Box::new(nested(*value))),
         crate::types::Type::Function(function) => VerificationType::Function {
             parameters: function.parameters.iter().map(|ty| nested(*ty)).collect(),
@@ -650,6 +668,32 @@ fn verification_type_inner(
 }
 
 impl FunctionCompiler<'_> {
+    fn reference_binding(&self, local: LocalId) -> bool {
+        self.types
+            .local_type(local)
+            .is_some_and(|ty| matches!(self.types.types[ty], crate::types::Type::Reference { .. }))
+            || self.hir.functions[self.function]
+                .parameters
+                .iter()
+                .position(|parameter| *parameter == local)
+                .and_then(|index| {
+                    self.types
+                        .function_type(self.function)
+                        .map(|signature| signature.parameters[index])
+                })
+                .is_some_and(|ty| {
+                    matches!(self.types.types[ty], crate::types::Type::Reference { .. })
+                })
+            || self
+                .closure_captures
+                .get(&self.function)
+                .is_some_and(|captures| {
+                    captures.iter().any(|capture| {
+                        capture.local == local && capture.mode == hir::CaptureMode::Ref
+                    })
+                })
+    }
+
     fn end_temporaries(
         &mut self,
         all: bool,
@@ -840,7 +884,12 @@ impl FunctionCompiler<'_> {
                     let destination = self.allocate();
                     self.locals.insert(*local, destination);
                     let value = self.owned_expression(*value)?;
-                    if self.observable_cleanup {
+                    if self.observable_cleanup
+                        && self
+                            .types
+                            .local_type(*local)
+                            .is_some_and(|ty| self.types.has_cleanup(ty))
+                    {
                         self.scopes.last_mut().unwrap().push(destination);
                     }
                     self.emit(
@@ -855,7 +904,7 @@ impl FunctionCompiler<'_> {
                 hir::Stmt::Assign { local, value } => {
                     let value = self.owned_expression(*value)?;
                     let destination = self.locals[local];
-                    if self.observable_cleanup {
+                    if self.observable_cleanup && !self.reference_binding(*local) {
                         self.emit(
                             Instruction::Drop {
                                 register: destination,

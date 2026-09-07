@@ -896,7 +896,7 @@ impl Drop for WireOwned {
     }
 }
 
-pub(crate) type WireResult = Result<WireValue, String>;
+pub(crate) type WireResult = Result<WireValue, crate::remote::RemoteError>;
 pub(crate) type FutureReceiver = may::sync::mpsc::Receiver<WireResult>;
 
 pub(crate) enum RemoteArgument {
@@ -916,6 +916,29 @@ pub struct RemoteValue {
     pub(crate) id: u64,
     pub(crate) sender: may::sync::mpsc::Sender<RemoteMessage>,
     pub(crate) control: Arc<crate::remote::Control>,
+    pub(crate) _owner: Arc<RemoteOwner>,
+}
+
+pub(crate) struct RemoteOwner {
+    pub(crate) control: Arc<crate::remote::Control>,
+    pub(crate) completion: Mutex<Option<may::sync::mpsc::Receiver<()>>>,
+}
+
+impl Drop for RemoteOwner {
+    fn drop(&mut self) {
+        let idle = !self.control.has_pending();
+        self.control.terminate(crate::remote::RemoteError::Shutdown);
+        if idle && let Some(completion) = self.completion.get_mut().unwrap().take() {
+            let _ = completion.recv();
+        }
+    }
+}
+
+pub(crate) struct WorkerCompletion(pub(crate) may::sync::mpsc::Sender<()>);
+impl Drop for WorkerCompletion {
+    fn drop(&mut self) {
+        let _ = self.0.send(());
+    }
 }
 
 impl fmt::Debug for RemoteValue {

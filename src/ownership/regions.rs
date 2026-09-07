@@ -131,6 +131,18 @@ fn collect_reborrow_parents(
     definitions: &mut [super::LoanDefinition],
 ) {
     match value {
+        BorrowValue::Callable { environment, .. } => {
+            collect_reborrow_parents(environment, state, definitions)
+        }
+        BorrowValue::Invocation {
+            callee, arguments, ..
+        } => {
+            collect_reborrow_parents(callee, state, definitions);
+            for argument in arguments {
+                collect_reborrow_parents(argument, state, definitions);
+            }
+        }
+        BorrowValue::Tracked { loans, .. } => collect_reborrow_parents(loans, state, definitions),
         BorrowValue::Reborrow { loan, origin } => {
             definitions[loan.0]
                 .parents
@@ -269,7 +281,14 @@ fn transfer_requirement(
             remove_issued_at(function, block, operation_index, state);
         }
         Operation::Initialize { .. }
+        | Operation::ForgetPathFacts { .. }
+        | Operation::ForgetCallableTargets
         | Operation::Invalidate { .. }
+        | Operation::RemoteScopeEnd { .. }
+        | Operation::RemoteConsume { .. }
+        | Operation::RemoteOwner { .. }
+        | Operation::RemoteRequest { .. }
+        | Operation::RemoteComplete { .. }
         | Operation::Suspend { .. }
         | Operation::Destroy { .. } => {}
     }
@@ -353,6 +372,10 @@ struct PathCondition {
 }
 
 impl PathCondition {
+    fn has_facts(&self) -> bool {
+        !self.booleans.is_empty() || !self.variants.is_empty() || !self.comparisons.is_empty()
+    }
+
     fn with_boolean_fact(&self, place: &Place, value: bool) -> Option<Self> {
         if let Some(existing) = self.booleans.iter().find(|fact| fact.place == *place) {
             return (existing.value == value).then(|| self.clone());
@@ -600,10 +623,66 @@ fn mutated_place(operation: &Operation) -> Option<&Place> {
         | Operation::Invalidate { place, .. }
         | Operation::Destroy { place, .. } => Some(place),
         Operation::StoreBorrower { destination, .. } => Some(destination),
-        Operation::Use { .. } | Operation::ReturnBorrower { .. } | Operation::Suspend { .. } => {
-            None
+        Operation::Use { .. }
+        | Operation::ForgetPathFacts { .. }
+        | Operation::ForgetCallableTargets
+        | Operation::ReturnBorrower { .. }
+        | Operation::RemoteScopeEnd { .. }
+        | Operation::RemoteConsume { .. }
+        | Operation::RemoteOwner { .. }
+        | Operation::RemoteRequest { .. }
+        | Operation::RemoteComplete { .. }
+        | Operation::Suspend { .. } => None,
+    }
+}
+
+// Forget alias origins as well as the syntactic destination. Following parents
+// covers reborrows without assuming an alias has a single possible origin.
+struct FactInvalidation {
+    all: bool,
+    places: Vec<Place>,
+}
+
+impl FactInvalidation {
+    fn apply(&self, condition: &mut PathCondition) {
+        if self.all {
+            *condition = PathCondition::default();
+        } else {
+            for place in &self.places {
+                condition.forget(place);
+            }
         }
     }
+}
+
+fn operation_fact_invalidation(
+    operation: &Operation,
+    function: &Function,
+    before: &ProvenanceState,
+) -> FactInvalidation {
+    let mut invalidation = FactInvalidation {
+        all: matches!(operation, Operation::ForgetPathFacts { place: None }),
+        places: Vec::new(),
+    };
+    let changed = match operation {
+        Operation::ForgetPathFacts { place: Some(place) } => Some(place),
+        _ => mutated_place(operation),
+    };
+    let Some(changed) = changed else {
+        return invalidation;
+    };
+    invalidation.places.push(changed.clone());
+    let mut work = contents_at(before, changed).into_iter().collect::<Vec<_>>();
+    let mut seen = HashSet::new();
+    while let Some(loan) = work.pop() {
+        if seen.insert(loan) {
+            invalidation
+                .places
+                .push(function.loans[loan.0].origin.clone());
+            work.extend(function.loans[loan.0].parents.iter().copied());
+        }
+    }
+    invalidation
 }
 
 fn merge_path_conditions(existing: &mut Vec<PathCondition>, incoming: Vec<PathCondition>) -> bool {
@@ -831,16 +910,30 @@ fn transfer_guarded_requirement(
             remove_guarded_issued_at(function, block, operation_index, state);
         }
         Operation::Initialize { .. }
+        | Operation::ForgetPathFacts { .. }
+        | Operation::ForgetCallableTargets
         | Operation::Invalidate { .. }
+        | Operation::RemoteScopeEnd { .. }
+        | Operation::RemoteConsume { .. }
+        | Operation::RemoteOwner { .. }
+        | Operation::RemoteRequest { .. }
+        | Operation::RemoteComplete { .. }
         | Operation::Suspend { .. }
         | Operation::Destroy { .. } => {}
     }
     require_guarded_ancestors(function, state);
-    if let Some(changed) = mutated_place(operation) {
-        for uses in state.values_mut() {
-            for guarded in uses {
-                guarded.condition.forget(changed);
-            }
+    if !state
+        .values()
+        .flatten()
+        .any(|guarded| guarded.condition.has_facts())
+    {
+        return;
+    }
+    let before = &provenance.points[block].as_ref().expect("reachable block")[operation_index];
+    let invalidation = operation_fact_invalidation(operation, function, before);
+    for uses in state.values_mut() {
+        for guarded in uses {
+            invalidation.apply(&mut guarded.condition);
         }
     }
 }
@@ -874,7 +967,10 @@ fn remove_guarded_issued_at(
     }
 }
 
-fn analyze_path_reachability(function: &Function) -> PathReachability {
+fn analyze_path_reachability(
+    function: &Function,
+    provenance: &ProvenanceAnalysis,
+) -> PathReachability {
     let mut entries = vec![None::<Vec<PathCondition>>; function.blocks.len()];
     let mut points = vec![None::<Vec<Vec<PathCondition>>>; function.blocks.len()];
     entries[function.entry] = Some(vec![PathCondition::default()]);
@@ -885,11 +981,16 @@ fn analyze_path_reachability(function: &Function) -> PathReachability {
             continue;
         };
         let mut block_points = Vec::with_capacity(function.blocks[block].operations.len() + 1);
-        for operation in &function.blocks[block].operations {
+        for (index, operation) in function.blocks[block].operations.iter().enumerate() {
             block_points.push(conditions.clone());
-            if let Some(changed) = mutated_place(operation) {
+            if !conditions.iter().any(PathCondition::has_facts) {
+                continue;
+            }
+            let before = &provenance.points[block].as_ref().expect("reachable block")[index];
+            let invalidation = operation_fact_invalidation(operation, function, before);
+            if invalidation.all || !invalidation.places.is_empty() {
                 for condition in &mut conditions {
-                    condition.forget(changed);
+                    invalidation.apply(condition);
                 }
                 let mut deduplicated = Vec::new();
                 merge_path_conditions(&mut deduplicated, conditions);
@@ -1243,6 +1344,24 @@ fn find_conflict_with_hir(
     )
 }
 
+fn invalidating_operation(
+    operation: &Operation,
+) -> Option<(&Place, InvalidationKind, &std::ops::Range<usize>)> {
+    match operation {
+        Operation::Invalidate { place, kind, span } => Some((place, *kind, span)),
+        Operation::Use {
+            place,
+            mode: super::UseMode::Move,
+            span,
+        }
+        | Operation::Destroy { place, span } => Some((place, InvalidationKind::Consume, span)),
+        Operation::StoreBorrower {
+            destination, span, ..
+        } => Some((destination, InvalidationKind::Replace, span)),
+        _ => None,
+    }
+}
+
 fn find_conflict_inner(
     semantics: Option<(
         &PackageHir,
@@ -1252,8 +1371,38 @@ fn find_conflict_inner(
     provenance: &ProvenanceAnalysis,
     requirements: &RequirementAnalysis,
 ) -> Option<InvalidationConflict> {
+    if function.loans.is_empty() {
+        return None;
+    }
+    // Path facts can only remove conflicts from the conservative loan result.
+    // Avoid solving path formulas for functions with no candidate conflict.
+    let has_candidate = function
+        .blocks
+        .iter()
+        .enumerate()
+        .any(|(block, definition)| {
+            let Some(points) = &requirements.points[block] else {
+                return false;
+            };
+            definition
+                .operations
+                .iter()
+                .enumerate()
+                .any(|(index, operation)| {
+                    let Some((place, kind, _)) = invalidating_operation(operation) else {
+                        return false;
+                    };
+                    points[index + 1]
+                        .loans
+                        .keys()
+                        .any(|loan| invalidates(place, kind, &function.loans[loan.0].origin))
+                })
+        });
+    if !has_candidate {
+        return None;
+    }
     let guarded = analyze_guarded_requirements(function, provenance);
-    let reachability = analyze_path_reachability(function);
+    let reachability = analyze_path_reachability(function, provenance);
     for (block, definition) in function.blocks.iter().enumerate() {
         let Some(points) = &requirements.points[block] else {
             continue;
@@ -1265,18 +1414,8 @@ fn find_conflict_inner(
             .as_ref()
             .expect("provenance-reachable block has path reachability");
         for (operation_index, operation) in definition.operations.iter().enumerate() {
-            let (place, kind, span) = match operation {
-                Operation::Invalidate { place, kind, span } => (place, *kind, span),
-                Operation::Use {
-                    place,
-                    mode: super::UseMode::Move,
-                    span,
-                } => (place, InvalidationKind::Consume, span),
-                Operation::StoreBorrower {
-                    destination, span, ..
-                } => (destination, InvalidationKind::Replace, span),
-                Operation::Destroy { place, span } => (place, InvalidationKind::Consume, span),
-                _ => continue,
+            let Some((place, kind, span)) = invalidating_operation(operation) else {
+                continue;
             };
             let required_after = &points[operation_index + 1];
             let guarded_after = &guarded_points[operation_index + 1];
@@ -1445,6 +1584,8 @@ fn analyze_function(function: &Function) -> ProvenanceAnalysis {
                 store(destination, value, &mut state);
             } else if let Operation::Destroy { place, .. } = operation {
                 replace(place, HashSet::new(), &mut state);
+            } else if matches!(operation, Operation::ForgetCallableTargets) {
+                state.callables.clear();
             }
         }
         block_points.push(state.clone());
@@ -1485,6 +1626,15 @@ fn join_predecessors(
 }
 
 fn store(destination: &Place, value: &BorrowValue, state: &mut ProvenanceState) {
+    let callables = callable_fields(value, state);
+    // A write through a reference can change another place's target identity.
+    if state
+        .contents
+        .iter()
+        .any(|(stored, loans)| places_overlap(stored, destination) && !loans.is_empty())
+    {
+        state.callables.clear();
+    }
     match value {
         BorrowValue::Fields(fields) => {
             replace(destination, HashSet::new(), state);
@@ -1499,10 +1649,87 @@ fn store(destination: &Place, value: &BorrowValue, state: &mut ProvenanceState) 
             replace(destination, loans, state);
         }
     }
+    for (suffix, parameters) in callables {
+        let mut place = destination.clone();
+        place.projections.extend(suffix);
+        state.callables.insert(place, parameters);
+    }
+}
+
+fn callable_fields(
+    value: &BorrowValue,
+    state: &ProvenanceState,
+) -> Vec<(Vec<Projection>, std::collections::BTreeSet<usize>)> {
+    match value {
+        BorrowValue::Callable { parameters, .. } => {
+            vec![(vec![], parameters.iter().copied().collect())]
+        }
+        BorrowValue::Tracked { loans, .. } => callable_fields(loans, state),
+        BorrowValue::Place(place) | BorrowValue::MovePlace(place) => state
+            .callables
+            .iter()
+            .filter(|(stored, _)| {
+                place_contains(place, stored)
+                    && stored.projections.iter().all(|projection| {
+                        matches!(
+                            projection,
+                            Projection::Field(_)
+                                | Projection::Index {
+                                    constant: Some(_),
+                                    ..
+                                }
+                        )
+                    })
+            })
+            .map(|(stored, parameters)| {
+                (
+                    stored.projections[place.projections.len()..].to_vec(),
+                    parameters.clone(),
+                )
+            })
+            .collect(),
+        BorrowValue::Fields(fields) => fields
+            .iter()
+            .flat_map(|(prefix, value)| {
+                callable_fields(value, state)
+                    .into_iter()
+                    .map(|(suffix, parameters)| {
+                        (prefix.iter().cloned().chain(suffix).collect(), parameters)
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect(),
+        _ => vec![],
+    }
 }
 
 fn evaluate(value: &BorrowValue, state: &mut ProvenanceState) -> HashSet<LoanId> {
     match value {
+        BorrowValue::Callable { environment, .. } => evaluate(environment, state),
+        BorrowValue::Invocation {
+            callee,
+            arguments,
+            fallback_parameters,
+        } => {
+            let fields = callable_fields(callee, state);
+            let known = fields
+                .iter()
+                .find(|(path, _)| path.is_empty())
+                .map(|(_, parameters)| parameters);
+            let parameters = known
+                .cloned()
+                .unwrap_or_else(|| fallback_parameters.iter().copied().collect());
+            // The returned value can depend on the environment independently of its arguments.
+            let mut loans = evaluate(callee, state);
+            for (index, argument) in arguments.iter().enumerate() {
+                let origins = evaluate(argument, state);
+                if parameters.contains(&index) {
+                    loans.extend(origins);
+                }
+            }
+            loans
+        }
+        BorrowValue::Tracked { loans, .. } => evaluate(loans, state),
         BorrowValue::Empty => HashSet::new(),
         BorrowValue::Loan(loan) => HashSet::from([*loan]),
         BorrowValue::Reborrow { loan, .. } => HashSet::from([*loan]),
@@ -1522,6 +1749,9 @@ fn evaluate(value: &BorrowValue, state: &mut ProvenanceState) -> HashSet<LoanId>
             state
                 .contents
                 .retain(|stored, _| !place_contains(place, stored));
+            state
+                .callables
+                .retain(|stored, _| !place_contains(place, stored));
             loans
         }
         BorrowValue::Merge(values) => values
@@ -1536,6 +1766,10 @@ fn evaluate(value: &BorrowValue, state: &mut ProvenanceState) -> HashSet<LoanId>
 }
 
 fn replace(destination: &Place, loans: HashSet<LoanId>, state: &mut ProvenanceState) {
+    // Any overlapping write loses target identity (including a dynamic index).
+    state
+        .callables
+        .retain(|stored, _| !places_overlap(destination, stored));
     state
         .contents
         .retain(|stored, _| !place_contains(destination, stored));
@@ -1545,7 +1779,16 @@ fn replace(destination: &Place, loans: HashSet<LoanId>, state: &mut ProvenanceSt
 }
 
 fn join(existing: &mut ProvenanceState, incoming: &ProvenanceState) -> bool {
-    let mut changed = false;
+    let previous = existing.callables.clone();
+    existing.callables.retain(|place, parameters| {
+        if let Some(other) = incoming.callables.get(place) {
+            parameters.extend(other);
+            true
+        } else {
+            false
+        }
+    });
+    let mut changed = existing.callables != previous;
     for (place, loans) in &incoming.contents {
         let entry = existing.contents.entry(place.clone()).or_default();
         let old = entry.len();

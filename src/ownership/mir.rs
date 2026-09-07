@@ -110,7 +110,7 @@ pub type BlockId = usize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct LoanId(pub usize);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct MirPoint {
     pub block: BlockId,
     pub operation: usize,
@@ -243,6 +243,21 @@ pub struct LoanDefinition {
 
 #[derive(Debug, Clone)]
 pub enum BorrowValue {
+    /// A callable's result parameter dependencies, distinct from its captured loans.
+    Callable {
+        parameters: Vec<usize>,
+        environment: Box<BorrowValue>,
+    },
+    /// Resolve known-target dependencies at this CFG point, otherwise use the typed contract.
+    Invocation {
+        callee: Box<BorrowValue>,
+        arguments: Vec<BorrowValue>,
+        fallback_parameters: Vec<usize>,
+    },
+    Tracked {
+        place: Place,
+        loans: Box<BorrowValue>,
+    },
     Empty,
     Loan(LoanId),
     /// A newly issued loan that flattens to loans already contained by its
@@ -275,6 +290,9 @@ pub struct ProvenanceAnalysis {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProvenanceState {
+    /// Missing entries are unknown, never independent. Joins union dependencies only
+    /// when every predecessor knows the callable at this exact place.
+    pub callables: HashMap<Place, std::collections::BTreeSet<usize>>,
     pub contents: HashMap<Place, std::collections::HashSet<LoanId>>,
 }
 
@@ -309,6 +327,33 @@ pub struct BasicBlock {
 
 #[derive(Debug, Clone)]
 pub enum Operation {
+    /// Effectful calls can replace callable values through aliases.
+    ForgetCallableTargets,
+    /// A call may mutate predicate operands through effects or captured aliases.
+    ForgetPathFacts {
+        place: Option<Place>,
+    },
+    RemoteScopeEnd {
+        places: Vec<Place>,
+        span: Range<usize>,
+    },
+    RemoteConsume {
+        value: BorrowValue,
+        span: Range<usize>,
+    },
+    RemoteOwner {
+        destination: Place,
+        span: Range<usize>,
+    },
+    RemoteRequest {
+        destination: Place,
+        owner: BorrowValue,
+        span: Range<usize>,
+    },
+    RemoteComplete {
+        future: BorrowValue,
+        span: Range<usize>,
+    },
     Use {
         place: Place,
         mode: UseMode,

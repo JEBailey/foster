@@ -455,9 +455,11 @@ Result provenance stored on ownership MIR is inferred from every reachable retur
 forward provenance is known. Inference follows each returned loan's complete reborrow ancestry back
 to receiver and parameter roots. The inferred summary is validated against the declared result
 groups; declarations may conservatively expose more origins, but may never omit an origin actually
-returned. Direct calls substitute these summaries at their arguments. Calls through erased or
-otherwise indirect callable values conservatively retain provenance from the callable and every
-argument until callable types carry an equally precise origin summary.
+returned. Direct calls substitute these summaries at their arguments. Indirect calls use callable summaries carried through ownership MIR, falling back to checked
+result types and reference groups when the target is unknown. Results proven recursively free of
+borrowers do not inherit input loans. Borrow-containing results retain their possible parameter
+origins and captured environment; unknown relationships remain conservative. See
+[G-07 supported forms](analysis-precision.md#1-precise-results-through-indirect-callables).
 
 An `await` parks the complete invocation frame without relocating its storage. Loans into named
 frame locals and borrowed parameters may cross suspension when ordinary region analysis proves
@@ -605,16 +607,17 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
 
 - Move, initialization, provenance, and required-loan analysis are control-flow-aware. Stable
   boolean-place, enum-discriminant, and direct scalar comparisons remain correlated across separate
-  branches with bounded widening. Compound predicates and comparisons of computed values still join
-  conservatively.
+  branches with bounded widening. `&&`, `||`, and `not` combine supported facts while preserving
+  short-circuit effects. Writes and calls discard affected facts, including alias origins.
+  Comparisons of computed values still join conservatively.
 - Ownership and loan places model field, index, and dereference projections. Different named fields
   and different constant indices are disjoint. Stable dynamic indices are disjoint while a live
   comparison proves them unequal and conservatively overlap otherwise.
 - Provenance flows through the implemented aggregate and closure expressions. Direct calls
   substitute the callee's inferred result provenance at matching receiver and argument places;
-  summaries are propagated to a fixed point across chains of direct calls. Indirect and erased
-  callable results remain conservative until callable types carry equivalent parameter/result
-  provenance metadata.
+  summaries are propagated to a fixed point across chains of direct calls. Indirect calls now preserve known result-parameter summaries through moves, fixed aggregate
+  storage, and joins; erased/unknown callables use checked result-type and group contracts.
+  Hidden environment dependencies and dynamic target selection remain conservative.
 - Implicit copy behavior is a built-in classification. The structural `Copy` capability supports
   explicit user-defined copying without changing assignment or capture semantics.
 - Runtime values still use managed host representations in the VM. Records now use shared layouts
@@ -626,7 +629,7 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   object descriptors. Cranelift record/enum code now executes strong retain/release, copy-on-write,
   and recursive tag-aware destruction plans, including collections, closures, and exceptional
   frame exits. Both backends invoke `deinit` before releasing child values. Arbitrary cyclic owned
-  graphs and scoped remote cancellation remain open.
+  graphs remain open; scoped remote cancellation is implemented under G-06.
 - Explicit assertion failures are represented in ownership MIR. Other dynamic failures, such as
   bounds errors and host-operation errors, use deterministic runtime frame teardown but do not yet
   have per-operation exceptional successors in ownership MIR.

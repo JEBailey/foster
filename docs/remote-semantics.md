@@ -1,11 +1,11 @@
 # Remote ownership, requests, and failure
 
-Status: **failure containment and typed outcomes implemented; scoped cancellation and lifetime analysis pending**, 2026-09-06.
+Status: **scoped cancellation, typed outcomes, and conservative lifetime checking implemented**, 2026-09-06.
 
 This document encapsulates the remote lifecycle decisions accompanying
 [S-19 and S-20 of the semantic specification](semantics.md#9-remote-execution).
-It specifies required behavior. The implementation status below distinguishes working failure
-containment from the remaining owner-lifetime and cancellation work.
+It specifies required behavior. The implementation status below documents cancellation points and
+the completion proofs supported by the compiler.
 
 ## Ownership and request lifetime
 
@@ -64,8 +64,8 @@ not established by this decision.
 **R-06 — One outcome type.** Success and remote failure must be expressible through one static
 result contract. A remote call returns `Future<Result<T, RemoteError>>`; its awaited value is
 `Result<T, RemoteError>`, where `T` is the method's declared result type. `RemoteError.Failed(String)` describes an execution failure. `RemoteError` is declared in
-`core.remote_error`; `Result` is declared in `core.result`. `RemoteError.Shutdown` reserves
-the distinct owner-cancellation outcome; owner-driven cancellation is still G-06.
+`core.remote_error`; `Result` is declared in `core.result`. `RemoteError.Shutdown` is
+the distinct owner-cancellation outcome.
 
 If a method already returns `Result<T, E>`, the outer remote outcome remains separate:
 `Result<Result<T, E>, RemoteError>`. Remote execution failure must not be silently converted into
@@ -105,7 +105,7 @@ help: await the request before leaving this scope, or transfer the remote owner
 ```
 
 This wording refers to request completion, not to “returning” a future: returning or discarding
-the future does not finish the remote invocation. A diagnostic code has not yet been assigned.
+the future does not finish the remote invocation. The diagnostic code is `E0730`.
 
 **R-08 — Runtime backstop.** Static checking does not replace runtime shutdown. Exceptional exits
 and cases beyond the analysis must still cancel safely and resolve futures as errors. The compiler
@@ -123,36 +123,47 @@ storage or synchronization still needed by executing code.
 The view's worker lifetime and the origin object's loan lifetime are distinct obligations; neither
 may be erased by retaining a future or adapting the receiver to another contract.
 
-## Implementation and conformance work
+## Implementation and conformance
 
-The [shared lifecycle controller](../src/remote.rs) now implements terminal-state arbitration,
-owner-triggered cancellation callbacks, and exactly-once request completion independently of an
-execution engine. Its unit tests cover sticky failure, later request rejection, owner destruction,
-and completion/shutdown races. Both workers use it to register requests and arbitrate completion
-versus failure. Outstanding failures are published before queued-argument reclamation.
-Owner-driven cancellation is not yet connected, so it does not enforce Foster owner lifetimes.
+Both backends connect owner release to the [shared lifecycle controller](../src/remote.rs).
+Shutdown publishes outstanding errors before reclaiming queued arguments. Futures retain their
+outcomes, not worker ownership. VM instruction dispatch and native block entry provide cooperative
+cancellation points; waits for futures also check cancellation. Cleanup continues to run `deinit`
+while preserving the original failure. Remote owners remain live until their semantic scope exit,
+rather than being reclaimed at a last use before an await.
 
-Both runtimes contain execution failures, retain the first failure for subsequent requests,
-and deliver typed outcomes. Completed results are preserved; domain errors leave the worker live.
-Native generated calls propagate a thread-local failure flag by ordinary returns, releasing live
-managed frame values without unwinding through generated frames. Rejected native messages release
-their transferred arguments. G-04 is closed: both backends invoke `deinit` at ownership end,
-before releasing owned fields, and continue cleanup while preserving the original failure.
-Owner-triggered cancellation, completion analysis, and the proposed
-diagnostic remain G-06. See [native runtime gaps](native.md#known-runtime-correctness-gaps).
+Running workers retain receiver storage and read leases until execution has stopped safely.
+Idle workers finish receiver cleanup at owner release; active workers can finish physical cleanup
+later. A blocked host call is not forcibly terminated. Per-worker FIFO and exactly-once terminal
+outcomes remain unchanged. Cross-worker scheduling, fairness, deadlock freedom, exact host
+interruption latency, and process-wide shutdown ordering remain separate design work.
 
-Implementation must include witnesses for:
+### Supported static proofs
 
-- accepting calls awaited before owner exit and owner moves to a longer-lived scope;
-- rejecting returned pending futures, discarded-but-outstanding requests, and partially awaited
-  branches whose owners leave scope;
-- cancelling both queued and running work, with every pending future receiving a shutdown error;
-- keeping completed outcomes usable after worker shutdown;
-- containing failure and rejecting further execution on the failed worker;
-- distinguishing domain errors, remote execution failure, and owner shutdown;
-- resolving completion/shutdown races once without resurrecting cancelled work;
-- releasing remote read loans safely during cancellation; and
-- equivalent VM/native behavior with optimization enabled and disabled.
+The ownership CFG tracks remote owners and request identities separately from borrow origins.
+`E0730` rejects a reachable normal destruction boundary with outstanding work, including discarded
+futures, future moves and record/list storage, owner replacement, early returns, branch exits,
+loop exits, and incomplete awaits across branches. Awaiting a later known request on the same
+worker also proves earlier non-repeated requests complete through FIFO ordering. Failure exits
+use runtime cancellation; they do not masquerade as successful completion witnesses.
 
-Implement the remaining lifetime enforcement directly, without adding a compatibility mode. Cross-worker scheduling, fairness, deadlock freedom, exact host interruption latency,
-and process-wide shutdown ordering remain separate design work.
+Owner and future moves within a function preserve identities. A direct future returned by a
+helper using a borrowed remote parameter carries an obligation at its caller. Concrete remote
+factory results and remote fields of concrete record factory results receive owner identities.
+Completed futures may escape, and an owner with no pending requests may transfer across a function
+boundary. Pending owner/aggregate transfers across function boundaries are conservatively rejected:
+a plain record type does not encode the needed interprocedural ownership relationship. Await the
+requests before that transfer. Awaiting through arbitrary helpers, indirect call provenance,
+dynamically sized owner collections returned by opaque calls, and richer loop proofs are not
+currently completion proofs. Runtime shutdown remains the backstop for unmodeled dynamic cases.
+
+Branch states remain separate so that an owner from one path cannot satisfy another path's
+obligation. Repeated request sites are conservative; the analysis bounds distinct states at a CFG
+point to 256 and reports a diagnostic if that limit prevents a proof.
+
+Conformance tests cover accepted completion and moves; rejected discarded, escaping, partially
+awaited, and replaced-owner requests; running and queued cancellation; discarded futures;
+completed outcomes surviving shutdown; receiver cleanup; failure containment; and optimization
+parity. A runtime parity fixture removes a completion witness after semantic checking to test the
+runtime backstop independently of the compiler rejection. No source-language compatibility mode
+bypasses the checks.

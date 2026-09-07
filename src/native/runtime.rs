@@ -654,12 +654,25 @@ mod tests {
             .replace("fn main() {", r#"
 static LIVE: std::sync::Mutex<std::collections::BTreeMap<usize, (i64, i64)>> = std::sync::Mutex::new(std::collections::BTreeMap::new());
 static HOST_RESPONSES: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+static LIVE_WORKERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+struct WorkerCensus;
+impl Drop for WorkerCensus {
+    fn drop(&mut self) { LIVE_WORKERS.fetch_sub(1, std::sync::atomic::Ordering::SeqCst); }
+}
 fn check_reclamation() {
+    // Test instrumentation waits for actual worker completion: owner cancellation
+    // deliberately publishes futures before physical storage reclamation finishes.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while LIVE_WORKERS.load(std::sync::atomic::Ordering::SeqCst) != 0 {
+        assert!(std::time::Instant::now() < deadline, "cancelled workers did not finish cleanup");
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
     let live = LIVE.lock().unwrap();
     assert!(live.is_empty(), "native allocations leaked: {:?}", *live);
     assert_eq!(HOST_RESPONSES.load(std::sync::atomic::Ordering::SeqCst), 0, "host responses leaked");
 }
 fn main() {"#)
+            .replace("let worker = thread::spawn(move || {", "LIVE_WORKERS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);\n    let worker = thread::spawn(move || {\n        let _census = WorkerCensus;")
             .replace("let pointer = unsafe { alloc_zeroed(layout) };", "let pointer = unsafe { alloc_zeroed(layout) };\n    assert!(LIVE.lock().unwrap().insert(pointer as usize, (size, align)).is_none());")
             .replace("unsafe { dealloc(pointer as *mut u8, layout) };", "assert_eq!(LIVE.lock().unwrap().remove(&pointer), Some((size, align)), \"allocation layout mismatch\");\n    unsafe { dealloc(pointer as *mut u8, layout) };")
             .replace("Box::into_raw(Box::new(response)) as usize", "{ HOST_RESPONSES.fetch_add(1, std::sync::atomic::Ordering::SeqCst); Box::into_raw(Box::new(response)) as usize }")
@@ -865,6 +878,79 @@ func main(args: Arguments) -> String {
                     }
                 }
             }
+        }
+    }
+
+    #[test]
+    fn remote_owner_shutdown_stops_running_work_and_reclaims_queued_messages() {
+        let compilation = crate::compile("func main() -> Int { 0 }").unwrap();
+        let prepared = prepare(&compilation).unwrap();
+        let temporary = TemporaryDirectory::create().unwrap();
+        let source = runtime_source()
+            + r#"
+static STARTED: (Mutex<bool>, std::sync::Condvar) = (Mutex::new(false), std::sync::Condvar::new());
+static RELEASED: (Mutex<bool>, std::sync::Condvar) = (Mutex::new(false), std::sync::Condvar::new());
+static QUEUED_CLEANUP: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+unsafe extern "C" fn release_state(_: usize) -> u8 {
+    *RELEASED.0.lock().unwrap() = true;
+    RELEASED.1.notify_all();
+    0
+}
+unsafe extern "C" fn request(_: u64, arguments: usize, execute: u8) -> u64 {
+    if execute == 0 {
+        QUEUED_CLEANUP.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        return 0;
+    }
+    let kind = unsafe { *(arguments as *const u64) };
+    if kind == 0 { return 7; }
+    assert_eq!(kind, 1, "queued work ran after shutdown");
+    *STARTED.0.lock().unwrap() = true;
+    STARTED.1.notify_all();
+    while foster_rt_v4_failure_pending() == 0 { thread::yield_now(); }
+    0
+}
+fn wait(signal: &(Mutex<bool>, std::sync::Condvar)) {
+    let (ready, timed) = signal.1.wait_timeout_while(signal.0.lock().unwrap(), std::time::Duration::from_secs(5), |ready| !*ready).unwrap();
+    assert!(*ready && !timed.timed_out(), "worker failed to reach a cancellation boundary");
+}
+fn main() {
+    foster_runtime_initialize(&[]);
+    let remote = foster_rt_v4_remote_spawn(0, release_state as *const () as usize, 0);
+    let invoke = |kind: u64, blocking| foster_rt_v4_remote_call(remote, request as *const () as usize, &kind as *const u64 as usize, 1, blocking, 0);
+    let completed = invoke(0, 1);
+    let running = invoke(1, 0);
+    wait(&STARTED);
+    let queued = invoke(2, 0);
+    let discarded = invoke(3, 0);
+    foster_rt_v4_future_release(discarded);
+    foster_rt_v4_remote_release(remote);
+    for future in [running, queued] {
+        foster_rt_v4_future_await(future);
+        assert_eq!(foster_rt_v4_future_error(future), 1);
+        foster_rt_v4_future_release(future);
+    }
+    assert_eq!(foster_rt_v4_future_await(completed), 7);
+    assert_eq!(foster_rt_v4_future_error(completed), 0);
+    foster_rt_v4_future_release(completed);
+    wait(&RELEASED);
+    assert_eq!(QUEUED_CLEANUP.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+"#;
+        for optimize in [false, true] {
+            let options = CompileOptions { optimize };
+            let artifact = prepared.compile_object(options).unwrap();
+            let executable = temporary.path.join(format!(
+                "shutdown-{optimize}{}",
+                std::env::consts::EXE_SUFFIX
+            ));
+            link_source(artifact, &executable, options, &source, None).unwrap();
+            let output = Command::new(executable).output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
     }
 

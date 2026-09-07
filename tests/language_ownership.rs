@@ -345,7 +345,7 @@ impl Worker {
 func main() {
     let worker = remote Worker {}
     let message = "owned"
-    worker.submit(message)
+    await worker.submit(message)
 }
 "#;
     let error = foster::compile(source).unwrap_err();

@@ -547,7 +547,9 @@ fn ownership_revision_and_diagnostic_catalog_match_current_contract() {
             .iter()
             .map(|(code, _)| *code)
             .collect::<Vec<_>>(),
-        vec!["E0382", "E0401", "E0402", "E0403", "E0507", "E0728"]
+        vec![
+            "E0730", "E0382", "E0401", "E0402", "E0403", "E0507", "E0728"
+        ]
     );
 }
 

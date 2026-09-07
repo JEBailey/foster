@@ -61,13 +61,16 @@ struct Builder<'a> {
     result_provenance: &'a std::collections::HashMap<FunctionId, super::ResultProvenance>,
     loans: Vec<LoanDefinition>,
     loops: Vec<LoopTargets>,
+    remote_scopes: Vec<Vec<hir::LocalId>>,
     next_temporary: usize,
     temporary_scopes: Vec<Vec<(ExprId, Place)>>,
     active_temporaries: std::collections::HashMap<ExprId, Place>,
+    remote_temporaries: std::collections::HashSet<ExprId>,
 }
 
 #[derive(Clone, Copy)]
 struct LoopTargets {
+    scope_depth: usize,
     continue_to: BlockId,
     break_to: BlockId,
 }
@@ -90,9 +93,11 @@ impl<'a> Builder<'a> {
             result_provenance,
             loans: Vec::new(),
             loops: Vec::new(),
+            remote_scopes: Vec::new(),
             next_temporary: 0,
             temporary_scopes: Vec::new(),
             active_temporaries: std::collections::HashMap::new(),
+            remote_temporaries: std::collections::HashSet::new(),
         }
     }
 
@@ -138,12 +143,9 @@ impl<'a> Builder<'a> {
         match statement {
             hir::Stmt::Return { value, guard } => {
                 if let Some(guard) = guard {
-                    self.begin_full_expression();
-                    self.expression(*guard, Context::Read);
-                    self.end_full_expression(self.span(*guard));
                     let returned = self.block();
                     let continued = self.block();
-                    self.terminate(Terminator::Branch(vec![returned, continued]));
+                    self.full_expression_condition(*guard, [returned, continued]);
                     self.current = returned;
                     self.begin_full_expression();
                     self.expression(*value, Context::Consume);
@@ -174,7 +176,11 @@ impl<'a> Builder<'a> {
                     message.map_or_else(|| self.span(*condition), |message| self.span(message));
                 let failed = self.block();
                 let continued = self.block();
-                self.terminate(Terminator::Branch(vec![failed, continued]));
+                self.terminate(match self.hir.expressions[*condition] {
+                    hir::Expr::Bool(false) => Terminator::Goto(failed),
+                    hir::Expr::Bool(true) => Terminator::Goto(continued),
+                    _ => Terminator::Branch(vec![failed, continued]),
+                });
                 self.current = failed;
                 self.emit_active_temporary_destruction(span.clone());
                 self.emit_scope_destruction(span.clone());
@@ -190,12 +196,26 @@ impl<'a> Builder<'a> {
                 self.terminate(Terminator::Goto(blocks[cfg.body.0]));
                 self.current = blocks[cfg.body.0];
                 self.loops.push(LoopTargets {
+                    scope_depth: self.remote_scopes.len(),
                     continue_to: blocks[cfg.header.0],
                     break_to: blocks[cfg.exit.0],
                 });
+                self.remote_scopes.push(
+                    body.iter()
+                        .filter_map(|statement| match statement {
+                            hir::Stmt::Bind { local, .. } => Some(*local),
+                            _ => None,
+                        })
+                        .collect(),
+                );
                 for statement in body {
                     self.statement(statement, false);
                 }
+                self.end_remote_scopes(
+                    self.remote_scopes.len() - 1,
+                    self.hir.functions[self.function].span.clone(),
+                );
+                self.remote_scopes.pop();
                 if matches!(
                     self.blocks[self.current].terminator,
                     Terminator::Unreachable
@@ -289,18 +309,17 @@ impl<'a> Builder<'a> {
 
     fn loop_transfer(&mut self, guard: Option<ExprId>, target: BlockId) {
         if let Some(guard) = guard {
-            self.begin_full_expression();
-            self.expression(guard, Context::Read);
-            self.end_full_expression(self.span(guard));
             let transferred = self.block();
             let continued = self.block();
-            self.terminate(Terminator::Branch(vec![transferred, continued]));
+            self.full_expression_condition(guard, [transferred, continued]);
             self.current = transferred;
+            self.end_remote_scopes(self.loops.last().unwrap().scope_depth, self.span(guard));
             self.emit_active_temporary_destruction(self.span(guard));
             self.terminate(Terminator::Goto(target));
             self.current = continued;
         } else {
             let span = self.hir.functions[self.function].span.clone();
+            self.end_remote_scopes(self.loops.last().unwrap().scope_depth, span.clone());
             self.emit_active_temporary_destruction(span);
             self.terminate(Terminator::Goto(target));
             self.current = self.block();
@@ -405,7 +424,67 @@ impl<'a> Builder<'a> {
                         });
                     }
                 }
+                for (index, argument) in arguments.iter().enumerate() {
+                    if parameter_modes.get(index) == Some(&crate::ast::ParameterMode::Consume) {
+                        let value = self.borrow_value(*argument);
+                        self.emit(Operation::RemoteConsume {
+                            value,
+                            span: self.span(expression),
+                        });
+                    }
+                }
                 self.emit_call_invalidations(*callee, arguments, expression);
+                let owner_paths = self
+                    .types
+                    .expression_type(expression)
+                    .map(|ty| self.remote_owner_paths(ty))
+                    .unwrap_or_default();
+                if !owner_paths.is_empty() {
+                    let root = self.reserve_temporary(expression);
+                    self.remote_temporaries.insert(expression);
+                    for projections in owner_paths {
+                        let mut destination = root.clone();
+                        destination.projections.extend(projections);
+                        self.emit(Operation::RemoteOwner {
+                            destination,
+                            span: self.span(expression),
+                        });
+                    }
+                }
+
+                if self
+                    .types
+                    .expression_type(expression)
+                    .is_some_and(|ty| matches!(self.types.types[ty], crate::types::Type::Future(_)))
+                {
+                    let mut origins = if matches!(
+                        self.types.resolved_call(*callee),
+                        Some(crate::types::ResolvedCall::Method { remote: true, .. })
+                    ) {
+                        Vec::new()
+                    } else {
+                        arguments
+                            .iter()
+                            .map(|argument| self.borrow_value(*argument))
+                            .collect::<Vec<_>>()
+                    };
+                    if let hir::Expr::Member { object, .. } = self.hir.expressions[*callee] {
+                        origins.push(self.borrow_value(object));
+                    }
+                    let borrowed = BorrowValue::Empty;
+                    let destination = self.reserve_temporary(expression);
+                    self.remote_temporaries.insert(expression);
+                    self.emit(Operation::StoreBorrower {
+                        destination: destination.clone(),
+                        value: borrowed,
+                        span: self.span(expression),
+                    });
+                    self.emit(Operation::RemoteRequest {
+                        destination,
+                        owner: BorrowValue::Merge(origins),
+                        span: self.span(expression),
+                    });
+                }
             }
             hir::Expr::Member { object, .. } | hir::Expr::Index { object, .. }
                 if self.owned_place(expression).is_some() =>
@@ -455,9 +534,26 @@ impl<'a> Builder<'a> {
             }
             hir::Expr::Remote(value) => {
                 self.expression(*value, Context::Consume);
+                let borrowed = BorrowValue::Empty;
+                let destination = self.reserve_temporary(expression);
+                self.remote_temporaries.insert(expression);
+                self.emit(Operation::StoreBorrower {
+                    destination: destination.clone(),
+                    value: borrowed,
+                    span: self.span(expression),
+                });
+                self.emit(Operation::RemoteOwner {
+                    destination,
+                    span: self.span(expression),
+                });
             }
             hir::Expr::Await(value) => {
                 self.expression(*value, Context::Consume);
+                let future = self.borrow_value(*value);
+                self.emit(Operation::RemoteComplete {
+                    future,
+                    span: self.span(expression),
+                });
                 self.emit(Operation::Suspend {
                     span: self.span(expression),
                 });
@@ -492,6 +588,14 @@ impl<'a> Builder<'a> {
                 self.lower_branch_expression(subject, &arms, context, destination);
             }
             hir::Expr::Closure { captures, .. } => {
+                // A reference capture exposes storage to later calls through the
+                // environment. Do not retain target identities across that alias.
+                if captures
+                    .iter()
+                    .any(|capture| capture.mode == CaptureMode::Ref)
+                {
+                    self.emit(Operation::ForgetCallableTargets);
+                }
                 for capture in captures {
                     if let Some(source) = capture.source {
                         self.expression(
@@ -537,6 +641,15 @@ impl<'a> Builder<'a> {
         let Some(last) = arm.body.last() else {
             return;
         };
+        self.remote_scopes.push(
+            arm.body
+                .iter()
+                .filter_map(|statement| match statement {
+                    hir::Stmt::Bind { local, .. } => Some(*local),
+                    _ => None,
+                })
+                .collect(),
+        );
         for statement in arm.body.iter().take(arm.body.len() - 1) {
             self.statement(statement, false);
         }
@@ -549,6 +662,21 @@ impl<'a> Builder<'a> {
         } else {
             self.statement(last, false);
         }
+        self.end_remote_scopes(
+            self.remote_scopes.len() - 1,
+            self.hir.functions[self.function].span.clone(),
+        );
+        self.remote_scopes.pop();
+    }
+
+    fn end_remote_scopes(&mut self, depth: usize, span: std::ops::Range<usize>) {
+        let places = self.remote_scopes[depth..]
+            .iter()
+            .rev()
+            .flat_map(|scope| scope.iter().rev())
+            .map(|local| Place::local(*local))
+            .collect();
+        self.emit(Operation::RemoteScopeEnd { places, span });
     }
 
     fn lower_branch_expression(
@@ -558,7 +686,20 @@ impl<'a> Builder<'a> {
         context: Context,
         destination: Option<Place>,
     ) {
-        let pattern_source = if let Some(subject) = subject {
+        let boolean_subject = subject.filter(|subject| {
+            self.types
+                .expression_type(*subject)
+                .is_some_and(|ty| matches!(self.types.types[ty], crate::types::Type::Bool))
+                && arms.iter().all(|arm| match &arm.test {
+                    BranchTest::Wildcard => true,
+                    BranchTest::Pattern(pattern) => matches!(
+                        pattern.unspanned(),
+                        hir::Pattern::Bool(_) | hir::Pattern::Wildcard
+                    ),
+                    _ => false,
+                })
+        });
+        let pattern_source = if let Some(subject) = subject.filter(|_| boolean_subject.is_none()) {
             self.expression(subject, Context::Read);
             let has_bindings = arms.iter().any(|arm| {
                 matches!(&arm.test, BranchTest::Pattern(pattern) if Self::pattern_has_bindings(pattern))
@@ -575,7 +716,23 @@ impl<'a> Builder<'a> {
 
         let cfg = crate::control_flow::BranchCfg::new(arms);
         let blocks = cfg.nodes().map(|_| self.block()).collect::<Vec<_>>();
-        self.terminate(Terminator::Goto(blocks[cfg.entry().0]));
+        if let Some(subject) = boolean_subject {
+            let target = |value| {
+                let matched = arms.iter().position(|arm| match &arm.test {
+                    BranchTest::Wildcard => true,
+                    BranchTest::Pattern(pattern) => match pattern.unspanned() {
+                        hir::Pattern::Bool(expected) => *expected == value,
+                        hir::Pattern::Wildcard => true,
+                        _ => false,
+                    },
+                    _ => false,
+                });
+                matched.map_or(blocks[cfg.exit().0], |arm| blocks[arm * 2 + 1])
+            };
+            self.condition(subject, [target(true), target(false)]);
+        } else {
+            self.terminate(Terminator::Goto(blocks[cfg.entry().0]));
+        }
 
         for (node_id, node) in cfg.nodes() {
             match node {
@@ -587,30 +744,15 @@ impl<'a> Builder<'a> {
                     self.current = blocks[node_id.0];
                     match (&arms[arm].test, unmatched) {
                         (BranchTest::Condition(condition), Some(unmatched)) => {
-                            self.expression(*condition, Context::Read);
-                            let targets = [blocks[matched.0], blocks[unmatched.0]];
-                            if let Some(condition) = self.boolean_condition_place(*condition) {
-                                self.terminate(Terminator::BooleanBranch { condition, targets });
-                            } else if let Some((comparison, polarity)) =
-                                self.comparison_condition(*condition)
-                            {
-                                let targets = if polarity {
-                                    targets
-                                } else {
-                                    [targets[1], targets[0]]
-                                };
-                                self.terminate(Terminator::ComparisonBranch {
-                                    comparison,
-                                    targets,
-                                });
-                            } else {
-                                self.terminate(Terminator::Branch(targets.to_vec()));
-                            }
+                            self.condition(*condition, [blocks[matched.0], blocks[unmatched.0]]);
                         }
                         (BranchTest::Pattern(pattern), Some(unmatched)) => {
                             let matched = blocks[matched.0];
                             let unmatched = blocks[unmatched.0];
                             match pattern.unspanned() {
+                                hir::Pattern::Wildcard | hir::Pattern::Binding(_) => {
+                                    self.terminate(Terminator::Goto(matched))
+                                }
                                 hir::Pattern::Bool(expected) => {
                                     if let Some(condition) = subject
                                         .and_then(|subject| self.boolean_condition_place(subject))
@@ -727,6 +869,13 @@ impl<'a> Builder<'a> {
     }
 
     fn borrow_value(&mut self, expression: ExprId) -> BorrowValue {
+        if self.remote_temporaries.contains(&expression)
+            && let Some(place) = self.active_temporaries.remove(&expression)
+        {
+            let loans = Box::new(self.borrow_value(expression));
+            self.active_temporaries.insert(expression, place.clone());
+            return BorrowValue::Tracked { place, loans };
+        }
         if let Some(place) = self.active_temporaries.get(&expression) {
             return BorrowValue::Place(place.clone());
         }
@@ -775,33 +924,40 @@ impl<'a> Builder<'a> {
                     })
                     .collect(),
             ),
-            hir::Expr::Closure { captures, .. } => BorrowValue::Merge(
-                captures
-                    .iter()
-                    .filter_map(|capture| match (capture.mode, capture.source) {
-                        (CaptureMode::Ref, Some(source)) => {
-                            let origin = self
-                                .owned_place(source)
-                                .or_else(|| self.active_temporaries.get(&source).cloned())?;
-                            Some(self.issue_reborrow(origin, self.span(expression)))
-                        }
-                        (CaptureMode::Move | CaptureMode::Pending, Some(source)) => Some(
-                            self.owned_place(source)
-                                .map(BorrowValue::MovePlace)
-                                .unwrap_or_else(|| self.borrow_value(source)),
-                        ),
-                        (CaptureMode::Copy, Some(_)) => None,
-                        (CaptureMode::Ref, None) => {
-                            let origin = Self::local_place(capture.local);
-                            Some(self.issue_reborrow(origin, self.span(expression)))
-                        }
-                        (CaptureMode::Move | CaptureMode::Pending, None) => {
-                            Some(BorrowValue::MovePlace(Self::local_place(capture.local)))
-                        }
-                        (CaptureMode::Copy, None) => None,
-                    })
-                    .collect(),
-            ),
+            hir::Expr::Closure { function, captures } => BorrowValue::Callable {
+                parameters: self.callable_parameters(*function),
+                environment: Box::new(BorrowValue::Merge(
+                    captures
+                        .iter()
+                        .filter_map(|capture| match (capture.mode, capture.source) {
+                            (CaptureMode::Ref, Some(source)) => {
+                                let origin = self
+                                    .owned_place(source)
+                                    .or_else(|| self.active_temporaries.get(&source).cloned())?;
+                                Some(self.issue_reborrow(origin, self.span(expression)))
+                            }
+                            (CaptureMode::Move | CaptureMode::Pending, Some(source)) => Some(
+                                self.owned_place(source)
+                                    .map(BorrowValue::MovePlace)
+                                    .unwrap_or_else(|| self.borrow_value(source)),
+                            ),
+                            (CaptureMode::Copy, Some(_)) => None,
+                            (CaptureMode::Ref, None) => {
+                                let origin = Self::local_place(capture.local);
+                                Some(self.issue_reborrow(origin, self.span(expression)))
+                            }
+                            (CaptureMode::Move | CaptureMode::Pending, None) => {
+                                Some(BorrowValue::MovePlace(Self::local_place(capture.local)))
+                            }
+                            (CaptureMode::Copy, None) => None,
+                        })
+                        .collect(),
+                )),
+            },
+            hir::Expr::Name(ResolvedName::Function(function)) => BorrowValue::Callable {
+                parameters: self.callable_parameters(*function),
+                environment: Box::new(BorrowValue::Empty),
+            },
             hir::Expr::Call { callee, arguments } => {
                 self.call_result_borrow_value(*callee, arguments)
             }
@@ -823,16 +979,108 @@ impl<'a> Builder<'a> {
         }
     }
 
+    fn remote_owner_paths(&self, ty: crate::types::TypeId) -> Vec<Vec<hir::Projection>> {
+        fn visit(
+            builder: &Builder<'_>,
+            ty: crate::types::TypeId,
+            substitutions: &std::collections::HashMap<String, crate::types::TypeId>,
+            depth: usize,
+        ) -> Vec<Vec<hir::Projection>> {
+            if depth >= 32 {
+                return vec![];
+            }
+            match &builder.types.types[ty] {
+                crate::types::Type::Remote(_) => vec![vec![]],
+                crate::types::Type::Generic(name) => substitutions
+                    .get(name)
+                    .filter(|actual| **actual != ty)
+                    .map_or_else(Vec::new, |actual| {
+                        visit(builder, *actual, substitutions, depth + 1)
+                    }),
+                crate::types::Type::Record { record, arguments } => {
+                    let mut nested = substitutions.clone();
+                    for (name, argument) in builder.hir.records[*record]
+                        .parameters
+                        .iter()
+                        .zip(arguments)
+                    {
+                        let argument = match &builder.types.types[*argument] {
+                            crate::types::Type::Generic(name) => {
+                                substitutions.get(name).copied().unwrap_or(*argument)
+                            }
+                            _ => *argument,
+                        };
+                        nested.insert(name.clone(), argument);
+                    }
+                    builder
+                        .types
+                        .record_field_types
+                        .get(record)
+                        .into_iter()
+                        .flatten()
+                        .flat_map(|(field, ty)| {
+                            visit(builder, *ty, &nested, depth + 1)
+                                .into_iter()
+                                .map(|path| {
+                                    std::iter::once(hir::Projection::Field(field.clone()))
+                                        .chain(path)
+                                        .collect()
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                        .collect()
+                }
+                _ => vec![],
+            }
+        }
+        visit(self, ty, &std::collections::HashMap::new(), 0)
+    }
+
+    fn callable_parameters(&self, function: FunctionId) -> Vec<usize> {
+        let mut parameters = self.result_provenance[&function].parameters.clone();
+        if let Some(signature) = self.types.function_type(function) {
+            // Existing inferred summaries seed explicit reference parameters. Hidden
+            // borrowers in aggregate/callable parameters still require a fallback.
+            for (index, ty) in signature.parameters.iter().enumerate() {
+                if !matches!(self.types.types[*ty], crate::types::Type::Reference { .. })
+                    && super::callables::may_borrow(self.hir, self.types, *ty)
+                {
+                    parameters.push(index);
+                }
+            }
+        }
+        parameters.sort_unstable();
+        parameters.dedup();
+        parameters
+    }
+
     fn call_result_borrow_value(&mut self, callee: ExprId, arguments: &[ExprId]) -> BorrowValue {
         let direct = self.types.resolved_function_for_callee(callee);
         let Some(function) = direct else {
-            let mut values = vec![self.borrow_value(callee)];
-            values.extend(
-                arguments
-                    .iter()
-                    .map(|argument| self.borrow_value(*argument)),
+            let signature =
+                self.types
+                    .expression_type(callee)
+                    .and_then(|ty| match &self.types.types[ty] {
+                        crate::types::Type::Function(signature) => Some(signature),
+                        _ => None,
+                    });
+            if signature.is_some_and(|signature| {
+                !super::callables::may_borrow(self.hir, self.types, signature.result)
+            }) {
+                return BorrowValue::Empty;
+            }
+            let fallback_parameters = signature.map_or_else(
+                || (0..arguments.len()).collect(),
+                |signature| super::callables::parameter_origins(self.types, signature),
             );
-            return BorrowValue::Merge(values);
+            return BorrowValue::Invocation {
+                callee: Box::new(self.borrow_value(callee)),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| self.borrow_value(*argument))
+                    .collect(),
+                fallback_parameters,
+            };
         };
         let offset = usize::from(matches!(
             self.hir.expressions[callee],
@@ -901,6 +1149,32 @@ impl<'a> Builder<'a> {
         arguments: &[ExprId],
         expression: ExprId,
     ) {
+        if self
+            .types
+            .expression_type(callee)
+            .is_none_or(|ty| match &self.types.types[ty] {
+                crate::types::Type::Function(signature) => signature
+                    .effects
+                    .iter()
+                    .any(|effect| effect.kind != crate::ast::EffectKind::Read),
+                _ => true,
+            })
+        {
+            self.emit(Operation::ForgetCallableTargets);
+        }
+        let indirect = self.types.resolved_function_for_callee(callee).is_none()
+            && !matches!(
+                self.hir.expressions[callee],
+                hir::Expr::Name(ResolvedName::Builtin(_))
+            );
+        if indirect {
+            self.emit(Operation::ForgetPathFacts { place: None });
+        }
+        for (place, _) in super::effects::call_mutations(self.hir, self.types, callee, arguments) {
+            self.emit(Operation::ForgetPathFacts {
+                place: Some(Place::from_hir(place)),
+            });
+        }
         for (place, kind) in
             super::effects::call_invalidations(self.hir, self.types, callee, arguments)
         {
@@ -927,11 +1201,97 @@ impl<'a> Builder<'a> {
             .is_some_and(|ty| self.types.is_copy(ty))
     }
 
+    /// Lower boolean value selection directly to control flow. HIR represents
+    /// short-circuit operators as two single-expression branch arms; threading
+    /// their results avoids throwing away operand facts at a temporary join.
+    fn condition(&mut self, expression: ExprId, targets: [BlockId; 2]) {
+        match &self.hir.expressions[expression] {
+            hir::Expr::Bool(value) => {
+                self.terminate(Terminator::Goto(targets[usize::from(!*value)]));
+                return;
+            }
+            hir::Expr::Unary {
+                operator: crate::ast::UnaryOp::Not,
+                operand,
+            } => {
+                self.condition(*operand, [targets[1], targets[0]]);
+                return;
+            }
+            hir::Expr::Branch {
+                subject: None,
+                arms,
+            } if arms.len() == 2 && arms[0].body.len() == 1 && arms[1].body.len() == 1 => {
+                if let (
+                    BranchTest::Condition(test),
+                    BranchTest::Wildcard,
+                    hir::Stmt::Expr(yes),
+                    hir::Stmt::Expr(no),
+                ) = (
+                    &arms[0].test,
+                    &arms[1].test,
+                    &arms[0].body[0],
+                    &arms[1].body[0],
+                ) {
+                    let (test, yes, no) = (*test, *yes, *no);
+                    let matched = self.block();
+                    let unmatched = self.block();
+                    self.condition(test, [matched, unmatched]);
+                    self.current = matched;
+                    self.condition(yes, targets);
+                    self.current = unmatched;
+                    self.condition(no, targets);
+                    return;
+                }
+            }
+            _ => {}
+        }
+        self.expression(expression, Context::Read);
+        if let Some(condition) = self.boolean_condition_place(expression) {
+            self.terminate(Terminator::BooleanBranch { condition, targets });
+        } else if let Some((comparison, polarity)) = self.comparison_condition(expression) {
+            let targets = if polarity {
+                targets
+            } else {
+                [targets[1], targets[0]]
+            };
+            self.terminate(Terminator::ComparisonBranch {
+                comparison,
+                targets,
+            });
+        } else {
+            self.terminate(Terminator::Branch(targets.to_vec()));
+        }
+    }
+
+    fn full_expression_condition(&mut self, expression: ExprId, targets: [BlockId; 2]) {
+        self.begin_full_expression();
+        let cleanup = [self.block(), self.block()];
+        self.condition(expression, cleanup);
+        self.current = cleanup[0];
+        self.end_full_expression(self.span(expression));
+        let operations = self.blocks[self.current].operations.clone();
+        self.terminate(Terminator::Goto(targets[0]));
+        self.current = cleanup[1];
+        self.blocks[self.current].operations.extend(operations);
+        self.terminate(Terminator::Goto(targets[1]));
+    }
+
     fn boolean_condition_place(&self, expression: ExprId) -> Option<Place> {
         let ty = self.types.expression_type(expression)?;
         matches!(self.types.types[ty], crate::types::Type::Bool)
-            .then(|| self.owned_place(expression))
+            .then(|| self.predicate_place(expression))
             .flatten()
+    }
+
+    fn predicate_place(&self, expression: ExprId) -> Option<Place> {
+        let place = self.owned_place(expression)?;
+        // A computed index can change independently of the indexed storage.
+        // Until its dependencies are represented, do not attach reusable facts.
+        (!place
+            .projections
+            .iter()
+            .any(|projection| matches!(projection, hir::Projection::Index { constant: None, .. })))
+        .then_some(place)
     }
 
     fn comparison_condition(&self, expression: ExprId) -> Option<(Comparison, bool)> {
@@ -943,9 +1303,14 @@ impl<'a> Builder<'a> {
         else {
             return None;
         };
+        let integer_order = [left, right].into_iter().all(|operand| {
+            self.types
+                .expression_type(operand)
+                .is_some_and(|ty| matches!(self.types.types[ty], crate::types::Type::Int))
+        });
         let mut left = self.comparison_operand(left)?;
         let mut right = self.comparison_operand(right)?;
-        let (kind, polarity) = match operator {
+        let (mut kind, mut polarity) = match operator {
             crate::ast::BinaryOp::Equal => (ComparisonKind::Equal, true),
             crate::ast::BinaryOp::NotEqual => (ComparisonKind::Equal, false),
             crate::ast::BinaryOp::Less => (ComparisonKind::Less, true),
@@ -960,13 +1325,22 @@ impl<'a> Builder<'a> {
             }
             _ => return None,
         };
+        // Integer order is total. Do not apply this complement identity to
+        // floating-point operands, where NaN makes both comparisons false.
+        if integer_order && kind == ComparisonKind::LessEqual {
+            std::mem::swap(&mut left, &mut right);
+            kind = ComparisonKind::Less;
+            polarity = !polarity;
+        }
         Some((Comparison { left, kind, right }, polarity))
     }
 
     fn comparison_operand(&self, expression: ExprId) -> Option<ComparisonOperand> {
         match self.hir.expressions[expression] {
             hir::Expr::Integer(value) => Some(ComparisonOperand::Integer(value)),
-            _ => self.owned_place(expression).map(ComparisonOperand::Place),
+            _ => self
+                .predicate_place(expression)
+                .map(ComparisonOperand::Place),
         }
     }
 

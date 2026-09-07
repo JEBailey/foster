@@ -167,7 +167,31 @@ fn seal_function_with_types(
     for (index, leader) in leaders.iter().copied().enumerate() {
         leader_blocks[leader] = Some(Block(index as u32));
     }
-    let liveness = crate::vm::optimizer::analysis::liveness(function);
+    // Weak references need their origin storage through the frame's lifetime.
+    // Preserve the drop planner's protection when pruning SSA block arguments.
+    let mut origins = std::collections::HashSet::new();
+    for instruction in &function.instructions {
+        match instruction {
+            vm::Instruction::MakeReference { object, .. }
+            | vm::Instruction::MakeWholeReference { object, .. }
+            | vm::Instruction::MakeFieldReference { object, .. }
+            | vm::Instruction::LoadField {
+                object,
+                by_reference: true,
+                ..
+            } => {
+                origins.insert(*object);
+            }
+            vm::Instruction::MakeClosure { captures, .. }
+            | vm::Instruction::CallClosure { captures, .. } => {
+                origins.extend(captures.iter().filter_map(|(mode, source)| {
+                    (*mode == crate::hir::CaptureMode::Ref).then_some(*source)
+                }));
+            }
+            _ => {}
+        }
+    }
+    let liveness = crate::vm::optimizer::analysis::liveness_with_exit_uses(function, &origins);
     let mut value_types = Vec::new();
     let mut storage_hints = Vec::new();
     let mut externals = Vec::new();

@@ -178,6 +178,13 @@ pub(crate) fn uses(instruction: &Instruction) -> Vec<Register> {
 }
 
 pub(crate) fn liveness(function: &BytecodeFunction) -> Liveness {
+    liveness_with_exit_uses(function, &HashSet::new())
+}
+
+pub(crate) fn liveness_with_exit_uses(
+    function: &BytecodeFunction,
+    exit_uses: &HashSet<Register>,
+) -> Liveness {
     let count = function.instructions.len();
     let mut live_in = vec![HashSet::new(); count];
     let mut live_out = vec![HashSet::new(); count];
@@ -194,6 +201,9 @@ pub(crate) fn liveness(function: &BytecodeFunction) -> Liveness {
             let mut next_in = uses(&function.instructions[index])
                 .into_iter()
                 .collect::<HashSet<_>>();
+            if matches!(function.instructions[index], Instruction::Return { .. }) {
+                next_in.extend(exit_uses.iter().copied());
+            }
             next_in.extend(
                 next_out
                     .iter()

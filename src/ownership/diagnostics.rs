@@ -6,9 +6,14 @@ pub const INVALIDATED_LOAN: &str = "E0401";
 pub const BORROW_ESCAPE: &str = "E0402";
 pub const SELF_BORROW: &str = "E0403";
 pub const BORROWED_PARAMETER_CONSUMED: &str = "E0507";
+pub const PENDING_REMOTE: &str = "E0730";
 pub const UNSAFE_SUSPENSION: &str = "E0728";
 
 pub const CATALOG: &[(&str, &str)] = &[
+    (
+        PENDING_REMOTE,
+        "remote owner leaves scope with a pending request",
+    ),
     (USE_AFTER_MOVE, "use after move or before initialization"),
     (INVALIDATED_LOAN, "use of an invalidated loan"),
     (BORROW_ESCAPE, "borrow escapes its declared result contract"),

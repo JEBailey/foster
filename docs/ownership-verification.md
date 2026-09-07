@@ -26,6 +26,16 @@ forgets facts on overlapping mutation, and widens to shared facts after sixteen 
 pair accepted boolean, variant, comparison, and dynamic-index correlations with feasible-conflict
 and predicate-mutation rejection witnesses.
 
+## Callable result provenance
+
+`tests/callable_provenance.rs` pairs independent-result acceptance with dependent-result rejection
+through callable aliases, moves, joins, aggregate storage, explicit reference-group contracts,
+recursive targets, and captured environments. Unknown predecessors never become independent
+summaries, and mutation through a reference must invalidate stale target knowledge. Borrower-free
+result classification inspects generic fields recursively and treats opaque/structural values
+conservatively. `tests/backend_parity.rs` exercises the newly accepted forms in both backends and
+optimization modes, including native callable storage/return conversion and returned references.
+
 ## Rule witnesses
 
 The [semantic specification](semantics.md#11-backend-conformance-and-witnesses) maps its stable
@@ -80,3 +90,12 @@ Release qualification should increase input counts and run coverage-guided fuzze
 Every campaign must enforce time and memory limits. Panics, hangs, nondeterministic diagnostics, and
 oracle disagreements are failures. Raw malformed MIR with invalid arena IDs is outside the language
 input boundary and belongs to defensive verifier tests rather than the semantic oracle.
+
+## Compound-condition reference checks
+
+`tests/compound_conditions.rs` generates every two-boolean function as a disjunction of truth-table
+rows, then checks all 256 mutation/use condition pairs. The independent oracle accepts exactly when
+the two truth masks do not intersect. Paired regressions cover scalar complements, guarded exits,
+alias and call mutation, short-circuit effects, and loop backedges. The existing path-limit unit test
+checks conservative widening after 16 alternatives; backend parity covers all four boolean inputs
+and observable RHS effects with optimization enabled and disabled.

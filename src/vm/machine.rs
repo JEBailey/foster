@@ -9,7 +9,7 @@ use super::operations::{binary, constant_value, unary};
 use super::patterns::matches as match_pattern;
 use super::value::{
     AccessLease, FutureValue, PlaceHandle, RecordFields, RemoteArgument, RemoteMessage,
-    RemoteValue, SharedValue, Slot, next_future_id, next_remote_id,
+    RemoteOwner, RemoteValue, SharedValue, Slot, WorkerCompletion, next_future_id, next_remote_id,
 };
 use super::{Capture, Instruction, Program, Register, Value};
 
@@ -169,6 +169,7 @@ struct SharedCommit {
 }
 
 pub struct Machine {
+    cancellation: Option<Arc<crate::remote::Control>>,
     program: Arc<Program>,
     host: Arc<super::host::HostContext>,
 }
@@ -245,6 +246,7 @@ impl Cleanup {
         let machine = Machine {
             program: self.program,
             host: self.host,
+            cancellation: None,
         };
         let original = CLEANUP_FAILURE.with(|failure| failure.borrow_mut().take());
         let result = machine.execute(
@@ -280,7 +282,12 @@ impl Machine {
             variant: Some(metadata.parent),
             type_name: metadata.type_name.clone(),
             alternative: metadata.alternative.clone(),
-            payload: vec![value].into(),
+            payload: if alternative == "Shutdown" {
+                vec![]
+            } else {
+                vec![value]
+            }
+            .into(),
         })
     }
 
@@ -297,6 +304,7 @@ impl Machine {
         Self {
             program: Arc::new(program.clone()),
             host: host.into(),
+            cancellation: None,
         }
     }
 
@@ -396,6 +404,13 @@ impl Machine {
         frames[0].argument_leases = argument_leases;
 
         loop {
+            if let Some(error) = self
+                .cancellation
+                .as_ref()
+                .and_then(|control| control.error())
+            {
+                return Err(RuntimeError::runtime(error.to_string()));
+            }
             if let Some(error) = CLEANUP_FAILURE.with(|failure| failure.borrow_mut().take()) {
                 return Err(error);
             }
@@ -1147,8 +1162,14 @@ impl Machine {
                     let id = next_remote_id();
                     let control = Arc::new(crate::remote::Control::default());
                     let worker_control = control.clone();
+                    let (finished, completion) = may::sync::mpsc::channel();
                     let _handle = may::go_with!(1024 * 1024, move || {
-                        let machine = Machine { program, host };
+                        let _finished = WorkerCompletion(finished);
+                        let machine = Machine {
+                            program,
+                            host,
+                            cancellation: Some(worker_control.clone()),
+                        };
                         let mut state = state;
                         while let Ok(message) = inbox.recv() {
                             if worker_control.error().is_some() {
@@ -1194,6 +1215,10 @@ impl Machine {
                         Value::Remote(RemoteValue {
                             id,
                             sender,
+                            _owner: Arc::new(RemoteOwner {
+                                control: control.clone(),
+                                completion: Mutex::new(Some(completion)),
+                            }),
                             control,
                         }),
                     )?;
@@ -1209,8 +1234,14 @@ impl Machine {
                     let id = next_remote_id();
                     let control = Arc::new(crate::remote::Control::default());
                     let worker_control = control.clone();
+                    let (finished, completion) = may::sync::mpsc::channel();
                     let _handle = may::go_with!(1024 * 1024, move || {
-                        let machine = Machine { program, host };
+                        let _finished = WorkerCompletion(finished);
+                        let machine = Machine {
+                            program,
+                            host,
+                            cancellation: Some(worker_control.clone()),
+                        };
                         while let Ok(message) = inbox.recv() {
                             if worker_control.error().is_some() {
                                 continue;
@@ -1252,6 +1283,10 @@ impl Machine {
                         Value::Remote(RemoteValue {
                             id,
                             sender,
+                            _owner: Arc::new(RemoteOwner {
+                                control: control.clone(),
+                                completion: Mutex::new(Some(completion)),
+                            }),
                             control,
                         }),
                     )?;
@@ -1285,11 +1320,7 @@ impl Machine {
                     let (sender, receiver) = may::sync::mpsc::channel();
                     let cancelled = sender.clone();
                     let request = remote.control.register(move |error| {
-                        let message = match error {
-                            crate::remote::RemoteError::Failed(message) => message,
-                            crate::remote::RemoteError::Shutdown => error.to_string(),
-                        };
-                        let _ = cancelled.send(Err(message));
+                        let _ = cancelled.send(Err(error));
                     });
                     if let Some(request) = request
                         && remote
@@ -1328,9 +1359,26 @@ impl Machine {
                         .map_err(|_| RuntimeError::runtime("future lock was poisoned"))?
                         .take()
                         .ok_or_else(|| RuntimeError::runtime("future has already been awaited"))?;
-                    let value = receiver.recv().map_err(|_| {
-                        RuntimeError::runtime("remote object terminated before replying")
-                    })?;
+                    let value = loop {
+                        if let Some(error) = self
+                            .cancellation
+                            .as_ref()
+                            .and_then(|control| control.error())
+                        {
+                            return Err(RuntimeError::runtime(error.to_string()));
+                        }
+                        match receiver.try_recv() {
+                            Ok(value) => break value,
+                            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                                may::coroutine::sleep(std::time::Duration::from_millis(1))
+                            }
+                            Err(_) => {
+                                return Err(RuntimeError::runtime(
+                                    "remote object terminated before replying",
+                                ));
+                            }
+                        }
+                    };
                     let outcome = match value {
                         Ok(value) => self.remote_variant(
                             self.program.remote_result,
@@ -1338,11 +1386,18 @@ impl Machine {
                             Value::from_wire(value)?,
                         )?,
                         Err(error) => {
-                            let error = self.remote_variant(
-                                self.program.remote_error,
-                                "Failed",
-                                Value::string(self.program.string_record, error.into_bytes()),
-                            )?;
+                            let error = match error {
+                                crate::remote::RemoteError::Shutdown => self.remote_variant(
+                                    self.program.remote_error,
+                                    "Shutdown",
+                                    Value::Unit,
+                                )?,
+                                crate::remote::RemoteError::Failed(error) => self.remote_variant(
+                                    self.program.remote_error,
+                                    "Failed",
+                                    Value::string(self.program.string_record, error.into_bytes()),
+                                )?,
+                            };
                             self.remote_variant(self.program.remote_result, "Error", error)?
                         }
                     };
@@ -1658,6 +1713,76 @@ fn member(
 #[cfg(test)]
 mod register_storage_tests {
     use super::*;
+
+    #[test]
+    fn owner_cancellation_stops_running_vm_code_and_runs_cleanup() {
+        let compilation = crate::compile(
+            r#"
+import core.drop
+import core.result
+import std.fs
+type Held = & Drop & {}
+impl Held { func deinit(self) -> () { write_text("released", "yes")
+() } }
+func main() -> Int {
+    let held = Held {}
+    assert(write_text("started", "yes").success?())
+    loop {}
+    0
+}
+"#,
+        )
+        .unwrap();
+        for optimize in [false, true] {
+            let directory = std::env::temp_dir().join(format!(
+                "foster-vm-shutdown-{}-{}",
+                std::process::id(),
+                next_remote_id()
+            ));
+            std::fs::create_dir(&directory).unwrap();
+            let program = super::super::compile_with_options(
+                &compilation,
+                super::super::CompileOptions { optimize },
+            )
+            .unwrap();
+            let control = Arc::new(crate::remote::Control::default());
+            let owner = crate::remote::Owner(control.clone());
+            let path = directory.clone();
+            let (send, receive) = std::sync::mpsc::channel();
+            let worker = std::thread::spawn(move || {
+                let mut machine =
+                    Machine::with_host_context(&program, super::super::HostContext::new(path));
+                machine.cancellation = Some(control);
+                send.send(
+                    machine
+                        .run_main()
+                        .map(|_| ())
+                        .map_err(|error| error.message),
+                )
+                .unwrap();
+            });
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            while !directory.join("started").exists() {
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "VM never started executing"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            drop(owner);
+            let error = receive
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .expect("VM failed to stop")
+                .unwrap_err();
+            assert!(error.contains("owner shut down"), "{error}");
+            worker.join().unwrap();
+            assert!(
+                directory.join("released").exists(),
+                "cancellation skipped deinit"
+            );
+            std::fs::remove_dir_all(directory).unwrap();
+        }
+    }
 
     #[test]
     fn ordinary_registers_remain_inline_until_their_place_is_observed() {

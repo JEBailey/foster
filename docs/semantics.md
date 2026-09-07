@@ -298,7 +298,7 @@ requests and resolves outstanding futures with shutdown errors; futures do not k
 alive. Statically established outstanding requests at owner exit must be rejected. Remote execution
 failure is contained, terminal for that worker, and resolves outstanding and subsequent requests
 with errors. The awaited outcome is `Result<T, RemoteError>` in both backends, including an outer Result
-when the method returns a domain Result. Owner cancellation and lifetime checks remain G-06.
+when the method returns a domain Result. Owner cancellation and conservative lifetime checks enforce G-06.
 
 **S-20 — Remote loans.** Owned messages transfer only supported transferable values. Ordinary
 explicit references, closures, and futures cannot be transferred as owned mailbox arguments in
@@ -366,26 +366,30 @@ S-08. Their decisions are normative rules above rather than open entries:
   reject queued and later execution after failure, and deliver `Result<T, RemoteError>` outcomes.
   Cross-backend tests cover discarded failures, completed results, domain errors, and nested failures
   with optimization enabled and disabled. Owner cancellation
-  and lifetime checking remain G-06.
+  and lifetime checking are implemented under G-06.
 - **G-04 — Reclamation (closed):** modeled native failures release live managed values and
   active temporaries while generated frames return from callee to caller. Both backends invoke
   user-defined `deinit` at ownership end, before releasing fields, and preserve the original error
   while continuing cleanup. Explicit `Copy`, typed `List.at` failures, moves, replacement, loop
   exits, enum payloads, remote argument transfer, and failure cleanup have backend parity tests.
-  Scoped remote owner cancellation remains G-06; host wrappers need a `deinit` implementation to
+  Scoped remote owner cancellation is implemented under G-06; host wrappers need a `deinit` implementation to
   close their external resources automatically.
 - **G-05 — Generic sequence execution (closed):** native contract dispatch resolves sequence
   accessors through erased stored values, preserving checked generic result types. Built-in
   lists, strings, bytes, user-defined sequences, mixed iterator element types, lazy adapters,
   exhaustion, and failure cleanup have VM/native parity coverage. Head/rest adapters can still
   copy tails; structural conformance and slicing do not promise zero-copy traversal.
-- **G-06 — Scoped remote lifetime (accepted, not implemented):** implement owner-exit cancellation,
-  completion tracking, and diagnostics under [the remote contract](remote-semantics.md). Dropping a
-  future does not discharge its request. Cross-worker scheduling, liveness, host interruption, and
-  process-wide shutdown ordering remain open.
-- **G-07 — Analysis precision (implementation limit):** indirect callable-result provenance and
-  richer path facts remain conservative. Better precision may accept more safe programs but must
-  not discard a real origin or lifetime dependency.
+- **G-06 — Scoped remote lifetime (implemented):** owner destruction cancels running and queued
+  requests in both backends, preserving completed outcomes and retaining executing storage safely.
+  `E0730` tracks completion through moves, storage, branches and loops; dropping a future does not
+  discharge its request. Pending transfers across function boundaries and unmodeled completion
+  proofs remain conservative; see [supported proofs](remote-semantics.md#supported-static-proofs).
+  Cross-worker scheduling, liveness, host interruption and process-wide shutdown ordering remain open.
+- **G-07 — Analysis precision (implemented for the bounded scope):** indirect callable results now use known
+  target summaries or checked type/group contracts. Moves, fixed aggregate storage, and joins
+  preserve supported dependencies; unknown targets and hidden environments remain conservative.
+  Bounded compound boolean path reasoning supports `&&`, `||`, and `not`, preserving short-circuit
+  effects and forgetting facts after operand mutation. See [supported forms and limits](analysis-precision.md).
 - **G-08 — Nested indexed assignment (implementation violation):** both backends currently lower
   `items[0].field = value` through an owned index read, so the write can affect a detached temporary
   and leave the list element unchanged. For example, a list containing `{ text: "before" }` still

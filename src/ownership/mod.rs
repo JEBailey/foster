@@ -1,3 +1,4 @@
+mod callables;
 mod check;
 pub mod diagnostics;
 mod effects;
@@ -6,6 +7,7 @@ mod mir;
 #[cfg(test)]
 mod model;
 mod regions;
+mod remote;
 
 pub use mir::{
     BasicBlock, BlockId, BorrowValue, Comparison, ComparisonKind, ComparisonOperand, Function,
@@ -57,6 +59,7 @@ fn finish_check(
     program.requirements = regions::analyze_requirements(&program);
     check::check(hir, types, &program)?;
     regions::validate(hir, types, &program)?;
+    remote::check(hir, types, &program)?;
     Ok(program)
 }
 

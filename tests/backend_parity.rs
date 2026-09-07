@@ -139,8 +139,10 @@ fn check_process_output(name: &str, source: &str, expected: &str, failure: Optio
         assert_eq!(
             output.status.success(),
             failure.is_none(),
-            "native {name}: {}",
-            String::from_utf8_lossy(&output.stderr)
+            "native {name}, optimize={optimize}, status={}: {}\nstdout: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr),
+            String::from_utf8_lossy(&output.stdout)
         );
         if let Some(message) = failure {
             assert!(
@@ -280,10 +282,18 @@ impl Drop for Scratch {
 
 fn check(name: &str, source: &str, expected: Result<&str, &str>) {
     let compilation = foster::compile(source).unwrap();
-    let prepared = native::prepare(&compilation).unwrap();
+    check_compilation(name, &compilation, expected);
+}
+
+fn check_compilation(
+    name: &str,
+    compilation: &foster::compiler::Compilation,
+    expected: Result<&str, &str>,
+) {
+    let prepared = native::prepare(compilation).unwrap();
     let scratch = Scratch::new(name);
     for optimize in [false, true] {
-        let result = vm::run_with_options(&compilation, vm::CompileOptions { optimize });
+        let result = vm::run_with_options(compilation, vm::CompileOptions { optimize });
         match expected {
             Ok(value) => assert_eq!(
                 result.unwrap().to_string(),
@@ -794,10 +804,10 @@ func main() -> Int {
     let text = "before"
     take(move text)
     text = "after"
-    assert(text == "after")
+    assert(text == "after", "text assignment")
     let values = [0, 2]
     set(ref values[0], 40)
-    assert(values == [40, 2])
+    assert(values == [40, 2], "reference assignment")
     let worker = remote Counter { value: 0 }
     let first = worker.increment(20)
     let second = worker.increment(2)
@@ -914,22 +924,95 @@ func main() -> Int {
 }
 
 #[test]
-fn discarded_remote_failures_do_not_terminate_the_application() {
-    check(
-        "discarded-remote-failure",
+fn discarded_remote_requests_require_completion_before_owner_exit() {
+    let error = foster::compile(
         r#"
+ type Worker = {}
+ impl Worker { func fail(self) -> () { assert(false) } }
+ func main() -> Int { let worker = remote Worker {}
+ worker.fail()
+ 42 }
+ "#,
+    )
+    .expect_err("discarded request was accepted");
+    assert_eq!(error.code.as_deref(), Some("E0730"));
+}
+
+#[test]
+fn completed_remote_outcomes_outlive_the_owner_and_receiver_cleanup() {
+    check_stdout(
+        "remote-completed",
+        r#"
+import core.result
+import core.remote_error
+import core.drop
+type Held = & Drop & {}
+impl Held { func deinit(self) -> () { println("closed") } }
+type Worker = { held: Held }
+impl Worker { func value(self) -> Int { 42 } }
+func completed() -> Future<Result<Int, RemoteError>> {
+    let worker = remote Worker { held: Held {} }
+    let earlier = worker.value()
+    await worker.value()
+    earlier
+}
+func main() -> Int { (await completed()).unwrap_or(0) }
+"#,
+        "closed\n42",
+    );
+}
+
+#[test]
+fn remote_shutdown_resolves_pending_futures_without_draining() {
+    let mut compilation = foster::compile(
+        r#"
+import core.result
+import core.remote_error
 type Worker = {}
 impl Worker {
-    func fail(self) { assert(false) }
+    func barrier(self) -> Int { 0 }
+    func forever(self) -> Int { loop {}
+0 }
+    func queued(self) -> Int { assert(false, "queued work started")
+0 }
 }
-func main() -> Int {
+type Job = {
+    owner: Remote<Worker>
+    running: Future<Result<Int, RemoteError>>
+    queued: Future<Result<Int, RemoteError>>
+}
+func start() -> Job {
     let worker = remote Worker {}
-    worker.fail()
-    42
+    let running = worker.forever()
+    let queued = worker.queued()
+    await worker.barrier()
+    Job { owner: move worker, running: move running, queued: move queued }
+}
+func finish(worker: Remote<Worker>) -> () [consume worker] { () }
+func main() -> Bool {
+    let job = start()
+    let running = move job.running
+    let queued = move job.queued
+    finish(move job.owner)
+    assert((await running) == Result.Error(RemoteError.Shutdown))
+    assert((await queued) == Result.Error(RemoteError.Shutdown))
+    true
 }
 "#,
-        Ok("42"),
-    );
+    )
+    .unwrap();
+    // Remove the completion witness after semantic checking to exercise the runtime
+    // backstop independently of the compiler's rejection of pending owner exits.
+    let waits = compilation.hir.expressions.iter().filter_map(|(id, expression)| match expression {
+        foster::hir::Expr::Await(value) => match &compilation.hir.expressions[*value] {
+            foster::hir::Expr::Call { callee, .. } if matches!(&compilation.hir.expressions[*callee], foster::hir::Expr::Member { name, .. } if name == "barrier") => Some(id),
+            _ => None,
+        },
+        _ => None,
+    }).collect::<Vec<_>>();
+    assert_eq!(waits.len(), 1);
+    compilation.hir.expressions[waits[0]] = foster::hir::Expr::Unit;
+    check_compilation("remote-shutdown", &compilation, Ok("true"));
 }
 
 #[test]
@@ -1184,5 +1267,77 @@ func main() -> Int {
 }
 "#,
         "2\n4\n3\n1\n1\n42",
+    );
+}
+
+#[test]
+fn indirect_callable_result_provenance_agrees_in_both_backends() {
+    check_stdout(
+        "callable-result-provenance",
+        r#"
+type Holder<T> = { callback: T }
+func describe(value: Int) -> String { "number" }
+func make() -> func(Int) -> String { describe }
+func invoke(callback: func(Int) -> String, value: Int) -> String { callback(value) }
+func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref left }
+func main() -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    let held = Holder { callback: describe }
+    let text = held.callback(selected)
+    let forwarded = invoke(held.callback, selected)
+    let captured = [ref selected] () -> { selected
+        "number" }
+    let snapshot = captured()
+    let factory_result = make()
+    let returned_text = factory_result(selected)
+    let callbacks = [describe]
+    callbacks.push(describe)
+    callbacks[0] = describe
+    let listed_text = callbacks[0](selected)
+    values.push(20)
+    assert(text.length + forwarded.length + snapshot.length + returned_text.length + listed_text.length == 30)
+    let left = [10]
+    let right = [20]
+    let choice = branch { true -> Holder { callback: first }
+        _ -> Holder { callback: first } }
+    let answer = choice.callback(ref left[0], ref right[0])
+    right.push(30)
+    println(answer)
+    42
+}
+"#,
+        "10\n42",
+    );
+}
+
+#[test]
+fn compound_ownership_conditions_and_short_circuit_effects_agree() {
+    check(
+        "compound-conditions",
+        r#"
+func choose(a: Bool, b: Bool) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    branch { a && b -> values.push(20)
+ _ -> () }
+    branch { not a || not b -> selected
+ _ -> 0 }
+}
+func bump[g: group Int](count: ref[g] Int) -> Bool [mut g] {
+    count = count + 1
+    true
+}
+func main() -> Int {
+    let count = 0
+    false && bump(ref count)
+    true || bump(ref count)
+    true && bump(ref count)
+    false || bump(ref count)
+    assert(count == 2)
+    choose(false, false) + choose(false, true) + choose(true, false) + choose(true, true) + count
+}
+"#,
+        Ok("32"),
     );
 }

@@ -7,6 +7,56 @@ impl Checker<'_> {
         Ty::Variable(variable)
     }
 
+    pub(super) fn check_callable_result_origins(
+        &self,
+        expected: &Ty,
+        actual: &Ty,
+        function: FunctionId,
+    ) -> Result<(), FosterError> {
+        fn parts(ty: &Ty) -> Option<(&[Ty], &Ty)> {
+            match ty {
+                Ty::Callable {
+                    parameters, result, ..
+                }
+                | Ty::Function(parameters, result) => Some((parameters, result)),
+                _ => None,
+            }
+        }
+        let (
+            Some((expected_parameters, expected_result)),
+            Some((actual_parameters, actual_result)),
+        ) = (parts(expected), parts(actual))
+        else {
+            return Ok(());
+        };
+        if let (Ty::Reference(expected_group, _), Ty::Reference(actual_group, _)) =
+            (expected_result, actual_result)
+            && expected_group != "_"
+            && expected_group != FRAME_GROUP
+        {
+            for (index, parameter) in actual_parameters.iter().enumerate() {
+                if let Ty::Reference(group, _) = parameter
+                    && (group == actual_group
+                        || group == "_"
+                        || actual_group == "_"
+                        || group == FRAME_GROUP
+                        || actual_group == FRAME_GROUP)
+                    && let Some(Ty::Reference(allowed, _)) = expected_parameters.get(index)
+                    && allowed != "_"
+                    && allowed != FRAME_GROUP
+                    && allowed != expected_group
+                {
+                    return Err(self.error(function, "callable result provenance is incompatible: result may borrow an argument excluded by the expected reference group"));
+                }
+            }
+        }
+        for (expected, actual) in expected_parameters.iter().zip(actual_parameters) {
+            // Parameter callable contracts are contravariant.
+            self.check_callable_result_origins(actual, expected, function)?;
+        }
+        self.check_callable_result_origins(expected_result, actual_result, function)
+    }
+
     pub(super) fn unify(
         &mut self,
         left: Ty,
@@ -15,6 +65,7 @@ impl Checker<'_> {
     ) -> Result<(), FosterError> {
         let left = self.resolved(left);
         let right = self.resolved(right);
+        self.check_callable_result_origins(&left, &right, function)?;
         match (left, right) {
             (Ty::Variable(a), Ty::Variable(b)) if a == b => Ok(()),
             (Ty::Variable(variable), ty) | (ty, Ty::Variable(variable)) => {

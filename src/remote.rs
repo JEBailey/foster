@@ -65,6 +65,15 @@ impl Control {
         cancelled.is_some()
     }
 
+    pub fn has_pending(&self) -> bool {
+        !self
+            .0
+            .lock()
+            .expect("remote lifecycle lock poisoned")
+            .pending
+            .is_empty()
+    }
+
     pub fn error(&self) -> Option<RemoteError> {
         self.0
             .lock()

@@ -2545,6 +2545,35 @@ fn lower_shared_to_native_ir(
             .ok_or_else(|| native_error("captured reference has no native layout"))?;
         value_types[value.0 as usize] = NativeType::Object(layout);
     }
+    // Empty values carried after a Drop have no storage home. Recover their
+    // specialized layout from the receiving block instead of keeping Opaque.
+    let seeds = shared.entry_seeds.iter().copied().collect::<HashSet<_>>();
+    for block in &shared.blocks {
+        let edges = match &block.terminator {
+            ir::Terminator::Jump { target, arguments } => vec![(*target, arguments)],
+            ir::Terminator::Branch {
+                then_target,
+                then_arguments,
+                else_target,
+                else_arguments,
+                ..
+            } => vec![
+                (*then_target, then_arguments),
+                (*else_target, else_arguments),
+            ],
+            ir::Terminator::Return(_) => Vec::new(),
+        };
+        for (target, arguments) in edges {
+            for (argument, parameter) in arguments
+                .iter()
+                .zip(&shared.blocks[target.0 as usize].parameters)
+            {
+                if seeds.contains(argument) && shared.storage_hints[argument.0 as usize].is_none() {
+                    value_types[argument.0 as usize] = value_types[parameter.0 as usize];
+                }
+            }
+        }
+    }
     let mut storage_hints = shared.storage_hints.clone();
     let mut blocks = Vec::with_capacity(shared.blocks.len());
     let mut cleanup_edges = Vec::new();
@@ -2560,6 +2589,27 @@ fn lower_shared_to_native_ir(
         }
         let mut instructions = Vec::new();
         let mut spans = Vec::new();
+        let poll = ir::Value(value_types.len() as u32);
+        value_types.push(NativeType::Bool);
+        storage_hints.push(None);
+        failure_cleanup.values.insert(
+            (block_index, 0),
+            state
+                .iter()
+                .filter(|(home, _)| !reference_homes.contains_key(home))
+                .map(|(_, value)| *value)
+                .collect(),
+        );
+        instructions.push(ir::Instruction::RuntimeCall {
+            destination: poll,
+            helper: abi::CANCELLATION_POINT,
+            signature: ir::Signature {
+                parameters: vec![],
+                result: NativeType::Bool,
+            },
+            arguments: vec![],
+        });
+        spans.push(block.terminator_span.clone());
         for (instruction, span) in block.instructions.iter().zip(&block.instruction_spans) {
             let lowered = lower_shared_instruction(
                 instruction,
@@ -2629,7 +2679,23 @@ fn lower_shared_to_native_ir(
         let mut terminator = block.terminator.clone();
         if let ir::Terminator::Return(returned) = &terminator {
             let returned = *returned;
-            if let Some(conversion) = erased_conversion(
+            if callable_conversion(
+                value_types[returned.0 as usize],
+                function_signature.result,
+                environment.layouts,
+            ) {
+                let converted = allocate_shared_value(
+                    &mut value_types,
+                    &mut storage_hints,
+                    function_signature.result,
+                );
+                instructions.push(ir::Instruction::WrapCallable {
+                    destination: converted,
+                    source: returned,
+                });
+                spans.push(block.terminator_span.clone());
+                terminator = ir::Terminator::Return(converted);
+            } else if let Some(conversion) = erased_conversion(
                 value_types[returned.0 as usize],
                 function_signature.result,
                 environment.layouts,
@@ -2822,6 +2888,11 @@ fn lower_shared_to_native_ir(
             let crate::vm::VerificationType::Reference(pointee) = input_type else {
                 continue;
             };
+            // Pruned reference inputs were released above and have no pointee users.
+            if !shared.entry_arguments.contains(input) {
+                continue;
+            }
+
             let concrete_pointee = pointee.specialize(&instance.substitutions);
             let reference_type = NativeType::Object(
                 environment
@@ -3009,6 +3080,139 @@ fn lower_shared_instruction(
     storage_hints: &mut Vec<Option<u16>>,
     facts: NativeFunctionFacts<'_>,
 ) -> Result<Vec<(ir::Instruction, Vec<ir::Value>)>, FosterError> {
+    // Stored callable fields use the erased callable ABI, even when the source
+    // expression is a concrete closure. Normalize before retaining it in storage.
+    let mut adapted = instruction.clone();
+    let mut wrappers = Vec::new();
+    let mut prefix = Vec::new();
+    if let ir::Instruction::Portable(portable) = &mut adapted {
+        let object_layout = |value: ir::Value| match value_types[value.0 as usize] {
+            NativeType::Object(layout) => Some(layout),
+            _ => None,
+        };
+        let mut sources = Vec::new();
+        match portable {
+            ir::PortableInstruction::MakeRecord {
+                destination,
+                fields,
+                ..
+            } => {
+                if let Some(layout) = object_layout(*destination)
+                    && let PhysicalKind::Record {
+                        fields: expected, ..
+                    } = &environment.physical_layouts.get(layout).kind
+                {
+                    for ((_, source), field) in fields.iter_mut().zip(expected) {
+                        sources.push((source, field.value.pointee));
+                    }
+                }
+            }
+            ir::PortableInstruction::MakeVariant {
+                destination,
+                variant,
+                payload,
+                ..
+            } => {
+                if let Some(layout) = object_layout(*destination)
+                    && let LayoutKind::Variant { alternatives, .. } =
+                        &environment.layouts.get(layout).kind
+                    && let Some(tag) = alternatives
+                        .iter()
+                        .find(|alternative| alternative.variant == *variant)
+                        .map(|alternative| alternative.tag)
+                    && let PhysicalKind::Variant { alternatives, .. } =
+                        &environment.physical_layouts.get(layout).kind
+                    && let Some(alternative) = alternatives
+                        .iter()
+                        .find(|alternative| alternative.tag == tag)
+                {
+                    for (source, field) in payload.iter_mut().zip(&alternative.fields) {
+                        sources.push((source, field.value.pointee));
+                    }
+                }
+            }
+            ir::PortableInstruction::MakeList {
+                destination,
+                elements,
+                ..
+            } => {
+                if let Some(layout) = object_layout(*destination)
+                    && let PhysicalKind::Buffer { element, .. } =
+                        &environment.physical_layouts.get(layout).kind
+                {
+                    for source in elements {
+                        sources.push((source, element.pointee));
+                    }
+                }
+            }
+            ir::PortableInstruction::StoreField {
+                object,
+                field,
+                source,
+            } => {
+                if let Some(layout) = object_layout(*object)
+                    && let PhysicalKind::Record { fields, .. } =
+                        &environment.physical_layouts.get(layout).kind
+                    && let Some(field) = fields.iter().find(|candidate| candidate.name == *field)
+                {
+                    sources.push((source, field.value.pointee));
+                }
+            }
+            ir::PortableInstruction::StoreIndex { object, source, .. }
+            | ir::PortableInstruction::Push {
+                object,
+                value: source,
+                ..
+            } => {
+                if let Some(layout) = object_layout(*object)
+                    && let PhysicalKind::Buffer { element, .. } =
+                        &environment.physical_layouts.get(layout).kind
+                {
+                    sources.push((source, element.pointee));
+                }
+            }
+            _ => {}
+        }
+        for (source, layout) in sources {
+            if let Some(layout) = layout {
+                let expected = NativeType::Object(layout);
+                if callable_conversion(
+                    value_types[source.0 as usize],
+                    expected,
+                    environment.layouts,
+                ) {
+                    let wrapper = allocate_shared_value(value_types, storage_hints, expected);
+                    prefix.push((
+                        ir::Instruction::WrapCallable {
+                            destination: wrapper,
+                            source: *source,
+                        },
+                        Vec::new(),
+                    ));
+                    wrappers.push(wrapper);
+                    *source = wrapper;
+                }
+            }
+        }
+    }
+    if !wrappers.is_empty() {
+        prefix.extend(lower_shared_instruction(
+            &adapted,
+            metadata,
+            instance,
+            environment,
+            value_types,
+            storage_hints,
+            facts,
+        )?);
+        prefix.extend(wrappers.into_iter().map(|value| {
+            (
+                ir::Instruction::Portable(ir::PortableInstruction::Drop { value }),
+                Vec::new(),
+            )
+        }));
+        return Ok(prefix);
+    }
     let ty = |value: ir::Value| value_types[value.0 as usize];
     let one = |instruction| vec![(instruction, Vec::new())];
     let ir::Instruction::Portable(portable) = instruction else {
@@ -3036,6 +3240,26 @@ fn lower_shared_instruction(
                 destination: *destination,
                 value,
             }))
+        }
+        ir::PortableInstruction::MakeWholeReference {
+            destination,
+            object,
+            ..
+        } => {
+            if let Some(reference) = storage_hints[object.0 as usize]
+                .and_then(|home| facts.reference_homes.get(&home).copied())
+            {
+                // A reborrow of a reference parameter/capture must keep the caller's
+                // address, not return the address of this frame's loaded snapshot.
+                Ok(one(ir::Instruction::Portable(
+                    ir::PortableInstruction::Move {
+                        destination: *destination,
+                        source: reference,
+                    },
+                )))
+            } else {
+                Ok(one(instruction.clone()))
+            }
         }
         ir::PortableInstruction::Move {
             destination,
@@ -3569,11 +3793,50 @@ fn lower_shared_instruction(
         ir::PortableInstruction::Builtin {
             destination,
             builtin,
-            ..
+            arguments,
         } => {
             value_types[destination.0 as usize] =
                 native_intrinsic_result_type(*builtin, environment)?;
-            Ok(one(instruction.clone()))
+            if matches!(
+                builtin.descriptor().native,
+                crate::intrinsics::NativeIntrinsic::Print { .. }
+            ) {
+                let mut result = Vec::new();
+                let mut lowered = Vec::new();
+                for argument in arguments {
+                    let source = value_types[argument.0 as usize];
+                    let pointee = dereference_native_type(source, environment)?;
+                    if source != pointee {
+                        let loaded = allocate_shared_value(value_types, storage_hints, pointee);
+                        result.push((
+                            ir::Instruction::RuntimeCall {
+                                destination: loaded,
+                                helper: reference_load_helper(pointee),
+                                signature: ir::Signature {
+                                    parameters: vec![source],
+                                    result: pointee,
+                                },
+                                arguments: vec![*argument],
+                            },
+                            Vec::new(),
+                        ));
+                        lowered.push(loaded);
+                    } else {
+                        lowered.push(*argument);
+                    }
+                }
+                result.push((
+                    ir::Instruction::Portable(ir::PortableInstruction::Builtin {
+                        destination: *destination,
+                        builtin: *builtin,
+                        arguments: lowered,
+                    }),
+                    Vec::new(),
+                ));
+                Ok(result)
+            } else {
+                Ok(one(instruction.clone()))
+            }
         }
         ir::PortableInstruction::SpawnRemote { value, .. } => {
             Ok(vec![(instruction.clone(), vec![*value])])
@@ -3949,6 +4212,30 @@ fn lower_native_ir(
     backend: &NativeBackend<'_>,
 ) -> Result<(), FosterError> {
     let function = &prepared.ir;
+    // Scalar locals whose address escapes are memory-backed. A call can
+    // change their home without producing a new SSA definition.
+    let referenced_scalar_homes = function
+        .blocks
+        .iter()
+        .flat_map(|block| &block.instructions)
+        .filter_map(|instruction| match instruction {
+            ir::Instruction::Portable(ir::PortableInstruction::MakeWholeReference {
+                object,
+                ..
+            }) if matches!(
+                function.value_type(*object),
+                NativeType::Int
+                    | NativeType::Bool
+                    | NativeType::Byte
+                    | NativeType::CodePoint
+                    | NativeType::Float
+            ) =>
+            {
+                function.storage_hints[object.0 as usize]
+            }
+            _ => None,
+        })
+        .collect::<HashSet<_>>();
     let mutable_parameter_homes = &prepared.mutable_parameter_homes;
     let pointer_type = module.target_config().pointer_type();
     let homes = prepared
@@ -4037,6 +4324,19 @@ fn lower_native_ir(
             }
         }
         for (instruction_index, instruction) in block.instructions.iter().enumerate() {
+            for operand in instruction.operands() {
+                if let Some(home) = function.storage_hints[operand.0 as usize]
+                    && referenced_scalar_homes.contains(&home)
+                {
+                    let loaded = builder.ins().stack_load(
+                        pointer_type,
+                        cranelift_type(function.value_type(operand), pointer_type),
+                        homes[&home],
+                        0,
+                    );
+                    values.insert(operand, loaded);
+                }
+            }
             builder.cleanup = prepared
                 .failure_cleanup
                 .values
@@ -4116,6 +4416,34 @@ fn lower_native_ir(
                         .ins()
                         .stack_store(pointer_type, values[destination], homes[&home], 0);
                 }
+            }
+        }
+        let operands = match &block.terminator {
+            ir::Terminator::Jump { arguments, .. } => arguments.clone(),
+            ir::Terminator::Branch {
+                condition,
+                then_arguments,
+                else_arguments,
+                ..
+            } => {
+                let mut operands = vec![*condition];
+                operands.extend(then_arguments);
+                operands.extend(else_arguments);
+                operands
+            }
+            ir::Terminator::Return(value) => vec![*value],
+        };
+        for operand in operands {
+            if let Some(home) = function.storage_hints[operand.0 as usize]
+                && referenced_scalar_homes.contains(&home)
+            {
+                let loaded = builder.ins().stack_load(
+                    pointer_type,
+                    cranelift_type(function.value_type(operand), pointer_type),
+                    homes[&home],
+                    0,
+                );
+                values.insert(operand, loaded);
             }
         }
         lower_native_terminator(builder, &block.terminator, &blocks, &values);
@@ -4632,7 +4960,18 @@ fn lower_portable_native(
             destination,
             source,
         } => {
-            let value = get(source);
+            let value = if function.value_type(*source) != function.value_type(*destination) {
+                native_reference_receiver(
+                    builder,
+                    module,
+                    get(source),
+                    function.value_type(*source),
+                    backend,
+                )?
+                .0
+            } else {
+                get(source)
+            };
             if let Some(layout) = objects
                 .layouts
                 .managed_layout(function.value_type(*destination))
@@ -6065,6 +6404,25 @@ fn lower_native_await(
         native_outcome_variant(builder, module, result_layout, "Ok", value, context.backend)?;
     builder.ins().jump(join, &[outcome.into()]);
     builder.switch_to_block(failed);
+    let shutdown = builder.create_block();
+    let execution_failed = builder.create_block();
+    let error_join = builder.create_block();
+    builder.append_block_param(error_join, module.target_config().pointer_type());
+    let cancelled = builder.ins().icmp_imm_s(IntCC::Equal, error, 1);
+    builder
+        .ins()
+        .brif(cancelled, shutdown, &[], execution_failed, &[]);
+    builder.switch_to_block(shutdown);
+    let shutdown_error = native_outcome_variant(
+        builder,
+        module,
+        error_layout,
+        "Shutdown",
+        error,
+        context.backend,
+    )?;
+    builder.ins().jump(error_join, &[shutdown_error.into()]);
+    builder.switch_to_block(execution_failed);
     let error = native_outcome_variant(
         builder,
         module,
@@ -6073,6 +6431,9 @@ fn lower_native_await(
         error,
         context.backend,
     )?;
+    builder.ins().jump(error_join, &[error.into()]);
+    builder.switch_to_block(error_join);
+    let error = builder.block_params(error_join)[0];
     let outcome = native_outcome_variant(
         builder,
         module,
@@ -6125,7 +6486,9 @@ fn native_outcome_variant(
     let object = backend.objects.allocate(builder, module, layout)?;
     let tag_value = builder.ins().iconst(types::I32, i64::from(tag));
     store_physical_value(builder, object, *tag_offset, tag_value);
-    store_physical_value(builder, object, alternative.fields[0].offset, payload);
+    if let Some(field) = alternative.fields.first() {
+        store_physical_value(builder, object, field.offset, payload);
+    }
     Ok(object)
 }
 
@@ -7672,7 +8035,12 @@ fn runtime_call(
     let result = builder.inst_results(call)[0];
     if matches!(
         name,
-        abi::ASSERT | abi::FAIL | abi::STRING_HEAD | abi::STRING_GET | abi::PARSE_FLOAT
+        abi::CANCELLATION_POINT
+            | abi::ASSERT
+            | abi::FAIL
+            | abi::STRING_HEAD
+            | abi::STRING_GET
+            | abi::PARSE_FLOAT
     ) {
         propagate_native_failure(builder, module)?;
     }

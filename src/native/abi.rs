@@ -8,6 +8,7 @@ pub const VERSION: u16 = 4;
 pub const ALLOC: &str = "foster_rt_v4_alloc";
 pub const DEALLOC: &str = "foster_rt_v4_dealloc";
 pub const ASSERT: &str = "foster_rt_v4_assert";
+pub const CANCELLATION_POINT: &str = "foster_rt_v4_cancellation_point";
 pub const FAILURE_PENDING: &str = "foster_rt_v4_failure_pending";
 pub const BEGIN_CLEANUP: &str = "foster_rt_v4_begin_cleanup";
 pub const END_CLEANUP: &str = "foster_rt_v4_end_cleanup";
@@ -54,7 +55,8 @@ pub const HOST_RELEASE: &str = "foster_rt_v4_host_release";
 // Remote actors use fixed-width words so callback thunks have one signature for every Foster
 // scalar-or-pointer specialization. Futures own completed managed results until `await` transfers
 // the word back into generated code. FUTURE_AWAIT consumes the completion; FUTURE_ERROR then
-// transfers its failure message (or returns null on success) for construction of the outer Result.
+// returns 0 on success, 1 for Shutdown, or transfers an owned failure string. The Shutdown
+// sentinel is never dereferenced or released as a string when constructing the outer Result.
 pub const REMOTE_SPAWN: &str = "foster_rt_v4_remote_spawn";
 pub const REMOTE_CALL: &str = "foster_rt_v4_remote_call";
 pub const FUTURE_ERROR: &str = "foster_rt_v4_future_error";
@@ -180,6 +182,7 @@ runtime_functions! {
     DEALLOC: (Pointer Consumed, I64 Value, I64 Value) -> U8 Scalar;
     ASSERT: (U8 Value, Pointer Borrowed) -> U8 Scalar;
     FAILURE_PENDING: () -> U8 Scalar;
+    CANCELLATION_POINT: () -> U8 Scalar;
     BEGIN_CLEANUP: () -> U8 Scalar;
     END_CLEANUP: () -> U8 Scalar;
     FAIL: (I64 Value, I64 Value, I64 Value) -> U8 Scalar;
