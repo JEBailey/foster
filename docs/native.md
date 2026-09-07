@@ -293,7 +293,7 @@ SSA sealing also preserves the drop planner's protection of weak-reference origi
 while explicit ownership drops still clear their storage. Copying a reference into a value-typed
 branch result loads the pointee before releasing its origin.
 
-A separate native return-lowering gap remains: returning an indexed reference directly from a
-value-returning function can fail native IR validation (for example, `let selected = ref items[0].left[0]`
-followed by `selected` as an `Int` function's result). Reading it in a value expression such as
-`selected + 0` works. This reproduces without nested assignment and is outside G-08.
+Native value-returning functions read indexed references before releasing local origins. For
+example, `let selected = ref items[0].left[0]` followed by `selected` as an `Int` function's
+result returns the selected integer directly. Both explicit and implicit returns support this
+conversion. Ownership checking still rejects escaping borrows of local managed storage (`E0402`).

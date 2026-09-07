@@ -1507,9 +1507,56 @@ func main() -> Int {
     let selected = ref items[0].left[0]
     items[0].right = [42]
     assert(items[0].right[0] == 42)
-    selected + 0
+    selected
 }
 "#,
         Ok("10"),
     );
+}
+
+#[test]
+fn indexed_references_return_as_values() {
+    check(
+        "indexed-reference-results",
+        r#"
+type Item = { left: List<Int>, right: List<Int> }
+func integer() -> Int {
+    let items = [Item { left: [42], right: [20] }]
+    let selected = ref items[0].left[0]
+    selected
+}
+func boolean() -> Bool {
+    let values = [true]
+    let selected = ref values[0]
+    return selected
+}
+func floating() -> Float {
+    let values = [1.5]
+    let selected = ref values[0]
+    selected
+}
+func main() -> Int {
+    assert(boolean())
+    assert(floating() == 1.5)
+    integer()
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
+fn indexed_reference_results_cannot_escape_local_managed_origins() {
+    let error = foster::compile(
+        r#"
+func text() -> String {
+    let values = ["returned text"]
+    let selected = ref values[0]
+    selected
+}
+func main() -> String { text() }
+"#,
+    )
+    .unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0402"), "{error}");
 }

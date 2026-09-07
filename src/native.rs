@@ -2594,11 +2594,7 @@ fn lower_shared_to_native_ir(
         storage_hints.push(None);
         failure_cleanup.values.insert(
             (block_index, 0),
-            state
-                .iter()
-                .filter(|(home, _)| !reference_homes.contains_key(home))
-                .map(|(_, value)| *value)
-                .collect(),
+            owned_home_values(&state, &reference_homes).collect(),
         );
         instructions.push(ir::Instruction::RuntimeCall {
             destination: poll,
@@ -2626,13 +2622,10 @@ fn lower_shared_to_native_ir(
             for (instruction, consumed) in lowered {
                 if let ir::Instruction::Portable(ir::PortableInstruction::Drop { value }) =
                     &instruction
-                    && !remove_shared_home(&mut state, &storage_hints, *value)
                 {
-                    continue;
-                }
-                if let ir::Instruction::Portable(ir::PortableInstruction::Drop { value }) =
-                    &instruction
-                {
+                    if !remove_shared_home(&mut state, &storage_hints, *value) {
+                        continue;
+                    }
                     temporaries.remove(value);
                     if storage_hints[value.0 as usize]
                         .is_some_and(|home| reference_homes.contains_key(&home))
@@ -2647,10 +2640,7 @@ fn lower_shared_to_native_ir(
                 }
                 // ABI argument copies and conversions have no construction home,
                 // but own references until transferred to a call or closure.
-                let live = state
-                    .iter()
-                    .filter(|(home, _)| !reference_homes.contains_key(home))
-                    .map(|(_, value)| *value)
+                let live = owned_home_values(&state, &reference_homes)
                     .chain(temporaries.iter().copied())
                     .filter(|value| {
                         matches!(
@@ -2684,75 +2674,41 @@ fn lower_shared_to_native_ir(
         }
         let mut terminator = block.terminator.clone();
         if let ir::Terminator::Return(returned) = &terminator {
-            let returned = *returned;
-            if callable_conversion(
+            let mut returned = *returned;
+            if let Some(conversion) = ReturnConversion::between(
                 value_types[returned.0 as usize],
                 function_signature.result,
-                environment.layouts,
-            ) {
+                environment,
+            )? {
                 let converted = allocate_shared_value(
                     &mut value_types,
                     &mut storage_hints,
                     function_signature.result,
                 );
-                instructions.push(ir::Instruction::WrapCallable {
-                    destination: converted,
-                    source: returned,
-                });
+                instructions.push(conversion.instruction(converted, returned));
                 spans.push(block.terminator_span.clone());
-                terminator = ir::Terminator::Return(converted);
-            } else if let Some(conversion) = erased_conversion(
-                value_types[returned.0 as usize],
-                function_signature.result,
-                environment.layouts,
-            ) {
-                let converted = allocate_shared_value(
-                    &mut value_types,
-                    &mut storage_hints,
-                    function_signature.result,
-                );
-                instructions.push(match conversion {
-                    ErasedConversion::Box => ir::Instruction::BoxValue {
-                        destination: converted,
-                        source: returned,
-                    },
-                    ErasedConversion::Unbox => ir::Instruction::UnboxValue {
-                        destination: converted,
-                        source: returned,
-                    },
-                });
-                spans.push(block.terminator_span.clone());
-                terminator = ir::Terminator::Return(converted);
-            } else if result_error_conversion(
-                value_types[returned.0 as usize],
-                function_signature.result,
-                environment.layouts,
-            ) {
-                let converted = allocate_shared_value(
-                    &mut value_types,
-                    &mut storage_hints,
-                    function_signature.result,
-                );
-                instructions.push(ir::Instruction::ConvertResultError {
-                    destination: converted,
-                    source: returned,
-                });
-                spans.push(block.terminator_span.clone());
-                instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Drop {
-                    value: returned,
-                }));
-                spans.push(block.terminator_span.clone());
-                remove_shared_home(&mut state, &storage_hints, returned);
-                terminator = ir::Terminator::Return(converted);
+                match conversion {
+                    ReturnConversion::Reference => {
+                        if matches!(
+                            function_signature.result,
+                            NativeType::Object(_) | NativeType::String
+                        ) {
+                            temporaries.insert(converted);
+                        }
+                    }
+                    ReturnConversion::ResultError => {
+                        instructions.push(ir::Instruction::Portable(
+                            ir::PortableInstruction::Drop { value: returned },
+                        ));
+                        spans.push(block.terminator_span.clone());
+                        remove_shared_home(&mut state, &storage_hints, returned);
+                    }
+                    _ => {}
+                }
+                returned = converted;
             }
-            let ir::Terminator::Return(returned) = &terminator else {
-                unreachable!()
-            };
-            let returned = *returned;
-            for value in state
-                .iter()
-                .filter(|(home, _)| !reference_homes.contains_key(home))
-                .map(|(_, value)| *value)
+            terminator = ir::Terminator::Return(returned);
+            for value in owned_home_values(&state, &reference_homes)
                 .collect::<BTreeSet<_>>()
                 .into_iter()
                 .rev()
@@ -2764,10 +2720,7 @@ fn lower_shared_to_native_ir(
                     )
                 {
                     remove_shared_home(&mut state, &storage_hints, value);
-                    let live = state
-                        .iter()
-                        .filter(|(home, _)| !reference_homes.contains_key(home))
-                        .map(|(_, value)| *value)
+                    let live = owned_home_values(&state, &reference_homes)
                         .chain(temporaries.iter().copied())
                         .filter(|value| {
                             matches!(
@@ -2791,11 +2744,7 @@ fn lower_shared_to_native_ir(
         }
         // Pruned SSA block arguments no longer carry dead storage into the successor.
         // Release that storage on the particular edge where its lifetime ends.
-        let owned = state
-            .iter()
-            .filter(|(home, _)| !reference_homes.contains_key(home))
-            .map(|(_, value)| *value)
-            .collect::<BTreeSet<_>>();
+        let owned = owned_home_values(&state, &reference_homes).collect::<BTreeSet<_>>();
         let dying = |arguments: &[ir::Value]| {
             owned
                 .iter()
@@ -3047,6 +2996,77 @@ fn native_shared_type(ty: ir::Type) -> NativeType {
         ir::Type::Byte => NativeType::Byte,
         ir::Type::String => NativeType::String,
         ir::Type::Object(layout) => NativeType::Object(layout),
+    }
+}
+
+/// Loaded reference parameters belong to the caller, not this frame.
+fn owned_home_values<'a>(
+    state: &'a HashMap<u16, ir::Value>,
+    reference_homes: &'a HashMap<u16, ir::Value>,
+) -> impl Iterator<Item = ir::Value> + 'a {
+    state
+        .iter()
+        .filter_map(|(home, value)| (!reference_homes.contains_key(home)).then_some(*value))
+}
+
+#[derive(Clone, Copy)]
+enum ReturnConversion {
+    Reference,
+    Callable,
+    Box,
+    Unbox,
+    ResultError,
+}
+
+impl ReturnConversion {
+    fn between(
+        source: NativeType,
+        target: NativeType,
+        environment: NativeIrEnvironment<'_>,
+    ) -> Result<Option<Self>, FosterError> {
+        Ok(
+            if source != target && dereference_native_type(source, environment)? == target {
+                Some(Self::Reference)
+            } else if callable_conversion(source, target, environment.layouts) {
+                Some(Self::Callable)
+            } else if let Some(conversion) = erased_conversion(source, target, environment.layouts)
+            {
+                Some(match conversion {
+                    ErasedConversion::Box => Self::Box,
+                    ErasedConversion::Unbox => Self::Unbox,
+                })
+            } else if result_error_conversion(source, target, environment.layouts) {
+                Some(Self::ResultError)
+            } else {
+                None
+            },
+        )
+    }
+
+    fn instruction(self, destination: ir::Value, source: ir::Value) -> ir::Instruction {
+        match self {
+            // Read and retain the pointee before releasing its local origin.
+            Self::Reference => ir::Instruction::Portable(ir::PortableInstruction::Move {
+                destination,
+                source,
+            }),
+            Self::Callable => ir::Instruction::WrapCallable {
+                destination,
+                source,
+            },
+            Self::Box => ir::Instruction::BoxValue {
+                destination,
+                source,
+            },
+            Self::Unbox => ir::Instruction::UnboxValue {
+                destination,
+                source,
+            },
+            Self::ResultError => ir::Instruction::ConvertResultError {
+                destination,
+                source,
+            },
+        }
     }
 }
 
