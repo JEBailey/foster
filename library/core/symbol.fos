@@ -5,6 +5,10 @@
 /// Symbol literals are the trusted construction path for the private text.
 pub type Symbol = {
     value: String
+
+    // Required public operations; implementations live in impl blocks.
+    /// Explicitly copies this immutable identifier.
+    pub func copy(self) -> self [read self]
 }
 
 impl Symbol {

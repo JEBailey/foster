@@ -1554,9 +1554,36 @@ func text() -> String {
     let selected = ref values[0]
     selected
 }
+
 func main() -> String { text() }
 "#,
     )
     .unwrap_err();
     assert_eq!(error.code.as_deref(), Some("E0402"), "{error}");
+}
+
+#[test]
+fn explicit_library_contracts_dispatch_on_both_backends() {
+    check(
+        "explicit-library-contracts",
+        r#"
+import core.result
+import core.byte
+import core.bytes.buffer
+type ListView = & List<Int> & {}
+type TextView = & String & {}
+type BufferView = & ByteBuffer & {}
+func inspect(values: ListView) -> Int {
+    let mapped = values.map((value: Int) -> value + 1)
+    mapped.at(0).unwrap_or(0)
+}
+func text_size(text: TextView) -> Int { text.trim().length }
+func fill(builder: BufferView) -> Int {
+    builder.push(Byte.unchecked(42))
+    builder.length()
+}
+func main() -> Int { inspect([34]) + text_size(" answer ") + fill(ByteBuffer.empty()) }
+"#,
+        Ok("42"),
+    );
 }

@@ -1,5 +1,6 @@
 //! Immutable binary data, encoding conversions, and byte-oriented queries.
 
+import std.iter
 import core.byte
 import core.list
 import core.result
@@ -21,6 +22,36 @@ impl BytesHost {
 /// Immutable binary data backed by compact private host storage.
 pub type Bytes = {
     value: RawBytes
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns an independent immutable byte value.
+    pub func copy(self) -> self [read self]
+    /// Concatenates two immutable byte sequences.
+    pub func concat(self, other: Bytes) -> Bytes [read other, read self]
+    /// Returns bytes in the half-open range `start..end`.
+    pub func slice(self, start: Int, end: Int) -> Bytes [read end, read self, read start]
+    /// Expands compact bytes into a Foster list.
+    pub func list(self) -> List<Byte> [read self]
+    /// Encodes bytes as lowercase hexadecimal text.
+    pub func hex(self) -> String [read self]
+    /// Returns whether two byte sequences contain identical values.
+    pub func equal?(self, other: Bytes) -> Bool [read other, read self]
+    /// Computes a deterministic hash over the byte sequence.
+    pub func hash(self) -> Int [read self]
+    /// Checks UTF-8 scalar boundaries without allocating decoded text or copied suffixes.
+    pub func utf8_valid?(self) -> Bool [read self]
+
+    // Required accessors supplied by the builtin storage implementation.
+    /// Reports whether the collection contains no elements.
+    pub func empty?(self) -> Bool
+    /// Returns the number of elements.
+    pub func length(self) -> Int
+    /// Returns the first element; the collection must not be empty.
+    pub func head(self) -> Byte
+    /// Returns the collection without its first element.
+    pub func rest(self) -> Bytes
+    /// Creates an independent iterator over the elements.
+    pub func iterator(self) -> Iterator<Byte>
 }
 
 /// Describes a failed UTF-8 decoding operation.

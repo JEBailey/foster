@@ -1,6 +1,6 @@
 use super::*;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) enum Ty {
     Variable(u32),
     Generic(String),
@@ -48,6 +48,7 @@ pub(super) struct MemberConstraint {
 }
 
 pub(super) struct Checker<'a> {
+    pub(super) checked_requirements: HashSet<(RecordId, Vec<Ty>, RecordId, usize)>,
     pub(super) hir: &'a hir::PackageHir,
     pub(super) next_variable: u32,
     pub(super) substitutions: HashMap<u32, Ty>,

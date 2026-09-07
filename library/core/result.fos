@@ -3,6 +3,25 @@
 /// A value that is either a successful `Ok(T)` or a failed `Error(E)`.
 pub enum Result<T, E> = Ok(T)
     | Error(E)
+    & {
+        // Required public operations; implementations live in impl blocks.
+        /// Applies `transform` to a successful value and preserves an error.
+        pub func map<U>(self, transform: func(T) -> U) -> Result<U, E> [read self, read transform]
+        /// Applies `transform` to an error and preserves a successful value.
+        pub func map_error<F>(self, transform: func(E) -> F) -> Result<T, F> [read self, read transform]
+        /// Applies a result-producing transform to a successful value and flattens the result.
+        pub func and_then<U>(self, transform: func(T) -> Result<U, E>) -> Result<U, E> [read self, read transform]
+        /// Returns whether the result is successful.
+        pub func success?(self) -> Bool [read self]
+        /// Returns whether the result contains an error.
+        pub func error?(self) -> Bool [read self]
+        /// Returns the successful value, or a fallback when the result contains an error.
+        pub func unwrap_or(self, fallback: T) -> T [consume fallback, read self]
+        /// Returns the successful value, or computes a fallback from the error.
+        pub func unwrap_or_else(self, fallback: func(E) -> T) -> T [read fallback, read self]
+        /// Preserves a successful value, or recovers by transforming the error into another result.
+        pub func or_else<F>(self, recover: func(E) -> Result<T, F>) -> Result<T, F> [read recover, read self]
+    }
 
 impl Result {
     /// Applies `transform` to a successful value and preserves an error.
@@ -46,7 +65,7 @@ impl Result {
     }
 
     /// Returns the successful value, or a fallback when the result contains an error.
-    pub func unwrap_or<T, E>(self: Result<T, E>, fallback: T) -> T {
+    pub func unwrap_or<T, E>(self: Result<T, E>, fallback: T) -> T [consume fallback, read self] {
         branch self {
             Result.Ok(value) -> value
             Result.Error(_) -> fallback

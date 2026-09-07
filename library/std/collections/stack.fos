@@ -7,6 +7,12 @@ import core.option
 /// A last-in, first-out collection.
 pub type Stack<T> = & Collection<T> & {
     values: List<T>
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns a stack with `value` placed on top.
+    pub func push(self, value: T) -> Stack<T> [consume self, consume value]
+    /// Removes the top value and returns the remaining stack.
+    pub func pop(self) -> Option<StackItem<T>> [consume self]
 }
 
 impl Stack {

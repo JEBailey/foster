@@ -11,6 +11,7 @@ pub(super) struct EffectiveField {
 
 #[derive(Debug, Clone)]
 pub(super) struct EffectiveMethod {
+    pub(super) type_parameters: Vec<String>,
     pub(super) name: String,
     pub(super) public: bool,
     pub(super) parameters: Vec<Ty>,
@@ -187,7 +188,17 @@ impl Checker<'_> {
                 ),
             ));
         }
-        let signature = self.functions[&function].clone();
+        let raw_signature = self.functions[&function].clone();
+        let mut generics = HashMap::new();
+        let signature = Signature {
+            parameters: raw_signature
+                .parameters
+                .into_iter()
+                .map(|ty| self.instantiate(ty, &mut generics))
+                .collect(),
+            parameter_modes: raw_signature.parameter_modes,
+            result: self.instantiate(raw_signature.result, &mut generics),
+        };
         if signature.parameters.len() != required.parameters.len() + 1 {
             return Err(self.error(function, format!(
                 "method `{}` does not match its composed contract: expected {} argument(s) after `self`",
@@ -436,6 +447,7 @@ impl Checker<'_> {
                         owner,
                         methods,
                         EffectiveMethod {
+                            type_parameters: Vec::new(),
                             name: name.into(),
                             public: true,
                             parameters: Vec::new(),
@@ -468,11 +480,35 @@ impl Checker<'_> {
         record_generics: &HashMap<String, Ty>,
         origin: Option<(RecordId, usize)>,
     ) -> Result<EffectiveMethod, FosterError> {
-        if !requirement.type_parameters.is_empty() || !requirement.groups.is_empty() {
+        if !requirement.groups.is_empty() {
             return Err(FosterError::runtime(format!(
-                "required method `{}.{}` cannot yet declare method-level type or group parameters",
+                "required method `{}.{}` cannot yet declare method-level group parameters",
                 owner_name, requirement.name
             )));
+        }
+        let mut generics = record_generics.clone();
+        let mut type_parameters = Vec::new();
+        let mut occupied = HashMap::new();
+        for ty in record_generics.values() {
+            preserve_generics(ty, &mut occupied);
+        }
+        let mut index = 0;
+        for parameter in &requirement.type_parameters {
+            if generics.contains_key(parameter) {
+                return Err(FosterError::runtime(format!(
+                    "required method `{owner_name}.{}` shadows type parameter `{parameter}`",
+                    requirement.name
+                )));
+            }
+            let name = loop {
+                let name = format!("$required{index}");
+                index += 1;
+                if !occupied.contains_key(&name) {
+                    break name;
+                }
+            };
+            generics.insert(parameter.clone(), Ty::Generic(name.clone()));
+            type_parameters.push(name);
         }
         let Some(receiver) = requirement.parameters.first() else {
             return Err(FosterError::runtime(format!(
@@ -497,7 +533,7 @@ impl Checker<'_> {
                         owner_name, requirement.name, parameter.name
                     ))
                 })?;
-                self.annotation_type(owner_module, annotation, record_generics)
+                self.annotation_type(owner_module, annotation, &generics)
             })
             .collect::<Result<Vec<_>, _>>()?;
         let parameter_modes = requirement
@@ -521,10 +557,11 @@ impl Checker<'_> {
             .return_type
             .as_ref()
             .filter(|_| !returns_self)
-            .map(|ty| self.annotation_type(owner_module, ty, record_generics))
+            .map(|ty| self.annotation_type(owner_module, ty, &generics))
             .transpose()?
             .unwrap_or(Ty::Unit);
         Ok(EffectiveMethod {
+            type_parameters,
             name: requirement.name.clone(),
             public: requirement.public,
             parameters,
@@ -537,6 +574,27 @@ impl Checker<'_> {
         })
     }
 
+    pub(super) fn instantiate_required_method(
+        &mut self,
+        mut method: EffectiveMethod,
+    ) -> EffectiveMethod {
+        let mut generics = HashMap::new();
+        for parameter in &method.parameters {
+            preserve_generics(parameter, &mut generics);
+        }
+        preserve_generics(&method.result, &mut generics);
+        for name in &method.type_parameters {
+            generics.insert(name.clone(), self.fresh());
+        }
+        method.parameters = method
+            .parameters
+            .into_iter()
+            .map(|ty| self.instantiate(ty, &mut generics))
+            .collect();
+        method.result = self.instantiate(method.result, &mut generics);
+        method
+    }
+
     pub(super) fn check_method_implementation(
         &mut self,
         site: FunctionId,
@@ -544,7 +602,40 @@ impl Checker<'_> {
         arguments: &[Ty],
         required: &EffectiveMethod,
     ) -> Result<(), FosterError> {
+        // Rigid contracts need validation only once in this checker pass. Never
+        // cache unresolved arguments or signatures: later inference can change them.
+        let resolved_arguments = arguments
+            .iter()
+            .cloned()
+            .map(|ty| self.resolved(ty))
+            .collect::<Vec<_>>();
+        let cache_key = required
+            .requirement
+            .filter(|_| {
+                resolved_arguments
+                    .iter()
+                    .chain(&required.parameters)
+                    .chain(std::iter::once(&required.result))
+                    .all(|ty| !contains_variable(ty))
+            })
+            .map(|(record, index)| (owner, resolved_arguments, record, index));
+        if cache_key
+            .as_ref()
+            .is_some_and(|key| self.checked_requirements.contains(key))
+        {
+            return Ok(());
+        }
         let definition = self.hir.records[owner].clone();
+        if let Some(Ty::Callable {
+            parameters, result, ..
+        }) =
+            self.builtin_collection_method(&Ty::Record(owner, arguments.to_vec()), &required.name)
+            && required.parameters == parameters
+            && required.result == *result
+            && !required.returns_self
+        {
+            return Ok(());
+        }
         let qualified_name = format!("{}.{name}", definition.name, name = required.name);
         let Some(function) = self.matching_method_implementation(
             definition.module,
@@ -584,6 +675,13 @@ impl Checker<'_> {
         let implementation_effects = implementation.effects.clone();
         let implementation_suspends = implementation.suspends;
         let raw_signature = self.functions[&function].clone();
+        let cache_key = cache_key.filter(|_| {
+            raw_signature
+                .parameters
+                .iter()
+                .chain(std::iter::once(&raw_signature.result))
+                .all(|ty| !contains_variable(ty))
+        });
         let mut generics = HashMap::new();
         let signature = Signature {
             parameters: raw_signature
@@ -665,6 +763,9 @@ impl Checker<'_> {
                 ),
             ));
         }
+        if let Some(key) = cache_key {
+            self.checked_requirements.insert(key);
+        }
         Ok(())
     }
 
@@ -730,6 +831,8 @@ impl Checker<'_> {
         let initial_next_variable = self.next_variable;
         let mut found = Vec::new();
         for function in self.hir.functions_named(module, qualified_name) {
+            self.substitutions = initial_substitutions.clone();
+            self.next_variable = initial_next_variable;
             let raw_signature = self.functions[function].clone();
             let mut generics = HashMap::new();
             let signature = Signature {
@@ -747,8 +850,6 @@ impl Checker<'_> {
             {
                 continue;
             }
-            self.substitutions = initial_substitutions.clone();
-            self.next_variable = initial_next_variable;
             let compatible_receiver = self
                 .unify(receiver.clone(), signature.parameters[0].clone(), *function)
                 .is_ok();
@@ -823,4 +924,32 @@ fn describe_effects(effects: &[crate::ast::Effect]) -> String {
         .map(|effect| format!("{} {}", effect_kind_name(effect.kind), effect.target))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+fn preserve_generics(ty: &Ty, generics: &mut HashMap<String, Ty>) {
+    match ty {
+        Ty::Generic(name) => {
+            generics.entry(name.clone()).or_insert_with(|| ty.clone());
+        }
+        Ty::Record(_, args) | Ty::Variant(_, args) | Ty::Intersection(args) => {
+            for arg in args {
+                preserve_generics(arg, generics);
+            }
+        }
+        Ty::RawList(inner)
+        | Ty::Sequence(inner)
+        | Ty::Remote(inner)
+        | Ty::Future(inner)
+        | Ty::Reference(_, inner) => preserve_generics(inner, generics),
+        Ty::Function(parameters, result)
+        | Ty::Callable {
+            parameters, result, ..
+        } => {
+            for parameter in parameters {
+                preserve_generics(parameter, generics);
+            }
+            preserve_generics(result, generics);
+        }
+        _ => {}
+    }
 }

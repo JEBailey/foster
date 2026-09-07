@@ -7,6 +7,16 @@ import core.option
 /// A double-ended queue.
 pub type Deque<T> = & Collection<T> & {
     values: List<T>
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns a deque with `value` added at the front.
+    pub func push_front(self, value: T) -> Deque<T> [consume self, consume value]
+    /// Returns a deque with `value` added at the back.
+    pub func push_back(self, value: T) -> Deque<T> [consume self, consume value]
+    /// Removes the front value and returns the remaining deque.
+    pub func pop_front(self) -> Option<DequeItem<T>> [consume self]
+    /// Removes the back value and returns the remaining deque.
+    pub func pop_back(self) -> Option<DequeItem<T>> [consume self]
 }
 
 impl Deque {

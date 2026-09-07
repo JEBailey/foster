@@ -335,7 +335,7 @@ fn reachable_instances(
             }
         }
         for ty in &concrete_nominals {
-            let Some(nominal) = nominal_id(ty) else {
+            let Some(nominal) = nominal_id(ty, compilation) else {
                 continue;
             };
             for (slot, argument_types) in &contract_calls {
@@ -392,13 +392,30 @@ fn reachable_instances(
         .collect()
 }
 
-fn nominal_id(ty: &crate::vm::VerificationType) -> Option<crate::types::NominalTypeId> {
+fn nominal_id(
+    ty: &crate::vm::VerificationType,
+    compilation: &Compilation,
+) -> Option<crate::types::NominalTypeId> {
     match ty {
         crate::vm::VerificationType::Record { record, .. } => {
             Some(crate::types::NominalTypeId::Record(*record))
         }
         crate::vm::VerificationType::Variant { variant, .. } => {
             Some(crate::types::NominalTypeId::Variant(*variant))
+        }
+        crate::vm::VerificationType::List(_)
+        | crate::vm::VerificationType::Bytes
+        | crate::vm::VerificationType::ByteBuffer => {
+            let (module, name) = match ty {
+                crate::vm::VerificationType::List(_) => ("core.list", "List"),
+                crate::vm::VerificationType::Bytes => ("core.bytes", "Bytes"),
+                _ => ("core.bytes.buffer", "ByteBuffer"),
+            };
+            let module = compilation.hir.module_named(module)?;
+            compilation
+                .hir
+                .record_named(module, name)
+                .map(crate::types::NominalTypeId::Record)
         }
         _ => None,
     }
@@ -419,8 +436,16 @@ fn collect_nominal_types(
                 collect_nominal_types(argument, output);
             }
         }
-        VerificationType::List(value)
-        | VerificationType::Reference(value)
+        VerificationType::List(value) => {
+            if !ty.contains_generic() {
+                output.insert(ty.clone());
+            }
+            collect_nominal_types(value, output);
+        }
+        VerificationType::Bytes | VerificationType::ByteBuffer => {
+            output.insert(ty.clone());
+        }
+        VerificationType::Reference(value)
         | VerificationType::Remote(value)
         | VerificationType::Future(value) => collect_nominal_types(value, output),
         VerificationType::Function {
@@ -443,9 +468,7 @@ fn collect_nominal_types(
         | VerificationType::Integer
         | VerificationType::Float
         | VerificationType::CodePoint
-        | VerificationType::Byte
-        | VerificationType::Bytes
-        | VerificationType::ByteBuffer => {}
+        | VerificationType::Byte => {}
     }
 }
 
@@ -638,9 +661,12 @@ fn contract_candidates(
                 variant: *variant_type,
                 arguments: arguments.clone(),
             },
+            LayoutKind::Builtin { ty } => ty.clone(),
             _ => continue,
         };
-        let nominal = nominal_id(&concrete).expect("record and variant layouts are nominal");
+        let Some(nominal) = nominal_id(&concrete, environment.compilation) else {
+            continue;
+        };
         let Some(implementation) = environment.program.dispatch.get(&(nominal, slot)).copied()
         else {
             continue;
@@ -653,8 +679,10 @@ fn contract_candidates(
                     return None;
                 }
                 let signature = &environment.function_types[function];
-                (signature.parameters.first() == Some(&NativeType::Object(layout.id))
-                    && signature.parameters.get(1..) == Some(argument_types))
+                let receiver_type = if matches!(layout.kind, LayoutKind::Record { record, .. } if Some(record) == environment.program.string_record) { NativeType::String } else { NativeType::Object(layout.id) };
+                (signature.parameters.first() == Some(&receiver_type)
+                    && signature.parameters.len() == argument_types.len() + 1
+                    && signature.parameters[1..].iter().zip(argument_types).all(|(expected, actual)| contract_argument_matches(*actual, *expected, environment)))
                 .then_some(*function)
             })
             .collect::<Vec<_>>();
@@ -669,6 +697,50 @@ fn contract_candidates(
         });
     }
     Ok(candidates)
+}
+
+// A concrete closure can use the existing callable-wrapper conversion when
+// its complete specialized signature satisfies the contract argument.
+fn contract_argument_matches(
+    actual: NativeType,
+    expected: NativeType,
+    environment: NativeIrEnvironment<'_>,
+) -> bool {
+    if actual == expected {
+        return true;
+    }
+    let (NativeType::Object(actual), NativeType::Object(expected)) = (actual, expected) else {
+        return false;
+    };
+    let LayoutKind::Closure {
+        function,
+        specialization,
+        ..
+    } = &environment.layouts.get(actual).kind
+    else {
+        return false;
+    };
+    let LayoutKind::Builtin {
+        ty:
+            VerificationType::Function {
+                parameters,
+                parameter_modes,
+                result,
+            },
+    } = &environment.layouts.get(expected).kind
+    else {
+        return false;
+    };
+    let signature = &environment.program.functions[function];
+    let substitutions = specialization.iter().cloned().collect::<HashMap<_, _>>();
+    signature.parameter_modes == *parameter_modes
+        && signature
+            .parameter_types
+            .iter()
+            .map(|ty| ty.substitute(&substitutions))
+            .collect::<Vec<_>>()
+            == *parameters
+        && signature.result_type.substitute(&substitutions) == **result
 }
 
 fn resolve_specialization(

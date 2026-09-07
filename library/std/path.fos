@@ -26,6 +26,22 @@ impl PathHost {
 /// normalized path is required.
 pub type Path = & ResourceIdentifier & {
     value: String
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns the host path text.
+    pub func as_string(self) -> String [read self.value]
+    /// Joins this path with another typed path.
+    pub func join(self, right: Path) -> Path [read right.value, read self.value]
+    /// Joins one textual path component onto this path.
+    pub func child(self, component: String) -> Path [read component, read self.value]
+    /// Returns this path's parent, or `None` when no parent component exists.
+    pub func parent(self) -> Option<Path> [read self.value]
+    /// Returns this path's final component, or `None` when it is absent.
+    pub func file_name(self) -> Option<String> [read self.value]
+    /// Returns this path's final extension without its separator.
+    pub func extension(self) -> Option<String> [read self.value]
+    /// Resolves this path to an absolute canonical path.
+    pub func canonical(self) -> Result<Path, IoError> [read self.value]
 }
 
 impl Path {

@@ -175,6 +175,8 @@ impl Checker<'_> {
                         },
                     );
                 }
+                self.member_kinds
+                    .insert(callee, crate::semantics::MemberKind::Method);
                 self.expressions.insert(callee, method);
             } else if let Some((method_function, method)) =
                 self.extension_method_type(function, object_type, &name)?
@@ -186,6 +188,8 @@ impl Checker<'_> {
                         remote: false,
                     },
                 );
+                self.member_kinds
+                    .insert(callee, crate::semantics::MemberKind::Method);
                 self.expressions.insert(callee, method);
             }
             if let Some(method_function) = selected_inherent_method {
@@ -1025,6 +1029,7 @@ impl Checker<'_> {
         if definition.module != self.hir.functions[caller].module && !method.public {
             return Err(self.error(caller, format!("method `{name}` is private")));
         }
+        let method = self.instantiate_required_method(method);
         Ok(Some(Ty::Callable {
             parameters: method.parameters,
             parameter_modes: method.parameter_modes,

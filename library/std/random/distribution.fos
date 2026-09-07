@@ -15,6 +15,12 @@ pub type Distribution<T> = {
 pub type UniformInt = & Distribution<Int> & {
     start_value: Int
     end_value: Int
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns the inclusive lower bound.
+    pub func start(self) -> Int [read self.start_value]
+    /// Returns the exclusive upper bound.
+    pub func end(self) -> Int [read self.end_value]
 }
 
 impl UniformInt {
@@ -40,6 +46,12 @@ impl UniformInt {
 pub type UniformFloat = & Distribution<Float> & {
     start_value: Float
     end_value: Float
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns the inclusive floating-point lower bound.
+    pub func start(self) -> Float [read self.start_value]
+    /// Returns the exclusive floating-point upper bound.
+    pub func end(self) -> Float [read self.end_value]
 }
 
 impl UniformFloat {
@@ -67,6 +79,10 @@ impl UniformFloat {
 /// A Bernoulli distribution returning true with a configured probability.
 pub type Bernoulli = & Distribution<Bool> & {
     probability_value: Float
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns the probability of drawing true.
+    pub func probability(self) -> Float [read self.probability_value]
 }
 
 impl Bernoulli {
@@ -94,6 +110,12 @@ impl Bernoulli {
 pub type WeightedIndex = & Distribution<Int> & {
     weights_value: List<Int>
     total_value: Int
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns the number of weighted outcomes.
+    pub func length(self) -> Int [read self.weights_value]
+    /// Returns the sum of all configured weights.
+    pub func total(self) -> Int [read self.total_value]
 }
 
 impl WeightedIndex {

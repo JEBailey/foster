@@ -4,6 +4,11 @@
 pub enum Ordering = Less
     | Equal
     | Greater
+    & {
+        // Required public operations; implementations live in impl blocks.
+        /// Reverses an ordering, exchanging `Less` and `Greater` while preserving `Equal`.
+        pub func reverse(self) -> Ordering [read self]
+    }
 
 /// A type whose values can be compared for semantic equality with `T`.
 ///

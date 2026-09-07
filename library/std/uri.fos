@@ -18,6 +18,14 @@ pub type Uri = & ResourceIdentifier & {
     value: String
     scheme_value: String
     path_value: String
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns the complete URI text.
+    pub func as_string(self) -> String [read self.value]
+    /// Returns the scheme spelling supplied to the parser.
+    pub func scheme(self) -> String [read self.scheme_value]
+    /// Returns the resource portion following the URI scheme separator.
+    pub func path(self) -> String [read self.path_value]
 }
 
 impl Uri {

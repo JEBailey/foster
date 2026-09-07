@@ -1,5 +1,6 @@
 //! Owned homogeneous lists and indexed, stack-safe collection algorithms.
 
+import std.iter
 import core.functions
 import core.option
 import core.result as outcomes
@@ -11,6 +12,64 @@ intrinsic type RawList<T>
 /// An ordered value collection backed by private copy-on-write contiguous storage.
 pub type List<T> = {
     value: RawList<T>
+
+    // Required public operations; implementations live in impl blocks.
+    /// Appends `value` to this list in place.
+    pub func push(self, value: T) -> () [reshape self.items]
+    /// Returns this list with `value` appended.
+    pub func append(self, value: T) -> List<T> [consume self]
+    /// Copies an element without removing it. Bounds are checked before its Copy capability.
+    pub func at(self, index: Int) -> Result<T, ListReadError> [read self]
+    /// Returns whether this list contains `expected`.
+    pub func contains?(self, expected: T) -> Bool [read expected, read self]
+    /// Copies the first element, or returns `None` when it is absent or not copyable.
+    pub func first(self) -> Option<T> [read self]
+    /// Copies the final element, or returns `None` when it is absent or not copyable.
+    pub func last(self) -> Option<T> [read self]
+    /// Applies `transform` to every element, from left to right.
+    pub func map<U>(self, transform: func(T) -> U) -> List<U> [read self, read transform]
+    /// Returns the elements for which `include` evaluates to true.
+    pub func filter(self, include: Predicate<T>) -> List<T> [read include, read self]
+    /// Reduces the list from left to right, beginning with `initial`.
+    pub func fold<U>(self, initial: U, combine: func(consume U, consume T) -> U) -> U [consume initial, read self]
+    /// Returns the first matching element; stops evaluating the predicate at that element.
+    pub func find(self, predicate: Predicate<T>) -> Option<T> [read predicate, read self]
+    /// Returns whether at least one element satisfies `predicate`.
+    pub func any?(self, predicate: Predicate<T>) -> Bool [read predicate, read self]
+    /// Returns whether every element satisfies `predicate`.
+    pub func all?(self, predicate: Predicate<T>) -> Bool [read predicate, read self]
+    /// Builds a reversed list without materializing intermediate tails.
+    pub func reverse(self) -> List<T> [read self]
+    /// Appends every element of `right`, consuming the left list.
+    pub func concat(self, right: List<T>) -> List<T> [consume self, read right]
+    /// Returns a copy of the element, or None when it is unavailable or not copyable.
+    pub func get(self, index: Int) -> Option<T> [read self]
+    /// Copies only the elements in the checked half-open range `start..end`.
+    pub func slice(self, start: Int, end: Int) -> List<T> [read end, read self, read start]
+    /// Returns at most the first `count` elements; a nonpositive count returns an empty list.
+    pub func take(self, count: Int) -> List<T> [read count, read self]
+    /// Consumes the list and returns the elements after the first `count` entries.
+    pub func drop(self, count: Int) -> List<T> [consume self]
+    /// Maps each element to a list and appends its elements to one output buffer.
+    pub func flat_map<U>(self, transform: func(T) -> List<U>) -> List<U> [read self, read transform]
+    /// Counts the elements satisfying `predicate`.
+    pub func count(self, predicate: Predicate<T>) -> Int [read predicate, read self]
+    /// Returns whether no element satisfies `predicate`.
+    pub func none?(self, predicate: Predicate<T>) -> Bool [read predicate, read self]
+    /// Combines a nonempty list into one value, or returns `None` for an empty list.
+    pub func reduce(self, combine: func(T, T) -> T) -> Option<T> [read combine, read self]
+
+    // Required accessors supplied by the builtin storage implementation.
+    /// Reports whether the collection contains no elements.
+    pub func empty?(self) -> Bool
+    /// Returns the number of elements.
+    pub func length(self) -> Int
+    /// Returns the first element; the collection must not be empty.
+    pub func head(self) -> T
+    /// Returns the collection without its first element.
+    pub func rest(self) -> List<T>
+    /// Creates an independent iterator over the elements.
+    pub func iterator(self) -> Iterator<T>
 }
 
 /// Why an independently owned element could not be obtained.
@@ -95,7 +154,7 @@ impl List {
     }
 
     /// Reduces the list from left to right, beginning with `initial`.
-    pub func fold<T, U>(self: List<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [read self, consume initial] {
+    pub func fold<T, U>(self: List<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [consume initial, read self] {
         let result = move initial
         let index = 0
         loop {

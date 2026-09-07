@@ -217,6 +217,7 @@ impl Checker<'_> {
         {
             self.substitutions = initial_substitutions.clone();
             self.next_variable = initial_next_variable;
+            let method = self.instantiate_required_method(method.clone());
             if let Some(conversions) =
                 self.overload_argument_conversions(function, &method.parameters, &argument_types)
             {

@@ -9,9 +9,40 @@ import core.list
 /// accepts reservations without making allocation strategy observable.
 pub type ByteBuffer = {
     value: List<Byte>
+
+    // Required public operations; implementations live in impl blocks.
+    /// Appends one byte.
+    pub func push(self, value: Byte) -> () [reshape self.value.items]
+    /// Appends an immutable byte sequence.
+    pub func extend(self, values: Bytes) -> () [reshape self.value.items]
+    /// Removes every buffered byte.
+    pub func clear(self) -> () [mut self.value]
+    /// Keeps at most the first `length` buffered bytes.
+    pub func truncate(self, length: Int) -> () [mut self.value]
+    /// Accepts an allocation hint without exposing storage capacity as semantics.
+    pub func reserve(self, additional: Int) -> () [read additional]
+    /// Consumes the buffer and packs its values into immutable bytes.
+    pub func freeze(self) -> Bytes [consume self]
+    /// Copies the current values into immutable bytes.
+    pub func snapshot(self) -> Bytes [read self.value]
+    /// Returns whether the buffer contains no bytes.
+    pub func empty?(self) -> Bool
+    /// Returns the number of buffered bytes.
+    pub func length(self) -> Int
+    /// Reports current length without exposing allocation strategy.
+    pub func capacity(self) -> Int
 }
 
 impl ByteBuffer {
+    /// Returns whether the buffer contains no bytes.
+    pub func empty?(self: ByteBuffer) -> Bool { self.value.empty? }
+
+    /// Returns the number of buffered bytes.
+    pub func length(self: ByteBuffer) -> Int { self.value.length }
+
+    /// Reports current length without exposing allocation strategy.
+    pub func capacity(self: ByteBuffer) -> Int { self.value.length }
+
     /// Creates an empty mutable byte buffer.
     pub func empty() -> ByteBuffer {
         ByteBuffer { value: [] }

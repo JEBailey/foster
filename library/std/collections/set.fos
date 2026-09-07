@@ -6,6 +6,14 @@ import std.iter
 /// An insertion-ordered collection containing no duplicate values.
 pub type Set<T> = & Collection<T> & {
     values: List<T>
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns whether `value` is present.
+    pub func contains?(self, value: T) -> Bool [read self.values, read value]
+    /// Returns a set containing `value`.
+    pub func insert(self, value: T) -> Set<T> [consume self, consume value]
+    /// Returns a set without `value`.
+    pub func remove(self, value: T) -> Set<T> [consume self]
 }
 
 impl Set {

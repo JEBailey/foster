@@ -11,12 +11,20 @@ import core.string
 /// A complete TOML document whose root is a table.
 pub type TomlDocument = {
     pub entries: List<TomlEntry>
+
+    // Required public operations; implementations live in impl blocks.
+    /// Renders a typed TOML document as deterministic TOML text.
+    pub func render(self) -> Result<String, TomlError> [consume self]
+    /// Finds a top-level document value by key.
+    pub func get(self, key: String) -> Option<TomlValue> [consume key, consume self]
 }
 
 /// A key-value entry in a TOML table.
 pub type TomlEntry = {
     pub key: String
     pub value: TomlValue
+    /// Copies this entry and its complete TOML value.
+    pub func copy(self) -> self [read self]
 }
 
 /// A scalar, date-time, list, or table value in the TOML data model.
@@ -30,6 +38,13 @@ pub enum TomlValue = String(String)
     | DateTime(String)
     | Array(List<TomlValue>)
     | Table(List<TomlEntry>)
+    & {
+        // Required public operations; implementations live in impl blocks.
+        /// Copies the complete TOML tree without consuming the source.
+        pub func copy(self) -> self [read self]
+        /// Finds a value by key when `value` is a table, returning `None` otherwise.
+        pub func get(self, key: String) -> Option<TomlValue> [consume key, consume self]
+    }
 
 /// A TOML parsing or rendering failure.
 ///
@@ -113,14 +128,14 @@ impl TomlDocument {
     }
 
     /// Finds a top-level document value by key.
-    pub func get(self: TomlDocument, key: String) -> Option<TomlValue> [consume self, consume key] {
+    pub func get(self: TomlDocument, key: String) -> Option<TomlValue> [consume key, consume self] {
         find_entry(move self.entries, move key)
     }
 }
 
 impl TomlValue {
     /// Finds a value by key when `value` is a table, returning `None` otherwise.
-    pub func get(self: TomlValue, key: String) -> Option<TomlValue> [consume self, consume key] {
+    pub func get(self: TomlValue, key: String) -> Option<TomlValue> [consume key, consume self] {
         branch self {
             TomlValue.Table(entries) -> find_entry(move entries, move key)
             _ -> Option.None

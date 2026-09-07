@@ -45,6 +45,10 @@ impl RandomHost {
 /// A stateless view of the operating system's secure random source.
 pub type SystemRandom = & RandomSource & {
     marker: Symbol
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns up to 1,048,576 bytes from the operating system's secure entropy source.
+    pub func bytes(self, count: Int) -> Result<Bytes, RandomError> [mut self]
 }
 
 impl SystemRandom {

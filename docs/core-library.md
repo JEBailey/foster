@@ -365,3 +365,24 @@ value after invoking user code require a borrowed-callback type; they are intent
 until that contract can be expressed without weakening move checking. For the same reason,
 `Map.get`, `keys`, and `values` consume the map when returning owned generic values, while
 queries such as `contains_key?`, `length`, and `empty?` only borrow it.
+
+## Explicit type contracts
+
+Library record and enum definitions declare their general public instance operations as required
+functions. Implementations remain in `impl` blocks. Existing composed requirements are reused:
+for example, a queue obtains `length`, `empty?`, and `iterator` from `Collection<T>`, and declares
+its own `push` and `pop` requirements. Plain data types need no artificial method requirements.
+
+Behavioral contracts retain their defining operations: `Iterator<T>` requires `next`; its derived
+consumers remain impl-only helpers. Constructors, private helpers, imported extensions, and methods
+restricted to special receiver types, such as `List<List<T>>.flatten` or `List<String>.join`, are not
+requirements of every instance of the owning type. Primitive scalars retain their compiler-defined
+types and owner-qualified library helpers; this change does not introduce shadow scalar types.
+
+`List`, `String`, and `Bytes` also declare their builtin storage accessors explicitly. The compiler
+checks those declarations against the storage implementation. `ByteBuffer` supplies its query
+methods in Foster. Ownership effects on requirements describe the same borrowing and consumption
+as their implementations, including methods with independently generic callbacks.
+
+Import-free programs use the existing minimal bootstrap API. Its contracts are trimmed alongside
+its implementations; importing the library loads the full source declarations and implementations.

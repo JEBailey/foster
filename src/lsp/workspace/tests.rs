@@ -1209,7 +1209,9 @@ fn definition_opens_embedded_core_source_when_available() {
     );
     let declaration_line = include_str!("../../../library/core/list.fos")
         .lines()
-        .position(|line| line.trim_start().starts_with("pub func map<"))
+        .position(|line| {
+            line.trim_start().starts_with("pub func map<") && line.contains("self: List<T>")
+        })
         .unwrap() as u32;
     assert_eq!(location.range.start, Position::new(declaration_line, 13));
 }

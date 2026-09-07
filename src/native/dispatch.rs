@@ -32,7 +32,7 @@ pub(super) fn lower(
         .into_iter()
         .map(|method| Candidate {
             layout: method.layout,
-            receiver: NativeType::Object(method.layout),
+            receiver: environment.function_types[&method.function].parameters[0],
             result: environment.function_types[&method.function].result,
             method: Some(method),
         })

@@ -307,10 +307,28 @@ type Identified = {
 }
 ```
 
-A composing type implements these requirements with owner-qualified module-level receiver functions. The
+A composing type implements these requirements with receiver functions inside its `impl` block. The
 compiler checks parameter ownership modes, result types, effects, suspension, and visibility.
 Naming a contract is not required for conformance: another type with matching accessible fields and
 methods is accepted structurally.
+
+The declarations inside `type` define what is required; the bodies inside `impl` define what is
+implemented. An additional public function written only in `impl` is available on that concrete
+type, but does not become a requirement when another type composes its contract. Associated
+constructors likewise remain in `impl`. Composition carries requirements, not implementation bodies.
+
+Required functions can introduce their own type parameters, independently of the enclosing type:
+
+```foster
+type Transform<T> = {
+    pub func map<U>(self, transform: func(T) -> U) -> List<U>
+}
+```
+
+An implementation must satisfy this requirement for every `U`; a function specialized to one
+result type is insufficient. Each call instantiates method type parameters independently. Required
+method type parameters must not shadow the enclosing type's parameters. Method-level ownership
+group parameters are not supported yet.
 
 ## Records
 

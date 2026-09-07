@@ -13,6 +13,18 @@ pub type Entry<K, V> = {
 /// An insertion-ordered associative collection.
 pub type Map<K, V> = & Collection<Entry<K, V>> & {
     entries: List<Entry<K, V>>
+
+    // Required public operations; implementations live in impl blocks.
+    /// Consumes the map and returns the value associated with `key`, if present.
+    pub func get(self, key: K) -> Option<V> [consume self]
+    /// Returns whether the map contains `key` without consuming the map.
+    pub func contains_key?(self, key: K) -> Bool [read key, read self.entries]
+    /// Returns a map with `key` associated with `value`, replacing an existing entry when present.
+    pub func put(self, key: K, value: V) -> Map<K, V> [consume key, consume self, consume value]
+    /// Consumes the map and returns its keys in storage order.
+    pub func keys(self) -> List<K> [consume self]
+    /// Consumes the map and returns its values in storage order.
+    pub func values(self) -> List<V> [consume self]
 }
 
 impl Map {
@@ -54,7 +66,7 @@ func contains_entries?<K, V>(entries: List<Entry<K, V>>, key: K) -> Bool {
 
 impl Map {
     /// Returns a map with `key` associated with `value`, replacing an existing entry when present.
-    pub func put<K, V>(self: Map<K, V>, key: K, value: V) -> Map<K, V> [consume self, consume key, consume value] {
+    pub func put<K, V>(self: Map<K, V>, key: K, value: V) -> Map<K, V> [consume key, consume self, consume value] {
         Map { entries: put_entries(move self.entries, move key, move value) }
     }
 }

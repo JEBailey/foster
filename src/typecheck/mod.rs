@@ -67,6 +67,7 @@ impl<'a> Checker<'a> {
         Self {
             hir,
             next_variable: 0,
+            checked_requirements: HashSet::new(),
             substitutions: HashMap::new(),
             functions: HashMap::new(),
             constants: HashMap::new(),

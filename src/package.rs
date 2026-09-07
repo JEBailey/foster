@@ -577,6 +577,27 @@ impl Package {
             program
                 .records
                 .retain(|record| types.contains(&record.name.as_str()));
+            // The import-free bootstrap exposes only its selected implementations and
+            // storage accessors. Full module imports retain the source contract verbatim.
+            for record in &mut program.records {
+                record.methods.retain(|method| {
+                    program
+                        .functions
+                        .iter()
+                        .any(|function| function.name == format!("{}.{}", record.name, method.name))
+                        || matches!(
+                            method.name.as_str(),
+                            "empty?" | "length" | "head" | "rest" | "bytes"
+                        )
+                });
+            }
+            for variant in &mut program.variants {
+                variant.methods.retain(|method| {
+                    program.functions.iter().any(|function| {
+                        function.name == format!("{}.{}", variant.name, method.name)
+                    })
+                });
+            }
             if program.records.len() + program.variants.len() != types.len() {
                 return Err(FosterError::runtime(format!(
                     "embedded `{}` must define bootstrap types {}",

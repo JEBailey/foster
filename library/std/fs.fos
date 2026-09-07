@@ -78,6 +78,14 @@ pub type File = & Resource<paths::Path>
     & {
         pub location: paths::Path
         host_file: ()
+
+        // Required public operations; implementations live in impl blocks.
+        /// Compatibility spelling for positioned reads.
+        pub func read_range(self, offset: Int, maximum: Int) -> Result<Bytes, IoError> [read maximum, read offset, read self.location.value]
+        /// Reads the complete file as UTF-8 text.
+        pub func read_text(self) -> Result<String, IoError> [read self.location.value]
+        /// Replaces the complete file with UTF-8 text.
+        pub func write_text(self, text: String) -> Result<(), IoError> [read self.location.value, read text]
     }
 
 impl File {

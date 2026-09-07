@@ -7,6 +7,12 @@ import core.option
 /// A first-in, first-out collection.
 pub type Queue<T> = & Collection<T> & {
     values: List<T>
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns a queue with `value` added at the back.
+    pub func push(self, value: T) -> Queue<T> [consume self, consume value]
+    /// Removes the front value and returns the remaining queue.
+    pub func pop(self) -> Option<QueueItem<T>> [consume self]
 }
 
 impl Queue {

@@ -14,6 +14,57 @@ import std.iter
 /// Private storage preserves the validity invariant across every construction path.
 pub type String = {
     value: Bytes
+
+    // Required public operations; implementations live in impl blocks.
+    /// Returns an independent text value; immutable byte storage may be shared.
+    pub func copy(self) -> self [read self]
+    /// Creates an independent UTF-8 cursor over a stable byte snapshot.
+    pub func iterator(self) -> Iterator<CodePoint> [read self]
+    /// Returns the first code point, or `None` when the string is empty.
+    pub func first(self) -> Option<CodePoint> [read self]
+    /// Returns the final code point without allocating intermediate suffixes.
+    pub func last(self) -> Option<CodePoint> [read self]
+    /// Returns the string with its Unicode scalar values in reverse order.
+    pub func reverse(self) -> String [read self]
+    /// Returns whether the text begins with `prefix`.
+    pub func starts_with?(self, prefix: String) -> Bool [read prefix, read self]
+    /// Returns whether the text ends with `suffix`, without reversing either string.
+    pub func ends_with?(self, suffix: String) -> Bool [read self, read suffix]
+    /// Searches validated UTF-8 byte ranges without constructing suffix strings.
+    pub func contains?(self, fragment: String) -> Bool [read fragment, read self]
+    /// Consumes the string and removes leading Unicode whitespace.
+    pub func trim_start(self) -> String [consume self]
+    /// Removes trailing Unicode whitespace, copying the retained range once.
+    pub func trim_end(self) -> String [read self]
+    /// Removes both whitespace boundaries in one Unicode scan.
+    pub func trim(self) -> String [consume self]
+    /// Materializes Unicode scalar values by scanning the UTF-8 bytes once.
+    pub func code_points(self) -> List<CodePoint> [read self]
+    /// Returns the longest matching prefix, evaluating predicates once and from left to right.
+    pub func take_while(self, predicate: Predicate<CodePoint>) -> String [read predicate, read self]
+    /// Returns a clamped half-open range measured in Unicode scalar values.
+    pub func slice(self, start: Int, end: Int) -> String [read end, read self, read start]
+    /// Splits around nonoverlapping separators, preserving empty fields.
+    /// An empty separator produces one string per Unicode scalar.
+    pub func split(self, separator: String) -> List<String> [consume self]
+    /// Returns ASCII-lowercase text while preserving every non-ASCII byte.
+    pub func lower(self) -> String [read self]
+    /// Returns ASCII-uppercase text while preserving every non-ASCII byte.
+    pub func upper(self) -> String [read self]
+    /// Returns the number of bytes required by the UTF-8 encoding.
+    pub func byte_length(self) -> Int [read self.value]
+
+    // Required accessors supplied by the builtin storage implementation.
+    /// Reports whether the collection contains no elements.
+    pub func empty?(self) -> Bool
+    /// Returns the number of elements.
+    pub func length(self) -> Int
+    /// Returns the first element; the collection must not be empty.
+    pub func head(self) -> CodePoint
+    /// Returns the collection without its first element.
+    pub func rest(self) -> String
+    /// Returns the UTF-8 bytes underlying the text.
+    pub func bytes(self) -> Bytes
 }
 
 impl String {
@@ -32,6 +83,14 @@ impl String {
 /// A Foster text builder that encodes code points and appends UTF-8 without prefix concatenation.
 pub type StringBuilder = {
     value: ByteBuffer
+
+    // Required public operations; implementations live in impl blocks.
+    /// Appends validated text to this builder.
+    pub func append(self, text: String) -> () [reshape self.value.value.items]
+    /// Encodes one Unicode scalar into UTF-8; encoding policy stays in Foster.
+    pub func push(self, character: CodePoint) -> () [reshape self.value.value.items]
+    /// Consumes the builder and constructs one validated immutable String.
+    pub func finish(self) -> String [consume self]
 }
 
 impl StringBuilder {

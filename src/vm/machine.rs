@@ -1035,39 +1035,89 @@ impl Machine {
                         write(frame, *destination, field.clone())?;
                         continue;
                     }
-                    if value.string_bytes().is_some() {
-                        if !arguments.is_empty() {
-                            return Err(RuntimeError::runtime(format!(
-                                "contract member `{}` does not accept arguments",
-                                name
-                            )));
+                    let function = match &value {
+                        Value::Record {
+                            record: Some(record),
+                            ..
+                        } => self
+                            .program
+                            .dispatch
+                            .get(&(crate::types::NominalTypeId::Record(*record), *slot))
+                            .copied(),
+                        Value::Variant {
+                            variant: Some(variant),
+                            ..
+                        } => self
+                            .program
+                            .dispatch
+                            .get(&(crate::types::NominalTypeId::Variant(*variant), *slot))
+                            .copied(),
+                        _ => None,
+                    }
+                    .or_else(|| {
+                        let mut matches = self.program.dispatch.iter().filter_map(
+                            |((_, candidate_slot), target)| {
+                                if candidate_slot != slot {
+                                    return None;
+                                }
+                                let matches =
+                                    match self.program.functions[target].parameter_types.first() {
+                                        Some(crate::vm::VerificationType::List(_)) => {
+                                            value.list_value().is_some()
+                                        }
+                                        Some(crate::vm::VerificationType::Bytes) => {
+                                            value.bytes_value().is_some()
+                                        }
+                                        Some(crate::vm::VerificationType::ByteBuffer) => {
+                                            value.byte_buffer_value().is_some()
+                                                || value.byte_buffer_list_value().is_some()
+                                        }
+                                        _ => false,
+                                    };
+                                matches.then_some(*target)
+                            },
+                        );
+                        let first = matches.next()?;
+                        matches.all(|other| other == first).then_some(first)
+                    });
+                    if let Some(function) = function {
+                        if let Some(shared) = receiver.shared() {
+                            let (lease, state) = shared.write_snapshot()?;
+                            let local = Slot::new(Value::from_wire(state)?);
+                            let mut method = self.method_call_frame(
+                                function,
+                                local.clone(),
+                                frame,
+                                arguments,
+                                Some(*destination),
+                            )?;
+                            method.shared_commit = Some(SharedCommit {
+                                shared,
+                                receiver: local,
+                                _lease: lease,
+                            });
+                            frames.push(method);
+                        } else {
+                            let next = self.method_call_frame(
+                                function,
+                                receiver,
+                                frame,
+                                arguments,
+                                Some(*destination),
+                            )?;
+                            frames.push(next);
                         }
-                        write(
-                            frame,
-                            *destination,
-                            member(value, name, self.program.string_record)?,
-                        )?;
                         continue;
                     }
-                    if value.bytes_value().is_some() {
+                    if value.string_bytes().is_some()
+                        || value.bytes_value().is_some()
+                        || value.list_value().is_some()
+                        || value.byte_buffer_value().is_some()
+                        || value.byte_buffer_list_value().is_some()
+                    {
                         if !arguments.is_empty() {
                             return Err(RuntimeError::runtime(format!(
-                                "contract member `{}` does not accept arguments",
-                                name
-                            )));
-                        }
-                        write(
-                            frame,
-                            *destination,
-                            member(value, name, self.program.string_record)?,
-                        )?;
-                        continue;
-                    }
-                    if value.list_value().is_some() {
-                        if !arguments.is_empty() {
-                            return Err(RuntimeError::runtime(format!(
-                                "contract member `{}` does not accept arguments",
-                                name
+                                "contract member `{name}` does not accept arguments"
                             )));
                         }
                         write(
@@ -1098,57 +1148,9 @@ impl Machine {
                         )?;
                         continue;
                     }
-                    let function = match &value {
-                        Value::Record {
-                            record: Some(record),
-                            ..
-                        } => self
-                            .program
-                            .dispatch
-                            .get(&(crate::types::NominalTypeId::Record(*record), *slot))
-                            .copied(),
-                        Value::Variant {
-                            variant: Some(variant),
-                            ..
-                        } => self
-                            .program
-                            .dispatch
-                            .get(&(crate::types::NominalTypeId::Variant(*variant), *slot))
-                            .copied(),
-                        _ => None,
-                    };
-                    let function = function.ok_or_else(|| {
-                        RuntimeError::runtime(format!(
-                            "value has no implementation of required method `{}`",
-                            name
-                        ))
-                    })?;
-                    if let Some(shared) = receiver.shared() {
-                        let (lease, state) = shared.write_snapshot()?;
-                        let local = Slot::new(Value::from_wire(state)?);
-                        let mut method = self.method_call_frame(
-                            function,
-                            local.clone(),
-                            frame,
-                            arguments,
-                            Some(*destination),
-                        )?;
-                        method.shared_commit = Some(SharedCommit {
-                            shared,
-                            receiver: local,
-                            _lease: lease,
-                        });
-                        frames.push(method);
-                    } else {
-                        let next = self.method_call_frame(
-                            function,
-                            receiver,
-                            frame,
-                            arguments,
-                            Some(*destination),
-                        )?;
-                        frames.push(next);
-                    }
+                    return Err(RuntimeError::runtime(format!(
+                        "value has no implementation of required method `{name}`"
+                    )));
                 }
                 Instruction::CallValue {
                     destination,

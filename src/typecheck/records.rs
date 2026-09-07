@@ -542,7 +542,7 @@ impl Checker<'_> {
             .collect())
     }
 
-    fn builtin_collection_method(&self, actual: &Ty, name: &str) -> Option<Ty> {
+    pub(super) fn builtin_collection_method(&self, actual: &Ty, name: &str) -> Option<Ty> {
         let element = if self.is_string_type(actual) {
             Ty::CodePoint
         } else if self.is_bytes_type(actual) {
@@ -559,6 +559,9 @@ impl Checker<'_> {
         let result = match name {
             "empty?" => Ty::Bool,
             "length" => Ty::Int,
+            "head" => element.clone(),
+            "rest" => actual.clone(),
+            "bytes" if self.is_string_type(actual) => self.bytes_type(),
             "iterator" => self.core_record_type("std.iter", "Iterator", element)?,
             _ => return None,
         };
