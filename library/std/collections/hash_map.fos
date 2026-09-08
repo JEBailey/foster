@@ -1,0 +1,228 @@
+//! Hash tables implemented in Foster with separate chaining and automatic growth.
+
+import core.option
+import std.collections
+import std.collections.map
+import std.iter
+
+/// An unordered associative collection using equality and a caller-supplied hash.
+/// Equal keys must have equal, stable hashes. Hashes may be any Int, including negatives.
+/// Updates consume the table; iteration uses a snapshot in unspecified bucket order.
+/// Lookups are expected O(1), worst-case O(n); growth rehashes all entries.
+pub type HashMap<K, V> = & Collection<Entry<K, V>> & {
+    buckets: List<List<Entry<K, V>>>
+    size: Int
+    hasher: func(K) -> Int
+}
+
+impl HashMap {
+    /// Creates an empty table. The hash function must remain stable for stored keys.
+    pub func empty<K, V>(hasher: func(K) -> Int) -> HashMap<K, V> [consume hasher] {
+        HashMap { buckets: empty_buckets(8), size: 0, hasher }
+    }
+
+    /// Returns the number of distinct keys.
+    pub func length<K, V>(self: HashMap<K, V>) -> Int { self.size }
+
+    /// Returns whether the table has no entries.
+    pub func empty?<K, V>(self: HashMap<K, V>) -> Bool { self.size == 0 }
+
+    /// Tests membership without consuming the table.
+    pub func contains_key?<K, V>(self: HashMap<K, V>, key: K) -> Bool {
+        let bucket = bucket_index(self.hasher(key), self.buckets.length)
+        find_index(self.buckets[bucket], key) >= 0
+    }
+
+    /// Consumes the table and returns the matching value, if any.
+    pub func get<K, V>(self: HashMap<K, V>, key: K) -> Option<V> [consume self] {
+        let bucket = bucket_index(self.hasher(key), self.buckets.length)
+        let index = find_index(self.buckets[bucket], key)
+        branch {
+            index < 0 -> Option.None
+            _ -> Option.Some(self.buckets[bucket][index].value)
+        }
+    }
+
+    /// Inserts or replaces a key and grows above a three-quarter load factor.
+    pub func put<K, V>(self: HashMap<K, V>, key: K, value: V) -> HashMap<K, V> [mut self.size, mut self.buckets.items, consume self, consume key, consume value] {
+        let bucket = bucket_index(self.hasher(key), self.buckets.length)
+        let index = find_index(self.buckets[bucket], key)
+        branch {
+            index >= 0 -> {
+                self.buckets[bucket][index] = Entry { key, value }
+                self
+            }
+            _ -> {
+                self.buckets[bucket] = self.buckets[bucket].append(Entry { key, value })
+                self.size = self.size + 1
+                branch {
+                    self.size > (self.buckets.length / 4) * 3 -> grow(move self)
+                    _ -> self
+                }
+            }
+        }
+    }
+
+    /// Removes a key if present, leaving other colliding entries intact.
+    pub func remove<K, V>(self: HashMap<K, V>, key: K) -> HashMap<K, V> [mut self.buckets.items, mut self.size, consume self] {
+        let bucket = bucket_index(self.hasher(key), self.buckets.length)
+        let index = find_index(self.buckets[bucket], key)
+        branch {
+            index < 0 -> self
+            _ -> {
+                let remaining = []
+                let entries = self.buckets[bucket].iterator()
+                let cursor = 0
+                loop {
+                    branch entries.next() {
+                        Option.None -> { break }
+                        Option.Some(entry) -> {
+                            branch {
+                                cursor != index -> remaining.push(entry)
+                                _ -> ()
+                            }
+                            cursor = cursor + 1
+                        }
+                    }
+                }
+                self.buckets[bucket] = remaining
+                self.size = self.size - 1
+                self
+            }
+        }
+    }
+
+    /// Creates a snapshot iterator over entries in unspecified order.
+    pub func iterator<K, V>(self: HashMap<K, V>) -> Iterator<Entry<K, V>> {
+        BucketIterator { buckets: self.buckets.iterator(), current: [].iterator() }
+    }
+
+    /// Consumes the table and returns its keys in unspecified order.
+    pub func keys<K, V>(self: HashMap<K, V>) -> List<K> [consume self] {
+        let result = []
+        let entries = self.iterator()
+        loop {
+            branch entries.next() {
+                Option.None -> { break }
+                Option.Some(entry) -> result.push(entry.key)
+            }
+        }
+        result
+    }
+
+    /// Consumes the table and returns its values in unspecified order.
+    pub func values<K, V>(self: HashMap<K, V>) -> List<V> [consume self] {
+        let result = []
+        let entries = self.iterator()
+        loop {
+            branch entries.next() {
+                Option.None -> { break }
+                Option.Some(entry) -> result.push(entry.value)
+            }
+        }
+        result
+    }
+}
+
+/// Holds a stable bucket snapshot and traverses it without flattening entries.
+type BucketIterator<K, V> = & Iterator<Entry<K, V>> & {
+    buckets: Iterator<List<Entry<K, V>>>
+    current: Iterator<Entry<K, V>>
+}
+
+impl BucketIterator {
+    /// Advances across empty buckets and yields each stored entry once.
+    func next<K, V>(self: BucketIterator<K, V>) -> Option<Entry<K, V>> {
+        loop {
+            branch self.current.next() {
+                Option.Some(entry) -> { return Option.Some(entry) }
+                Option.None -> {
+                    branch self.buckets.next() {
+                        Option.None -> { return Option.None }
+                        Option.Some(bucket) -> { self.current = bucket.iterator() }
+                    }
+                }
+            }
+        }
+        Option.None
+    }
+}
+
+/// Allocates independent empty collision chains.
+func empty_buckets<K, V>(capacity: Int) -> List<List<Entry<K, V>>> {
+    let buckets = []
+    loop {
+        break if buckets.length >= capacity
+        buckets.push([])
+    }
+    buckets
+}
+
+/// Normalizes a signed hash without negating Int's minimum value.
+func bucket_index(hash: Int, capacity: Int) -> Int {
+    let remainder = hash - hash / capacity * capacity
+    branch {
+        remainder < 0 -> remainder + capacity
+        _ -> remainder
+    }
+}
+
+/// Searches only the selected collision chain using key equality.
+func find_index<K, V>(entries: List<Entry<K, V>>, key: K) -> Int {
+    let index = 0
+    loop {
+        break if index >= entries.length
+        return index if entries[index].key == key
+        index = index + 1
+    }
+    -1
+}
+
+/// Doubles bucket storage and redistributes entries without recursive insertion.
+func grow<K, V>(table: HashMap<K, V>) -> HashMap<K, V> [consume table] {
+    let capacity = table.buckets.length * 2
+    let buckets = empty_buckets(capacity)
+    let entries = table.iterator()
+    loop {
+        branch entries.next() {
+            Option.None -> { break }
+            Option.Some(entry) -> {
+                let destination = bucket_index(table.hasher(entry.key), capacity)
+                buckets[destination] = buckets[destination].append(entry)
+            }
+        }
+    }
+    HashMap { buckets, size: table.size, hasher: table.hasher }
+}
+
+test "hash maps retain colliding keys through replacement and removal" {
+    let table = HashMap.empty((key: Int) -> -1).put(1, "one").put(2, "two").put(3, "three").put(2, "updated")
+    assert(table.length() == 3)
+    assert(table.contains_key?(1))
+    table = (move table).remove(2).remove(99)
+    assert(table.length() == 2)
+    assert(not table.contains_key?(2))
+    assert(table.contains_key?(3))
+    assert((move table).get(1) == Option.Some("one"))
+}
+
+test "hash maps grow and accept every signed hash" {
+    let table = HashMap.empty((key: Int) -> key)
+    let index = 0
+    loop {
+        break if index >= 100
+        let next = index + 1
+        table = (move table).put(index, index * 2)
+        index = next
+    }
+    assert(table.length() == 100)
+    index = 0
+    loop {
+        break if index >= 100
+        assert(table.contains_key?(index))
+        index = index + 1
+    }
+    assert((move table).get(99) == Option.Some(198))
+    let negative = HashMap.empty((key: Int) -> -9223372036854775807 - 1)
+    assert((move negative).put(1, 42).get(1) == Option.Some(42))
+}

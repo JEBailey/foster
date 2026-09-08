@@ -1,0 +1,79 @@
+import core.option
+import std.collections
+import std.collections.hash_map
+import std.collections.hash_set
+import std.collections.hashing
+import std.iter
+
+type Key = { id: Int, name: String }
+type Payload = { values: List<Int> }
+
+func count<T>(values: Collection<T>) -> Int { values.length() }
+
+func main() -> Int {
+    let map = HashMap.empty(hashing::integer).put(-1, "negative")
+    let index = 0
+    loop {
+        break if index >= 80
+        let next = index + 1
+        map = (move map).put(index, "value")
+        index = next
+    }
+    assert(count(map) == 81, "hash collection check 19")
+    let snapshot = map.iterator()
+    map = (move map).put(-1, "changed").remove(0).remove(79).remove(999)
+    assert(map.length() == 79, "hash collection check 22")
+    assert(not map.contains_key?(0), "hash collection check 23")
+    assert(map.contains_key?(40), "hash collection check 24")
+    let seen = 0
+    loop {
+        branch snapshot.next() {
+            Option.None -> { break }
+            Option.Some(entry) -> {
+                assert(entry.value == "negative" || entry.value == "value", "hash collection check 30")
+                seen = seen + 1
+            }
+        }
+    }
+    assert(seen == 81, "hash collection check 35")
+    assert(snapshot.next() == Option.None, "hash collection check 36")
+    assert((move map).get(-1) == Option.Some("changed"), "hash collection check 37")
+    let missing = HashMap.empty(hashing::integer).put(1, "value")
+    assert((move missing).get(2) == Option.None, "hash collection check 39")
+    let strings = HashMap.empty(hashing::text).put("ab", 10).put("ba", 20).put("λ", 12)
+    assert(strings.contains_key?("λ"), "hash collection check 41")
+    assert((move strings).values().length == 3, "hash collection check 42")
+    let collided = HashMap.empty((key: Int) -> -9223372036854775807 - 1).put(1, 10).put(2, 20).put(3, 30)
+    collided = (move collided).put(2, 42).remove(1).remove(3)
+    assert(collided.length() == 1, "hash collection check 45")
+    assert((move collided).get(2) == Option.Some(42), "hash collection check 46")
+    let set = HashSet.from([1, 2, 1, 3], (value: Int) -> -1)
+    let before = set.iterator()
+    set = (move set).remove(2).insert(4)
+    assert(count(set) == 3, "hash collection check 50")
+    assert(not set.contains?(2), "hash collection check 51")
+    assert(set.contains?(4), "hash collection check 52")
+    let total = 0
+    loop {
+        branch before.next() {
+            Option.None -> { break }
+            Option.Some(value) -> { total = total + value }
+        }
+    }
+    assert(total == 6, "hash collection check 60")
+    assert((move set).values().length == 3, "hash collection check 61")
+    let salt = 17
+    let records = HashMap.empty((key: Key) -> key.id + salt).put(Key { id: 1, name: "Ada" }, Payload { values: [20, 22] })
+    assert(records.contains_key?(Key { id: 1, name: "Ada" }), "structurally equal record key")
+    assert(not records.contains_key?(Key { id: 1, name: "Lin" }), "unequal record key with identical hash")
+    let found = (move records).get(Key { id: 1, name: "Ada" })
+    branch found {
+        Option.None -> { assert(false, "record payload missing") }
+        Option.Some(payload) -> { assert(payload.values[0] + payload.values[1] == 42, "record payload contents") }
+    }
+    let empty = HashMap.empty(hashing::integer).put(1, 42).remove(1)
+    assert(empty.empty?(), "empty map after final removal")
+    assert(empty.iterator().next() == Option.None, "empty map iterator")
+    assert((move empty).get(1) == Option.None, "empty map lookup")
+    42
+}

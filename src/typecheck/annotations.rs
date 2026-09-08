@@ -184,6 +184,9 @@ impl Checker<'_> {
         current_module: hir::ModuleId,
         name: &str,
     ) -> Result<NominalTypeId, FosterError> {
+        if let Some(nominal) = self.hir.composition_types.get(name) {
+            return Ok(*nominal);
+        }
         if let Some((qualifier, local_name)) = name.rsplit_once('.') {
             let first = qualifier.split('.').next().unwrap_or(qualifier);
             let module = self.hir.modules[current_module]

@@ -784,7 +784,52 @@ fn collect_function_types(
                 signature
                     .parameters
                     .iter()
-                    .map(|ty| {
+                    .enumerate()
+                    .map(|(index, ty)| {
+                        // Dispatch selects a concrete implementation before entering its
+                        // receiver. Other values of a default-providing contract stay erased.
+                        if index == 0
+                            && definition.receiver.is_some()
+                            && let Type::Record { record, .. } = compilation.types.types[*ty]
+                            && record_uses_dynamic_dispatch(compilation, record)
+                            && compilation
+                                .types
+                                .record_methods
+                                .get(&record)
+                                .is_none_or(|methods| {
+                                    methods.iter().all(|name| {
+                                        let owner = &compilation.hir.records[record];
+                                        compilation
+                                            .hir
+                                            .functions_named(
+                                                owner.module,
+                                                &format!("{}.{name}", owner.name),
+                                            )
+                                            .iter()
+                                            .any(|method| {
+                                                compilation.hir.functions[*method]
+                                                    .receiver
+                                                    .is_some()
+                                            })
+                                    })
+                                })
+                        {
+                            let concrete = specialized_verification_type(
+                                compilation,
+                                *ty,
+                                &instance.key.substitutions,
+                                0,
+                            )?;
+                            layouts.instantiate_type(&concrete)?;
+                            if let VerificationType::Record { record, arguments } = concrete {
+                                return layouts
+                                    .record_instance(record, &arguments)
+                                    .map(NativeType::Object)
+                                    .ok_or_else(|| {
+                                        native_error("default receiver has no concrete layout")
+                                    });
+                            }
+                        }
                         native_type(
                             compilation,
                             layouts,
@@ -1323,7 +1368,13 @@ fn record_uses_dynamic_dispatch(compilation: &Compilation, record: crate::hir::R
         .dispatch
         .keys()
         .any(|(nominal, _)| *nominal == crate::types::NominalTypeId::Record(record));
-    has_contract_surface && !has_implementation
+    let provides_defaults = compilation.hir.composition_dispatch.iter().any(|function| {
+        let method = &compilation.hir.functions[*function];
+        !compilation.hir.composition_owners.contains_key(function)
+            && method.module == declaration.module
+            && method.owner.as_deref() == Some(declaration.name.as_str())
+    });
+    (has_contract_surface && !has_implementation) || provides_defaults
 }
 
 fn validate_program(
@@ -3569,9 +3620,16 @@ fn lower_shared_instruction(
                 function: *function,
                 substitutions: resolve_specialization(specialization, &instance.substitutions),
             }];
+            // Method receivers alias the caller's place in the VM, independently
+            // of the ordinary parameter mode inferred for `self`. Transfer a
+            // retained reference to the native callee, which releases its input.
+            let mut modes = environment.program.functions[function]
+                .parameter_modes
+                .clone();
+            modes[0] = ParameterMode::Borrow;
             let (arguments, consumed) = shared_call_arguments(
                 &sources,
-                &environment.program.functions[function].parameter_modes,
+                &modes,
                 &environment.function_types[&target].parameters,
                 environment,
                 value_types,

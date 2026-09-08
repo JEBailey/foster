@@ -2,6 +2,33 @@
 use foster::{native, vm};
 
 #[test]
+fn ordered_composition_defaults_agree_in_both_backends() {
+    check(
+        "ordered-generics",
+        include_str!("fixtures/programs/ordered_generic_defaults.fos"),
+        Ok("42"),
+    );
+    check(
+        "ordered-composition",
+        include_str!("fixtures/programs/ordered_composition.fos"),
+        Ok("42"),
+    );
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/composition_defaults");
+    let compilation = foster::check_package(path).unwrap();
+    check_compilation("default-lexical-scope", &compilation, Ok("42"));
+}
+
+#[test]
+fn foster_hash_collections_agree_in_both_backends() {
+    check(
+        "hash-collections",
+        include_str!("fixtures/programs/hash_collections.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn implicit_unit_results_agree_in_both_backends() {
     check(
         "unit-results",

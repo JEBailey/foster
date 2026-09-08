@@ -98,11 +98,12 @@ func main() -> Int { 0 }
     )
     .unwrap();
     let mut checked = 0;
-    for (_, function) in compilation.hir.functions.iter() {
+    for (id, function) in compilation.hir.functions.iter() {
         let module = &compilation.hir.modules[function.module].name;
         if !(module.starts_with("core.") || module.starts_with("std."))
             || function.name.contains('$')
             || function.test_description.is_some()
+            || compilation.hir.composition_owners.contains_key(&id)
         {
             continue;
         }
@@ -116,7 +117,7 @@ func main() -> Int { 0 }
             function.name
         );
     }
-    assert_eq!(checked, 868);
+    assert_eq!(checked, 895);
 
     let mut modules = 0;
     let mut types = 0;

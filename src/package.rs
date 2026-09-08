@@ -1123,6 +1123,18 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
         include_str!("../library/std/collections/map.fos"),
     ),
     (
+        "std.collections.hashing",
+        include_str!("../library/std/collections/hashing.fos"),
+    ),
+    (
+        "std.collections.hash_map",
+        include_str!("../library/std/collections/hash_map.fos"),
+    ),
+    (
+        "std.collections.hash_set",
+        include_str!("../library/std/collections/hash_set.fos"),
+    ),
+    (
         "std.collections.set",
         include_str!("../library/std/collections/set.fos"),
     ),

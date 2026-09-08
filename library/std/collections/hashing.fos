@@ -1,0 +1,32 @@
+//! Deterministic hash functions for Foster hash collections.
+
+import core.bytes as binary
+import core.string
+
+/// Returns an integer's value as its hash, preserving all signed values.
+pub func integer(value: Int) -> Int { value }
+
+/// Hashes UTF-8 text by its bytes. Equal strings always have equal hashes.
+pub func text(value: String) -> Int { bytes(value.bytes) }
+
+/// Computes an order-sensitive polynomial hash bounded to 31 bits.
+/// This deterministic hash is not cryptographic or randomized against hostile inputs.
+pub func bytes(value: Bytes) -> Int {
+    let state = 17
+    let index = 0
+    loop {
+        break if index >= value.length
+        let next = state * 31 + value[index]
+        state = next - next / 2147483647 * 2147483647
+        index = index + 1
+    }
+    state
+}
+
+test "hash helpers preserve equality and distinguish byte order" {
+    assert(integer(-42) == -42)
+    assert(text("Foster") == bytes("Foster".bytes))
+    assert(text("ab") != text("ba"))
+    assert(text("") == 17)
+    assert(text("λ") == text("λ"))
+}

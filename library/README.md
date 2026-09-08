@@ -45,6 +45,11 @@ tests can control or inspect operating-system resources.
 
 Current modules:
 
+- `std.collections.hash_map`: Foster-written `HashMap<K, V>` with separate collision chains,
+  automatic growth, replacement, removal, consuming lookup, and snapshot iteration
+- `std.collections.hash_set`: Foster-written `HashSet<T>` sharing HashMap storage and hashing
+- `std.collections.hashing`: deterministic integer, UTF-8 text, and byte hash functions
+
 - `core.functions`: reusable `Predicate<T>`, consuming `Consumer<T>`, and `Supplier<T>` callable aliases
 - `core.option`: `Option`, mapping, chaining, eager and lazy fallbacks, flattening, and presence queries
 - `std.iter`: stateful iteration contracts plus Foster-written `for_each`, `fold`, `find`, query,

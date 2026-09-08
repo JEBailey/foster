@@ -194,6 +194,9 @@ impl<'a> Checker<'a> {
         }
         self.solve_member_constraints()?;
         self.check_derived_effects(validate_effects)?;
+        if validate_effects {
+            self.check_composed_implementations()?;
+        }
         let diagnostics = std::mem::take(&mut self.diagnostics);
         let inferred_effects = std::mem::take(&mut self.inferred_effects);
         Ok(CheckOutput {
@@ -299,7 +302,11 @@ impl<'a> Checker<'a> {
                     "function body may suspend; add `suspend` to its signature",
                 ));
             }
-            if !definition.name.contains('$') {
+            // Diagnose the source declaration once, rather than repeating its
+            // advisory warnings for every specialization of an inherited body.
+            if !definition.name.contains('$')
+                && !self.hir.composition_owners.contains_key(&function)
+            {
                 for (index, declared) in definition.effects.iter().enumerate() {
                     if declared.kind != crate::ast::EffectKind::Consume
                         && !effects_are_subset(std::slice::from_ref(declared), &actual)
@@ -492,8 +499,14 @@ impl<'a> Checker<'a> {
                 let owners_match = if primitive_owner(owner) || primitive_owner(receiver_name) {
                     owner == receiver_name
                 } else {
-                    self.resolve_nominal_type(module, owner)?
-                        == self.resolve_nominal_type(module, receiver_name)?
+                    self.resolve_nominal_type(
+                        self.hir
+                            .composition_owners
+                            .get(&function_id)
+                            .copied()
+                            .unwrap_or(module),
+                        owner,
+                    )? == self.resolve_nominal_type(module, receiver_name)?
                 };
                 if !owners_match {
                     return Err(FosterError::runtime(format!(

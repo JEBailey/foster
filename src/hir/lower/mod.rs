@@ -1,6 +1,7 @@
 use super::*;
 
 mod closure;
+mod composition;
 mod function;
 mod resolution;
 
@@ -373,6 +374,7 @@ impl PackageHir {
             }
         }
 
+        composition::materialize(&mut hir, package, &source_functions)?;
         Ok(hir)
     }
 

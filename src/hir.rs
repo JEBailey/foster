@@ -23,6 +23,12 @@ pub type ExprId = Idx<Expr>;
 
 #[derive(Debug, Default)]
 pub struct PackageHir {
+    /// Internal type identities used when specializing a default in its lexical module.
+    pub composition_types: HashMap<String, crate::types::NominalTypeId>,
+    /// Earlier and later implementations whose contracts must remain compatible.
+    pub composition_checks: Vec<(FunctionId, FunctionId)>,
+    pub composition_dispatch: std::collections::HashSet<FunctionId>,
+    pub composition_owners: HashMap<FunctionId, ModuleId>,
     pub modules: Arena<Module>,
     pub functions: Arena<Function>,
     pub constants: Arena<Constant>,
@@ -124,7 +130,7 @@ pub struct RecordField {
     pub ty: ast::TypeExpr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Function {
     pub span: std::ops::Range<usize>,
     pub documentation: Option<String>,

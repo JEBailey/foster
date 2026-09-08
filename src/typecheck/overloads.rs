@@ -172,8 +172,7 @@ impl Checker<'_> {
                     .into_iter()
                     .filter(|method| {
                         method.name == name
-                            && (definition.module == self.hir.functions[caller].module
-                                || method.public)
+                            && (self.can_access_module(caller, definition.module) || method.public)
                     })
                     .collect())
             }
@@ -354,7 +353,7 @@ impl Checker<'_> {
             .copied()
             .filter(|function| {
                 self.hir.functions[*function].receiver.is_some()
-                    && (module == self.hir.functions[caller].module
+                    && (self.can_access_module(caller, module)
                         || self.hir.functions[*function].public)
             })
             .collect()
@@ -504,6 +503,7 @@ impl Checker<'_> {
                 remote,
             },
         );
+        self.dispatch_composed_default(callee, &callable);
         let callable = instantiate_call_groups(callable, &argument_types);
         self.check_argument_modes(function, &callable, arguments, &argument_types)?;
         let result = self.fresh();

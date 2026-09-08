@@ -291,10 +291,12 @@ type Foo = & Sequence<CodePoint> & {
 }
 ```
 
-This is compile-time contract composition, not inheritance. The composed contract's accessible
+This is compile-time contract composition. The composed contract's accessible
 members become part of `Foo`'s effective contract, but behavioral requirements do not become stored
 fields. `Foo` therefore supplies compatible `empty?`, `length`, `head`, and `rest` instance
-functions. Methods always use call syntax, including zero-argument methods such as `value.head()`.
+functions. Composed types can also supply reusable default bodies, as described under
+[ordered default implementations](#ordered-default-implementations). Methods always use call
+syntax, including zero-argument methods such as `value.head()`.
 This keeps method invocation distinct from stored-field access. `Foo` constructors only initialize
 fields written in its effective stored-field contract.
 
@@ -736,6 +738,45 @@ method. The same structural rules apply at calls, returns, and assignments. Stru
 never exposes an inaccessible private member, so records with private representation remain
 encapsulated outside their defining module. `&` does not add a wrapper or establish a nominal
 subtype chain; contract method calls dispatch against the original runtime record.
+
+### Ordered default implementations
+
+Declaration-side composition inherits public instance-method bodies from composed types
+whose representation consists entirely of public fields (including types without fields).
+Types with private storage contribute their public contract; their own bodies remain tied
+to their concrete representation and are not inherited as defaults.
+Components are expanded from left to right, including their own composed defaults. For each
+overload, the rightmost compatible implementation wins. A method supplied by the resulting
+type's own `impl` block has final precedence:
+
+```foster
+pub type Bar = { pub func fighter(self) -> Int }
+pub type Monkey = { pub func fighter(self) -> Int }
+impl Bar { pub func fighter(self) -> Int { 1 } }
+impl Monkey { pub func fighter(self) -> Int { 2 } }
+type Foo = & Bar & Monkey & {}
+
+func main() -> Int { Foo {}.fighter() } // 2
+```
+
+An additional declaration such as `pub func fighter(self) -> Int` adds a requirement without
+replacing an existing body. Distinct overloads remain available; precedence selects between
+implementations with the same parameter signature. Overlapping fields must retain compatible
+types, and overlapping implementations must preserve return types, ownership modes, visibility,
+and effect/suspension contracts. A later implementation may require fewer effects. When a
+method has a declared requirement, that requirement supplies the bound even if an earlier
+default happens to use fewer effects. Conflicts are compile-time errors, including conflicts
+with a local implementation.
+
+Default bodies keep their defining module's lexical scope for names and helpers. They are
+specialized and checked with the resulting type as `self`, so calls to another method on
+`self` observe the selected implementation. Contract-typed calls likewise dispatch to the
+original concrete value's selected methods in both the VM and native backend. Composition
+does not copy private representation fields or private method bodies; inherited code must
+type-check against the resulting accessible structure. Associated factories are not defaults.
+
+Structural conformance without an explicit composition clause still checks an existing value's
+contract; it does not inject default methods into that value's nominal type.
 
 ## Iteration contracts
 

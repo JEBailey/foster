@@ -112,6 +112,7 @@ pub(super) fn lower(
         candidate.result == result_type
             || opaque(result_type, environment.layouts)
             || opaque(candidate.result, environment.layouts)
+            || contract_argument_matches(candidate.result, result_type, environment)
     });
     candidates.sort_by_key(|candidate| candidate.layout);
     if candidates.is_empty() {
@@ -275,6 +276,36 @@ fn adapt_result(
     expected: NativeType,
     backend: &NativeBackend<'_>,
 ) -> Result<ClifValue, FosterError> {
+    if callable_conversion(actual, expected, backend.ir.layouts) {
+        let (NativeType::Object(environment_layout), NativeType::Object(callable_layout)) =
+            (actual, expected)
+        else {
+            unreachable!()
+        };
+        let PhysicalKind::Callable {
+            code_offset,
+            environment_offset,
+            release_offset,
+        } = backend.ir.physical_layouts.get(callable_layout).kind
+        else {
+            return Err(native_error(
+                "dispatched callable result has the wrong layout",
+            ));
+        };
+        let object = backend.objects.allocate(builder, module, callable_layout)?;
+        let word = module.target_config().pointer_type();
+        let code =
+            module.declare_func_in_func(backend.callable_thunks[&environment_layout], builder.func);
+        let code = builder.ins().func_addr(word, code);
+        let release =
+            module.declare_func_in_func(backend.release_thunks[&environment_layout], builder.func);
+        let release = builder.ins().func_addr(word, release);
+        store_physical_value(builder, object, code_offset, code);
+        // The method returned an owned environment; transfer that reference.
+        store_physical_value(builder, object, environment_offset, value);
+        store_physical_value(builder, object, release_offset, release);
+        return Ok(object);
+    }
     let Some(conversion) = erased_conversion(actual, expected, backend.ir.layouts) else {
         return Ok(value);
     };

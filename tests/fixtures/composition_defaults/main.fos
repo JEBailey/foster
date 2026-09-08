@@ -1,0 +1,4 @@
+import base
+type Concrete = & Base & {}
+func helper(value: Int) -> Int { 999 }
+func main() -> Int { Concrete { value: 20 }.doubled() }

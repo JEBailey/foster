@@ -1,0 +1,18 @@
+pub type Provider<T> = {}
+impl Provider {
+    pub func echo<T>(self: Provider<T>, value: T) -> T [consume value] { value }
+    pub func score<T>(self: Provider<T>, value: Int) -> Int { value + 1 }
+    pub func score<T>(self: Provider<T>, value: String) -> Int { 9 }
+    pub func closure<T>(self: Provider<T>) -> func(Int) -> Int { (value: Int) -> value + 1 }
+}
+pub type Middle<U> = & Provider<U> & {}
+pub type Other = {}
+impl Other { pub func score(self, value: Int) -> Int { value + 2 } }
+type Concrete = & Middle<Int> & Other & {}
+func main() -> Int {
+    let value = Concrete {}
+    assert(value.score(10) == 12)
+    assert(value.score("text") == 9)
+    assert(value.closure()(10) == 11)
+    value.echo(42)
+}

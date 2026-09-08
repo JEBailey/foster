@@ -1,0 +1,26 @@
+pub type Bar = { pub value: Int, pub func fighter(self) -> Int }
+pub type Monkey = { pub value: Int, pub func fighter(self) -> Int }
+impl Bar {
+    pub func fighter(self) -> Int { self.value + 1 }
+    pub func twice(self) -> Int { self.fighter() * 2 }
+}
+impl Monkey { pub func fighter(self) -> Int { self.value + 2 } }
+type Foo = & Bar & Monkey & {}
+type Reverse = & Monkey & Bar & {}
+pub type Requirement = { pub func fighter(self) -> Int }
+type Required = & Bar & Requirement & {}
+pub type Local = & Bar & Monkey & {}
+impl Local { pub func fighter(self) -> Int { self.value + 3 } }
+pub type NumberDefault = {}
+impl NumberDefault { pub func number(self) -> Int { 42 } }
+enum Choice = First | Second & NumberDefault
+func invoke(value: Bar) -> Int { value.fighter() }
+func main() -> Int {
+    assert(Foo { value: 10 }.fighter() == 12)
+    assert(Foo { value: 10 }.twice() == 24)
+    assert(Reverse { value: 10 }.fighter() == 11)
+    assert(Local { value: 10 }.twice() == 26)
+    assert(Required { value: 10 }.fighter() == 11)
+    assert(Choice.Second.number() == 42)
+    invoke(Foo { value: 40 })
+}

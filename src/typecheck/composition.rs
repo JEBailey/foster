@@ -24,6 +24,107 @@ pub(super) struct EffectiveMethod {
 }
 
 impl Checker<'_> {
+    pub(super) fn can_access_module(&self, caller: FunctionId, module: hir::ModuleId) -> bool {
+        self.hir.functions[caller].module == module
+            || self.hir.composition_owners.get(&caller) == Some(&module)
+    }
+    /// Ordering selects behavior, never permission to weaken an earlier contract.
+    pub(super) fn check_composed_implementations(&mut self) -> Result<(), FosterError> {
+        for &(earlier, later) in &self.hir.composition_checks {
+            let left = self.functions[&earlier].clone();
+            let right = self.functions[&later].clone();
+            let canonical = |checker: &mut Self, function: FunctionId, ty: Ty| {
+                let mut generics = checker.hir.functions[function]
+                    .type_parameters
+                    .iter()
+                    .enumerate()
+                    .map(|(index, name)| (name.clone(), Ty::Generic(format!("$parameter{index}"))))
+                    .collect();
+                let ty = checker.resolved(ty);
+                checker.instantiate(ty, &mut generics)
+            };
+            let left_parameters = left
+                .parameters
+                .iter()
+                .cloned()
+                .map(|ty| canonical(self, earlier, ty))
+                .collect::<Vec<_>>();
+            let right_parameters = right
+                .parameters
+                .iter()
+                .cloned()
+                .map(|ty| canonical(self, later, ty))
+                .collect::<Vec<_>>();
+            let compatible = left_parameters == right_parameters
+                && left.parameter_modes == right.parameter_modes
+                && canonical(self, earlier, left.result) == canonical(self, later, right.result);
+            // A declared requirement is the public bound; a default body may use
+            // fewer effects without narrowing that requirement for later defaults.
+            let contract_checked =
+                if let Ty::Record(owner, arguments) = self.resolved(right.parameters[0].clone()) {
+                    let name = self.hir.functions[later]
+                        .name
+                        .rsplit('.')
+                        .next()
+                        .unwrap()
+                        .split('$')
+                        .next()
+                        .unwrap()
+                        .to_owned();
+                    let parameters = right
+                        .parameters
+                        .iter()
+                        .skip(1)
+                        .cloned()
+                        .map(|ty| self.resolved(ty))
+                        .collect::<Vec<_>>();
+                    let required = self
+                        .effective_record_methods(owner, &arguments)?
+                        .into_iter()
+                        .find(|method| method.name == name && method.parameters == parameters);
+                    if let Some(required) = required {
+                        self.check_method_implementation(later, owner, &arguments, &required)?;
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                };
+            let normalize_effects = |function: FunctionId| {
+                let definition = &self.hir.functions[function];
+                let mut effects = definition.effects.clone();
+                for effect in &mut effects {
+                    if let Some(index) = definition
+                        .parameters
+                        .iter()
+                        .position(|local| self.hir.locals[*local].name == effect.target.root)
+                    {
+                        effect.target.root = format!("argument{index}");
+                    }
+                }
+                effects
+            };
+            if !compatible
+                || (self.hir.functions[earlier].public && !self.hir.functions[later].public)
+                || (!contract_checked
+                    && (!effects_are_subset(
+                        &normalize_effects(later),
+                        &normalize_effects(earlier),
+                    ) || (self.hir.functions[later].suspends
+                        && !self.hir.functions[earlier].suspends)))
+            {
+                return Err(self.error(
+                    later,
+                    format!(
+                        "composes incompatible implementations of method `{}`",
+                        self.hir.functions[later].name
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
     pub(super) fn check_variant_compositions(&mut self) -> Result<(), FosterError> {
         let variants = self
             .hir

@@ -629,7 +629,7 @@ impl Checker<'_> {
             .map(|_| self.fresh())
             .collect::<Vec<_>>();
         let fields = self.effective_record_fields(record, &arguments)?;
-        if definition.module != self.hir.functions[function].module
+        if !self.can_access_module(function, definition.module)
             && fields.iter().any(|field| !field.public)
         {
             return Err(self.error(
@@ -654,7 +654,7 @@ impl Checker<'_> {
                         format!("record `{}` has no field `{name}`", definition.name),
                     )
                 })?;
-            if definition.module != self.hir.functions[function].module && !field.public {
+            if !self.can_access_module(function, definition.module) && !field.public {
                 return Err(self.error(
                     function,
                     format!("field `{}.{name}` is private", definition.name),
@@ -701,7 +701,7 @@ impl Checker<'_> {
                     format!("record `{}` has no field `{name}`", definition.name),
                 )
             })?;
-        if definition.module != self.hir.functions[function].module && !field.public {
+        if !self.can_access_module(function, definition.module) && !field.public {
             return Err(self.error(
                 function,
                 format!("field `{}.{name}` is private", definition.name),

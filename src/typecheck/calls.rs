@@ -75,7 +75,7 @@ impl Checker<'_> {
                 .iter()
                 .copied()
                 .filter(|candidate| {
-                    definition.module == self.hir.functions[function].module
+                    self.can_access_module(function, definition.module)
                         || self.hir.functions[*candidate].public
                 })
                 .collect::<Vec<_>>();
@@ -207,6 +207,7 @@ impl Checker<'_> {
         }
 
         let callee_type = self.infer_expression(function, callee)?;
+        self.dispatch_composed_default(callee, &callee_type);
         if !self.resolved_calls.contains_key(&callee)
             && let hir::Expr::Member { object, name } = self.hir.expressions[callee].clone()
             && let Ty::Callable {
@@ -828,7 +829,7 @@ impl Checker<'_> {
             .function_named(module, &qualified_name)
             .ok_or_else(|| self.error(caller, format!("type has no member `{name}`")))?;
         let definition = &self.hir.functions[function];
-        if !definition.public && definition.module != self.hir.functions[caller].module {
+        if !definition.public && !self.can_access_module(caller, definition.module) {
             return Err(self.error(caller, format!("method `{name}` is private")));
         }
         let signature = self.functions[&function].clone();
@@ -855,6 +856,41 @@ impl Checker<'_> {
             effects: callable_effects(self.hir, function),
             suspends: definition.suspends,
         })
+    }
+
+    pub(super) fn dispatch_composed_default(&mut self, callee: ExprId, callable: &Ty) {
+        let Some(ResolvedCall::Method {
+            function,
+            remote: false,
+        }) = self.resolved_calls.get(&callee)
+        else {
+            return;
+        };
+        if !self.hir.composition_dispatch.contains(function) {
+            return;
+        }
+        let hir::Expr::Member { name, .. } = &self.hir.expressions[callee] else {
+            return;
+        };
+        let name = name.clone();
+        let Ty::Callable {
+            parameters,
+            parameter_modes,
+            ..
+        } = self.resolved(callable.clone())
+        else {
+            return;
+        };
+        let key = self.method_key(&name, &parameters, &parameter_modes);
+        let slot = self.dispatch_slot(key);
+        self.resolved_calls.insert(
+            callee,
+            ResolvedCall::ContractMethod {
+                slot,
+                name,
+                requirement: None,
+            },
+        );
     }
 
     fn contract_method_type(
@@ -1026,7 +1062,7 @@ impl Checker<'_> {
         else {
             return Ok(None);
         };
-        if definition.module != self.hir.functions[caller].module && !method.public {
+        if !self.can_access_module(caller, definition.module) && !method.public {
             return Err(self.error(caller, format!("method `{name}` is private")));
         }
         let method = self.instantiate_required_method(method);
@@ -1068,7 +1104,10 @@ impl Checker<'_> {
                 format!("function `{name}` is not an instance method because its first parameter is not `self`"),
             ));
         }
-        if definition.module != self.hir.functions[caller].module && !definition.public {
+        if !self.can_access_module(caller, definition.module)
+            && self.hir.composition_owners.get(&method) != Some(&self.hir.functions[caller].module)
+            && !definition.public
+        {
             return Err(self.error(caller, format!("method `{name}` is private")));
         }
         if remote_read_only
@@ -1157,7 +1196,7 @@ impl Checker<'_> {
                 "function `{name}` is not an instance method because its first parameter is not `self`"
             )));
         }
-        if function.module != self.hir.functions[caller].module && !function.public {
+        if !self.can_access_module(caller, function.module) && !function.public {
             return Err(self.error(caller, format!("method `{name}` is private")));
         }
         let signature = self.functions[&method].clone();
