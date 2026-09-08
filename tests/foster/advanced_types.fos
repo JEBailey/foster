@@ -1,6 +1,6 @@
-//! Unions, enum contracts, intersections, and structural record adaptation.
+//! Enums, shared contracts, intersections, and structural record adaptation.
 
-type Scalar = String | Int
+enum Scalar = Text(String) | Number(Int)
 
 type Named = {
     pub name: String
@@ -49,8 +49,8 @@ func score_of(value: Scored) -> Int {
     value.score()
 }
 
-test "union contracts accept every member without construction" {
-    assert(scalar_size("Foster") + scalar_size(42) == 2)
+test "enum alternatives use explicit case construction" {
+    assert(scalar_size(Scalar.Text("Foster")) + scalar_size(Scalar.Number(42)) == 2)
 }
 
 test "records adapt structurally to public field contracts" {

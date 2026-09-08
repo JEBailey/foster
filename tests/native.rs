@@ -310,15 +310,15 @@ func main() -> Int {
 }
 
 #[test]
-fn lowers_erased_union_arguments_through_owned_boxes() {
+fn lowers_enum_alternatives_with_owned_payloads() {
     let compilation = foster::compile(
         r#"
-type Scalar = String | Int
+enum Scalar = Text(String) | Number(Int)
 
 func count(value: Scalar) -> Int { 1 }
 
 func main() -> Int {
-    count("Foster") + count(42)
+    count(Scalar.Text("Foster")) + count(Scalar.Number(42))
 }
 "#,
     )

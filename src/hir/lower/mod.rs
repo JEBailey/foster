@@ -81,7 +81,7 @@ impl PackageHir {
                 });
                 for alternative in &source.alternatives {
                     let (span, member, name, payload) = match alternative {
-                        ast::VariantAlternative::UnionMember { span, ty } => (
+                        ast::VariantAlternative::AliasTarget { span, ty } => (
                             span.clone(),
                             Some(ty.clone()),
                             variant_member_name(ty),
@@ -104,7 +104,7 @@ impl PackageHir {
                             if source.kind == ast::VariantKind::Enum {
                                 "enum"
                             } else {
-                                "union"
+                                "type alias"
                             },
                             source.name
                         ))

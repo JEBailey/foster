@@ -724,95 +724,64 @@ func main() -> Int {
 }
 
 #[test]
-fn union_declarations_separate_member_types_with_inline_pipes() {
-    let source = r#"
-type scalar = String | Int
-
-func size(value: scalar) -> Int {
-    1
-}
-
-func main() -> Int { size("Foster") + size(4) }
-"#;
-    assert_eq!(foster::run(source).unwrap(), Value::Integer(2));
-}
-
-#[test]
-fn union_contracts_accept_any_member_without_runtime_construction() {
-    let source = r#"
-type Bar = { value: Int }
-type Trigger = { value: Int }
-type foo = List<Bar>
-type fod = List<Trigger>
-type X = foo | fod
-type Direct = List<Bar> | List<Trigger>
-
-func bars() -> foo { [] }
-func triggers() -> fod { [] }
-func empty() -> X { [] }
-func direct_empty() -> Direct { [] }
-
-func length(value: X) -> Int {
-    value.length
-}
-
-func main() -> Int {
-    length(bars()) + length(triggers()) + length(empty()) + direct_empty().length
-}
-"#;
-    assert_eq!(foster::run(source).unwrap(), Value::Integer(0));
-}
-
-#[test]
-fn union_contracts_do_not_synthesize_constructors() {
-    let error = foster::compile(
-        r#"
-type Bar = { value: Int }
-type foo = List<Bar>
-type X = foo | String
-
-func invalid(value: foo) -> X { X.foo(value) }
-"#,
-    )
-    .unwrap_err();
-    assert!(
-        error.message.contains("has no constructors"),
-        "{}",
-        error.message
-    );
-}
-
-#[test]
-fn union_contracts_widen_when_each_source_member_satisfies_the_target() {
-    let source = r#"
-type Small = String | Int
-type Wide = String | Int | Float
-
-func choose(flag: Bool) -> Small {
-    branch {
-        flag -> "Foster"
-        _ -> 42
+fn type_definitions_reject_alternatives_and_recommend_enums() {
+    for declaration in [
+        "type Value = String | Int",
+        "pub type Value<T> = List<T>\n| String",
+        "type Value = | String | Int",
+        "type Value = String or Int",
+        "type Value = String || Int",
+        "type Value = { pub value: Int } | String",
+        "type Value = { pub value: Int }\n| String",
+        "type Value = & Named | Located",
+        "type Value = & Named & {}\n| Located",
+    ] {
+        let error = foster::compile(declaration).unwrap_err();
+        assert!(
+            error
+                .message
+                .contains("type definitions do not support alternatives"),
+            "{declaration}: {error}"
+        );
+        assert!(error.message.contains("use `enum`"), "{error}");
     }
 }
 
-func widen(value: Small) -> Wide { value }
-
-func main() -> Int {
-    let widened = widen(choose(true))
-    0
+#[test]
+fn enums_express_alternatives_with_explicit_construction() {
+    let source = r#"
+enum Scalar = Text(String) | Number(Int)
+func size(value: Scalar) -> Int {
+    branch value {
+        Scalar.Text(text) -> text.length
+        Scalar.Number(number) -> number
+    }
 }
+func main() -> Int { size(Scalar.Text("Foster")) + size(Scalar.Number(36)) }
 "#;
-    assert_eq!(foster::run(source).unwrap(), Value::Integer(0));
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+    let error = foster::compile(
+        "enum Scalar = Text(String) | Number(Int)\nfunc invalid() -> Scalar { 42 }",
+    )
+    .unwrap_err();
+    assert!(error.message.contains("Scalar"), "{error}");
 }
 
 #[test]
-fn union_declarations_reject_a_leading_pipe() {
-    let error = foster::compile("type Value = | String | Int").unwrap_err();
-    assert!(
-        error.message.contains("remove the leading `|`"),
-        "{}",
-        error.message
-    );
+fn parser_recovers_after_a_removed_type_union() {
+    let tokens = foster::lexer::lex("type Bad = String | Int\nenum Good = Text(String) | Number(Int)\nfunc main() -> Int { 42 }").unwrap();
+    let parsed = foster::parser::parse_recovering(tokens);
+    assert_eq!(parsed.diagnostics.len(), 1);
+    assert!(parsed.diagnostics[0].message.contains("use `enum`"));
+    assert_eq!(parsed.program.variants.len(), 1);
+    assert_eq!(parsed.program.variants[0].name, "Good");
+    assert_eq!(parsed.program.functions.len(), 1);
+}
+
+#[test]
+fn enum_declarations_reject_a_leading_pipe() {
+    let error = foster::compile("enum Value = | Text(String) | Number(Int)").unwrap_err();
+    assert!(error.message.contains("remove the leading `|`"), "{error}");
 }
 
 #[test]
@@ -882,17 +851,15 @@ func main() -> Int {
 }
 
 #[test]
-fn rejects_positional_payload_syntax_in_union_declarations() {
+fn type_aliases_reject_enum_case_payload_syntax() {
     let error = foster::compile(
         r#"
-type Value =
-List<Value>
-| Table(List<Value>)
+type Value = Table(List<Value>)
 "#,
     )
     .unwrap_err();
     assert!(
-        error.message.contains("union members are complete types"),
+        error.message.contains("type aliases name a complete type"),
         "{}",
         error.message
     );
@@ -2333,7 +2300,7 @@ func main() { 0 }
     assert!(
         error
             .message
-            .contains("enum and union shared bodies may only declare required methods")
+            .contains("enum shared bodies may only declare required methods")
     );
 }
 

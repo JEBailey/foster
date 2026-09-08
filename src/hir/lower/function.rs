@@ -237,13 +237,13 @@ impl FunctionLowerer<'_> {
                 .chain(self.imports.values().copied())
                 .filter_map(|module| self.hir.variant_type_named(module, path[0]))
                 .filter(|union| {
-                    self.hir.variant_types[*union].kind == ast::VariantKind::Union
+                    self.hir.variant_types[*union].kind == ast::VariantKind::Alias
                         && (self.hir.variant_types[*union].module == self.module
                             || self.hir.variant_types[*union].public)
                 });
             if unions.next().is_some() {
                 return Err(self.error(format!(
-                    "type union `{}` has no constructors; declare an `enum` for labelled cases",
+                    "type alias `{}` has no constructors; declare an `enum` for labelled cases",
                     path[0]
                 )));
             }

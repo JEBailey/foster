@@ -126,7 +126,7 @@ The current implementation includes:
 - generic records, associated factories, and arity- and parameter-type-based function/method
   overloads, with exact matches preferred over lossless widening and ambiguous calls rejected;
 - `impl` blocks for associated functions and instance methods, private-by-default declarations,
-  untagged union contracts, and tagged enums with exhaustive pattern branches;
+  transparent type aliases, and tagged enums with exhaustive pattern branches;
 - statically checked structural record adaptation, declaration-side composition such as
   `type Text = & Sequence<CodePoint> & { ... }`, and intersection contracts such as
   `Named & Located`;

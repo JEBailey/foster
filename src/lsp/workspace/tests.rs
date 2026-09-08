@@ -618,16 +618,13 @@ func select(value: Choice) -> String {
 }
 
 #[test]
-fn union_hover_renders_complete_member_types() {
+fn alias_hover_renders_its_single_target_type() {
     let (mut workspace, uri, _) = fixture_workspace();
-    let source = r#"type Value =
-    String
-    | List<Value>
-
-func identity(value: Value) -> Value { value }
-"#;
-    workspace.open(uri.clone(), source.into(), 2);
-
+    workspace.open(
+        uri.clone(),
+        "type Value = List<String>\nfunc identity(value: Value) -> Value { value }\n".into(),
+        2,
+    );
     let hover = workspace
         .hover(&TextDocumentPositionParams::new(
             lsp_types::TextDocumentIdentifier::new(uri),
@@ -637,17 +634,12 @@ func identity(value: Value) -> Value { value }
     let HoverContents::Markup(contents) = hover.contents else {
         panic!("expected markdown hover")
     };
-    assert!(contents.value.contains("    String"), "{}", contents.value);
     assert!(
-        contents.value.contains("| List<Value>"),
+        contents.value.contains("type Value = List<String>"),
         "{}",
         contents.value
     );
-    assert!(
-        !contents.value.contains("List(Value)"),
-        "{}",
-        contents.value
-    );
+    assert!(!contents.value.contains('|'), "{}", contents.value);
 }
 
 #[test]

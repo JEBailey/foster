@@ -1242,14 +1242,14 @@ impl Checker<'_> {
                 self.hir.variants[alternative]
                     .member
                     .as_ref()
-                    .expect("a union alternative has a member type"),
+                    .expect("a type alias has a target type"),
                 &generics,
             )?;
             let candidate = self.infer_member(function, member, name).map_err(|_| {
                 self.error(
                     function,
                     format!(
-                        "union contract `{}` does not provide member `{name}` on every alternative",
+                        "type alias `{}` does not provide member `{name}` on every alternative",
                         definition.name
                     ),
                 )
@@ -1260,7 +1260,7 @@ impl Checker<'_> {
                         self.error(
                             function,
                             format!(
-                                "union contract `{}` has incompatible definitions of member `{name}`",
+                                "type alias `{}` has incompatible definitions of member `{name}`",
                                 definition.name
                             ),
                         )
@@ -1272,7 +1272,7 @@ impl Checker<'_> {
         common.ok_or_else(|| {
             self.error(
                 function,
-                format!("union contract `{}` has no alternatives", definition.name),
+                format!("type alias `{}` has no alternatives", definition.name),
             )
         })
     }

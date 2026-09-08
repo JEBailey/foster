@@ -120,7 +120,7 @@ impl Checker<'_> {
                     .collect::<Result<Vec<_>, _>>()?;
                 if let NominalTypeId::Variant(variant) = nominal {
                     let definition = self.hir.variant_types[variant].clone();
-                    if definition.kind == crate::ast::VariantKind::Union
+                    if definition.kind == crate::ast::VariantKind::Alias
                         && definition.alternatives.len() == 1
                         && definition.compositions.is_empty()
                         && definition.methods.is_empty()
@@ -134,7 +134,7 @@ impl Checker<'_> {
                         let member = self.hir.variants[definition.alternatives[0]]
                             .member
                             .clone()
-                            .expect("a union alternative has a member type");
+                            .expect("a type alias has a target type");
                         let alias_generics = definition
                             .parameters
                             .iter()

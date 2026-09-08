@@ -234,7 +234,7 @@ impl Parser {
             VariantKind::Enum
         } else {
             self.expect(&TokenKind::Type, "expected `type` or `enum`")?;
-            VariantKind::Union
+            VariantKind::Alias
         };
         if intrinsic && kind == VariantKind::Enum {
             return Err(self.error("an intrinsic declaration must use `type`"));
@@ -268,20 +268,14 @@ impl Parser {
         }
         self.expect(&TokenKind::Equal, "expected `=` after type name")?;
         self.newlines();
+        if kind == VariantKind::Alias
+            && matches!(self.peek().kind, TokenKind::Pipe | TokenKind::DoublePipe)
+        {
+            self.reject_type_alternatives()?;
+        }
         if self.at(&TokenKind::Pipe) {
-            return Err(self.error(&format!(
-                "an {} declaration starts with its first {}; remove the leading `|`",
-                if kind == VariantKind::Enum {
-                    "enum"
-                } else {
-                    "union"
-                },
-                if kind == VariantKind::Enum {
-                    "case"
-                } else {
-                    "member type"
-                }
-            )));
+            return Err(self
+                .error("an enum declaration starts with its first case; remove the leading `|`"));
         }
         if kind == VariantKind::Enum
             || (!self.at(&TokenKind::LBrace) && !self.at(&TokenKind::Ampersand))
@@ -319,16 +313,20 @@ impl Parser {
                     let member_end = self.tokens[self.current.saturating_sub(1)].range.end;
                     if self.at(&TokenKind::LParen) {
                         return Err(self.error(
-                            "union members are complete types; declare an `enum` for labelled cases",
+                            "type aliases name a complete type; declare an `enum` for labelled cases",
                         ));
                     }
-                    VariantAlternative::UnionMember {
+                    VariantAlternative::AliasTarget {
                         span: member_start..member_end,
                         ty,
                     }
                 };
                 alternatives.push(alternative);
                 self.newlines();
+                if kind == VariantKind::Alias {
+                    self.reject_type_alternatives()?;
+                    break;
+                }
                 if !self.take(&TokenKind::Pipe) {
                     break;
                 }
@@ -358,9 +356,9 @@ impl Parser {
                                 .peek_n(1)
                                 .is_some_and(|token| token.kind == TokenKind::Func));
                     if !method_follows {
-                        return Err(self.error(
-                            "enum and union shared bodies may only declare required methods",
-                        ));
+                        return Err(
+                            self.error("enum shared bodies may only declare required methods")
+                        );
                     }
                     methods.push(self.method_requirement(documentation)?);
                     if !self.at(&TokenKind::RBrace) {
@@ -402,8 +400,10 @@ impl Parser {
             }
         }
         if !has_body {
+            self.reject_type_alternatives()?;
             if compositions.is_empty() {
-                return Err(self.error("expected `{`, `&`, or `|` after `=` in type declaration"));
+                return Err(self
+                    .error("expected `{`, `&`, or an alias target after `=` in type declaration"));
             }
             return Ok((
                 Some(RecordDecl {
@@ -455,6 +455,7 @@ impl Parser {
             self.newlines();
         }
         self.expect(&TokenKind::RBrace, "expected `}` after record fields")?;
+        self.reject_type_alternatives()?;
         Ok((
             Some(RecordDecl {
                 span: start..self.tokens[self.current.saturating_sub(1)].range.end,
@@ -469,6 +470,24 @@ impl Parser {
             }),
             None,
         ))
+    }
+
+    fn reject_type_alternatives(&mut self) -> Result<(), FosterError> {
+        let mut next = self.current;
+        while self.tokens[next].kind == TokenKind::Newline {
+            next += 1;
+        }
+        if matches!(
+            self.tokens[next].kind,
+            TokenKind::Pipe | TokenKind::DoublePipe
+        ) || matches!(&self.tokens[next].kind, TokenKind::Ident(name) if name == "or")
+        {
+            self.current = next;
+            return Err(self.error(
+                "type definitions do not support alternatives; use `enum` with `|` for distinct cases",
+            ));
+        }
+        Ok(())
     }
 
     fn method_requirement(

@@ -49,13 +49,14 @@ pub struct VariantDecl {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VariantKind {
-    Union,
+    /// A transparent alias with exactly one target type.
+    Alias,
     Enum,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VariantAlternative {
-    UnionMember {
+    AliasTarget {
         span: std::ops::Range<usize>,
         ty: TypeExpr,
     },
@@ -69,7 +70,7 @@ pub enum VariantAlternative {
 impl VariantAlternative {
     pub fn span(&self) -> &std::ops::Range<usize> {
         match self {
-            Self::UnionMember { span, .. } | Self::EnumCase { span, .. } => span,
+            Self::AliasTarget { span, .. } | Self::EnumCase { span, .. } => span,
         }
     }
 }

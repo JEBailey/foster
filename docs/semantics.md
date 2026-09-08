@@ -57,8 +57,8 @@ not declare conformance; visibility remains per member. Module functions remain 
 including their ownership modes, effects, and suspension requirements. It does not require nominal
 inheritance. Adapting a value to a narrower contract must preserve its ownership and loan origins;
 the adaptation does not manufacture an independent owner. An intersection requires every component
-contract. A union contract admits its member types and is not an enum constructor or source-level
-tagged variant. An enum has distinct cases and an optional single payload per case.
+contract. Type definitions do not admit alternatives; a transparent alias names one target type.
+An enum has distinct cases and an optional single payload per case, constructed explicitly.
 
 **S-05 — Generic and callable identity.** Generic substitution must preserve type relationships,
 parameter modes, effect substitutions, and borrower provenance. Specialization and representation

@@ -1638,7 +1638,7 @@ fn variant_signature(
 ) -> String {
     let variant = &compilation.hir.variant_types[variant_id];
     let parameters = angle_parameters(&variant.parameters);
-    if variant.kind == crate::ast::VariantKind::Union
+    if variant.kind == crate::ast::VariantKind::Alias
         && variant.alternatives.len() == 1
         && variant.compositions.is_empty()
         && variant.methods.is_empty()
@@ -1646,7 +1646,7 @@ fn variant_signature(
         let member = compilation.hir.variants[variant.alternatives[0]]
             .member
             .as_ref()
-            .expect("a union alternative has a member type");
+            .expect("a type alias has a target type");
         return format!(
             "{}type {}{parameters} = {}",
             if variant.public { "pub " } else { "" },

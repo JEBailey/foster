@@ -179,7 +179,7 @@ impl FunctionLowerer<'_> {
                 }
                 if self.hir.variant_types[parent].kind != ast::VariantKind::Enum {
                     return Err(self.error(format!(
-                        "type union `{}.{}` has no enum cases to pattern match",
+                        "type alias `{}.{}` has no enum cases to pattern match",
                         path[0], path[1]
                     )));
                 }
@@ -235,7 +235,7 @@ impl FunctionLowerer<'_> {
             .ok_or_else(|| self.error(format!("unknown enum type `{}`", path[0])))?;
         if self.hir.variant_types[parent].kind != ast::VariantKind::Enum {
             return Err(self.error(format!(
-                "type union `{}` has no enum cases to pattern match",
+                "type alias `{}` has no enum cases to pattern match",
                 path[0]
             )));
         }

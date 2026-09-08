@@ -392,7 +392,7 @@ impl<'a> Checker<'a> {
                     if variant.public
                         && let Some(private) = self.private_type_in(&ty)
                     {
-                        if variant.kind == crate::ast::VariantKind::Union
+                        if variant.kind == crate::ast::VariantKind::Alias
                             && variant.alternatives.len() == 1
                             && variant.compositions.is_empty()
                             && variant.methods.is_empty()
@@ -407,7 +407,7 @@ impl<'a> Checker<'a> {
                             if variant.kind == crate::ast::VariantKind::Enum {
                                 "enum"
                             } else {
-                                "union"
+                                "type alias"
                             },
                             variant.name
                         )));

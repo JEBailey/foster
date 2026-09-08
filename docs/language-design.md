@@ -389,26 +389,29 @@ whose representation contains private fields. Existing method ownership and impo
 apply inside blocks. Calls retain their existing spelling: `Box.new(42)`, `value.get()`, or
 `module::Box.new(42)`. Callable requirements remain in type declarations.
 
-## Union contracts and enums
+## Type aliases and enums
 
-In a `type` declaration, `|` combines complete types into an untagged union contract. A value
-satisfies the union when it satisfies at least one member:
+A `type` definition describes one type: a record, a composed contract using `&`, or a
+transparent alias. It cannot declare alternatives with `|`, `or`, or `||`.
 
 ```foster
-type TextOrBytes = String | Bytes
-
-func length(value: TextOrBytes) -> Int {
-    value.length
-}
+type Text = String
+type Items<T> = List<T>
 ```
 
-The first member follows `=` directly; each additional member follows `|`. Every member is an
-ordinary type expression. A declaration with one member, such as `type Text = String`, is a
-transparent alias: `Text` has the same operations and runtime representation as `String`.
-Primitive types and instantiated generics are valid members, so `Int` and `List<TomlValue>` mean
-exactly those types. Union conformance does not change runtime representation and does not create
-constructors or tags. A member named `foo` in `type X = foo | bar` therefore does not create
-`X.foo(...)`. Code receiving a union may use only members provided compatibly by every alternative.
+Aliases preserve the target type's operations and runtime representation. Alternatives belong
+to enums and require explicit case construction and matching. For example:
+
+```foster
+enum TextOrBytes = Text(String) | Binary(Bytes)
+
+func length(value: TextOrBytes) -> Int {
+    branch value {
+        TextOrBytes.Text(text) -> text.length
+        TextOrBytes.Binary(bytes) -> bytes.length
+    }
+}
+```
 
 Tagged cases use a distinct `enum` declaration. Each case has a label and optionally carries one
 explicit payload type:
@@ -594,7 +597,7 @@ member lookup implied by “duck typing.” Records retain nominal construction 
 representation, while their accessible contract participates in structural conformance.
 
 The implemented type system includes nominally constructed records with structural adaptation and
-declared contract composition, untagged union contracts, tagged enums, explicit parametric generics using
+declared contract composition, transparent type aliases, tagged enums, explicit parametric generics using
 `Type<Argument>`, function and intersection types, callable-member contracts, two lossless integer
 widenings, and no implicit nullable conversions.
 
@@ -604,7 +607,7 @@ to a local binding, function, module, builtin, or later a type-level definition 
 The unit type is written `()`. The bootstrap compiler also resolves `Bool`, `Int`, `Float`, `CodePoint`,
 `List<T>`, `Sequence<T>`, `Remote<T>`, `Future<T>`, callable types with internally inferred
 representation erasure, records,
-enums, union contracts, generics, and record intersections. Decimal and scientific-notation literals produce
+enums, type aliases, generics, and record intersections. Decimal and scientific-notation literals produce
 `Float`; there are no implicit conversions between `Int` and `Float`.
 `Byte` and `CodePoint` widen to `Int` when an assignment, stored field, argument, branch arm, or
 function result has an expected `Int` type. The compiler records the conversion in typed output and
@@ -657,7 +660,7 @@ comments do not enter the AST and have no effect on compilation.
 `//!` is a module documentation comment and must appear before the module's declarations. Consecutive
 module documentation comments are joined with newlines. `///` and `/** ... */` are declaration
 documentation comments. Consecutive declaration documentation comments are joined
-with newlines and attach to the function, record, union-contract, or enum declaration that immediately follows them:
+with newlines and attach to the function, record, type-alias, or enum declaration that immediately follows them:
 
 ```foster
 /// A TCP connection owned by the runtime.

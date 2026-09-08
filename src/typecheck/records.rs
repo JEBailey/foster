@@ -41,7 +41,7 @@ impl Checker<'_> {
                 self.hir.variants[member]
                     .member
                     .as_ref()
-                    .expect("a union alternative has a member type"),
+                    .expect("a type alias has a target type"),
                 &generics,
             )?;
             if self.unify(member_type, actual.clone(), function).is_ok() {
@@ -69,8 +69,8 @@ impl Checker<'_> {
             Ty::Variant(expected_union, expected_arguments),
             Ty::Variant(actual_union, actual_arguments),
         ) = (expected.clone(), actual.clone())
-            && self.hir.variant_types[expected_union].kind == crate::ast::VariantKind::Union
-            && self.hir.variant_types[actual_union].kind == crate::ast::VariantKind::Union
+            && self.hir.variant_types[expected_union].kind == crate::ast::VariantKind::Alias
+            && self.hir.variant_types[actual_union].kind == crate::ast::VariantKind::Alias
         {
             return self.coerce_union_to_union(
                 function,
@@ -81,12 +81,12 @@ impl Checker<'_> {
             );
         }
         if let Ty::Variant(union, arguments) = expected.clone()
-            && self.hir.variant_types[union].kind == crate::ast::VariantKind::Union
+            && self.hir.variant_types[union].kind == crate::ast::VariantKind::Alias
         {
             return self.coerce_to_union(function, union, arguments, actual);
         }
         if let Ty::Variant(union, arguments) = actual.clone()
-            && self.hir.variant_types[union].kind == crate::ast::VariantKind::Union
+            && self.hir.variant_types[union].kind == crate::ast::VariantKind::Alias
         {
             return self.coerce_from_union(function, expected, union, arguments);
         }
@@ -180,7 +180,7 @@ impl Checker<'_> {
                 self.hir.variants[alternative]
                     .member
                     .as_ref()
-                    .expect("a union alternative has a member type"),
+                    .expect("a type alias has a target type"),
                 &generics,
             )?;
             if self.coerce(member, actual.clone(), function).is_ok() {
@@ -191,7 +191,7 @@ impl Checker<'_> {
         Err(self.error(
             function,
             format!(
-                "type `{}` does not satisfy union contract `{}`",
+                "type `{}` does not satisfy type alias `{}`",
                 self.describe(&actual),
                 definition.name
             ),
@@ -218,7 +218,7 @@ impl Checker<'_> {
                 self.hir.variants[alternative]
                     .member
                     .as_ref()
-                    .expect("a union alternative has a member type"),
+                    .expect("a type alias has a target type"),
                 &generics,
             )?;
             self.coerce(expected.clone(), member, function)?;
@@ -254,7 +254,7 @@ impl Checker<'_> {
                 self.hir.variants[alternative]
                     .member
                     .as_ref()
-                    .expect("a union alternative has a member type"),
+                    .expect("a type alias has a target type"),
                 &generics,
             )?;
             self.coerce_to_union(function, expected, expected_arguments.clone(), member)?;

@@ -191,7 +191,7 @@ impl Checker<'_> {
                         if owner.kind == crate::ast::VariantKind::Enum {
                             "enum"
                         } else {
-                            "union contract"
+                            "type alias"
                         },
                         owner.name,
                         self.hir.records[record].name
@@ -215,7 +215,7 @@ impl Checker<'_> {
                 if owner.kind == crate::ast::VariantKind::Enum {
                     "enum"
                 } else {
-                    "union contract"
+                    "type alias"
                 },
                 owner.name,
                 self.describe(&other)

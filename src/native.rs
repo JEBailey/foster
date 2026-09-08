@@ -1123,7 +1123,7 @@ fn native_type(
         Type::Variant {
             variant,
             ref arguments,
-        } if compilation.hir.variant_types[variant].kind == crate::ast::VariantKind::Union => {
+        } if compilation.hir.variant_types[variant].kind == crate::ast::VariantKind::Alias => {
             let members = arguments
                 .iter()
                 .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 0))
@@ -1233,7 +1233,7 @@ fn specialized_verification_type(
                 .collect::<Result<_, _>>()?,
         },
         Type::Variant { variant, arguments }
-            if compilation.hir.variant_types[*variant].kind == crate::ast::VariantKind::Union =>
+            if compilation.hir.variant_types[*variant].kind == crate::ast::VariantKind::Alias =>
         {
             VerificationType::Union(
                 arguments

@@ -655,9 +655,9 @@ fn verification_type_inner(
             }
         }
         crate::types::Type::Variant { variant, .. }
-            if hir.variant_types[*variant].kind == crate::ast::VariantKind::Union =>
+            if hir.variant_types[*variant].kind == crate::ast::VariantKind::Alias =>
         {
-            // Unions are erased structural views; their value keeps its member representation.
+            // Aliases are transparent views; their value keeps its target representation.
             VerificationType::Unknown
         }
         crate::types::Type::Variant { variant, arguments } => VerificationType::Variant {
