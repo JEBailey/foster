@@ -2,6 +2,15 @@
 use foster::{native, vm};
 
 #[test]
+fn collection_contracts_preserve_concrete_implementations() {
+    check(
+        "collection-contracts",
+        include_str!("fixtures/programs/collection_contracts.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn ordered_composition_defaults_agree_in_both_backends() {
     check(
         "ordered-generics",

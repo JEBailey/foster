@@ -40,7 +40,7 @@ being added accidentally.
 | `core.bytes.buffer` | Mutable growable byte storage |
 | `std.io` | Generic binary/text stream contracts and binary transfer algorithms |
 | `std.resource` | Typed resource association and independent I/O capability contracts |
-| `std.collections.set` | Insertion-ordered `Set<T>` |
+| `std.collections.set` | Storage-free `Set<T>` contract and insertion-ordered `ListSet<T>` |
 | `std.collections.queue` | First-in, first-out `Queue<T>` |
 | `std.collections.deque` | Double-ended `Deque<T>` |
 | `std.collections.stack` | Last-in, first-out `Stack<T>` |
@@ -50,7 +50,12 @@ being added accidentally.
 | `core.ordering` | Equality, total-ordering, and hashing contracts plus `Less`, `Equal`, and `Greater` |
 | `std.sequence` | Shared map, filter, fold, search, slicing, and query algorithms for strings and lists |
 | `core.list` | Search, map, filter, folds, slicing, flattening, joining, and predicates |
-| `std.collections.map` | Generic maps with associated construction, lookup, insertion, keys, and values |
+| `std.collections.map` | Storage-free `Map<K, V>` contract and insertion-ordered `ListMap<K, V>` |
+| `std.collections.hash_map` | Foster-written `HashMap<K, V>` implementing `Map<K, V>` |
+| `std.collections.hash_set` | Foster-written `HashSet<T>` implementing `Set<T>` |
+| `std.collections.hashing` | Deterministic integer, text, and byte hash functions |
+| `core.symbol` | Immutable symbolic identifiers |
+| `std.iter.map`, `std.iter.filter`, `std.iter.take`, `std.iter.skip` | Lazy iterator adaptors |
 | `core.code_point` | Unicode scalar validation and ASCII/whitespace classification |
 | `core.string` | Boundary queries, slicing, splitting, joining, prefix predicates, case conversion, trimming, and characters |
 | `core.bool` | Boolean composition and conditional singleton-list construction |
@@ -283,13 +288,18 @@ Iterable<T>
     ├── Sequence<T>
     │   ├── List<T>
     │   ├── String as Sequence<CodePoint>
+    │   ├── Bytes as Sequence<Byte>
     │   └── Range<T>
     ├── Set<T>
+    │   ├── ListSet<T>
+    │   └── HashSet<T>
     ├── Queue<T>
     ├── Deque<T>
     └── Stack<T>
 
 Map<K, V> & Collection<Entry<K, V>>
+├── ListMap<K, V>
+└── HashMap<K, V>
 ```
 
 `List<T>`, `String`, and `Sequence<T>` expose `.iterator()` directly. Creating the cursor borrows the
@@ -297,9 +307,14 @@ source at the language level; the VM materializes an independent cursor over the
 value view, so advancing it neither consumes nor mutates the collection. The explicit
 `Iterator.from_sequence` adapter remains available when ownership should be transferred.
 
-`Map<K, V>` iterates public `Entry<K, V>` values in storage order. `Set`, `Queue`, `Deque`, `Stack`,
-and `Range` are implemented in Foster on top of `List`, keeping only representation primitives in
-the compiler and VM.
+`Map<K, V>` iterates public `Entry<K, V>` values. `Map` and `Set` contain no storage and do not
+promise an iteration order. `ListMap` and `ListSet` preserve insertion order; hash collection order
+is unspecified. `Map.empty()`, `Set.empty()`, and `Set.from(values)` construct the list-backed types.
+These concrete collections, along with `Queue`, `Deque`, `Stack`, and `Range`, are implemented in
+Foster on top of `List`, keeping only representation primitives in the compiler and VM.
+Collection implementations supply `length`, `empty?`, and `iterator`. For contracts with shared
+default bodies, later compatible composed defaults override earlier defaults, and a concrete type's
+own implementation wins.
 
 ## Binary data
 
@@ -358,6 +373,8 @@ may collide.
 
 TCP is deliberately a small blocking binary transport layer rather than an HTTP library; explicit
 UTF-8 helpers remain available, while protocol parsing and higher-level policy belong in Foster.
+`Listener` and `Connection` require explicit consuming `close()` calls to report and release host
+handles promptly. Automatic socket cleanup is not yet part of these types' contracts.
 Socket readiness, TLS, and explicit filesystem/network capability tokens remain future work.
 
 Core APIs should not bypass ownership. In particular, operations that must retain an owned generic

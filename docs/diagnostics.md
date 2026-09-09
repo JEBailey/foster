@@ -16,6 +16,11 @@ preserves its code, primary range, label explanations, notes, and help. Compiler
 format source locations into their message text or discard spans by converting an error to a plain
 runtime string.
 
+Argument-count errors identify the called function, member, or named callable and underline the
+failing call. The `in module.function` prefix identifies the enclosing function, not the callee.
+For example, an error inside `integer_text?` for `unsigned.slice(2)` names member `slice` as the
+operation expecting two arguments. Method argument counts exclude the receiver.
+
 Ownership diagnostics currently reserve these codes:
 
 | Code | Meaning |

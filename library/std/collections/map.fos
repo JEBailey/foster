@@ -1,4 +1,4 @@
-//! Persistent insertion-ordered maps represented by public key-value entries.
+//! Associative collection contracts and an insertion-ordered list-backed implementation.
 
 import core.option
 import std.collections
@@ -10,118 +10,120 @@ pub type Entry<K, V> = {
     pub value: V
 }
 
-/// An insertion-ordered associative collection.
+/// An associative collection with unique keys and implementation-defined iteration order.
+/// Updates consume and return the concrete implementation. Lookup consumes the map so that
+/// values need not implement Copy; membership checks borrow it.
 pub type Map<K, V> = & Collection<Entry<K, V>> & {
-    entries: List<Entry<K, V>>
-
-    // Required public operations; implementations live in impl blocks.
     /// Consumes the map and returns the value associated with `key`, if present.
     pub func get(self, key: K) -> Option<V> [consume self]
-    /// Returns whether the map contains `key` without consuming the map.
-    pub func contains_key?(self, key: K) -> Bool [read key, read self.entries]
-    /// Returns a map with `key` associated with `value`, replacing an existing entry when present.
-    pub func put(self, key: K, value: V) -> Map<K, V> [consume key, consume self, consume value]
-    /// Consumes the map and returns its keys in storage order.
+    /// Tests key membership without consuming the map.
+    pub func contains_key?(self, key: K) -> Bool [read self, read key]
+    /// Associates `key` with `value`, replacing an existing entry while preserving the implementation.
+    pub func put(self, key: K, value: V) -> self [mut self, consume self, consume key, consume value]
+    /// Consumes the map and returns its keys in iteration order.
     pub func keys(self) -> List<K> [consume self]
-    /// Consumes the map and returns its values in storage order.
+    /// Consumes the map and returns its values in iteration order.
     pub func values(self) -> List<V> [consume self]
 }
 
 impl Map {
+    /// Creates an insertion-ordered list-backed map; use HashMap.empty for hashed storage.
+    pub func empty<K, V>() -> ListMap<K, V> { ListMap.empty() }
+}
+
+/// An insertion-ordered associative collection.
+pub type ListMap<K, V> = & Map<K, V> & {
+    entries: List<Entry<K, V>>
+}
+
+impl ListMap {
     /// Creates an empty map.
-    pub func empty<K, V>() -> Map<K, V> {
-        Map { entries: [] }
+    pub func empty<K, V>() -> ListMap<K, V> {
+        ListMap { entries: [] }
     }
 
     /// Consumes the map and returns the value associated with `key`, if present.
-    pub func get<K, V>(self: Map<K, V>, key: K) -> Option<V> [consume self] {
-        get_entries(move self.entries, key)
+    pub func get<K, V>(self: ListMap<K, V>, key: K) -> Option<V> [consume self] {
+        let index = find_index(self.entries, key)
+        branch {
+            index < 0 -> Option.None
+            _ -> Option.Some(self.entries[index].value)
+        }
     }
 }
 
-/// Searches owned entries for a matching key and returns its value.
-func get_entries<K, V>(entries: List<Entry<K, V>>, key: K) -> Option<V> {
-    branch {
-        entries.empty? -> Option.None
-        entries.head.key == key -> Option.Some(entries.head.value)
-        _ -> get_entries(entries.rest, key)
+/// Finds a key without extracting owned entries or growing the call stack.
+func find_index<K, V>(entries: List<Entry<K, V>>, key: K) -> Int {
+    let index = 0
+    loop {
+        break if index >= entries.length
+        return index if entries[index].key == key
+        index = index + 1
     }
+    -1
 }
 
-impl Map {
+impl ListMap {
     /// Returns whether the map contains `key` without consuming the map.
-    pub func contains_key?<K, V>(self: Map<K, V>, key: K) -> Bool {
-        contains_entries?(self.entries, key)
+    pub func contains_key?<K, V>(self: ListMap<K, V>, key: K) -> Bool {
+        find_index(self.entries, key) >= 0
     }
 }
 
-/// Searches entries for a key without extracting its value.
-func contains_entries?<K, V>(entries: List<Entry<K, V>>, key: K) -> Bool {
-    branch {
-        entries.empty? -> false
-        entries.head.key == key -> true
-        _ -> contains_entries?(entries.rest, key)
-    }
-}
-
-impl Map {
+impl ListMap {
     /// Returns a map with `key` associated with `value`, replacing an existing entry when present.
-    pub func put<K, V>(self: Map<K, V>, key: K, value: V) -> Map<K, V> [consume key, consume self, consume value] {
-        Map { entries: put_entries(move self.entries, move key, move value) }
+    pub func put<K, V>(self: ListMap<K, V>, key: K, value: V) -> ListMap<K, V> [mut self.entries, consume key, consume self, consume value] {
+        let index = find_index(self.entries, key)
+        branch {
+            index >= 0 -> { self.entries[index] = Entry { key, value } }
+            _ -> { self.entries = self.entries.append(Entry { key, value }) }
+        }
+        self
     }
 }
 
-/// Rebuilds the entry list with the supplied key and value.
-func put_entries<K, V>(entries: List<Entry<K, V>>, key: K, value: V) -> List<Entry<K, V>> {
-    branch {
-        entries.empty? -> [Entry { key, value }]
-        entries.head.key == key -> append_entries(entries.rest, [Entry { key, value }])
-        _ -> append_entries(put_entries(entries.rest, move key, move value), [entries.head])
-    }
-}
-
-/// Transfers an owned entry sequence into the result without requesting copies of its elements.
-func append_entries<K, V>(remaining: List<Entry<K, V>>, result: List<Entry<K, V>>) -> List<Entry<K, V>> [consume remaining, consume result] {
-    branch {
-        remaining.empty? -> result
-        _ -> append_entries(remaining.rest, result.append(remaining.head))
-    }
-}
-
-impl Map {
+impl ListMap {
     /// Returns the number of entries in the map.
-    pub func length<K, V>(self: Map<K, V>) -> Int {
+    pub func length<K, V>(self: ListMap<K, V>) -> Int {
         self.entries.length
     }
 
     /// Returns whether the map contains no entries.
-    pub func empty?<K, V>(self: Map<K, V>) -> Bool {
+    pub func empty?<K, V>(self: ListMap<K, V>) -> Bool {
         self.entries.empty?
     }
 
     /// Creates an independent iterator over entries in storage order.
-    pub func iterator<K, V>(self: Map<K, V>) -> Iterator<Entry<K, V>> {
+    pub func iterator<K, V>(self: ListMap<K, V>) -> Iterator<Entry<K, V>> {
         self.entries.iterator()
     }
 
     /// Consumes the map and returns its keys in storage order.
-    pub func keys<K, V>(self: Map<K, V>) -> List<K> [consume self] {
-        keys_into(move self.entries, [])
+    pub func keys<K, V>(self: ListMap<K, V>) -> List<K> [consume self] {
+        let result = []
+        let entries = self.iterator()
+        loop {
+            branch entries.next() {
+                Option.None -> { break }
+                Option.Some(entry) -> result.push(entry.key)
+            }
+        }
+        result
     }
 }
 
-/// Extracts keys from owned entries into the result accumulator.
-func keys_into<K, V>(entries: List<Entry<K, V>>, result: List<K>) -> List<K> {
-    branch {
-        entries.empty? -> result
-        _ -> keys_into(entries.rest, result.append(entries.head.key))
-    }
-}
-
-impl Map {
+impl ListMap {
     /// Consumes the map and returns its values in storage order.
-    pub func values<K, V>(self: Map<K, V>) -> List<V> [consume self] {
-        values_into(move self.entries, [])
+    pub func values<K, V>(self: ListMap<K, V>) -> List<V> [consume self] {
+        let result = []
+        let entries = self.iterator()
+        loop {
+            branch entries.next() {
+                Option.None -> { break }
+                Option.Some(entry) -> result.push(entry.value)
+            }
+        }
+        result
     }
 }
 
@@ -144,12 +146,4 @@ test "maps replace values without duplicating keys" {
     assert(stored.length == 2)
     assert(stored[0] == 2)
     assert(stored[1] == 3)
-}
-
-/// Extracts values from owned entries into the result accumulator.
-func values_into<K, V>(entries: List<Entry<K, V>>, result: List<V>) -> List<V> {
-    branch {
-        entries.empty? -> result
-        _ -> values_into(entries.rest, result.append(entries.head.value))
-    }
 }

@@ -18,6 +18,21 @@ separate structural test requires the optimizer to reduce instruction and regist
 representative program. These are stable CI gates; elapsed-time assertions are deliberately
 excluded because scheduler load and machine differences make them unreliable.
 
+## Language-server latency
+
+Measure cold requests, repeated requests without edits, and requests after an open-buffer change
+separately. Use a release compiler for interactive latency measurements; a debug compiler measures
+unoptimized compiler work as well as the language-server behavior. Include a document with errors:
+semantic recovery currently restarts checking after replacing each failed body with a stub.
+
+The type checker reuses the converged inference pass for final effect and composition validation.
+Within each pass, it caches expanded record fields and methods only when both generic arguments
+and resulting contracts contain no inference variables. Caches are discarded between passes so
+changed effect contracts and overload substitutions cannot reuse stale structural information.
+Inference substitutions use shared pages: overload and structural-matching backtracking snapshots
+copy page references, and a new binding detaches only its affected page.
+These optimizations preserve full semantic checking; they do not make package checking incremental.
+
 ## Criterion benchmarks
 
 Criterion provides statistically sampled compiler and VM microbenchmarks, warmup, outlier

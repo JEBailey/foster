@@ -45,6 +45,15 @@ tests can control or inspect operating-system resources.
 
 Current modules:
 
+- `core.copy` and `core.drop`: explicit independent copies and automatic ownership cleanup
+- `core.symbol`: immutable symbolic identifiers
+- `core.range`: reusable list-backed range views
+- `core.remote_error`: remote execution failures and the reserved shutdown outcome
+- `std.collections`: storage-free `Collection<T>` contract for sized, repeatable collections
+- `std.collections.set`: storage-free `Set<T>` contract and insertion-ordered `ListSet<T>`
+- `std.collections.stack`, `std.collections.queue`, and `std.collections.deque`: concrete
+  last-in-first-out, first-in-first-out, and double-ended collections
+- `std.process`: typed executable name and command arguments supplied to `main`
 - `std.collections.hash_map`: Foster-written `HashMap<K, V>` with separate collision chains,
   automatic growth, replacement, removal, consuming lookup, and snapshot iteration
 - `std.collections.hash_set`: Foster-written `HashSet<T>` sharing HashMap storage and hashing
@@ -68,13 +77,13 @@ Current modules:
 - `core.bytes.buffer`: mutable binary construction with consuming `freeze` and borrowing `snapshot`
 - `std.io`: generic binary/text stream contracts plus `read_all`, `write_all`, and `copy`
 - `std.resource`: abstract resource locations plus readable, writable, and read/write structural capabilities
-- `std.collections.map`: a generic Foster-written map with opaque list-backed storage
+- `std.collections.map`: storage-free `Map<K, V>` contract and insertion-ordered `ListMap<K, V>`
 - `std.fs`: `File` resources, typed text and binary I/O, directory mutation, copying, moving, and inspection
 - `std.path`: typed `Path` values plus compatible string-based composition, inspection, and canonicalization
 - `std.uri`: parsed URI resource locations; protocol-specific I/O remains separate
 - `std.env`: process environment queries
 - `std.toml`: a Foster-written TOML 1.1 parser, typed documents, table lookup, rendering, and positioned errors
-- `std.net.tcp`: typed TCP listeners and `Duplex<NetworkError>` connections
+- `std.net.tcp`: typed TCP listeners and `Duplex<NetworkError>` connections with explicit `close`
 - `std.time`: exact `Instant` and `Duration` values, half-open `Interval` values, and generic wall
   and monotonic `Clock<T>` implementations
 - `std.time.civil`: ISO `Date`, `TimeOfDay`, `DateTime`, `YearMonth`, `MonthDay`, calendar-aware
@@ -99,3 +108,9 @@ generators, distributions, tokens, and sequence algorithms remain Foster source 
 Fallible APIs return the Foster-written `Result<T, E>` type. Library implementations use `try`
 only to forward the same error type; recovery, error mapping, and conversion remain explicit
 `branch` expressions so those policy decisions stay visible.
+
+`Map` and `Set` define shared behavior; `ListMap`/`HashMap` and `ListSet`/`HashSet` supply storage.
+Existing `Map.empty()`, `Set.empty()`, and `Set.from(values)` factories construct the list-backed
+implementations. Use a concrete type annotation when its representation or insertion order matters;
+use the contracts for functions accepting either implementation. See
+[hash collections](../docs/hash-collections.md) for hashing and ownership semantics.

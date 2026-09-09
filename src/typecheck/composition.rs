@@ -409,7 +409,19 @@ impl Checker<'_> {
         record: RecordId,
         arguments: &[Ty],
     ) -> Result<Vec<EffectiveField>, FosterError> {
-        self.collect_record_fields(record, arguments, &mut HashSet::new())
+        let key = (record, arguments.to_vec());
+        if let Some(fields) = self.record_fields_cache.get(&key) {
+            return Ok(fields.clone());
+        }
+        let fields = self.collect_record_fields(record, arguments, &mut HashSet::new())?;
+        // Inference variables can be rebound by overload backtracking. Cache only contracts
+        // whose inputs and outputs are independent of the current substitution state.
+        if !arguments.iter().any(contains_variable)
+            && !fields.iter().any(|field| contains_variable(&field.ty))
+        {
+            self.record_fields_cache.insert(key, fields.clone());
+        }
+        Ok(fields)
     }
 
     pub(super) fn effective_record_methods(
@@ -417,11 +429,22 @@ impl Checker<'_> {
         record: RecordId,
         arguments: &[Ty],
     ) -> Result<Vec<EffectiveMethod>, FosterError> {
+        let key = (record, arguments.to_vec());
+        if let Some(methods) = self.record_methods_cache.get(&key) {
+            return Ok(methods.clone());
+        }
         let mut methods = self.collect_record_methods(record, arguments, &mut HashSet::new())?;
         for method in &mut methods {
             if method.returns_self {
                 method.result = Ty::Record(record, arguments.to_vec());
             }
+        }
+        if !arguments.iter().any(contains_variable)
+            && !methods.iter().any(|method| {
+                method.parameters.iter().any(contains_variable) || contains_variable(&method.result)
+            })
+        {
+            self.record_methods_cache.insert(key, methods.clone());
         }
         Ok(methods)
     }

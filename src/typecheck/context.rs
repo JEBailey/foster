@@ -48,10 +48,13 @@ pub(super) struct MemberConstraint {
 }
 
 pub(super) struct Checker<'a> {
+    pub(super) record_fields_cache: HashMap<(RecordId, Vec<Ty>), Vec<composition::EffectiveField>>,
+    pub(super) record_methods_cache:
+        HashMap<(RecordId, Vec<Ty>), Vec<composition::EffectiveMethod>>,
     pub(super) checked_requirements: HashSet<(RecordId, Vec<Ty>, RecordId, usize)>,
     pub(super) hir: &'a hir::PackageHir,
     pub(super) next_variable: u32,
-    pub(super) substitutions: HashMap<u32, Ty>,
+    pub(super) substitutions: substitutions::Substitutions,
     pub(super) functions: HashMap<FunctionId, Signature>,
     pub(super) constants: HashMap<ConstantId, Ty>,
     pub(super) locals: HashMap<LocalId, Ty>,

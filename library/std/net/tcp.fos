@@ -174,7 +174,7 @@ pub func connect_uri(value: Uri) -> Result<Connection, NetworkError> [consume va
 /// Converts a successful listener handle into an opaque `Listener`.
 func wrap_listener(endpoint: TcpEndpoint, outcome: Result<Int, NetworkError>) -> Result<Listener, NetworkError> [consume endpoint, consume outcome] {
     let handle = try move outcome
-    Ok(Listener { location: move endpoint, handle })
+    Result.Ok(Listener { location: move endpoint, handle })
 }
 
 impl Listener {
@@ -188,7 +188,7 @@ impl Listener {
 /// Converts a successful connection handle into an opaque `Connection`.
 func wrap_connection(endpoint: TcpEndpoint, outcome: Result<Int, NetworkError>) -> Result<Connection, NetworkError> [consume endpoint, consume outcome] {
     let handle = try move outcome
-    Ok(Connection { location: move endpoint, handle })
+    Result.Ok(Connection { location: move endpoint, handle })
 }
 
 impl Connection {

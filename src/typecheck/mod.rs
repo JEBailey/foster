@@ -11,6 +11,7 @@ mod output;
 mod overloads;
 mod predicates;
 mod records;
+mod substitutions;
 mod unify;
 mod variants;
 use context::*;
@@ -33,18 +34,31 @@ use crate::types::{
 
 type InferredEffects = HashMap<FunctionId, (Vec<crate::ast::Effect>, bool)>;
 
-struct CheckOutput {
-    types: TypeInformation,
-    diagnostics: Vec<crate::diagnostic::Diagnostic>,
-    inferred_effects: InferredEffects,
-}
-
 pub fn check(
     hir: &mut hir::PackageHir,
 ) -> Result<(TypeInformation, Vec<crate::diagnostic::Diagnostic>), FosterError> {
     loop {
-        let inferred = Checker::new(hir).check(false)?.inferred_effects;
-        let mut changed = false;
+        let mut checker = Checker::new(hir).check()?;
+        let changed = checker
+            .inferred_effects
+            .iter()
+            .any(|(function, (effects, suspends))| {
+                let definition = &hir.functions[*function];
+                definition.effects != *effects || definition.suspends != *suspends
+            });
+        if !changed {
+            // The current pass already checked every body against the fixed-point contracts.
+            // Validate the published bounds using that same state instead of repeating all
+            // declaration, expression, and structural checks in a fresh checker.
+            checker.check_derived_effects(true)?;
+            checker.check_composed_implementations()?;
+            let diagnostics = std::mem::take(&mut checker.diagnostics);
+            return Ok((checker.finish()?, diagnostics));
+        }
+        let inferred = std::mem::take(&mut checker.inferred_effects);
+        // Keep finalization checks on intermediate passes: malformed callable/member uses and
+        // unresolved types must still be rejected before publishing their inferred effects.
+        checker.finish()?;
         for (function, (effects, suspends)) in inferred {
             let definition = &mut hir.functions[function];
             if definition.effects != effects || definition.suspends != suspends {
@@ -52,12 +66,7 @@ pub fn check(
                 definition.effect_spans.clear();
                 definition.suspends = suspends;
                 definition.suspend_span = None;
-                changed = true;
             }
-        }
-        if !changed {
-            let output = Checker::new(hir).check(true)?;
-            return Ok((output.types, output.diagnostics));
         }
     }
 }
@@ -65,10 +74,12 @@ pub fn check(
 impl<'a> Checker<'a> {
     fn new(hir: &'a hir::PackageHir) -> Self {
         Self {
+            record_fields_cache: HashMap::new(),
+            record_methods_cache: HashMap::new(),
             hir,
             next_variable: 0,
             checked_requirements: HashSet::new(),
-            substitutions: HashMap::new(),
+            substitutions: substitutions::Substitutions::default(),
             functions: HashMap::new(),
             constants: HashMap::new(),
             locals: HashMap::new(),
@@ -181,7 +192,7 @@ impl<'a> Checker<'a> {
             .flatten()
     }
 
-    fn check(mut self, validate_effects: bool) -> Result<CheckOutput, FosterError> {
+    fn check(mut self) -> Result<Self, FosterError> {
         self.check_record_declarations()?;
         self.check_variant_declarations()?;
         self.declare_constants()?;
@@ -193,17 +204,8 @@ impl<'a> Checker<'a> {
             self.check_function(function)?;
         }
         self.solve_member_constraints()?;
-        self.check_derived_effects(validate_effects)?;
-        if validate_effects {
-            self.check_composed_implementations()?;
-        }
-        let diagnostics = std::mem::take(&mut self.diagnostics);
-        let inferred_effects = std::mem::take(&mut self.inferred_effects);
-        Ok(CheckOutput {
-            types: self.finish()?,
-            diagnostics,
-            inferred_effects,
-        })
+        self.check_derived_effects(false)?;
+        Ok(self)
     }
 
     fn validate_overloads(&self) -> Result<(), FosterError> {

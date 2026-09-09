@@ -5,36 +5,84 @@ This document collects work that is not part of the implemented language describ
 compatibility promises or a release schedule. Items move into the language design document only
 after the compiler, runtime, and tests agree on their behavior.
 
-The implemented baseline already includes transparent type aliases, compile-time module constants,
-enum and literal patterns, a per-machine host context, the exact/civil/zoned `std.time` taxonomy,
-the source/generator/distribution/secure/sequence `std.random` taxonomy, and the initial Cranelift
-backend for scalar values, strings, and read-only command arguments. The
-items below describe the remaining extensions to those facilities rather than proposing them from
-scratch.
+## Implemented baseline
+
+The current baseline includes:
+
+- Records, transparent type aliases, `&` composition, method-level generic requirements, and
+  ordered default implementations. The rightmost compatible default wins, with a concrete type's
+  own implementation taking final precedence. Alternatives belong to enums; `type` definitions
+  no longer support union alternatives.
+- Compile-time module constants, enum and scalar literal patterns, explicit user-defined `Copy`,
+  and automatic `Drop`/`deinit` at ownership end, including cleanup after modeled failures.
+- Bounded reasoning about compound Boolean conditions and result-provenance summaries through
+  supported direct and indirect calls. Unknown targets and computed predicates remain conservative.
+- Foster-written HashMap and HashSet collections composing storage-free Map and Set contracts,
+  insertion-ordered ListMap and ListSet implementations, a per-machine host context, the
+  exact/civil/zoned `std.time` taxonomy, and the
+  source/generator/distribution/secure/sequence `std.random` taxonomy.
+- Cranelift execution of supported records, enums, generic collections, strings and bytes,
+  closures and callable contracts, references, structural dispatch, remote objects, and futures.
+  Native host services include filesystem operations, clocks, entropy, and TCP. Remote failure
+  containment, scoped owner cancellation, and managed-value cleanup have cross-backend tests.
+
+These are tested capabilities, not a claim that every possible program is supported. The items
+below describe remaining extensions. See the [semantic specification](semantics.md),
+[analysis precision](analysis-precision.md), and [native compilation](native.md) for exact limits.
 
 ## Strengthen the existing model
 
 The immediate priority is to make the ownership, group, effect, and structural-contract model more
 general without weakening its current guarantees.
 
-- Generalize path-correlated loan states beyond direct stable predicates to compound conditions,
-  computed values, and richer range facts. Stable Boolean places, enum discriminants, and direct
-  scalar comparisons are already correlated.
-- Generalize interprocedural `reshape` metadata and projected-reference invalidation beyond the
-  implemented fixed-point summaries for direct calls, including equivalent provenance through
-  erased callable contracts.
-- Define method-level generic requirements, default contract implementations, and
-  effect-polymorphic callable contracts.
+- Generalize path-correlated loan states to computed predicates, computed-value comparisons, and
+  richer range facts. Bounded `&&`, `||`, and `not` reasoning over supported stable facts is
+  already implemented; arithmetic equivalence and stored predicate formulas remain conservative.
+- Extend result provenance and projected-reference invalidation precision for dynamically selected
+  callables, opaque factories, hidden captured borrowers, and effectful calls. Direct fixed-point
+  summaries, supported indirect-target summaries, and checked type/group fallbacks already exist.
+- Define effect-polymorphic callable contracts beyond the implemented concrete effect annotations.
 - Decide whether public APIs require explicit annotations beyond the checks already performed by
   inference.
 - Define explicit re-exports while preserving the filesystem-derived module model and declarations
   that are private by default.
-- Finish explicit ownership-MIR failure edges for dynamic runtime errors, then define resource
-  destructors, destruction order, and unwinding behavior before a stable release.
+- Add per-operation ownership-MIR failure edges for dynamic bounds and host errors. Deterministic
+  runtime failure cleanup and user-defined destructors are implemented; their existing guarantees
+  must be preserved as exceptional control flow becomes explicit in the analysis.
+- Validate partial inherited defaults on abstract library contracts before adding a shared
+  `Collection.empty?` body. Native representation selection must distinguish an abstract contract
+  with some defaults from a concrete implementation.
+- Investigate the native managed-value regression exposed by composing `Drop` into TCP `Listener`
+  and `Connection`. Keep their explicit `close()` contract until automatic cleanup passes both
+  socket-lifetime tests and the wider native collection/iterator suite.
 
 The focused [ownership](ownership.md), [closure](closures.md), and
 [effect derivation](effect-derivation.md) documents contain the detailed constraints behind this
 work.
+
+## Self-hosting preparation
+
+Writing the compiler in Foster is a new direction to develop in stages. The Rust compiler remains
+the bootstrap implementation; a self-hosted compiler and the arena API below are not implemented.
+
+- Prototype an append-only `Arena<T>` and typed `ArenaId<T>` in Foster using existing list storage.
+  The arena owns its nodes; graph edges store IDs. Define insertion, borrowed lookup, replacement,
+  ID copying, invalid-ID handling, and protection against using an ID with the wrong arena.
+- Validate noncopyable-node access, ownership effects, growth, and cleanup in both VM and native
+  execution. IDs should survive insertion; borrowed element references must obey existing reshape
+  invalidation rules. The initial design omits deletion and slot reuse. No new VM instruction is
+  assumed necessary for this ID-based design; verify that with the prototype.
+- Use arenas and the existing HashMap/HashSet to prototype compiler nodes, symbol tables, and
+  analysis side tables. Identify concrete language or library blockers through these workloads
+  before deciding the scope and order of compiler passes to port.
+- Define staged bootstrap validation: build the Foster compiler with the Rust compiler, use that
+  compiler to rebuild itself, and check successive stages against the language and backend
+  conformance suites. Specify the output target and runtime/toolchain dependencies for each stage.
+
+`Cell`-like interior mutability remains a separate design question, not a prerequisite for the
+ID-based arena. Mutating through shared access would need explicit group, effect, and remote-access
+rules. An arena that preserves direct references across allocation would also need a stronger
+storage and borrowing contract than the proposed list-backed arena.
 
 ## Compiler architecture
 
@@ -48,14 +96,15 @@ and stable bytecode tags. The remaining structural work should preserve that dep
   and language-server features.
 - Separate package discovery, module graphs, bootstrap-library selection, validation, caching, and
   source diagnostics into focused modules.
-- Split the ownership region analyses, VM value/place machinery, execution machine, and native backend by
-  phase and state ownership while retaining their current tested semantics.
+- Continue separating ownership region analyses, VM value/place machinery, execution, and native
+  lowering by phase and state ownership. Existing compiler orchestration and native support modules
+  already provide part of this separation.
 - Narrow the public crate surface into supported compiler, tooling, and runtime APIs before the
   bootstrap implementation reaches a stable release.
 
 ## Complete everyday language facilities
 
-- Add record and list patterns, branch guards, and more precise exhaustiveness checking for literal
+- Add record and list patterns, pattern-branch guards, and more precise exhaustiveness checking for literal
   domains. Enum cases, nested enum payloads, bindings, wildcards, and scalar literal patterns are
   already implemented.
 - Design functional record updates.
@@ -65,9 +114,12 @@ and stable bytecode tags. The remaining structural work should preserve that dep
   declaration-only module bodies and avoiding observable module initialization order.
 - Decide whether typed error effects or explicit error-conversion protocols should complement the
   implemented `try` propagation over `Result<T, E>` values.
-- Define aggregate copy/clone contracts; today copy behavior is limited to built-in copy values.
+- Decide whether aggregate copy derivation or additional clone conveniences should extend the
+  implemented explicit structural `Copy` capability. User-defined copying already works; implicit
+  copying remains limited to built-in copy values.
 - Decide the user-facing task, synchronization, `Send`, and `Share` model around the existing remote
-  object and virtual-thread runtime.
+  object and virtual-thread runtime. Extend conservative completion proofs across function
+  boundaries and resolve scheduling, liveness, host interruption, and process shutdown ordering.
 
 ## Runtime and platform
 
@@ -88,20 +140,21 @@ and stable bytecode tags. The remaining structural work should preserve that dep
   stronger named portable generator only with a frozen algorithm, seed mapping, output sequence,
   and cross-target compatibility suite; `LehmerRandom` remains the current portable baseline.
 - Add socket readiness and TLS support to the I/O boundary, and extend resource providers beyond
-  the current whole-file and TCP implementations.
+  the existing filesystem and TCP implementations.
 - Refine scalar inference for dynamically erased values in the shared SSA verifier. The complete VM
   instruction surface now seals through shared SSA and de-SSA with deterministic record, enum,
   closure, and reference layouts; erased heterogeneous joins retain an explicit opaque type until
   the bytecode ownership/type verifier resolves their concrete flow state.
-- Complete instruction lowering for the target-specific String/Symbol/bytes, erased box,
-  heterogeneous callable, remote, and future layouts now materialized by native
-  specialization. Then extend native runtime services and cross-target object output while
-  retaining the register VM as the semantic reference.
+- Implement resumable suspension/state-machine lowering; native `await` currently blocks.
+  Extend native runtime services and cross-target object output, and address additional unsupported
+  cases as conformance tests identify them. Existing text/bytes, erased values, callable, remote,
+  and future lowering should be extended from its tested baseline, with the VM as semantic reference.
 - Compact the bytecode encoding after its instruction model is stable.
 
 ## Longer-horizon questions
 
-Inheritance, higher-kinded types, arbitrary type-level programming, macros, operator overloading,
+Nominal inheritance beyond the implemented structural composition and defaults, higher-kinded
+types, arbitrary type-level programming, macros, operator overloading,
 reflection, and a stable ABI are deliberately uncommitted. They should be evaluated only when a
 concrete use case shows how they interact with structural typing, ownership, groups, and effects.
 

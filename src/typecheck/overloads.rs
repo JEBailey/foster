@@ -5,7 +5,7 @@ use super::*;
 struct Ranked<T> {
     conversions: usize,
     value: T,
-    substitutions: HashMap<u32, Ty>,
+    substitutions: substitutions::Substitutions,
     next_variable: u32,
 }
 

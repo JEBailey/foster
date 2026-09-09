@@ -9,10 +9,13 @@ import std.iter
 /// Equal keys must have equal, stable hashes. Hashes may be any Int, including negatives.
 /// Updates consume the table; iteration uses a snapshot in unspecified bucket order.
 /// Lookups are expected O(1), worst-case O(n); growth rehashes all entries.
-pub type HashMap<K, V> = & Collection<Entry<K, V>> & {
+pub type HashMap<K, V> = & Map<K, V> & {
     buckets: List<List<Entry<K, V>>>
     size: Int
     hasher: func(K) -> Int
+
+    /// Removes a key while preserving the table's hashing strategy and other entries.
+    pub func remove(self, key: K) -> HashMap<K, V> [mut self.buckets.items, mut self.size, consume self]
 }
 
 impl HashMap {

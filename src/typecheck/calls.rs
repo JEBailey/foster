@@ -347,10 +347,27 @@ impl Checker<'_> {
             }
         };
         if parameters.len() != argument_types.len() {
+            let target = match &self.hir.expressions[call] {
+                hir::Expr::Call { callee, .. } => match &self.hir.expressions[*callee] {
+                    hir::Expr::Name(ResolvedName::Function(target)) => {
+                        let target = &self.hir.functions[*target];
+                        format!(
+                            "function `{}::{}`",
+                            self.hir.modules[target.module].name, target.name
+                        )
+                    }
+                    hir::Expr::Name(ResolvedName::Local(local)) => {
+                        format!("callable `{}`", self.hir.locals[*local].name)
+                    }
+                    hir::Expr::Member { name, .. } => format!("member `{name}`"),
+                    _ => "callable".to_owned(),
+                },
+                _ => "callable".to_owned(),
+            };
             let error = self.error(
                 function,
                 format!(
-                    "function expects {} argument(s), received {}",
+                    "{target} expects {} argument(s), received {}",
                     parameters.len(),
                     argument_types.len()
                 ),

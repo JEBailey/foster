@@ -63,6 +63,10 @@ Open `editors/vscode` in VS Code and press `F5` to launch an Extension Developme
 development session without a staged server automatically finds `target/debug/foster.exe` (or
 `target/debug/foster` on Unix), then falls back to `foster` on `PATH`.
 
+For everyday editing, use an optimized compiler: run `cargo build --release --bin foster`, then
+set `foster.server.path` to the absolute path of `target/release/foster.exe` (or `foster` on Unix).
+Debug builds are useful for compiler debugging but can make semantic editor requests much slower.
+
 Use **Foster: Restart Language Server** after rebuilding the compiler. Set
 `foster.server.trace` to `messages` or `verbose` when diagnosing protocol traffic.
 Use **Foster: Show Language Server Output** to inspect compiler output and protocol failures. The

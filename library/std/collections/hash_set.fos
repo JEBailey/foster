@@ -1,14 +1,17 @@
 //! Unordered hash sets implemented in Foster over HashMap.
 
 import core.option
-import std.collections
+import std.collections.set
 import std.collections.hash_map
 import std.iter
 
 /// A hash-backed collection of distinct values with unspecified iteration order.
 /// Equal values must have equal, stable hashes. Updates consume the set.
-pub type HashSet<T> = & Collection<T> & {
+pub type HashSet<T> = & Set<T> & {
     table: HashMap<T, ()>
+
+    /// Consumes the set and returns its values in unspecified order.
+    pub func values(self) -> List<T> [consume self]
 }
 
 impl HashSet {

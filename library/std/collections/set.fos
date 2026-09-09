@@ -1,63 +1,73 @@
-//! Persistent insertion-ordered sets with uniqueness enforced by equality.
+//! Unique-value collection contracts and an insertion-ordered list-backed implementation.
 
 import std.collections
 import std.iter
 
-/// An insertion-ordered collection containing no duplicate values.
+/// A collection of unique values with implementation-defined iteration order.
+/// Membership borrows the set; updates consume and preserve the concrete implementation.
 pub type Set<T> = & Collection<T> & {
-    values: List<T>
-
-    // Required public operations; implementations live in impl blocks.
-    /// Returns whether `value` is present.
-    pub func contains?(self, value: T) -> Bool [read self.values, read value]
-    /// Returns a set containing `value`.
-    pub func insert(self, value: T) -> Set<T> [consume self, consume value]
-    /// Returns a set without `value`.
-    pub func remove(self, value: T) -> Set<T> [consume self]
+    /// Tests membership without consuming the set.
+    pub func contains?(self, value: T) -> Bool [read self, read value]
+    /// Returns this implementation containing `value`.
+    pub func insert(self, value: T) -> self [mut self, consume self, consume value]
+    /// Returns this implementation without `value`.
+    pub func remove(self, value: T) -> self [mut self, consume self]
 }
 
 impl Set {
+    /// Creates an insertion-ordered list-backed set; use HashSet.empty for hashed storage.
+    pub func empty<T>() -> ListSet<T> { ListSet.empty() }
+    /// Creates an insertion-ordered list-backed set containing each input value once.
+    pub func from<T>(values: List<T>) -> ListSet<T> [consume values] { ListSet.from(move values) }
+}
+
+/// An insertion-ordered collection containing no duplicate values.
+pub type ListSet<T> = & Set<T> & {
+    values: List<T>
+}
+
+impl ListSet {
     /// Creates an empty set.
-    pub func empty<T>() -> Set<T> {
-        Set { values: [] }
+    pub func empty<T>() -> ListSet<T> {
+        ListSet { values: [] }
     }
 
     /// Creates a set containing each input value once.
-    pub func from<T>(values: List<T>) -> Set<T> [consume values] {
-        Set { values: unique(move values, []) }
+    pub func from<T>(values: List<T>) -> ListSet<T> [consume values] {
+        ListSet { values: unique(move values, []) }
     }
 
     /// Returns the number of values in the set.
-    pub func length<T>(self: Set<T>) -> Int {
+    pub func length<T>(self: ListSet<T>) -> Int {
         self.values.length
     }
 
     /// Returns whether the set contains no values.
-    pub func empty?<T>(self: Set<T>) -> Bool {
+    pub func empty?<T>(self: ListSet<T>) -> Bool {
         self.values.empty?
     }
 
     /// Creates an independent iterator in insertion order.
-    pub func iterator<T>(self: Set<T>) -> Iterator<T> {
+    pub func iterator<T>(self: ListSet<T>) -> Iterator<T> {
         self.values.iterator()
     }
 
     /// Returns whether `value` is present.
-    pub func contains?<T>(self: Set<T>, value: T) -> Bool {
+    pub func contains?<T>(self: ListSet<T>, value: T) -> Bool {
         contains_value?(self.values, value)
     }
 
     /// Returns a set containing `value`.
-    pub func insert<T>(self: Set<T>, value: T) -> Set<T> [consume self, consume value] {
+    pub func insert<T>(self: ListSet<T>, value: T) -> ListSet<T> [consume self, consume value] {
         branch {
             self.contains?(value) -> self
-            _ -> Set { values: self.values.append(value) }
+            _ -> ListSet { values: self.values.append(value) }
         }
     }
 
     /// Returns a set without `value`.
-    pub func remove<T>(self: Set<T>, value: T) -> Set<T> [consume self] {
-        Set { values: without(move self.values, value, []) }
+    pub func remove<T>(self: ListSet<T>, value: T) -> ListSet<T> [consume self] {
+        ListSet { values: without(move self.values, value, []) }
     }
 }
 

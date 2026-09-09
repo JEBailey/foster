@@ -31,6 +31,66 @@ fn diagnostics_are_limited_to_workspace_and_explicitly_opened_sources() {
 }
 
 #[test]
+fn argument_diagnostics_name_the_callee_and_follow_edited_call_ranges() {
+    let path = std::env::current_dir()
+        .unwrap()
+        .join("target/lsp-call-diagnostics.fos");
+    let uri = path_to_uri(&path).unwrap();
+    let mut workspace = Workspace {
+        root: None,
+        documents: HashMap::new(),
+        published: HashSet::new(),
+        compilations: Default::default(),
+    };
+    let body = "func helper(left: Int, right: Int) -> Int { left + right }\n\
+                func integer_text?() -> Int { helper(1) }\n\
+                type Parser = {}\n\
+                impl Parser { func take(self: Parser, count: Int) -> Int { count } }\n\
+                func declare_array_table(parser: Parser) -> Int { parser.take(1, 2) }\n";
+    let generation = std::sync::atomic::AtomicU64::new(0);
+    let (sender, receiver) = crossbeam_channel::unbounded();
+    for (version, prefix) in [(1, ""), (2, "// edited buffer: λ 😀\n\n")] {
+        let source = format!("{prefix}{body}");
+        workspace.change(uri.clone(), source.clone(), version);
+        workspace
+            .publish_diagnostics(&sender, 0, &generation)
+            .unwrap();
+        let Message::Notification(notification) = receiver.recv().unwrap() else {
+            panic!("expected diagnostics");
+        };
+        let published: lsp_types::PublishDiagnosticsParams =
+            serde_json::from_value(notification.params).unwrap();
+        assert_eq!(published.uri, uri);
+        assert_eq!(published.version, Some(version));
+        assert_eq!(published.diagnostics.len(), 2, "{published:?}");
+        for (call, target, counts) in [
+            (
+                "helper(1)",
+                "function `lsp-call-diagnostics::helper`",
+                "expects 2 argument(s), received 1",
+            ),
+            (
+                "parser.take(1, 2)",
+                "member `take`",
+                "expects 1 argument(s), received 2",
+            ),
+        ] {
+            let diagnostic = published
+                .diagnostics
+                .iter()
+                .find(|d| d.message.contains(target))
+                .unwrap_or_else(|| panic!("missing {target}: {published:?}"));
+            assert!(diagnostic.message.contains(counts), "{diagnostic:?}");
+            let start = source.find(call).unwrap();
+            assert_eq!(
+                diagnostic.range,
+                byte_range_to_lsp(&source, start..start + call.len())
+            );
+        }
+    }
+}
+
+#[test]
 fn malformed_function_does_not_hide_later_function_semantics() {
     let path = std::env::current_dir()
         .unwrap()

@@ -1,7 +1,13 @@
 # Hash collections
 
-`HashMap` and `HashSet` are implemented in Foster, over ordinary lists. They work alongside
-the insertion-ordered `Map` and `Set`. Hash collection iteration order is unspecified.
+`HashMap` and `HashSet` are implemented in Foster, over ordinary lists. They compose the
+storage-free `Map` and `Set` contracts, respectively. `ListMap` and `ListSet` provide insertion-ordered
+implementations of those same contracts. Hash collection iteration order is unspecified.
+
+`Map.empty()`, `Set.empty()`, and `Set.from(values)` remain available as factories returning
+`ListMap` and `ListSet`. A `Map<K, V>` or `Set<T>` annotation accepts either implementation;
+consuming updates through these contracts preserve the concrete implementation. Use `ListMap`
+or `ListSet` annotations when callers specifically require the list-backed representation.
 
 ```foster
 import core.option
@@ -25,7 +31,7 @@ minimum Int. Custom record keys can use a closure that hashes their equality-rel
 Hasher behavior and key equality must remain stable while keys are stored. The supplied
 hashing helpers are deterministic and are not designed to resist adversarial collision attacks.
 
-Both types implement `Collection`, exposing `length()`, `empty?()`, and `iterator()`.
+Both contracts compose `Collection`, exposing `length()`, `empty?()`, and `iterator()`.
 HashMap additionally provides `contains_key?`, `put`, `remove`, `get`, `keys`, and `values`.
 HashSet provides `contains?`, `insert`, `remove`, and `values`. Updates consume and return the
 collection, following the existing Map/Set API. HashMap's `get` also consumes the map and returns

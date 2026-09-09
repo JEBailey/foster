@@ -1,0 +1,52 @@
+import core.option
+import std.collections.map
+import std.collections.set
+import std.collections.hash_map
+import std.collections.hash_set
+import std.collections.hashing
+import std.collections
+import std.iter
+
+type Bag = & Collection<Int> & { values: List<Int> }
+impl Bag {
+    func empty?(self) -> Bool { self.values.empty? }
+    func length(self) -> Int { self.values.length }
+    func iterator(self) -> Iterator<Int> { self.values.iterator() }
+}
+func collection_empty(values: Collection<Int>) -> Bool { values.empty?() }
+
+func update_map(values: Map<String, Int>) -> Map<String, Int> [mut values, consume values] {
+    (move values).put("answer", 42)
+}
+func map_answer(values: Map<String, Int>) -> Int [consume values] {
+    assert(values.length() == 1)
+    assert(values.contains_key?("answer"))
+    (move values).get("answer").unwrap_or(0)
+}
+func update_set(values: Set<Int>) -> Set<Int> [mut values, consume values] {
+    (move values).insert(42).insert(42).remove(7)
+}
+func check_set(values: Set<Int>) -> Bool {
+    values.length() == 1 && values.contains?(42) && not values.empty?() && values.iterator().collect() == [42]
+}
+func map_keys(values: Map<String, Int>) -> List<String> [consume values] {
+    (move values).keys()
+}
+func map_values(values: Map<String, Int>) -> List<Int> [consume values] {
+    (move values).values()
+}
+func main() -> Int {
+    assert(collection_empty(Bag { values: [] }))
+    assert(not collection_empty(Bag { values: [1] }))
+    assert(map_answer(update_map(Map.empty())) == 42)
+    assert(map_answer(update_map(HashMap.empty(hashing::text))) == 42)
+    assert(map_keys(update_map(Map.empty())) == ["answer"])
+    assert(map_keys(update_map(HashMap.empty(hashing::text))) == ["answer"])
+    assert(map_values(update_map(Map.empty())) == [42])
+    assert(map_values(update_map(HashMap.empty(hashing::text))) == [42])
+    assert(check_set(update_set(Set.from([7]))))
+    assert(check_set(update_set(HashSet.from([7], hashing::integer))))
+    assert(Map.empty().put("a", 1).put("b", 2).put("a", 3).keys() == ["a", "b"])
+    assert(ListSet.from([3, 2, 3]).iterator().collect() == [3, 2])
+    42
+}
