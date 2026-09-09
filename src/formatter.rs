@@ -203,10 +203,10 @@ mod tests {
     #[test]
     fn formats_multiline_type_composition() {
         let source =
-            "type Foo =\nBar\n| What\n& SomeContract\n& {\npub func describe(self) -> String\n}\n";
+            "type Foo =\nBar\n& What\n& SomeContract\n& {\npub func describe(self) -> String\n}\n";
         assert_eq!(
             format(source).unwrap(),
-            "type Foo =\n    Bar\n    | What\n    & SomeContract\n    & {\n        pub func describe(self) -> String\n    }\n"
+            "type Foo =\n    Bar\n    & What\n    & SomeContract\n    & {\n        pub func describe(self) -> String\n    }\n"
         );
     }
 
