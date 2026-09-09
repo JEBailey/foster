@@ -125,3 +125,19 @@ Criterion and the cross-language benchmark are diagnostic rather than pass/fail 
 Result mismatches do fail the cross-language run.
 Record results from a quiet machine, use release builds, and compare results from the same commit,
 toolchains, hardware, and power settings.
+
+## Language server latency
+
+```text
+python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos
+python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos --outline
+python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos --interrupt
+```
+
+Use a release `foster lsp` process and the real project root. Measure cold semantic
+requests, repeated requests, and requests after a body edit separately. Also measure
+diagnostic publication and cancellation during active checking. Document symbols now
+use parsing only, so outline latency is not a proxy for full semantic-check latency.
+For edits, cover unchanged contracts, changed effects/signatures, and error repair.
+Compare diagnostics and current source ranges against a fresh checked compilation.
+The implementation boundaries are documented in [interactive checking](incremental-checking.md).

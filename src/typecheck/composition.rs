@@ -726,6 +726,8 @@ impl Checker<'_> {
         arguments: &[Ty],
         required: &EffectiveMethod,
     ) -> Result<(), FosterError> {
+        // This check observes implementation contracts beyond the selected direct callee.
+        self.body_cacheable = false;
         // Rigid contracts need validation only once in this checker pass. Never
         // cache unresolved arguments or signatures: later inference can change them.
         let resolved_arguments = arguments

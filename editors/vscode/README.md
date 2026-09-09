@@ -4,7 +4,7 @@ This extension registers `.fos` files, provides Foster syntax highlighting and e
 and launches the Foster language server. Language features include:
 
 - package-wide compiler errors and warnings with open-buffer overlays;
-- document symbols;
+- document symbols from the current parse, without waiting for semantic checking;
 - go-to-definition across imported modules, selected function and concrete method overloads,
   instance methods, and repository core-library source;
 - find-references across package modules;
@@ -16,9 +16,12 @@ and launches the Foster language server. Language features include:
   including `try`, `not`, and automatic `std.process` import when completing `Arguments`;
 - automatic diagnostic refresh when Foster files change on disk;
 - background semantic compilation that keeps the protocol loop responsive, tags work with the
-  current document versions and workspace generation, and supersedes cancelled or stale requests;
+  current document versions and workspace generation, and cooperatively cancels stale work;
+- interactive requests take priority over background diagnostics;
 - cached package snapshots and parsed modules, so edits reparse changed sources while preserving
   unaffected compilation work;
+- reusable function-body type checks guarded by source, declarations, and callee contracts,
+  plus batched recovery for independent function-body errors;
 - error-tolerant module parsing that reports independent syntax errors together, skips damaged
   declarations, and continues semantic analysis for complete declarations later in the file;
 - commands to run the active file or its nearest `foster.toml` project (with legacy `main.fos`

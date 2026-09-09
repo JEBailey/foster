@@ -73,6 +73,9 @@ impl Workspace {
     ) -> Result<(), Box<dyn Error>> {
         let mut next_by_uri = HashMap::<String, (Uri, Vec<Diagnostic>, Option<i32>)>::new();
         for (focus_uri, document) in &self.documents {
+            if crate::compiler::cancellation::is_cancelled() {
+                return Ok(());
+            }
             match self.compile_for(focus_uri) {
                 Ok(compilation) => {
                     for (_, module) in compilation.hir.modules.iter() {
@@ -127,7 +130,9 @@ impl Workspace {
         }
         let next = next_by_uri.into_values().collect::<Vec<_>>();
 
-        if generation.load(std::sync::atomic::Ordering::Acquire) != expected_generation {
+        if generation.load(std::sync::atomic::Ordering::Acquire) != expected_generation
+            || crate::compiler::cancellation::is_cancelled()
+        {
             return Ok(());
         }
 
@@ -161,6 +166,54 @@ impl Workspace {
     }
 
     pub(super) fn document_symbols(&self, uri: &Uri) -> Option<DocumentSymbolResponse> {
+        let path = uri_to_path(uri)?;
+        let source = self
+            .documents
+            .get(uri)
+            .map(|document| document.text.clone())
+            .or_else(|| std::fs::read_to_string(&path).ok())?;
+        let program = match self.compilations.parse_document(&path, &source) {
+            Ok(program) => program,
+            Err(_) => return self.semantic_document_symbols(uri),
+        };
+        let mut symbols = Vec::new();
+        for constant in &program.constants {
+            symbols.push(symbol(
+                &constant.name,
+                SymbolKind::CONSTANT,
+                &source,
+                constant.span.clone(),
+            ));
+        }
+        for record in &program.records {
+            symbols.push(symbol(
+                &record.name,
+                SymbolKind::STRUCT,
+                &source,
+                record.span.clone(),
+            ));
+        }
+        for variant in &program.variants {
+            let kind = if variant.kind == crate::ast::VariantKind::Enum {
+                SymbolKind::ENUM
+            } else {
+                SymbolKind::INTERFACE
+            };
+            symbols.push(symbol(&variant.name, kind, &source, variant.span.clone()));
+        }
+        for function in &program.functions {
+            let name = function.name.clone();
+            symbols.push(symbol(
+                &name,
+                SymbolKind::FUNCTION,
+                &source,
+                function.span.clone(),
+            ));
+        }
+        Some(DocumentSymbolResponse::Nested(symbols))
+    }
+
+    fn semantic_document_symbols(&self, uri: &Uri) -> Option<DocumentSymbolResponse> {
         let compilation = self.semantic_compilation_for(uri)?;
         let module_id = module_for_uri(&compilation, uri)?;
         let module = &compilation.hir.modules[module_id];
@@ -219,7 +272,7 @@ impl Workspace {
                 function.module == module_id && !function.name.contains('$')
             })
         {
-            let name = source_function_name(function);
+            let name = function.name.clone();
             symbols.push(symbol(
                 &name,
                 SymbolKind::FUNCTION,
@@ -1550,10 +1603,6 @@ pub(super) fn function_signature(
         Some(owner) => format!("impl {owner} {{\n    {signature}\n}}"),
         None => signature,
     }
-}
-
-fn source_function_name(function: &crate::hir::Function) -> String {
-    function.name.clone()
 }
 
 fn record_signature(record: &crate::hir::Record) -> String {

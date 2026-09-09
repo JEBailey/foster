@@ -342,6 +342,9 @@ impl Checker<'_> {
         expected_arguments: &[Ty],
         actual: Ty,
     ) -> Result<(), FosterError> {
+        // Adaptation checks implementation contracts beyond the selected call target. Until
+        // those edges are represented individually, do not replay this body's type results.
+        self.body_cacheable = false;
         let caller_module = self.hir.functions[function].module;
         let expected_definition = self.hir.records[expected].clone();
         let expected_fields = self.effective_record_fields(expected, expected_arguments)?;

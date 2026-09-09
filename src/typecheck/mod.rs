@@ -7,6 +7,7 @@ mod constants;
 mod context;
 mod effects;
 mod expressions;
+pub(crate) mod incremental;
 mod output;
 mod overloads;
 mod predicates;
@@ -37,8 +38,27 @@ type InferredEffects = HashMap<FunctionId, (Vec<crate::ast::Effect>, bool)>;
 pub fn check(
     hir: &mut hir::PackageHir,
 ) -> Result<(TypeInformation, Vec<crate::diagnostic::Diagnostic>), FosterError> {
+    check_bodies(hir, None, None).map_err(|errors| errors.into_iter().next().unwrap())
+}
+
+pub(crate) fn check_collecting(
+    hir: &mut hir::PackageHir,
+    recoverable: &HashSet<hir::ModuleId>,
+    cache: Option<incremental::SharedBodyCache>,
+) -> Result<(TypeInformation, Vec<crate::diagnostic::Diagnostic>), Vec<FosterError>> {
+    check_bodies(hir, Some(recoverable), cache)
+}
+
+fn check_bodies(
+    hir: &mut hir::PackageHir,
+    recover: Option<&HashSet<hir::ModuleId>>,
+    cache: Option<incremental::SharedBodyCache>,
+) -> Result<(TypeInformation, Vec<crate::diagnostic::Diagnostic>), Vec<FosterError>> {
     loop {
-        let mut checker = Checker::new(hir).check()?;
+        crate::compiler::cancellation::check().map_err(|e| vec![e])?;
+        let mut checker = Checker::new(hir);
+        checker.body_cache = cache.clone();
+        let mut checker = checker.check(recover)?;
         let changed = checker
             .inferred_effects
             .iter()
@@ -50,15 +70,17 @@ pub fn check(
             // The current pass already checked every body against the fixed-point contracts.
             // Validate the published bounds using that same state instead of repeating all
             // declaration, expression, and structural checks in a fresh checker.
-            checker.check_derived_effects(true)?;
-            checker.check_composed_implementations()?;
+            checker.check_derived_effects(true).map_err(|e| vec![e])?;
+            checker
+                .check_composed_implementations()
+                .map_err(|e| vec![e])?;
             let diagnostics = std::mem::take(&mut checker.diagnostics);
-            return Ok((checker.finish()?, diagnostics));
+            return Ok((checker.finish().map_err(|e| vec![e])?, diagnostics));
         }
         let inferred = std::mem::take(&mut checker.inferred_effects);
         // Keep finalization checks on intermediate passes: malformed callable/member uses and
         // unresolved types must still be rejected before publishing their inferred effects.
-        checker.finish()?;
+        checker.finish().map_err(|e| vec![e])?;
         for (function, (effects, suspends)) in inferred {
             let definition = &mut hir.functions[function];
             if definition.effects != effects || definition.suspends != suspends {
@@ -74,6 +96,8 @@ pub fn check(
 impl<'a> Checker<'a> {
     fn new(hir: &'a hir::PackageHir) -> Self {
         Self {
+            body_cache: None,
+            body_cacheable: true,
             record_fields_cache: HashMap::new(),
             record_methods_cache: HashMap::new(),
             hir,
@@ -192,7 +216,7 @@ impl<'a> Checker<'a> {
             .flatten()
     }
 
-    fn check(mut self) -> Result<Self, FosterError> {
+    fn prepare(&mut self) -> Result<(), FosterError> {
         self.check_record_declarations()?;
         self.check_variant_declarations()?;
         self.declare_constants()?;
@@ -200,11 +224,52 @@ impl<'a> Checker<'a> {
         self.validate_overloads()?;
         self.check_record_compositions()?;
         self.check_variant_compositions()?;
+        Ok(())
+    }
+
+    fn check(mut self, recover: Option<&HashSet<hir::ModuleId>>) -> Result<Self, Vec<FosterError>> {
+        self.prepare().map_err(|e| vec![e])?;
+        let mut errors = Vec::new();
         for (function, _) in self.hir.functions.iter() {
-            self.check_function(function)?;
+            crate::compiler::cancellation::check().map_err(|e| vec![e])?;
+            self.body_cacheable = true;
+            let input = self.body_input(function);
+            if let Some(error) = self.cached_failure(function, &input) {
+                errors.push(error);
+                continue;
+            }
+            if self.reuse_body(function, &input) {
+                continue;
+            }
+            let constraints_before = self.member_constraints.len();
+            let definition = &self.hir.functions[function];
+            // Explicit signatures isolate body constraints. With an inferred signature, stop
+            // at the first failure rather than attributing speculative downstream errors.
+            let independent = definition.return_type.is_some()
+                && definition.parameter_types.iter().all(Option::is_some);
+            let checkpoint = (independent
+                && recover.is_some_and(|modules| modules.contains(&definition.module)))
+            .then(|| self.clone());
+            if let Err(error) = self.check_function(function) {
+                if crate::compiler::cancellation::is_cancellation(&error) {
+                    return Err(vec![error]);
+                }
+                self.record_failure(function, input, &error);
+                errors.push(error);
+                if let Some(checkpoint) = checkpoint {
+                    self = checkpoint;
+                } else {
+                    return Err(errors);
+                }
+            } else {
+                self.record_body(function, input, constraints_before);
+            }
         }
-        self.solve_member_constraints()?;
-        self.check_derived_effects(false)?;
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+        self.solve_member_constraints().map_err(|e| vec![e])?;
+        self.check_derived_effects(false).map_err(|e| vec![e])?;
         Ok(self)
     }
 
@@ -266,6 +331,7 @@ impl<'a> Checker<'a> {
 
     fn check_derived_effects(&mut self, validate: bool) -> Result<(), FosterError> {
         for (function, definition) in self.hir.functions.iter() {
+            crate::compiler::cancellation::check()?;
             if definition.intrinsic.is_some() {
                 continue;
             }

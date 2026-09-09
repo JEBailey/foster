@@ -32,7 +32,7 @@ pub(super) enum Ty {
     Module(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Signature {
     pub(super) parameters: Vec<Ty>,
     pub(super) parameter_modes: Vec<crate::ast::ParameterMode>,
@@ -47,7 +47,10 @@ pub(super) struct MemberConstraint {
     pub(super) result: Ty,
 }
 
+#[derive(Clone)]
 pub(super) struct Checker<'a> {
+    pub(super) body_cache: Option<incremental::SharedBodyCache>,
+    pub(super) body_cacheable: bool,
     pub(super) record_fields_cache: HashMap<(RecordId, Vec<Ty>), Vec<composition::EffectiveField>>,
     pub(super) record_methods_cache:
         HashMap<(RecordId, Vec<Ty>), Vec<composition::EffectiveMethod>>,

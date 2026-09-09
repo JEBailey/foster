@@ -25,7 +25,7 @@ pub(super) fn check(
     Ok(())
 }
 
-fn check_function(
+pub(super) fn check_function(
     hir: &PackageHir,
     types: &TypeInformation,
     function: crate::hir::FunctionId,

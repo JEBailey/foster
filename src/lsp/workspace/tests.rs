@@ -355,6 +355,26 @@ fn hover_reports_inferred_local_and_function_types() {
 }
 
 #[test]
+fn document_symbols_do_not_need_semantic_analysis() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    workspace.open(uri.clone(), "type Item = {}\nimpl Item { func value(self: Item) -> Int { 1 } }\nfunc broken() -> Int { false }".into(), 1);
+    crate::compiler::cancellation::scope(
+        || true,
+        || {
+            let Some(DocumentSymbolResponse::Nested(symbols)) = workspace.document_symbols(&uri)
+            else {
+                panic!("outline should only require parsing");
+            };
+            assert!(symbols.iter().any(|symbol| symbol.name == "Item.value"));
+            assert!(symbols.iter().any(|symbol| symbol.name == "broken"));
+            assert!(workspace.compile_for(&uri).is_err());
+            assert!(!workspace.compilations.has_cached_error(&uri));
+        },
+    );
+    assert_eq!(workspace.compile_for(&uri).unwrap().diagnostics.len(), 1);
+}
+
+#[test]
 fn constants_have_symbols_hover_and_cross_module_definitions() {
     let root = std::env::current_dir()
         .unwrap()

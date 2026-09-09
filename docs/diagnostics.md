@@ -46,7 +46,8 @@ fields and rendered output so changing prose or losing a label is intentional an
 
 The language server uses the same checked frontend phases as the CLI `check` command, with
 interactive recovery enabled. When a semantic error is confined to a function body, tooling keeps
-the declaration and signature, substitutes an empty body, and restarts checking so unrelated
+the declaration and signature, collects independent body errors in a batch, substitutes empty
+bodies for that batch, and resumes checking so unrelated
 functions receive current type information. The original error remains a published diagnostic;
 strict compiler entry points still reject the source. Errors outside a recoverable input function
 fall back to the last-good semantic snapshot. The LSP does not require executable lowering for
@@ -55,6 +56,10 @@ Shared-SSA sealing, final bytecode verification, and native supported-subset err
 build/run commands. LSP tests keep source-builtin names and parameter metadata synchronized with the
 authoritative intrinsic registry; intrinsic-backed library functions otherwise use their ordinary
 Foster declarations for tooling.
+
+The LSP reuses eligible unchanged body results and cancels obsolete analysis. See
+[interactive checking](incremental-checking.md) for invalidation rules, recovery boundaries,
+and the analyses that still run across the package.
 
 The remaining compiler phases should migrate incrementally to this representation. Parser errors
 already retain line and column positions and are adapted into a primary label; type, group, effect,

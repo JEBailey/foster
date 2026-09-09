@@ -62,6 +62,9 @@ struct WorkTag {
 struct WorkspaceWorker {
     sender: mpsc::Sender<WorkerMessage>,
     handle: thread::JoinHandle<()>,
+    interactive_epoch: Arc<AtomicU64>,
+    pending_requests: Arc<AtomicU64>,
+    generation: Arc<AtomicU64>,
 }
 
 impl WorkspaceWorker {
@@ -72,12 +75,43 @@ impl WorkspaceWorker {
         cancelled: Arc<Mutex<HashSet<String>>>,
     ) -> Self {
         let (sender, receiver) = mpsc::channel();
+        let interactive_epoch = Arc::new(AtomicU64::new(0));
+        let worker_epoch = Arc::clone(&interactive_epoch);
+        let pending_requests = Arc::new(AtomicU64::new(0));
+        let worker_pending = Arc::clone(&pending_requests);
+        let worker_generation = Arc::clone(&generation);
         let handle = thread::spawn(move || {
             let mut workspace = Workspace::new(&initialize);
-            while let Ok(message) = receiver.recv() {
+            let mut pending = std::collections::VecDeque::new();
+            let mut diagnostics = None;
+            loop {
+                pending.extend(receiver.try_iter());
+                let message = if let Some(message) = pending.pop_front() {
+                    message
+                } else if let Some(tag) = diagnostics.take() {
+                    // Every already queued edit/request has run before background checking.
+                    WorkerMessage::Diagnostics { tag }
+                } else if let Ok(message) = receiver.recv() {
+                    message
+                } else {
+                    break;
+                };
+                if let WorkerMessage::Diagnostics { tag } = &message {
+                    pending.extend(receiver.try_iter());
+                    if !pending.is_empty() {
+                        if diagnostics
+                            .as_ref()
+                            .is_none_or(|old: &WorkTag| old.generation <= tag.generation)
+                        {
+                            diagnostics = Some(tag.clone());
+                        }
+                        continue;
+                    }
+                }
                 match message {
                     WorkerMessage::Change(change) => apply_workspace_change(&mut workspace, change),
                     WorkerMessage::Request { tag, request } => {
+                        worker_pending.fetch_sub(1, Ordering::AcqRel);
                         let key = request_key(&request.id);
                         let response = if take_cancellation(&cancelled, &key) {
                             cancelled_response(request.id)
@@ -85,7 +119,19 @@ impl WorkspaceWorker {
                             content_modified_response(request.id)
                         } else {
                             let id = request.id.clone();
-                            let response = handle_workspace_request(&workspace, request);
+                            let probe_generation = Arc::clone(&generation);
+                            let probe_cancelled = Arc::clone(&cancelled);
+                            let probe_key = key.clone();
+                            let expected = tag.generation;
+                            let response = crate::compiler::cancellation::scope(
+                                move || {
+                                    probe_generation.load(Ordering::Acquire) != expected
+                                        || probe_cancelled
+                                            .lock()
+                                            .is_ok_and(|values| values.contains(&probe_key))
+                                },
+                                || handle_workspace_request(&workspace, request),
+                            );
                             if take_cancellation(&cancelled, &key) {
                                 cancelled_response(id)
                             } else if !work_is_current(&workspace, &generation, &tag) {
@@ -99,29 +145,55 @@ impl WorkspaceWorker {
                         }
                     }
                     WorkerMessage::Diagnostics { tag } => {
-                        if work_is_current(&workspace, &generation, &tag)
-                            && let Err(error) = workspace.publish_diagnostics(
-                                &outgoing,
-                                tag.generation,
-                                &generation,
-                            )
-                        {
-                            eprintln!("Foster language server diagnostic error: {error}");
+                        if work_is_current(&workspace, &generation, &tag) {
+                            let expected_epoch = worker_epoch.load(Ordering::Acquire);
+                            let probe_epoch = Arc::clone(&worker_epoch);
+                            let probe_pending = Arc::clone(&worker_pending);
+                            let probe_generation = Arc::clone(&generation);
+                            let expected = tag.generation;
+                            let result = crate::compiler::cancellation::scope(
+                                move || {
+                                    probe_generation.load(Ordering::Acquire) != expected
+                                        || probe_pending.load(Ordering::Acquire) != 0
+                                        || probe_epoch.load(Ordering::Acquire) != expected_epoch
+                                },
+                                || workspace.publish_diagnostics(&outgoing, expected, &generation),
+                            );
+                            if let Err(error) = result {
+                                eprintln!("Foster language server diagnostic error: {error}");
+                            }
+                            if (worker_epoch.load(Ordering::Acquire) != expected_epoch
+                                || worker_pending.load(Ordering::Acquire) != 0)
+                                && work_is_current(&workspace, &generation, &tag)
+                            {
+                                diagnostics = Some(tag);
+                            }
                         }
                     }
                     WorkerMessage::Stop => break,
                 }
             }
         });
-        Self { sender, handle }
+        Self {
+            sender,
+            handle,
+            interactive_epoch,
+            pending_requests,
+            generation: worker_generation,
+        }
     }
 
     fn send(&self, message: WorkerMessage) -> Result<(), Box<dyn Error>> {
+        if matches!(&message, WorkerMessage::Request { .. }) {
+            self.pending_requests.fetch_add(1, Ordering::AcqRel);
+            self.interactive_epoch.fetch_add(1, Ordering::AcqRel);
+        }
         self.sender.send(message)?;
         Ok(())
     }
 
     fn stop(self) -> Result<(), Box<dyn Error>> {
+        self.generation.fetch_add(1, Ordering::AcqRel);
         let _ = self.sender.send(WorkerMessage::Stop);
         self.handle
             .join()

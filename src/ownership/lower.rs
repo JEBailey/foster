@@ -19,7 +19,7 @@ pub(super) fn lower(
     hir: &hir::PackageHir,
     types: &TypeInformation,
     result_provenance: &std::collections::HashMap<FunctionId, super::ResultProvenance>,
-) -> Program {
+) -> Result<Program, crate::error::FosterError> {
     let mut program = Program::default();
     let captures = hir
         .expressions
@@ -36,6 +36,7 @@ pub(super) fn lower(
         })
         .collect::<std::collections::HashMap<_, _>>();
     for (function, _) in hir.functions.iter() {
+        crate::compiler::cancellation::check()?;
         program.functions.insert(
             function,
             Builder::new(
@@ -48,7 +49,7 @@ pub(super) fn lower(
             .lower(),
         );
     }
-    program
+    Ok(program)
 }
 
 struct Builder<'a> {

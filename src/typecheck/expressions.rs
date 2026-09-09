@@ -335,6 +335,7 @@ impl Checker<'_> {
         function: FunctionId,
         expression_id: ExprId,
     ) -> Result<Ty, FosterError> {
+        crate::compiler::cancellation::check()?;
         let result = self.infer_expression_unlocated(function, expression_id);
         result.map_err(|error| {
             let label = error.message.clone();

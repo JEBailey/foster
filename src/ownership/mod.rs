@@ -30,6 +30,15 @@ pub(crate) fn build_and_check(
     hir: &PackageHir,
     types: &TypeInformation,
 ) -> Result<Program, FosterError> {
+    build_and_check_collecting(hir, types, false)
+        .map_err(|errors| errors.into_iter().next().unwrap())
+}
+
+pub(crate) fn build_and_check_collecting(
+    hir: &PackageHir,
+    types: &TypeInformation,
+    collect: bool,
+) -> Result<Program, Vec<FosterError>> {
     // Start with no assumed origins. Each pass adds provenance proven by a reachable MIR return,
     // so direct-call chains and recursive call graphs converge on the least fixed-point summary.
     let mut summaries = hir
@@ -38,14 +47,16 @@ pub(crate) fn build_and_check(
         .map(|(id, _)| (id, ResultProvenance::default()))
         .collect::<std::collections::HashMap<_, _>>();
     loop {
-        let program = lower_and_infer(hir, types, &summaries);
+        crate::compiler::cancellation::check().map_err(|e| vec![e])?;
+        let program = lower_and_infer(hir, types, &summaries).map_err(|e| vec![e])?;
+        crate::compiler::cancellation::check().map_err(|e| vec![e])?;
         let inferred = program
             .functions
             .iter()
             .map(|(id, function)| (*id, function.result_provenance.clone()))
             .collect::<std::collections::HashMap<_, _>>();
         if inferred == summaries {
-            break finish_check(hir, types, program);
+            break finish_check(hir, types, program, collect);
         }
         summaries = inferred;
     }
@@ -55,11 +66,30 @@ fn finish_check(
     hir: &PackageHir,
     types: &TypeInformation,
     mut program: Program,
-) -> Result<Program, FosterError> {
+    collect: bool,
+) -> Result<Program, Vec<FosterError>> {
     program.requirements = regions::analyze_requirements(&program);
-    check::check(hir, types, &program)?;
-    regions::validate(hir, types, &program)?;
-    remote::check(hir, types, &program)?;
+    if collect {
+        let mut errors = Vec::new();
+        let mut functions = program.functions.keys().copied().collect::<Vec<_>>();
+        functions.sort();
+        for function in functions {
+            crate::compiler::cancellation::check().map_err(|e| vec![e])?;
+            let result = check::check_function(hir, types, function, &program.functions[&function])
+                .and_then(|_| regions::validate_function(hir, types, &program, function))
+                .and_then(|_| remote::check_function(hir, types, &program, function));
+            if let Err(error) = result {
+                errors.push(error);
+            }
+        }
+        if !errors.is_empty() {
+            return Err(errors);
+        }
+    } else {
+        check::check(hir, types, &program).map_err(|e| vec![e])?;
+        regions::validate(hir, types, &program).map_err(|e| vec![e])?;
+        remote::check(hir, types, &program).map_err(|e| vec![e])?;
+    }
     Ok(program)
 }
 
@@ -67,10 +97,10 @@ fn lower_and_infer(
     hir: &PackageHir,
     types: &TypeInformation,
     result_provenance: &std::collections::HashMap<crate::hir::FunctionId, ResultProvenance>,
-) -> Program {
-    let mut program = lower::lower(hir, types, result_provenance);
+) -> Result<Program, FosterError> {
+    let mut program = lower::lower(hir, types, result_provenance)?;
     program.provenance = regions::analyze(&program);
     regions::populate_reborrow_parents(&mut program);
     regions::infer_result_provenance(hir, &mut program);
-    program
+    Ok(program)
 }

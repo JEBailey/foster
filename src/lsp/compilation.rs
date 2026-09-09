@@ -16,9 +16,20 @@ pub(super) struct CompilationCache {
     errors: RefCell<HashMap<Uri, FosterError>>,
     last_good: RefCell<HashMap<Uri, Rc<Compilation>>>,
     modules: RefCell<crate::package::ModuleCache>,
+    bodies: RefCell<HashMap<Utf8PathBuf, crate::typecheck::incremental::SharedBodyCache>>,
 }
 
 impl CompilationCache {
+    pub(super) fn parse_document(
+        &self,
+        path: &Path,
+        source: &str,
+    ) -> Result<crate::ast::Program, FosterError> {
+        let path = Utf8PathBuf::from_path_buf(path.to_owned())
+            .map_err(|_| FosterError::runtime("source path is not valid UTF-8"))?;
+        self.modules.borrow_mut().parse_source(&path, source)
+    }
+
     pub(super) fn clear(&self) {
         // Watched-file changes can invalidate package membership, so discard semantic snapshots.
         // Parsed modules remain content-addressed in `modules` and are reused on the next build.
@@ -105,7 +116,21 @@ impl CompilationCache {
 }
 
 impl Workspace {
+    fn check_incremental(
+        &self,
+        package: crate::package::Package,
+    ) -> Result<Compilation, FosterError> {
+        let cache = self
+            .compilations
+            .bodies
+            .borrow_mut()
+            .entry(package.root.clone())
+            .or_default()
+            .clone();
+        crate::compiler::check_recovering_cached(package, cache)
+    }
     pub(super) fn compile_for(&self, uri: &Uri) -> Result<Rc<Compilation>, FosterError> {
+        crate::compiler::cancellation::check()?;
         if let Some(compilation) = self.compilations.get(uri) {
             return Ok(compilation);
         }
@@ -113,8 +138,14 @@ impl Workspace {
             return Err(error);
         }
         match self.compile_uncached(uri) {
-            Ok(compilation) => Ok(self.compilations.insert(uri.clone(), compilation)),
+            Ok(compilation) => {
+                crate::compiler::cancellation::check()?;
+                Ok(self.compilations.insert(uri.clone(), compilation))
+            }
             Err(error) => {
+                if crate::compiler::cancellation::is_cancellation(&error) {
+                    return Err(error);
+                }
                 self.compilations.insert_error(uri.clone(), error.clone());
                 Err(error)
             }
@@ -157,11 +188,12 @@ impl Workspace {
                     .as_ref()
                     .is_some_and(|source| source.as_std_path() == path)
             }) {
-                return crate::compiler::check_recovering(package);
+                return self.check_incremental(package);
             }
         }
 
         let standalone = self.compile_standalone(&path, &overlays);
+        crate::compiler::cancellation::check()?;
         if standalone.is_ok() {
             return standalone;
         }
@@ -185,7 +217,7 @@ impl Workspace {
                     .as_ref()
                     .is_some_and(|source| source.as_std_path() == path)
             }) {
-                return crate::compiler::check_recovering(package);
+                return self.check_incremental(package);
             }
             if self
                 .root
@@ -235,9 +267,11 @@ impl Workspace {
             .modules
             .get_mut(&module_name)
             .expect("standalone package contains its source module");
-        module.source_path = Some(source_path);
+        module.source_path = Some(source_path.clone());
         module.source = Some(source);
-        crate::compiler::check_recovering(package)
+        // Distinguish standalone roots so unrelated open files do not evict each other's bodies.
+        package.root = source_path;
+        self.check_incremental(package)
     }
 }
 

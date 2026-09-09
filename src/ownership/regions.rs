@@ -1031,38 +1031,51 @@ pub(super) fn validate(
     types: &TypeInformation,
     program: &Program,
 ) -> Result<(), FosterError> {
-    for (function_id, function) in &program.functions {
-        validate_storage_and_escape(
-            hir,
-            *function_id,
-            function,
-            &program.provenance[function_id],
-        )?;
-        let requirements = &program.requirements[function_id];
-        validate_suspensions(hir, *function_id, function, requirements)?;
-        if let Some(conflict) = find_conflict_with_hir(
-            hir,
-            types,
-            function,
-            &program.provenance[function_id],
-            requirements,
-        ) {
-            let definition = &hir.functions[*function_id];
-            let origin_name = place_name(hir, &conflict.loan.origin);
-            let borrower_name = place_name(hir, &conflict.required_use.place);
-            let is_call = conflict.required_use.mode == super::UseMode::Call;
-            let message = if is_call {
-                format!(
-                    "in `{}.{}`: closure `{borrower_name}` is no longer callable; structural mutation invalidated its captured reference into `{origin_name}`",
-                    hir.modules[definition.module].name, definition.name
-                )
-            } else {
-                format!(
-                    "in `{}.{}`: borrowed value `{borrower_name}` is no longer usable; its reference into `{origin_name}` was invalidated",
-                    hir.modules[definition.module].name, definition.name
-                )
-            };
-            return Err(FosterError::runtime(message)
+    for function_id in program.functions.keys() {
+        validate_function(hir, types, program, *function_id)?;
+    }
+    Ok(())
+}
+
+pub(super) fn validate_function(
+    hir: &PackageHir,
+    types: &TypeInformation,
+    program: &Program,
+    id: FunctionId,
+) -> Result<(), FosterError> {
+    let function_id = &id;
+    let function = &program.functions[function_id];
+    validate_storage_and_escape(
+        hir,
+        *function_id,
+        function,
+        &program.provenance[function_id],
+    )?;
+    let requirements = &program.requirements[function_id];
+    validate_suspensions(hir, *function_id, function, requirements)?;
+    if let Some(conflict) = find_conflict_with_hir(
+        hir,
+        types,
+        function,
+        &program.provenance[function_id],
+        requirements,
+    ) {
+        let definition = &hir.functions[*function_id];
+        let origin_name = place_name(hir, &conflict.loan.origin);
+        let borrower_name = place_name(hir, &conflict.required_use.place);
+        let is_call = conflict.required_use.mode == super::UseMode::Call;
+        let message = if is_call {
+            format!(
+                "in `{}.{}`: closure `{borrower_name}` is no longer callable; structural mutation invalidated its captured reference into `{origin_name}`",
+                hir.modules[definition.module].name, definition.name
+            )
+        } else {
+            format!(
+                "in `{}.{}`: borrowed value `{borrower_name}` is no longer usable; its reference into `{origin_name}` was invalidated",
+                hir.modules[definition.module].name, definition.name
+            )
+        };
+        return Err(FosterError::runtime(message)
             .with_code(super::diagnostics::INVALIDATED_LOAN)
             .with_source_module(hir.modules[definition.module].name.clone())
             .with_primary_label(
@@ -1092,7 +1105,6 @@ pub(super) fn validate(
                 },
             )
             .with_help("use or propagate the borrower before this invalidating operation, or reacquire it afterward"));
-        }
     }
     Ok(())
 }
