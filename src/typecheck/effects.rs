@@ -4,10 +4,13 @@ use super::*;
 
 pub(super) struct EffectDerivation<'a, 'hir> {
     checker: &'a Checker<'hir>,
+    function: FunctionId,
     owners: HashMap<LocalId, crate::ast::GroupPath>,
     contract: HashSet<String>,
     derived: Vec<crate::ast::Effect>,
     pub(super) suspends: bool,
+    summaries: Option<&'a DerivedEffects>,
+    pub(super) dependencies: HashSet<FunctionId>,
 }
 
 impl<'a, 'hir> EffectDerivation<'a, 'hir> {
@@ -76,27 +79,39 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             owners.insert(self_local, crate::ast::GroupPath::root("self"));
             contract.insert("self".to_owned());
         }
-        for (local, ty) in &checker.locals {
-            if checker.hir.locals[*local].function != function {
-                let group =
-                    checker.local_groups.get(local).cloned().unwrap_or_else(|| {
-                        reference_group(&checker.resolved(ty.clone())).unwrap_or_else(|| {
-                            match checker.hir.locals[*local].name.as_str() {
-                                "self" => "self".to_owned(),
-                                _ => FRAME_GROUP.to_owned(),
-                            }
-                        })
-                    });
-                owners.entry(*local).or_insert_with(|| group.into());
-            }
-        }
         Self {
             checker,
+            function,
             owners,
             contract,
             derived: Vec::new(),
             suspends: false,
+            summaries: None,
+            dependencies: HashSet::new(),
         }
+    }
+
+    pub(super) fn with_summaries(
+        checker: &'a Checker<'hir>,
+        function: FunctionId,
+        summaries: &'a DerivedEffects,
+    ) -> Self {
+        let mut derivation = Self::new(checker, function);
+        derivation.summaries = Some(summaries);
+        derivation
+    }
+
+    fn callee_effects(&self, function: FunctionId) -> (&[crate::ast::Effect], bool) {
+        let definition = &self.checker.hir.functions[function];
+        if !definition.effects_explicit
+            && definition.intrinsic.is_none()
+            && let Some(summary) = self
+                .summaries
+                .and_then(|summaries| summaries.get(&function))
+        {
+            return (&summary.0, summary.1);
+        }
+        (&definition.effects, definition.suspends)
     }
 
     pub(super) fn effects(&self) -> Vec<crate::ast::Effect> {
@@ -393,6 +408,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                     _ => None,
                 };
                 if let Some(method) = self.call_target(callee) {
+                    self.dependencies.insert(method);
                     let definition = &self.checker.hir.functions[method];
                     let parameter_names = definition
                         .parameters
@@ -400,7 +416,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                         .skip(1)
                         .map(|parameter| self.checker.hir.locals[*parameter].name.clone())
                         .collect::<Vec<_>>();
-                    let effects = definition.effects.clone();
+                    let effects = self.callee_effects(method).0.to_vec();
                     for effect in effects {
                         let group = if effect.target.root == "self" {
                             receiver_group
@@ -507,9 +523,12 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     }
 
     fn apply_callee(&mut self, target: FunctionId, receiver: Option<ExprId>, arguments: &[ExprId]) {
+        self.dependencies.insert(target);
         let definition = &self.checker.hir.functions[target];
-        self.suspends |= definition.suspends;
-        for effect in &definition.effects {
+        let (effects, suspends) = self.callee_effects(target);
+        let effects = effects.to_vec();
+        self.suspends |= suspends;
+        for effect in &effects {
             let group = match (effect.target.root.as_str(), receiver) {
                 ("self", Some(receiver)) => self
                     .place_group(receiver)
@@ -628,9 +647,95 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     }
 
     fn local_group(&self, local: LocalId) -> crate::ast::GroupPath {
-        self.owners
-            .get(&local)
-            .cloned()
-            .unwrap_or_else(|| crate::ast::GroupPath::root(FRAME_GROUP))
+        self.owners.get(&local).cloned().unwrap_or_else(|| {
+            // Outer locals matter only when referenced. Do not populate every other
+            // function's locals for each derivation; preserve the original group fallback.
+            if self.checker.hir.locals[local].function != self.function
+                && let Some(ty) = self.checker.locals.get(&local)
+            {
+                let group = self
+                    .checker
+                    .local_groups
+                    .get(&local)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        reference_group(&self.checker.resolved(ty.clone())).unwrap_or_else(|| {
+                            if self.checker.hir.locals[local].name == "self" {
+                                "self".to_owned()
+                            } else {
+                                FRAME_GROUP.to_owned()
+                            }
+                        })
+                    });
+                return crate::ast::GroupPath::root(group);
+            }
+            crate::ast::GroupPath::root(FRAME_GROUP)
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn referenced_outer_groups_match_eager_derivation() {
+        let source = r#"
+func make[g: group Int](value: ref[g] Int) -> func() -> Int [mut g] {
+    [ref value] () -> [mut g] {
+        value = value + 1
+        value
+    }
+}
+func main() -> Int {
+    let unrelated = 100
+    let count = 0
+    let increment = [ref count] () -> {
+        count = count + 1
+        count
+    }
+    increment()
+}
+"#;
+        let package =
+            crate::package::Package::from_program_with_core("main", crate::parse(source).unwrap())
+                .unwrap();
+        let compilation = crate::compiler::check(package).unwrap();
+        let mut checker = Checker::new(&compilation.hir)
+            .check(None)
+            .unwrap_or_else(|errors| panic!("{errors:?}"));
+        // Check both recorded local groups and the type/name fallback used when absent.
+        for recorded_groups in [true, false] {
+            if !recorded_groups {
+                checker.local_groups = Default::default();
+            }
+            for (function, definition) in checker
+                .hir
+                .functions
+                .iter()
+                .filter(|(_, definition)| checker.hir.modules[definition.module].name == "main")
+            {
+                let mut lazy = EffectDerivation::new(&checker, function);
+                let mut eager = EffectDerivation::new(&checker, function);
+                // Reference behavior before lazy lookup: seed every typed foreign local.
+                for (local, ty) in &checker.locals {
+                    if checker.hir.locals[*local].function != function {
+                        let group = checker.local_groups.get(local).cloned().unwrap_or_else(|| {
+                            reference_group(&checker.resolved(ty.clone())).unwrap_or_else(|| {
+                                match checker.hir.locals[*local].name.as_str() {
+                                    "self" => "self".to_owned(),
+                                    _ => FRAME_GROUP.to_owned(),
+                                }
+                            })
+                        });
+                        eager.owners.entry(*local).or_insert_with(|| group.into());
+                    }
+                }
+                lazy.walk_statements(&definition.body);
+                eager.walk_statements(&definition.body);
+                assert_eq!(lazy.effects(), eager.effects(), "{}", definition.name);
+                assert_eq!(lazy.suspends, eager.suspends, "{}", definition.name);
+            }
+        }
     }
 }

@@ -11,6 +11,8 @@ pub(crate) type SharedBodyCache = Rc<RefCell<BodyCache>>;
 pub(crate) struct AnalysisStats {
     pub checked: HashMap<String, usize>,
     pub reused: HashMap<String, usize>,
+    pub effect_derived: HashMap<String, usize>,
+    pub effect_reused: HashMap<String, usize>,
     pub pipeline_runs: usize,
 }
 
@@ -45,6 +47,7 @@ struct Contract {
 
 #[derive(Clone)]
 struct BodyResult {
+    effect_summary: Option<effect_worklist::EffectSummary>,
     source: String,
     input: Signature,
     dependencies: Vec<(FunctionId, Contract)>,
@@ -64,9 +67,19 @@ struct BodyFailure {
 }
 
 impl BodyCache {
+    pub(super) fn note_effect(&mut self, function: FunctionId, reused: bool) {
+        let key = self.shapes[&function].key.clone();
+        let counts = if reused {
+            &mut self.stats.effect_reused
+        } else {
+            &mut self.stats.effect_derived
+        };
+        *counts.entry(key).or_default() += 1;
+    }
     pub(crate) fn prepare(&mut self, hir: &mut hir::PackageHir, package: &crate::package::Package) {
         let declarations = declaration_key(hir);
         if declarations != self.declarations {
+            crate::compiler::profile::count("body_cache.declaration_reset");
             self.entries.clear();
             self.failures.clear();
             self.contracts.clear();
@@ -381,6 +394,34 @@ impl Checker<'_> {
         );
     }
 
+    pub(super) fn record_effect_summaries(&self) {
+        let Some(cache) = &self.body_cache else {
+            return;
+        };
+        let mut cache = cache.borrow_mut();
+        for (function, row) in &self.derived_effects {
+            let shape = &cache.shapes[function];
+            let key = shape.key.clone();
+            let Some(entry) = cache.entries.get(&key) else {
+                continue;
+            };
+            if entry.source != shape.source
+                || self.body_input(*function).as_ref() != Some(&entry.input)
+                || entry
+                    .dependencies
+                    .iter()
+                    .any(|(id, contract)| self.body_contract(*id).as_ref() != Some(contract))
+            {
+                continue;
+            }
+            let summary = effect_worklist::EffectSummary {
+                row: row.clone(),
+                dependencies: self.effect_dependencies[function].clone(),
+            };
+            cache.entries.get_mut(&key).unwrap().effect_summary = Some(summary);
+        }
+    }
+
     pub(super) fn body_input(&self, function: FunctionId) -> Option<Signature> {
         let signature = &self.functions[&function];
         let parameters = signature
@@ -409,30 +450,44 @@ impl Checker<'_> {
     }
 
     pub(super) fn reuse_body(&mut self, function: FunctionId, input: &Option<Signature>) -> bool {
+        let miss = |reason| {
+            if !self.hir.functions[function].body.is_empty() {
+                crate::compiler::profile::count(reason);
+            }
+            false
+        };
         let Some(cache) = self.body_cache.clone() else {
-            return false;
+            return miss("body.miss.no_session");
         };
         let (shape, result) = {
             let cache = cache.borrow();
             let Some(shape) = cache.shapes.get(&function).filter(|shape| shape.eligible) else {
-                return false;
+                return miss("body.miss.ineligible");
             };
             let Some(result) = cache.entries.get(&shape.key) else {
-                return false;
+                return miss("body.miss.no_entry");
             };
-            if Some(&result.input) != input.as_ref()
-                || result.source != shape.source
+            if Some(&result.input) != input.as_ref() {
+                return miss("body.miss.signature");
+            }
+            if result.source != shape.source
                 || result.locals.len() != shape.locals.len()
                 || result.expressions.len() != shape.expressions.len()
-                || result
-                    .dependencies
-                    .iter()
-                    .any(|(id, contract)| self.body_contract(*id).as_ref() != Some(contract))
             {
-                return false;
+                return miss("body.miss.source_or_shape");
+            }
+            if result
+                .dependencies
+                .iter()
+                .any(|(id, contract)| self.body_contract(*id).as_ref() != Some(contract))
+            {
+                return miss("body.miss.dependency");
             }
             (shape.clone(), result.clone())
         };
+        if let Some(summary) = result.effect_summary {
+            self.effect_seeds.insert(function, summary);
+        }
         for (id, value) in shape.locals.iter().zip(result.locals) {
             if let Some((ty, group)) = value {
                 self.locals.insert(*id, ty);
@@ -489,11 +544,15 @@ impl Checker<'_> {
             .checked
             .entry(shape.key.clone())
             .or_default() += 1;
-        let Some(input) = input else { return };
+        let Some(input) = input else {
+            crate::compiler::profile::count("body.store_skip.unresolved_input");
+            return;
+        };
         if !shape.eligible
             || !self.body_cacheable
             || self.member_constraints.len() != constraints_before
         {
+            crate::compiler::profile::count("body.store_skip.ineligible_or_shared_constraints");
             return;
         }
         let mut dependencies = shape.dependencies.clone();
@@ -555,6 +614,7 @@ impl Checker<'_> {
         cache.borrow_mut().entries.insert(
             shape.key,
             BodyResult {
+                effect_summary: None,
                 source: shape.source,
                 input,
                 dependencies,

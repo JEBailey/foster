@@ -1,6 +1,7 @@
 """Measure actual LSP requests; edits are unsaved overlays, never file writes."""
 import argparse
 import json
+import os
 import pathlib
 import queue
 import subprocess
@@ -14,11 +15,18 @@ def main():
     parser.add_argument("document", type=pathlib.Path)
     parser.add_argument("--outline", action="store_true")
     parser.add_argument("--interrupt", action="store_true")
+    parser.add_argument("--profile-log", type=pathlib.Path,
+                        help="enable frontend profiling and save server stderr to this file")
     args = parser.parse_args()
     messages = queue.Queue()
+    profile_log = args.profile_log.open("w", encoding="utf-8") if args.profile_log else None
+    environment = os.environ.copy()
+    if profile_log:
+        environment["FOSTER_LSP_PROFILE"] = "1"
     process = subprocess.Popen(
         [str(args.executable.resolve()), "lsp"],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        stderr=profile_log if profile_log else subprocess.DEVNULL, env=environment,
     )
 
     def read():
@@ -95,6 +103,8 @@ def main():
     finally:
         process.kill()
         process.wait()
+        if profile_log:
+            profile_log.close()
 
 
 if __name__ == "__main__":

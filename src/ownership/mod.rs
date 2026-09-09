@@ -48,6 +48,7 @@ pub(crate) fn build_and_check_collecting(
         .collect::<std::collections::HashMap<_, _>>();
     loop {
         crate::compiler::cancellation::check().map_err(|e| vec![e])?;
+        crate::compiler::profile::count("ownership.iterations");
         let program = lower_and_infer(hir, types, &summaries).map_err(|e| vec![e])?;
         crate::compiler::cancellation::check().map_err(|e| vec![e])?;
         let inferred = program
@@ -56,7 +57,9 @@ pub(crate) fn build_and_check_collecting(
             .map(|(id, function)| (*id, function.result_provenance.clone()))
             .collect::<std::collections::HashMap<_, _>>();
         if inferred == summaries {
-            break finish_check(hir, types, program, collect);
+            break crate::compiler::profile::measure("ownership.validate", || {
+                finish_check(hir, types, program, collect)
+            });
         }
         summaries = inferred;
     }
@@ -68,7 +71,9 @@ fn finish_check(
     mut program: Program,
     collect: bool,
 ) -> Result<Program, Vec<FosterError>> {
-    program.requirements = regions::analyze_requirements(&program);
+    program.requirements = crate::compiler::profile::measure("ownership.requirements", || {
+        regions::analyze_requirements(&program)
+    });
     if collect {
         let mut errors = Vec::new();
         let mut functions = program.functions.keys().copied().collect::<Vec<_>>();
@@ -98,9 +103,16 @@ fn lower_and_infer(
     types: &TypeInformation,
     result_provenance: &std::collections::HashMap<crate::hir::FunctionId, ResultProvenance>,
 ) -> Result<Program, FosterError> {
-    let mut program = lower::lower(hir, types, result_provenance)?;
-    program.provenance = regions::analyze(&program);
-    regions::populate_reborrow_parents(&mut program);
-    regions::infer_result_provenance(hir, &mut program);
+    let mut program = crate::compiler::profile::measure("ownership.lower", || {
+        lower::lower(hir, types, result_provenance)
+    })?;
+    program.provenance =
+        crate::compiler::profile::measure("ownership.provenance", || regions::analyze(&program));
+    crate::compiler::profile::measure("ownership.reborrow", || {
+        regions::populate_reborrow_parents(&mut program)
+    });
+    crate::compiler::profile::measure("ownership.summary", || {
+        regions::infer_result_provenance(hir, &mut program)
+    });
     Ok(program)
 }

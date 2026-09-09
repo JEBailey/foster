@@ -1,3 +1,4 @@
+use super::transactions::{JournalMap, JournalSet};
 use super::*;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -47,30 +48,33 @@ pub(super) struct MemberConstraint {
     pub(super) result: Ty,
 }
 
-#[derive(Clone)]
+#[cfg_attr(test, derive(Clone))]
 pub(super) struct Checker<'a> {
     pub(super) body_cache: Option<incremental::SharedBodyCache>,
     pub(super) body_cacheable: bool,
-    pub(super) record_fields_cache: HashMap<(RecordId, Vec<Ty>), Vec<composition::EffectiveField>>,
+    pub(super) record_fields_cache:
+        JournalMap<(RecordId, Vec<Ty>), Vec<composition::EffectiveField>>,
     pub(super) record_methods_cache:
-        HashMap<(RecordId, Vec<Ty>), Vec<composition::EffectiveMethod>>,
-    pub(super) checked_requirements: HashSet<(RecordId, Vec<Ty>, RecordId, usize)>,
+        JournalMap<(RecordId, Vec<Ty>), Vec<composition::EffectiveMethod>>,
+    pub(super) checked_requirements: JournalSet<(RecordId, Vec<Ty>, RecordId, usize)>,
     pub(super) hir: &'a hir::PackageHir,
     pub(super) next_variable: u32,
     pub(super) substitutions: substitutions::Substitutions,
-    pub(super) functions: HashMap<FunctionId, Signature>,
-    pub(super) constants: HashMap<ConstantId, Ty>,
-    pub(super) locals: HashMap<LocalId, Ty>,
-    pub(super) local_groups: HashMap<LocalId, String>,
-    pub(super) expressions: HashMap<ExprId, Ty>,
-    pub(super) integer_promotions: HashSet<ExprId>,
-    pub(super) member_kinds: HashMap<ExprId, crate::semantics::MemberKind>,
-    pub(super) bare_method_members: HashSet<ExprId>,
-    pub(super) resolved_calls: HashMap<ExprId, crate::types::ResolvedCall>,
-    pub(super) dispatch_slots: HashMap<MethodKey, DispatchSlot>,
+    pub(super) functions: JournalMap<FunctionId, Signature>,
+    pub(super) constants: JournalMap<ConstantId, Ty>,
+    pub(super) locals: JournalMap<LocalId, Ty>,
+    pub(super) local_groups: JournalMap<LocalId, String>,
+    pub(super) expressions: JournalMap<ExprId, Ty>,
+    pub(super) integer_promotions: JournalSet<ExprId>,
+    pub(super) member_kinds: JournalMap<ExprId, crate::semantics::MemberKind>,
+    pub(super) bare_method_members: JournalSet<ExprId>,
+    pub(super) resolved_calls: JournalMap<ExprId, crate::types::ResolvedCall>,
+    pub(super) dispatch_slots: JournalMap<MethodKey, DispatchSlot>,
     pub(super) dispatch_keys: Vec<MethodKey>,
     pub(super) member_constraints: Vec<MemberConstraint>,
     pub(super) diagnostics: Vec<crate::diagnostic::Diagnostic>,
-    pub(super) inferred_effects: InferredEffects,
+    pub(super) derived_effects: DerivedEffects,
+    pub(super) effect_seeds: HashMap<FunctionId, effect_worklist::EffectSummary>,
+    pub(super) effect_dependencies: HashMap<FunctionId, HashSet<FunctionId>>,
     pub(super) resolving_aliases: Vec<hir::VariantTypeId>,
 }

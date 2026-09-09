@@ -132,6 +132,7 @@ toolchains, hardware, and power settings.
 python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos
 python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos --outline
 python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos --interrupt
+python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos --profile-log target/lsp-profile.log
 ```
 
 Use a release `foster lsp` process and the real project root. Measure cold semantic

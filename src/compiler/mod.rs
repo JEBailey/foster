@@ -5,6 +5,7 @@
 
 pub(crate) mod cancellation;
 mod pipeline;
+pub(crate) mod profile;
 
 use crate::error::FosterError;
 use crate::package::Package;

@@ -27,7 +27,9 @@ impl CompilationCache {
     ) -> Result<crate::ast::Program, FosterError> {
         let path = Utf8PathBuf::from_path_buf(path.to_owned())
             .map_err(|_| FosterError::runtime("source path is not valid UTF-8"))?;
-        self.modules.borrow_mut().parse_source(&path, source)
+        crate::compiler::profile::request("parse_document", path.as_str(), || {
+            self.modules.borrow_mut().parse_source(&path, source)
+        })
     }
 
     pub(super) fn clear(&self) {
@@ -127,17 +129,30 @@ impl Workspace {
             .entry(package.root.clone())
             .or_default()
             .clone();
-        crate::compiler::check_recovering_cached(package, cache)
+        crate::compiler::profile::measure("compiler.recovering", || {
+            crate::compiler::check_recovering_cached(package, cache)
+        })
     }
     pub(super) fn compile_for(&self, uri: &Uri) -> Result<Rc<Compilation>, FosterError> {
+        crate::compiler::profile::request("compile_for", uri.as_str(), || {
+            self.compile_profiled(uri)
+        })
+    }
+
+    fn compile_profiled(&self, uri: &Uri) -> Result<Rc<Compilation>, FosterError> {
         crate::compiler::cancellation::check()?;
         if let Some(compilation) = self.compilations.get(uri) {
+            crate::compiler::profile::count("compilation.hit");
             return Ok(compilation);
         }
         if let Some(error) = self.compilations.error(uri) {
+            crate::compiler::profile::count("compilation.error_hit");
             return Err(error);
         }
-        match self.compile_uncached(uri) {
+        crate::compiler::profile::count("compilation.miss");
+        match crate::compiler::profile::measure("compilation.rebuild", || {
+            self.compile_uncached(uri)
+        }) {
             Ok(compilation) => {
                 crate::compiler::cancellation::check()?;
                 Ok(self.compilations.insert(uri.clone(), compilation))
@@ -177,11 +192,13 @@ impl Workspace {
         if let Some(project) = crate::project::Project::discover(&path, self.root.as_deref())?
             && path.starts_with(&project.source_root)
         {
-            let package = crate::package::Package::load_project_with_overlays_cached(
-                &project,
-                &overlays,
-                &mut self.compilations.modules.borrow_mut(),
-            )?;
+            let package = crate::compiler::profile::measure("package.load", || {
+                crate::package::Package::load_project_with_overlays_cached(
+                    &project,
+                    &overlays,
+                    &mut self.compilations.modules.borrow_mut(),
+                )
+            })?;
             if package.modules.values().any(|module| {
                 module
                     .source_path
@@ -207,11 +224,13 @@ impl Workspace {
             {
                 break;
             }
-            if let Ok(package) = crate::package::Package::load_with_overlays_cached(
-                root,
-                &overlays,
-                &mut self.compilations.modules.borrow_mut(),
-            ) && package.modules.values().any(|module| {
+            if let Ok(package) = crate::compiler::profile::measure("package.load", || {
+                crate::package::Package::load_with_overlays_cached(
+                    root,
+                    &overlays,
+                    &mut self.compilations.modules.borrow_mut(),
+                )
+            }) && package.modules.values().any(|module| {
                 module
                     .source_path
                     .as_ref()
@@ -258,11 +277,13 @@ impl Workspace {
             .and_then(|name| name.to_str())
             .unwrap_or("main")
             .to_owned();
-        let mut package = crate::package::Package::from_program_with_core_cached(
-            &module_name,
-            program,
-            &mut modules,
-        )?;
+        let mut package = crate::compiler::profile::measure("package.load", || {
+            crate::package::Package::from_program_with_core_cached(
+                &module_name,
+                program,
+                &mut modules,
+            )
+        })?;
         let module = package
             .modules
             .get_mut(&module_name)

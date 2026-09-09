@@ -49,10 +49,12 @@ impl ModuleCache {
         if let Some(cached) = self.entries.get(&key)
             && cached.source == source
         {
+            crate::compiler::profile::count("parse.hit");
             return cached_program(&key, cached.parsed.clone());
         }
 
-        let parsed = crate::parse_recovering(source);
+        crate::compiler::profile::count("parse.miss");
+        let parsed = crate::compiler::profile::measure("parse", || crate::parse_recovering(source));
         self.entries.insert(
             key.clone(),
             CachedModule {

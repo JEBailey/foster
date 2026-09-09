@@ -1,4 +1,4 @@
-use crate::compiler::Compilation;
+use crate::compiler::{Compilation, profile};
 use crate::error::CompileError;
 use crate::hir::PackageHir;
 use crate::package::Package;
@@ -38,10 +38,14 @@ fn check_impl(
             crate::typecheck::check(hir).map_err(|error| vec![CompileError::types(error)])
         }
     }
+    profile::count("pipeline.runs");
     crate::compiler::cancellation::check().map_err(|e| vec![CompileError::lowering(e)])?;
-    let mut hir = PackageHir::lower(&package).map_err(|e| vec![CompileError::lowering(e)])?;
+    let mut hir = profile::measure("hir.lower", || PackageHir::lower(&package))
+        .map_err(|e| vec![CompileError::lowering(e)])?;
     if let Some(cache) = &cache {
-        cache.borrow_mut().prepare(&mut hir, &package);
+        profile::measure("cache.prepare", || {
+            cache.borrow_mut().prepare(&mut hir, &package)
+        });
     }
     let recoverable = hir
         .modules
@@ -53,32 +57,48 @@ fn check_impl(
                 .map(|_| id)
         })
         .collect();
-    crate::hir::ownership::infer_ref_capture_effects(&mut hir);
-    crate::hir::ownership::validate_groups_and_effects(&hir)
-        .map_err(|e| vec![CompileError::effects(e)])?;
-    let (initial_types, _) = types(&mut hir, recover, &recoverable, cache.clone())?;
+    profile::measure("capture.effects", || {
+        crate::hir::ownership::infer_ref_capture_effects(&mut hir)
+    });
+    profile::measure("effects.validate", || {
+        crate::hir::ownership::validate_groups_and_effects(&hir)
+    })
+    .map_err(|e| vec![CompileError::effects(e)])?;
+    let (initial_types, _) = profile::measure("types.initial", || {
+        types(&mut hir, recover, &recoverable, cache.clone())
+    })?;
     crate::compiler::cancellation::check().map_err(|e| vec![CompileError::types(e)])?;
-    crate::hir::ownership::infer_capture_modes(&mut hir, &initial_types)
-        .map_err(|e| vec![CompileError::ownership(e)])?;
-    let (types, diagnostics) = types(&mut hir, recover, &recoverable, cache.clone())?;
+    profile::measure("capture.modes", || {
+        crate::hir::ownership::infer_capture_modes(&mut hir, &initial_types)
+    })
+    .map_err(|e| vec![CompileError::ownership(e)])?;
+    let (types, diagnostics) = profile::measure("types.final", || {
+        types(&mut hir, recover, &recoverable, cache.clone())
+    })?;
     crate::compiler::cancellation::check().map_err(|e| vec![CompileError::types(e)])?;
-    crate::hir::ownership::validate_groups_and_effects(&hir)
-        .map_err(|e| vec![CompileError::effects(e)])?;
-    crate::hir::ownership::check_closure_ownership(&hir)
-        .map_err(|e| vec![CompileError::ownership(e)])?;
-    let ownership = if recover {
-        crate::ownership::build_and_check_collecting(&hir, &types, true).map_err(|errors| {
-            errors
-                .into_iter()
-                .map(CompileError::ownership)
-                .collect::<Vec<_>>()
-        })?
-    } else {
-        crate::ownership::build_and_check(&hir, &types)
-            .map_err(|e| vec![CompileError::ownership(e)])?
-    };
+    profile::measure("effects.validate", || {
+        crate::hir::ownership::validate_groups_and_effects(&hir)
+    })
+    .map_err(|e| vec![CompileError::effects(e)])?;
+    profile::measure("closures.validate", || {
+        crate::hir::ownership::check_closure_ownership(&hir)
+    })
+    .map_err(|e| vec![CompileError::ownership(e)])?;
+    let ownership = profile::measure("ownership.total", || {
+        if recover {
+            crate::ownership::build_and_check_collecting(&hir, &types, true).map_err(|errors| {
+                errors
+                    .into_iter()
+                    .map(CompileError::ownership)
+                    .collect::<Vec<_>>()
+            })
+        } else {
+            crate::ownership::build_and_check(&hir, &types)
+                .map_err(|e| vec![CompileError::ownership(e)])
+        }
+    })?;
     if let Some(cache) = &cache {
-        cache.borrow_mut().complete(&hir);
+        profile::measure("cache.complete", || cache.borrow_mut().complete(&hir));
     }
     let compilation = Compilation {
         package,

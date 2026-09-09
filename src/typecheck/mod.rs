@@ -5,6 +5,7 @@ mod calls;
 mod composition;
 mod constants;
 mod context;
+mod effect_worklist;
 mod effects;
 mod expressions;
 pub(crate) mod incremental;
@@ -13,6 +14,7 @@ mod overloads;
 mod predicates;
 mod records;
 mod substitutions;
+mod transactions;
 mod unify;
 mod variants;
 use context::*;
@@ -33,7 +35,7 @@ use crate::types::{
     TypeId, TypeInformation,
 };
 
-type InferredEffects = HashMap<FunctionId, (Vec<crate::ast::Effect>, bool)>;
+type DerivedEffects = HashMap<FunctionId, (Vec<crate::ast::Effect>, bool)>;
 
 pub fn check(
     hir: &mut hir::PackageHir,
@@ -56,34 +58,47 @@ fn check_bodies(
 ) -> Result<(TypeInformation, Vec<crate::diagnostic::Diagnostic>), Vec<FosterError>> {
     loop {
         crate::compiler::cancellation::check().map_err(|e| vec![e])?;
+        crate::compiler::profile::count("types.iterations");
         let mut checker = Checker::new(hir);
         checker.body_cache = cache.clone();
         let mut checker = checker.check(recover)?;
         let changed = checker
-            .inferred_effects
+            .derived_effects
             .iter()
             .any(|(function, (effects, suspends))| {
                 let definition = &hir.functions[*function];
-                definition.effects != *effects || definition.suspends != *suspends
+                !definition.effects_explicit
+                    && (definition.effects != *effects || definition.suspends != *suspends)
             });
         if !changed {
             // The current pass already checked every body against the fixed-point contracts.
             // Validate the published bounds using that same state instead of repeating all
             // declaration, expression, and structural checks in a fresh checker.
-            checker.check_derived_effects(true).map_err(|e| vec![e])?;
+            crate::compiler::profile::measure("types.effects_validate", || {
+                checker.validate_derived_effects()
+            })
+            .map_err(|e| vec![e])?;
             checker
                 .check_composed_implementations()
                 .map_err(|e| vec![e])?;
+            checker.record_effect_summaries();
             let diagnostics = std::mem::take(&mut checker.diagnostics);
-            return Ok((checker.finish().map_err(|e| vec![e])?, diagnostics));
+            return Ok((
+                crate::compiler::profile::measure("types.finish", || checker.finish())
+                    .map_err(|e| vec![e])?,
+                diagnostics,
+            ));
         }
-        let inferred = std::mem::take(&mut checker.inferred_effects);
+        let inferred = std::mem::take(&mut checker.derived_effects);
         // Keep finalization checks on intermediate passes: malformed callable/member uses and
         // unresolved types must still be rejected before publishing their inferred effects.
-        checker.finish().map_err(|e| vec![e])?;
+        crate::compiler::profile::measure("types.finish", || checker.finish())
+            .map_err(|e| vec![e])?;
         for (function, (effects, suspends)) in inferred {
             let definition = &mut hir.functions[function];
-            if definition.effects != effects || definition.suspends != suspends {
+            if !definition.effects_explicit
+                && (definition.effects != effects || definition.suspends != suspends)
+            {
                 definition.effects = effects;
                 definition.effect_spans.clear();
                 definition.suspends = suspends;
@@ -98,26 +113,28 @@ impl<'a> Checker<'a> {
         Self {
             body_cache: None,
             body_cacheable: true,
-            record_fields_cache: HashMap::new(),
-            record_methods_cache: HashMap::new(),
+            record_fields_cache: Default::default(),
+            record_methods_cache: Default::default(),
             hir,
             next_variable: 0,
-            checked_requirements: HashSet::new(),
+            checked_requirements: Default::default(),
             substitutions: substitutions::Substitutions::default(),
-            functions: HashMap::new(),
-            constants: HashMap::new(),
-            locals: HashMap::new(),
-            local_groups: HashMap::new(),
-            expressions: HashMap::new(),
-            integer_promotions: HashSet::new(),
-            member_kinds: HashMap::new(),
-            bare_method_members: HashSet::new(),
-            resolved_calls: HashMap::new(),
-            dispatch_slots: HashMap::new(),
+            functions: Default::default(),
+            constants: Default::default(),
+            locals: Default::default(),
+            local_groups: Default::default(),
+            expressions: Default::default(),
+            integer_promotions: Default::default(),
+            member_kinds: Default::default(),
+            bare_method_members: Default::default(),
+            resolved_calls: Default::default(),
+            dispatch_slots: Default::default(),
             dispatch_keys: Vec::new(),
             member_constraints: Vec::new(),
             diagnostics: Vec::new(),
-            inferred_effects: HashMap::new(),
+            derived_effects: Default::default(),
+            effect_seeds: Default::default(),
+            effect_dependencies: Default::default(),
             resolving_aliases: Vec::new(),
         }
     }
@@ -228,17 +245,22 @@ impl<'a> Checker<'a> {
     }
 
     fn check(mut self, recover: Option<&HashSet<hir::ModuleId>>) -> Result<Self, Vec<FosterError>> {
-        self.prepare().map_err(|e| vec![e])?;
+        crate::compiler::profile::measure("types.declarations", || self.prepare())
+            .map_err(|e| vec![e])?;
         let mut errors = Vec::new();
         for (function, _) in self.hir.functions.iter() {
             crate::compiler::cancellation::check().map_err(|e| vec![e])?;
             self.body_cacheable = true;
             let input = self.body_input(function);
             if let Some(error) = self.cached_failure(function, &input) {
+                crate::compiler::profile::count("body.error_hit");
                 errors.push(error);
                 continue;
             }
-            if self.reuse_body(function, &input) {
+            if crate::compiler::profile::measure("types.cache_lookup", || {
+                self.reuse_body(function, &input)
+            }) {
+                crate::compiler::profile::count("body.hit");
                 continue;
             }
             let constraints_before = self.member_constraints.len();
@@ -249,27 +271,44 @@ impl<'a> Checker<'a> {
                 && definition.parameter_types.iter().all(Option::is_some);
             let checkpoint = (independent
                 && recover.is_some_and(|modules| modules.contains(&definition.module)))
-            .then(|| self.clone());
-            if let Err(error) = self.check_function(function) {
+            .then(|| crate::compiler::profile::measure("types.checkpoint", || self.begin_body()));
+            crate::compiler::profile::count(if definition.body.is_empty() {
+                "body.empty_checked"
+            } else {
+                "body.checked"
+            });
+            if let Err(error) = crate::compiler::profile::measure("types.body_check", || {
+                self.check_function(function)
+            }) {
                 if crate::compiler::cancellation::is_cancellation(&error) {
                     return Err(vec![error]);
                 }
                 self.record_failure(function, input, &error);
                 errors.push(error);
                 if let Some(checkpoint) = checkpoint {
-                    self = checkpoint;
+                    crate::compiler::profile::measure("types.rollback", || {
+                        self.rollback_body(checkpoint)
+                    });
                 } else {
                     return Err(errors);
                 }
             } else {
-                self.record_body(function, input, constraints_before);
+                if let Some(checkpoint) = checkpoint {
+                    crate::compiler::profile::measure("types.commit", || {
+                        self.commit_body(checkpoint)
+                    });
+                }
+                crate::compiler::profile::measure("types.cache_store", || {
+                    self.record_body(function, input, constraints_before)
+                });
             }
         }
         if !errors.is_empty() {
             return Err(errors);
         }
         self.solve_member_constraints().map_err(|e| vec![e])?;
-        self.check_derived_effects(false).map_err(|e| vec![e])?;
+        crate::compiler::profile::measure("types.effects", || self.derive_effects())
+            .map_err(|e| vec![e])?;
         Ok(self)
     }
 
@@ -329,25 +368,15 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
-    fn check_derived_effects(&mut self, validate: bool) -> Result<(), FosterError> {
+    fn validate_derived_effects(&mut self) -> Result<(), FosterError> {
         for (function, definition) in self.hir.functions.iter() {
             crate::compiler::cancellation::check()?;
-            if definition.intrinsic.is_some() {
+            if definition.intrinsic.is_some() || !definition.effects_explicit {
                 continue;
             }
-            let mut derivation = EffectDerivation::new(self, function);
-            derivation.walk_statements(&definition.body);
-            let actual = derivation.effects();
-            let derived_suspends = derivation.suspends;
-            drop(derivation);
-            if !definition.effects_explicit {
-                self.inferred_effects
-                    .insert(function, (actual, derived_suspends));
-                continue;
-            }
-            if !validate {
-                continue;
-            }
+            // These summaries belong to this checker pass. Validation runs only after
+            // inference converges, against exactly the contracts used for derivation.
+            let (actual, derived_suspends) = &self.derived_effects[&function];
             if !effects_are_subset(&actual, &definition.effects) {
                 let missing = actual
                     .iter()
@@ -364,7 +393,7 @@ impl<'a> Checker<'a> {
             }
             let is_entry =
                 definition.name == "main" && self.hir.modules[definition.module].name == "main";
-            if derived_suspends && !definition.suspends && !is_entry {
+            if *derived_suspends && !definition.suspends && !is_entry {
                 return Err(self.error(
                     function,
                     "function body may suspend; add `suspend` to its signature",
@@ -425,7 +454,7 @@ impl<'a> Checker<'a> {
                         self.diagnostics.push(diagnostic);
                     }
                 }
-                if definition.suspends && !derived_suspends {
+                if definition.suspends && !*derived_suspends {
                     let mut diagnostic = crate::diagnostic::Diagnostic::warning(
                         "unused-suspend",
                         format!(
