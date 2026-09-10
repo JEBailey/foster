@@ -972,6 +972,25 @@ impl FunctionCompiler<'_> {
                 match_generic_types(self.types, *schema, actual, &mut substitutions);
             }
         }
+        // A structural implementation can have a different nominal identity from its
+        // parameter contract. Recover the already inferred contract arguments from
+        // the checked callee instead of trying to match those two record identities.
+        if let hir::Expr::Call { callee, .. } = self.hir.expressions[result]
+            && let Some(callee_type) = self.types.expression_type(callee)
+            && let crate::types::Type::Function(checked) = &self.types.types[callee_type]
+        {
+            let offset = usize::from(self.hir.functions[function].receiver.is_some());
+            let parameters = if signature.parameters.len() == checked.parameters.len() {
+                &signature.parameters[..]
+            } else if signature.parameters.len() == checked.parameters.len() + offset {
+                &signature.parameters[offset..]
+            } else {
+                &[]
+            };
+            for (schema, actual) in parameters.iter().zip(&checked.parameters) {
+                match_generic_types(self.types, *schema, *actual, &mut substitutions);
+            }
+        }
         if let Some(actual) = self.types.expression_type(result) {
             match_generic_types(self.types, signature.result, actual, &mut substitutions);
         }

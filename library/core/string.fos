@@ -9,6 +9,8 @@ import core.list
 import core.option
 import core.result
 import std.iter
+import std.cursor as cursors
+import core.unicode as unicode
 
 /// Immutable Unicode text stored as validated UTF-8 bytes.
 /// Private storage preserves the validity invariant across every construction path.
@@ -47,10 +49,16 @@ pub type String = {
     /// Splits around nonoverlapping separators, preserving empty fields.
     /// An empty separator produces one string per Unicode scalar.
     pub func split(self, separator: String) -> List<String> [consume self]
-    /// Returns ASCII-lowercase text while preserving every non-ASCII byte.
+    /// Returns full Unicode lowercase text, including contextual final sigma.
     pub func lower(self) -> String [read self]
-    /// Returns ASCII-uppercase text while preserving every non-ASCII byte.
+    /// Returns full Unicode uppercase text, including multi-scalar expansions.
     pub func upper(self) -> String [read self]
+    /// Changes ASCII letters to uppercase, preserving all other scalars.
+    pub func ascii_upper(self) -> String [read self]
+    /// Changes ASCII letters to lowercase, preserving all other scalars.
+    pub func ascii_lower(self) -> String [read self]
+    /// Returns full default Unicode case folding without normalization or locale tailoring.
+    pub func case_fold(self) -> String [read self]
     /// Returns the number of bytes required by the UTF-8 encoding.
     pub func byte_length(self) -> Int [read self.value]
 
@@ -145,14 +153,14 @@ func decode_bytes(data: Bytes) -> String {
 }
 
 /// A cursor over one stable UTF-8 byte snapshot, never over copied suffix strings.
-type TextCursor = & Iterator<CodePoint> & {
+pub type StringCursor = & Cursor<CodePoint> & {
     data: Bytes
     offset: Int
 }
 
 /// Creates a byte cursor over validated text.
-func cursor(text: String) -> TextCursor {
-    TextCursor { data: text.bytes, offset: 0 }
+func cursor(text: String) -> StringCursor {
+    StringCursor { data: text.bytes, offset: 0 }
 }
 
 impl String {
@@ -162,6 +170,45 @@ impl String {
     }
 }
 
+impl StringCursor {
+    /// Creates a UTF-8 reader over an immutable string snapshot.
+    pub func from(text: String) -> StringCursor { cursor(text) }
+    /// Returns the current UTF-8 byte offset.
+    pub func checkpoint(self: StringCursor) -> Int { self.offset }
+    /// Reads the next scalar without changing the position.
+    pub func peek(self: StringCursor) -> Option<CodePoint> {
+        branch { self.offset >= self.data.length -> Option.None _ -> Option.Some(self.scalar()) }
+    }
+    /// Restores a byte offset only when it is a complete scalar boundary.
+    pub func restore(self: StringCursor, position: Int) -> Bool {
+        return false if !self.boundary?(position)
+        self.offset = position
+        true
+    }
+    /// Copies scalars between two valid byte checkpoints into an item list.
+    pub func span(self: StringCursor, start: Int, end: Int) -> Option<List<CodePoint>> {
+        branch self.text_span(start, end) {
+            Option.None -> Option.None
+            Option.Some(text) -> Option.Some(text.code_points())
+        }
+    }
+    /// Copies a UTF-8 region with scalar-aligned boundaries.
+    pub func text_span(self: StringCursor, start: Int, end: Int) -> Option<String> {
+        return Option.None if end < start || !self.boundary?(start) || !self.boundary?(end)
+        Option.Some(decode_bytes(self.data.slice(start, end)))
+    }
+    /// Copies the text from the current position to the end.
+    pub func remaining(self: StringCursor) -> String { decode_bytes(self.data.slice(self.offset, self.data.length)) }
+    /// Reports whether the reader has reached the end.
+    pub func empty?(self: StringCursor) -> Bool { self.offset == self.data.length }
+    /// Checks that an offset does not split a UTF-8 encoding.
+    func boundary?(self: StringCursor, position: Int) -> Bool {
+        return false if position < 0 || position > self.data.length
+        return true if position == self.data.length
+        let first = self.data[position].int
+        first < 128 || first >= 192
+    }
+}
 /// Returns the encoded width of a valid UTF-8 leading byte.
 func scalar_width(first: Int) -> Int {
     branch {
@@ -172,9 +219,9 @@ func scalar_width(first: Int) -> Int {
     }
 }
 
-impl TextCursor {
+impl StringCursor {
     /// Returns the next complete Unicode scalar, or None after exhaustion.
-    func next(self: TextCursor) -> Option<CodePoint> {
+    pub func next(self: StringCursor) -> Option<CodePoint> {
         branch {
             self.offset >= self.data.length -> Option.None
             _ -> Option.Some(self.next_scalar())
@@ -182,7 +229,14 @@ impl TextCursor {
     }
 
     /// Reads one scalar and advances the byte offset; callers ensure the cursor is nonempty.
-    func next_scalar(self: TextCursor) -> CodePoint {
+    func next_scalar(self: StringCursor) -> CodePoint {
+        let value = self.scalar()
+        self.offset = self.offset + scalar_width(self.data[self.offset].int)
+        value
+    }
+
+    /// Decodes the scalar at the current nonempty position without advancing.
+    func scalar(self: StringCursor) -> CodePoint {
         let first = self.data[self.offset].int
         let width = scalar_width(first)
         let scalar = branch {
@@ -197,7 +251,6 @@ impl TextCursor {
             scalar = scalar * 64 + self.data[self.offset + index].int - 128
             index = index + 1
         }
-        self.offset = self.offset + width
         from_code_point(scalar)
     }
 }
@@ -445,14 +498,23 @@ impl String {
         output
     }
 
-    /// Returns ASCII-lowercase text while preserving every non-ASCII byte.
+    /// Returns full Unicode lowercase text, including contextual final sigma.
     pub func lower(self: String) -> String {
-        ascii_case(self, true)
+        unicode::change_case(self, 0)
     }
 
-    /// Returns ASCII-uppercase text while preserving every non-ASCII byte.
+    /// Returns full default Unicode case folding without normalization or locale tailoring.
+    pub func case_fold(self: String) -> String { unicode::change_case(self, 2) }
+
+    /// Changes ASCII letters to lowercase, preserving all other scalars.
+    pub func ascii_lower(self: String) -> String { ascii_case(self, true) }
+
+    /// Changes ASCII letters to uppercase, preserving all other scalars.
+    pub func ascii_upper(self: String) -> String { ascii_case(self, false) }
+
+    /// Returns full Unicode uppercase text, including multi-scalar expansions.
     pub func upper(self: String) -> String {
-        ascii_case(self, false)
+        unicode::change_case(self, 1)
     }
 }
 
@@ -506,7 +568,7 @@ test "string algorithms preserve Unicode text" {
     assert("".split("") == [])
     assert("".split(",") == [""])
     assert("AZλ🙂".lower() == "azλ🙂")
-    assert("azλ🙂".upper() == "AZλ🙂")
+    assert("azλ🙂".upper() == "AZΛ🙂")
     ()
 }
 

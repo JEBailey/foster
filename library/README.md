@@ -1,5 +1,35 @@
 # Foster standard library
 
+`std.crypto.sha256` provides `sha256::digest(bytes)`, returning a 64-character
+lowercase hexadecimal SHA-256 digest. It is implemented entirely in Foster and
+preserves its input bytes:
+
+```foster
+import std.crypto.sha256
+func main() -> String { sha256::digest("abc".bytes) }
+```
+
+`core.code_point` provides Unicode 17.0.0 classification: `category()` returns a
+`GeneralCategory`; predicates include `letter?`, `alphabetic?`, `digit?`, `numeric?`,
+`alphanumeric?`, `lowercase?`, `uppercase?`, `titlecase?`, `mark?`, `punctuation?`,
+`symbol?`, `separator?`, `control?`, `assigned?`, `identifier_start?`, and
+`identifier_part?`. `letter?` means category L; `alphabetic?` uses the broader
+Alphabetic property. `digit?` means decimal digit (Nd), while `numeric?` means any
+Number category (N). Identifier predicates use XID_Start and XID_Continue;
+these do not change Foster's identifier syntax. Predicates are called as methods,
+for example `'λ'.letter?()` and `'٣'.digit?()`.
+
+`String.lower()` and `upper()` now apply full, locale-independent Unicode casing.
+`case_fold()` supports caseless comparison, for example
+`"Straße".case_fold() == "STRASSE".case_fold()`. These operations also exist on
+`CodePoint` and return strings because mappings can expand (`ß` becomes `SS`).
+`CodePoint.simple_lower()`, `simple_upper()`, and `simple_title()` return a single
+code point. String lowercasing handles Greek final sigma in context. Casing and
+folding do not normalize text or apply Turkish/Lithuanian locale tailoring.
+`String.ascii_lower()` and `ascii_upper()` preserve the previous ASCII-only behavior.
+See [Unicode data maintenance](../tools/unicode/README.md) for provenance and regeneration.
+The new algorithms and lookup tables are written in Foster.
+
 The standard library is written in Foster and is available through explicit imports. Foster has no
 prelude and does not inject library declarations into user modules. Foundational language types
 live under `core`; general-purpose facilities live under `std`.
@@ -114,3 +144,36 @@ Existing `Map.empty()`, `Set.empty()`, and `Set.from(values)` factories construc
 implementations. Use a concrete type annotation when its representation or insertion order matters;
 use the contracts for functions accepting either implementation. See
 [hash collections](../docs/hash-collections.md) for hashing and ownership semantics.
+
+## Checkpointable cursors
+
+`std.cursor.Cursor<T>` extends the iterator contract with `peek`, `checkpoint`,
+`restore`, and `span`. The type parameter is the item type. Construct a concrete
+reader with `StringCursor.from(text)` (`core.string`), `BytesCursor.from(bytes)`,
+or `ListCursor.from(values)` (`std.cursor`). List reads require copyable elements.
+
+```foster
+import core.string
+import std.cursor
+
+let reader = StringCursor.from("Aλ🙂")
+reader.next()
+let start = reader.checkpoint() // byte offset 1
+reader.next()
+let matched = reader.text_span(start, reader.checkpoint()) // Some("λ")
+reader.restore(start)
+```
+
+Checkpoints are source offsets: UTF-8 byte offsets for strings, byte offsets for
+bytes, and element offsets for lists. Use checkpoints with the same source
+snapshot. String readers reject offsets inside a multibyte encoding. Failed
+restores leave the position unchanged; invalid spans return `None`. End-of-input
+reads repeatedly return `None` without advancing. `span` returns a `List<T>`;
+`StringCursor.text_span` and `BytesCursor.byte_span` preserve the source type.
+Spans materialize their result. Cursors reuse stable backing storage and do not
+buffer arbitrary iterators. All cursor algorithms are implemented in Foster.
+
+Concrete cursor operations and generic `Cursor<T>` dispatch are supported by both
+the VM and native backend. `cursor.fos` and `cursor_dispatch.fos` verify UTF-8
+boundaries, reader state, and inherited iterator operations with optimization
+enabled and disabled.

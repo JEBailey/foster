@@ -214,14 +214,11 @@ fn compile_construction(compilation: &Compilation) -> Result<Program, FosterErro
             )
         })
         .collect();
-    compiler.program.string_record = compilation
-        .hir
-        .module_named("core.string")
-        .and_then(|module| compilation.hir.record_named(module, "String"));
-    compiler.program.symbol_record = compilation
-        .hir
-        .module_named("core.symbol")
-        .and_then(|module| compilation.hir.record_named(module, "Symbol"));
+    compiler.program.string_record = compilation.types.core.string;
+    compiler.program.symbol_record = compilation.types.core.symbol;
+    compiler.program.list_record = compilation.types.core.list;
+    compiler.program.bytes_record = compilation.types.core.bytes;
+    compiler.program.byte_buffer_record = compilation.types.core.byte_buffer;
     compiler.program.dispatch = compilation.types.dispatch.clone();
     compiler.program.remote_result = compilation
         .hir
@@ -625,15 +622,15 @@ fn verification_type_inner(
             result: Box::new(nested(function.result)),
         },
         crate::types::Type::Record { record, arguments } => {
-            match information.record_names.get(record).map(String::as_str) {
-                Some("List") => VerificationType::List(Box::new(
+            match Some(*record) {
+                id if id == information.core.list => VerificationType::List(Box::new(
                     arguments
                         .first()
                         .copied()
                         .map(nested)
                         .unwrap_or(VerificationType::Unknown),
                 )),
-                Some("Bytes") => VerificationType::Bytes,
+                id if id == information.core.bytes => VerificationType::Bytes,
                 // Method-only records are structural contracts and carry no unique runtime
                 // representation. Their conformance proof has already been checked.
                 _ if hir.records[*record].fields.is_empty()

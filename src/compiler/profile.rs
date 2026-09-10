@@ -103,6 +103,20 @@ mod tests {
     use super::*;
 
     #[test]
+    fn native_preparation_analyzes_each_body_once_across_specializations() {
+        let compilation = crate::compile("func identity<T>(value: T) -> T { value }\nfunc main() -> Int { assert(identity(true))\nassert(identity(1.5) == 1.5)\nidentity(42) }").unwrap();
+        let (prepared, report) = collect(|| crate::native::prepare(&compilation));
+        let prepared = prepared.unwrap();
+        let bodies = prepared
+            .functions()
+            .iter()
+            .map(|function| function.source_function())
+            .collect::<std::collections::HashSet<_>>();
+        assert!(prepared.functions().len() > bodies.len());
+        assert_eq!(report.counters["native.flow_analysis"], bodies.len());
+    }
+
+    #[test]
     fn compiler_reports_reuse_and_recovery_per_analysis() {
         let source = "func healthy() -> Int { 42 }\nfunc broken() -> Int { false }";
         let mut package =

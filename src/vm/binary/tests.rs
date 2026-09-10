@@ -333,3 +333,22 @@ func main() -> Bool {
     malformed.remote_error = malformed.remote_result;
     assert!(crate::vm::verify(&malformed).is_err());
 }
+
+#[test]
+fn round_trip_preserves_core_identities_with_same_named_user_records() {
+    let compilation = crate::compile(include_str!(
+        "../../../tests/fixtures/programs/core_name_collisions.fos"
+    ))
+    .unwrap();
+    for optimize in [false, true] {
+        let program = compile_with_options(&compilation, CompileOptions { optimize }).unwrap();
+        let decoded = decode_program(&encode_program(&program).unwrap()).unwrap();
+        assert_eq!(program, decoded);
+        assert_eq!(decoded.bytes_record, compilation.types.core.bytes);
+        assert_eq!(decoded.list_record, compilation.types.core.list);
+        assert_eq!(
+            Machine::new(&decoded).run_main().unwrap(),
+            crate::vm::Value::Integer(42)
+        );
+    }
+}

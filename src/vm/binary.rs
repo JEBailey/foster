@@ -16,7 +16,7 @@ use crate::intrinsics::Builtin;
 use crate::types::{DispatchSlot, NominalTypeId};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 24;
+pub const FORMAT_VERSION: u16 = 25;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -65,6 +65,9 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
     w.u8(u8::from(program.main_arguments));
     w.option_id(program.string_record);
     w.option_id(program.symbol_record);
+    w.option_id(program.list_record);
+    w.option_id(program.bytes_record);
+    w.option_id(program.byte_buffer_record);
     w.option_id(program.remote_result);
     w.option_id(program.remote_error);
 
@@ -139,6 +142,9 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
     let main_arguments = r.bool()?;
     let string_record = r.option_id::<Record>()?;
     let symbol_record = r.option_id::<Record>()?;
+    let list_record = r.option_id::<Record>()?;
+    let bytes_record = r.option_id::<Record>()?;
+    let byte_buffer_record = r.option_id::<Record>()?;
     let remote_result = r.option_id::<crate::hir::VariantType>()?;
     let remote_error = r.option_id::<crate::hir::VariantType>()?;
     let records = r.map(|r| {
@@ -188,6 +194,9 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         main_arguments,
         string_record,
         symbol_record,
+        list_record,
+        bytes_record,
+        byte_buffer_record,
         remote_result,
         remote_error,
         records,

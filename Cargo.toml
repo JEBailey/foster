@@ -13,6 +13,7 @@ name = "foster"
 path = "src/main.rs"
 
 [dependencies]
+foster-host = { path = "host" }
 ariadne = "0.6"
 camino = "1.2"
 clap = "4.6.6"
@@ -42,3 +43,8 @@ harness = false
 [[bench]]
 name = "runtime"
 harness = false
+
+[workspace]
+members = ["runtime", "host"]
+default-members = [".", "runtime", "host"]
+resolver = "3"

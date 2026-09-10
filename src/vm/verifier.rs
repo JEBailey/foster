@@ -94,9 +94,15 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
             }
         }
     }
-    for record in [program.string_record, program.symbol_record]
-        .into_iter()
-        .flatten()
+    for record in [
+        program.string_record,
+        program.symbol_record,
+        program.list_record,
+        program.bytes_record,
+        program.byte_buffer_record,
+    ]
+    .into_iter()
+    .flatten()
     {
         if !program.records.contains_key(&record) {
             return Err(FosterError::runtime(
@@ -2092,13 +2098,11 @@ fn constant_type(program: &Program, constant: &Constant) -> VerificationType {
 }
 
 fn record_type(program: &Program, record: crate::hir::RecordId) -> VerificationType {
-    match program
-        .records
-        .get(&record)
-        .map(|metadata| metadata.name.as_str())
-    {
-        Some("List") => VerificationType::List(Box::new(VerificationType::Unknown)),
-        Some("Bytes") => VerificationType::Bytes,
+    match Some(record) {
+        id if id == program.list_record => {
+            VerificationType::List(Box::new(VerificationType::Unknown))
+        }
+        id if id == program.bytes_record => VerificationType::Bytes,
         _ => nominal_record(record),
     }
 }
@@ -2107,10 +2111,7 @@ fn is_foster_byte_buffer(program: &Program, ty: &VerificationType) -> bool {
     let VerificationType::Record { record, .. } = ty else {
         return false;
     };
-    program
-        .records
-        .get(record)
-        .is_some_and(|metadata| metadata.name == "ByteBuffer")
+    Some(*record) == program.byte_buffer_record
 }
 
 fn indexed_element_type(program: &Program, ty: &VerificationType) -> Option<VerificationType> {

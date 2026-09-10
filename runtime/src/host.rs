@@ -1,17 +1,9 @@
-//! Rust source linked beside generated Cranelift objects for native platform services.
-//!
-//! The response object is deliberately opaque to generated code. Accessor functions form the
-//! stable ABI; the Rust layout below may change without changing compiled Foster object files.
-
-pub(super) const SOURCE: &str = r#"
-use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Default)]
 struct FosterHostResponse {
@@ -37,7 +29,10 @@ enum FosterHostValue {
 
 impl FosterHostResponse {
     fn success(value: FosterHostValue) -> Self {
-        let mut response = Self { ok: true, ..Self::default() };
+        let mut response = Self {
+            ok: true,
+            ..Self::default()
+        };
         match value {
             FosterHostValue::Unit => {}
             FosterHostValue::Integer(value) => response.integers[0] = value,
@@ -64,6 +59,9 @@ fn foster_host_response(response: FosterHostResponse) -> usize {
     Box::into_raw(Box::new(response)) as usize
 }
 
+/// # Safety
+/// The handle must own a live response allocated by foster_host_response; the
+/// returned borrow must end before the response is released through the ABI.
 unsafe fn foster_host_response_ref<'a>(response: usize) -> &'a FosterHostResponse {
     unsafe { &*(response as *const FosterHostResponse) }
 }
@@ -89,29 +87,24 @@ fn foster_host_network(
     }
 }
 
-static FOSTER_HOST_DIRECTORY: OnceLock<PathBuf> = OnceLock::new();
-static FOSTER_MONOTONIC_ORIGIN: OnceLock<Instant> = OnceLock::new();
-static FOSTER_NETWORK: OnceLock<Mutex<FosterNetwork>> = OnceLock::new();
+static FOSTER_HOST: OnceLock<services::HostContext> = OnceLock::new();
+fn foster_host() -> &'static services::HostContext {
+    FOSTER_HOST
+        .get_or_init(|| services::HostContext::new(std::env::current_dir().unwrap_or_default()))
+}
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_host_initialize() -> u8 {
-    FOSTER_HOST_DIRECTORY.get_or_init(|| std::env::current_dir().unwrap_or_default());
-    FOSTER_MONOTONIC_ORIGIN.get_or_init(Instant::now);
-    FOSTER_NETWORK.get_or_init(|| Mutex::new(FosterNetwork::default()));
+    foster_host();
     0
 }
 
-fn foster_host_directory() -> &'static PathBuf {
-    FOSTER_HOST_DIRECTORY.get_or_init(|| std::env::current_dir().unwrap_or_default())
+fn foster_host_directory() -> &'static Path {
+    foster_host().working_directory()
 }
 
 fn foster_host_resolve(path: &str) -> PathBuf {
-    let path = Path::new(path);
-    if path.is_absolute() {
-        path.to_path_buf()
-    } else {
-        foster_host_directory().join(path)
-    }
+    foster_host().resolve_path(path)
 }
 
 fn foster_host_path_text(path: PathBuf) -> std::io::Result<String> {
@@ -136,15 +129,15 @@ extern "C" fn foster_rt_v4_host_call_nullary(operation: i64) -> usize {
         45 => foster_host_io(
             "current_directory",
             "",
-            foster_host_path_text(foster_host_directory().clone()).map(FosterHostValue::Text),
+            foster_host_path_text(foster_host_directory().to_path_buf()).map(FosterHostValue::Text),
         ),
         59 => match foster_host_wall_now() {
-            Ok((seconds, nanos)) => FosterHostResponse::success(FosterHostValue::Pair(seconds, nanos)),
+            Ok((seconds, nanos)) => {
+                FosterHostResponse::success(FosterHostValue::Pair(seconds, nanos))
+            }
             Err(error) => FosterHostResponse::error("wall_now", "", 0, error),
         },
-        60 => match i64::try_from(
-            FOSTER_MONOTONIC_ORIGIN.get_or_init(Instant::now).elapsed().as_nanos(),
-        ) {
+        60 => match foster_host().monotonic_nanoseconds() {
             Ok(value) => FosterHostResponse::success(FosterHostValue::Integer(value)),
             Err(_) => FosterHostResponse::error(
                 "monotonic_now",
@@ -231,11 +224,7 @@ extern "C" fn foster_rt_v4_host_call_string(operation: i64, value: usize) -> usi
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_host_call_strings(
-    operation: i64,
-    first: usize,
-    second: usize,
-) -> usize {
+extern "C" fn foster_rt_v4_host_call_strings(operation: i64, first: usize, second: usize) -> usize {
     let first = unsafe { string_value(first) };
     let second = unsafe { string_value(second) };
     let response = match operation {
@@ -254,17 +243,24 @@ extern "C" fn foster_rt_v4_host_call_strings(
         39 => foster_host_io(
             "copy_file",
             first,
-            std::fs::copy(foster_host_resolve(first), foster_host_resolve(second)).and_then(|size| {
-                i64::try_from(size)
-                    .map(FosterHostValue::Integer)
-                    .map_err(|_| std::io::Error::other("copied byte count exceeds Int"))
-            }),
+            std::fs::copy(foster_host_resolve(first), foster_host_resolve(second)).and_then(
+                |size| {
+                    i64::try_from(size)
+                        .map(FosterHostValue::Integer)
+                        .map_err(|_| std::io::Error::other("copied byte count exceeds Int"))
+                },
+            ),
         ),
         40 => match foster_host_path_text(Path::new(first).join(second)) {
             Ok(path) => FosterHostResponse::success(FosterHostValue::Text(path)),
             Err(error) => FosterHostResponse::error("join", first, 0, error.to_string()),
         },
-        _ => FosterHostResponse::error("host", first, operation, "unknown string-pair host operation"),
+        _ => FosterHostResponse::error(
+            "host",
+            first,
+            operation,
+            "unknown string-pair host operation",
+        ),
     };
     foster_host_response(response)
 }
@@ -287,7 +283,12 @@ extern "C" fn foster_rt_v4_host_call_string_ints(
             foster_network_connect(text, first).map(FosterHostValue::Integer),
         ),
         56 => foster_host_read_range(text, first, second),
-        _ => FosterHostResponse::error("host", text, operation, "unknown string/integer host operation"),
+        _ => FosterHostResponse::error(
+            "host",
+            text,
+            operation,
+            "unknown string/integer host operation",
+        ),
     };
     foster_host_response(response)
 }
@@ -331,7 +332,9 @@ extern "C" fn foster_rt_v4_host_call_ints(operation: i64, first: i64, second: i6
             "set_timeout",
             foster_network_set_timeout(first, second).map(|()| FosterHostValue::Unit),
         ),
-        _ => FosterHostResponse::error("host", "", operation, "unknown integer-pair host operation"),
+        _ => {
+            FosterHostResponse::error("host", "", operation, "unknown integer-pair host operation")
+        }
     };
     foster_host_response(response)
 }
@@ -352,7 +355,12 @@ extern "C" fn foster_rt_v4_host_call_string_bytes(
             std::fs::write(foster_host_resolve(text), bytes).map(|()| FosterHostValue::Unit),
         ),
         57 => foster_host_append_bytes(text, bytes),
-        _ => FosterHostResponse::error("host", text, operation, "unknown string/bytes host operation"),
+        _ => FosterHostResponse::error(
+            "host",
+            text,
+            operation,
+            "unknown string/bytes host operation",
+        ),
     };
     foster_host_response(response)
 }
@@ -370,24 +378,30 @@ extern "C" fn foster_rt_v4_host_call_int_bytes(
             "write_bytes",
             foster_network_write_bytes(handle, bytes).map(|()| FosterHostValue::Unit),
         ),
-        _ => FosterHostResponse::error("host", "", operation, "unknown integer/bytes host operation"),
+        _ => FosterHostResponse::error(
+            "host",
+            "",
+            operation,
+            "unknown integer/bytes host operation",
+        ),
     };
     foster_host_response(response)
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_host_call_int_string(
-    operation: i64,
-    handle: i64,
-    text: usize,
-) -> usize {
+extern "C" fn foster_rt_v4_host_call_int_string(operation: i64, handle: i64, text: usize) -> usize {
     let text = unsafe { string_value(text) };
     let response = match operation {
         50 => foster_host_network(
             "write",
             foster_network_write_bytes(handle, text.as_bytes()).map(|()| FosterHostValue::Unit),
         ),
-        _ => FosterHostResponse::error("host", "", operation, "unknown integer/string host operation"),
+        _ => FosterHostResponse::error(
+            "host",
+            "",
+            operation,
+            "unknown integer/string host operation",
+        ),
     };
     foster_host_response(response)
 }
@@ -462,7 +476,9 @@ extern "C" fn foster_rt_v4_host_copy_bytes(response: usize, destination: usize) 
         if destination == 0 {
             std::process::abort();
         }
-        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), destination as *mut u8, bytes.len()) };
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), destination as *mut u8, bytes.len())
+        };
     }
     0
 }
@@ -489,14 +505,23 @@ thread_local! {
 fn foster_execution_failure(message: String) {
     FOSTER_EXECUTION.with(|execution| {
         let mut execution = execution.borrow_mut();
-        if execution.is_none() { *execution = Some(message); }
+        if execution.is_none() {
+            *execution = Some(message);
+        }
     });
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_failure_pending() -> u8 {
     let cleaning = FOSTER_CLEANUP_FAILURES.with(|failures| !failures.borrow().is_empty());
-    if !cleaning && let Some(error) = FOSTER_CANCELLATION.with(|control| control.borrow().as_ref().and_then(|control| control.error())) {
+    if !cleaning
+        && let Some(error) = FOSTER_CANCELLATION.with(|control| {
+            control
+                .borrow()
+                .as_ref()
+                .and_then(|control| control.error())
+        })
+    {
         foster_execution_failure(error.to_string());
     }
     FOSTER_EXECUTION.with(|execution| u8::from(execution.borrow().is_some()))
@@ -515,14 +540,18 @@ extern "C" fn foster_rt_v4_begin_cleanup() -> u8 {
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_end_cleanup() -> u8 {
-    if let Some(Some(original)) = FOSTER_CLEANUP_FAILURES.with(|failures| failures.borrow_mut().pop()) {
+    if let Some(Some(original)) =
+        FOSTER_CLEANUP_FAILURES.with(|failures| failures.borrow_mut().pop())
+    {
         FOSTER_EXECUTION.with(|execution| *execution.borrow_mut() = Some(original));
     }
     0
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_cancellation_point() -> u8 { foster_rt_v4_failure_pending() }
+extern "C" fn foster_rt_v4_cancellation_point() -> u8 {
+    foster_rt_v4_failure_pending()
+}
 
 type FosterRemoteCallback = unsafe extern "C" fn(u64, usize, u8) -> u64;
 type FosterReleaseCallback = unsafe extern "C" fn(usize) -> u8;
@@ -569,7 +598,9 @@ struct FosterRemote {
 
 struct FosterFuture {
     error: Mutex<Option<remote_lifecycle::RemoteError>>,
-    receiver: Mutex<Option<mpsc::Receiver<Result<FosterRemoteCompletion, remote_lifecycle::RemoteError>>>>,
+    receiver: Mutex<
+        Option<mpsc::Receiver<Result<FosterRemoteCompletion, remote_lifecycle::RemoteError>>>,
+    >,
 }
 
 #[unsafe(no_mangle)]
@@ -591,7 +622,10 @@ extern "C" fn foster_rt_v4_remote_spawn(state: u64, release: usize, borrowed: u8
                 // Publish every outstanding failure before reclaiming queued arguments.
                 worker_control.terminate(remote_lifecycle::RemoteError::Failed(error));
             } else {
-                let completion = FosterRemoteCompletion { value, release: message.result_release };
+                let completion = FosterRemoteCompletion {
+                    value,
+                    release: message.result_release,
+                };
                 if worker_control.complete(message.request.unwrap()) {
                     let _ = message.response.send(Ok(completion));
                 }
@@ -633,9 +667,16 @@ extern "C" fn foster_rt_v4_remote_call(
     let request = remote.control.register(move |error| {
         let _ = cancelled.send(Err(error));
     });
-    remote.sender.send(FosterRemoteMessage {
-        request, callback, arguments, result_release, response,
-    }).unwrap_or_else(|_| foster_remote_abort("remote object is closed"));
+    remote
+        .sender
+        .send(FosterRemoteMessage {
+            request,
+            callback,
+            arguments,
+            result_release,
+            response,
+        })
+        .unwrap_or_else(|_| foster_remote_abort("remote object is closed"));
     let receiver = if blocking != 0 || remote.borrowed {
         let completion = receiver
             .recv()
@@ -664,11 +705,17 @@ extern "C" fn foster_rt_v4_future_await(future: usize) -> u64 {
         .take()
         .unwrap_or_else(|| foster_remote_abort("future has already been awaited"));
     let outcome = loop {
-        if foster_rt_v4_failure_pending() != 0 { return 0; }
+        if foster_rt_v4_failure_pending() != 0 {
+            return 0;
+        }
         match receiver.recv_timeout(std::time::Duration::from_millis(1)) {
             Ok(value) => break value,
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
-            Err(_) => break Err(remote_lifecycle::RemoteError::Failed("remote object terminated before replying".into())),
+            Err(_) => {
+                break Err(remote_lifecycle::RemoteError::Failed(
+                    "remote object terminated before replying".into(),
+                ));
+            }
         }
     };
     match outcome {
@@ -676,17 +723,25 @@ extern "C" fn foster_rt_v4_future_await(future: usize) -> u64 {
             completion.release = 0;
             completion.value
         }
-        Err(error) => { *future.error.lock().unwrap() = Some(error); 0 }
+        Err(error) => {
+            *future.error.lock().unwrap() = Some(error);
+            0
+        }
     }
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_future_error(future: usize) -> usize {
     let future = unsafe { &*(future as *const FosterFuture) };
-    future.error.lock().unwrap().take().map_or(0, |error| match error {
-        remote_lifecycle::RemoteError::Shutdown => 1,
-        remote_lifecycle::RemoteError::Failed(message) => owned_string(&message),
-    })
+    future
+        .error
+        .lock()
+        .unwrap()
+        .take()
+        .map_or(0, |error| match error {
+            remote_lifecycle::RemoteError::Shutdown => 1,
+            remote_lifecycle::RemoteError::Failed(message) => owned_string(&message),
+        })
 }
 
 #[unsafe(no_mangle)]
@@ -703,7 +758,12 @@ extern "C" fn foster_rt_v4_remote_release(remote: usize) -> u8 {
     drop(sender);
     // Worker storage belongs to the worker until its safe cancellation point.
     // Detaching here never waits for an arbitrary host operation to return.
-    if idle && let Some(worker) = worker && worker.thread().id() != thread::current().id() { let _ = worker.join(); }
+    if idle
+        && let Some(worker) = worker
+        && worker.thread().id() != thread::current().id()
+    {
+        let _ = worker.join();
+    }
     0
 }
 
@@ -734,7 +794,10 @@ fn foster_host_list_directory(path: &str) -> FosterHostResponse {
 fn foster_host_read_range(path: &str, offset: i64, maximum: i64) -> FosterHostResponse {
     let result = (|| {
         let offset = u64::try_from(offset).map_err(|_| {
-            std::io::Error::new(std::io::ErrorKind::InvalidInput, "file offset cannot be negative")
+            std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "file offset cannot be negative",
+            )
         })?;
         let maximum = usize::try_from(maximum)
             .ok()
@@ -866,137 +929,38 @@ fn foster_random_bytes(count: i64) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-#[derive(Default)]
-struct FosterNetwork {
-    next_handle: i64,
-    listeners: HashMap<i64, Arc<TcpListener>>,
-    connections: HashMap<i64, Arc<Mutex<TcpStream>>>,
-}
-
-impl FosterNetwork {
-    fn allocate_handle(&mut self) -> Result<i64, String> {
-        if self.next_handle == 0 {
-            self.next_handle = 1;
-        }
-        let handle = self.next_handle;
-        self.next_handle = self
-            .next_handle
-            .checked_add(1)
-            .ok_or_else(|| "TCP handle space is exhausted".to_owned())?;
-        Ok(handle)
-    }
-}
-
-fn foster_network() -> Result<std::sync::MutexGuard<'static, FosterNetwork>, String> {
-    FOSTER_NETWORK
-        .get_or_init(|| Mutex::new(FosterNetwork::default()))
-        .lock()
-        .map_err(|_| "network host lock was poisoned".to_owned())
-}
-
 fn foster_network_listen(address: &str, port: i64) -> Result<i64, String> {
-    let port = u16::try_from(port).map_err(|_| "port must be between 0 and 65535".to_owned())?;
-    let listener = TcpListener::bind((address, port))
-        .map_err(|error| format!("could not listen on {address}:{port}: {error}"))?;
-    let mut network = foster_network()?;
-    let handle = network.allocate_handle()?;
-    network.listeners.insert(handle, Arc::new(listener));
-    Ok(handle)
+    foster_host().listen(address, port)
 }
 
 fn foster_network_connect(address: &str, port: i64) -> Result<i64, String> {
-    let port = u16::try_from(port).map_err(|_| "port must be between 0 and 65535".to_owned())?;
-    let connection = TcpStream::connect((address, port))
-        .map_err(|error| format!("could not connect to {address}:{port}: {error}"))?;
-    let mut network = foster_network()?;
-    let handle = network.allocate_handle()?;
-    network
-        .connections
-        .insert(handle, Arc::new(Mutex::new(connection)));
-    Ok(handle)
+    foster_host().connect(address, port)
 }
 
-fn foster_network_accept(listener: i64) -> Result<i64, String> {
-    let listener = foster_network()?
-        .listeners
-        .get(&listener)
-        .cloned()
-        .ok_or_else(|| "TCP listener is closed or invalid".to_owned())?;
-    let (connection, _) = listener
-        .accept()
-        .map_err(|error| format!("could not accept TCP connection: {error}"))?;
-    let mut network = foster_network()?;
-    let handle = network.allocate_handle()?;
-    network
-        .connections
-        .insert(handle, Arc::new(Mutex::new(connection)));
-    Ok(handle)
-}
-
-fn foster_network_connection(handle: i64) -> Result<Arc<Mutex<TcpStream>>, String> {
-    foster_network()?
-        .connections
-        .get(&handle)
-        .cloned()
-        .ok_or_else(|| "TCP connection is closed or invalid".to_owned())
+fn foster_network_accept(handle: i64) -> Result<i64, String> {
+    foster_host().accept(handle)
 }
 
 fn foster_network_read_bytes(handle: i64, maximum: i64) -> Result<Vec<u8>, String> {
-    let maximum = usize::try_from(maximum)
-        .ok()
-        .filter(|maximum| (1..=1024 * 1024).contains(maximum))
-        .ok_or_else(|| "read maximum must be between 1 and 1048576".to_owned())?;
-    let connection = foster_network_connection(handle)?;
-    let mut bytes = vec![0; maximum];
-    let read = connection
-        .lock()
-        .map_err(|_| "TCP connection lock was poisoned".to_owned())?
-        .read(&mut bytes)
-        .map_err(|error| format!("could not read TCP connection: {error}"))?;
-    bytes.truncate(read);
-    Ok(bytes)
+    foster_host().read_bytes(handle, maximum)
 }
 
 fn foster_network_read(handle: i64, maximum: i64) -> Result<String, String> {
-    String::from_utf8(foster_network_read_bytes(handle, maximum)?)
-        .map_err(|_| "TCP input is not valid UTF-8".to_owned())
+    foster_host().read(handle, maximum)
 }
 
 fn foster_network_write_bytes(handle: i64, bytes: &[u8]) -> Result<(), String> {
-    foster_network_connection(handle)?
-        .lock()
-        .map_err(|_| "TCP connection lock was poisoned".to_owned())?
-        .write_all(bytes)
-        .map_err(|error| format!("could not write TCP connection: {error}"))
+    foster_host().write_bytes(handle, bytes)
 }
 
 fn foster_network_set_timeout(handle: i64, milliseconds: i64) -> Result<(), String> {
-    let milliseconds =
-        u64::try_from(milliseconds).map_err(|_| "TCP timeout cannot be negative".to_owned())?;
-    let connection = foster_network_connection(handle)?;
-    let connection = connection
-        .lock()
-        .map_err(|_| "TCP connection lock was poisoned".to_owned())?;
-    let duration = Some(Duration::from_millis(milliseconds));
-    connection
-        .set_read_timeout(duration)
-        .and_then(|()| connection.set_write_timeout(duration))
-        .map_err(|error| format!("could not set TCP timeout: {error}"))
+    foster_host().set_timeout(handle, milliseconds)
 }
 
 fn foster_network_close_listener(handle: i64) -> Result<(), String> {
-    foster_network()?
-        .listeners
-        .remove(&handle)
-        .map(|_| ())
-        .ok_or_else(|| "TCP listener is already closed or invalid".to_owned())
+    foster_host().close_listener(handle)
 }
 
 fn foster_network_close_connection(handle: i64) -> Result<(), String> {
-    foster_network()?
-        .connections
-        .remove(&handle)
-        .map(|_| ())
-        .ok_or_else(|| "TCP connection is already closed or invalid".to_owned())
+    foster_host().close_connection(handle)
 }
-"#;

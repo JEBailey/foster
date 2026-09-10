@@ -2,6 +2,33 @@
 use foster::{native, vm};
 
 #[test]
+fn standard_library_sha256_agrees_in_both_backends() {
+    check(
+        "sha256",
+        include_str!("fixtures/programs/sha256.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn unicode_classification_and_casing_agree_in_both_backends() {
+    check(
+        "unicode",
+        include_str!("fixtures/programs/unicode.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn unicode_mappings_conform_to_ucd_in_both_backends() {
+    check(
+        "unicode-conformance",
+        include_str!("fixtures/programs/unicode_conformance.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn collection_contracts_preserve_concrete_implementations() {
     check(
         "collection-contracts",
@@ -1620,6 +1647,33 @@ func fill(builder: BufferView) -> Int {
 }
 func main() -> Int { inspect([34]) + text_size(" answer ") + fill(ByteBuffer.empty()) }
 "#,
+        Ok("42"),
+    );
+}
+
+#[test]
+fn cursors_preserve_checkpoints_and_unicode_boundaries() {
+    check(
+        "cursor",
+        include_str!("fixtures/programs/cursor.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn generic_cursor_dispatch_preserves_reader_state() {
+    check(
+        "cursor-dispatch",
+        include_str!("fixtures/programs/cursor_dispatch.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn user_record_names_do_not_select_builtin_representations() {
+    check(
+        "core-name-collisions",
+        include_str!("fixtures/programs/core_name_collisions.fos"),
         Ok("42"),
     );
 }

@@ -1064,8 +1064,12 @@ fn value_semantic(registry: &Registry, ty: &VerificationType) -> ValueSemantic {
                 layout: Some(layout),
                 ..
             } => match &registry.get(layout).kind {
-                LayoutKind::Record { name, .. } if name == "String" => ValueSemantic::String,
-                LayoutKind::Record { name, .. } if name == "Symbol" => ValueSemantic::Symbol,
+                LayoutKind::Record { record, .. } if Some(*record) == registry.string_record => {
+                    ValueSemantic::String
+                }
+                LayoutKind::Record { record, .. } if Some(*record) == registry.symbol_record => {
+                    ValueSemantic::Symbol
+                }
                 _ => ValueSemantic::Object,
             },
             _ => ValueSemantic::Object,

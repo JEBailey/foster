@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 24, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 25, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -26,7 +26,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `23` |
+| version | `u16` | `25` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -35,11 +35,17 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | main arguments | `bool` | whether `main` receives `std.process.Arguments` |
 | string record | optional `RecordId` | String wrapper |
 | symbol record | optional `RecordId` | Symbol wrapper |
+| list record | optional `RecordId` | canonical core List identity |
+| bytes record | optional `RecordId` | canonical core Bytes identity |
+| byte buffer record | optional `RecordId` | canonical core ByteBuffer identity |
 | remote result | optional `VariantTypeId` | nominal `core.result.Result` for remote outcomes |
 | remote error | optional `VariantTypeId` | nominal `core.remote_error.RemoteError` for remote failures |
 | records | `vector<(RecordId, string, vector<string> parameters, vector<(string, VerificationType)>)>` | runtime name, generic parameters, and typed indexed field layout |
 | dispatch | `vector<(NominalTypeId, u32 slot, FunctionId)>` | record and enum dispatch |
 | enum cases | `vector<(VariantId, VariantTypeId, string, vector<string> parameters, string, vector<VerificationType>)>` | parent enum, generic parameters, case label, and declared payload layout |
+
+Core wrapper IDs identify standard-library records independently of user type names. Version 25
+adds List, Bytes, and ByteBuffer identities; older bytecode must be rebuilt from source.
 
 Remote outcome IDs identify the actual Result and RemoteError enums, independently of similarly
 named user types. The verifier checks their cases, generic arity, and payload types before
@@ -146,7 +152,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 24 readers accept only version 24 with zero flags. Contract calls retain their checked
+Version 25 readers accept only version 25 with zero flags. Contract calls retain their checked
 generic result type, including when the receiver's concrete representation is erased.
 Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A

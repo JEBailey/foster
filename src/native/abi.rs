@@ -3,7 +3,10 @@
 //! The version is part of every imported symbol. An object compiled against a different runtime
 //! therefore fails at link time instead of silently calling an incompatible function.
 
-pub const VERSION: u16 = 4;
+mod runtime_version {
+    include!("../../runtime/src/version.rs");
+}
+pub const VERSION: u16 = runtime_version::ABI_VERSION;
 
 pub const ALLOC: &str = "foster_rt_v4_alloc";
 pub const DEALLOC: &str = "foster_rt_v4_dealloc";

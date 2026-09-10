@@ -51,8 +51,6 @@ mod runtime_cache;
 pub use ownership::MemoryManagement;
 use ownership::*;
 pub use program::{LogicalSignature, NativeFunction, NativeProgram, prepare};
-mod equality_runtime;
-mod host_runtime;
 
 /// Primitive Foster values supported by the native ABI.
 pub use crate::codegen::ir::Type as NativeType;
@@ -159,11 +157,34 @@ pub fn build_executable(
     prepare(compilation)?.build_executable(output, options)
 }
 
+type RegisterTypes = Vec<Option<VerificationType>>;
+type FunctionFlow = Vec<Option<RegisterTypes>>;
+
+/// Verified flow facts for the immutable construction program, shared by all specializations.
+#[derive(Default)]
+struct FlowFacts {
+    functions: HashMap<FunctionId, FunctionFlow>,
+}
+impl FlowFacts {
+    fn get(
+        &mut self,
+        program: &Program,
+        function: FunctionId,
+    ) -> Result<&[Option<RegisterTypes>], FosterError> {
+        if let std::collections::hash_map::Entry::Vacant(entry) = self.functions.entry(function) {
+            crate::compiler::profile::count("native.flow_analysis");
+            entry.insert(vm::type_states(program, &program.functions[&function])?);
+        }
+        Ok(&self.functions[&function])
+    }
+}
+
 fn reachable_instances(
     compilation: &Compilation,
     program: &Program,
     shared_functions: &HashMap<FunctionId, ir::Function>,
     main: FunctionId,
+    facts: &mut FlowFacts,
 ) -> Result<Vec<NativeInstance>, FosterError> {
     let mut reachable = BTreeSet::new();
     let mut concrete_nominals = BTreeSet::new();
@@ -216,7 +237,7 @@ fn reachable_instances(
                 collect_nominal_types(&ty, &mut concrete_nominals);
             }
         }
-        let type_states = vm::type_states(program, body)?;
+        let type_states = facts.get(program, instance.function)?;
         for (index, instruction) in body.instructions.iter().enumerate() {
             let Some(state) = type_states[index].as_ref() else {
                 continue;
@@ -759,6 +780,7 @@ fn collect_function_types(
     instances: &[NativeInstance],
     builtin_result_types: &HashMap<crate::intrinsics::Builtin, crate::vm::VerificationType>,
     layouts: &mut LayoutRegistry,
+    facts: &mut FlowFacts,
 ) -> Result<HashMap<FunctionId, ir::Signature>, FosterError> {
     instances
         .iter()
@@ -843,11 +865,8 @@ fn collect_function_types(
             if layouts.closure(function).is_some() {
                 layouts.instantiate_closure(function, &instance.key.substitutions)?;
             }
-            for state in vm::type_states(program, &program.functions[&function])?
-                .into_iter()
-                .flatten()
-            {
-                for ty in state.into_iter().flatten() {
+            for state in facts.get(program, function)?.iter().flatten() {
+                for ty in state.iter().flatten() {
                     layouts.instantiate_type(&ty.specialize(&instance.key.substitutions))?;
                 }
             }
@@ -1057,27 +1076,14 @@ fn native_type(
         Type::Record {
             record,
             ref arguments,
-        } if compilation.hir.records[record].name == "String"
-            && compilation.hir.modules[compilation.hir.records[record].module].name
-                == "core.string" =>
-        {
-            Ok(NativeType::String)
-        }
-        Type::Record { record, .. }
-            if compilation.hir.records[record].name == "Symbol"
-                && compilation.hir.modules[compilation.hir.records[record].module].name
-                    == "core.symbol" =>
-        {
+        } if Some(record) == compilation.types.core.string => Ok(NativeType::String),
+        Type::Record { record, .. } if Some(record) == compilation.types.core.symbol => {
             Ok(NativeType::String)
         }
         Type::Record { record, .. } if record_uses_dynamic_dispatch(compilation, record) => {
             Ok(NativeType::Object(layouts.opaque()))
         }
-        Type::Record { record, .. }
-            if compilation.hir.records[record].name == "Bytes"
-                && compilation.hir.modules[compilation.hir.records[record].module].name
-                    == "core.bytes" =>
-        {
+        Type::Record { record, .. } if Some(record) == compilation.types.core.bytes => {
             let concrete = crate::vm::VerificationType::Bytes;
             layouts.instantiate_type(&concrete)?;
             layouts
@@ -1088,11 +1094,7 @@ fn native_type(
         Type::Record {
             record,
             ref arguments,
-        } if compilation.hir.records[record].name == "List"
-            && compilation.hir.modules[compilation.hir.records[record].module].name
-                == "core.list"
-            && arguments.len() == 1 =>
-        {
+        } if Some(record) == compilation.types.core.list && arguments.len() == 1 => {
             let element =
                 specialized_verification_type(compilation, arguments[0], substitutions, 0)?;
             let concrete = crate::vm::VerificationType::List(Box::new(element));
@@ -1210,18 +1212,11 @@ fn specialized_verification_type(
             parameter_modes: function.parameter_modes.clone(),
             result: Box::new(nested(function.result)?),
         },
-        Type::Record { record, .. }
-            if compilation.hir.records[*record].name == "Bytes"
-                && compilation.hir.modules[compilation.hir.records[*record].module].name
-                    == "core.bytes" =>
-        {
+        Type::Record { record, .. } if Some(*record) == compilation.types.core.bytes => {
             VerificationType::Bytes
         }
         Type::Record { record, arguments }
-            if compilation.hir.records[*record].name == "List"
-                && compilation.hir.modules[compilation.hir.records[*record].module].name
-                    == "core.list"
-                && arguments.len() == 1 =>
+            if Some(*record) == compilation.types.core.list && arguments.len() == 1 =>
         {
             VerificationType::List(Box::new(nested(arguments[0])?))
         }
@@ -1274,11 +1269,7 @@ fn concrete_native_type(
         VerificationType::CodePoint => Ok(NativeType::CodePoint),
         VerificationType::Byte => Ok(NativeType::Byte),
         VerificationType::Record { record, .. }
-            if compilation
-                .types
-                .record_names
-                .get(record)
-                .is_some_and(|name| name == "String") =>
+            if Some(*record) == compilation.types.core.string =>
         {
             Ok(NativeType::String)
         }
@@ -1288,20 +1279,12 @@ fn concrete_native_type(
             Ok(NativeType::Object(layouts.opaque()))
         }
         VerificationType::Record { record, .. }
-            if compilation
-                .types
-                .record_names
-                .get(record)
-                .is_some_and(|name| name == "Symbol") =>
+            if Some(*record) == compilation.types.core.symbol =>
         {
             Ok(NativeType::String)
         }
         VerificationType::Record { record, .. }
-            if compilation
-                .types
-                .record_names
-                .get(record)
-                .is_some_and(|name| name == "Bytes") =>
+            if Some(*record) == compilation.types.core.bytes =>
         {
             layouts.instantiate_type(&VerificationType::Bytes)?;
             layouts
@@ -1363,11 +1346,16 @@ fn record_uses_dynamic_dispatch(compilation: &Compilation, record: crate::hir::R
     }
     let has_contract_surface =
         !declaration.methods.is_empty() || !declaration.compositions.is_empty();
+    // Inherited defaults add dispatch entries but do not give a structural
+    // contract its own concrete implementation storage.
     let has_implementation = compilation
         .types
         .dispatch
-        .keys()
-        .any(|(nominal, _)| *nominal == crate::types::NominalTypeId::Record(record));
+        .iter()
+        .any(|((nominal, _), function)| {
+            *nominal == crate::types::NominalTypeId::Record(record)
+                && !compilation.hir.composition_owners.contains_key(function)
+        });
     let provides_defaults = compilation.hir.composition_dispatch.iter().any(|function| {
         let method = &compilation.hir.functions[*function];
         !compilation.hir.composition_owners.contains_key(function)

@@ -1080,6 +1080,7 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
         "core.bytes.buffer",
         include_str!("../library/core/bytes/buffer.fos"),
     ),
+    ("std.cursor", include_str!("../library/std/cursor.fos")),
     ("std.iter", include_str!("../library/std/iter.fos")),
     ("std.iter.map", include_str!("../library/std/iter/map.fos")),
     (
@@ -1119,6 +1120,15 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
     ("core.int", include_str!("../library/core/int.fos")),
     ("core.float", include_str!("../library/core/float.fos")),
     ("core.string", include_str!("../library/core/string.fos")),
+    (
+        "std.crypto.sha256",
+        include_str!("../library/std/crypto/sha256.fos"),
+    ),
+    ("core.unicode", include_str!("../library/core/unicode.fos")),
+    (
+        "core.unicode.data",
+        include_str!("../library/core/unicode/data.fos"),
+    ),
     ("core.symbol", include_str!("../library/core/symbol.fos")),
     (
         "std.collections.map",

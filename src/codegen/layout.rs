@@ -97,6 +97,8 @@ pub enum LegalType {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Registry {
+    string_record: Option<RecordId>,
+    symbol_record: Option<RecordId>,
     layouts: Vec<Layout>,
     records: HashMap<RecordId, LayoutId>,
     variants: HashMap<VariantTypeId, LayoutId>,
@@ -509,7 +511,11 @@ fn layout_kind_has_generic(kind: &LayoutKind) -> bool {
 /// This is deliberately run before optimization.  Consequently field order and variant tags are
 /// stable even when an optimizer later removes a construction site.
 pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
-    let mut registry = Registry::default();
+    let mut registry = Registry {
+        string_record: program.string_record,
+        symbol_record: program.symbol_record,
+        ..Registry::default()
+    };
     registry.opaque = Some(registry.push(LayoutKind::Opaque));
 
     let mut records = program.records.iter().collect::<Vec<_>>();

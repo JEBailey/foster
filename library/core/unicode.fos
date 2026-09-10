@@ -1,0 +1,166 @@
+//! Unicode 17.0.0 table lookup and locale-independent default casing, implemented in Foster.
+
+import core.bytes
+import core.list
+import core.string
+import core.unicode.data as data
+
+/// Reads an unsigned integer from a fixed-width ASCII hexadecimal table field.
+func hex(table: Bytes, offset: Int, width: Int) -> Int {
+    let value = 0
+    let index = 0
+    loop {
+        break if index == width
+        let digit = table[offset + index].int
+        value = value * 16 + branch { digit <= 57 -> digit - 48 _ -> digit - 55 }
+        index = index + 1
+    }
+    value
+}
+
+/// Returns the first record whose key is at least point, or the record count.
+func lower_bound(table: Bytes, point: Int, width: Int, key_offset: Int) -> Int {
+    let low = 0
+    let high = table.length / width
+    loop {
+        break if low >= high
+        let middle = low + (high - low) / 2
+        branch {
+            hex(table, middle * width + key_offset, 6) < point -> { low = middle + 1 }
+            _ -> { high = middle }
+        }
+    }
+    low
+}
+
+/// Searches sorted inclusive ranges; omitted code points have value zero.
+func range_value(table: Bytes, point: Int) -> Int {
+    let offset = lower_bound(table, point, 14, 6) * 14
+    return 0 if offset == table.length
+    return 0 if hex(table, offset, 6) > point
+    hex(table, offset + 12, 2)
+}
+
+/// Tests one bit of a Unicode property mask without platform-specific operations.
+func bit?(bits: Int, mask: Int) -> Bool {
+    bits / mask - bits / (mask * 2) * 2 == 1
+}
+
+/// Returns the pinned General_Category index used by core.code_point.
+pub func category(point: Int) -> Int { range_value(data::categories().bytes, point) }
+
+/// Evaluates a Unicode classification property; property IDs are internal library details.
+pub func property(point: Int, property: Int) -> Bool {
+    let category = category(point)
+    let bits = range_value(data::properties().bytes, point)
+    branch {
+        property == 0 -> category >= 1 && category <= 5
+        property == 1 -> bit?(bits, 1)
+        property == 2 -> category == 9
+        property == 3 -> category >= 9 && category <= 11
+        property == 4 -> bit?(bits, 2)
+        property == 5 -> bit?(bits, 4)
+        property == 6 -> category == 3
+        property == 7 -> category >= 6 && category <= 8
+        property == 8 -> category >= 12 && category <= 18
+        property == 9 -> category >= 19 && category <= 22
+        property == 10 -> category >= 23 && category <= 25
+        property == 11 -> category == 26
+        property == 12 -> category != 0
+        property == 13 -> bit?(bits, 64)
+        property == 14 -> bit?(bits, 128)
+        property == 15 -> bit?(bits, 8)
+        _ -> false
+    }
+}
+
+/// Applies simple lowercase (0), uppercase (1), or titlecase (2) to a valid scalar.
+pub func simple_case(point: Int, mode: Int) -> CodePoint {
+    let table = branch {
+        mode == 0 -> data::simple_lower().bytes
+        mode == 1 -> data::simple_upper().bytes
+        _ -> data::simple_title().bytes
+    }
+    let offset = lower_bound(table, point, 12, 0) * 12
+    return from_code_point(point) if offset == table.length
+    return from_code_point(point) if hex(table, offset, 6) != point
+    from_code_point(hex(table, offset + 6, 6))
+}
+
+/// Applies full lowercase (0), uppercase (1), or default case folding (2).
+/// Lowercase handles Final_Sigma in linear time; no locale tailoring or normalization.
+pub func change_case(text: String, mode: Int) -> String {
+    let table = branch {
+        mode == 0 -> data::lower().bytes
+        mode == 1 -> data::upper().bytes
+        _ -> data::fold().bytes
+    }
+    let properties = data::properties().bytes
+    let points = text.code_points()
+    let following = []
+    branch {
+        mode == 0 -> {
+            let next_cased = false
+            let index = points.length
+            loop {
+                break if index == 0
+                index = index - 1
+                following.push(next_cased)
+                let bits = range_value(properties, points[index])
+                // Ignore Case_Ignorable even when it overlaps Cased (e.g. U+0345).
+                branch { !bit?(bits, 32) -> { next_cased = bit?(bits, 16) } _ -> () }
+            }
+        }
+        _ -> ()
+    }
+    let output = StringBuilder.empty()
+    let preceding_cased = false
+    let index = 0
+    loop {
+        break if index == points.length
+        let point = points[index]
+        let final_sigma = false
+        branch {
+            mode == 0 -> { final_sigma = point == 931 && preceding_cased && !following[points.length - index - 1] }
+            _ -> ()
+        }
+        branch {
+            final_sigma -> output.push(from_code_point(962))
+            _ -> append_mapping(output, table, point)
+        }
+        branch {
+            mode == 0 -> {
+                let bits = range_value(properties, point)
+                branch { !bit?(bits, 32) -> { preceding_cased = bit?(bits, 16) } _ -> () }
+            }
+            _ -> ()
+        }
+        index = index + 1
+    }
+    (move output).finish()
+}
+
+/// Appends the mapped scalars, or the original scalar when there is no mapping.
+func append_mapping(output: StringBuilder, table: Bytes, point: Int) -> () {
+    let offset = lower_bound(table, point, 25, 0) * 25
+    branch {
+        offset == table.length -> output.push(from_code_point(point))
+        hex(table, offset, 6) != point -> output.push(from_code_point(point))
+        _ -> {
+            let count = hex(table, offset + 6, 1)
+            let index = 0
+            loop {
+                break if index == count
+                output.push(from_code_point(hex(table, offset + 7 + index * 6, 6)))
+                index = index + 1
+            }
+        }
+    }
+}
+
+test "Unicode default casing expands and handles case-ignorable context" {
+    assert(change_case("Straße ﬃ", 1) == "STRASSE FFI")
+    assert(change_case("ΟΣ ΟΣΑ Σ", 0) == "ος οσα σ")
+    assert(change_case("Straße Σςσ", 2) == "strasse σσσ")
+    assert(property(837, 1) && !property(837, 0))
+}

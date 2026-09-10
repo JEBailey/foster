@@ -1,0 +1,4 @@
+[package]
+name = "unicode_generator"
+source = "src"
+

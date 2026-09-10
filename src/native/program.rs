@@ -87,7 +87,9 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
     let main = program
         .main
         .ok_or_else(|| native_error("native compilation requires a `main` function"))?;
-    let instances = reachable_instances(compilation, &program, &shared.functions, main)?;
+    let mut facts = FlowFacts::default();
+    let instances =
+        reachable_instances(compilation, &program, &shared.functions, main, &mut facts)?;
     let instance_ids = instances
         .iter()
         .map(|instance| (instance.key.clone(), instance.ir_function))
@@ -99,6 +101,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         &instances,
         &builtin_result_types,
         &mut layouts,
+        &mut facts,
     )?;
     // Projected mutable fields are addresses, not the objects stored at those addresses.
     // Materialize typed borrowed pointers before freezing the physical-layout registry.
@@ -139,19 +142,9 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         runtime_literal_indices,
         functions: Vec::new(),
     };
-    let mut states = None;
     for instance in &prepared.instances {
         let source = &prepared.program.functions[&instance.key.function];
-        if states
-            .as_ref()
-            .is_none_or(|(function, _)| *function != instance.key.function)
-        {
-            states = Some((
-                instance.key.function,
-                vm::type_states(&prepared.program, source)?,
-            ));
-        }
-        let source_states = &states.as_ref().unwrap().1;
+        let source_states = facts.get(&prepared.program, instance.key.function)?;
         let environment = prepared.environment();
         let (lowered, failure_cleanup) = lower_shared_to_native_ir(
             &shared.functions[&instance.key.function],

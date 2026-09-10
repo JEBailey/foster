@@ -115,8 +115,34 @@ impl ResolvedCall {
     }
 }
 
+/// Canonical standard-library record identities, resolved once after lowering.
+#[derive(Debug, Default)]
+pub struct CoreRecords {
+    pub string: Option<RecordId>,
+    pub symbol: Option<RecordId>,
+    pub bytes: Option<RecordId>,
+    pub list: Option<RecordId>,
+    pub byte_buffer: Option<RecordId>,
+}
+impl CoreRecords {
+    pub(crate) fn resolve(hir: &crate::hir::PackageHir) -> Self {
+        let find = |module, name| {
+            hir.module_named(module)
+                .and_then(|id| hir.record_named(id, name))
+        };
+        Self {
+            string: find("core.string", "String"),
+            symbol: find("core.symbol", "Symbol"),
+            bytes: find("core.bytes", "Bytes"),
+            list: find("core.list", "List"),
+            byte_buffer: find("core.bytes.buffer", "ByteBuffer"),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct TypeInformation {
+    pub core: CoreRecords,
     pub types: Arena<Type>,
     pub expressions: HashMap<ExprId, TypeId>,
     pub integer_promotions: HashSet<ExprId>,
@@ -147,7 +173,7 @@ impl TypeInformation {
             }
             match &types.types[ty] {
                 Type::Generic(_) | Type::Function(_) | Type::Remote(_) | Type::Future(_) => true,
-                Type::Record { record, arguments } if types.record_names[record] == "List" => {
+                Type::Record { record, arguments } if Some(*record) == types.core.list => {
                     arguments.iter().any(|ty| visit(types, *ty, seen))
                 }
                 Type::Record { record, arguments } => {
@@ -184,7 +210,7 @@ impl TypeInformation {
         ) || matches!(
             self.types[ty],
             Type::Record { record, .. }
-                if self.record_names.get(&record).is_some_and(|name| name == "Symbol")
+                if Some(record) == self.core.symbol
         )
     }
 

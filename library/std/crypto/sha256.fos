@@ -1,0 +1,201 @@
+//! SHA-256 digests of binary data, implemented with portable Foster integer arithmetic.
+// Functions and constants: https://www.rfc-editor.org/rfc/rfc6234#section-5
+
+import core.bytes
+import core.list
+import core.string
+
+const MODULUS = 4294967296
+
+/// Reduces a nonnegative integer to an unsigned 32-bit word.
+func word(value: Int) -> Int { value - value / MODULUS * MODULUS }
+
+/// Rotates an unsigned word right using the supplied power-of-two divisor.
+func rotate(value: Int, divisor: Int) -> Int {
+    value / divisor + (value - value / divisor * divisor) * (MODULUS / divisor)
+}
+
+/// Builds the 16-by-16 nibble AND table once per digest.
+func and_table() -> List<Int> {
+    let table = []
+    let a = 0
+    loop {
+        break if a == 16
+        let b = 0
+        loop {
+            break if b == 16
+            let bit = 1
+            let value = 0
+            loop {
+                break if bit == 16
+                branch {
+                    a / bit - a / (bit * 2) * 2 == 1 && b / bit - b / (bit * 2) * 2 == 1 -> { value = value + bit }
+                    _ -> ()
+                }
+                bit = bit * 2
+            }
+            table.push(value)
+            b = b + 1
+        }
+        a = a + 1
+    }
+    table
+}
+
+/// Computes a three-way XOR, choice, or majority using eight nibble lookups.
+func combine(table: List<Int>, a: Int, b: Int, c: Int, mode: Int) -> Int {
+    let left = a
+    let middle = b
+    let right = c
+    let output = 0
+    let place = 1
+    loop {
+        break if place == MODULUS
+        let x = left - left / 16 * 16
+        let y = middle - middle / 16 * 16
+        let z = right - right / 16 * 16
+        let xy = table[x * 16 + y]
+        let digit = branch {
+            mode == 0 -> {
+                let exclusive = x + y - 2 * xy
+                exclusive + z - 2 * table[exclusive * 16 + z]
+            }
+            mode == 1 -> xy + table[(15 - x) * 16 + z]
+            _ -> xy + table[(x + y - 2 * xy) * 16 + z]
+        }
+        output = output + digit * place
+        left = left / 16
+        middle = middle / 16
+        right = right / 16
+        place = place * 16
+    }
+    output
+}
+
+/// Decodes the standard's hexadecimal initial words and round constants.
+func words(text: String) -> List<Int> {
+    let encoded = text.bytes
+    let result = []
+    let index = 0
+    loop {
+        break if index == encoded.length
+        let value = 0
+        let count = 0
+        loop {
+            break if count == 8
+            let digit = encoded[index].int
+            value = value * 16 + branch { digit <= 57 -> digit - 48 _ -> digit - 87 }
+            index = index + 1
+            count = count + 1
+        }
+        result.push(value)
+    }
+    result
+}
+
+/// Returns the SHA-256 digest of arbitrary bytes as lowercase hexadecimal text.
+pub func digest(input: Bytes) -> String {
+    let table = and_table()
+    let constants = words("428a2f9871374491b5c0fbcfe9b5dba53956c25b59f111f1923f82a4ab1c5ed5d807aa9812835b01243185be550c7dc372be5d7480deb1fe9bdc06a7c19bf174e49b69c1efbe47860fc19dc6240ca1cc2de92c6f4a7484aa5cb0a9dc76f988da983e5152a831c66db00327c8bf597fc7c6e00bf3d5a7914706ca63511429296727b70a852e1b21384d2c6dfc53380d13650a7354766a0abb81c2c92e92722c85a2bfe8a1a81a664bc24b8b70c76c51a3d192e819d6990624f40e3585106aa07019a4c1161e376c082748774c34b0bcb5391c0cb34ed8aa4a5b9cca4f682e6ff3748f82ee78a5636f84c878148cc7020890befffaa4506cebbef9a3f7c67178f2")
+    let state = words("6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19")
+    let padded_length = (input.length + 9 + 63) / 64 * 64
+    let offset = 0
+    loop {
+        break if offset == padded_length
+        let schedule = []
+        let index = 0
+        loop {
+            break if index == 16
+            let value = 0
+            let byte_index = 0
+            loop {
+                break if byte_index == 4
+                let position = offset + index * 4 + byte_index
+                let byte = branch {
+                    position < input.length -> input[position].int
+                    position == input.length -> 128
+                    position >= padded_length - 8 -> {
+                        let divisor = 1
+                        let remaining = padded_length - position - 1
+                        loop {
+                            break if remaining == 0
+                            divisor = divisor * 256
+                            remaining = remaining - 1
+                        }
+                        let shifted = input.length * 8 / divisor
+                        shifted - shifted / 256 * 256
+                    }
+                    _ -> 0
+                }
+                value = value * 256 + byte
+                byte_index = byte_index + 1
+            }
+            schedule.push(value)
+            index = index + 1
+        }
+        loop {
+            break if index == 64
+            let x = schedule[index - 15]
+            let y = schedule[index - 2]
+            let small0 = combine(table, rotate(x, 128), rotate(x, 262144), x / 8, 0)
+            let small1 = combine(table, rotate(y, 131072), rotate(y, 524288), y / 1024, 0)
+            schedule.push(word(schedule[index - 16] + small0 + schedule[index - 7] + small1))
+            index = index + 1
+        }
+        let a = state[0]
+        let b = state[1]
+        let c = state[2]
+        let d = state[3]
+        let e = state[4]
+        let f = state[5]
+        let g = state[6]
+        let h = state[7]
+        index = 0
+        loop {
+            break if index == 64
+            let big1 = combine(table, rotate(e, 64), rotate(e, 2048), rotate(e, 33554432), 0)
+            let first = h + big1 + combine(table, e, f, g, 1) + constants[index] + schedule[index]
+            let big0 = combine(table, rotate(a, 4), rotate(a, 8192), rotate(a, 4194304), 0)
+            let second = big0 + combine(table, a, b, c, 2)
+            h = g
+            g = f
+            f = e
+            e = word(d + first)
+            d = c
+            c = b
+            b = a
+            a = word(first + second)
+            index = index + 1
+        }
+        state[0] = word(state[0] + a)
+        state[1] = word(state[1] + b)
+        state[2] = word(state[2] + c)
+        state[3] = word(state[3] + d)
+        state[4] = word(state[4] + e)
+        state[5] = word(state[5] + f)
+        state[6] = word(state[6] + g)
+        state[7] = word(state[7] + h)
+        offset = offset + 64
+    }
+    let output = StringBuilder.empty()
+    let digits = "0123456789abcdef".bytes
+    let hex_index = 0
+    loop {
+        break if hex_index == 8
+        let hex_divisor = 268435456
+        loop {
+            break if hex_divisor == 0
+            let hex_shifted = state[hex_index] / hex_divisor
+            output.push(from_code_point(digits[hex_shifted - hex_shifted / 16 * 16].int))
+            hex_divisor = hex_divisor / 16
+        }
+        hex_index = hex_index + 1
+    }
+    (move output).finish()
+}
+
+test "SHA-256 empty, short and multi-block known answers" {
+    assert(digest("".bytes) == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    assert(digest("abc".bytes) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+    assert(digest("abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq".bytes) == "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1")
+}

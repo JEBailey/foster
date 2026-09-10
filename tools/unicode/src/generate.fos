@@ -1,0 +1,490 @@
+//! Offline Unicode 17.0.0 table and conformance generator. Run from the repository root.
+
+import core.bytes
+import core.code_point
+import core.list
+import core.result
+import core.string
+import std.fs as fs
+import std.crypto.sha256
+
+const LIMIT = 1114112
+
+type Mapping = { point: Int, targets: List<Int> }
+impl Mapping {
+    func copy(self: Mapping) -> self { Mapping { point: self.point, targets: self.targets.slice(0, self.targets.length) } }
+}
+type Database = {
+    categories: List<Int>
+    properties: List<Int>
+    lower: List<Mapping>
+    upper: List<Mapping>
+    title: List<Mapping>
+    full_lower: List<Mapping>
+    full_upper: List<Mapping>
+    fold: List<Mapping>
+}
+
+func zeros() -> List<Int> {
+    let values = []
+    loop { break if values.length == LIMIT
+        values.push(0)
+    }
+    values
+}
+
+func read_file(path: String) -> String {
+    branch fs::read_text(path) {
+        Result.Ok(text) -> text
+        Result.Error(error) -> { assert(false, "cannot read " + path + ": " + error.message)
+            ""
+        }
+    }
+}
+
+func source(root: String, name: String) -> String { read_file(root + "/tools/unicode/17.0.0/" + name) }
+
+/// Removes comments and trims fields without changing empty UnicodeData fields.
+func fields(line: String) -> List<String> {
+    let comments = (move line).split("#")
+    let text = comments[0].copy().trim()
+    return [] if text.empty?
+    (move text).split(";").map((field: String) -> field.copy().trim())
+}
+
+func number(text: String) -> Int {
+    let encoded = text.bytes
+    assert(encoded.length > 0, "empty hexadecimal field")
+    let value = 0
+    let index = 0
+    loop {
+        break if index == encoded.length
+        let digit = encoded[index].int
+        assert((digit >= 48 && digit <= 57) || (digit >= 65 && digit <= 70), "invalid hexadecimal field")
+        value = value * 16 + branch { digit <= 57 -> digit - 48 _ -> digit - 55 }
+        index = index + 1
+    }
+    value
+}
+
+func category_index(name: String) -> Int {
+    let names = "Cn Lu Ll Lt Lm Lo Mn Mc Me Nd Nl No Pc Pd Ps Pe Pi Pf Po Sm Sc Sk So Zs Zl Zp Cc Cf Cs Co".split(" ")
+    let index = 0
+    loop {
+        break if index == names.length
+        return index if names[index] == name
+        index = index + 1
+    }
+    assert(false, "unknown Unicode category " + name)
+    0
+}
+
+/// Replaces existing entries in place, preserving UCD insertion order for fixtures.
+func put(table: List<Mapping>, point: Int, targets: List<Int>) -> List<Mapping> [consume table, consume targets] {
+    let index = 0
+    loop {
+        break if index == table.length
+        branch {
+            table[index].point == point -> {
+                table[index] = Mapping { point, targets }
+                return table
+            }
+            _ -> ()
+        }
+        index = index + 1
+    }
+    table.push(Mapping { point, targets })
+    table
+}
+
+func read_unicode(db: Database, text: String) -> Database [consume db, consume text] {
+    let lines = (move text).split("\n")
+    let index = 0
+    let range_start = -1
+    let range_category = -1
+    loop {
+        break if index == lines.length
+        let row = fields(lines[index].copy())
+        index = index + 1
+        continue if row.empty?
+        assert(row.length == 15, "UnicodeData record must have 15 fields")
+        let point = number(row[0])
+        assert(point < LIMIT, "invalid code point")
+        let category = category_index(row[2])
+        branch {
+            row[1].ends_with?(", First>") -> {
+                assert(range_start == -1, "nested UnicodeData range")
+                range_start = point
+                range_category = category
+            }
+            row[1].ends_with?(", Last>") -> {
+                assert(range_start >= 0 && range_start <= point && range_category == category, "invalid UnicodeData range")
+                loop {
+                    break if range_start > point
+                    db.categories[range_start] = category
+                    range_start = range_start + 1
+                }
+                range_start = -1
+            }
+            _ -> { db.categories[point] = category }
+        }
+        branch { !row[13].empty? -> {
+            let lower = number(row[13])
+            db.lower.push(Mapping { point, targets: [lower] })
+            db.full_lower.push(Mapping { point, targets: [lower] })
+        } _ -> () }
+        branch { !row[12].empty? -> {
+            let upper = number(row[12])
+            db.upper.push(Mapping { point, targets: [upper] })
+            db.full_upper.push(Mapping { point, targets: [upper] })
+        } _ -> () }
+        branch { !row[14].empty? -> { db.title.push(Mapping { point, targets: [number(row[14])] }) } _ -> () }
+    }
+    assert(range_start == -1, "unterminated UnicodeData range")
+    db
+}
+
+func targets(text: String) -> List<Int> { text.copy().split(" ").filter((part: String) -> !part.empty?).map(number) }
+
+func read_special(db: Database, text: String) -> Database [consume db, consume text] {
+    let lines = (move text).split("\n")
+    let index = 0
+    loop {
+        break if index == lines.length
+        let row = fields(lines[index].copy())
+        index = index + 1
+        continue if row.empty?
+        assert(row.length >= 5, "invalid SpecialCasing record")
+        branch {
+            !row[4].empty? -> {
+                let conditions = row[4].copy().split(" ")
+                assert(row[4] == "Final_Sigma" || conditions[0] == "lt" || conditions[0] == "tr" || conditions[0] == "az", "new contextual casing rule requires review")
+            }
+            _ -> {
+                let point = number(row[0])
+                db.full_lower = put(db.full_lower.slice(0, db.full_lower.length), point, targets(row[1]))
+                db.full_upper = put(db.full_upper.slice(0, db.full_upper.length), point, targets(row[3]))
+            }
+        }
+    }
+    db
+}
+
+func read_fold(db: Database, text: String) -> Database [consume db, consume text] {
+    let lines = (move text).split("\n")
+    let index = 0
+    loop {
+        break if index == lines.length
+        let row = fields(lines[index].copy())
+        index = index + 1
+        continue if row.empty?
+        assert(row.length >= 3, "invalid CaseFolding record")
+        branch { row[1] == "C" || row[1] == "F" -> { db.fold = put(db.fold.slice(0, db.fold.length), number(row[0]), targets(row[2])) } _ -> () }
+    }
+    db
+}
+
+func property_mask(name: String) -> Int {
+    branch {
+        name == "Alphabetic" -> 1
+        name == "Lowercase" -> 2
+        name == "Uppercase" -> 4
+        name == "White_Space" -> 8
+        name == "Cased" -> 16
+        name == "Case_Ignorable" -> 32
+        name == "XID_Start" -> 64
+        name == "XID_Continue" -> 128
+        _ -> 0
+    }
+}
+
+func read_properties(db: Database, text: String) -> Database [consume db, consume text] {
+    let lines = (move text).split("\n")
+    let index = 0
+    loop {
+        break if index == lines.length
+        let row = fields(lines[index].copy())
+        index = index + 1
+        continue if row.empty?
+        assert(row.length >= 2, "invalid property record")
+        let mask = property_mask(row[1])
+        continue if mask == 0
+        let ends = row[0].copy().split("..")
+        let point = number(ends[0])
+        let last = number(ends[ends.length - 1])
+        assert(point <= last && last < LIMIT, "invalid property range")
+        loop {
+            break if point > last
+            let old = db.properties[point]
+            branch { old / mask - old / (mask * 2) * 2 == 0 -> { db.properties[point] = old + mask } _ -> () }
+            point = point + 1
+        }
+    }
+    db
+}
+
+func append_hex(output: StringBuilder, value: Int, width: Int) -> () {
+    let digits = "0123456789ABCDEF".bytes
+    let divisor = 1
+    let count = 1
+    loop { break if count == width
+        divisor = divisor * 16
+        count = count + 1
+    }
+    assert(value >= 0 && value / divisor < 16, "hexadecimal field overflow")
+    loop { break if divisor == 0
+        let shifted = value / divisor
+        output.push(from_code_point(digits[shifted - shifted / 16 * 16].int))
+        divisor = divisor / 16
+    }
+}
+
+func append_ranges(output: StringBuilder, name: String, values: List<Int>) -> () {
+    output.append("/// Returns " + name + " as start(6), end(6), value(2) hex records.\npub func " + name + "() -> String { \"")
+    let start = 0
+    let end = 1
+    loop {
+        break if end > values.length
+        let boundary = branch { end == values.length -> true _ -> values[end] != values[start] }
+        branch { boundary -> {
+            branch { values[start] != 0 -> {
+                append_hex(output, start, 6)
+                append_hex(output, end - 1, 6)
+                append_hex(output, values[start], 2)
+            } _ -> () }
+            start = end
+        } _ -> () }
+        end = end + 1
+    }
+    output.append("\" }\n")
+}
+
+/// Insertion sorting is cheap here: UnicodeData is sorted; only special cases are appended.
+func sort(table: List<Mapping>) -> List<Mapping> [consume table] {
+    let index = 1
+    loop {
+        break if index >= table.length
+        let position = index
+        loop {
+            break if position == 0
+            break if table[position - 1].point <= table[position].point
+            let previous = table[position - 1].copy()
+            table[position - 1] = table[position].copy()
+            table[position] = previous
+            position = position - 1
+        }
+        index = index + 1
+    }
+    table
+}
+
+func append_map(output: StringBuilder, name: String, input: List<Mapping>, simple: Bool) -> () {
+    let table = sort(input.slice(0, input.length))
+    output.append(branch {
+        simple -> "/// Returns " + name + " source(6), target(6) hex records.\n"
+        _ -> "/// Returns full " + name + " source(6), length(1), three targets(18) hex records.\n"
+    })
+    output.append("pub func " + name + "() -> String { \"")
+    let index = 0
+    loop {
+        break if index == table.length
+        let entry = table[index].copy()
+        index = index + 1
+        continue if entry.targets.length == 1 && entry.targets[0] == entry.point
+        assert(entry.targets.length >= 1 && entry.targets.length <= 3, "case expansion exceeds table format")
+        append_hex(output, entry.point, 6)
+        branch {
+            simple -> append_hex(output, entry.targets[0], 6)
+            _ -> {
+                append_hex(output, entry.targets.length, 1)
+                let target_index = 0
+                loop { break if target_index == 3
+                    append_hex(output, branch { target_index < entry.targets.length -> entry.targets[target_index] _ -> 0 }, 6)
+                    target_index = target_index + 1
+                }
+            }
+        }
+    }
+    output.append("\" }\n")
+}
+
+func provenance(root: String) -> String {
+    let names = ["CaseFolding.txt", "DerivedCoreProperties.txt", "PropList.txt", "SpecialCasing.txt", "UnicodeData.txt"]
+    let output = StringBuilder.empty()
+    let index = 0
+    loop {
+        break if index == names.length
+        let name = names[index].copy()
+        println("Hashing " + name)
+        let raw = branch fs::read_bytes(root + "/tools/unicode/17.0.0/" + name) {
+            Result.Ok(contents) -> contents
+            Result.Error(error) -> { assert(false, error.message)
+                Bytes.empty()
+            }
+        }
+        output.append("// " + name + " SHA-256: " + sha256::digest(raw) + "\n")
+        index = index + 1
+    }
+    (move output).finish()
+}
+
+func tables(db: Database, hashes: String) -> String {
+    let output = StringBuilder.empty()
+    output.append("//! Generated Unicode 17.0.0 lookup tables; regenerate with tools/unicode/src/generate.fos.\n// Unicode 17.0.0; Unicode License V3: tools/unicode/LICENSE.txt.\n// Fixed-width ASCII hexadecimal records allow indexed binary searches in Foster.\n")
+    output.append(hashes)
+    append_ranges(output, "categories", db.categories)
+    append_ranges(output, "properties", db.properties)
+    append_map(output, "lower", db.full_lower, false)
+    append_map(output, "upper", db.full_upper, false)
+    append_map(output, "fold", db.fold, false)
+    append_map(output, "simple_lower", db.lower, true)
+    append_map(output, "simple_upper", db.upper, true)
+    append_map(output, "simple_title", db.title, true)
+    output.append("test \"generated Unicode tables contain records\" {\n    assert(categories().length > 0)\n    assert(fold().length > 0)\n}\n")
+    (move output).finish()
+}
+
+func append_literal(output: StringBuilder, table: List<Mapping>, keys: Bool, separator: Bool) -> () {
+    output.append("\"")
+    let index = 0
+    loop {
+        break if index == table.length
+        branch { separator && index > 0 -> output.append("|") _ -> () }
+        let values = branch { keys -> [table[index].point] _ -> table[index].targets.slice(0, table[index].targets.length) }
+        let target_index = 0
+        loop {
+            break if target_index == values.length
+            let point = values[target_index]
+            branch { point == 34 || point == 92 -> output.append("\\") _ -> () }
+            output.push(from_code_point(point))
+            target_index = target_index + 1
+        }
+        index = index + 1
+    }
+    output.append("\"")
+}
+
+func simple_fixture(output: StringBuilder, table: List<Mapping>, mode: String) -> () {
+    output.append("    verify_simple(")
+    append_literal(output, table, true, false)
+    output.append(", ")
+    append_literal(output, table, false, false)
+    output.append(", " + mode + ")\n")
+}
+
+func full_fixture(output: StringBuilder, table: List<Mapping>, method: String) -> () {
+    output.append("    assert(")
+    append_literal(output, table, true, true)
+    output.append("." + method + "() == ")
+    append_literal(output, table, false, true)
+    output.append(")\n")
+}
+
+func conformance(db: Database) -> String {
+    let output = StringBuilder.empty()
+    output.append("// Generated UCD conformance cases; tools/unicode/src/generate.fos.\nimport core.code_point\nimport core.string\nimport core.list\nfunc main() -> Int {\n")
+    simple_fixture(output, db.lower, "0")
+    simple_fixture(output, db.upper, "1")
+    simple_fixture(output, db.title, "2")
+    full_fixture(output, db.full_lower, "lower")
+    full_fixture(output, db.full_upper, "upper")
+    full_fixture(output, db.fold, "case_fold")
+    output.append("    42\n}\n\nfunc verify_simple(input: String, expected: String, mode: Int) -> () {\n    let points = input.code_points()\n    let targets = expected.code_points()\n    assert(points.length == targets.length)\n    let index = 0\n    loop {\n        break if index == points.length\n        let point = points[index]\n        let actual = branch {\n            mode == 0 -> point.simple_lower()\n            mode == 1 -> point.simple_upper()\n            _ -> point.simple_title()\n        }\n        assert(actual == targets[index])\n        index = index + 1\n    }\n}\n")
+    (move output).finish()
+}
+
+func publish(path: String, generated: String, check: Bool) -> () {
+    branch {
+        check -> { assert(read_file(path) == generated, path + " is stale; run the Foster Unicode generator") }
+        _ -> branch fs::write_text(path, generated) {
+            Result.Ok(_) -> ()
+            Result.Error(error) -> { assert(false, "cannot write " + path + ": " + error.message) }
+        }
+    }
+}
+
+func ensure_directory(path: String) -> () {
+    branch fs::create_directory_all(path) {
+        Result.Ok(_) -> ()
+        Result.Error(error) -> { assert(false, "cannot create " + path + ": " + error.message) }
+    }
+}
+
+pub func run(args: List<String>) -> Int {
+    let root = "."
+    let check = false
+    let index = 0
+    loop {
+        break if index == args.length
+        let argument = args[index].copy()
+        branch {
+            argument == "--check" -> { check = true }
+            argument == "--root" -> {
+                index = index + 1
+                assert(index < args.length, "--root requires the repository path")
+                root = args[index].copy()
+            }
+            argument == "--help" -> {
+                println("Unicode generator [--check] [--root REPOSITORY]. Defaults to the current directory.")
+                return 0
+            }
+            _ -> { assert(false, "unknown argument " + argument) }
+        }
+        index = index + 1
+    }
+    let db = Database { categories: zeros(), properties: zeros(), lower: [], upper: [], title: [], full_lower: [], full_upper: [], fold: [] }
+    println("Reading Unicode 17.0.0 data")
+    db = read_unicode(move db, source(root, "UnicodeData.txt"))
+    db = read_special(move db, source(root, "SpecialCasing.txt"))
+    db = read_fold(move db, source(root, "CaseFolding.txt"))
+    db = read_properties(move db, source(root, "DerivedCoreProperties.txt"))
+    db = read_properties(move db, source(root, "PropList.txt"))
+    // Capture insertion-ordered fixtures before sorting tables for binary searches.
+    let fixture = conformance(db)
+    let generated = tables(db, provenance(root))
+    branch { !check -> {
+        ensure_directory(root + "/library/core/unicode")
+        ensure_directory(root + "/tests/fixtures/programs")
+    } _ -> () }
+    publish(root + "/library/core/unicode/data.fos", generated, check)
+    publish(root + "/tests/fixtures/programs/unicode_conformance.fos", fixture, check)
+    println(branch { check -> "Unicode 17.0.0 tables and fixtures verified" _ -> "Unicode 17.0.0 tables and fixtures generated" })
+    0
+}
+
+test "records preserve empty fields and remove comments" {
+    let row = fields(" 0041 ; A ; ; # comment")
+    assert(row == ["0041", "A", "", ""])
+    assert(fields("# comment").empty?)
+    assert(number("10FFFF") == 1114111)
+}
+
+test "mapping updates and sorting retain keys and replacement values" {
+    let table = []
+    table = put(move table, 3, [4])
+    table = put(move table, 1, [2])
+    table = put(move table, 3, [5, 6])
+    assert(table.length == 2)
+    assert(table[0].targets == [5, 6])
+    table = sort(move table)
+    assert(table[0].point == 1)
+    assert(table[1].point == 3)
+}
+
+test "Unicode records update the shared database" {
+    let db = Database { categories: [0, 0, 0, 0], properties: [0, 0, 0, 0], lower: [], upper: [], title: [], full_lower: [], full_upper: [], fold: [] }
+    db = read_unicode(move db, "0001;TEST;Lu;0;L;;;;;N;;;;0002;\n")
+    assert(db.categories[1] == 1)
+    assert(db.lower.length == 1)
+    db = read_properties(move db, "0001..0002 ; Alphabetic\n0002 ; Lowercase\n")
+    assert(db.properties == [0, 1, 3, 0])
+}
+
+test "range and mapping encoders preserve boundaries and expansion padding" {
+    let ranges = StringBuilder.empty()
+    append_ranges(ranges, "sample", [0, 2, 2, 0, 3])
+    assert((move ranges).finish() == "/// Returns sample as start(6), end(6), value(2) hex records.\npub func sample() -> String { \"0000010000020200000400000403\" }\n")
+    let mapped = StringBuilder.empty()
+    append_map(mapped, "sample", [Mapping { point: 3, targets: [4, 5] }, Mapping { point: 1, targets: [1] }], false)
+    assert((move mapped).finish() == "/// Returns full sample source(6), length(1), three targets(18) hex records.\npub func sample() -> String { \"0000032000004000005000000\" }\n")
+}

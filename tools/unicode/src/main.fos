@@ -1,0 +1,7 @@
+//! Entry point for the offline Foster Unicode generator.
+import core.list
+import core.string
+import generate
+import std.process
+
+func main(args: Arguments) -> Int { generate::run(args.values) }

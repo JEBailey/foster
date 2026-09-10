@@ -84,7 +84,7 @@ func algorithms() -> Result<Int, ListReadError> {
     assert("λ🙂".split("") == ["λ", "🙂"])
     assert(["λ", "", "🙂"].join("|") == "λ||🙂")
     assert("AZλ🙂".lower() == "azλ🙂")
-    assert("azλ🙂".upper() == "AZλ🙂")
+    assert("azλ🙂".upper() == "AZΛ🙂")
 
     let scalars = [from_code_point(0), from_code_point(127), from_code_point(128), from_code_point(2047), from_code_point(2048), from_code_point(65535), from_code_point(65536), from_code_point(1114111)]
     assert(String.from_code_points(scalars).code_points() == scalars)

@@ -1,8 +1,123 @@
 //! Unicode scalar construction, classification, and UTF-8 encoding.
 
 import core.option
+import core.string
+import core.unicode as unicode
+
+/// Unicode 17.0.0 General_Category values.
+pub enum GeneralCategory = Unassigned
+    | UppercaseLetter
+    | LowercaseLetter
+    | TitlecaseLetter
+    | ModifierLetter
+    | OtherLetter
+    | NonspacingMark
+    | SpacingMark
+    | EnclosingMark
+    | DecimalNumber
+    | LetterNumber
+    | OtherNumber
+    | ConnectorPunctuation
+    | DashPunctuation
+    | OpenPunctuation
+    | ClosePunctuation
+    | InitialPunctuation
+    | FinalPunctuation
+    | OtherPunctuation
+    | MathSymbol
+    | CurrencySymbol
+    | ModifierSymbol
+    | OtherSymbol
+    | SpaceSeparator
+    | LineSeparator
+    | ParagraphSeparator
+    | Control
+    | Format
+    | Surrogate
+    | PrivateUse
 
 impl CodePoint {
+    /// Returns the Unicode 17.0.0 General_Category.
+    pub func category(self: CodePoint) -> GeneralCategory {
+        let category = unicode::category(self.as_int())
+        branch {
+            category == 1 -> GeneralCategory.UppercaseLetter
+            category == 2 -> GeneralCategory.LowercaseLetter
+            category == 3 -> GeneralCategory.TitlecaseLetter
+            category == 4 -> GeneralCategory.ModifierLetter
+            category == 5 -> GeneralCategory.OtherLetter
+            category == 6 -> GeneralCategory.NonspacingMark
+            category == 7 -> GeneralCategory.SpacingMark
+            category == 8 -> GeneralCategory.EnclosingMark
+            category == 9 -> GeneralCategory.DecimalNumber
+            category == 10 -> GeneralCategory.LetterNumber
+            category == 11 -> GeneralCategory.OtherNumber
+            category == 12 -> GeneralCategory.ConnectorPunctuation
+            category == 13 -> GeneralCategory.DashPunctuation
+            category == 14 -> GeneralCategory.OpenPunctuation
+            category == 15 -> GeneralCategory.ClosePunctuation
+            category == 16 -> GeneralCategory.InitialPunctuation
+            category == 17 -> GeneralCategory.FinalPunctuation
+            category == 18 -> GeneralCategory.OtherPunctuation
+            category == 19 -> GeneralCategory.MathSymbol
+            category == 20 -> GeneralCategory.CurrencySymbol
+            category == 21 -> GeneralCategory.ModifierSymbol
+            category == 22 -> GeneralCategory.OtherSymbol
+            category == 23 -> GeneralCategory.SpaceSeparator
+            category == 24 -> GeneralCategory.LineSeparator
+            category == 25 -> GeneralCategory.ParagraphSeparator
+            category == 26 -> GeneralCategory.Control
+            category == 27 -> GeneralCategory.Format
+            category == 28 -> GeneralCategory.Surrogate
+            category == 29 -> GeneralCategory.PrivateUse
+            _ -> GeneralCategory.Unassigned
+        }
+    }
+    /// Tests the Unicode letter property.
+    pub func letter?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 0) }
+    /// Tests the Unicode alphabetic property.
+    pub func alphabetic?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 1) }
+    /// Tests the Unicode digit property.
+    pub func digit?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 2) }
+    /// Tests the Unicode numeric property.
+    pub func numeric?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 3) }
+    /// Tests the Unicode lowercase property.
+    pub func lowercase?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 4) }
+    /// Tests the Unicode uppercase property.
+    pub func uppercase?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 5) }
+    /// Tests the Unicode titlecase property.
+    pub func titlecase?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 6) }
+    /// Tests the Unicode mark property.
+    pub func mark?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 7) }
+    /// Tests the Unicode punctuation property.
+    pub func punctuation?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 8) }
+    /// Tests the Unicode symbol property.
+    pub func symbol?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 9) }
+    /// Tests the Unicode separator property.
+    pub func separator?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 10) }
+    /// Tests the Unicode control property.
+    pub func control?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 11) }
+    /// Tests the Unicode assigned property.
+    pub func assigned?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 12) }
+    /// Tests the Unicode identifier_start property.
+    pub func identifier_start?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 13) }
+    /// Tests the Unicode identifier_part property.
+    pub func identifier_part?(self: CodePoint) -> Bool { unicode::property(self.as_int(), 14) }
+    /// Tests Alphabetic or any Number category.
+    pub func alphanumeric?(self: CodePoint) -> Bool { self.alphabetic?() || self.numeric?() }
+    /// Returns the one-to-one Unicode simple lower mapping.
+    pub func simple_lower(self: CodePoint) -> CodePoint { unicode::simple_case(self.as_int(), 0) }
+    /// Returns the one-to-one Unicode simple upper mapping.
+    pub func simple_upper(self: CodePoint) -> CodePoint { unicode::simple_case(self.as_int(), 1) }
+    /// Returns the one-to-one Unicode simple title mapping.
+    pub func simple_title(self: CodePoint) -> CodePoint { unicode::simple_case(self.as_int(), 2) }
+    /// Returns the full default Unicode mapping, which may contain multiple scalars.
+    pub func lower(self: CodePoint) -> String { self.string.lower() }
+    /// Returns the full default Unicode mapping, which may contain multiple scalars.
+    pub func upper(self: CodePoint) -> String { self.string.upper() }
+    /// Returns the full default Unicode mapping, which may contain multiple scalars.
+    pub func case_fold(self: CodePoint) -> String { self.string.case_fold() }
+
     /// Explicitly copies this scalar value.
     pub func copy(self: CodePoint) -> self [read self] { self }
 

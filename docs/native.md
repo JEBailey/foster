@@ -24,6 +24,13 @@ mode, then reused across native builds and compiler processes. Each executable s
 own Foster object and a small startup shim containing its string constants and entry signature.
 The runtime is linked statically, so the resulting executable does not need the cache to run.
 
+Stable runtime code lives in the ordinary Rust `runtime` workspace crate. The compiler embeds
+those source files for distribution and appends ABI checks when building the cached archive.
+Both backends share the `host` crate for host contexts, path resolution, clocks, and TCP services;
+the compiler does not link the program-facing native ABI runtime. Workspace Cargo checks,
+Clippy, and runtime unit tests cover the extracted source directly.
+
+
 By default, runtime archives live in `%LOCALAPPDATA%/foster/native-runtime` on Windows and
 `$XDG_CACHE_HOME/foster/native-runtime` (or `$HOME/.cache/foster/native-runtime`) elsewhere.
 Set `FOSTER_NATIVE_CACHE_DIR` to select another directory, for example a CI cache or
@@ -165,10 +172,13 @@ function is sealed into SSA; that unsealed form is never optimized, serialized, 
 Before backend-specific emission, logical layout legalization reduces values to scalars or pointers
 and builds deterministic descriptions for record field slots and declared types, enum alternative
 tags and payloads, closure environments and capture ownership, reference place handles, and
-runtime-backed structural values. Portable bytecode version 24 retains generic identities, nominal
+runtime-backed structural values. Portable bytecode version 25 retains generic identities, nominal
 parameters and arguments, and sorted substitutions at statically resolved calls and closure
 construction. Native
-reachability is keyed by function plus substitutions; it materializes concrete signatures and
+reachability is keyed by function plus substitutions. Per-body verifier flow facts are cached for
+one preparation and reused by all specializations and layout/lowering passes; the cache is
+discarded when preparation returns. Built-in representation selection uses canonical record IDs.
+Native preparation materializes concrete signatures and
 record/enum/closure and runtime-backed generic layouts before target-specific physical layout
 calculation. Generic lists, callable signatures, remote/future handles, and places are cached by
 their concrete verifier type. Explicit opaque slots remain only for values whose representation is

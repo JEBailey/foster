@@ -1,0 +1,16 @@
+type Bytes = { pub size: Int }
+type List<T> = { pub item: T }
+type String = { pub size: Int }
+type Symbol = { pub size: Int }
+type ByteBuffer = { pub size: Int }
+func identity<T>(value: T) -> T { value }
+func main() -> Int {
+    assert(identity(Bytes { size: 10 }).size == 10)
+    assert(identity(List { item: 11 }).item == 11)
+    assert(identity(String { size: 12 }).size == 12)
+    assert(identity(Symbol { size: 13 }).size == 13)
+    assert(identity(ByteBuffer { size: 14 }).size == 14)
+    let records = [String { size: 15 }]
+    assert(identity(move records).head.size == 15)
+    42
+}
