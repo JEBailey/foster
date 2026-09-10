@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct Program {
     pub documentation: Option<String>,
     pub imports: Vec<Import>,
@@ -10,7 +10,7 @@ pub struct Program {
     pub tests: Vec<TestDecl>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct Implementation {
     pub span: std::ops::Range<usize>,
     pub owner_span: std::ops::Range<usize>,
@@ -18,14 +18,14 @@ pub struct Implementation {
     pub parameters: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct TestDecl {
     pub span: std::ops::Range<usize>,
     pub description: String,
     pub body: crate::block::Block<Stmt>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct ConstDecl {
     pub span: std::ops::Range<usize>,
     pub documentation: Option<String>,
@@ -34,7 +34,7 @@ pub struct ConstDecl {
     pub value: Expr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct VariantDecl {
     pub span: std::ops::Range<usize>,
     pub documentation: Option<String>,
@@ -47,14 +47,14 @@ pub struct VariantDecl {
     pub methods: Vec<MethodRequirement>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VariantKind {
     /// A transparent alias with exactly one target type.
     Alias,
     Enum,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum VariantAlternative {
     AliasTarget {
         span: std::ops::Range<usize>,
@@ -75,7 +75,7 @@ impl VariantAlternative {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct RecordDecl {
     pub span: std::ops::Range<usize>,
     pub documentation: Option<String>,
@@ -88,14 +88,14 @@ pub struct RecordDecl {
     pub methods: Vec<MethodRequirement>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct RecordField {
     pub name: String,
     pub public: bool,
     pub ty: TypeExpr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct MethodRequirement {
     pub span: std::ops::Range<usize>,
     pub documentation: Option<String>,
@@ -110,14 +110,14 @@ pub struct MethodRequirement {
     pub suspends: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Import {
     pub span: std::ops::Range<usize>,
     pub path: Vec<String>,
     pub alias: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct Function {
     /// Interactive checking may preserve a signature after discarding an invalid body.
     pub body_is_recovery_stub: bool,
@@ -140,13 +140,13 @@ pub struct Function {
     pub body: crate::block::Block<Stmt>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct GroupParameter {
     pub name: String,
     pub element: TypeExpr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Parameter {
     pub span: std::ops::Range<usize>,
     pub name: String,
@@ -154,7 +154,7 @@ pub struct Parameter {
     pub type_span: Option<std::ops::Range<usize>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub enum TypeExpr {
     Unit,
     Named(String, Vec<TypeExpr>),
@@ -172,19 +172,21 @@ pub enum TypeExpr {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash,
+)]
 pub enum ParameterMode {
     Borrow,
     Consume,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Effect {
     pub kind: EffectKind,
     pub target: GroupPath,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct GroupPath {
     pub root: String,
     pub children: Vec<String>,
@@ -259,7 +261,7 @@ impl PartialEq<&str> for GroupPath {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EffectKind {
     Read,
     Mut,
@@ -267,7 +269,7 @@ pub enum EffectKind {
     Consume,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum Stmt {
     Return {
         value: Expr,
@@ -302,7 +304,7 @@ pub enum Stmt {
     Expr(Expr),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum Expr {
     Spanned {
         expression: Box<Expr>,
@@ -392,45 +394,45 @@ impl Expr {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct RecordFieldValue {
     pub name: String,
     pub value: Expr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct CaptureSpec {
     pub mode: CaptureMode,
     pub name: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CaptureMode {
     Copy,
     Move,
     Ref,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum ClosureBody {
     Expression(Box<Expr>),
     Block(crate::block::Block<Stmt>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct BranchArm {
     pub test: BranchTest,
     pub body: crate::block::Block<Stmt>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum BranchTest {
     Condition(Expr),
     Wildcard,
     Pattern(Pattern),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum Pattern {
     Spanned {
         pattern: Box<Pattern>,
@@ -467,14 +469,14 @@ impl Pattern {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnaryOp {
     Negate,
     Not,
     BitNot,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryOp {
     Add,
     Subtract,
@@ -493,7 +495,7 @@ pub enum BinaryOp {
     GreaterEqual,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogicalOp {
     And,
     Or,

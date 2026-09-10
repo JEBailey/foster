@@ -69,6 +69,14 @@ and reused bodies and count recovery pipeline runs.
 
 ## Scheduling and cancellation
 
+Compilation snapshots, including the last usable snapshot retained during an invalid edit,
+are kept for open documents and at most eight recently requested documents. The small recent
+set supports navigation into files that are not open. Closing a document evicts it and any
+snapshot containing its editor overlay, so other files cannot fall back to that closed overlay.
+Package body caches and disk-backed parse entries are pruned to the retained snapshots and
+documents; embedded library parses remain reusable. Watched-file changes clear snapshots and
+incremental state because package membership may have changed.
+
 The worker preserves edit/request order and postpones queued background diagnostics
 until interactive work has run. A new request interrupts active diagnostics; they
 are rescheduled after the request if the document generation is still current.

@@ -47,6 +47,12 @@ pub(super) fn materialize(
         .collect::<Vec<_>>();
     let mut pending = Vec::new();
     for record in owners {
+        // Compiled modules already contain their materialized implementations.
+        let source = &package.modules[&hir.modules[record.module].name];
+        if source.origin == crate::package::ModuleOrigin::Dependency && source.source_path.is_none()
+        {
+            continue;
+        }
         if record.compositions.is_empty() {
             continue;
         }
@@ -113,6 +119,11 @@ pub(super) fn materialize(
             let key = (member.clone(), format!("{parameters:?}"));
             let own = hir.functions[candidate.original].module == record.module
                 && candidate.source.owner.as_deref() == Some(record.name.as_str());
+            // A compiled method has no source body to adapt to a new receiver layout.
+            // Client compositions must supply their implementations explicitly.
+            if !own && hir.external_functions.contains_key(&candidate.original) {
+                continue;
+            }
             let function = if own {
                 candidate.original
             } else {

@@ -16,6 +16,7 @@ pub fn verify(program: &Program) -> Result<(), FosterError> {
     for (id, function) in &program.functions {
         verify_function_flow(program, *id, function)?;
     }
+    program.symbols.validate(program)?;
     Ok(())
 }
 

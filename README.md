@@ -78,6 +78,10 @@ compiled from source with the application, and included by `check`, `run`, `buil
 `core` or `std`; cycles, conflicting transitive names, missing projects, and duplicate mounted
 modules are errors.
 
+Build independent libraries with `foster build path/to/library --library -o math.flib`.
+Consumers can use `math = { path = "vendor/math.flib" }` in `[dependencies]` without the library source.
+See [compiled libraries](docs/compiled-libraries.md) for linking behavior and supported boundaries.
+
 `run` invokes `main`. It may take no parameters, or one `std.process.Arguments` value containing
 the executable name and following command-line values. Pass program arguments after `--`, for
 example `foster run app.fos -- input.txt --verbose`. A file is treated as a one-module package; a
@@ -394,6 +398,7 @@ remain build/run concerns, so ordinary library documents do not need a `main`. T
 - [Register VM](docs/vm.md)
 - [Native compilation](docs/native.md)
 - [Compiled bytecode format](docs/binary-format.md)
+- [Symbolic modules and callable descriptors](docs/symbolic-modules.md)
 - [Package archive format](docs/package-format.md)
 - [Core library](docs/core-library.md)
 - [Time in Foster](docs/time.md)

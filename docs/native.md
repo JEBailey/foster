@@ -159,6 +159,15 @@ every SSA alias. Raw host pointers are explicitly classified as unmanaged by the
 retain/release protocol. Helper definitions are emitted in stable key order, so hash-map iteration
 does not change repeated object emission.
 
+The native entry module contains the public API and shared compilation contexts. Preparation
+uses `specialization.rs` for reachability and cached flow facts, `representation.rs` and
+`inference.rs` for type conversion, `validation.rs` for native restrictions, and `legalize.rs`
+for converting shared IR to native IR. Machine emission uses `lowering.rs` for blocks and
+patterns, `portable.rs` for portable instructions, `operations.rs` for arithmetic and control
+flow, and `machine.rs` for signatures and scalar storage. Host calls, remote calls, buffers,
+record fields, runtime handles, and callable thunks each have a separate module. These modules
+share the immutable preparation/backend contexts; helper visibility stays within the backend.
+
 The shared boundary also has a VM de-SSA emitter. It assigns registers to immutable definitions,
 splits conditional edges when their block arguments differ, and resolves parallel-copy cycles with
 one temporary register. Its output is ordinary versioned bytecode and passes through the existing

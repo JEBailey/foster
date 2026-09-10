@@ -114,5 +114,19 @@ fn lower_and_infer(
     crate::compiler::profile::measure("ownership.summary", || {
         regions::infer_result_provenance(hir, &mut program)
     });
+    for (id, external) in &hir.external_functions {
+        if let Some(function) = program.functions.get_mut(id) {
+            let descriptor = &external.definition.descriptor;
+            function.result_provenance = ResultProvenance {
+                parameters: descriptor
+                    .result_dependencies
+                    .iter()
+                    .map(|p| *p as usize)
+                    .collect(),
+                receiver: descriptor.receiver && descriptor.result_dependencies.contains(&0),
+                fresh_owned: descriptor.fresh_result,
+            };
+        }
+    }
     Ok(program)
 }

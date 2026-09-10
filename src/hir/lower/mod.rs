@@ -258,6 +258,24 @@ impl PackageHir {
                     .or_default()
                     .push(function);
                 source_functions.insert((module, index), function);
+                if let Some(binding) = package.library_bindings.get(&(module_name.clone(), index)) {
+                    if let Some(owner) = &binding.context.composition_owner {
+                        hir.composition_owners
+                            .insert(function, hir.modules_by_name[owner]);
+                    }
+                    if binding.context.dispatch {
+                        hir.composition_dispatch.insert(function);
+                    }
+                    for (module, name) in &binding.context.registrations {
+                        let owner = hir.modules_by_name[module];
+                        hir.modules[owner]
+                            .functions
+                            .entry(name.clone())
+                            .or_default()
+                            .push(function);
+                    }
+                    hir.external_functions.insert(function, binding.clone());
+                }
             }
             let mut descriptions = std::collections::HashSet::new();
             for (index, test) in program.tests.iter().enumerate() {

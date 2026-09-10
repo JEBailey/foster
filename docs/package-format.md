@@ -65,3 +65,7 @@ use before extraction.
 
 The `.fpk` container version and the embedded `.fbc` bytecode version are independent. A container
 format change does not by itself require a bytecode format change, or vice versa.
+
+Bytecode version 26 includes [symbolic module identities and descriptors](symbolic-modules.md)
+inside `app/main.fbc`. This adds module grouping and checked symbolic linkage without changing the
+version-1 package layout.

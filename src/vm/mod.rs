@@ -18,8 +18,8 @@ mod value;
 mod verifier;
 
 pub use binary::{BinaryError, FORMAT_VERSION, decode_program, encode_program};
-pub(crate) use compiler::compile_shared;
 pub use compiler::{CompileOptions, compile, compile_with_options};
+pub(crate) use compiler::{compile_library, compile_shared};
 pub use host::HostContext;
 pub use ir::{
     BytecodeFunction, Constant, Instruction, Program, ProgramMetrics, Register, RuntimeRecord,

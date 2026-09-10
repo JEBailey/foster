@@ -4,13 +4,13 @@ fn value_ref<T>(item: &Spanned<T>) -> &T {
     &item.value
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct Spanned<T> {
     pub value: T,
     pub span: Range<usize>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct Block<T> {
     items: Vec<Spanned<T>>,
 }

@@ -14,7 +14,9 @@ impl Checker<'_> {
         #[cfg(test)]
         if tests::REFERENCE.with(|reference| reference.get()) {
             for (function, definition) in self.hir.functions.iter() {
-                if definition.intrinsic.is_some() {
+                if definition.intrinsic.is_some()
+                    || self.hir.external_functions.contains_key(&function)
+                {
                     continue;
                 }
                 let mut derivation = EffectDerivation::new(self, function);
@@ -36,7 +38,7 @@ impl Checker<'_> {
         let mut queue = VecDeque::new();
 
         for (id, definition) in self.hir.functions.iter() {
-            if definition.intrinsic.is_some() {
+            if definition.intrinsic.is_some() || self.hir.external_functions.contains_key(&id) {
                 continue;
             }
             if let Some(seed) = self.effect_seeds.get(&id) {

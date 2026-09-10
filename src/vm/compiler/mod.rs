@@ -275,7 +275,21 @@ fn compile_construction(compilation: &Compilation) -> Result<Program, FosterErro
         .map(|main| crate::entry::accepts_arguments(&compilation.hir, &compilation.types, main))
         .transpose()?
         .unwrap_or(false);
+    crate::library::link(compilation, &mut compiler.program)?;
     Ok(compiler.program)
+}
+
+/// Compiled generic library bodies, sealed through SSA but not finalized with register drops.
+pub(crate) fn compile_library(compilation: &Compilation) -> Result<Program, FosterError> {
+    let mut program = compile_construction(compilation)?;
+    crate::codegen::layout::legalize(&mut program)?;
+    crate::codegen::vm::lower_program_through_shared_ir(&mut program)
+        .map_err(|e| FosterError::runtime(e.to_string()))?;
+    program.main = None;
+    program.main_arguments = false;
+    program.symbols = crate::symbols::Table::from_compilation(compilation, &program)?;
+    super::verifier::verify(&program)?;
+    Ok(program)
 }
 
 pub fn compile_with_options(
@@ -292,7 +306,8 @@ pub fn compile_with_options(
         super::optimizer::optimize(&mut program);
     }
     super::optimizer::insert_drops(&mut program);
-    super::verifier::verify(&program)?;
+    program.symbols = crate::symbols::Table::from_compilation(compilation, &program)?;
+    crate::symbols::link(&mut program)?;
     Ok(program)
 }
 
@@ -305,7 +320,8 @@ pub(crate) fn compile_shared(
     // Drop insertion is still expressed over construction registers. Sealing then turns those
     // ownership operations into SSA instructions; native codegen never reconstructs bytecode.
     super::optimizer::insert_drops(&mut program);
-    super::verifier::verify(&program)?;
+    program.symbols = crate::symbols::Table::from_compilation(compilation, &program)?;
+    crate::symbols::link(&mut program)?;
     crate::codegen::vm::seal_program(program)
         .map_err(|error| FosterError::runtime(format!("shared native lowering failed: {error}")))
 }

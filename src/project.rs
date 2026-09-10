@@ -37,7 +37,8 @@ pub struct ProjectDependency {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedDependency {
     pub name: String,
-    pub project: Project,
+    pub project: Option<Project>,
+    pub artifact: Option<PathBuf>,
 }
 
 impl Project {
@@ -178,6 +179,39 @@ struct DependencyResolution {
 impl DependencyResolution {
     fn visit_dependencies(&mut self, project: &Project) -> Result<(), FosterError> {
         for dependency in project.dependencies.values() {
+            if dependency
+                .root
+                .extension()
+                .is_some_and(|extension| extension == "flib")
+            {
+                let artifact = fs::canonicalize(&dependency.root).map_err(|e| {
+                    FosterError::runtime(format!(
+                        "cannot resolve library `{}`: {e}",
+                        dependency.root.display()
+                    ))
+                })?;
+                if let Some(existing) = self.aliases.get(&dependency.name) {
+                    if existing != &artifact {
+                        return Err(FosterError::runtime(format!(
+                            "dependency name `{}` refers to different artifacts",
+                            dependency.name
+                        )));
+                    }
+                }
+                self.aliases
+                    .insert(dependency.name.clone(), artifact.clone());
+                if self
+                    .resolved
+                    .insert((dependency.name.clone(), artifact.clone()))
+                {
+                    self.output.push(ResolvedDependency {
+                        name: dependency.name.clone(),
+                        project: None,
+                        artifact: Some(artifact),
+                    });
+                }
+                continue;
+            }
             let dependency_project = Project::load(&dependency.root).map_err(|error| {
                 FosterError::runtime(format!(
                     "cannot load dependency `{}` of package `{}`: {error}",
@@ -224,7 +258,8 @@ impl DependencyResolution {
 
             self.output.push(ResolvedDependency {
                 name: dependency.name.clone(),
-                project: dependency_project.clone(),
+                project: Some(dependency_project.clone()),
+                artifact: None,
             });
             self.visiting
                 .push((dependency.name.clone(), manifest.clone()));
@@ -659,8 +694,14 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["middle", "leaf"]
         );
-        assert_eq!(dependencies[0].project.name, "middle-package");
-        assert_eq!(dependencies[1].project.name, "leaf-package");
+        assert_eq!(
+            dependencies[0].project.as_ref().unwrap().name,
+            "middle-package"
+        );
+        assert_eq!(
+            dependencies[1].project.as_ref().unwrap().name,
+            "leaf-package"
+        );
 
         fs::remove_dir_all(root).unwrap();
     }

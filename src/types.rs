@@ -150,6 +150,7 @@ pub struct TypeInformation {
     pub member_kinds: HashMap<ExprId, crate::semantics::MemberKind>,
     pub resolved_calls: HashMap<ExprId, ResolvedCall>,
     pub dispatch: HashMap<(NominalTypeId, DispatchSlot), FunctionId>,
+    pub dispatch_keys: Vec<MethodKey>,
     pub locals: HashMap<LocalId, TypeId>,
     pub functions: HashMap<FunctionId, FunctionType>,
     pub constants: HashMap<ConstantId, TypeId>,

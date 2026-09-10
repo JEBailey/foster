@@ -371,7 +371,10 @@ impl<'a> Checker<'a> {
     fn validate_derived_effects(&mut self) -> Result<(), FosterError> {
         for (function, definition) in self.hir.functions.iter() {
             crate::compiler::cancellation::check()?;
-            if definition.intrinsic.is_some() || !definition.effects_explicit {
+            if definition.intrinsic.is_some()
+                || self.hir.external_functions.contains_key(&function)
+                || !definition.effects_explicit
+            {
                 continue;
             }
             // These summaries belong to this checker pass. Validation runs only after

@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 25, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 26, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -26,7 +26,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `25` |
+| version | `u16` | `26` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -43,6 +43,13 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | records | `vector<(RecordId, string, vector<string> parameters, vector<(string, VerificationType)>)>` | runtime name, generic parameters, and typed indexed field layout |
 | dispatch | `vector<(NominalTypeId, u32 slot, FunctionId)>` | record and enum dispatch |
 | enum cases | `vector<(VariantId, VariantTypeId, string, vector<string> parameters, string, vector<VerificationType>)>` | parent enum, generic parameters, case label, and declared payload layout |
+| symbolic modules | `string` | compact UTF-8 JSON descriptor table, version 1 |
+
+The symbolic module table groups package-qualified type/function identities, semantic descriptors,
+implementation bindings, and required imports. See [symbolic modules](symbolic-modules.md). Its JSON
+schema is defined by `symbols::Table`; unknown fields and unsupported descriptor versions are
+rejected. The writer orders modules, definitions, imports, and nominal bindings by symbolic identity.
+The existing 64 MiB string bound and the JSON decoder's nesting bound apply to this section.
 
 Core wrapper IDs identify standard-library records independently of user type names. Version 25
 adds List, Bytes, and ByteBuffer identities; older bytecode must be rebuilt from source.
@@ -152,7 +159,8 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 25 readers accept only version 25 with zero flags. Contract calls retain their checked
+Version 26 readers accept only version 26 with zero flags. Version 26 adds the symbolic module table;
+version 25 artifacts must be rebuilt. Contract calls retain their checked
 generic result type, including when the receiver's concrete representation is erased.
 Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A

@@ -57,8 +57,8 @@ impl Workspace {
     }
 
     pub(super) fn close(&mut self, uri: &Uri) {
-        self.compilations.invalidate(uri);
         self.documents.remove(uri);
+        self.compilations.close(uri, self.documents.keys());
     }
 
     pub(super) fn invalidate_compilations(&self) {

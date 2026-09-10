@@ -67,6 +67,7 @@ impl Checker<'_> {
             );
         }
         let mut information = TypeInformation {
+            dispatch_keys: self.dispatch_keys.clone(),
             core: crate::types::CoreRecords::resolve(self.hir),
             resolved_calls: (*self.resolved_calls).clone(),
             integer_promotions: (*self.integer_promotions).clone(),

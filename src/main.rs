@@ -122,9 +122,12 @@ fn cli() -> Command {
                 .about("Compile Foster source to bytecode or a native executable")
                 .arg(path())
                 .args(optimizer())
+                .arg(Arg::new("library").long("library").action(ArgAction::SetTrue).conflicts_with_all(["native", "emit"]).help("Build an independently compiled .flib library"))
+                .arg(Arg::new("package-name").long("package-name").requires("library").help("Package identity for a standalone library"))
                 .arg(
                     Arg::new("native")
                         .long("native")
+                        .required_if_eq("emit", "native-ir")
                         .help("Compile and link a host-native executable with Cranelift")
                         .action(ArgAction::SetTrue),
                 )
@@ -132,8 +135,7 @@ fn cli() -> Command {
                     Arg::new("emit")
                         .long("emit")
                         .value_name("FORMAT")
-                        .value_parser(["native-ir"])
-                        .requires("native")
+                        .value_parser(["native-ir", "symbols"])
                         .conflicts_with("output")
                         .help("Print an intermediate representation instead of writing an artifact"),
                 )
@@ -401,18 +403,70 @@ fn check(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
 fn build(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     let target = source_target(arguments)?;
     let native = arguments.get_flag("native");
+    let library = arguments.get_flag("library");
+    if target.project.is_some() && arguments.get_one::<String>("package-name").is_some() {
+        return Err("project libraries use package.name from foster.toml; --package-name is for standalone libraries".into());
+    }
     let output = arguments
         .get_one::<PathBuf>("output")
         .cloned()
         .unwrap_or_else(|| {
-            if native {
+            if library {
+                target.artifact_base().with_extension("flib")
+            } else if native {
                 default_native_path(target.artifact_base())
             } else {
                 default_bytecode_path(target.artifact_base())
             }
         });
-    let compilation = compile_target(&target)?;
+    let compilation = if library && target.project.is_none() {
+        let name = arguments
+            .get_one::<String>("package-name")
+            .ok_or("standalone libraries require --package-name")?;
+        if name.trim().is_empty() {
+            return Err("package name cannot be empty".into());
+        }
+        let mut package = if target.source.is_dir() {
+            foster::package::Package::load(&target.source)?
+        } else {
+            foster::package::Package::from_program_with_core(
+                "main",
+                parse_file(&target.source, &fs::read_to_string(&target.source)?)?,
+            )?
+        };
+        for (module, source) in &package.modules {
+            if source.origin == foster::package::ModuleOrigin::Input {
+                package
+                    .symbol_modules
+                    .insert(module.clone(), (name.clone(), module.clone()));
+            }
+        }
+        foster::compiler::check(package)?
+    } else {
+        compile_target(&target)?
+    };
     report_warnings(&compilation, None, None)?;
+    if library {
+        fs::write(
+            &output,
+            foster::library::encode(&foster::library::build(&compilation)?)?,
+        )?;
+        println!("built library {}", output.display());
+        return Ok(());
+    }
+    if arguments
+        .get_one::<String>("emit")
+        .is_some_and(|emit| emit == "symbols")
+    {
+        let program = foster::vm::compile_with_options(
+            &compilation,
+            foster::vm::CompileOptions {
+                optimize: !arguments.get_flag("no-optimize"),
+            },
+        )?;
+        println!("{}", serde_json::to_string_pretty(&program.symbols)?);
+        return Ok(());
+    }
     if arguments
         .get_one::<String>("emit")
         .is_some_and(|emit| emit == "native-ir")
@@ -801,11 +855,11 @@ fn report_project_compilation_error(
     if let Some(module) = &error.source_module {
         let mut projects = vec![(None, project.clone())];
         if let Ok(dependencies) = project.resolve_dependencies() {
-            projects.extend(
-                dependencies
-                    .into_iter()
-                    .map(|dependency| (Some(dependency.name), dependency.project)),
-            );
+            projects.extend(dependencies.into_iter().filter_map(|dependency| {
+                dependency
+                    .project
+                    .map(|project| (Some(dependency.name), project))
+            }));
         }
         for (prefix, candidate) in projects {
             let local_module = match prefix {

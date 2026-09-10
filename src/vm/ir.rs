@@ -733,6 +733,7 @@ pub struct BytecodeFunction {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Program {
+    pub symbols: crate::symbols::Table,
     pub drops_inserted: bool,
     pub constants: Vec<Constant>,
     pub functions: HashMap<FunctionId, BytecodeFunction>,

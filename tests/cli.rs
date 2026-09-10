@@ -10,6 +10,30 @@ fn benchmark_source() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("benchmarks/fibonacci.fos")
 }
 
+#[test]
+fn build_emits_symbolic_modules_without_a_native_backend() {
+    let output = foster()
+        .arg("build")
+        .arg(benchmark_source())
+        .args(["--emit", "symbols"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let table: foster::symbols::Table = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(table.version, foster::symbols::FORMAT_VERSION);
+    assert!(table.modules.iter().any(|module| {
+        module.name.path == "main"
+            && module
+                .definitions
+                .iter()
+                .any(|definition| definition.symbol.name.name == "main")
+    }));
+}
+
 fn arguments_source() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/programs/arguments.fos")
 }
@@ -159,6 +183,32 @@ fn projects_compile_and_run_transitive_path_dependencies() {
     )
     .unwrap();
     fs::write(leaf.join("src/main.fos"), "pub func base() -> Int { 40 }\n").unwrap();
+
+    let symbols = foster()
+        .arg("build")
+        .arg(&app)
+        .args(["--emit", "symbols"])
+        .output()
+        .unwrap();
+    assert!(
+        symbols.status.success(),
+        "{}",
+        String::from_utf8_lossy(&symbols.stderr)
+    );
+    let table: foster::symbols::Table = serde_json::from_slice(&symbols.stdout).unwrap();
+    for (package, path) in [
+        ("app", "main"),
+        ("middle-package", "main"),
+        ("middle-package", "helper"),
+        ("leaf-package", "main"),
+    ] {
+        assert!(
+            table
+                .modules
+                .iter()
+                .any(|module| module.name.package == package && module.name.path == path)
+        );
+    }
 
     let run = foster().arg("run").arg(&app).output().unwrap();
     assert!(

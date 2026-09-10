@@ -33,6 +33,15 @@ pub(crate) struct ModuleCache {
 }
 
 impl ModuleCache {
+    /// Keep disk-backed parses only while an editor document or snapshot needs them.
+    /// Embedded modules are a fixed set and remain reusable across projects.
+    pub(crate) fn retain_sources(&mut self, paths: &HashSet<Utf8PathBuf>) {
+        self.entries.retain(|key, _| match key {
+            ModuleCacheKey::Source(path) => paths.contains(path),
+            ModuleCacheKey::Embedded(_) => true,
+        });
+    }
+
     pub(crate) fn parse_source(
         &mut self,
         path: &Utf8Path,
@@ -156,6 +165,10 @@ impl Module {
 pub struct Package {
     pub root: Utf8PathBuf,
     pub modules: BTreeMap<String, Module>,
+    /// Stable package and package-relative module identities, independent of import aliases.
+    pub symbol_modules: BTreeMap<String, (String, String)>,
+    pub libraries: Vec<std::sync::Arc<crate::library::Library>>,
+    pub library_bindings: BTreeMap<(String, usize), crate::library::ExternalFunction>,
 }
 
 #[derive(Clone, Copy)]
@@ -327,6 +340,9 @@ impl Package {
         };
         Self {
             root: Utf8PathBuf::new(),
+            symbol_modules: BTreeMap::new(),
+            libraries: Vec::new(),
+            library_bindings: BTreeMap::new(),
             modules: BTreeMap::from([(name, module)]),
         }
     }
@@ -377,6 +393,9 @@ impl Package {
         let root = utf8_source_root(root)?;
         let mut package = Self {
             root: root.clone(),
+            symbol_modules: BTreeMap::new(),
+            libraries: Vec::new(),
+            library_bindings: BTreeMap::new(),
             modules: BTreeMap::new(),
         };
         package.discover_modules_from(&root, ModuleOrigin::Input, None, overlays, cache)?;
@@ -411,11 +430,28 @@ impl Package {
         let root = utf8_source_root(&project.source_root)?;
         let mut package = Self {
             root: root.clone(),
+            symbol_modules: BTreeMap::new(),
+            libraries: Vec::new(),
+            library_bindings: BTreeMap::new(),
             modules: BTreeMap::new(),
         };
         package.discover_modules_from(&root, ModuleOrigin::Input, None, overlays, cache)?;
+        for name in package.modules.keys() {
+            package
+                .symbol_modules
+                .insert(name.clone(), (project.name.clone(), name.clone()));
+        }
         for dependency in project.resolve_dependencies()? {
-            let dependency_root = utf8_source_root(&dependency.project.source_root)?;
+            if let Some(artifact) = &dependency.artifact {
+                crate::library::mount(
+                    &mut package,
+                    &dependency.name,
+                    std::sync::Arc::new(crate::library::read(artifact)?),
+                )?;
+                continue;
+            }
+            let dependency_project = dependency.project.as_ref().expect("source dependency");
+            let dependency_root = utf8_source_root(&dependency_project.source_root)?;
             package.discover_modules_from(
                 &dependency_root,
                 ModuleOrigin::Dependency,
@@ -423,6 +459,23 @@ impl Package {
                 overlays,
                 cache,
             )?;
+            let prefix = format!("{}.", dependency.name);
+            for (name, module) in &package.modules {
+                if module.origin != ModuleOrigin::Dependency {
+                    continue;
+                }
+                if let Some(local) = name.strip_prefix(&prefix) {
+                    package.symbol_modules.insert(
+                        name.clone(),
+                        (dependency_project.name.clone(), local.to_owned()),
+                    );
+                } else if name == &dependency.name {
+                    package.symbol_modules.insert(
+                        name.clone(),
+                        (dependency_project.name.clone(), "main".to_owned()),
+                    );
+                }
+            }
         }
         package.finish_loading(cache)?;
         Ok(package)
@@ -635,7 +688,14 @@ impl Package {
                 })
             })
         });
-        if !imports_embedded {
+        let library_needs_embedded = self.libraries.iter().any(|library| {
+            library
+                .interface
+                .embedded
+                .iter()
+                .any(|name| name.starts_with("std."))
+        });
+        if !imports_embedded && !library_needs_embedded {
             return Ok(());
         }
         let existing = EMBEDDED_MODULES

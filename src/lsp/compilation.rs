@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -10,8 +10,13 @@ use super::workspace::{Workspace, path_to_uri, uri_to_path};
 use crate::compiler::Compilation;
 use crate::error::FosterError;
 
+// Navigation can request files that are not open in the editor. Keep a small working set
+// for those requests, without retaining every package visited during the session.
+const RECENT_DOCUMENT_LIMIT: usize = 8;
+
 #[derive(Default)]
 pub(super) struct CompilationCache {
+    recent: RefCell<VecDeque<Uri>>,
     entries: RefCell<HashMap<Uri, Rc<Compilation>>>,
     errors: RefCell<HashMap<Uri, FosterError>>,
     last_good: RefCell<HashMap<Uri, Rc<Compilation>>>,
@@ -33,25 +38,85 @@ impl CompilationCache {
     }
 
     pub(super) fn clear(&self) {
-        // Watched-file changes can invalidate package membership, so discard semantic snapshots.
-        // Parsed modules remain content-addressed in `modules` and are reused on the next build.
+        // Watched-file changes can remove packages or dependencies. No snapshot or incremental
+        // cache from the old membership may remain available as a semantic fallback.
         self.entries.borrow_mut().clear();
         self.errors.borrow_mut().clear();
+        self.last_good.borrow_mut().clear();
+        self.bodies.borrow_mut().clear();
+        self.recent.borrow_mut().clear();
+        *self.modules.borrow_mut() = crate::package::ModuleCache::default();
+    }
+
+    pub(super) fn close<'a>(&self, uri: &Uri, open: impl Iterator<Item = &'a Uri>) {
+        self.recent.borrow_mut().retain(|cached| cached != uri);
+        self.invalidate(uri);
+        // Other open files must not fall back to a snapshot containing the closed overlay.
+        self.last_good
+            .borrow_mut()
+            .retain(|cached_uri, compilation| {
+                cached_uri != uri && !contains_document(compilation, uri)
+            });
+        self.prune(open);
+    }
+
+    fn prune<'a>(&self, open: impl Iterator<Item = &'a Uri>) {
+        let mut open = open.cloned().collect::<Vec<_>>();
+        open.extend(self.recent.borrow().iter().cloned());
+        let active = open
+            .iter()
+            .map(|uri| uri.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        self.entries
+            .borrow_mut()
+            .retain(|uri, _| active.contains(uri.as_str()));
+        self.last_good
+            .borrow_mut()
+            .retain(|uri, _| active.contains(uri.as_str()));
+        self.errors
+            .borrow_mut()
+            .retain(|uri, _| active.contains(uri.as_str()));
+        let mut paths = open
+            .iter()
+            .filter_map(uri_to_path)
+            .filter_map(|path| Utf8PathBuf::from_path_buf(path).ok())
+            .collect::<std::collections::HashSet<_>>();
+        let mut roots = std::collections::HashSet::new();
+        for compilation in self
+            .entries
+            .borrow()
+            .values()
+            .chain(self.last_good.borrow().values())
+        {
+            roots.insert(compilation.package.root.clone());
+            paths.extend(
+                compilation
+                    .hir
+                    .modules
+                    .iter()
+                    .filter_map(|(_, module)| module.source_path.clone()),
+            );
+        }
+        self.bodies
+            .borrow_mut()
+            .retain(|root, _| roots.contains(root));
+        self.modules.borrow_mut().retain_sources(&paths);
+    }
+
+    fn touch(&self, uri: &Uri) {
+        let mut recent = self.recent.borrow_mut();
+        recent.retain(|cached| cached != uri);
+        recent.push_back(uri.clone());
+        if recent.len() > RECENT_DOCUMENT_LIMIT {
+            recent.pop_front();
+        }
     }
 
     pub(super) fn invalidate(&self, uri: &Uri) {
         // A dependency can belong to several snapshots; its URI entry only names the latest.
         // Check every snapshot's module membership rather than following that single alias.
         self.entries.borrow_mut().retain(|cached_uri, compilation| {
-            cached_uri != uri
-                && !compilation.hir.modules.iter().any(|(_, module)| {
-                    module
-                        .source_path
-                        .as_deref()
-                        .and_then(|path| path_to_uri(path.as_std_path()))
-                        .as_ref()
-                        == Some(uri)
-                })
+            cached_uri != uri && !contains_document(compilation, uri)
         });
         // Failed compilations are keyed by the document that requested them rather than by a
         // resolved package, so conservatively discard these small entries on any source change.
@@ -117,6 +182,17 @@ impl CompilationCache {
     }
 }
 
+fn contains_document(compilation: &Compilation, uri: &Uri) -> bool {
+    compilation.hir.modules.iter().any(|(_, module)| {
+        module
+            .source_path
+            .as_deref()
+            .and_then(|path| path_to_uri(path.as_std_path()))
+            .as_ref()
+            == Some(uri)
+    })
+}
+
 impl Workspace {
     fn check_incremental(
         &self,
@@ -141,6 +217,7 @@ impl Workspace {
 
     fn compile_profiled(&self, uri: &Uri) -> Result<Rc<Compilation>, FosterError> {
         crate::compiler::cancellation::check()?;
+        self.compilations.touch(uri);
         if let Some(compilation) = self.compilations.get(uri) {
             crate::compiler::profile::count("compilation.hit");
             return Ok(compilation);
@@ -155,13 +232,16 @@ impl Workspace {
         }) {
             Ok(compilation) => {
                 crate::compiler::cancellation::check()?;
-                Ok(self.compilations.insert(uri.clone(), compilation))
+                let compilation = self.compilations.insert(uri.clone(), compilation);
+                self.compilations.prune(self.documents.keys());
+                Ok(compilation)
             }
             Err(error) => {
                 if crate::compiler::cancellation::is_cancellation(&error) {
                     return Err(error);
                 }
                 self.compilations.insert_error(uri.clone(), error.clone());
+                self.compilations.prune(self.documents.keys());
                 Err(error)
             }
         }
@@ -299,6 +379,116 @@ impl Workspace {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn snapshot(path: &Path) -> Compilation {
+        let mut compilation = crate::compile("func main() -> Int { 1 }").unwrap();
+        let path = Utf8PathBuf::from_path_buf(path.to_owned()).unwrap();
+        compilation.package.root = path.clone();
+        let module = compilation.hir.modules.iter().next().unwrap().0;
+        compilation.hir.modules[module].source_path = Some(path);
+        compilation
+    }
+
+    #[test]
+    fn closing_documents_releases_snapshots_bodies_and_source_parses() {
+        let cache = CompilationCache::default();
+        let root = std::env::current_dir().unwrap();
+        let path = root.join("closed.fos");
+        let other = root.join("open.fos");
+        let uri = path_to_uri(&path).unwrap();
+        let other_uri = path_to_uri(&other).unwrap();
+        let source = "func main() -> Int { 1 }";
+        cache.parse_document(&path, source).unwrap();
+        cache.parse_document(&other, source).unwrap();
+        let compilation = cache.insert(uri.clone(), snapshot(&path));
+        let released = Rc::downgrade(&compilation);
+        let body = crate::typecheck::incremental::SharedBodyCache::default();
+        let released_body = Rc::downgrade(&body);
+        cache
+            .bodies
+            .borrow_mut()
+            .insert(compilation.package.root.clone(), body);
+        drop(compilation);
+        let retained = cache.insert(other_uri.clone(), snapshot(&other));
+
+        cache.close(&uri, [&other_uri].into_iter());
+        assert!(released.upgrade().is_none());
+        assert!(released_body.upgrade().is_none());
+        assert!(Rc::ptr_eq(&retained, &cache.get(&other_uri).unwrap()));
+        cache.parse_document(&path, source).unwrap();
+        cache.parse_document(&other, source).unwrap();
+        assert_eq!(cache.module_parse_count(&path), 2);
+        assert_eq!(cache.module_parse_count(&other), 1);
+    }
+
+    #[test]
+    fn editing_keeps_fallback_but_closing_dependency_releases_it() {
+        let cache = CompilationCache::default();
+        let root = std::env::current_dir().unwrap();
+        let dependency = root.join("dependency.fos");
+        let uri = path_to_uri(&root.join("main.fos")).unwrap();
+        let dependency_uri = path_to_uri(&dependency).unwrap();
+        let compilation = cache.insert(uri.clone(), snapshot(&dependency));
+        let released = Rc::downgrade(&compilation);
+        drop(compilation);
+        cache.prune([&uri, &dependency_uri].into_iter());
+        cache.invalidate(&dependency_uri);
+        assert!(cache.get(&uri).is_none());
+        assert!(cache.last_good(&uri).is_some());
+        cache.close(&dependency_uri, [&uri].into_iter());
+        assert!(cache.last_good(&uri).is_none());
+        assert!(released.upgrade().is_none());
+    }
+
+    #[test]
+    fn watched_file_changes_discard_semantic_fallback_and_incremental_state() {
+        let cache = CompilationCache::default();
+        let path = std::env::current_dir().unwrap().join("removed.fos");
+        let uri = path_to_uri(&path).unwrap();
+        let compilation = cache.insert(uri.clone(), snapshot(&path));
+        let released = Rc::downgrade(&compilation);
+        cache
+            .bodies
+            .borrow_mut()
+            .insert(compilation.package.root.clone(), Default::default());
+        drop(compilation);
+        cache.insert_error(uri.clone(), FosterError::runtime("missing dependency"));
+        cache.clear();
+        assert!(released.upgrade().is_none());
+        assert!(cache.last_good(&uri).is_none());
+        assert!(cache.error(&uri).is_none());
+        assert!(cache.bodies.borrow().is_empty());
+    }
+
+    #[test]
+    fn recent_navigation_evicts_least_recent_snapshot_but_keeps_open_documents() {
+        let cache = CompilationCache::default();
+        let root = std::env::current_dir().unwrap();
+        let open_path = root.join("open.fos");
+        let open_uri = path_to_uri(&open_path).unwrap();
+        let retained = cache.insert(open_uri.clone(), snapshot(&open_path));
+        let mut recent = Vec::new();
+        for index in 0..RECENT_DOCUMENT_LIMIT {
+            let path = root.join(format!("recent-{index}.fos"));
+            let uri = path_to_uri(&path).unwrap();
+            cache.touch(&uri);
+            let compilation = cache.insert(uri.clone(), snapshot(&path));
+            recent.push((uri, Rc::downgrade(&compilation)));
+            cache.prune([&open_uri].into_iter());
+        }
+        cache.touch(&recent[0].0);
+        let path = root.join("next.fos");
+        let uri = path_to_uri(&path).unwrap();
+        cache.touch(&uri);
+        cache.insert(uri, snapshot(&path));
+        cache.prune([&open_uri].into_iter());
+
+        assert!(recent[0].1.upgrade().is_some());
+        assert!(recent[1].1.upgrade().is_none());
+        assert!(cache.last_good(&recent[1].0).is_none());
+        assert!(Rc::ptr_eq(&retained, &cache.get(&open_uri).unwrap()));
+        assert_eq!(cache.entries.borrow().len(), RECENT_DOCUMENT_LIMIT + 1);
+    }
 
     #[test]
     fn invalidates_every_snapshot_containing_a_shared_module() {

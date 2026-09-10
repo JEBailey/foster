@@ -16,7 +16,7 @@ use crate::intrinsics::Builtin;
 use crate::types::{DispatchSlot, NominalTypeId};
 
 const MAGIC: &[u8; 8] = b"FOSTERBC";
-pub const FORMAT_VERSION: u16 = 25;
+pub const FORMAT_VERSION: u16 = 26;
 const MAX_ITEMS: usize = 16_777_216;
 const MAX_STRING: usize = 64 * 1024 * 1024;
 
@@ -114,6 +114,10 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
             w.verification_type(ty)?;
         }
     }
+    w.string(
+        &serde_json::to_string(&program.symbols.canonical())
+            .map_err(|e| BinaryError::new(e.to_string()))?,
+    )?;
     Ok(w.bytes)
 }
 
@@ -181,12 +185,15 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
             },
         ))
     })?;
+    let symbols = serde_json::from_str(&r.string()?)
+        .map_err(|e| BinaryError::new(format!("invalid symbolic module table: {e}")))?;
     if r.offset != bytes.len() {
         return Err(BinaryError::new(
             "trailing bytes after Foster bytecode program",
         ));
     }
-    let program = Program {
+    let mut program = Program {
+        symbols,
         drops_inserted,
         constants,
         functions,
@@ -203,7 +210,7 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         dispatch,
         variants,
     };
-    verify(&program)
+    crate::symbols::link(&mut program)
         .map_err(|error| BinaryError::new(format!("invalid Foster bytecode: {error}")))?;
     Ok(program)
 }
