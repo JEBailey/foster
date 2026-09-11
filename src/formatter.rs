@@ -250,6 +250,17 @@ mod tests {
     }
 
     #[test]
+    fn formats_while_without_expanding_the_sugar() {
+        let formatted =
+            "func main() {\n    while true {\n        // stop here\n        break\n    }\n}\n";
+        assert_eq!(
+            format("func main() {\nwhile true {\n// stop here\nbreak\n}\n}\n").unwrap(),
+            formatted
+        );
+        assert_eq!(format(formatted).unwrap(), formatted);
+    }
+
+    #[test]
     fn formats_multiline_branch_arms() {
         assert_eq!(
             format("func main() -> Int {\nbranch {\ntrue -> {\nlet value = 42\nvalue\n}\n_ -> 0\n}\n}\n").unwrap(),

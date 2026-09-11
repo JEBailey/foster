@@ -2,6 +2,15 @@
 use foster::{native, vm};
 
 #[test]
+fn while_loops_agree_in_both_backends() {
+    check(
+        "while-loops",
+        include_str!("fixtures/programs/while_loops.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn returned_callables_can_be_forwarded_selected_and_nested() {
     check(
         "returned-callables",

@@ -1,0 +1,42 @@
+type Counter = { value: Int }
+func next[g: group Counter](counter: ref[g] Counter) -> Bool {
+    counter.value = counter.value + 1
+    counter.value <= 3
+}
+
+func main() -> Int {
+    while false { assert(false, "false condition entered the loop") }
+    let active = true
+    let iterations = 0
+    while active {
+        iterations = iterations + 1
+        active = false
+    }
+    assert(iterations == 1)
+
+    let counter = Counter { value: 0 }
+    let visits = 0
+    while next(ref counter) {
+        visits = visits + 1
+        assert(visits <= 3, "continue did not recheck the condition")
+        assert(counter.value < 4)
+        continue
+    }
+    assert(counter.value == 4)
+    assert(visits == 3)
+
+    let total = 0
+    let outer = 0
+    while outer < 3 {
+        outer = outer + 1
+        let inner = 0
+        while true {
+            inner = inner + 1
+            continue if inner == 1
+            total = total + inner
+            break if inner == 3
+        }
+    }
+    assert(total == 15)
+    42
+}

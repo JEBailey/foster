@@ -207,6 +207,18 @@ are statements rather than recoverable `Result` values and cannot be guarded wit
 control-transfer statement, so `write(value) if ready` and `value = next() if ready` are invalid.
 Use `branch` when choosing whether to evaluate a value-producing operation.
 
+`while condition { ... }` checks a Boolean condition before each iteration. It is syntax sugar for:
+
+```foster
+loop {
+    break if !condition
+    // body
+}
+```
+
+A false initial condition skips the body; `continue` returns to the condition check. The condition
+is evaluated once per iteration, and the loop produces `()` when it exits.
+
 `loop` repeats a statement block until control leaves it. `break` exits the nearest enclosing loop,
 and `continue` starts its next iteration. Both transfers
 may use the same postfix `if` guard as `return`:

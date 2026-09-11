@@ -493,8 +493,8 @@ impl Workspace {
             }
             for keyword in [
                 "assert", "await", "branch", "break", "continue", "copy", "false", "func", "impl",
-                "import", "let", "loop", "move", "not", "pub", "ref", "remote", "return", "true",
-                "type", "enum", "try",
+                "import", "let", "loop", "while", "move", "not", "pub", "ref", "remote", "return",
+                "true", "type", "enum", "try",
             ] {
                 insert_completion(&mut items, keyword, CompletionItemKind::KEYWORD, None);
             }

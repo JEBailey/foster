@@ -1023,6 +1023,27 @@ impl Parser {
                 body: self.block()?,
             });
         }
+        if self.take(&TokenKind::While) {
+            let start = self.peek().range.start;
+            let previous = self.suppress_record_literal;
+            self.suppress_record_literal = true;
+            let condition = self.expression();
+            self.suppress_record_literal = previous;
+            let condition = condition?;
+            let span = start..self.tokens[self.current.saturating_sub(1)].range.end;
+            let guard = Expr::Spanned {
+                expression: Box::new(Expr::Unary {
+                    operator: UnaryOp::Not,
+                    operand: Box::new(condition),
+                }),
+                span: span.clone(),
+            };
+            let mut body = crate::block::Block::single(Stmt::Break { guard: Some(guard) }, span);
+            for (statement, span) in self.block()?.iter_spanned() {
+                body.push(statement.clone(), span.clone());
+            }
+            return Ok(Stmt::Loop { body });
+        }
         if self.take(&TokenKind::Break) {
             return Ok(Stmt::Break {
                 guard: self.control_guard()?,
