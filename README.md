@@ -100,11 +100,15 @@ suitable for CI. The current directory is used when no path is supplied.
 `documentation/` directory within the selected package. The site is built from resolved HIR, so signatures include
 inferred types and effects. It includes public and private declarations, their visibility, and all
 attached Markdown documentation comments, but omits private types without nonempty documentation.
+The index lists modules alphabetically in collapsible namespace groups, with indentation for nested
+modules, namespace shortcuts, and search that reveals matching groups.
 Module pages summarize the public types they provide,
 including fields, enum cases, required methods, and linked functions or methods.
 Type references in signatures and fields link to their declarations in the generated site.
 Primitive types link to their library module; omitted types and modules remain plain text.
 Module pages keep an overview and declaration navigation alongside the reference on wide screens.
+The sidebar groups functions under collapsible types, with a type overview link and function count.
+Following a declaration link opens its type; searching temporarily expands matching groups.
 Use **Find a declaration** to filter navigation by name or kind; press Escape to clear it.
 On smaller screens, **On this page** can be collapsed to make room for the reference.
 

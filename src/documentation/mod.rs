@@ -1,8 +1,8 @@
 //! Static API documentation generation and local preview serving.
 
 mod render;
-mod type_links;
 mod server;
+mod type_links;
 
 use std::fs;
 use std::io;

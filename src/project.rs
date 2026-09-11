@@ -190,13 +190,13 @@ impl DependencyResolution {
                         dependency.root.display()
                     ))
                 })?;
-                if let Some(existing) = self.aliases.get(&dependency.name) {
-                    if existing != &artifact {
-                        return Err(FosterError::runtime(format!(
-                            "dependency name `{}` refers to different artifacts",
-                            dependency.name
-                        )));
-                    }
+                if let Some(existing) = self.aliases.get(&dependency.name)
+                    && existing != &artifact
+                {
+                    return Err(FosterError::runtime(format!(
+                        "dependency name `{}` refers to different artifacts",
+                        dependency.name
+                    )));
                 }
                 self.aliases
                     .insert(dependency.name.clone(), artifact.clone());

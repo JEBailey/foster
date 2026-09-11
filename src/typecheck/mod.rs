@@ -380,7 +380,7 @@ impl<'a> Checker<'a> {
             // These summaries belong to this checker pass. Validation runs only after
             // inference converges, against exactly the contracts used for derivation.
             let (actual, derived_suspends) = &self.derived_effects[&function];
-            if !effects_are_subset(&actual, &definition.effects) {
+            if !effects_are_subset(actual, &definition.effects) {
                 let missing = actual
                     .iter()
                     .filter(|effect| {
@@ -409,7 +409,7 @@ impl<'a> Checker<'a> {
             {
                 for (index, declared) in definition.effects.iter().enumerate() {
                     if declared.kind != crate::ast::EffectKind::Consume
-                        && !effects_are_subset(std::slice::from_ref(declared), &actual)
+                        && !effects_are_subset(std::slice::from_ref(declared), actual)
                     {
                         let narrower = actual
                             .iter()

@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use super::type_links::TypeLinks;
-use crate::ast::{Effect, EffectKind, ParameterMode, TypeExpr};
+use crate::ast::{Effect, EffectKind, ParameterMode};
 use crate::compiler::Compilation;
 use crate::hir::{ConstantId, FunctionId, ModuleId};
 
@@ -18,11 +18,19 @@ a { color: #3564c4; text-decoration: none; } a:hover { text-decoration: underlin
 .summary span { padding: .3rem .7rem; border: 1px solid #d8dde7; border-radius: 99px; background: white; }
 .filter { width: 100%; margin: 0 0 1.25rem; padding: .8rem 1rem; border: 1px solid #c9d0dc; border-radius: .6rem; color: inherit; background: white; font: inherit; }
 .filter:focus { border-color: #3564c4; outline: 3px solid color-mix(in srgb, #3564c4 20%, transparent); }
-.module-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); gap: 1rem; padding: 0; list-style: none; }
+.module-list { margin: .5rem 0 1.5rem; padding: 0; list-style: none; }
 .module-list li[hidden] { display: none; }
 .module-list a, article, .on-this-page { display: block; padding: 1rem 1.15rem; border: 1px solid #d8dde7; border-radius: .65rem; background: white; }
-.module-list a { height: 100%; transition: border-color .15s, transform .15s, box-shadow .15s; }
-.module-list a:hover { border-color: #9bb2df; box-shadow: 0 .35rem 1rem #17203312; transform: translateY(-2px); text-decoration: none; }
+.module-list a { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: .65rem .75rem; padding-left: calc(.75rem + var(--depth, 0) * 1rem); border: 0; border-bottom: 1px solid #d8dde7; border-radius: 0; background: transparent; }
+.module-list a:hover { background: color-mix(in srgb, #628ae0 10%, transparent); text-decoration: none; }
+.module-list small { flex-shrink: 0; }
+.module-list strong { min-width: 0; }
+@media (max-width: 36rem) { .module-list a { flex-wrap: wrap; gap: .15rem .75rem; } }
+.module-group { margin-bottom: 1rem; }
+.module-group > summary { cursor: pointer; padding: .65rem .75rem; background: color-mix(in srgb, #628ae0 10%, transparent); border-radius: .35rem; font-size: 1.1rem; font-weight: 700; }
+.module-group > summary small { font-size: .8rem; font-weight: 400; margin-left: .75rem; }
+.module-jumps { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin-bottom: 1.5rem; }
+.module-group { scroll-margin-top: 1rem; }
 .module-list small { color: #667085; }
 .on-this-page { margin: 0 0 1.5rem; }
 .on-this-page strong { display: block; margin-bottom: .45rem; }
@@ -58,15 +66,19 @@ header h1, article, .module-list strong { overflow-wrap: anywhere; }
 .on-this-page .crumb { margin: 0 0 .75rem; }
 .on-this-page label { display: block; margin-top: 1rem; font-size: .85rem; font-weight: 600; }
 .on-this-page .filter { margin: .35rem 0 .5rem; padding: .55rem; }
-.on-this-page ul { display: block; padding: 0; list-style: none; max-height: max(8rem, calc(100vh - 20rem)); overflow: auto; }
+.on-this-page ul { display: block; padding: 0; list-style: none; }
+.on-this-page .declaration-tree { max-height: max(8rem, calc(100vh - 20rem)); overflow: auto; padding: .25rem; }
 .on-this-page li a { display: block; padding: .4rem .25rem; overflow-wrap: anywhere; }
 .on-this-page small { color: #596273; font-size: .75rem; margin-left: .35rem; }
 .on-this-page a[aria-current="location"] { background: #e8f0ff; border-radius: .25rem; font-weight: 700; }
+.type-navigation summary { padding: .5rem .25rem; overflow-wrap: anywhere; }
+.on-this-page .type-navigation ul { margin: .15rem 0 .5rem .55rem; padding-left: .65rem; border-left: 1px solid #8090aa; }
+.on-this-page h3 { font-size: .85rem; margin: 1rem .25rem .3rem; }
 .filter-status { font-size: .85rem; color: #596273; }
 .back-to-navigation { display: none; }
 article:target { outline: 2px solid #628ae0; outline-offset: 3px; }
 .type-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
-@media (max-width: 60rem) { .module-layout { display: block; } .on-this-page { position: static; max-height: none; } .on-this-page ul { max-height: 16rem; overflow: auto; } }
+@media (max-width: 60rem) { .module-layout { display: block; } .on-this-page { position: static; max-height: none; } .on-this-page .declaration-tree { max-height: 16rem; overflow: auto; } }
 @media (max-width: 60rem) { .back-to-navigation { display: inline-block; margin-top: .75rem; padding-block: .35rem; font-size: .85rem; } }
 @media (max-width: 36rem) { header { padding-block: 2rem; } main { padding-top: 1.25rem; } .on-this-page ul { display: block; } }
 @media (prefers-color-scheme: dark) { body { color: #e5e7eb; background: #111827; } article, .module-list a, .on-this-page, .summary span, .filter { border-color: #344052; background: #1b2434; } p code, li code { background: #303b4d; } a { color: #8db4ff; } .module-list small, .summary, .type-summary small, .type-summary h4 { color: #aab5c5; } .kind { color: #b9d2ff; background: #263c60; } }
@@ -78,27 +90,115 @@ const filter = document.querySelector('[data-module-filter]');
 if (filter) {
   const modules = [...document.querySelectorAll('[data-module]')];
   const empty = document.querySelector('[data-no-results]');
+  const groups = [...document.querySelectorAll('[data-module-group]')];
+  const status = document.querySelector('[data-module-status]');
+  let savedOpen = null;
   filter.addEventListener('input', () => {
     const query = filter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
     let visible = 0;
     for (const module of modules) {
       module.hidden = !module.dataset.module.includes(query);
       if (!module.hidden) visible++;
     }
     empty.hidden = visible > 0;
+    groups.forEach((group, index) => {
+      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
+      group.hidden = matches === 0;
+      if (query) group.open = matches > 0;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) savedOpen = null;
+    status.textContent = `${visible} of ${modules.length} modules`;
   });
+  filter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
+  });
+  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
+    filter.value = '';
+    filter.dispatchEvent(new Event('input'));
+    document.getElementById(link.hash.slice(1)).open = true;
+  }));
 }
 const declarationFilter = document.querySelector('[data-declaration-filter]');
+// Keep the generated links usable without scripting, then enhance them into a tree.
+const declarationList = document.querySelector('.on-this-page details > ul');
+if (declarationList) {
+  declarationList.classList.add('declaration-tree');
+  const groups = new Map();
+  const entries = [...declarationList.children];
+  function groupFor(name) {
+    if (groups.has(name)) return groups.get(name);
+    const item = document.createElement('li');
+    const group = document.createElement('details');
+    group.className = 'type-navigation';
+    const summary = document.createElement('summary');
+    summary.textContent = name;
+    const children = document.createElement('ul');
+    group.append(summary, children);
+    item.append(group);
+    declarationList.append(item);
+    groups.set(name, group);
+    return group;
+  }
+  for (const entry of entries) {
+    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
+    const link = entry.querySelector('a');
+    const kind = entry.querySelector('small').textContent;
+    if (kind === 'type' || kind === 'variant') {
+      const name = link.firstChild.textContent.trim();
+      groupFor(name).querySelector('ul').append(entry);
+      link.firstChild.textContent = 'Type overview ';
+    }
+  }
+  for (const entry of entries) {
+    const owner = entry.dataset.owner;
+    if (!owner) continue;
+    const group = groupFor(owner);
+    group.querySelector('ul').append(entry);
+    const link = entry.querySelector('a');
+    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
+  }
+  for (const group of groups.values()) {
+    const count = group.querySelectorAll('[data-owner]').length;
+    const badge = document.createElement('small');
+    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
+    group.querySelector('summary').append(badge);
+  }
+  for (const kind of ['function', 'constant']) {
+    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
+    if (!remaining.length) continue;
+    const section = document.createElement('li');
+    section.className = 'navigation-section';
+    const heading = document.createElement('h3');
+    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
+    const list = document.createElement('ul');
+    list.append(...remaining);
+    section.append(heading, list);
+    declarationList.append(section);
+  }
+}
 if (declarationFilter) {
   const entries = [...document.querySelectorAll('[data-declaration]')];
   const status = document.querySelector('[data-declaration-status]');
+  const groups = [...document.querySelectorAll('.type-navigation')];
+  let savedOpen = null;
   declarationFilter.addEventListener('input', () => {
     const query = declarationFilter.value.trim().toLowerCase();
+    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
     let visible = 0;
     for (const entry of entries) {
-      entry.hidden = !entry.textContent.toLowerCase().includes(query);
+      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
       if (!entry.hidden) visible++;
     }
+    for (const section of declarationList.children) {
+      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
+    }
+    groups.forEach((group, index) => {
+      if (query) group.open = !group.parentElement.hidden;
+      else if (savedOpen) group.open = savedOpen[index];
+    });
+    if (!query) { savedOpen = null; updateCurrentLocation(); }
     status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
   });
   declarationFilter.addEventListener('keydown', event => {
@@ -111,7 +211,11 @@ if (declarationFilter) {
 const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
 function updateCurrentLocation() {
   for (const link of navigationLinks) {
-    if (link.hash === location.hash) link.setAttribute('aria-current', 'location');
+    if (link.hash === location.hash) {
+      link.setAttribute('aria-current', 'location');
+      const group = link.closest('.type-navigation');
+      if (group) group.open = true;
+    }
     else link.removeAttribute('aria-current');
   }
 }
@@ -132,7 +236,7 @@ pub(super) struct ModulePage {
 }
 
 pub(super) fn site(compilation: &Compilation) -> Site {
-    let mut index_items = String::new();
+    let mut index_groups = std::collections::BTreeMap::<String, Vec<(String, String)>>::new();
     let mut pages = Vec::new();
     let mut declaration_count = 0;
     for (module_id, module) in compilation.hir.modules.iter() {
@@ -160,25 +264,48 @@ pub(super) fn site(compilation: &Compilation) -> Site {
                 .filter(|variant| visible_type(variant.public, variant.documentation.as_deref()))
                 .count();
         declaration_count += count;
+        let namespace = module.name.split('.').next().unwrap_or(&module.name);
+        let depth = module.name.matches('.').count();
+        let mut index_item = String::new();
         let _ = write!(
-            index_items,
-            "<li data-module=\"{}\"><a href=\"modules/{file_name}\"><strong>{}</strong><br><small>{count} declaration{}</small></a></li>",
+            index_item,
+            "<li data-module=\"{}\" style=\"--depth:{depth}\"><a href=\"modules/{file_name}\"><strong>{}</strong><small>{count} declaration{}</small></a></li>",
             escape(&module.name.to_lowercase()),
             escape(&module.name),
             if count == 1 { "" } else { "s" }
         );
+        index_groups
+            .entry(namespace.to_owned())
+            .or_default()
+            .push((module.name.clone(), index_item));
         pages.push(ModulePage {
             file_name,
             html: module_page(compilation, module_id),
         });
     }
     let module_count = pages.len();
+    let mut index_items = String::new();
+    let mut jumps = String::new();
+    for (index, (namespace, mut entries)) in index_groups.into_iter().enumerate() {
+        entries.sort_by(|a, b| a.0.cmp(&b.0));
+        let count = entries.len();
+        let _ = write!(
+            jumps,
+            "<a href=\"#namespace-{index}\" data-module-jump>{}</a>",
+            escape(&namespace)
+        );
+        let _ = write!(index_items, "<details class=\"module-group\" id=\"namespace-{index}\" data-module-group open><summary>{}<small>{count} modules</small></summary><ul class=\"module-list\">", escape(&namespace));
+        for (_, entry) in entries {
+            index_items.push_str(&entry);
+        }
+        index_items.push_str("</ul></details>");
+    }
     Site {
         index: page(
             "Foster documentation",
             "<h1>Foster documentation</h1><p>Resolved package API reference</p>",
             &format!(
-                "<div class=\"summary\"><span>{module_count} module{module_suffix}</span><span>{declaration_count} declaration{declaration_suffix}</span></div><h2>Modules</h2><label for=\"module-filter\">Filter modules by name</label><input id=\"module-filter\" class=\"filter\" type=\"search\" placeholder=\"e.g. collections or string\" aria-label=\"Filter modules\" data-module-filter><ul class=\"module-list\">{index_items}</ul><p class=\"no-results\" role=\"status\" data-no-results hidden>No modules match your filter.</p>",
+                "<div class=\"summary\"><span>{module_count} module{module_suffix}</span><span>{declaration_count} declaration{declaration_suffix}</span></div><h2>Modules</h2><label for=\"module-filter\">Filter modules by name</label><input id=\"module-filter\" class=\"filter\" type=\"search\" placeholder=\"e.g. collections or string\" aria-label=\"Filter modules\" data-module-filter><p class=\"filter-status\" role=\"status\" data-module-status>{module_count} modules</p><nav class=\"module-jumps\" aria-label=\"Module namespaces\">{jumps}</nav>{index_items}<p class=\"no-results\" role=\"status\" data-no-results hidden>No modules match your filter.</p>",
                 module_suffix = if module_count == 1 { "" } else { "s" },
                 declaration_suffix = if declaration_count == 1 { "" } else { "s" },
             ),
@@ -262,7 +389,24 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
         count += 1;
         let function = &compilation.hir.functions[function_id];
         let source_name = source_function_name(function);
+        let entry_start = contents.len();
         contents_entry(&mut contents, &function.name, &source_name, "function");
+        if let Some(owner) = function_owner(compilation, function_id) {
+            let hidden_record = module.records.get(&owner).is_some_and(|id| {
+                let ty = &compilation.hir.records[*id];
+                !visible_type(ty.public, ty.documentation.as_deref())
+            });
+            let hidden_variant = module.variant_types.get(&owner).is_some_and(|id| {
+                let ty = &compilation.hir.variant_types[*id];
+                !visible_type(ty.public, ty.documentation.as_deref())
+            });
+            if !hidden_record && !hidden_variant {
+                contents.insert_str(
+                    entry_start + 3,
+                    &format!(" data-owner=\"{}\"", escape(&owner)),
+                );
+            }
+        }
         declaration(
             &mut body,
             &function.name,
@@ -588,17 +732,10 @@ fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
         escape(&effects(&sig.effects, sig.suspends))
     });
     let name = function.name.rsplit('.').next().unwrap_or(&function.name);
-    let signature = format!(
+    format!(
         "{}func {name}{generics}{groups}({parameters}) -&gt; {result}{effects}",
         if function.public { "pub " } else { "" },
-    );
-    match &function.owner {
-        Some(owner) => format!(
-            "impl {} {{\n    {signature}\n}}",
-            links.source(&TypeExpr::Named(owner.clone(), vec![]))
-        ),
-        None => signature,
-    }
+    )
 }
 
 fn source_function_name(function: &crate::hir::Function) -> String {
@@ -873,6 +1010,20 @@ func main() -> Int { 0 }
         assert!(string.contains("href=\"core-option.html#Option\""));
         assert!(string.contains("href=\"core-code_point.html#module-overview\""));
         assert!(string.contains("href=\"std-iter.html#Iterator\""));
+        assert!(
+            string.contains("<li data-owner=\"String\" data-declaration><a href=\"#String.first\"")
+        );
+        assert!(string.contains("<li data-owner=\"GraphemeCursor\" data-declaration>"));
+        // Grouping must preserve one navigation destination per declaration.
+        for page in &site.modules {
+            let navigation = page.html.split("</nav>").next().unwrap();
+            let mut anchors = std::collections::BTreeSet::new();
+            for entry in navigation.split("data-declaration><a href=\"#").skip(1) {
+                let anchor = entry.split('"').next().unwrap();
+                assert!(anchors.insert(anchor), "duplicate navigation: {anchor}");
+                assert!(page.html.contains(&format!("<article id=\"{anchor}\"")));
+            }
+        }
         for page in &site.modules {
             for link in page.html.split("class=\"type-link\" href=\"").skip(1) {
                 let href = link.split('"').next().unwrap();

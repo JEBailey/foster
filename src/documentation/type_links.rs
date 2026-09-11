@@ -51,11 +51,10 @@ impl<'a> TypeLinks<'a> {
         let (public, docs) = if let Some(id) = definitions.records.get(name) {
             let record = &hir.records[*id];
             (record.public, record.documentation.as_deref())
-        } else if let Some(id) = definitions.variant_types.get(name) {
+        } else {
+            let id = definitions.variant_types.get(name)?;
             let variant = &hir.variant_types[*id];
             (variant.public, variant.documentation.as_deref())
-        } else {
-            return None;
         };
         Some(if visible_type(public, docs) {
             self.link(module, name, label)

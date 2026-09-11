@@ -205,11 +205,12 @@ impl BodyCache {
             }
         }
         for (id, function) in hir.functions.iter_mut() {
-            if !function.effects_explicit && !dirty.contains(&id) {
-                if let Some((_, effects, suspends)) = self.contracts.get(&self.shapes[&id].key) {
-                    function.effects = effects.clone();
-                    function.suspends = *suspends;
-                }
+            if !function.effects_explicit
+                && !dirty.contains(&id)
+                && let Some((_, effects, suspends)) = self.contracts.get(&self.shapes[&id].key)
+            {
+                function.effects = effects.clone();
+                function.suspends = *suspends;
             }
         }
         self.stats.pipeline_runs += 1;
