@@ -637,6 +637,7 @@ impl Package {
             // The import-free bootstrap exposes only its selected implementations and
             // storage accessors. Full module imports retain the source contract verbatim.
             for record in &mut program.records {
+                record.compositions.clear();
                 record.methods.retain(|method| {
                     program
                         .functions
@@ -649,6 +650,7 @@ impl Package {
                 });
             }
             for variant in &mut program.variants {
+                variant.compositions.clear();
                 variant.methods.retain(|method| {
                     program.functions.iter().any(|function| {
                         function.name == format!("{}.{}", variant.name, method.name)

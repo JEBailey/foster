@@ -4,6 +4,10 @@
 //! octets; use `String`.from_utf8 to validate and decode text. Slices are checked,
 //! half-open ranges and materialize a new byte value. Hex decoding returns `HexError`.
 
+import core.copy
+import core.ordering
+import std.collections
+
 import std.iter
 import core.byte
 import core.list
@@ -24,12 +28,13 @@ impl BytesHost {
 }
 
 /// Immutable binary data backed by compact private host storage.
-pub type Bytes = {
+pub type Bytes = & Copy & Sequence<Byte> & Collection<Byte> & Equality<Bytes> & Hashing & {
     value: RawBytes
 
-    // Required public operations; implementations live in impl blocks.
     /// Returns an independent immutable byte value.
     pub func copy(self) -> self [read self]
+
+    // Required public operations; implementations live in impl blocks.
     /// Concatenates two immutable byte sequences.
     pub func concat(self, other: Bytes) -> Bytes [read other, read self]
     /// Copies bytes in the half-open range `[start, end)`.
@@ -39,24 +44,10 @@ pub type Bytes = {
     pub func list(self) -> List<Byte> [read self]
     /// Encodes bytes as lowercase hexadecimal text.
     pub func hex(self) -> String [read self]
-    /// Returns whether two byte sequences contain identical values.
-    pub func equal?(self, other: Bytes) -> Bool [read other, read self]
-    /// Computes a deterministic hash over the byte sequence.
-    pub func hash(self) -> Int [read self]
     /// Checks UTF-8 scalar boundaries without allocating decoded text or copied suffixes.
     pub func utf8_valid?(self) -> Bool [read self]
 
-    // Required accessors supplied by the builtin storage implementation.
-    /// Returns whether this byte sequence is empty.
-    pub func empty?(self) -> Bool
-    /// Returns the number of bytes.
-    pub func length(self) -> Int
-    /// Returns the first byte; the sequence must not be empty.
-    pub func head(self) -> Byte
-    /// Returns the collection without its first element.
-    pub func rest(self) -> Bytes
-    /// Creates an independent iterator over the elements.
-    pub func iterator(self) -> Iterator<Byte>
+
 }
 
 /// Describes a failed UTF-8 decoding operation.

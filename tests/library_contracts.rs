@@ -4,13 +4,41 @@ use foster::ast::{TypeExpr, VariantKind};
 fn library_declarations_use_current_type_forms_and_explicit_public_signatures() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("library");
     let mut modules = 0;
-    for entry in walkdir::WalkDir::new(root) {
+    let audit = include_str!("../docs/library-contract-audit.md");
+    for entry in walkdir::WalkDir::new(&root) {
         let entry = entry.unwrap();
         if !entry.file_type().is_file() || entry.path().extension().is_none_or(|ext| ext != "fos") {
             continue;
         }
         let source = std::fs::read_to_string(entry.path()).unwrap();
         let program = foster::parse(&source).unwrap();
+        let module = entry
+            .path()
+            .strip_prefix(&root)
+            .unwrap()
+            .with_extension("")
+            .components()
+            .map(|part| part.as_os_str().to_str().unwrap())
+            .collect::<Vec<_>>()
+            .join(".");
+        for name in program
+            .records
+            .iter()
+            .filter(|ty| ty.public)
+            .map(|ty| &ty.name)
+            .chain(
+                program
+                    .variants
+                    .iter()
+                    .filter(|ty| ty.public)
+                    .map(|ty| &ty.name),
+            )
+        {
+            assert!(
+                audit.contains(&format!("[{module}.{name}]")),
+                "public type {module}.{name} needs a contract audit entry"
+            );
+        }
         modules += 1;
         for declaration in &program.variants {
             if declaration.kind == VariantKind::Alias {
@@ -99,9 +127,64 @@ fn library_declarations_use_current_type_forms_and_explicit_public_signatures() 
                     record.name
                 );
             }
+            let expected: &[&str] = match record.name.as_str() {
+                "String" => &["Copy", "Sequence", "Collection"],
+                "Bytes" => &["Copy", "Sequence", "Collection", "Equality", "Hashing"],
+                "List" => &["Sequence", "Collection"],
+                "Symbol" | "TomlEntry" => &["Copy"],
+                "File" => &["ReadWrite", "TextWriter"],
+                "Connection" => &["Duplex", "TextWriter", "Closable"],
+                "SystemRandom" => &["RandomSource", "secure.EntropySource"],
+                _ => &[],
+            };
+            for expected in expected {
+                assert!(
+                    record
+                        .compositions
+                        .iter()
+                        .any(|ty| matches!(ty, TypeExpr::Named(name, _) if name == expected)),
+                    "{} must explicitly compose {expected}",
+                    record.name
+                );
+            }
+        }
+        for variant in &program.variants {
+            if variant.name == "TomlValue" {
+                assert!(
+                    variant
+                        .compositions
+                        .iter()
+                        .any(|ty| matches!(ty, TypeExpr::Named(name, _) if name == "Copy"))
+                );
+            }
         }
     }
     assert!(modules >= 50, "review must cover both core and std");
+}
+
+#[test]
+fn resource_and_entropy_types_support_their_explicit_contract_views() {
+    foster::compile(
+        r#"
+import std.fs
+import std.io
+import std.resource
+import std.net.tcp
+import std.random
+import std.random.secure
+func text<E>(value: TextWriter<E>) -> () {}
+func binary<E>(value: ReadWrite<E>) -> () {}
+func entropy(value: EntropySource) -> () {}
+func inspect_file(value: File) -> () {
+    text(value)
+    binary(value)
+}
+func inspect_connection(value: Connection) -> () { text(value) }
+func inspect_system(value: SystemRandom) -> () { entropy(value) }
+func main() -> Int { 0 }
+"#,
+    )
+    .unwrap();
 }
 
 #[test]

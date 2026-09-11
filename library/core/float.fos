@@ -3,6 +3,8 @@
 //! These helpers use ordinary floating-point comparisons. In particular, compare
 //! returns `Equal` when neither operand compares less or greater, including NaN;
 //! it is not an IEEE total ordering. See each method's NaN and signed-zero behavior.
+//!
+//! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
 import core.ordering
 

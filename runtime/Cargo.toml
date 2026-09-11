@@ -9,3 +9,4 @@ path = "src/lib.rs"
 
 [dependencies]
 foster-host = { path = "../host" }
+may = "=0.3.51"

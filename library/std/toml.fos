@@ -5,6 +5,8 @@
 //! TOML from the value model; it is not a source-preserving editor for comments
 //! and original formatting.
 
+import core.copy
+
 import core.code_point
 import core.float
 import core.int
@@ -25,11 +27,9 @@ pub type TomlDocument = {
 }
 
 /// A key-value entry in a TOML table.
-pub type TomlEntry = {
+pub type TomlEntry = & Copy & {
     pub key: String
     pub value: TomlValue
-    /// Copies this entry and its complete TOML value.
-    pub func copy(self) -> self [read self]
 }
 
 /// A scalar, date-time, list, or table value in the TOML data model.
@@ -43,10 +43,9 @@ pub enum TomlValue = String(String)
     | DateTime(String)
     | Array(List<TomlValue>)
     | Table(List<TomlEntry>)
+    & Copy
     & {
         // Required public operations; implementations live in impl blocks.
-        /// Copies the complete TOML tree without consuming the source.
-        pub func copy(self) -> self [read self]
         /// Finds a value by key when `value` is a table, returning `None` otherwise.
         pub func get(self, key: String) -> Option<TomlValue> [consume key, consume self]
     }

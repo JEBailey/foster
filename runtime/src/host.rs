@@ -1,9 +1,30 @@
+use may::sync::mpsc;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+// HostContext currently exposes blocking OS calls. Offload them so an actor
+// waiting on filesystem/TCP work cannot pin a May scheduler worker. The closure
+// owns its inputs; it never touches coroutine-local execution or Foster values.
+// Main-thread callers can execute the same operation directly.
+fn foster_host_blocking<T: Send + 'static>(operation: impl FnOnce() -> T + Send + 'static) -> T {
+    if !may::coroutine::is_coroutine() {
+        return operation();
+    }
+    let (sender, receiver) = mpsc::channel();
+    std::thread::Builder::new()
+        .name("foster-host".into())
+        .spawn(move || {
+            let _ = sender.send(operation());
+        })
+        .unwrap_or_else(|error| {
+            foster_remote_abort(&format!("cannot start host operation: {error}"))
+        });
+    receiver
+        .recv()
+        .unwrap_or_else(|_| foster_remote_abort("host operation terminated before replying"))
+}
 
 #[derive(Default)]
 struct FosterHostResponse {
@@ -153,115 +174,124 @@ extern "C" fn foster_rt_v4_host_call_nullary(operation: i64) -> usize {
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_host_call_string(operation: i64, value: usize) -> usize {
-    let value = unsafe { string_value(value) };
-    let response = match operation {
-        26 => foster_host_io(
-            "read_text",
-            value,
-            std::fs::read_to_string(foster_host_resolve(value)).map(FosterHostValue::Text),
-        ),
-        28 => foster_host_io(
-            "read_bytes",
-            value,
-            std::fs::read(foster_host_resolve(value)).map(FosterHostValue::Bytes),
-        ),
-        30 => foster_host_list_directory(value),
-        31 => FosterHostResponse::success(FosterHostValue::Integer(i64::from(
-            foster_host_resolve(value).exists(),
-        ))),
-        32 => FosterHostResponse::success(FosterHostValue::Integer(i64::from(
-            foster_host_resolve(value).is_file(),
-        ))),
-        33 => FosterHostResponse::success(FosterHostValue::Integer(i64::from(
-            foster_host_resolve(value).is_dir(),
-        ))),
-        34 => foster_host_io(
-            "create_directory",
-            value,
-            std::fs::create_dir(foster_host_resolve(value)).map(|()| FosterHostValue::Unit),
-        ),
-        35 => foster_host_io(
-            "create_directory_all",
-            value,
-            std::fs::create_dir_all(foster_host_resolve(value)).map(|()| FosterHostValue::Unit),
-        ),
-        36 => foster_host_io(
-            "remove_file",
-            value,
-            std::fs::remove_file(foster_host_resolve(value)).map(|()| FosterHostValue::Unit),
-        ),
-        37 => foster_host_io(
-            "remove_directory",
-            value,
-            std::fs::remove_dir(foster_host_resolve(value)).map(|()| FosterHostValue::Unit),
-        ),
-        41 => match Path::new(value).parent().map(Path::to_path_buf) {
-            Some(path) => match foster_host_path_text(path) {
-                Ok(path) => FosterHostResponse::success(FosterHostValue::Text(path)),
-                Err(error) => FosterHostResponse::error("parent", value, 0, error.to_string()),
+    let value = unsafe { string_value(value) }.to_owned();
+    let response = foster_host_blocking(move || {
+        let value = value.as_str();
+        match operation {
+            26 => foster_host_io(
+                "read_text",
+                value,
+                std::fs::read_to_string(foster_host_resolve(value)).map(FosterHostValue::Text),
+            ),
+            28 => foster_host_io(
+                "read_bytes",
+                value,
+                std::fs::read(foster_host_resolve(value)).map(FosterHostValue::Bytes),
+            ),
+            30 => foster_host_list_directory(value),
+            31 => FosterHostResponse::success(FosterHostValue::Integer(i64::from(
+                foster_host_resolve(value).exists(),
+            ))),
+            32 => FosterHostResponse::success(FosterHostValue::Integer(i64::from(
+                foster_host_resolve(value).is_file(),
+            ))),
+            33 => FosterHostResponse::success(FosterHostValue::Integer(i64::from(
+                foster_host_resolve(value).is_dir(),
+            ))),
+            34 => foster_host_io(
+                "create_directory",
+                value,
+                std::fs::create_dir(foster_host_resolve(value)).map(|()| FosterHostValue::Unit),
+            ),
+            35 => foster_host_io(
+                "create_directory_all",
+                value,
+                std::fs::create_dir_all(foster_host_resolve(value)).map(|()| FosterHostValue::Unit),
+            ),
+            36 => foster_host_io(
+                "remove_file",
+                value,
+                std::fs::remove_file(foster_host_resolve(value)).map(|()| FosterHostValue::Unit),
+            ),
+            37 => foster_host_io(
+                "remove_directory",
+                value,
+                std::fs::remove_dir(foster_host_resolve(value)).map(|()| FosterHostValue::Unit),
+            ),
+            41 => match Path::new(value).parent().map(Path::to_path_buf) {
+                Some(path) => match foster_host_path_text(path) {
+                    Ok(path) => FosterHostResponse::success(FosterHostValue::Text(path)),
+                    Err(error) => FosterHostResponse::error("parent", value, 0, error.to_string()),
+                },
+                None => FosterHostResponse::success(FosterHostValue::Text(String::new())),
             },
-            None => FosterHostResponse::success(FosterHostValue::Text(String::new())),
-        },
-        42 => match foster_host_component(Path::new(value).file_name()) {
-            Ok(component) => FosterHostResponse::success(FosterHostValue::Text(component)),
-            Err(error) => FosterHostResponse::error("file_name", value, 0, error),
-        },
-        43 => match foster_host_component(Path::new(value).extension()) {
-            Ok(component) => FosterHostResponse::success(FosterHostValue::Text(component)),
-            Err(error) => FosterHostResponse::error("extension", value, 0, error),
-        },
-        44 => foster_host_io(
-            "canonicalize",
-            value,
-            std::fs::canonicalize(foster_host_resolve(value))
-                .and_then(foster_host_path_text)
-                .map(FosterHostValue::Text),
-        ),
-        58 => foster_host_file_length(value),
-        _ => FosterHostResponse::error("host", value, operation, "unknown string host operation"),
-    };
+            42 => match foster_host_component(Path::new(value).file_name()) {
+                Ok(component) => FosterHostResponse::success(FosterHostValue::Text(component)),
+                Err(error) => FosterHostResponse::error("file_name", value, 0, error),
+            },
+            43 => match foster_host_component(Path::new(value).extension()) {
+                Ok(component) => FosterHostResponse::success(FosterHostValue::Text(component)),
+                Err(error) => FosterHostResponse::error("extension", value, 0, error),
+            },
+            44 => foster_host_io(
+                "canonicalize",
+                value,
+                std::fs::canonicalize(foster_host_resolve(value))
+                    .and_then(foster_host_path_text)
+                    .map(FosterHostValue::Text),
+            ),
+            58 => foster_host_file_length(value),
+            _ => {
+                FosterHostResponse::error("host", value, operation, "unknown string host operation")
+            }
+        }
+    });
     foster_host_response(response)
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_host_call_strings(operation: i64, first: usize, second: usize) -> usize {
-    let first = unsafe { string_value(first) };
-    let second = unsafe { string_value(second) };
-    let response = match operation {
-        27 => foster_host_io(
-            "write_text",
-            first,
-            std::fs::write(foster_host_resolve(first), second.as_bytes())
-                .map(|()| FosterHostValue::Unit),
-        ),
-        38 => foster_host_io(
-            "rename",
-            first,
-            std::fs::rename(foster_host_resolve(first), foster_host_resolve(second))
-                .map(|()| FosterHostValue::Unit),
-        ),
-        39 => foster_host_io(
-            "copy_file",
-            first,
-            std::fs::copy(foster_host_resolve(first), foster_host_resolve(second)).and_then(
-                |size| {
-                    i64::try_from(size)
-                        .map(FosterHostValue::Integer)
-                        .map_err(|_| std::io::Error::other("copied byte count exceeds Int"))
-                },
+    let first = unsafe { string_value(first) }.to_owned();
+    let second = unsafe { string_value(second) }.to_owned();
+    let response = foster_host_blocking(move || {
+        let first = first.as_str();
+        let second = second.as_str();
+        match operation {
+            27 => foster_host_io(
+                "write_text",
+                first,
+                std::fs::write(foster_host_resolve(first), second.as_bytes())
+                    .map(|()| FosterHostValue::Unit),
             ),
-        ),
-        40 => match foster_host_path_text(Path::new(first).join(second)) {
-            Ok(path) => FosterHostResponse::success(FosterHostValue::Text(path)),
-            Err(error) => FosterHostResponse::error("join", first, 0, error.to_string()),
-        },
-        _ => FosterHostResponse::error(
-            "host",
-            first,
-            operation,
-            "unknown string-pair host operation",
-        ),
-    };
+            38 => foster_host_io(
+                "rename",
+                first,
+                std::fs::rename(foster_host_resolve(first), foster_host_resolve(second))
+                    .map(|()| FosterHostValue::Unit),
+            ),
+            39 => foster_host_io(
+                "copy_file",
+                first,
+                std::fs::copy(foster_host_resolve(first), foster_host_resolve(second)).and_then(
+                    |size| {
+                        i64::try_from(size)
+                            .map(FosterHostValue::Integer)
+                            .map_err(|_| std::io::Error::other("copied byte count exceeds Int"))
+                    },
+                ),
+            ),
+            40 => match foster_host_path_text(Path::new(first).join(second)) {
+                Ok(path) => FosterHostResponse::success(FosterHostValue::Text(path)),
+                Err(error) => FosterHostResponse::error("join", first, 0, error.to_string()),
+            },
+            _ => FosterHostResponse::error(
+                "host",
+                first,
+                operation,
+                "unknown string-pair host operation",
+            ),
+        }
+    });
     foster_host_response(response)
 }
 
@@ -272,30 +302,33 @@ extern "C" fn foster_rt_v4_host_call_string_ints(
     first: i64,
     second: i64,
 ) -> usize {
-    let text = unsafe { string_value(text) };
-    let response = match operation {
-        46 => foster_host_network(
-            "listen",
-            foster_network_listen(text, first).map(FosterHostValue::Integer),
-        ),
-        47 => foster_host_network(
-            "connect",
-            foster_network_connect(text, first).map(FosterHostValue::Integer),
-        ),
-        56 => foster_host_read_range(text, first, second),
-        _ => FosterHostResponse::error(
-            "host",
-            text,
-            operation,
-            "unknown string/integer host operation",
-        ),
-    };
+    let text = unsafe { string_value(text) }.to_owned();
+    let response = foster_host_blocking(move || {
+        let text = text.as_str();
+        match operation {
+            46 => foster_host_network(
+                "listen",
+                foster_network_listen(text, first).map(FosterHostValue::Integer),
+            ),
+            47 => foster_host_network(
+                "connect",
+                foster_network_connect(text, first).map(FosterHostValue::Integer),
+            ),
+            56 => foster_host_read_range(text, first, second),
+            _ => FosterHostResponse::error(
+                "host",
+                text,
+                operation,
+                "unknown string/integer host operation",
+            ),
+        }
+    });
     foster_host_response(response)
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_host_call_int(operation: i64, value: i64) -> usize {
-    let response = match operation {
+    let response = foster_host_blocking(move || match operation {
         48 => foster_host_network(
             "accept",
             foster_network_accept(value).map(FosterHostValue::Integer),
@@ -313,13 +346,13 @@ extern "C" fn foster_rt_v4_host_call_int(operation: i64, value: i64) -> usize {
             Err(error) => FosterHostResponse::error("bytes", "", value, error),
         },
         _ => FosterHostResponse::error("host", "", operation, "unknown integer host operation"),
-    };
+    });
     foster_host_response(response)
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_host_call_ints(operation: i64, first: i64, second: i64) -> usize {
-    let response = match operation {
+    let response = foster_host_blocking(move || match operation {
         49 => foster_host_network(
             "read",
             foster_network_read(first, second).map(FosterHostValue::Text),
@@ -335,7 +368,7 @@ extern "C" fn foster_rt_v4_host_call_ints(operation: i64, first: i64, second: i6
         _ => {
             FosterHostResponse::error("host", "", operation, "unknown integer-pair host operation")
         }
-    };
+    });
     foster_host_response(response)
 }
 
@@ -346,22 +379,26 @@ extern "C" fn foster_rt_v4_host_call_string_bytes(
     data: usize,
     length: i64,
 ) -> usize {
-    let text = unsafe { string_value(text) };
-    let bytes = unsafe { foster_host_input_bytes(data, length) };
-    let response = match operation {
-        29 => foster_host_io(
-            "write_bytes",
-            text,
-            std::fs::write(foster_host_resolve(text), bytes).map(|()| FosterHostValue::Unit),
-        ),
-        57 => foster_host_append_bytes(text, bytes),
-        _ => FosterHostResponse::error(
-            "host",
-            text,
-            operation,
-            "unknown string/bytes host operation",
-        ),
-    };
+    let text = unsafe { string_value(text) }.to_owned();
+    let bytes = unsafe { foster_host_input_bytes(data, length) }.to_vec();
+    let response = foster_host_blocking(move || {
+        let text = text.as_str();
+        let bytes = bytes.as_slice();
+        match operation {
+            29 => foster_host_io(
+                "write_bytes",
+                text,
+                std::fs::write(foster_host_resolve(text), bytes).map(|()| FosterHostValue::Unit),
+            ),
+            57 => foster_host_append_bytes(text, bytes),
+            _ => FosterHostResponse::error(
+                "host",
+                text,
+                operation,
+                "unknown string/bytes host operation",
+            ),
+        }
+    });
     foster_host_response(response)
 }
 
@@ -372,37 +409,43 @@ extern "C" fn foster_rt_v4_host_call_int_bytes(
     data: usize,
     length: i64,
 ) -> usize {
-    let bytes = unsafe { foster_host_input_bytes(data, length) };
-    let response = match operation {
-        52 => foster_host_network(
-            "write_bytes",
-            foster_network_write_bytes(handle, bytes).map(|()| FosterHostValue::Unit),
-        ),
-        _ => FosterHostResponse::error(
-            "host",
-            "",
-            operation,
-            "unknown integer/bytes host operation",
-        ),
-    };
+    let bytes = unsafe { foster_host_input_bytes(data, length) }.to_vec();
+    let response = foster_host_blocking(move || {
+        let bytes = bytes.as_slice();
+        match operation {
+            52 => foster_host_network(
+                "write_bytes",
+                foster_network_write_bytes(handle, bytes).map(|()| FosterHostValue::Unit),
+            ),
+            _ => FosterHostResponse::error(
+                "host",
+                "",
+                operation,
+                "unknown integer/bytes host operation",
+            ),
+        }
+    });
     foster_host_response(response)
 }
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_host_call_int_string(operation: i64, handle: i64, text: usize) -> usize {
-    let text = unsafe { string_value(text) };
-    let response = match operation {
-        50 => foster_host_network(
-            "write",
-            foster_network_write_bytes(handle, text.as_bytes()).map(|()| FosterHostValue::Unit),
-        ),
-        _ => FosterHostResponse::error(
-            "host",
-            "",
-            operation,
-            "unknown integer/string host operation",
-        ),
-    };
+    let text = unsafe { string_value(text) }.to_owned();
+    let response = foster_host_blocking(move || {
+        let text = text.as_str();
+        match operation {
+            50 => foster_host_network(
+                "write",
+                foster_network_write_bytes(handle, text.as_bytes()).map(|()| FosterHostValue::Unit),
+            ),
+            _ => FosterHostResponse::error(
+                "host",
+                "",
+                operation,
+                "unknown integer/string host operation",
+            ),
+        }
+    });
     foster_host_response(response)
 }
 
@@ -495,11 +538,15 @@ extern "C" fn foster_rt_v4_host_release(response: usize) -> u8 {
     0
 }
 
-thread_local! {
-    static FOSTER_CANCELLATION: std::cell::RefCell<Option<Arc<remote_lifecycle::Control>>> = const { std::cell::RefCell::new(None) };
-    static FOSTER_EXECUTION: std::cell::RefCell<Option<String>> = const {
+// May falls back to thread-local storage for the process entry thread. Actors
+// retain their own state even when they suspend or move between scheduler workers.
+may::coroutine_local! {
+    static FOSTER_CANCELLATION: std::cell::RefCell<Option<Arc<remote_lifecycle::Control>>> = std::cell::RefCell::new(None)
+}
+may::coroutine_local! {
+    static FOSTER_EXECUTION: std::cell::RefCell<Option<String>> = {
         std::cell::RefCell::new(None)
-    };
+    }
 }
 
 fn foster_execution_failure(message: String) {
@@ -527,8 +574,11 @@ extern "C" fn foster_rt_v4_failure_pending() -> u8 {
     FOSTER_EXECUTION.with(|execution| u8::from(execution.borrow().is_some()))
 }
 
-thread_local! {
-    static FOSTER_CLEANUP_FAILURES: std::cell::RefCell<Vec<Option<String>>> = const { std::cell::RefCell::new(Vec::new()) };
+may::coroutine_local! {
+    static FOSTER_CLEANUP_FAILURES: std::cell::RefCell<Vec<Option<String>>> = std::cell::RefCell::new(Vec::new())
+}
+may::coroutine_local! {
+    static FOSTER_SCHEDULING_BUDGET: std::cell::Cell<u16> = std::cell::Cell::new(1024)
 }
 
 #[unsafe(no_mangle)]
@@ -550,6 +600,20 @@ extern "C" fn foster_rt_v4_end_cleanup() -> u8 {
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_cancellation_point() -> u8 {
+    // Generated basic-block polls also let CPU-bound actors share a worker.
+    if may::coroutine::is_coroutine() {
+        let exhausted = FOSTER_SCHEDULING_BUDGET.with(|budget| {
+            let remaining = budget.get() - 1;
+            budget.set(if remaining == 0 { 1024 } else { remaining });
+            remaining == 0
+        });
+        if exhausted {
+            // May's yield_now requeues locally; a perpetually runnable actor
+            // can keep that queue nonempty and starve global wakeups. A zero
+            // duration timer suspension gives newly awakened actors a turn.
+            may::coroutine::sleep(std::time::Duration::ZERO);
+        }
+    }
     foster_rt_v4_failure_pending()
 }
 
@@ -593,7 +657,7 @@ struct FosterRemote {
     control: Arc<remote_lifecycle::Control>,
     sender: mpsc::Sender<FosterRemoteMessage>,
     borrowed: bool,
-    worker: Option<thread::JoinHandle<()>>,
+    worker: Option<may::coroutine::JoinHandle<()>>,
 }
 
 struct FosterFuture {
@@ -608,7 +672,7 @@ extern "C" fn foster_rt_v4_remote_spawn(state: u64, release: usize, borrowed: u8
     let (sender, receiver) = mpsc::channel::<FosterRemoteMessage>();
     let control = Arc::new(remote_lifecycle::Control::default());
     let worker_control = control.clone();
-    let worker = thread::spawn(move || {
+    let worker = may::go_with!(1024 * 1024, move || {
         FOSTER_CANCELLATION.with(|slot| *slot.borrow_mut() = Some(worker_control.clone()));
         while let Ok(message) = receiver.recv() {
             if worker_control.error().is_some() || message.request.is_none() {
@@ -638,7 +702,11 @@ extern "C" fn foster_rt_v4_remote_spawn(state: u64, release: usize, borrowed: u8
         control,
         sender,
         borrowed: borrowed != 0,
-        worker: Some(worker),
+        worker: Some(
+            worker.unwrap_or_else(|error| {
+                foster_remote_abort(&format!("cannot start actor: {error}"))
+            }),
+        ),
     })) as usize
 }
 
@@ -710,7 +778,7 @@ extern "C" fn foster_rt_v4_future_await(future: usize) -> u64 {
         }
         match receiver.recv_timeout(std::time::Duration::from_millis(1)) {
             Ok(value) => break value,
-            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
             Err(_) => {
                 break Err(remote_lifecycle::RemoteError::Failed(
                     "remote object terminated before replying".into(),
@@ -758,9 +826,15 @@ extern "C" fn foster_rt_v4_remote_release(remote: usize) -> u8 {
     drop(sender);
     // Worker storage belongs to the worker until its safe cancellation point.
     // Detaching here never waits for an arbitrary host operation to return.
+    let current_actor = FOSTER_CANCELLATION.with(|current| {
+        current
+            .borrow()
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, &control))
+    });
     if idle
         && let Some(worker) = worker
-        && worker.thread().id() != thread::current().id()
+        && !current_actor
     {
         let _ = worker.join();
     }

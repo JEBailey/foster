@@ -1,0 +1,24 @@
+# Embedded by the compiler to build the assembled runtime outside this workspace.
+[package]
+name = "foster-native-runtime"
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+
+[lib]
+name = "foster_native_runtime"
+path = "runtime.rs"
+
+[dependencies]
+may = "=0.3.51"
+
+# Keep ABI exports together for linkers that see the Foster object after archives.
+[profile.dev]
+codegen-units = 1
+debug = false
+
+[profile.release]
+codegen-units = 1
+opt-level = 2
+debug = false

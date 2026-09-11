@@ -294,7 +294,11 @@ pub(super) fn site(compilation: &Compilation) -> Site {
             "<a href=\"#namespace-{index}\" data-module-jump>{}</a>",
             escape(&namespace)
         );
-        let _ = write!(index_items, "<details class=\"module-group\" id=\"namespace-{index}\" data-module-group open><summary>{}<small>{count} modules</small></summary><ul class=\"module-list\">", escape(&namespace));
+        let _ = write!(
+            index_items,
+            "<details class=\"module-group\" id=\"namespace-{index}\" data-module-group open><summary>{}<small>{count} modules</small></summary><ul class=\"module-list\">",
+            escape(&namespace)
+        );
         for (_, entry) in entries {
             index_items.push_str(&entry);
         }
@@ -540,6 +544,28 @@ fn type_card(
     );
     if let Some(docs) = docs {
         cards.push_str(&markdown(docs));
+    }
+    let module = &compilation.hir.modules[module_id];
+    let contracts = module
+        .records
+        .get(name)
+        .map(|id| {
+            let ty = &compilation.hir.records[*id];
+            (&ty.parameters, &ty.compositions)
+        })
+        .or_else(|| {
+            module.variant_types.get(name).map(|id| {
+                let ty = &compilation.hir.variant_types[*id];
+                (&ty.parameters, &ty.compositions)
+            })
+        });
+    if let Some((parameters, compositions)) = contracts {
+        let links = TypeLinks::new(compilation, module_id, parameters);
+        type_members(
+            cards,
+            "Contracts",
+            compositions.iter().map(|ty| (links.source(ty), None)),
+        );
     }
     type_members(
         cards,
@@ -816,7 +842,7 @@ fn variant_signature(compilation: &Compilation, id: crate::hir::VariantTypeId) -
         alternatives.join(" | ")
     };
     format!(
-        "{}{} {}{} = {alternatives}",
+        "{}{} {}{} = {alternatives}{}",
         if variant.public { "pub " } else { "" },
         if variant.kind == crate::ast::VariantKind::Enum {
             "enum"
@@ -824,7 +850,12 @@ fn variant_signature(compilation: &Compilation, id: crate::hir::VariantTypeId) -
             "type"
         },
         variant.name,
-        escape(&angled(&variant.parameters))
+        escape(&angled(&variant.parameters)),
+        variant
+            .compositions
+            .iter()
+            .map(|ty| format!("\n    &amp; {}", links.source(ty)))
+            .collect::<String>()
     )
 }
 
@@ -1010,6 +1041,23 @@ func main() -> Int { 0 }
         assert!(string.contains("href=\"core-option.html#Option\""));
         assert!(string.contains("href=\"core-code_point.html#module-overview\""));
         assert!(string.contains("href=\"std-iter.html#Iterator\""));
+        assert!(string.contains("<h4>Contracts</h4>"));
+        assert!(string.contains("href=\"core-copy.html#Copy\""));
+        assert!(string.contains("href=\"std-collections.html#Collection\""));
+        let toml = site
+            .modules
+            .iter()
+            .find(|page| page.file_name == "std-toml.html")
+            .unwrap();
+        let signature = toml
+            .html
+            .split("<article id=\"TomlValue\">")
+            .nth(1)
+            .unwrap()
+            .split("</pre>")
+            .next()
+            .unwrap();
+        assert!(signature.contains("href=\"core-copy.html#Copy\""));
         assert!(
             string.contains("<li data-owner=\"String\" data-declaration><a href=\"#String.first\"")
         );

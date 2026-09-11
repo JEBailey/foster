@@ -2,6 +2,8 @@
 //!
 //! Use the language's short-circuit operators for conditional evaluation. Method
 //! arguments are evaluated before a call, including values passed to conditional helpers.
+//!
+//! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
 impl Bool {
     /// Explicitly copies this scalar value.

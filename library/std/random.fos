@@ -5,6 +5,7 @@
 //! for reproducibility and `SystemRandom` for operating-system entropy.
 
 import core.bytes
+import std.random.secure as secure
 import core.result
 
 /// Describes invalid random requests or unavailable host entropy.
@@ -48,13 +49,8 @@ impl RandomHost {
 
 /// A stateless view of the operating system's secure random source.
 /// Drawing entropy changes external state, not this Foster value.
-pub type SystemRandom = & RandomSource & {
+pub type SystemRandom = & RandomSource & secure::EntropySource & {
     marker: Symbol
-
-    // Required public operations; implementations live in impl blocks.
-    /// Returns exactly `count` bytes of operating-system entropy.
-    /// Accepts `0..1048576`, inclusive; invalid sizes or unavailable entropy return `RandomError`.
-    pub func bytes(self, count: Int) -> Result<Bytes, RandomError>
 }
 
 impl SystemRandom {

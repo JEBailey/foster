@@ -3,15 +3,18 @@
 //! `Symbol`s represent named values such as :ready. Use their text conversion for
 //! display; use symbol equality when comparing symbolic identities.
 
+import core.copy
+
 /// An immutable symbolic identifier.
 ///
 /// Symbol literals are the trusted construction path for the private text.
-pub type Symbol = {
+pub type Symbol = & Copy & {
     value: String
 
-    // Required public operations; implementations live in impl blocks.
     /// Explicitly copies this immutable identifier.
     pub func copy(self) -> self [read self]
+
+    // Required public operations; implementations live in impl blocks.
 }
 
 impl Symbol {

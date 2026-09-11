@@ -166,6 +166,14 @@ fn link_source(
 
     let rustc = std::env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
     let mut command = Command::new(&rustc);
+    let dependency_library;
+    let dependencies = if let Some(library) = library {
+        library
+    } else {
+        dependency_library = runtime_cache::library(&rustc, &runtime_source(), options)?;
+        &dependency_library
+    };
+    runtime_cache::link_dependencies(&mut command, dependencies)?;
     if let Some(library) = library {
         command
             .arg("--extern")
@@ -230,7 +238,7 @@ fn check_reclamation() {
     assert_eq!(HOST_RESPONSES.load(std::sync::atomic::Ordering::SeqCst), 0, "host responses leaked");
 }
 fn main() {"#)
-            .replace("let worker = thread::spawn(move || {", "LIVE_WORKERS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);\n    let worker = thread::spawn(move || {\n        let _census = WorkerCensus;")
+            .replace("let worker = may::go_with!(1024 * 1024, move || {", "LIVE_WORKERS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);\n    let worker = may::go_with!(1024 * 1024, move || {\n        let _census = WorkerCensus;")
             .replace("let pointer = unsafe { alloc_zeroed(layout) };", "let pointer = unsafe { alloc_zeroed(layout) };\n    assert!(LIVE.lock().unwrap().insert(pointer as usize, (size, align)).is_none());")
             .replace("unsafe { dealloc(pointer as *mut u8, layout) };", "assert_eq!(LIVE.lock().unwrap().remove(&pointer), Some((size, align)), \"allocation layout mismatch\");\n    unsafe { dealloc(pointer as *mut u8, layout) };")
             .replace("Box::into_raw(Box::new(response)) as usize", "{ HOST_RESPONSES.fetch_add(1, std::sync::atomic::Ordering::SeqCst); Box::into_raw(Box::new(response)) as usize }")
@@ -477,7 +485,7 @@ unsafe extern "C" fn request(_: u64, arguments: usize, execute: u8) -> u64 {
     assert_eq!(kind, 1, "queued work ran after shutdown");
     *STARTED.0.lock().unwrap() = true;
     STARTED.1.notify_all();
-    while foster_rt_v4_failure_pending() == 0 { thread::yield_now(); }
+    while foster_rt_v4_cancellation_point() == 0 {}
     0
 }
 fn wait(signal: &(Mutex<bool>, std::sync::Condvar)) {
@@ -520,6 +528,46 @@ fn main() {
                 output.status.success(),
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[test]
+    fn virtual_threads_share_one_worker_and_suspend_native_stacks() {
+        let compilation = crate::compile(include_str!(
+            "../../tests/fixtures/programs/native_virtual_threads.fos"
+        ))
+        .unwrap();
+        let prepared = prepare(&compilation).unwrap();
+        let temporary = TemporaryDirectory::create().unwrap();
+        for optimize in [false, true] {
+            let options = CompileOptions { optimize };
+            let artifact = prepared.compile_object(options).unwrap();
+            let constants = artifact
+                .runtime_strings
+                .iter()
+                .map(|value| format!("{value:?}"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let source = runtime_source()
+                + &include_str!("virtual_threads_test.rs").replace(
+                    "foster_runtime_initialize(&[]);",
+                    &format!("foster_runtime_initialize(&[{constants}]);"),
+                );
+            let executable = temporary.path.join(format!(
+                "virtual-threads-{optimize}{}",
+                std::env::consts::EXE_SUFFIX
+            ));
+            link_source(artifact, &executable, options, &source, None).unwrap();
+            let output = Command::new(executable).output().unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(
+                String::from_utf8_lossy(&output.stdout).trim(),
+                "virtual threads passed"
             );
         }
     }
@@ -603,7 +651,7 @@ func main(args: Arguments) -> String {
                 let output = Command::new(&executable).args(argument).output().unwrap();
                 assert!(
                     output.status.success(),
-                    "{}",
+                    "optimize={optimize}, argument={argument:?}: {}",
                     String::from_utf8_lossy(&output.stderr)
                 );
                 assert_eq!(

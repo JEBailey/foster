@@ -104,6 +104,15 @@ Lists do not provide a shallow Copy implementation for arbitrary elements.
 
 `Copy` and `Drop` are structural contracts imported from their respective modules. Matching
 methods can also be declared on a concrete type without explicitly composing the contract.
+Library types explicitly compose the named contracts they promise, even though structural
+matching does not require it. `String`, `Bytes`, `Symbol`, `TomlEntry`, and `TomlValue` declare
+`Copy`; `List`, `String`, and `Bytes` declare their sequence and collection contracts. `Bytes`
+also declares `Equality<Bytes>` and `Hashing`. Builtin scalar modules document their `Copy`
+support because primitive types have no source record declaration. Generated type summaries
+link to explicitly composed contracts; they do not infer semantic promises from method names.
+The [library-wide contract audit](library-contract-audit.md) inventories every public type,
+including inherited relationships and deliberately excluded lookalikes. Resource and entropy
+types also declare their supported text-output, combined read/write, and entropy contracts.
 `deinit` is called by ownership cleanup; ordinary code cannot call it directly. It runs before
 child values are released and must be a non-suspending read of `self` returning `()`.
 

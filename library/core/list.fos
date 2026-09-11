@@ -5,6 +5,8 @@
 //! Borrowing reads preserve the list. Consuming updates return the resulting list.
 //! Use std.iter adaptors when intermediate collection allocation is unnecessary.
 
+import std.collections
+
 import std.iter
 import core.functions
 import core.option
@@ -15,7 +17,7 @@ import core.string
 intrinsic type RawList<T>
 
 /// An ordered value collection backed by private copy-on-write contiguous storage.
-pub type List<T> = {
+pub type List<T> = & Sequence<T> & Collection<T> & {
     value: RawList<T>
 
     // Required public operations; implementations live in impl blocks.
@@ -71,17 +73,7 @@ pub type List<T> = {
     /// Combines a nonempty list into one value, or returns `None` for an empty list.
     pub func reduce(self, combine: func(T, T) -> T) -> Option<T> [read combine, read self]
 
-    // Required accessors supplied by the builtin storage implementation.
-    /// Reports whether the collection contains no elements.
-    pub func empty?(self) -> Bool
-    /// Returns the number of elements.
-    pub func length(self) -> Int
-    /// Returns the first element; the collection must not be empty.
-    pub func head(self) -> T
-    /// Returns the collection without its first element.
-    pub func rest(self) -> List<T>
-    /// Creates an independent iterator over the elements.
-    pub func iterator(self) -> Iterator<T>
+
 }
 
 /// Why an independently owned element could not be obtained.

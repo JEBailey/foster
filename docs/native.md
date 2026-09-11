@@ -2,9 +2,9 @@
 
 Status: host-native AOT backend implemented with Cranelift; scalar, aggregate, concrete and erased
 callable, list, string/bytes, erased-value, local-reference, closed-world structural-contract,
-local remote-actor, and blocking-future lowering is executable. Filesystem, path, environment,
-clock, entropy, and TCP host services are executable. Resumable suspension/state-machine lowering
-remains in progress.
+local remote-actor, and stackful virtual-thread execution is supported. Filesystem, path, environment,
+clock, entropy, and TCP host services are executable. Actors use the same May coroutine scheduler
+as the VM.
 
 `foster build --native` compiles the functions reachable from `main` into a native object and links
 that object into a standalone executable with the installed Rust toolchain. `main` may take no
@@ -23,6 +23,11 @@ The shared Rust runtime is compiled once per runtime source, Rust toolchain/host
 mode, then reused across native builds and compiler processes. Each executable still compiles its
 own Foster object and a small startup shim containing its string constants and entry signature.
 The runtime is linked statically, so the resulting executable does not need the cache to run.
+
+The first runtime build uses Cargo with an embedded manifest and lockfile to build May and its
+dependencies. These must be available in the Cargo cache or downloadable. May and its dependencies
+are linked statically into the executable. Subsequent builds reuse the cached runtime and link
+artifacts; deployed executables need neither Cargo nor the cache.
 
 Stable runtime code lives in the ordinary Rust `runtime` workspace crate. The compiler embeds
 those source files for distribution and appends ABI checks when building the cached archive.
@@ -90,7 +95,7 @@ use the target pointer type. It supports:
 - handle-based TCP listen, connect, accept, byte/text reads and writes, timeouts, and explicit
   listener/connection close operations;
 - owned and borrowed local remote actors, FIFO worker dispatch, specialized generic remote
-  methods, ownership-correct scalar or aggregate messages/results, futures, and blocking `await`;
+  methods, ownership-correct scalar or aggregate messages/results, futures, and suspending `await`;
 - `print` and `println` over scalar and descriptor-backed values; and
 - printing scalar or aggregate results from `main`, followed by ownership-correct release of a
   managed aggregate result.
@@ -114,11 +119,18 @@ buffers, generic lists, places, callable handles, erased boxes, remote values, a
 list, string, byte, and byte-buffer algorithms using the supported primitives compile as ordinary
 Foster functions. Platform-dependent filesystem, path, clock, entropy, TCP, actor-worker, and
 future primitives lower through the stable native host ABI while their higher-level behavior
-remains Foster code. Native remote objects are currently in-process actors backed by one operating
-system thread each. Calls are FIFO; borrowed actor state and borrowed managed message arguments
-force dispatch to complete before the caller resumes. `await` blocks its current thread and
-consumes its future exactly once. Turning suspension points into resumable state machines remains
-unsupported; the portable VM remains the complete execution path for that scheduling model.
+remains Foster code. Native remote objects are in-process actors running on May stackful virtual
+threads, as in the VM. Many actors share scheduler OS threads; FIFO mailbox receives, borrowed dispatch waits,
+and `await` suspend the current coroutine while preserving its native call stack. Futures are
+still consumed exactly once. Generated basic-block cancellation checks yield periodically so
+CPU-bound actors share workers. Failure, cancellation, and cleanup state is coroutine-local.
+The process entry function runs on the main OS thread and can await actors there.
+
+Filesystem and TCP operations use the shared blocking host API. Calls from actors temporarily
+run on a host OS thread while the actor suspends; this avoids pinning a scheduler worker, but
+large numbers of concurrent blocking host operations can still create many OS threads. Host
+work owns copied inputs and completes before its actor resumes, including during cancellation.
+Native actor scheduling does not require compiler-generated resumable state machines.
 
 ## Architecture
 
@@ -285,7 +297,7 @@ and deliver `Result<T, RemoteError>` through futures. Failure is terminal for th
 when the failing future is discarded. Queued and later calls receive the original failure without
 invoking their methods; rejected messages release transferred arguments.
 
-Generated calls check a thread-local failure flag before using their results and release live
+Generated calls check a coroutine-local failure flag before using their results and release live
 managed values as they return through generated frames. Main-thread failures follow the same
 cleanup path before the entry shim reports a diagnostic and exits. This avoids unwinding through
 Cranelift frames or treating placeholder return values as owned results. Allocation-census tests

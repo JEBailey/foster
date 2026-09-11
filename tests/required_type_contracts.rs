@@ -90,7 +90,22 @@ fn library_contracts_match_their_implementations() {
                 }
                 let name = function.name.strip_prefix(&format!("{owner}.")).unwrap();
                 assert!(
-                    definition.methods.iter().any(|method| method.name == name),
+                    definition.methods.iter().any(|method| method.name == name)
+                        || definition.compositions.iter().any(|contract| {
+                            let foster::ast::TypeExpr::Named(contract, _) = contract else {
+                                return false;
+                            };
+                            let module = &compilation.hir.modules[function.module];
+                            std::iter::once(function.module)
+                                .chain(module.imports.values().copied())
+                                .any(|module| {
+                                    compilation.hir.record_named(module, contract).is_some_and(
+                                        |record| {
+                                            compilation.types.record_methods[&record].contains(name)
+                                        },
+                                    )
+                                })
+                        }),
                     "{}.{} has no required declaration",
                     compilation.hir.modules[function.module].name,
                     function.name

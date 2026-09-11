@@ -610,6 +610,7 @@ name = "foster-native-runtime"
 version = "0.1.0"
 dependencies = [
  "foster-host",
+ "may",
 ]
 
 [[package]]

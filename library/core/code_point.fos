@@ -3,6 +3,8 @@
 //! A `CodePoint` represents one Unicode scalar, not a grapheme cluster. Classification
 //! uses Unicode 17.0.0. Full case mappings return `String` because one scalar can expand;
 //! simple mappings return one `CodePoint`. Casing is locale-independent.
+//!
+//! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
 import core.option
 import core.string

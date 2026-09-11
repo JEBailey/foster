@@ -1,0 +1,19 @@
+import core.result
+
+type Worker = {}
+impl Worker {
+    func recurse(self, depth: Int, text: String) -> String [consume text, suspend] {
+        return text if depth == 0
+        let child = remote Worker {}
+        let pending = child.recurse(depth - 1, move text)
+        let held = "native frame"
+        let reply = (await pending).unwrap_or("failed")
+        assert(held == "native frame")
+        reply
+    }
+}
+func main() -> Int {
+    let worker = remote Worker {}
+    assert((await worker.recurse(32, "virtual threads")).unwrap_or("failed") == "virtual threads")
+    42
+}

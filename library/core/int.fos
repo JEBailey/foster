@@ -3,6 +3,8 @@
 //! `Range`s materialize a `List<Int>` and exclude the upper endpoint. Arithmetic uses
 //! Foster's `Int` operations; these helpers do not provide arbitrary-precision results.
 //! See individual methods for nonpositive exponents and division preconditions.
+//!
+//! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
 import core.ordering
 

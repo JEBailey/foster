@@ -75,8 +75,8 @@ func decode_text(path: String, contents: Bytes) -> Result<String, IoError> [cons
 /// Constructing a `File` does not touch the filesystem. Reads and writes can still fail if the
 /// location is unavailable, unsupported by the host provider, or its permissions change.
 pub type File = & Resource<paths::Path>
-    & Readable<IoError>
-    & Writable<IoError>
+    & ReadWrite<IoError>
+    & TextWriter<IoError>
     & PositionedReadable<IoError>
     & Appendable<IoError>
     & Sized<IoError>
@@ -90,9 +90,6 @@ pub type File = & Resource<paths::Path>
         /// Reads the complete file as UTF-8 text.
         /// Returns `IoError` for host read failures or invalid UTF-8; memory use grows with file size.
         pub func read_text(self) -> Result<String, IoError> [read self.location.value]
-        /// Writes UTF-8 text, creating the file or truncating existing contents.
-        /// Returns `IoError` on failure; replacement is not transactional.
-        pub func write_text(self, text: String) -> Result<(), IoError> [read self.location.value, read text]
     }
 
 impl File {

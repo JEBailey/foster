@@ -120,15 +120,13 @@ impl TcpEndpoint {
 
 /// An opaque connected TCP stream associated with the endpoint that created it.
 /// I/O reads the Foster handle without replacing it; socket state is managed by the host.
-pub type Connection = & Resource<TcpEndpoint> & Duplex<NetworkError> & Closable<NetworkError> & {
+pub type Connection = & Resource<TcpEndpoint> & Duplex<NetworkError> & TextWriter<NetworkError> & Closable<NetworkError> & {
     pub location: TcpEndpoint
     handle: Int
 
     // Required public operations; implementations live in impl blocks.
     /// Reads at most `maximum` bytes of UTF-8 text from a connection.
     pub func read_text(self, maximum: Int) -> Result<String, NetworkError> [read self.handle]
-    /// Writes the complete UTF-8 string to a connection.
-    pub func write_text(self, text: String) -> Result<(), NetworkError> [read self.handle]
     /// Compatibility spelling for binary `read`.
     pub func read_bytes(self, maximum: Int) -> Result<Bytes, NetworkError> [read self.handle]
     /// Explicit binary spelling for `write`.

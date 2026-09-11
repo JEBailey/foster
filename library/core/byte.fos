@@ -2,6 +2,8 @@
 //!
 //! Use `Byte`.from when input may be outside 0..255. `Byte`.unchecked is intended
 //! for values whose range has already been established; invalid input is a runtime error.
+//!
+//! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
 import core.result
 

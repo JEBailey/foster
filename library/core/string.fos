@@ -19,6 +19,8 @@
 //! }
 //! ```
 
+import core.copy
+import std.collections
 import core.byte
 import core.bytes
 import core.bytes.buffer
@@ -33,14 +35,13 @@ import core.unicode as unicode
 
 /// Immutable Unicode text stored as validated UTF-8 bytes.
 /// Private storage preserves the validity invariant across every construction path.
-pub type String = {
+pub type String = & Copy & Sequence<String> & Collection<String> & {
     value: Bytes
 
-    // Required public operations; implementations live in impl blocks.
     /// Returns an independent text value; immutable byte storage may be shared.
     pub func copy(self) -> self [read self]
-    /// Creates an independent iterator yielding whole grapheme clusters as strings.
-    pub func iterator(self) -> Iterator<String> [read self]
+
+    // Required public operations; implementations live in impl blocks.
     /// Returns the first grapheme cluster, or `None` when the string is empty.
     pub func first(self) -> Option<String> [read self]
     /// Returns the final grapheme cluster, or `None` for an empty string.
@@ -100,14 +101,6 @@ pub type String = {
     pub func byte_length(self) -> Int [read self.value]
 
     // Empty and byte access use builtin storage; length/head/rest are Foster algorithms.
-    /// Returns whether this string contains no text.
-    pub func empty?(self) -> Bool
-    /// Returns the number of extended grapheme clusters, not scalars or UTF-8 bytes.
-    pub func length(self) -> Int
-    /// Returns the first extended grapheme cluster; the string must not be empty.
-    pub func head(self) -> String
-    /// Returns the text after the first extended grapheme cluster.
-    pub func rest(self) -> String
     /// Returns the UTF-8 bytes underlying the text.
     pub func bytes(self) -> Bytes
 }
