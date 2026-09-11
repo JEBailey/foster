@@ -133,7 +133,8 @@ fn library_declarations_use_current_type_forms_and_explicit_public_signatures() 
                 "List" => &["Sequence", "Collection"],
                 "Symbol" | "TomlEntry" => &["Copy"],
                 "File" => &["ReadWrite", "TextWriter"],
-                "Connection" => &["Duplex", "TextWriter", "Closable"],
+                "Connection" => &["Drop", "Duplex", "TextWriter", "Closable"],
+                "Listener" => &["Drop", "Accepting", "Closable"],
                 "SystemRandom" => &["RandomSource", "secure.EntropySource"],
                 _ => &[],
             };

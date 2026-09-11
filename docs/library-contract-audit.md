@@ -36,7 +36,6 @@ Structural compatibility alone does not prove a semantic promise.
 | `Int` / `Float` → `Ordered` | A `compare` helper is insufficient without `equal?`. In addition, float comparison deliberately lacks total-order semantics for NaN. Operator equality does not declare the named method contract. |
 | Public data records and payload-free enums → `Copy` | Stored fields, immutability, or lack of payload do not supply a public `copy` method. No new operation was invented to create a relationship. |
 | Arbitrary `List<T>` → `Copy` | Elements need not be copyable. There is no general shallow-copy promise. |
-| `Connection` / `Listener` → `Drop` | Explicit `close` is not compiler-invoked `deinit`; neither type implements the latter. |
 | `File`, paths, URI, endpoint → extra I/O capabilities | Resource identity alone does not promise access. Only implemented access contracts are composed. |
 
 ## Builtin types
@@ -112,8 +111,8 @@ Reviewed **121 public type declarations** across the full library.
 | [std.iter.Iterable](../library/std/iter.fos) | None |
 | [std.net.tcp.NetworkError](../library/std/net/tcp.fos) | None |
 | [std.net.tcp.TcpEndpoint](../library/std/net/tcp.fos) | `ResourceIdentifier` |
-| [std.net.tcp.Connection](../library/std/net/tcp.fos) | `Resource<TcpEndpoint>`, `Duplex<NetworkError>`, `TextWriter<NetworkError>`, `Closable<NetworkError>` |
-| [std.net.tcp.Listener](../library/std/net/tcp.fos) | `Resource<TcpEndpoint>`, `Accepting<Connection, NetworkError>`, `Closable<NetworkError>` |
+| [std.net.tcp.Connection](../library/std/net/tcp.fos) | `Drop`, `Resource<TcpEndpoint>`, `Duplex<NetworkError>`, `TextWriter<NetworkError>`, `Closable<NetworkError>` |
+| [std.net.tcp.Listener](../library/std/net/tcp.fos) | `Drop`, `Resource<TcpEndpoint>`, `Accepting<Connection, NetworkError>`, `Closable<NetworkError>` |
 | [std.path.Path](../library/std/path.fos) | `ResourceIdentifier` |
 | [std.process.Arguments](../library/std/process.fos) | None |
 | [std.random.distribution.Distribution](../library/std/random/distribution.fos) | None |

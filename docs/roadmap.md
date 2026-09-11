@@ -15,6 +15,9 @@ The current baseline includes:
   no longer support union alternatives.
 - Compile-time module constants, enum and scalar literal patterns, explicit user-defined `Copy`,
   and automatic `Drop`/`deinit` at ownership end, including cleanup after modeled failures.
+- TCP listeners and connections implement `Drop`; consuming `close()` remains available to report
+  errors. Indexed accesses and abrupt host failures have explicit ownership-MIR cleanup successors,
+  with synchronous call failures propagating through the caller's cleanup path.
 - Bounded reasoning about compound Boolean conditions and result-provenance summaries through
   supported direct and indirect calls. Unknown targets and computed predicates remain conservative.
 - Foster-written HashMap and HashSet collections composing storage-free Map and Set contracts,
@@ -46,15 +49,11 @@ general without weakening its current guarantees.
   inference.
 - Define explicit re-exports while preserving the filesystem-derived module model and declarations
   that are private by default.
-- Add per-operation ownership-MIR failure edges for dynamic bounds and host errors. Deterministic
-  runtime failure cleanup and user-defined destructors are implemented; their existing guarantees
-  must be preserved as exceptional control flow becomes explicit in the analysis.
 - Validate partial inherited defaults on abstract library contracts before adding a shared
   `Collection.empty?` body. Native representation selection must distinguish an abstract contract
   with some defaults from a concrete implementation.
-- Investigate the native managed-value regression exposed by composing `Drop` into TCP `Listener`
-  and `Connection`. Keep their explicit `close()` contract until automatic cleanup passes both
-  socket-lifetime tests and the wider native collection/iterator suite.
+- Resolve the `String`/`Sequence<String>` method-selection failure in the `graphemes.fos` parity
+  fixture when `std.sequence` is imported; it fails during type checking before backend execution.
 
 The focused [ownership](ownership.md), [closure](closures.md), and
 [effect derivation](effect-derivation.md) documents contain the detailed constraints behind this

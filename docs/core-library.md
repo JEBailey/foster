@@ -395,8 +395,10 @@ may collide.
 
 TCP is deliberately a small blocking binary transport layer rather than an HTTP library; explicit
 UTF-8 helpers remain available, while protocol parsing and higher-level policy belong in Foster.
-`Listener` and `Connection` require explicit consuming `close()` calls to report and release host
-handles promptly. Automatic socket cleanup is not yet part of these types' contracts.
+`Listener` and `Connection` implement `Drop`: their host handles close when ownership ends,
+including during failure cleanup. Consuming `close()` releases a handle early and reports any
+error; it clears the owned handle so subsequent destruction does not close it again. Automatic
+cleanup ignores close errors and preserves an existing execution failure.
 Socket readiness, TLS, and explicit filesystem/network capability tokens remain future work.
 
 Core APIs should not bypass ownership. In particular, operations that must retain an owned generic

@@ -109,6 +109,7 @@ pub(super) fn lower_shared_to_native_ir(
         }
     }
     let mut storage_hints = shared.storage_hints.clone();
+    let mut entry_seeds = shared.entry_seeds.clone();
     let mut blocks = Vec::with_capacity(shared.blocks.len());
     let mut cleanup_edges = Vec::new();
     let mut failure_cleanup = FailureCleanup::default();
@@ -207,6 +208,35 @@ pub(super) fn lower_shared_to_native_ir(
             }
         }
         let mut terminator = block.terminator.clone();
+        // Native calls transfer consumed arguments instead of retaining VM
+        // aliases. Do not resurrect their old storage at a later block join.
+        let mut clear_transferred = |arguments: &mut Vec<ir::Value>| {
+            for argument in arguments {
+                if matches!(
+                    value_types[argument.0 as usize],
+                    NativeType::String | NativeType::Object(_)
+                ) && storage_hints[argument.0 as usize]
+                    .is_some_and(|home| !state.contains_key(&home))
+                {
+                    let ty = value_types[argument.0 as usize];
+                    let empty = allocate_shared_value(&mut value_types, &mut storage_hints, ty);
+                    entry_seeds.push(empty);
+                    *argument = empty;
+                }
+            }
+        };
+        match &mut terminator {
+            ir::Terminator::Jump { arguments, .. } => clear_transferred(arguments),
+            ir::Terminator::Branch {
+                then_arguments,
+                else_arguments,
+                ..
+            } => {
+                clear_transferred(then_arguments);
+                clear_transferred(else_arguments);
+            }
+            ir::Terminator::Return(_) => {}
+        }
         if let ir::Terminator::Return(returned) = &terminator {
             let mut returned = *returned;
             if let Some(conversion) = ReturnConversion::between(
@@ -448,7 +478,7 @@ pub(super) fn lower_shared_to_native_ir(
             parameters,
             captures: Vec::new(),
             capture_types: Vec::new(),
-            entry_seeds: shared.entry_seeds.clone(),
+            entry_seeds,
             entry,
             entry_arguments,
             value_types,

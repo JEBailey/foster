@@ -2597,6 +2597,7 @@ func main() -> Int {
     let operations = compilation.ownership.functions[&main]
         .blocks
         .iter()
+        .filter(|block| !matches!(block.terminator, foster::ownership::Terminator::Fail))
         .flat_map(|block| &block.operations)
         .collect::<Vec<_>>();
     let initialized = operations
@@ -2841,6 +2842,166 @@ func main() -> Int { consume_value("owned") + inspect("borrowed") }
             ))
     );
     assert_eq!(foster::run(source).unwrap(), Value::Integer(13));
+}
+
+#[test]
+fn bounds_failures_have_cleanup_edges_before_transfer_and_result_initialization() {
+    use foster::ownership::{FailureOperation, Operation, PlaceRoot, Terminator, UseMode};
+    let compilation = foster::compile(
+        r#"
+type Receiver = {}
+impl Receiver {
+    func receive(self, value: String, number: Int) -> Int [consume self, consume value] { number }
+}
+func checked(borrowed: List<Int>, index: Int) -> Int {
+    let owned = "owned"
+    Receiver {}.receive(move owned, borrowed[index])
+}
+func main() -> Int { checked([42], 0) }
+"#,
+    )
+    .unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let id = compilation.hir.function_named(module, "checked").unwrap();
+    let function = &compilation.ownership.functions[&id];
+    let borrowed = compilation.hir.functions[id].parameters[0];
+    let bounds = function
+        .blocks
+        .iter()
+        .find(|block| {
+            matches!(
+                block.terminator,
+                Terminator::Checked {
+                    operation: FailureOperation::Bounds { .. },
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    let Terminator::Checked { targets, .. } = bounds.terminator else {
+        unreachable!()
+    };
+    let staged = bounds
+        .operations
+        .iter()
+        .rev()
+        .find_map(|operation| match operation {
+            Operation::Initialize { place, .. }
+                if matches!(place.root, PlaceRoot::Temporary(_)) =>
+            {
+                Some(place.clone())
+            }
+            _ => None,
+        })
+        .unwrap();
+    let failure = &function.blocks[targets[1]];
+    assert!(matches!(failure.terminator, Terminator::Fail));
+    assert!(
+        failure
+            .operations
+            .iter()
+            .any(|op| matches!(op, Operation::Destroy { place, .. } if place == &staged))
+    );
+    assert!(!failure.operations.iter().any(|op| matches!(op, Operation::Destroy { place, .. } if place.root == PlaceRoot::Local(borrowed))));
+    let continued = &function.blocks[targets[0]];
+    assert_eq!(continued.operations.iter().filter(|op| matches!(op,
+        Operation::Use { place, mode: UseMode::Move, .. } if matches!(place.root, PlaceRoot::Temporary(_))
+    )).count(), 2, "both the receiver and argument transfer at invocation");
+    assert!(continued.operations.iter().any(
+        |op| matches!(op, Operation::Use { place, mode: UseMode::Move, .. } if place == &staged)
+    ));
+    assert!(matches!(
+        continued.terminator,
+        Terminator::Checked {
+            operation: FailureOperation::Call { .. },
+            ..
+        }
+    ));
+}
+
+#[test]
+fn ownership_mir_distinguishes_abrupt_host_failures_from_result_errors() {
+    use foster::intrinsics::Builtin;
+    use foster::ownership::{FailureOperation, Terminator};
+    let compilation = foster::compile(
+        "import std.fs\nimport std.time\nimport std.net.tcp\nfunc main() -> Int { 0 }",
+    )
+    .unwrap();
+    let mut hosts = Vec::new();
+    for function in compilation.ownership.functions.values() {
+        for block in &function.blocks {
+            if let Terminator::Checked {
+                operation: FailureOperation::Host { builtin },
+                targets,
+                ..
+            } = block.terminator
+            {
+                hosts.push(builtin);
+                assert!(matches!(
+                    function.blocks[targets[1]].terminator,
+                    Terminator::Fail
+                ));
+                assert_ne!(targets[0], targets[1]);
+            }
+        }
+    }
+    assert!(hosts.contains(&Builtin::IoExists));
+    assert!(hosts.contains(&Builtin::TimeMonotonicNow));
+    // These operations deliver host errors as ordinary Result values.
+    assert!(!hosts.contains(&Builtin::IoReadBytes));
+    assert!(!hosts.contains(&Builtin::TcpCloseConnection));
+}
+
+#[test]
+fn indexed_reads_writes_references_and_moves_each_check_bounds() {
+    use foster::ownership::{FailureOperation, Terminator};
+    let compilation = foster::compile(
+        r#"
+func main() -> Int {
+    let values = [1, 2]
+    let index = 0
+    let value = values[index]
+    values[index] = value + 1
+    let borrowed = ref values[index]
+    assert(borrowed == 2)
+    move values[index]
+}
+"#,
+    )
+    .unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let main = compilation.hir.function_named(module, "main").unwrap();
+    let function = &compilation.ownership.functions[&main];
+    let checks = function
+        .blocks
+        .iter()
+        .filter_map(|block| match &block.terminator {
+            Terminator::Checked {
+                operation: FailureOperation::Bounds { expression },
+                targets,
+                ..
+            } => {
+                assert!(matches!(
+                    compilation.hir.expressions[*expression],
+                    foster::hir::Expr::Index { .. }
+                ));
+                assert!(matches!(
+                    function.blocks[targets[1]].terminator,
+                    Terminator::Fail
+                ));
+                Some(expression)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(checks.len(), 4);
+    assert_eq!(
+        checks
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        4
+    );
 }
 
 #[test]

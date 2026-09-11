@@ -10,10 +10,11 @@ mod regions;
 mod remote;
 
 pub use mir::{
-    BasicBlock, BlockId, BorrowValue, Comparison, ComparisonKind, ComparisonOperand, Function,
-    InvalidationKind, LoanDefinition, LoanId, MirPoint, Operation, Place, PlaceRoot, Program,
-    ProvenanceAnalysis, ProvenanceState, RequiredUse, RequirementAnalysis, RequirementState,
-    ResultProvenance, ReturnKind, TemporaryId, Terminator, UseMode,
+    BasicBlock, BlockId, BorrowValue, Comparison, ComparisonKind, ComparisonOperand,
+    FailureOperation, Function, InvalidationKind, LoanDefinition, LoanId, MirPoint, Operation,
+    Place, PlaceRoot, Program, ProvenanceAnalysis, ProvenanceState, RequiredUse,
+    RequirementAnalysis, RequirementState, ResultProvenance, ReturnKind, TemporaryId, Terminator,
+    UseMode,
 };
 
 /// Current source-language revision; does not select older semantics.

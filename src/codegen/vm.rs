@@ -196,7 +196,12 @@ fn seal_function_with_types(
     let mut writable = std::collections::HashSet::new();
     for instruction in &function.instructions {
         if let vm::Instruction::StoreField { object, .. }
-        | vm::Instruction::StoreIndex { object, .. } = instruction
+        | vm::Instruction::StoreIndex { object, .. }
+        | vm::Instruction::MoveOut {
+            source: object,
+            by_reference: true,
+            ..
+        } = instruction
         {
             writable.insert(*object);
         }
@@ -571,6 +576,29 @@ fn seal_function_with_types(
                     instruction_spans.push(source_span);
                     for (register, value) in destinations {
                         state[usize::from(register.0)] = Some(value);
+                    }
+                    if let vm::Instruction::MoveOut {
+                        source,
+                        by_reference: false,
+                        ..
+                    } = operation
+                    {
+                        // MoveOut empties the VM storage home. A later cleanup
+                        // edge must carry that empty slot, not the old owner.
+                        state[usize::from(source.0)] =
+                            if liveness.live_out[source_index].contains(source) {
+                                let empty = allocate_lifted_value(
+                                    &mut value_types,
+                                    &mut storage_hints,
+                                    hints[usize::from(source.0)],
+                                    *source,
+                                );
+                                storage_hints[empty.0 as usize] = None;
+                                entry_seeds.push(empty);
+                                Some(empty)
+                            } else {
+                                None
+                            };
                     }
                 }
             }

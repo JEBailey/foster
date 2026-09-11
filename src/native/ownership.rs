@@ -725,6 +725,13 @@ pub(super) fn retain_object(
 ) {
     let physical = physical_layouts.get(layout);
     let pointer_type = builder.func.dfg.value_type(object);
+    // Partially moved aggregates and SSA empty homes contain null slots.
+    // Copying their remaining storage must preserve those holes.
+    let present = builder.create_block();
+    let finished = builder.create_block();
+    let is_null = builder.ins().icmp_imm_s(IntCC::Equal, object, 0);
+    builder.ins().brif(is_null, finished, &[], present, &[]);
+    builder.switch_to_block(present);
     let address = builder
         .ins()
         .iadd_imm_s(object, i64::from(physical.header.strong_count_offset));
@@ -736,6 +743,8 @@ pub(super) fn retain_object(
         address,
         one,
     );
+    builder.ins().jump(finished, &[]);
+    builder.switch_to_block(finished);
 }
 
 pub(super) fn release_object(

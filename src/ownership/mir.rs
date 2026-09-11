@@ -434,6 +434,13 @@ pub enum Terminator {
         comparison: Comparison,
         targets: [BlockId; 2],
     },
+    /// Executes one fallible operation. Only target 0 has a result; target 1
+    /// destroys the active owned storage and exits with `Fail`.
+    Checked {
+        operation: FailureOperation,
+        span: Range<usize>,
+        targets: [BlockId; 2],
+    },
     Return,
     /// Terminates the current invocation with a runtime failure after its
     /// active ownership scopes have been destroyed.
@@ -447,10 +454,21 @@ impl Terminator {
             Self::Branch(targets) => targets,
             Self::BooleanBranch { targets, .. }
             | Self::VariantBranch { targets, .. }
-            | Self::ComparisonBranch { targets, .. } => targets,
+            | Self::ComparisonBranch { targets, .. }
+            | Self::Checked { targets, .. } => targets,
             Self::Unreachable | Self::Return | Self::Fail => &[],
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FailureOperation {
+    /// Read, write, move, or borrow of an indexed place.
+    Bounds { expression: crate::hir::ExprId },
+    /// An unhandled host failure, as opposed to an ordinary `Result.Error` value.
+    Host { builtin: crate::intrinsics::Builtin },
+    /// Failures propagate through synchronous direct and indirect invocations.
+    Call { callee: crate::hir::ExprId },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

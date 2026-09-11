@@ -266,6 +266,9 @@ in Foster without a decoding intrinsic or native storage copy. Native text prope
 registry-owned; Unicode classification and numeric text conversion still use runtime primitives.
 Branch-edge cleanup releases owned values omitted from successor SSA arguments. Generated
 retain/release operations use atomic reference counts, including text shared with remote workers.
+Move-out and consumed-call homes carry empty values into later blocks, so cleanup cannot reclaim
+their former owners twice. Writable move-out projections detach shared parents before selecting
+child addresses; retaining a partially moved aggregate preserves its null slots.
 Preparation also retains the live ownership set at each native instruction. Modeled failure paths
 release that set before returning to the caller: transferred arguments belong to the callee, borrowed
 addresses do not own their pointees, and ABI argument copies remain owned until transferred.

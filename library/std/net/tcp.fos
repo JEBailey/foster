@@ -2,11 +2,13 @@
 //!
 //! `Connection` implements binary `Duplex` operations. Reads may return short chunks;
 //! empty bytes indicate orderly peer shutdown. Writes accept the complete supplied
-//! sequence or return `NetworkError`. Close owned listeners and connections explicitly.
+//! sequence or return `NetworkError`. Owned sockets close automatically; explicit
+//! `close()` also reports errors from the host.
 //! Timeouts are configured in milliseconds; this module does not provide TLS.
 
 import core.bytes
 import core.code_point
+import core.drop
 import core.int
 import core.list
 import core.option
@@ -120,7 +122,7 @@ impl TcpEndpoint {
 
 /// An opaque connected TCP stream associated with the endpoint that created it.
 /// I/O reads the Foster handle without replacing it; socket state is managed by the host.
-pub type Connection = & Resource<TcpEndpoint> & Duplex<NetworkError> & TextWriter<NetworkError> & Closable<NetworkError> & {
+pub type Connection = & Drop & Resource<TcpEndpoint> & Duplex<NetworkError> & TextWriter<NetworkError> & Closable<NetworkError> & {
     pub location: TcpEndpoint
     handle: Int
 
@@ -136,7 +138,7 @@ pub type Connection = & Resource<TcpEndpoint> & Duplex<NetworkError> & TextWrite
 }
 
 /// An opaque listening TCP socket associated with its bound endpoint.
-pub type Listener = & Resource<TcpEndpoint> & Accepting<Connection, NetworkError> & Closable<NetworkError> & {
+pub type Listener = & Drop & Resource<TcpEndpoint> & Accepting<Connection, NetworkError> & Closable<NetworkError> & {
     pub location: TcpEndpoint
     handle: Int
 }
@@ -182,6 +184,13 @@ func wrap_listener(endpoint: TcpEndpoint, outcome: Result<Int, NetworkError>) ->
 }
 
 impl Listener {
+    /// Releases an owned socket when its ownership ends.
+    pub func deinit(self) -> () {
+        return () if self.handle == 0
+        TcpHost.close_listener(self.handle)
+        ()
+    }
+
     /// Waits for and accepts one incoming connection.
     pub func accept(self: Listener) -> Result<Connection, NetworkError> [read self(handle, location.address_value, location.port_value)] {
         let endpoint = TcpEndpoint.at(self.location.address(), self.location.port())
@@ -240,14 +249,27 @@ impl Connection {
 impl Listener {
     /// Closes a listening socket.
     pub func close(self: Listener) -> Result<(), NetworkError> [consume self] {
-        TcpHost.close_listener(self.handle)
+        let owned = move self
+        let handle = owned.handle
+        owned.handle = 0
+        TcpHost.close_listener(handle)
     }
 }
 
 impl Connection {
+    /// Releases an owned socket when its ownership ends.
+    pub func deinit(self) -> () {
+        return () if self.handle == 0
+        TcpHost.close_connection(self.handle)
+        ()
+    }
+
     /// Closes a connected TCP stream.
     pub func close(self: Connection) -> Result<(), NetworkError> [consume self] {
-        TcpHost.close_connection(self.handle)
+        let owned = move self
+        let handle = owned.handle
+        owned.handle = 0
+        TcpHost.close_connection(handle)
     }
 }
 

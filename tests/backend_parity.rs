@@ -432,6 +432,174 @@ fn check(name: &str, source: &str, expected: Result<&str, &str>) {
     check_compilation(name, &compilation, expected);
 }
 
+#[test]
+fn tcp_connections_close_on_return_try_failure_and_runtime_failure() {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::time::{Duration, Instant};
+    let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let source = format!(
+        r#"
+import std.net.tcp
+import core.result
+type Worker = {{}}
+func fail() -> Result<(), NetworkError> {{
+    Result.Error(NetworkError {{ operation: "test", message: "expected" }})
+}}
+func use_socket(connection: Connection, mode: Int) -> Result<(), NetworkError> [consume connection] {{
+    try connection.write_text("ping")
+    branch {{
+        mode == 1 -> {{
+            try fail()
+            ()
+        }}
+        mode == 2 -> {{
+            try (move connection).close()
+            ()
+        }}
+        mode == 3 -> {{
+            let values = [1]
+            assert(values[mode] == 1)
+            ()
+        }}
+        _ -> ()
+    }}
+    Result.Ok(())
+}}
+impl Worker {{
+    func execute(self, mode: Int) -> Result<(), NetworkError> {{
+        let connection = try tcp::connect("127.0.0.1", {port})
+        use_socket(move connection, mode)
+    }}
+}}
+func observe() -> Result<String, NetworkError> {{
+    let connection = try tcp::connect("127.0.0.1", {port})
+    try connection.set_timeout(5000)
+    connection.read_text(16)
+}}
+func main() -> Bool {{
+    let mode = 0
+    loop {{
+        break if mode == 4
+        let worker = remote Worker {{}}
+        let outcome = await worker.execute(mode)
+        assert(outcome.error?() == (mode == 3))
+        assert(observe() == Result.Ok("closed"))
+        mode = mode + 1
+    }}
+    true
+}}
+"#
+    );
+    let compilation = foster::compile(&source).unwrap();
+    let prepared = native::prepare(&compilation).unwrap();
+    let scratch = Scratch::new("tcp-drop");
+    for optimize in [false, true] {
+        let executable = scratch
+            .0
+            .join(format!("tcp-{optimize}{}", std::env::consts::EXE_SUFFIX));
+        prepared
+            .build_executable(&executable, native::CompileOptions { optimize })
+            .unwrap();
+        for native_run in [false, true] {
+            let server_socket = listener.try_clone().unwrap();
+            let server = std::thread::spawn(move || -> std::io::Result<()> {
+                let accept = || {
+                    let deadline = Instant::now() + Duration::from_secs(10);
+                    loop {
+                        match server_socket.accept() {
+                            Ok((stream, _)) => return Ok(stream),
+                            Err(error)
+                                if error.kind() == std::io::ErrorKind::WouldBlock
+                                    && Instant::now() < deadline =>
+                            {
+                                std::thread::sleep(Duration::from_millis(5))
+                            }
+                            Err(error) => return Err(error),
+                        }
+                    }
+                };
+                for _ in 0..4 {
+                    let mut stream = accept()?;
+                    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
+                    let mut ping = [0; 4];
+                    stream.read_exact(&mut ping)?;
+                    assert_eq!(&ping, b"ping");
+                    let mut byte = [0];
+                    assert_eq!(
+                        stream.read(&mut byte)?,
+                        0,
+                        "socket should close before the next connection"
+                    );
+                    let mut observer = accept()?;
+                    observer.write_all(b"closed")?;
+                }
+                Ok(())
+            });
+            let result = if native_run {
+                let output = std::process::Command::new(&executable).output().unwrap();
+                (
+                    output.status.success(),
+                    String::from_utf8_lossy(&output.stdout).trim().to_owned(),
+                    String::from_utf8_lossy(&output.stderr).into_owned(),
+                )
+            } else {
+                match vm::run_with_options(&compilation, vm::CompileOptions { optimize }) {
+                    Ok(value) => (true, value.to_string(), String::new()),
+                    Err(error) => (false, String::new(), error.to_string()),
+                }
+            };
+            let server_result = server.join().unwrap();
+            assert!(
+                result.0,
+                "native={native_run}, optimize={optimize}: {}",
+                result.2
+            );
+            assert_eq!(result.1, "true");
+            server_result.unwrap();
+        }
+    }
+}
+
+#[test]
+fn tcp_listeners_release_the_port_and_borrows_preserve_the_owner() {
+    let reservation = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    let port = reservation.local_addr().unwrap().port();
+    drop(reservation);
+    check(
+        "tcp-listener-drop",
+        &format!(
+            r#"
+import std.net.tcp
+import core.result
+func borrowed(listener: Listener) -> Bool {{
+    assert(listener.location.port() == {port})
+    tcp::listen("127.0.0.1", {port}).error?()
+}}
+func lifetime(explicit: Bool) -> Result<(), NetworkError> {{
+    let listener = try tcp::listen("127.0.0.1", {port})
+    assert(borrowed(listener))
+    branch {{
+        explicit -> {{ try (move listener).close()
+            () }}
+        _ -> ()
+    }}
+    Result.Ok(())
+}}
+func main() -> Bool {{
+    assert(lifetime(false).success?())
+    assert(lifetime(false).success?())
+    assert(lifetime(true).success?())
+    lifetime(false).success?()
+}}
+"#
+        ),
+        Ok("true"),
+    );
+}
+
 fn check_compilation(
     name: &str,
     compilation: &foster::compiler::Compilation,

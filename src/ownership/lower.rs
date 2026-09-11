@@ -2,9 +2,9 @@ use crate::hir::{self, BranchTest, CaptureMode, ExprId, FunctionId, ResolvedName
 use crate::types::TypeInformation;
 
 use super::{
-    BasicBlock, BlockId, BorrowValue, Comparison, ComparisonKind, ComparisonOperand, Function,
-    InvalidationKind, LoanDefinition, LoanId, MirPoint, Operation, Place, Program, TemporaryId,
-    Terminator, UseMode,
+    BasicBlock, BlockId, BorrowValue, Comparison, ComparisonKind, ComparisonOperand,
+    FailureOperation, Function, InvalidationKind, LoanDefinition, LoanId, MirPoint, Operation,
+    Place, Program, TemporaryId, Terminator, UseMode,
 };
 
 #[derive(Clone, Copy)]
@@ -387,10 +387,30 @@ impl<'a> Builder<'a> {
             }
             hir::Expr::Call { callee, arguments } => {
                 self.expression(*callee, Context::Call);
+                let mut transferred = Vec::new();
                 if let hir::Expr::Member { object, .. } = self.hir.expressions[*callee]
                     && self.owned_place(object).is_none()
                 {
                     let place = self.materialize_temporary(object);
+                    if self
+                        .types
+                        .resolved_function_for_callee(*callee)
+                        .and_then(|function| self.types.function_type(function))
+                        .is_some_and(|signature| {
+                            signature.parameter_modes.first()
+                                == Some(&crate::ast::ParameterMode::Consume)
+                        })
+                        || self.types.expression_type(*callee).is_some_and(|ty| {
+                            matches!(&self.types.types[ty], crate::types::Type::Function(signature)
+                            if signature.effects.iter().any(|effect| {
+                                effect.kind == crate::ast::EffectKind::Consume
+                                    && effect.target.root == "self"
+                                    && effect.target.children.is_empty()
+                            }))
+                        })
+                    {
+                        transferred.push(place.clone());
+                    }
                     self.emit(Operation::Use {
                         place,
                         mode: UseMode::Borrow,
@@ -416,6 +436,11 @@ impl<'a> Builder<'a> {
                         Context::Borrow
                     };
                     self.expression(*argument, context);
+                    if matches!(context, Context::Consume) {
+                        // Earlier arguments remain caller-owned if evaluating a
+                        // later argument fails. Ownership transfers at invocation.
+                        transferred.push(self.materialize_temporary(*argument));
+                    }
                     if matches!(context, Context::Borrow) && self.owned_place(*argument).is_none() {
                         let place = self.materialize_temporary(*argument);
                         self.emit(Operation::Use {
@@ -435,6 +460,16 @@ impl<'a> Builder<'a> {
                     }
                 }
                 self.emit_call_invalidations(*callee, arguments, expression);
+                for place in transferred {
+                    self.emit(Operation::Use {
+                        place,
+                        mode: UseMode::Move,
+                        span: self.span(expression),
+                    });
+                }
+                if let Some(operation) = self.call_failure(*callee) {
+                    self.failure_edge(operation, expression);
+                }
                 let owner_paths = self
                     .types
                     .expression_type(expression)
@@ -487,12 +522,9 @@ impl<'a> Builder<'a> {
                     });
                 }
             }
-            hir::Expr::Member { object, .. } | hir::Expr::Index { object, .. }
+            hir::Expr::Member { .. } | hir::Expr::Index { .. }
                 if self.owned_place(expression).is_some() =>
             {
-                if let hir::Expr::Index { index, .. } = self.hir.expressions[expression] {
-                    self.expression(index, Context::Read);
-                }
                 let mode = match context {
                     Context::Read => UseMode::Read,
                     Context::Borrow => UseMode::Borrow,
@@ -501,12 +533,15 @@ impl<'a> Builder<'a> {
                     Context::Consume => UseMode::Move,
                 };
                 self.place_use(expression, mode);
-                let _ = object;
             }
             hir::Expr::Member { object, .. } => self.expression(*object, Context::Read),
             hir::Expr::Index { object, index } => {
                 self.expression(*object, Context::Read);
+                if self.owned_place(*object).is_none() {
+                    self.materialize_temporary(*object);
+                }
                 self.expression(*index, Context::Read);
+                self.failure_edge(FailureOperation::Bounds { expression }, expression);
             }
             hir::Expr::Reference(place) => {
                 if self.owned_place(*place).is_some() {
@@ -846,6 +881,10 @@ impl<'a> Builder<'a> {
     }
 
     fn place_use(&mut self, expression: ExprId, mode: UseMode) {
+        // Assignment already selected its destination before transferring the RHS.
+        if mode != UseMode::Write {
+            self.assignment_place_address(expression);
+        }
         if let Some(place) = self.owned_place(expression) {
             self.emit(Operation::Use {
                 place,
@@ -863,6 +902,7 @@ impl<'a> Builder<'a> {
             hir::Expr::Index { object, index } => {
                 self.assignment_place_address(object);
                 self.expression(index, Context::Read);
+                self.failure_edge(FailureOperation::Bounds { expression }, expression);
             }
             hir::Expr::Reference(place) => self.assignment_place_address(place),
             _ => {}
@@ -1387,6 +1427,59 @@ impl<'a> Builder<'a> {
                 span: span.clone(),
             });
         }
+    }
+
+    fn failure_edge(&mut self, operation: FailureOperation, expression: ExprId) {
+        let continued = self.block();
+        let failed = self.block();
+        let span = self.span(expression);
+        self.terminate(Terminator::Checked {
+            operation,
+            span: span.clone(),
+            targets: [continued, failed],
+        });
+        self.current = failed;
+        self.emit_active_temporary_destruction(span.clone());
+        self.emit_scope_destruction(span);
+        self.terminate(Terminator::Fail);
+        self.current = continued;
+    }
+
+    fn call_failure(&self, callee: ExprId) -> Option<FailureOperation> {
+        use crate::intrinsics::{Builtin, BuiltinExecution};
+        if matches!(
+            self.types.resolved_call(callee),
+            Some(crate::types::ResolvedCall::Method { remote: true, .. })
+        ) {
+            // The worker contains failures and delivers them through its future.
+            return None;
+        }
+        let builtin = match self.hir.expressions[callee] {
+            hir::Expr::Name(ResolvedName::Builtin(builtin)) => Some(builtin),
+            _ => self
+                .types
+                .resolved_function_for_callee(callee)
+                .and_then(|function| self.hir.functions[function].intrinsic.as_deref())
+                .and_then(Builtin::from_intrinsic_key),
+        };
+        if let Some(builtin) = builtin
+            && builtin.descriptor().execution == BuiltinExecution::Host
+        {
+            return matches!(
+                builtin,
+                Builtin::IoExists
+                    | Builtin::IoIsFile
+                    | Builtin::IoIsDirectory
+                    | Builtin::IoJoin
+                    | Builtin::IoParent
+                    | Builtin::IoFileName
+                    | Builtin::IoExtension
+                    | Builtin::TimeMonotonicNow
+                    | Builtin::TimeWallNow
+            )
+            .then_some(FailureOperation::Host { builtin });
+        }
+        Some(FailureOperation::Call { callee })
     }
 
     fn materialize_temporary(&mut self, expression: ExprId) -> Place {

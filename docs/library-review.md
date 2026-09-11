@@ -37,20 +37,25 @@ filesystem, TCP, time, entropy, resources, and TOML; native and backend-parity s
 and ownership behavior. These checks establish the supported tested surface, rather than proving
 every generic instantiation or possible program correct.
 
-The review's 94 integration tests passed with:
+The library integration suites can be run with:
 
 ```text
 cargo test --release --offline --test backend_parity --test library_contracts --test core_host --test foster --test native -- --test-threads=4
 ```
+
+TCP listeners and connections implement `Drop`, with explicit consuming `close()` for error
+reporting. Native move-out projections detach shared storage, moved and consumed homes remain
+empty across control-flow edges, and retain operations preserve partially moved null slots.
+Socket-lifetime and native collection/iterator regressions cover automatic cleanup.
 
 ## Remaining boundaries
 
 - `Collection.empty?` remains a required method supplied by each implementation. Adding a shared
   body exposed a native distinction between partial inherited defaults and concrete implementation
   storage; that compiler work is recorded in the roadmap.
-- TCP listeners and connections still require explicit consuming `close()` calls. Adding automatic
-  `Drop` cleanup passed host interaction checks but caused unrelated native collection and iterator
-  failures during this review. Automatic socket cleanup was therefore not enabled.
+- The `graphemes.fos` parity fixture has a type-checking failure when `std.sequence` is imported:
+  `Sequence<String>` is expected where a `String` is supplied. This also occurs with the TCP
+  declarations from before automatic cleanup and is independent of the native lifetime fixes.
 - Host operations retain conservative mutation effects because reading an integer handle can
   mutate the external socket or random source. Some TOML helpers also retain broader private effect
   annotations. The compiler reports these as warnings, not missing type information.

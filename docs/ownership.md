@@ -506,9 +506,13 @@ can also prove that two stable dynamic-index operands differ. A write, move, des
 that overlaps a fact operand forgets the fact. Unsupported predicates and excess alternatives widen
 to the ordinary conservative union.
 
-An `assert` statement has explicit success and failure successors in ownership MIR. Its failure
-block destroys active expression temporaries followed by owned function storage and terminates with
-`Fail`; its success block performs the ordinary full-expression cleanup and continues. Consumed
+Assertions, indexed reads/writes/moves/borrows, abrupt host operations, and synchronous calls have
+explicit success and failure successors in ownership MIR. `Checked` identifies bounds, host, and
+call failures and carries the source span. Its failure block destroys active expression temporaries
+followed by owned function storage and terminates with `Fail`; only its success block can initialize
+the result. Consumed arguments and temporary receivers remain caller-owned while later arguments
+are evaluated, and transfer at invocation. Ordinary host `Result.Error` values follow normal result
+handling; remote execution failures are delivered through futures. Consumed
 parameters participate in function cleanup, while borrowed parameters do not invalidate their
 caller's storage. At runtime, failure unwinds invocation frames from callee to caller and detaches
 each frame's registers in reverse allocation order. This deterministic frame teardown applies to
@@ -643,9 +647,9 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   and recursive tag-aware destruction plans, including collections, closures, and exceptional
   frame exits. Both backends invoke `deinit` before releasing child values. Arbitrary cyclic owned
   graphs remain open; scoped remote cancellation is implemented under G-06.
-- Explicit assertion failures are represented in ownership MIR. Other dynamic failures, such as
-  bounds errors and host-operation errors, use deterministic runtime frame teardown but do not yet
-  have per-operation exceptional successors in ownership MIR.
+- Assertions, indexed bounds checks, abrupt host failures, and synchronous call propagation are
+  represented in ownership MIR. Other runtime checks, including primitive arithmetic failures,
+  retain deterministic runtime frame teardown without per-operation MIR successors.
 
 The intended evolution is path-sensitive loan states and precise provenance through erased
 callables and future aggregate forms while preserving the source model: ownership transfer stays
