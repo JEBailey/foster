@@ -1,194 +1,172 @@
 # Foster standard library
 
-## Writing library code
+The standard library provides text, collections, iteration, error values, time,
+randomness, and host I/O. Foundational types live under `core`; general-purpose
+facilities live under `std`. Import modules explicitly: Foster has no prelude
+that imports their declarations for you.
 
-Use mutable `let` bindings and explicit `move` when transferring an existing owned
-value to a consuming parameter. Use references when a helper must update caller-owned
-storage. Keep public effect bounds precise and checked; allow private helpers to infer
-effects where an explicit contract adds no useful constraint.
+The `.fos` files here are the authoritative implementation and API documentation.
+Their Markdown comments appear in generated pages and LSP hovers. Installed
+compilers embed the library, so consumers do not need a checkout.
 
-Group sibling paths with the same effect and owner when this reduces repetition:
-`[mut self(buckets.items, size), consume self]`. Keep different owners and effect kinds
-separate, and use dotted syntax for a single path. Do not replace a list of field
-permissions with a broader root permission just to shorten the declaration.
+## Getting started
 
-Run `foster test library` and `foster test tests/foster` after changing shared library
-code. Examples should use the same syntax and ownership conventions as library code.
-
-`std.crypto.sha256` provides `sha256::digest(bytes)`, returning a 64-character
-lowercase hexadecimal SHA-256 digest. It is implemented entirely in Foster and
-preserves its input bytes:
-
-```foster
-import std.crypto.sha256
-func main() -> String { sha256::digest("abc".bytes) }
-```
-
-`core.code_point` provides Unicode 17.0.0 classification: `category()` returns a
-`GeneralCategory`; predicates include `letter?`, `alphabetic?`, `digit?`, `numeric?`,
-`alphanumeric?`, `lowercase?`, `uppercase?`, `titlecase?`, `mark?`, `punctuation?`,
-`symbol?`, `separator?`, `control?`, `assigned?`, `identifier_start?`, and
-`identifier_part?`. `letter?` means category L; `alphabetic?` uses the broader
-Alphabetic property. `digit?` means decimal digit (Nd), while `numeric?` means any
-Number category (N). Identifier predicates use XID_Start and XID_Continue;
-these do not change Foster's identifier syntax. Predicates are called as methods,
-for example `'λ'.letter?()` and `'٣'.digit?()`.
-
-`String.lower()` and `upper()` now apply full, locale-independent Unicode casing.
-`case_fold()` supports caseless comparison, for example
-`"Straße".case_fold() == "STRASSE".case_fold()`. These operations also exist on
-`CodePoint` and return strings because mappings can expand (`ß` becomes `SS`).
-`CodePoint.simple_lower()`, `simple_upper()`, and `simple_title()` return a single
-code point. String lowercasing handles Greek final sigma in context. Casing and
-folding do not normalize text or apply Turkish/Lithuanian locale tailoring.
-`String.ascii_lower()` and `ascii_upper()` preserve the previous ASCII-only behavior.
-See [Unicode data maintenance](../tools/unicode/README.md) for provenance and regeneration.
-The new algorithms and lookup tables are written in Foster.
-
-The standard library is written in Foster and is available through explicit imports. Foster has no
-prelude and does not inject library declarations into user modules. Foundational language types
-live under `core`; general-purpose facilities live under `std`.
+Save this as `main.fos` and run `foster run main.fos`:
 
 ```foster
 import core.list
 import core.option
 
-func first_doubled(values: List<Int>) -> Option<Int> {
-    values.map((value: Int) -> value * 2).first()
+func main() -> Int {
+    let doubled = [10, 20, 30].map((value: Int) -> value * 2)
+    assert(doubled.first() == Option.Some(20))
+    0
 }
 ```
 
-`import core.option` exposes its public `Option` type directly. The `option::Option` spelling remains
-available when qualification improves clarity or resolves an ambiguity. Operations that have one
-natural nominal receiver are instance methods, so scalar values, lists, strings, options, results,
-orderings, and TOML values use fluent calls such as `base.power(exponent)`,
-`values.map(transform)`, and `document.get(key)`. Module
-functions remain for construction and algorithms without one nominal receiver, such as
-`toml::parse(source)`, `sequence::map(values, transform)`, and `io::copy(reader, writer)`.
+An import exposes public names and a module qualifier: `import core.option`
+supports both `Option` and `option::Option`. Use qualifiers for ambiguous names.
+Receiver methods serve operations such as `text.slice(0, 3)`; module functions
+serve algorithms such as `sha256::digest(bytes)` and `io::copy(reader, writer)`.
 
-The compiler embeds these source modules so installed tools can resolve `core.*` and `std.*`
-without depending on the repository layout. The files in this directory remain authoritative.
-Every function carries a Markdown documentation comment. Public comments describe behavior,
-ownership, boundary conditions, and errors where relevant; private comments identify the helper's
-role in the implementation. The compiler retains these comments for language-server hover and
-completion information, and the test suite enforces complete function coverage.
-The implementations use fully qualified enum constructors and patterns, explicit public
-signatures, and explicit record fields. Primitive members such as `List.push` and `List.append` are
-owner-qualified intrinsic declarations, so their source identity is resolved before VM dispatch.
-Library implementations use `not`, `&&`, and `||` for Boolean logic and short-circuiting.
-`String` is an opaque Foster record backed by valid UTF-8 `Bytes`; literals and host decoding are
-its trusted construction paths, while its library algorithms are ordinary Foster functions.
-Hexadecimal conversion, UTF-8 validation, text-I/O adaptation, and the list-backed `ByteBuffer`
-implementation are Foster code; only compact byte packing/unpacking and trusted string construction
-remain at that representation boundary.
+Generate the API reference from the repository root:
 
-Portable library behavior is tested with Foster `test` declarations beside the implementation.
-Run the complete library suite with `foster test library`; the Rust integration harness executes it
-with and without bytecode optimization during `cargo test`. Host-dependent filesystem, process,
-network, clock, and operating-system entropy behavior remains in Rust integration tests so those
-tests can control or inspect operating-system resources.
-
-Current modules:
-
-- `core.copy` and `core.drop`: explicit independent copies and automatic ownership cleanup
-- `core.symbol`: immutable symbolic identifiers
-- `core.range`: reusable list-backed range views
-- `core.remote_error`: remote execution failures and the reserved shutdown outcome
-- `std.collections`: storage-free `Collection<T>` contract for sized, repeatable collections
-- `std.collections.set`: storage-free `Set<T>` contract and insertion-ordered `ListSet<T>`
-- `std.collections.stack`, `std.collections.queue`, and `std.collections.deque`: concrete
-  last-in-first-out, first-in-first-out, and double-ended collections
-- `std.process`: typed executable name and command arguments supplied to `main`
-- `std.collections.hash_map`: Foster-written `HashMap<K, V>` with separate collision chains,
-  automatic growth, replacement, removal, consuming lookup, and snapshot iteration
-- `std.collections.hash_set`: Foster-written `HashSet<T>` sharing HashMap storage and hashing
-- `std.collections.hashing`: deterministic integer, UTF-8 text, and byte hash functions
-
-- `core.functions`: reusable `Predicate<T>`, consuming `Consumer<T>`, and `Supplier<T>` callable aliases
-- `core.option`: `Option`, mapping, chaining, eager and lazy fallbacks, flattening, and presence queries
-- `std.iter`: stateful iteration contracts plus Foster-written `for_each`, `fold`, `find`, query,
-  and counting consumers
-- `std.iter.map`, `std.iter.filter`, `std.iter.take`, and `std.iter.skip`: lazy Foster-written
-  iterator adaptors used to build fluent pipelines
-- `core.result`: `Result`, mapping, error mapping, chaining, recovery, fallbacks, flattening, and queries
-- `core.ordering`: `Ordering`, `Equality<T>`, `Ordered<T>`, `Hashing`, and `reverse`
-- `std.sequence`: map, filter, fold, search, slicing, and query algorithms shared by strings and lists
-- `core.list`: safe access, map, filter, fold, find, predicates, reverse, and concatenation
-- `core.code_point`: validated Unicode scalar construction plus `as_int` and `as_string` conversion
-- `core.string`: slicing, splitting, joining, trimming, case conversion, and Unicode helpers
-- `core.bool`, `core.int`, and `core.float`: scalar algorithms and comparisons
-- `core.byte`: checked construction and integer conversion for eight-bit unsigned values
-- `core.bytes`: immutable compact bytes, hexadecimal conversion, hashing, and UTF-8 conversion
-- `core.bytes.buffer`: mutable binary construction with consuming `freeze` and borrowing `snapshot`
-- `std.io`: generic binary/text stream contracts plus `read_all`, `write_all`, and `copy`
-- `std.resource`: abstract resource locations plus readable, writable, and read/write structural capabilities
-- `std.collections.map`: storage-free `Map<K, V>` contract and insertion-ordered `ListMap<K, V>`
-- `std.fs`: `File` resources, typed text and binary I/O, directory mutation, copying, moving, and inspection
-- `std.path`: typed `Path` values plus compatible string-based composition, inspection, and canonicalization
-- `std.uri`: parsed URI resource locations; protocol-specific I/O remains separate
-- `std.env`: process environment queries
-- `std.toml`: a Foster-written TOML 1.1 parser, typed documents, table lookup, rendering, and positioned errors
-- `std.net.tcp`: typed TCP listeners and `Duplex<NetworkError>` connections with explicit `close`
-- `std.time`: exact `Instant` and `Duration` values, half-open `Interval` values, and generic wall
-  and monotonic `Clock<T>` implementations
-- `std.time.civil`: ISO `Date`, `TimeOfDay`, `DateTime`, `YearMonth`, `MonthDay`, calendar-aware
-  `Span`/`Period`, civil intervals, and the structural `Calendar` contract
-- `std.time.zone`: offsets, fixed and structural time zones, explicit unique/ambiguous/skipped local
-  resolution, `OffsetDateTime`, and `ZonedDateTime`
-- `std.time.format`: portable ISO-8601 and RFC-3339 parsing and formatting
-- `std.random`: structural source contracts, operating-system randomness, and unbiased half-open integer ranges
-- `std.random.generator`: named portable `LehmerRandom` and release-local `FastRandom` generators
-- `std.random.distribution`: uniform integer/float, Bernoulli, and weighted-index distributions
-- `std.random.secure`: secure entropy bytes and hexadecimal or URL-safe token generation
-- `std.random.sequence`: random choice, shuffling, and sampling without replacement
-
-The register VM executes imported core code and calls across modules after the normal checked-HIR
-pipeline. Filesystem, TCP, clock readings, and operating-system entropy cross into the Rust
-runtime. Exact and civil time arithmetic, fixed-zone resolution, ISO/RFC formatting, TOML grammar,
-validation, document construction, and rendering remain Foster source and use only general scalar
-primitives.
-The entropy boundary has no additional Rust package dependency; random range reduction,
-generators, distributions, tokens, and sequence algorithms remain Foster source as well.
-
-Fallible APIs return the Foster-written `Result<T, E>` type. Library implementations use `try`
-only to forward the same error type; recovery, error mapping, and conversion remain explicit
-`branch` expressions so those policy decisions stay visible.
-
-`Map` and `Set` define shared behavior; `ListMap`/`HashMap` and `ListSet`/`HashSet` supply storage.
-Existing `Map.empty()`, `Set.empty()`, and `Set.from(values)` factories construct the list-backed
-implementations. Use a concrete type annotation when its representation or insertion order matters;
-use the contracts for functions accepting either implementation. See
-[hash collections](../docs/hash-collections.md) for hashing and ownership semantics.
-
-## Checkpointable cursors
-
-`std.cursor.Cursor<T>` extends the iterator contract with `peek`, `checkpoint`,
-`restore`, and `span`. The type parameter is the item type. Construct a concrete
-reader with `StringCursor.from(text)` (`core.string`), `BytesCursor.from(bytes)`,
-or `ListCursor.from(values)` (`std.cursor`). List reads require copyable elements.
-
-```foster
-import core.string
-import std.cursor
-
-let reader = StringCursor.from("Aλ🙂")
-reader.next()
-let start = reader.checkpoint() // byte offset 1
-reader.next()
-let matched = reader.text_span(start, reader.checkpoint()) // Some("λ")
-reader.restore(start)
+```powershell
+foster docs library
+foster docs library --serve
 ```
 
-Checkpoints are source offsets: UTF-8 byte offsets for strings, byte offsets for
-bytes, and element offsets for lists. Use checkpoints with the same source
-snapshot. String readers reject offsets inside a multibyte encoding. Failed
-restores leave the position unchanged; invalid spans return `None`. End-of-input
-reads repeatedly return `None` without advancing. `span` returns a `List<T>`;
-`StringCursor.text_span` and `BytesCursor.byte_span` preserve the source type.
-Spans materialize their result. Cursors reuse stable backing storage and do not
-buffer arbitrary iterators. All cursor algorithms are implemented in Foster.
+The site is written to `library/documentation`. Edit source comments and
+regenerate; do not maintain generated HTML by hand.
 
-Concrete cursor operations and generic `Cursor<T>` dispatch are supported by both
-the VM and native backend. `cursor.fos` and `cursor_dispatch.fos` verify UTF-8
-boundaries, reader state, and inherited iterator operations with optimization
-enabled and disabled.
+## Find an API
+
+| Task | Modules |
+| --- | --- |
+| Unicode text, builders, text cursors | [core.string](core/string.fos), [core.code_point](core/code_point.fos) |
+| Bytes and binary construction | [core.byte](core/byte.fos), [core.bytes](core/bytes.fos), [core.bytes.buffer](core/bytes/buffer.fos) |
+| Lists and eager algorithms | [core.list](core/list.fos), [core.range](core/range.fos), [std.sequence](std/sequence.fos) |
+| Lazy traversal | [std.iter](std/iter.fos), adaptors [map](std/iter/map.fos), [filter](std/iter/filter.fos), [take](std/iter/take.fos), [skip](std/iter/skip.fos) |
+| Checkpoints and lookahead | [std.cursor](std/cursor.fos) |
+| Maps and sets | [std.collections.map](std/collections/map.fos), [set](std/collections/set.fos), [hash_map](std/collections/hash_map.fos), [hash_set](std/collections/hash_set.fos), [hashing](std/collections/hashing.fos) |
+| Collection contracts and ordered access | [std.collections](std/collections.fos), [stack](std/collections/stack.fos), [queue](std/collections/queue.fos), [deque](std/collections/deque.fos) |
+| Optional values and failures | [core.option](core/option.fos), [core.result](core/result.fos), [core.remote_error](core/remote_error.fos) |
+| Scalar helpers | [core.int](core/int.fos), [core.float](core/float.fos), [core.bool](core/bool.fos), [core.symbol](core/symbol.fos) |
+| Common contracts | [core.copy](core/copy.fos), [core.drop](core/drop.fos), [core.ordering](core/ordering.fos), [core.functions](core/functions.fos) |
+| Files and resource locations | [std.fs](std/fs.fos), [std.path](std/path.fos), [std.uri](std/uri.fos), [std.resource](std/resource.fos) |
+| Streams and TCP | [std.io](std/io.fos), [std.net.tcp](std/net/tcp.fos) |
+| Process inputs | [std.process](std/process.fos), [std.env](std/env.fos) |
+| Time and calendars | [std.time](std/time.fos), [civil](std/time/civil.fos), [zone](std/time/zone.fos), [format](std/time/format.fos) |
+| Random values | [std.random](std/random.fos), [generator](std/random/generator.fos), [distribution](std/random/distribution.fos), [secure](std/random/secure.fos), [sequence](std/random/sequence.fos) |
+| Configuration | [std.toml](std/toml.fos) |
+| SHA-256 digests | [std.crypto.sha256](std/crypto/sha256.fos) |
+
+[core.unicode](core/unicode.fos) and its generated tables support the public text
+APIs. Applications generally use `String` and `CodePoint` methods instead.
+See [Unicode maintenance](../tools/unicode/README.md) for provenance and regeneration.
+
+## Ownership and errors
+
+Read the signature as well as the summary. A consuming operation transfers
+ownership; use `move` when passing an existing binding. Map updates return the
+updated collection, while `Map.get` consumes the entire map to return one optional
+value. `contains_key?` borrows the map when only membership matters.
+
+`List.at` distinguishes `OutOfBounds` and `NotCopyable`. `get`, `first`, and `last`
+return `None` for either unavailable or noncopyable elements. Direct indexing and
+checked slices have preconditions; they are not fallible lookup APIs.
+
+Fallible operations return `Result<T, E>`. Use `try` to forward the same error
+type; use `branch`, `map_error`, or recovery methods to choose another policy.
+`Option<T>` represents absence without an explanation. Eager fallback arguments
+are evaluated before a call; `_else` callbacks defer computation until needed.
+
+```foster
+import core.byte
+import core.result
+
+func main() -> Int {
+    branch Byte.from(256) {
+        Result.Ok(_) -> { assert(false, "256 cannot fit in a byte") }
+        Result.Error(error) -> { assert(error.value == 256) }
+    }
+    0
+}
+```
+
+## Text positions and cursors
+
+| API | Position unit | Invalid bounds |
+| --- | --- | --- |
+| `String.length`, `String.slice` | Unicode scalars | Slice bounds are clamped |
+| `String.byte_length()` | UTF-8 bytes | No bounds argument |
+| `StringCursor.checkpoint`, `text_span` | UTF-8 bytes | Split scalars and invalid ranges are rejected |
+| `Bytes.length`, `Bytes.slice` | Bytes | Slice bounds assert |
+| `List.length`, `List.slice` | Elements | Slice bounds assert |
+
+A scalar is not necessarily a displayed character: combining marks and emoji
+sequences can contain several scalars. Unicode casing can also change length.
+Full `lower`, `upper`, and `case_fold` return strings; `CodePoint`'s `simple_*`
+methods return one scalar. Casing uses Unicode 17.0.0 without normalization or
+language-specific tailoring. `ascii_lower` and `ascii_upper` affect ASCII only.
+
+Use `StringCursor.from(text)` for repeated scanning without constructing suffix
+strings. `Cursor<T>` describes the yielded item type, independently of the offset
+unit. Failed restores leave the reader unchanged; invalid spans return `None`.
+Spans materialize their result without advancing. Checkpoints are plain offsets:
+callers must keep them with the same source snapshot, because the cursor cannot
+recognize an offset copied from an unrelated source.
+
+## Choosing a collection
+
+`Map.empty` and `Set.empty` construct insertion-ordered list implementations with
+linear membership searches. Hash collections use caller-supplied hashes and have
+expected constant-time bucket lookup, with a linear worst case. Equal keys must
+have equal hashes, and stored keys' hashes must remain stable. Hash iteration
+order is unspecified. See [hash collections](../docs/hash-collections.md).
+
+List and sequence transformations are eager. Iterator adaptors defer work until
+items are requested; terminal operations advance the remaining iterator. Use
+`StringBuilder` or `ByteBuffer` for incremental construction. `snapshot` preserves
+a byte buffer; `freeze` consumes it. Capacity methods are hints, not promises about
+reserved allocation size.
+
+## Host behavior and limits
+
+- Filesystem, TCP, clock reads, and operating-system entropy use the host runtime.
+  Text algorithms, collections, calendar arithmetic, parsing, and SHA-256 are Foster code.
+- Whole-file I/O allocates in proportion to input. Stream helpers stop at the
+  first error without rolling back earlier I/O. `File.flush` is a no-op, not a
+  durability guarantee.
+- Paths use host-platform rules. Canonicalization accesses the filesystem; URI
+  construction performs no network I/O and does not parse every URI component.
+- Use monotonic clocks for elapsed time. Civil spans are not elapsed durations.
+  Time-zone contracts allow custom providers, but no IANA database ships here.
+- Seeded generators have explicit reproducibility guarantees. Secure entropy
+  APIs produce unpredictable tokens; collection hashes are not cryptographic digests.
+- Numeric helpers retain their documented edge behavior. `Float.compare` returns
+  `Equal` for unordered comparisons involving NaN; it is not a total ordering.
+
+## Contributing and verification
+
+Follow the [documentation standard](DOCUMENTATION.md). Public comments describe
+observable behavior, ownership, bounds, errors, units, and relevant limitations.
+When a method is declared in a type and implemented separately, keep both comments
+consistent. Keep private implementation notes out of public summaries.
+
+Use mutable `let` bindings and explicit ownership transfers. Keep public effect
+bounds precise; do not broaden field permissions just to shorten a signature.
+Private helpers may infer effects where an explicit bound adds no useful contract.
+
+From the repository root:
+
+```powershell
+foster test library
+foster test tests/foster
+foster docs library
+```
+
+Portable tests live beside their implementations. Rust integration tests cover
+host resources and check that every library function has documentation. Comment
+coverage alone does not establish correctness: compile and run examples and
+review their claims against implementations and boundary tests.

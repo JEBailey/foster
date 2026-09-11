@@ -1,8 +1,8 @@
-//! Optional values and transformations that preserve absence.
+//! `Option`al values and transformations that preserve absence.
 //!
-//! Some carries a value; None represents absence without an error explanation.
-//! map and and_then invoke their callback only for Some. unwrap_or receives an
-//! already evaluated fallback; unwrap_or_else computes one only for None.
+//! `Some` carries a value; `None` represents absence without an error explanation.
+//! map and and_then invoke their callback only for `Some`. unwrap_or receives an
+//! already evaluated fallback; unwrap_or_else computes one only for `None`.
 
 import core.functions
 
@@ -47,8 +47,8 @@ impl Option {
     }
 
     /// Returns the contained value, or `fallback` for `None`.
-        /// The fallback is evaluated before this call, even for `Some`; use
-        /// `unwrap_or_else` to defer computation.
+    /// The fallback is evaluated before this call, even for `Some`; use
+    /// `unwrap_or_else` to defer computation.
     pub func unwrap_or<T>(self: Option<T>, fallback: T) -> T [consume fallback, read self] {
         branch self {
             Option.Some(value) -> value

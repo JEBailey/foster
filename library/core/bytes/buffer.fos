@@ -1,7 +1,7 @@
 //! Mutable byte construction with immutable snapshots.
 //!
 //! Append with push or extend. snapshot preserves the buffer; freeze consumes it
-//! and returns Bytes. Capacity and reservation APIs are allocation hints, not
+//! and returns `Bytes`. Capacity and reservation APIs are allocation hints, not
 //! guarantees about reserved storage. Negative sizes fail an assertion.
 
 import core.bytes

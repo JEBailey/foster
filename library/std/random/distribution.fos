@@ -1,8 +1,8 @@
 //! Probability distributions over injectable random sources.
 //!
-//! Operations validate their parameters and return RandomError on invalid requests
-//! or source failure. The _with variants use caller-owned state, allowing repeatable
-//! sampling with a seeded source.
+//! Operations validate their parameters and return `RandomError` on invalid requests
+//! or source failure. A distribution's sample method advances a caller-supplied
+//! `RandomSource`, allowing repeatable sampling with a seeded generator.
 
 import core.int
 import core.result

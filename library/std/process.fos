@@ -1,6 +1,6 @@
 //! The executable name and command-line arguments passed to main.
 //!
-//! Accept Arguments as main's parameter to read process inputs. The executable
+//! Accept `Arguments` as main's parameter to read process inputs. The executable
 //! name is separate from values, which contains the user arguments in order.
 //! This module does not launch subprocesses.
 
@@ -10,6 +10,7 @@ import core.list
 ///
 /// `executable` is the path or command used to invoke the program. `values` contains every
 /// following argument in order and does not repeat the executable name.
+/// The invocation name is not necessarily an absolute canonical path.
 pub type Arguments = {
     pub executable: String
     pub values: List<String>

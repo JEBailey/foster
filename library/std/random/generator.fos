@@ -1,7 +1,7 @@
 //! Seeded generators with explicit reproducibility contracts.
 //!
-//! LehmerRandom preserves its sequence across targets for the same seed and calls.
-//! FastRandom's algorithm may change across releases. Both are deterministic;
+//! `LehmerRandom` preserves its sequence across targets for the same seed and calls.
+//! `FastRandom`'s algorithm may change across releases. Both are deterministic;
 //! use std.random.secure for tokens that must be unpredictable.
 
 import core.result

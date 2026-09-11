@@ -1,8 +1,8 @@
 //! Immutable Unicode text, UTF-8 cursors, and text construction.
 //!
-//! String lengths and slice bounds count Unicode scalars, not bytes or grapheme
-//! clusters. byte_length and StringCursor checkpoints count UTF-8 bytes. Use a
-//! cursor for repeated sequential reads and StringBuilder for incremental output.
+//! `String` lengths and slice bounds count Unicode scalars, not bytes or grapheme
+//! clusters. byte_length and `StringCursor` checkpoints count UTF-8 bytes. Use a
+//! cursor for repeated sequential reads and `StringBuilder` for incremental output.
 //! Case conversion uses Unicode 17.0.0 without normalization or locale tailoring.
 //!
 //! ```foster

@@ -1,7 +1,7 @@
-//! Equality, ordering, and hashing contracts.
+//! `Equality`, ordering, and hashing contracts.
 //!
-//! Ordering represents Less, Equal, or Greater. Implementations of an ordering
-//! contract must define consistent comparisons. Hashing implementations must give
+//! `Ordering` represents `Less`, `Equal`, or `Greater`. Implementations of an ordering
+//! contract must define consistent comparisons. `Hashing` implementations must give
 //! equal values equal hashes; a hash is not a unique identifier.
 
 /// The relative order of two comparable values.

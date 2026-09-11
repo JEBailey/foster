@@ -99,8 +99,12 @@ suitable for CI. The current directory is used when no path is supplied.
 `foster docs [file-or-directory]` type-checks the package and generates a static API site in a
 `documentation/` directory within the selected package. The site is built from resolved HIR, so signatures include
 inferred types and effects. It includes public and private declarations, their visibility, and all
-attached Markdown documentation comments. Module pages summarize the public types they provide,
+attached Markdown documentation comments, but omits private types without nonempty documentation.
+Module pages summarize the public types they provide,
 including fields, enum cases, required methods, and linked functions or methods.
+Module pages keep an overview and declaration navigation alongside the reference on wide screens.
+Use **Find a declaration** to filter navigation by name or kind; press Escape to clear it.
+On smaller screens, **On this page** can be collapsed to make room for the reference.
 
 Use `--output <directory>` to choose another destination. Add `--serve` to start a local server and
 open the site in the system browser:

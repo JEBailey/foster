@@ -1,8 +1,8 @@
 //! Checkpointable readers over stable collection snapshots.
 //!
-//! Cursor<T> extends Iterator<T>; T is the item type, not the source type.
-//! ListCursor offsets count elements and BytesCursor offsets count bytes.
-//! StringCursor, provided by core.string, yields scalars but uses UTF-8 byte offsets.
+//! `Cursor<T>` extends `Iterator<T>`; T is the item type, not the source type.
+//! `ListCursor` offsets count elements and `BytesCursor` offsets count bytes.
+//! `StringCursor`, provided by core.string, yields scalars but uses UTF-8 byte offsets.
 //! Checkpoints carry no source identity: callers must use the same source snapshot.
 //! restore validates bounds (and text boundaries); a failed restore does not move.
 //! span copies a half-open region without moving the cursor.

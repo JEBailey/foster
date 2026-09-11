@@ -1,7 +1,7 @@
 //! Reusable sequence views backed by an owned list.
 //!
-//! Range<T> stores supplied values; it is not a lazy numeric interval. Use Int.range
-//! to construct consecutive integers. Iterators traverse the stored order.
+//! `Range<T>` stores supplied values; it is not a lazy numeric interval. Use `Int`.range
+//! to construct consecutive integers. `Iterator`s traverse the stored order.
 
 import std.collections
 import std.iter

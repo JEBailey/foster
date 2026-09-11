@@ -1,8 +1,8 @@
 //! Immutable binary data, hexadecimal encoding, and UTF-8 validation.
 //!
-//! Lengths, indexes, and slice bounds are measured in bytes. Bytes may contain any
-//! octets; use String.from_utf8 to validate and decode text. Slices are checked,
-//! half-open ranges and materialize a new byte value. Hex decoding returns HexError.
+//! Lengths, indexes, and slice bounds are measured in bytes. `Bytes` may contain any
+//! octets; use `String`.from_utf8 to validate and decode text. Slices are checked,
+//! half-open ranges and materialize a new byte value. Hex decoding returns `HexError`.
 
 import std.iter
 import core.byte
@@ -60,12 +60,16 @@ pub type Bytes = {
 }
 
 /// Describes a failed UTF-8 decoding operation.
+/// `offset` is a zero-based byte position in the input. `message` explains the
+/// invalid sequence; use the result type rather than message text for control flow.
 pub type Utf8Error = {
     pub offset: Int
     pub message: String
 }
 
 /// Describes malformed hexadecimal byte text.
+/// `offset` is a zero-based Unicode scalar position in the input. `message`
+/// explains the invalid digit or incomplete pair.
 pub type HexError = {
     pub offset: Int
     pub message: String

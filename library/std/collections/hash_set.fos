@@ -1,7 +1,7 @@
 //! Hash-based unique-value storage.
 //!
-//! HashSet uses HashMap storage and a caller-supplied hash function. Equal elements
-//! must have equal, stable hashes. Iteration order is unspecified; use ListSet when
+//! `HashSet` uses `HashMap` storage and a caller-supplied hash function. `Equal` elements
+//! must have equal, stable hashes. Iteration order is unspecified; use `ListSet` when
 //! insertion order is part of the required behavior.
 
 import core.option

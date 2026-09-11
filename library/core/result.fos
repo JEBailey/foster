@@ -1,6 +1,6 @@
 //! Success and failure values with explicit recovery.
 //!
-//! Ok carries a result and Error carries its error value. Mapping a success leaves
+//! `Ok` carries a result and `Error` carries its error value. `Map`ping a success leaves
 //! errors untouched; error mapping leaves successes untouched. Use and_then to
 //! chain fallible operations, or try when forwarding the same error type.
 

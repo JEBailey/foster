@@ -1,6 +1,6 @@
 //! Associative collection contracts and insertion-ordered list maps.
 //!
-//! Map<K, V> defines the shared API. Map.empty constructs ListMap, whose key searches
+//! `Map<K, V>` defines the shared API. `Map`.empty constructs `ListMap`, whose key searches
 //! are linear. Use std.collections.hash_map for hashed lookup. get consumes the
 //! map; contains_key? borrows it. put consumes and returns the updated collection.
 

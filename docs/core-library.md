@@ -1,5 +1,9 @@
 # Foster standard library
 
+Start with the [library guide](../library/README.md) for API selection, ownership,
+text units, and executable examples. Source comments are the API reference;
+contributions follow the [documentation standard](../library/DOCUMENTATION.md).
+
 Foster has no prelude. Embedded library modules are available to every package, but programs
 explicitly import the modules they use. The `core` namespace contains foundational language types;
 the `std` namespace contains general-purpose collections and host-facing facilities:
@@ -56,7 +60,9 @@ being added accidentally.
 | `std.collections.hashing` | Deterministic integer, text, and byte hash functions |
 | `core.symbol` | Immutable symbolic identifiers |
 | `std.iter.map`, `std.iter.filter`, `std.iter.take`, `std.iter.skip` | Lazy iterator adaptors |
-| `core.code_point` | Unicode scalar validation and ASCII/whitespace classification |
+| `core.code_point` | Unicode scalar validation, Unicode 17 classification, and full/simple case mapping |
+| `std.cursor` | Checkpointable list and byte readers; text cursors are provided by `core.string` |
+| `std.crypto.sha256` | One-shot SHA-256 returning 64 lowercase hexadecimal characters |
 | `core.string` | Boundary queries, slicing, splitting, joining, prefix predicates, case conversion, trimming, and characters |
 | `core.bool` | Boolean composition and conditional singleton-list construction |
 | `core.int` | Bounds, comparison, sign, parity, ranges, formatting, and integer powers |

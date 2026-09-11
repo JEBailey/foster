@@ -1,7 +1,7 @@
 //! Binary64 formatting, arithmetic helpers, and comparison-based queries.
 //!
 //! These helpers use ordinary floating-point comparisons. In particular, compare
-//! returns Equal when neither operand compares less or greater, including NaN;
+//! returns `Equal` when neither operand compares less or greater, including NaN;
 //! it is not an IEEE total ordering. See each method's NaN and signed-zero behavior.
 
 import core.ordering

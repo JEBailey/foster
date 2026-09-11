@@ -1,8 +1,8 @@
 //! Blocking TCP listeners and connections with typed errors.
 //!
-//! Connection implements binary Duplex operations. Reads may return short chunks;
+//! `Connection` implements binary `Duplex` operations. Reads may return short chunks;
 //! empty bytes indicate orderly peer shutdown. Writes accept the complete supplied
-//! sequence or return NetworkError. Close owned listeners and connections explicitly.
+//! sequence or return `NetworkError`. Close owned listeners and connections explicitly.
 //! Timeouts are configured in milliseconds; this module does not provide TLS.
 
 import core.bytes

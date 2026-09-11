@@ -1,8 +1,8 @@
 //! Host-filesystem paths, lexical composition, and canonicalization.
 //!
-//! Path preserves the supplied spelling. Joining and component inspection use
+//! `Path` preserves the supplied spelling. Joining and component inspection use
 //! host-platform path rules and do not require a path to exist. canonical performs
-//! filesystem I/O and returns IoError when resolution fails. A Path is not a URI.
+//! filesystem I/O and returns `IoError` when resolution fails. A `Path` is not a URI.
 
 import core.option
 import core.result

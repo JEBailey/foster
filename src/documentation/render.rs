@@ -42,12 +42,34 @@ p code, li code { padding: .08rem .3rem; border-radius: .25rem; background: #e8e
 .badge { margin-left: .45rem; padding: .15rem .4rem; border-radius: 99px; font-size: .68rem; font-weight: 700; letter-spacing: .02em; color: #596273; background: #edf0f5; vertical-align: middle; }
 .kind { color: #2356a8; background: #e8f0ff; }
 .empty, .no-results { color: #667085; font-style: italic; }
-.no-results { display: none; }
+[hidden] { display: none !important; }
+.skip-link { position: absolute; left: 1rem; top: -5rem; padding: .75rem; background: white; z-index: 2; }
+.skip-link:focus { top: 1rem; }
+:focus-visible { outline: 3px solid #628ae0; outline-offset: 3px; }
+header h1, article, .module-list strong { overflow-wrap: anywhere; }
+.module-layout { display: grid; grid-template-columns: 17rem minmax(0, 1fr); gap: 2rem; align-items: start; }
+.module-content { min-width: 0; }
+.on-this-page { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow: auto; }
+.on-this-page summary { cursor: pointer; font-weight: 700; }
+.on-this-page .crumb { margin: 0 0 .75rem; }
+.on-this-page label { display: block; margin-top: 1rem; font-size: .85rem; font-weight: 600; }
+.on-this-page .filter { margin: .35rem 0 .5rem; padding: .55rem; }
+.on-this-page ul { display: block; padding: 0; list-style: none; max-height: max(8rem, calc(100vh - 20rem)); overflow: auto; }
+.on-this-page li a { display: block; padding: .4rem .25rem; overflow-wrap: anywhere; }
+.on-this-page small { color: #596273; font-size: .75rem; margin-left: .35rem; }
+.on-this-page a[aria-current="location"] { background: #e8f0ff; border-radius: .25rem; font-weight: 700; }
+.filter-status { font-size: .85rem; color: #596273; }
+.back-to-navigation { display: none; }
+article:target { outline: 2px solid #628ae0; outline-offset: 3px; }
+.type-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
+@media (max-width: 60rem) { .module-layout { display: block; } .on-this-page { position: static; max-height: none; } .on-this-page ul { max-height: 16rem; overflow: auto; } }
+@media (max-width: 60rem) { .back-to-navigation { display: inline-block; margin-top: .75rem; padding-block: .35rem; font-size: .85rem; } }
 @media (max-width: 36rem) { header { padding-block: 2rem; } main { padding-top: 1.25rem; } .on-this-page ul { display: block; } }
 @media (prefers-color-scheme: dark) { body { color: #e5e7eb; background: #111827; } article, .module-list a, .on-this-page, .summary span, .filter { border-color: #344052; background: #1b2434; } p code, li code { background: #303b4d; } a { color: #8db4ff; } .module-list small, .summary, .type-summary small, .type-summary h4 { color: #aab5c5; } .kind { color: #b9d2ff; background: #263c60; } }
+@media (prefers-color-scheme: dark) { .empty, .no-results, .filter-status, .on-this-page small { color: #aab5c5; } .on-this-page a[aria-current="location"] { background: #263c60; } .skip-link { background: #1b2434; } }
 "#;
 
-const SCRIPT: &str = r#"<script>
+const SCRIPT: &str = r##"<script>
 const filter = document.querySelector('[data-module-filter]');
 if (filter) {
   const modules = [...document.querySelectorAll('[data-module]')];
@@ -59,10 +81,39 @@ if (filter) {
       module.hidden = !module.dataset.module.includes(query);
       if (!module.hidden) visible++;
     }
-    empty.style.display = visible ? 'none' : 'block';
+    empty.hidden = visible > 0;
   });
 }
-</script>"#;
+const declarationFilter = document.querySelector('[data-declaration-filter]');
+if (declarationFilter) {
+  const entries = [...document.querySelectorAll('[data-declaration]')];
+  const status = document.querySelector('[data-declaration-status]');
+  declarationFilter.addEventListener('input', () => {
+    const query = declarationFilter.value.trim().toLowerCase();
+    let visible = 0;
+    for (const entry of entries) {
+      entry.hidden = !entry.textContent.toLowerCase().includes(query);
+      if (!entry.hidden) visible++;
+    }
+    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
+  });
+  declarationFilter.addEventListener('keydown', event => {
+    if (event.key === 'Escape') {
+      declarationFilter.value = '';
+      declarationFilter.dispatchEvent(new Event('input'));
+    }
+  });
+}
+const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
+function updateCurrentLocation() {
+  for (const link of navigationLinks) {
+    if (link.hash === location.hash) link.setAttribute('aria-current', 'location');
+    else link.removeAttribute('aria-current');
+  }
+}
+window.addEventListener('hashchange', updateCurrentLocation);
+updateCurrentLocation();
+</script>"##;
 
 pub(super) struct Site {
     pub index: String,
@@ -92,8 +143,18 @@ pub(super) fn site(compilation: &Compilation) -> Site {
             .filter(|id| visible_function(compilation, *id))
             .count()
             + module.constants.len()
-            + module.records.len()
-            + module.variant_types.len();
+            + module
+                .records
+                .values()
+                .map(|id| &compilation.hir.records[*id])
+                .filter(|record| visible_type(record.public, record.documentation.as_deref()))
+                .count()
+            + module
+                .variant_types
+                .values()
+                .map(|id| &compilation.hir.variant_types[*id])
+                .filter(|variant| visible_type(variant.public, variant.documentation.as_deref()))
+                .count();
         declaration_count += count;
         let _ = write!(
             index_items,
@@ -113,7 +174,7 @@ pub(super) fn site(compilation: &Compilation) -> Site {
             "Foster documentation",
             "<h1>Foster documentation</h1><p>Resolved package API reference</p>",
             &format!(
-                "<div class=\"summary\"><span>{module_count} module{module_suffix}</span><span>{declaration_count} declaration{declaration_suffix}</span></div><h2>Modules</h2><input class=\"filter\" type=\"search\" placeholder=\"Filter modules…\" aria-label=\"Filter modules\" data-module-filter><ul class=\"module-list\">{index_items}</ul><p class=\"no-results\" data-no-results>No modules match your filter.</p>{SCRIPT}",
+                "<div class=\"summary\"><span>{module_count} module{module_suffix}</span><span>{declaration_count} declaration{declaration_suffix}</span></div><h2>Modules</h2><label for=\"module-filter\">Filter modules by name</label><input id=\"module-filter\" class=\"filter\" type=\"search\" placeholder=\"e.g. collections or string\" aria-label=\"Filter modules\" data-module-filter><ul class=\"module-list\">{index_items}</ul><p class=\"no-results\" role=\"status\" data-no-results hidden>No modules match your filter.</p>",
                 module_suffix = if module_count == 1 { "" } else { "s" },
                 declaration_suffix = if declaration_count == 1 { "" } else { "s" },
             ),
@@ -127,16 +188,51 @@ pub(super) fn site(compilation: &Compilation) -> Site {
 
 fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
     let module = &compilation.hir.modules[module_id];
-    let mut body = String::from("<a class=\"crumb\" href=\"../index.html\">← All modules</a>");
+    let mut body = String::from("<div id=\"module-overview\"><h2>Overview</h2>");
     if let Some(documentation) = &module.documentation {
         body.push_str("<article class=\"module-documentation\">");
         body.push_str(&markdown(documentation));
         body.push_str("</article>");
     }
     body.push_str(&provided_types(compilation, module_id));
+    body.push_str("</div>");
     let mut count = 0;
     let mut contents = String::new();
 
+    for record_id in module.records.values().copied() {
+        let record = &compilation.hir.records[record_id];
+        if !visible_type(record.public, record.documentation.as_deref()) {
+            continue;
+        }
+        count += 1;
+        contents_entry(&mut contents, &record.name, &record.name, "type");
+        declaration(
+            &mut body,
+            &record.name,
+            &record.name,
+            record.public,
+            &record_signature(record),
+            record.documentation.as_deref(),
+            "type",
+        );
+    }
+    for variant_id in module.variant_types.values().copied() {
+        let variant = &compilation.hir.variant_types[variant_id];
+        if !visible_type(variant.public, variant.documentation.as_deref()) {
+            continue;
+        }
+        count += 1;
+        contents_entry(&mut contents, &variant.name, &variant.name, "variant");
+        declaration(
+            &mut body,
+            &variant.name,
+            &variant.name,
+            variant.public,
+            &variant_signature(compilation, variant_id),
+            variant.documentation.as_deref(),
+            "variant",
+        );
+    }
     for constant_id in module.constants.values().copied() {
         count += 1;
         let constant = &compilation.hir.constants[constant_id];
@@ -173,42 +269,12 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
             "function",
         );
     }
-    for record_id in module.records.values().copied() {
-        count += 1;
-        let record = &compilation.hir.records[record_id];
-        contents_entry(&mut contents, &record.name, &record.name, "type");
-        declaration(
-            &mut body,
-            &record.name,
-            &record.name,
-            record.public,
-            &record_signature(record),
-            record.documentation.as_deref(),
-            "type",
-        );
-    }
-    for variant_id in module.variant_types.values().copied() {
-        count += 1;
-        let variant = &compilation.hir.variant_types[variant_id];
-        contents_entry(&mut contents, &variant.name, &variant.name, "variant");
-        declaration(
-            &mut body,
-            &variant.name,
-            &variant.name,
-            variant.public,
-            &variant_signature(compilation, variant_id),
-            variant.documentation.as_deref(),
-            "variant",
-        );
-    }
     if count == 0 {
         body.push_str("<p class=\"empty\">This module has no declarations.</p>");
-    } else {
-        body.insert_str(
-            body.find("<article id=").unwrap_or(body.len()),
-            &format!("<nav class=\"on-this-page\" aria-label=\"On this page\"><strong>On this page</strong><ul>{contents}</ul></nav>"),
-        );
     }
+    let body = format!(
+        "<div class=\"module-layout\"><nav id=\"page-navigation\" class=\"on-this-page\" aria-label=\"On this page\"><a class=\"crumb\" href=\"../index.html\">← All modules</a><details open><summary>On this page</summary><a href=\"#module-overview\">Overview</a><label for=\"declaration-filter\">Find a declaration</label><input id=\"declaration-filter\" class=\"filter\" type=\"search\" placeholder=\"Name or kind…\" data-declaration-filter><p class=\"filter-status\" role=\"status\" data-declaration-status>{count} declarations</p><ul>{contents}</ul></details></nav><div class=\"module-content\">{body}</div></div>"
+    );
     page(
         &format!("{} — Foster documentation", module.name),
         &format!(
@@ -219,6 +285,10 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
         &body,
         "../style.css",
     )
+}
+
+fn visible_type(public: bool, documentation: Option<&str>) -> bool {
+    public || documentation.is_some_and(|docs| !docs.trim().is_empty())
 }
 
 fn provided_types(compilation: &Compilation, module_id: ModuleId) -> String {
@@ -420,7 +490,7 @@ fn constant_signature(compilation: &Compilation, id: ConstantId) -> String {
 fn contents_entry(contents: &mut String, anchor: &str, name: &str, kind: &str) {
     let _ = write!(
         contents,
-        "<li><a href=\"#{}\">{} <small>{kind}</small></a></li>",
+        "<li data-declaration><a href=\"#{}\">{} <small>{kind}</small></a></li>",
         escape(anchor),
         escape(name)
     );
@@ -449,7 +519,9 @@ fn declaration(
     } else {
         body.push_str("<p class=\"empty\">No documentation provided.</p>");
     }
-    body.push_str("</article>");
+    body.push_str(
+        "<a class=\"back-to-navigation\" href=\"#page-navigation\">↑ On this page</a></article>",
+    );
 }
 
 fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
@@ -690,7 +762,7 @@ fn squared(values: &[String]) -> String {
 
 fn page(title: &str, heading: &str, body: &str, stylesheet: &str) -> String {
     format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{stylesheet}\"></head><body><header>{heading}</header><main>{body}</main></body></html>",
+        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{stylesheet}\"></head><body><a class=\"skip-link\" href=\"#main-content\">Skip to content</a><header>{heading}</header><main id=\"main-content\" tabindex=\"-1\">{body}</main>{SCRIPT}</body></html>",
         escape(title)
     )
 }
@@ -737,6 +809,65 @@ mod tests {
         let rendered = markdown("- first\n- second\n\n**important**");
         assert!(rendered.contains("<ul>"));
         assert!(rendered.contains("<strong>important</strong>"));
+    }
+
+    #[test]
+    fn site_omits_undocumented_private_types() {
+        let compilation = crate::compile(
+            r#"
+type HiddenRecord = { value: Int }
+enum HiddenEnum = Value
+type HiddenAlias = Int
+///
+type BlankRecord = { value: Int }
+/**   */
+enum BlankEnum = Value
+/// A documented private record.
+type DocumentedRecord = { value: Int }
+/// A documented private enum.
+enum DocumentedEnum = Value
+/// A documented private alias.
+type DocumentedAlias = Int
+pub type PublicRecord = { value: Int }
+pub enum PublicEnum = Value
+pub type PublicAlias = Int
+func main() -> Int { 0 }
+"#,
+        )
+        .unwrap();
+        let site = site(&compilation);
+        let html = &site.modules[0].html;
+
+        for name in [
+            "HiddenRecord",
+            "HiddenEnum",
+            "HiddenAlias",
+            "BlankRecord",
+            "BlankEnum",
+        ] {
+            assert!(!html.contains(name), "unexpected private type: {name}");
+        }
+        for name in [
+            "DocumentedRecord",
+            "DocumentedEnum",
+            "DocumentedAlias",
+            "PublicRecord",
+            "PublicEnum",
+            "PublicAlias",
+        ] {
+            assert!(
+                html.contains(&format!("<article id=\"{name}\"")),
+                "missing type: {name}"
+            );
+            assert!(
+                html.contains(&format!("href=\"#{name}\"")),
+                "missing navigation: {name}"
+            );
+        }
+        assert_eq!(site.declaration_count, 7);
+        assert!(site.index.contains("<span>7 declarations</span>"));
+        assert!(site.index.contains("<small>7 declarations</small>"));
+        assert!(html.contains("<p>7 declarations</p>"));
     }
 
     #[test]

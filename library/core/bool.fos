@@ -1,4 +1,4 @@
-//! Boolean queries and conditional values.
+//! `Bool`ean queries and conditional values.
 //!
 //! Use the language's short-circuit operators for conditional evaluation. Method
 //! arguments are evaluated before a call, including values passed to conditional helpers.

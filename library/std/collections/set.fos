@@ -1,8 +1,8 @@
 //! Unique-value contracts and insertion-ordered list sets.
 //!
-//! Set factories construct ListSet. Equality determines membership; adding an
+//! `Set` factories construct `ListSet`. `Equality` determines membership; adding an
 //! existing value does not create a duplicate. Use std.collections.hash_set for
-//! hashed membership. Iteration follows insertion order for ListSet.
+//! hashed membership. Iteration follows insertion order for `ListSet`.
 
 import std.collections
 import std.iter

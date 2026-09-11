@@ -1,8 +1,8 @@
 //! Random-source contracts and unbiased integer sampling.
 //!
-//! Range bounds are half-open. Invalid ranges and source failures return RandomError.
+//! `Range` bounds are half-open. Invalid ranges and source failures return `RandomError`.
 //! The requested width must fit the source's advertised range. Use seeded generators
-//! for reproducibility and SystemRandom for operating-system entropy.
+//! for reproducibility and `SystemRandom` for operating-system entropy.
 
 import core.bytes
 import core.result

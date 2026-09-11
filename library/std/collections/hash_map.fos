@@ -1,6 +1,6 @@
 //! Hash-based key-value storage with caller-supplied hashing.
 //!
-//! Equal keys must have equal hashes, and hash results must remain stable while
+//! `Equal` keys must have equal hashes, and hash results must remain stable while
 //! keys are stored. Queries have expected constant-time bucket lookup and linear
 //! worst-case lookup. Iteration order is unspecified. get consumes the whole map;
 //! use contains_key? for a membership query that preserves it.

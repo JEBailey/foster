@@ -1,7 +1,7 @@
 //! UTC offsets, fixed zones, and explicit local-time resolution.
 //!
-//! An offset is measured in seconds east of UTC. TimeZone implementations resolve
-//! local values as unique, ambiguous, or skipped; choose a Disambiguation policy
+//! An offset is measured in seconds east of UTC. `TimeZone` implementations resolve
+//! local values as unique, ambiguous, or skipped; choose a `Disambiguation` policy
 //! when selecting an instant. Fixed-offset support does not supply an IANA zone database.
 
 import core.ordering

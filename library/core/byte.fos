@@ -1,6 +1,6 @@
 //! Unsigned eight-bit values and checked integer conversion.
 //!
-//! Use Byte.from when input may be outside 0..255. Byte.unchecked is intended
+//! Use `Byte`.from when input may be outside 0..255. `Byte`.unchecked is intended
 //! for values whose range has already been established; invalid input is a runtime error.
 
 import core.result

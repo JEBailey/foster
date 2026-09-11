@@ -1,6 +1,6 @@
 //! Operating-system entropy for random bytes and text tokens.
 //!
-//! Functions return RandomError when the request is invalid or entropy is unavailable.
+//! Functions return `RandomError` when the request is invalid or entropy is unavailable.
 //! Hex tokens encode a requested byte count; URL-safe tokens use a requested character
 //! count. These lengths have different meanings and are documented per operation.
 
@@ -46,12 +46,16 @@ pub func random_bytes(count: Int) -> Result<Bytes, RandomError> {
 }
 
 /// Returns a lowercase hexadecimal security token containing `byte_count` random bytes.
+/// The result has `2 * byte_count` characters. Accepts `0..1048576`, inclusive;
+/// invalid sizes and unavailable entropy return `RandomError`.
 pub func token_hex(byte_count: Int) -> Result<String, RandomError> {
     let entropy = try random_bytes(byte_count)
     Result.Ok(entropy.hex())
 }
 
 /// Returns a URL-safe token with exactly `length` uniformly selected ASCII characters.
+/// Uses `A-Z`, `a-z`, `0-9`, `-`, and `_`, without padding. Accepts `0..4096`,
+/// inclusive; zero returns an empty string. Invalid sizes or entropy failures return `RandomError`.
 pub func token(length: Int) -> Result<String, RandomError> {
     return failure("token", length, "token length must not be negative") if length < 0
     return failure("token", length, "token length must not exceed 4096") if length > 4096

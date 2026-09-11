@@ -1,7 +1,7 @@
-//! Ordered homogeneous collections and eager collection algorithms.
+//! `Ordered` homogeneous collections and eager collection algorithms.
 //!
 //! Indexes are zero-based. at distinguishes out-of-bounds access from an element
-//! that cannot be copied; get, first, and last collapse both cases to None.
+//! that cannot be copied; get, first, and last collapse both cases to `None`.
 //! Borrowing reads preserve the list. Consuming updates return the resulting list.
 //! Use std.iter adaptors when intermediate collection allocation is unnecessary.
 
