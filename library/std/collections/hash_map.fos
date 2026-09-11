@@ -1,4 +1,9 @@
-//! Hash tables implemented in Foster with separate chaining and automatic growth.
+//! Hash-based key-value storage with caller-supplied hashing.
+//!
+//! Equal keys must have equal hashes, and hash results must remain stable while
+//! keys are stored. Queries have expected constant-time bucket lookup and linear
+//! worst-case lookup. Iteration order is unspecified. get consumes the whole map;
+//! use contains_key? for a membership query that preserves it.
 
 import core.option
 import std.collections
@@ -36,7 +41,8 @@ impl HashMap {
         find_index(self.buckets[bucket], key) >= 0
     }
 
-    /// Consumes the table and returns the matching value, if any.
+    /// Consumes the entire table and returns the matching value, or `None`.
+    /// All other entries are released. Use `contains_key?` for a borrowing membership test.
     pub func get<K, V>(self: HashMap<K, V>, key: K) -> Option<V> [consume self] {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
         let index = find_index(self.buckets[bucket], key)
@@ -46,7 +52,9 @@ impl HashMap {
         }
     }
 
-    /// Inserts or replaces a key and grows above a three-quarter load factor.
+    /// Consumes the table, key, and value and returns the updated table.
+    /// Replaces an equal key's entry without changing length; new keys may trigger
+    /// rehashing. Replaced entries are released. Iteration order is not preserved.
     pub func put<K, V>(self: HashMap<K, V>, key: K, value: V) -> HashMap<K, V> [mut self(size, buckets.items), consume self, consume key, consume value] {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
         let index = find_index(self.buckets[bucket], key)

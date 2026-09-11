@@ -326,6 +326,7 @@ impl PackageHir {
             hir.modules[module].imports_with_spans = program
                 .imports
                 .iter()
+                .filter(|import| import.alias.as_deref() != Some(ast::ITERATION_OPTION_MODULE))
                 .map(|import| {
                     let name = import.alias.clone().unwrap_or_else(|| {
                         import.path.last().expect("imports have a path").clone()
@@ -457,6 +458,9 @@ fn resolve_imports(
 ) -> Result<HashMap<String, ModuleId>, FosterError> {
     let mut imports = HashMap::new();
     for import in &program.imports {
+        if import.alias.as_deref() == Some(ast::ITERATION_OPTION_MODULE) {
+            continue;
+        }
         let path = import.path.join(".");
         let module = hir.module_named(&path).ok_or_else(|| {
             FosterError::runtime(format!(

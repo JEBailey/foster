@@ -1,4 +1,9 @@
 //! Exact instants, elapsed durations, intervals, and injectable clocks.
+//!
+//! Use a monotonic ContinuousClock for elapsed-time measurement and a wall clock
+//! for calendar timestamps. Duration and Instant separate seconds from nanoseconds;
+//! converting a large value to a single Int can overflow. Use std.time.civil for
+//! calendar arithmetic and std.time.zone for local-time resolution.
 
 import core.ordering
 import core.result

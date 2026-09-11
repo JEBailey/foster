@@ -1,4 +1,7 @@
-//! Cleanup at the end of an owned value's lifetime.
+//! The contract for cleanup when ownership ends.
+//!
+//! Implement deinit to release resources owned by a value. Ownership transfer moves
+//! the cleanup responsibility with the value; deinit is not a copying operation.
 
 /// The compiler calls `deinit` once, before cleaning up the value's fields.
 pub type Drop = {

@@ -1,4 +1,25 @@
 //! Checkpointable readers over stable collection snapshots.
+//!
+//! Cursor<T> extends Iterator<T>; T is the item type, not the source type.
+//! ListCursor offsets count elements and BytesCursor offsets count bytes.
+//! StringCursor, provided by core.string, yields scalars but uses UTF-8 byte offsets.
+//! Checkpoints carry no source identity: callers must use the same source snapshot.
+//! restore validates bounds (and text boundaries); a failed restore does not move.
+//! span copies a half-open region without moving the cursor.
+//!
+//! ```foster
+//! import core.string
+//! import core.option
+//! func main() -> Int {
+//!     let reader = StringCursor.from("Aλ🙂")
+//!     assert(reader.next() == Option.Some('A'))
+//!     let start = reader.checkpoint()
+//!     assert(reader.next() == Option.Some('λ'))
+//!     assert(reader.text_span(start, reader.checkpoint()) == Option.Some("λ"))
+//!     assert(reader.restore(start))
+//!     0
+//! }
+//! ```
 import core.option
 import core.result
 import core.list
@@ -7,7 +28,8 @@ import core.byte
 import std.iter
 
 /// A reader whose checkpoints are offsets in its source (bytes for UTF-8 text).
-/// Checkpoints must come from the same source snapshot. Invalid offsets are rejected.
+/// Checkpoints must come from the same source snapshot; this is a caller obligation.
+/// Validation rejects invalid offsets but cannot detect an offset from another source.
 pub type Cursor<T> = & Iterator<T> & {
     /// Reads the current item without advancing.
     pub func peek(self) -> Option<T> [read self]
@@ -15,7 +37,8 @@ pub type Cursor<T> = & Iterator<T> & {
     pub func checkpoint(self) -> Int [read self]
     /// Restores a valid source offset, leaving the position unchanged on failure.
     pub func restore(self, position: Int) -> Bool [mut self]
-    /// Copies a valid half-open source region, or returns None for invalid bounds.
+    /// Copies `[start, end)` without changing the position; invalid bounds return `None`.
+    /// Bounds use the source's offset unit, which can differ from the yielded item type.
     pub func span(self, start: Int, end: Int) -> Option<List<T>> [read self]
 }
 
@@ -46,7 +69,8 @@ impl ListCursor {
     }
     /// Returns the current element offset.
     pub func checkpoint<T>(self: ListCursor<T>) -> Int { self.offset }
-    /// Restores an in-bounds element offset.
+    /// Restores an element offset in `[0, length]`, including the exhausted position.
+    /// Returns false without moving for an out-of-range offset.
     pub func restore<T>(self: ListCursor<T>, position: Int) -> Bool {
         return false if position < 0 || position > self.values.length
         self.offset = position
@@ -80,7 +104,8 @@ impl BytesCursor {
     }
     /// Returns the byte offset.
     pub func checkpoint(self: BytesCursor) -> Int { self.offset }
-    /// Restores an in-bounds byte offset.
+    /// Restores a byte offset in `[0, length]`, including the exhausted position.
+    /// Returns false without moving for an out-of-range offset.
     pub func restore(self: BytesCursor, position: Int) -> Bool {
         return false if position < 0 || position > self.data.length
         self.offset = position

@@ -1,4 +1,7 @@
-//! Persistent first-in, first-out queues backed by Foster lists.
+//! An owned first-in, first-out collection.
+//!
+//! push adds at the back and pop removes from the front. Iteration follows
+//! the same front-to-back order. Updates transfer ownership to the returned queue.
 
 import std.collections
 import std.iter

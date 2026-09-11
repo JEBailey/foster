@@ -1,4 +1,8 @@
-//! Unicode scalar construction, classification, and UTF-8 encoding.
+//! Unicode scalar construction, classification, and case mapping.
+//!
+//! A CodePoint represents one Unicode scalar, not a grapheme cluster. Classification
+//! uses Unicode 17.0.0. Full case mappings return String because one scalar can expand;
+//! simple mappings return one CodePoint. Casing is locale-independent.
 
 import core.option
 import core.string

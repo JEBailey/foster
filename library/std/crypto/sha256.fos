@@ -1,4 +1,16 @@
-//! SHA-256 digests of binary data, implemented with portable Foster integer arithmetic.
+//! SHA-256 digests of immutable binary data.
+//!
+//! digest preserves its input and returns 64 lowercase hexadecimal characters.
+//! Pass a string's UTF-8 bytes to hash text. This is a one-shot digest API;
+//! it does not provide incremental hashing, HMAC, or password hashing.
+//!
+//! ```foster
+//! import std.crypto.sha256
+//! func main() -> Int {
+//!     assert(sha256::digest("abc".bytes) == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+//!     0
+//! }
+//! ```
 // Functions and constants: https://www.rfc-editor.org/rfc/rfc6234#section-5
 
 import core.bytes

@@ -1,4 +1,9 @@
-//! Generic byte and text stream contracts with complete read/write helpers.
+//! Binary and text stream contracts with complete-transfer helpers.
+//!
+//! Readers report EOF with an empty value. Writers may make partial progress.
+//! read_all, write_all, and copy propagate the first error without rolling back
+//! earlier I/O. write_all and copy flush on success. Implementations must honor
+//! the progress requirements in Reader and Writer to avoid nonterminating retries.
 
 import core.bytes.buffer as byte_buffer
 import core.bytes
@@ -16,7 +21,8 @@ pub type IoError = {
 /// `read` returns at most `maximum` bytes. Empty bytes indicate clean end-of-stream.
 /// A successful read of a non-empty stream must return at least one byte.
 pub type Reader<E> = {
-    /// Reads up to `maximum` bytes, returning empty bytes at end-of-stream.
+    /// Reads at most `maximum` bytes; callers supply a positive maximum.
+    /// For that positive request, empty bytes mean EOF and a nonempty result means progress.
     pub func read(self, maximum: Int) -> Result<Bytes, E> [mut self]
 }
 
@@ -26,7 +32,8 @@ pub type Reader<E> = {
 /// of non-empty bytes must accept at least one byte. `flush` makes buffered output visible to the
 /// destination.
 pub type Writer<E> = {
-    /// Writes a non-empty prefix of `contents` and returns the accepted byte count.
+    /// Writes a prefix of `contents` and returns its byte count.
+    /// For nonempty input, success must report `1..contents.length`; empty input may report zero.
     pub func write(self, contents: Bytes) -> Result<Int, E> [mut self]
     /// Makes buffered output visible to the destination.
     pub func flush(self) -> Result<(), E> [mut self]
@@ -53,13 +60,17 @@ pub type TextWriter<E> = {
 /// A bidirectional binary stream combining the `Reader<E>` and `Writer<E>` contracts.
 pub type Duplex<E> = & Reader<E> & Writer<E> & {}
 
-/// Reads a stream through EOF into compact immutable bytes.
+/// Reads through EOF and returns all bytes, retaining the reader for further use.
+/// Propagates the first read error; already consumed bytes are not restored.
+/// Memory use grows with the input size, so the stream must eventually terminate.
 pub func read_all<E>(reader: Reader<E>) -> Result<Bytes, E> [mut reader] {
     let buffer = ByteBuffer.empty()
     read_remaining(reader, move buffer)
 }
 
-/// Writes every byte, retrying successful partial writes, and then flushes the destination.
+/// Writes all bytes, retrying partial writes, then flushes once.
+/// Empty input still flushes. A write or flush error is returned unchanged; bytes
+/// already accepted by the destination are not rolled back.
 pub func write_all<E>(writer: Writer<E>, contents: Bytes) -> Result<(), E> [mut writer] {
     branch {
         contents.empty? -> writer.flush()
@@ -67,7 +78,9 @@ pub func write_all<E>(writer: Writer<E>, contents: Bytes) -> Result<(), E> [mut 
     }
 }
 
-/// Copies bytes through EOF and returns the number written.
+/// Copies through EOF, flushes the writer, and returns the total byte count.
+/// Reads chunks of at most 8192 bytes and retries partial writes. The first read,
+/// write, or flush error ends the operation; completed I/O is not rolled back.
 pub func copy<E>(reader: Reader<E>, writer: Writer<E>) -> Result<Int, E> [mut reader, mut writer] {
     copy_remaining(reader, writer, 0)
 }

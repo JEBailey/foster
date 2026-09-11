@@ -1,4 +1,8 @@
-//! Typed probability distributions sampled from explicit random sources.
+//! Probability distributions over injectable random sources.
+//!
+//! Operations validate their parameters and return RandomError on invalid requests
+//! or source failure. The _with variants use caller-owned state, allowing repeatable
+//! sampling with a seeded source.
 
 import core.int
 import core.result

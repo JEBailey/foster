@@ -1,4 +1,9 @@
-//! Stateful iterators, consumers, and lazy pipeline construction.
+//! Stateful iteration, short-circuiting consumers, and lazy pipelines.
+//!
+//! Iterable creates independent iterators; Iterator tracks progress through one
+//! traversal. Consumers operate on the remaining items and advance the receiver.
+//! find and Boolean queries stop once their answer is known. Adaptors take ownership
+//! of their input iterator and defer work until next is called.
 
 import core.functions
 import core.option

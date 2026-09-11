@@ -1,4 +1,8 @@
-//! Outcomes of remote execution, distinct from method domain errors.
+//! Typed failures from remote execution.
+//!
+//! RemoteError carries the remote failure information exposed to callers. Shutdown
+//! is a distinct reserved outcome, allowing callers to distinguish termination
+//! from a successful remote result.
 
 /// A worker execution failure, or the reserved outcome for owner-driven cancellation.
 pub enum RemoteError = Failed(String)

@@ -1,4 +1,7 @@
-//! Explicit creation of an independent owned value.
+//! The contract for making an independent value without consuming its source.
+//!
+//! Copy describes observable independence, not a requirement to duplicate every
+//! allocation. Implementations may share immutable backing storage.
 
 /// A value that can produce another value of its concrete type without consuming itself.
 pub type Copy = {

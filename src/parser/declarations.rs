@@ -47,6 +47,7 @@ impl Parser {
             });
         }
 
+        self.install_iteration_import(&mut program.imports);
         RecoveringParse {
             program,
             diagnostics,
@@ -177,6 +178,7 @@ impl Parser {
         if documentation.is_some() {
             return Err(self.error("documentation comment must precede a declaration"));
         }
+        self.install_iteration_import(&mut imports);
         Ok(Program {
             documentation: module_documentation,
             imports,
@@ -1043,6 +1045,9 @@ impl Parser {
                 body.push(statement.clone(), span.clone());
             }
             return Ok(Stmt::Loop { body });
+        }
+        if self.take(&TokenKind::For) {
+            return self.for_loop();
         }
         if self.take(&TokenKind::Break) {
             return Ok(Stmt::Break {

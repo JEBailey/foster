@@ -1,4 +1,8 @@
-//! Associative collection contracts and an insertion-ordered list-backed implementation.
+//! Associative collection contracts and insertion-ordered list maps.
+//!
+//! Map<K, V> defines the shared API. Map.empty constructs ListMap, whose key searches
+//! are linear. Use std.collections.hash_map for hashed lookup. get consumes the
+//! map; contains_key? borrows it. put consumes and returns the updated collection.
 
 import core.option
 import std.collections
@@ -93,7 +97,8 @@ impl ListMap {
         self.entries.empty?
     }
 
-    /// Creates an independent iterator over entries in storage order.
+    /// Creates an independent iterator in insertion order.
+    /// Replacing an existing key does not move its entry to the end.
     pub func iterator<K, V>(self: ListMap<K, V>) -> Iterator<Entry<K, V>> {
         self.entries.iterator()
     }

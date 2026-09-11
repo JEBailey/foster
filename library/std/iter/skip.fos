@@ -1,4 +1,7 @@
-//! Lazy omission of an iterator prefix.
+//! Lazy removal of an iterator prefix.
+//!
+//! skip owns its source and discards the requested prefix when iteration begins.
+//! Nonpositive counts discard nothing. Skipping beyond the source exhausts it.
 
 import core.option
 import std.iter

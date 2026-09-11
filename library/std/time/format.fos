@@ -1,4 +1,8 @@
-//! ISO-8601 and RFC-3339 parsing and formatting for Foster time values.
+//! Portable ISO-8601 and RFC-3339 time conversion.
+//!
+//! Parsing returns typed failures for malformed or invalid values. Formatting is
+//! locale-independent. Use exact, civil, and offset-aware types according to whether
+//! the text identifies an instant or only calendar fields.
 
 import core.code_point
 import core.int

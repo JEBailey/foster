@@ -2,6 +2,15 @@
 use foster::{native, vm};
 
 #[test]
+fn for_loops_agree_in_both_backends() {
+    check(
+        "for-loops",
+        include_str!("fixtures/programs/for_loops.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn while_loops_agree_in_both_backends() {
     check(
         "while-loops",

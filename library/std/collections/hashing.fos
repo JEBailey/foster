@@ -1,4 +1,8 @@
-//! Deterministic hash functions for Foster hash collections.
+//! Deterministic hashes for integers, text, and bytes.
+//!
+//! These functions are intended for hash collections. Collisions are possible;
+//! compare values for equality rather than treating a hash as an identity.
+//! They are not cryptographic digest functions.
 
 import core.bytes as binary
 import core.string

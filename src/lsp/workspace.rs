@@ -465,7 +465,9 @@ impl Workspace {
         } else {
             if let Some(function) = function_at(&compilation, module_id, offset) {
                 for (local, definition) in compilation.hir.locals.iter().filter(|(_, local)| {
-                    local.function == function && local.kind != crate::hir::LocalKind::CapturedValue
+                    local.function == function
+                        && local.kind != crate::hir::LocalKind::CapturedValue
+                        && !local.name.starts_with('$')
                 }) {
                     let detail = compilation
                         .types
@@ -493,8 +495,8 @@ impl Workspace {
             }
             for keyword in [
                 "assert", "await", "branch", "break", "continue", "copy", "false", "func", "impl",
-                "import", "let", "loop", "while", "move", "not", "pub", "ref", "remote", "return",
-                "true", "type", "enum", "try",
+                "import", "let", "loop", "while", "for", "in", "move", "not", "pub", "ref",
+                "remote", "return", "true", "type", "enum", "try",
             ] {
                 insert_completion(&mut items, keyword, CompletionItemKind::KEYWORD, None);
             }

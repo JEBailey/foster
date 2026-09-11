@@ -1,4 +1,8 @@
-//! Portable path inspection, composition, and normalization.
+//! Host-filesystem paths, lexical composition, and canonicalization.
+//!
+//! Path preserves the supplied spelling. Joining and component inspection use
+//! host-platform path rules and do not require a path to exist. canonical performs
+//! filesystem I/O and returns IoError when resolution fails. A Path is not a URI.
 
 import core.option
 import core.result
@@ -40,12 +44,14 @@ pub type Path = & ResourceIdentifier & {
     pub func file_name(self) -> Option<String> [read self.value]
     /// Returns this path's final extension without its separator.
     pub func extension(self) -> Option<String> [read self.value]
-    /// Resolves this path to an absolute canonical path.
+    /// Resolves this path through the filesystem to an absolute canonical path.
+    /// The path must be resolvable; missing paths and host failures return `IoError`.
+    /// Use lexical composition when the destination does not exist yet.
     pub func canonical(self) -> Result<Path, IoError> [read self.value]
 }
 
 impl Path {
-    /// Wraps host path text in a typed path value.
+    /// Wraps host path text without validating existence or accessing the filesystem.
     pub func from(value: String) -> Path { Path { value } }
 
     /// Returns the host path text.
@@ -79,7 +85,9 @@ impl Path {
         optional_component(PathHost.extension(self.value))
     }
 
-    /// Resolves this path to an absolute canonical path.
+    /// Resolves this path through the filesystem to an absolute canonical path.
+    /// The path must be resolvable; missing paths and host failures return `IoError`.
+    /// Use lexical composition when the destination does not exist yet.
     pub func canonical(self: Path) -> Result<Path, IoError> {
         path_result(PathHost.canonicalize(self.value))
     }

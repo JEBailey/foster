@@ -1,4 +1,8 @@
-//! Generic algorithms over immutable indexed sequences.
+//! Eager algorithms over the shared Sequence<T> interface.
+//!
+//! These operations accept sequence-compatible values such as lists and strings.
+//! Collection-producing operations return lists. Use std.iter for lazy pipelines;
+//! use receiver methods when working with a concrete List or String.
 
 import core.functions
 import core.option

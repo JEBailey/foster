@@ -1,4 +1,7 @@
-//! Checked byte construction and integer conversion.
+//! Unsigned eight-bit values and checked integer conversion.
+//!
+//! Use Byte.from when input may be outside 0..255. Byte.unchecked is intended
+//! for values whose range has already been established; invalid input is a runtime error.
 
 import core.result
 
@@ -11,7 +14,8 @@ impl Byte {
         value >= 0 && value <= 255
     }
 
-    /// Constructs a byte without repeating range validation.
+    /// Constructs a byte from a value known to be in the inclusive range `0..255`.
+    /// Invalid input fails at runtime; use `from` to receive a typed `ByteError`.
     pub func unchecked(value: Int) -> Byte = intrinsic("byte.unchecked")
 
     /// Converts an integer in the inclusive range 0 through 255 to `Byte`.

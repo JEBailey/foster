@@ -1,4 +1,7 @@
-//! Lazy limitation of an iterator to a maximum number of values.
+//! A lazy upper bound on the number of yielded items.
+//!
+//! take owns its source. Once the requested count is reached it returns None
+//! without requesting another source item. Nonpositive counts yield no items.
 
 import core.option
 import std.iter

@@ -1,4 +1,8 @@
-//! Typed resource identifiers and independent compile-time capability contracts.
+//! Resource identities separated from access capabilities.
+//!
+//! A resource identifier names a location; constructing one does not perform I/O.
+//! Readable and writable structural contracts describe the operations supported by
+//! a provider. Use std.fs or std.net.tcp for concrete host resources.
 
 import core.bytes
 import core.result

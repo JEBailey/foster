@@ -1,4 +1,8 @@
-//! Floating-point arithmetic helpers and totalized comparison utilities.
+//! Binary64 formatting, arithmetic helpers, and comparison-based queries.
+//!
+//! These helpers use ordinary floating-point comparisons. In particular, compare
+//! returns Equal when neither operand compares less or greater, including NaN;
+//! it is not an IEEE total ordering. See each method's NaN and signed-zero behavior.
 
 import core.ordering
 
@@ -16,7 +20,8 @@ impl Float {
     /// Formats a binary64 value as round-trippable decimal text.
     pub func as_string(self: Float) -> String { FloatHost.format(self) }
 
-    /// Returns the absolute value of `value`.
+    /// Negates `self` when it compares less than zero.
+    /// Preserves NaN and negative zero, which do not satisfy that comparison.
     pub func absolute(self: Float) -> Float {
         branch {
             self < 0.0 -> -self
@@ -24,7 +29,8 @@ impl Float {
         }
     }
 
-    /// Returns the smaller of `left` and `right`.
+    /// Returns `self` when `self <= right`, otherwise `right`.
+    /// An unordered comparison returns `right`; NaN handling is operand-order dependent.
     pub func minimum(self: Float, right: Float) -> Float {
         branch {
             self <= right -> self
@@ -32,7 +38,8 @@ impl Float {
         }
     }
 
-    /// Returns the larger of `left` and `right`.
+    /// Returns `self` when `self >= right`, otherwise `right`.
+    /// An unordered comparison returns `right`; NaN handling is operand-order dependent.
     pub func maximum(self: Float, right: Float) -> Float {
         branch {
             self >= right -> self
@@ -40,12 +47,15 @@ impl Float {
         }
     }
 
-    /// Restricts `value` to the inclusive range from `lower` to `upper`.
+    /// Applies `maximum(lower).minimum(upper)` to `self`.
+    /// Use ordered bounds with `lower <= upper` for interval clamping.
+    /// NaN and reversed bounds are not rejected.
     pub func clamp(self: Float, lower: Float, upper: Float) -> Float {
         self.maximum(lower).minimum(upper)
     }
 
-    /// Returns `-1`, `0`, or `1` according to the sign of `value`.
+    /// Returns `-1` for a negative value and `1` for a positive value.
+    /// Returns `0` for either signed zero or NaN.
     pub func sign(self: Float) -> Int {
         branch {
             self < 0.0 -> -1
@@ -54,7 +64,9 @@ impl Float {
         }
     }
 
-    /// Compares two floating-point values and returns their ordering.
+    /// Returns `Less` or `Greater` when the corresponding comparison succeeds.
+    /// Otherwise returns `Equal`, including comparisons involving NaN.
+    /// This method is not an IEEE total ordering and does not imply equality.
     pub func compare(self: Float, right: Float) -> Ordering {
         branch {
             self < right -> Ordering.Less
@@ -63,7 +75,8 @@ impl Float {
         }
     }
 
-    /// Returns whether `value` lies in the inclusive range from `lower` to `upper`.
+    /// Returns false when `self < lower`; otherwise evaluates `self <= upper`.
+    /// Use ordered, non-NaN bounds for an inclusive interval membership test.
     pub func between?(self: Float, lower: Float, upper: Float) -> Bool {
         branch {
             self < lower -> false

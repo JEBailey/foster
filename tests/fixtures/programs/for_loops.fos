@@ -1,0 +1,63 @@
+import std.iter
+
+type Counter = { calls: Int }
+func values[g: group Counter](counter: ref[g] Counter) -> List<Int> {
+    counter.calls = counter.calls + 1
+    [1, 2, 3]
+}
+
+type Bag = { values: List<Int> }
+impl Bag {
+    func iterator(self: Bag) -> Iterator<Int> { self.values.iterator() }
+}
+
+func empty() -> List<Int> { [] }
+func find() -> Int {
+    for value in [10, 42, 99] {
+        return value if value == 42
+    }
+    0
+}
+
+func main() -> Int {
+    for item in empty() { assert(false, "empty collection entered the body") }
+    let counter = Counter { calls: 0 }
+    let sum = 0
+    for value in values(ref counter) {
+        sum = sum + value
+    }
+    assert(sum == 6)
+    assert(counter.calls == 1)
+
+    let value = 100
+    let visits = 0
+    for value in [1, 2, 3] {
+        continue if value == 1
+        for value in [10, 20, 30] {
+            visits = visits + 1
+            break
+        }
+    }
+    assert(visits == 2)
+    assert(value == 100)
+
+    let source = [1, 2, 3]
+    let count = 0
+    for item in source {
+        count = count + 1
+        assert(count <= 3, "iteration did not preserve its snapshot")
+        source.push(99)
+        item
+    }
+    assert(count == 3)
+    assert(source.length == 6)
+
+    let bag = Bag { values: [4, 5] }
+    for item in bag { sum = sum + item }
+    assert(sum == 15)
+
+    let characters = 0
+    for _ in "a😀" { characters = characters + 1 }
+    assert(characters == 2)
+    find()
+}

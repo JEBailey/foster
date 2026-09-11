@@ -1,4 +1,8 @@
-//! Shared contracts for repeatable, sized collections.
+//! Shared contracts for sized, repeatable collections.
+//!
+//! Collection<T> describes length, emptiness, and independent iteration without
+//! choosing a storage representation. Use concrete collection types for construction
+//! and structural contracts for algorithms that accept several implementations.
 
 import std.iter
 

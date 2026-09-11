@@ -1,4 +1,8 @@
-//! Mutable byte accumulation implemented over Foster's lower-level list storage.
+//! Mutable byte construction with immutable snapshots.
+//!
+//! Append with push or extend. snapshot preserves the buffer; freeze consumes it
+//! and returns Bytes. Capacity and reservation APIs are allocation hints, not
+//! guarantees about reserved storage. Negative sizes fail an assertion.
 
 import core.bytes
 import core.list
@@ -17,9 +21,11 @@ pub type ByteBuffer = {
     pub func extend(self, values: Bytes) -> () [reshape self.value.items]
     /// Removes every buffered byte.
     pub func clear(self) -> () [mut self.value]
-    /// Keeps at most the first `length` buffered bytes.
+    /// Keeps at most the first `length` bytes; a larger length leaves the buffer unchanged.
+    /// Asserts if `length` is negative.
     pub func truncate(self, length: Int) -> () [mut self.value]
-    /// Accepts an allocation hint without exposing storage capacity as semantics.
+    /// Accepts a nonnegative allocation hint; negative values fail an assertion.
+    /// The current implementation does not reserve storage in advance.
     pub func reserve(self, additional: Int) -> () [read additional]
     /// Consumes the buffer and packs its values into immutable bytes.
     pub func freeze(self) -> Bytes [consume self]
@@ -48,7 +54,8 @@ impl ByteBuffer {
         ByteBuffer { value: [] }
     }
 
-    /// Creates an empty buffer with an allocation hint.
+    /// Creates an empty buffer with a nonnegative allocation hint.
+    /// Asserts for a negative capacity; no allocation size is guaranteed.
     pub func with_capacity(capacity: Int) -> ByteBuffer {
         assert(capacity >= 0, "ByteBuffer capacity cannot be negative")
         ByteBuffer.empty()
@@ -77,14 +84,16 @@ impl ByteBuffer {
         ()
     }
 
-    /// Keeps at most the first `length` buffered bytes.
+    /// Keeps at most the first `length` bytes; a larger length leaves the buffer unchanged.
+    /// Asserts if `length` is negative.
     pub func truncate(self: ByteBuffer, length: Int) -> () [mut self.value] {
         assert(length >= 0, "truncate length cannot be negative")
         self.value = self.value.take(length)
         ()
     }
 
-    /// Accepts an allocation hint without exposing storage capacity as semantics.
+    /// Accepts a nonnegative allocation hint; negative values fail an assertion.
+    /// The current implementation does not reserve storage in advance.
     pub func reserve(self: ByteBuffer, additional: Int) -> () {
         assert(additional >= 0, "reserve amount cannot be negative")
         ()

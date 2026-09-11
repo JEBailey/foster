@@ -1,4 +1,8 @@
-//! Immutable binary data, encoding conversions, and byte-oriented queries.
+//! Immutable binary data, hexadecimal encoding, and UTF-8 validation.
+//!
+//! Lengths, indexes, and slice bounds are measured in bytes. Bytes may contain any
+//! octets; use String.from_utf8 to validate and decode text. Slices are checked,
+//! half-open ranges and materialize a new byte value. Hex decoding returns HexError.
 
 import std.iter
 import core.byte
@@ -28,7 +32,8 @@ pub type Bytes = {
     pub func copy(self) -> self [read self]
     /// Concatenates two immutable byte sequences.
     pub func concat(self, other: Bytes) -> Bytes [read other, read self]
-    /// Returns bytes in the half-open range `start..end`.
+    /// Copies bytes in the half-open range `[start, end)`.
+    /// Asserts unless `0 <= start <= end <= length`; bounds are not clamped.
     pub func slice(self, start: Int, end: Int) -> Bytes [read end, read self, read start]
     /// Expands compact bytes into a Foster list.
     pub func list(self) -> List<Byte> [read self]
@@ -42,11 +47,11 @@ pub type Bytes = {
     pub func utf8_valid?(self) -> Bool [read self]
 
     // Required accessors supplied by the builtin storage implementation.
-    /// Reports whether the collection contains no elements.
+    /// Returns whether this byte sequence is empty.
     pub func empty?(self) -> Bool
-    /// Returns the number of elements.
+    /// Returns the number of bytes.
     pub func length(self) -> Int
-    /// Returns the first element; the collection must not be empty.
+    /// Returns the first byte; the sequence must not be empty.
     pub func head(self) -> Byte
     /// Returns the collection without its first element.
     pub func rest(self) -> Bytes
@@ -80,7 +85,9 @@ impl Bytes {
         BytesHost.from_list(move values)
     }
 
-    /// Decodes an even-length hexadecimal string.
+    /// Decodes pairs of ASCII hexadecimal digits, accepting uppercase and lowercase.
+    /// Empty input succeeds. Whitespace, prefixes such as `0x`, odd lengths, and
+    /// non-hexadecimal characters return `HexError`; offset counts Unicode scalars.
     pub func from_hex(value: String) -> Result<Bytes, HexError> {
         let characters = value.code_points()
         let output = []
@@ -113,7 +120,8 @@ impl Bytes {
         Bytes.from(move output)
     }
 
-    /// Returns bytes in the half-open range `start..end`.
+    /// Copies bytes in the half-open range `[start, end)`.
+    /// Asserts unless `0 <= start <= end <= length`; bounds are not clamped.
     pub func slice(self: Bytes, start: Int, end: Int) -> Bytes {
         assert(start >= 0 && end >= start && end <= self.length, "byte slice is out of bounds")
         let output = []

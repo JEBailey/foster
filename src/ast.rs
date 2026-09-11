@@ -1,3 +1,6 @@
+/// Compiler-only module alias used by desugared iteration; never a source import binding.
+pub(crate) const ITERATION_OPTION_MODULE: &str = "$for_option";
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub struct Program {
     pub documentation: Option<String>,

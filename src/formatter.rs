@@ -261,6 +261,19 @@ mod tests {
     }
 
     #[test]
+    fn formats_for_without_expanding_the_sugar() {
+        let expected = "func main() {\n    for item in [1, 2] {\n        // keep this comment\n        println(item)\n    }\n}\n";
+        assert_eq!(
+            format(
+                "func main() {\nfor item in [1, 2] {\n// keep this comment\nprintln(item)\n}\n}\n"
+            )
+            .unwrap(),
+            expected
+        );
+        assert_eq!(format(expected).unwrap(), expected);
+    }
+
+    #[test]
     fn formats_multiline_branch_arms() {
         assert_eq!(
             format("func main() -> Int {\nbranch {\ntrue -> {\nlet value = 42\nvalue\n}\n_ -> 0\n}\n}\n").unwrap(),

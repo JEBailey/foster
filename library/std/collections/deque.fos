@@ -1,4 +1,8 @@
-//! Persistent double-ended queues backed by Foster lists.
+//! An owned collection with access at both ends.
+//!
+//! Insert and remove at the front or back. Iteration runs from front to back.
+//! Operations use list-backed storage; the API does not promise constant-time
+//! insertion or removal at both ends.
 
 import std.collections
 import std.iter

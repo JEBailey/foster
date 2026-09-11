@@ -1,4 +1,9 @@
-//! ISO civil dates and times without an implied time zone or exact instant.
+//! ISO civil dates, times, calendar spans, and calendar contracts.
+//!
+//! Civil values represent calendar fields without a UTC offset. A calendar span
+//! can include months and days and is not an exact elapsed Duration. Checked
+//! constructors return CivilError for invalid fields. Use std.time.zone to
+//! resolve local civil values to exact instants.
 
 import core.ordering
 import core.result

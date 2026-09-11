@@ -1,4 +1,8 @@
-//! Integer arithmetic helpers, ordering, and range generation.
+//! Signed integer helpers, decimal formatting, and eager ranges.
+//!
+//! Ranges materialize a List<Int> and exclude the upper endpoint. Arithmetic uses
+//! Foster's Int operations; these helpers do not provide arbitrary-precision results.
+//! See individual methods for nonpositive exponents and division preconditions.
 
 import core.ordering
 
@@ -7,6 +11,7 @@ impl Int {
     pub func copy(self: Int) -> self [read self] { self }
 
     /// Returns the absolute value of this integer.
+    /// The signed minimum has no positive `Int` counterpart and must not be supplied.
     pub func absolute(self: Int) -> Int {
         branch {
             self < 0 -> -self
@@ -14,7 +19,7 @@ impl Int {
         }
     }
 
-    /// Returns the smaller of `left` and `right`.
+    /// Returns the smaller of `self` and `right`.
     pub func minimum(self: Int, right: Int) -> Int {
         branch {
             self <= right -> self
@@ -22,7 +27,7 @@ impl Int {
         }
     }
 
-    /// Returns the larger of `left` and `right`.
+    /// Returns the larger of `self` and `right`.
     pub func maximum(self: Int, right: Int) -> Int {
         branch {
             self >= right -> self
@@ -30,12 +35,13 @@ impl Int {
         }
     }
 
-    /// Restricts `value` to the inclusive range from `lower` to `upper`.
+    /// Restricts `self` to the inclusive range `[lower, upper]`.
+    /// Bounds are not validated; when `lower > upper`, the result is `upper`.
     pub func clamp(self: Int, lower: Int, upper: Int) -> Int {
         self.maximum(lower).minimum(upper)
     }
 
-    /// Returns `-1`, `0`, or `1` according to the sign of `value`.
+    /// Returns `-1`, `0`, or `1` according to the sign of `self`.
     pub func sign(self: Int) -> Int {
         branch {
             self < 0 -> -1
@@ -53,7 +59,7 @@ impl Int {
         }
     }
 
-    /// Returns whether `value` lies in the inclusive range from `lower` to `upper`.
+    /// Returns whether `self` lies in the inclusive range from `lower` to `upper`.
     pub func between?(self: Int, lower: Int, upper: Int) -> Bool {
         branch {
             self < lower -> false
@@ -61,27 +67,32 @@ impl Int {
         }
     }
 
-    /// Returns whether `value` is evenly divisible by two.
+    /// Returns whether `self` is evenly divisible by two.
     pub func even?(self: Int) -> Bool {
         self / 2 * 2 == self
     }
 
-    /// Returns whether `value` is not evenly divisible by two.
+    /// Returns whether `self` is not evenly divisible by two.
     pub func odd?(self: Int) -> Bool {
         self / 2 * 2 != self
     }
 
-    /// Raises `base` to a nonnegative integer `exponent`.
+    /// Raises `self` to `exponent` by repeated multiplication.
+    /// Returns `1` for zero or negative exponents, including `0.power(0)`.
+    /// The result must fit `Int`; this is not arbitrary-precision exponentiation.
     pub func power(self: Int, exponent: Int) -> Int {
         power_of(self, exponent)
     }
 
-    /// Returns the remainder after integer division by `divisor`.
+    /// Returns the remainder after division truncated toward zero.
+    /// A nonzero remainder has the dividend's sign; this is not Euclidean modulo.
+    /// `divisor` must be nonzero and the division must be representable in `Int`.
     pub func modulo(self: Int, divisor: Int) -> Int {
         self - self / divisor * divisor
     }
 
-    /// Builds the half-open integer range `[start, end)`.
+    /// Materializes consecutive integers in the half-open range `[self, end)`.
+    /// Returns an empty list when `end <= self`; storage grows with the result length.
     pub func range(self: Int, end: Int) -> List<Int> {
         range_into(self, end, [])
     }

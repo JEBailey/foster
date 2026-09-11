@@ -1,4 +1,9 @@
-//! Typed whole-file and directory operations.
+//! Whole-file and positioned filesystem I/O.
+//!
+//! File associates operations with a Path; construction does not open or create a
+//! file. Operations return IoError on failure. Text operations use UTF-8 and
+//! whole-file writes replace existing contents. Relative paths use the host context.
+//! These APIs do not provide transactional or atomic replacement guarantees.
 
 import core.result
 import core.string
@@ -83,8 +88,10 @@ pub type File = & Resource<paths::Path>
         /// Compatibility spelling for positioned reads.
         pub func read_range(self, offset: Int, maximum: Int) -> Result<Bytes, IoError> [read maximum, read offset, read self.location.value]
         /// Reads the complete file as UTF-8 text.
+    /// Returns `IoError` for host read failures or invalid UTF-8; memory use grows with file size.
         pub func read_text(self) -> Result<String, IoError> [read self.location.value]
-        /// Replaces the complete file with UTF-8 text.
+        /// Writes UTF-8 text, creating the file or truncating existing contents.
+        /// Returns `IoError` on failure; replacement is not transactional.
         pub func write_text(self, text: String) -> Result<(), IoError> [read self.location.value, read text]
     }
 
@@ -129,15 +136,19 @@ impl File {
         FsHost.file_length(self.location.as_string())
     }
 
-    /// Files written through whole-file operations have no pending userspace buffer.
+    /// Returns success without performing host I/O.
+    /// Whole-file operations leave no userspace buffer here; this is not an fsync
+    /// operation and does not guarantee durable storage.
     pub func flush(self: File) -> Result<(), IoError> { Result.Ok(()) }
 
     /// Reads the complete file as UTF-8 text.
+    /// Returns `IoError` for host read failures or invalid UTF-8; memory use grows with file size.
     pub func read_text(self: File) -> Result<String, IoError> {
         FsHost.read_text(self.location.as_string())
     }
 
-    /// Replaces the complete file with UTF-8 text.
+    /// Writes UTF-8 text, creating the file or truncating existing contents.
+        /// Returns `IoError` on failure; replacement is not transactional.
     pub func write_text(self: File, text: String) -> Result<(), IoError> {
         FsHost.write_text(self.location.as_string(), text)
     }

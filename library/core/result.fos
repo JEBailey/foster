@@ -1,4 +1,8 @@
-//! Explicit success and failure values with composable transformations.
+//! Success and failure values with explicit recovery.
+//!
+//! Ok carries a result and Error carries its error value. Mapping a success leaves
+//! errors untouched; error mapping leaves successes untouched. Use and_then to
+//! chain fallible operations, or try when forwarding the same error type.
 
 /// A value that is either a successful `Ok(T)` or a failed `Error(E)`.
 pub enum Result<T, E> = Ok(T)

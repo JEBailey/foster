@@ -1,4 +1,8 @@
-//! Security-oriented entropy, random bytes, and token generation.
+//! Operating-system entropy for random bytes and text tokens.
+//!
+//! Functions return RandomError when the request is invalid or entropy is unavailable.
+//! Hex tokens encode a requested byte count; URL-safe tokens use a requested character
+//! count. These lengths have different meanings and are documented per operation.
 
 import core.bytes
 import core.result

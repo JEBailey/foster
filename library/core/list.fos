@@ -1,4 +1,9 @@
-//! Owned homogeneous lists and indexed, stack-safe collection algorithms.
+//! Ordered homogeneous collections and eager collection algorithms.
+//!
+//! Indexes are zero-based. at distinguishes out-of-bounds access from an element
+//! that cannot be copied; get, first, and last collapse both cases to None.
+//! Borrowing reads preserve the list. Consuming updates return the resulting list.
+//! Use std.iter adaptors when intermediate collection allocation is unnecessary.
 
 import std.iter
 import core.functions
@@ -18,7 +23,9 @@ pub type List<T> = {
     pub func push(self, value: T) -> () [reshape self.items]
     /// Returns this list with `value` appended.
     pub func append(self, value: T) -> List<T> [consume self]
-    /// Copies an element without removing it. Bounds are checked before its Copy capability.
+    /// Copies the element at a zero-based index without removing it.
+    /// Returns `OutOfBounds` for an invalid index and `NotCopyable` if copying is unsupported.
+    /// Bounds are checked first.
     pub func at(self, index: Int) -> Result<T, ListReadError> [read self]
     /// Returns whether this list contains `expected`.
     pub func contains?(self, expected: T) -> Bool [read expected, read self]
@@ -34,21 +41,26 @@ pub type List<T> = {
     pub func fold<U>(self, initial: U, combine: func(consume U, consume T) -> U) -> U [consume initial, read self]
     /// Returns the first matching element; stops evaluating the predicate at that element.
     pub func find(self, predicate: Predicate<T>) -> Option<T> [read predicate, read self]
-    /// Returns whether at least one element satisfies `predicate`.
+    /// Returns whether any element satisfies `predicate`, stopping at the first match.
+    /// Returns false for an empty list.
     pub func any?(self, predicate: Predicate<T>) -> Bool [read predicate, read self]
-    /// Returns whether every element satisfies `predicate`.
+    /// Returns whether every element satisfies `predicate`, stopping at the first failure.
+    /// Returns true for an empty list.
     pub func all?(self, predicate: Predicate<T>) -> Bool [read predicate, read self]
     /// Builds a reversed list without materializing intermediate tails.
     pub func reverse(self) -> List<T> [read self]
     /// Appends every element of `right`, consuming the left list.
     pub func concat(self, right: List<T>) -> List<T> [consume self, read right]
-    /// Returns a copy of the element, or None when it is unavailable or not copyable.
+    /// Copies the element, or returns `None` for invalid indexes or noncopyable elements.
+    /// Use `at` when the caller needs to distinguish those failures.
     pub func get(self, index: Int) -> Option<T> [read self]
-    /// Copies only the elements in the checked half-open range `start..end`.
+    /// Copies elements in the half-open range `[start, end)`.
+    /// Asserts unless `0 <= start <= end <= length`; selected elements must support Copy.
     pub func slice(self, start: Int, end: Int) -> List<T> [read end, read self, read start]
     /// Returns at most the first `count` elements; a nonpositive count returns an empty list.
     pub func take(self, count: Int) -> List<T> [read count, read self]
     /// Consumes the list and returns the elements after the first `count` entries.
+    /// A nonpositive count preserves all elements; a count at least the length returns empty.
     pub func drop(self, count: Int) -> List<T> [consume self]
     /// Maps each element to a list and appends its elements to one output buffer.
     pub func flat_map<U>(self, transform: func(T) -> List<U>) -> List<U> [read self, read transform]
@@ -83,7 +95,9 @@ impl List {
     /// Returns this list with `value` appended.
     pub func append<T>(self: List<T>, value: T) -> List<T> [consume self] = intrinsic("list.append")
 
-    /// Copies an element without removing it. Bounds are checked before its Copy capability.
+    /// Copies the element at a zero-based index without removing it.
+    /// Returns `OutOfBounds` for an invalid index and `NotCopyable` if copying is unsupported.
+    /// Bounds are checked first.
     pub func at<T>(self: List<T>, index: Int) -> Result<T, ListReadError> [read self] {
         branch {
             index < 0 || index >= self.length -> Result.Error(ListReadError.OutOfBounds)
@@ -177,7 +191,8 @@ impl List {
         Option.None
     }
 
-    /// Returns whether at least one element satisfies `predicate`.
+    /// Returns whether any element satisfies `predicate`, stopping at the first match.
+    /// Returns false for an empty list.
     pub func any?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
         let index = 0
         loop {
@@ -188,7 +203,8 @@ impl List {
         false
     }
 
-    /// Returns whether every element satisfies `predicate`.
+    /// Returns whether every element satisfies `predicate`, stopping at the first failure.
+    /// Returns true for an empty list.
     pub func all?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
         let index = 0
         loop {
@@ -223,7 +239,8 @@ impl List {
         result
     }
 
-    /// Returns a copy of the element, or None when it is unavailable or not copyable.
+    /// Copies the element, or returns `None` for invalid indexes or noncopyable elements.
+    /// Use `at` when the caller needs to distinguish those failures.
     pub func get<T>(self: List<T>, index: Int) -> Option<T> [read self] {
         branch self.at(index) {
             Result.Ok(value) -> Option.Some(value)
@@ -231,7 +248,8 @@ impl List {
         }
     }
 
-    /// Copies only the elements in the checked half-open range `start..end`.
+    /// Copies elements in the half-open range `[start, end)`.
+    /// Asserts unless `0 <= start <= end <= length`; selected elements must support Copy.
     pub func slice<T>(self: List<T>, start: Int, end: Int) -> List<T> {
         assert(start >= 0 && end >= start && end <= self.length, "list slice is out of bounds")
         let result = []
@@ -255,6 +273,7 @@ impl List {
     }
 
     /// Consumes the list and returns the elements after the first `count` entries.
+    /// A nonpositive count preserves all elements; a count at least the length returns empty.
     pub func drop<T>(self: List<T>, count: Int) -> List<T> [consume self] {
         return self if count <= 0
         return [] if count >= self.length

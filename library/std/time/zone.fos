@@ -1,4 +1,8 @@
-//! UTC offsets, time-zone contracts, local-time resolution, and zoned values.
+//! UTC offsets, fixed zones, and explicit local-time resolution.
+//!
+//! An offset is measured in seconds east of UTC. TimeZone implementations resolve
+//! local values as unique, ambiguous, or skipped; choose a Disambiguation policy
+//! when selecting an instant. Fixed-offset support does not supply an IANA zone database.
 
 import core.ordering
 import core.result
@@ -114,7 +118,9 @@ pub type TimeZone = {
     pub func resolve(self, local: DateTime) -> LocalResolution
 }
 
-/// A provider of named time-zone rule sets, normally backed by the IANA database.
+/// A contract for providers of named time-zone rule sets.
+/// The standard library supplies no IANA database implementation; applications
+/// needing regional transitions must provide a conforming provider.
 pub type TimeZoneDatabase = {
     /// Looks up a time zone by stable identifier.
     pub func find(self, identifier: String) -> Result<TimeZone, ZoneError>

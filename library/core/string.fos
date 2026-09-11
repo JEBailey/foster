@@ -1,4 +1,20 @@
-//! Immutable UTF-8 text, byte-range scans, and amortized text construction.
+//! Immutable Unicode text, UTF-8 cursors, and text construction.
+//!
+//! String lengths and slice bounds count Unicode scalars, not bytes or grapheme
+//! clusters. byte_length and StringCursor checkpoints count UTF-8 bytes. Use a
+//! cursor for repeated sequential reads and StringBuilder for incremental output.
+//! Case conversion uses Unicode 17.0.0 without normalization or locale tailoring.
+//!
+//! ```foster
+//! import core.string
+//! func main() -> Int {
+//!     let text = "Aλ🙂"
+//!     assert(text.length == 3)
+//!     assert(text.byte_length() == 7)
+//!     assert(text.slice(1, 2) == "λ")
+//!     0
+//! }
+//! ```
 
 import core.byte
 import core.bytes
@@ -24,15 +40,16 @@ pub type String = {
     pub func iterator(self) -> Iterator<CodePoint> [read self]
     /// Returns the first code point, or `None` when the string is empty.
     pub func first(self) -> Option<CodePoint> [read self]
-    /// Returns the final code point without allocating intermediate suffixes.
+    /// Returns the final Unicode scalar, or `None` for an empty string.
     pub func last(self) -> Option<CodePoint> [read self]
     /// Returns the string with its Unicode scalar values in reverse order.
     pub func reverse(self) -> String [read self]
-    /// Returns whether the text begins with `prefix`.
+    /// Returns whether the text begins with `prefix`; an empty prefix always matches.
     pub func starts_with?(self, prefix: String) -> Bool [read prefix, read self]
-    /// Returns whether the text ends with `suffix`, without reversing either string.
+    /// Returns whether the text ends with `suffix`; an empty suffix always matches.
     pub func ends_with?(self, suffix: String) -> Bool [read self, read suffix]
-    /// Searches validated UTF-8 byte ranges without constructing suffix strings.
+    /// Returns whether `fragment` occurs as an exact substring.
+    /// An empty fragment matches. No normalization or case folding is performed.
     pub func contains?(self, fragment: String) -> Bool [read fragment, read self]
     /// Consumes the string and removes leading Unicode whitespace.
     pub func trim_start(self) -> String [consume self]
@@ -42,12 +59,17 @@ pub type String = {
     pub func trim(self) -> String [consume self]
     /// Materializes Unicode scalar values by scanning the UTF-8 bytes once.
     pub func code_points(self) -> List<CodePoint> [read self]
-    /// Returns the longest matching prefix, evaluating predicates once and from left to right.
+    /// Returns the longest prefix whose scalars satisfy `predicate`.
+    /// Calls the predicate once per inspected scalar, stopping at the first false result.
+    /// An empty input or a rejected first scalar returns `""`.
     pub func take_while(self, predicate: Predicate<CodePoint>) -> String [read predicate, read self]
-    /// Returns a clamped half-open range measured in Unicode scalar values.
+    /// Returns the half-open range `[start, end)` measured in Unicode scalars.
+    /// Bounds are clamped to the available text; reversed or empty ranges return `""`.
+    /// This differs from the asserting bounds checks on `List.slice` and `Bytes.slice`.
     pub func slice(self, start: Int, end: Int) -> String [read end, read self, read start]
     /// Splits around nonoverlapping separators, preserving empty fields.
-    /// An empty separator produces one string per Unicode scalar.
+    /// An empty separator produces one string per Unicode scalar, with no extra empty fields.
+    /// Empty input yields `[]` with an empty separator and `[""]` otherwise.
     pub func split(self, separator: String) -> List<String> [consume self]
     /// Returns full Unicode lowercase text, including contextual final sigma.
     pub func lower(self) -> String [read self]
@@ -63,13 +85,13 @@ pub type String = {
     pub func byte_length(self) -> Int [read self.value]
 
     // Required accessors supplied by the builtin storage implementation.
-    /// Reports whether the collection contains no elements.
+    /// Returns whether this string contains no Unicode scalars.
     pub func empty?(self) -> Bool
-    /// Returns the number of elements.
+    /// Returns the number of Unicode scalars, not UTF-8 bytes or grapheme clusters.
     pub func length(self) -> Int
-    /// Returns the first element; the collection must not be empty.
+    /// Returns the first Unicode scalar; the string must not be empty.
     pub func head(self) -> CodePoint
-    /// Returns the collection without its first element.
+    /// Returns the text after the first Unicode scalar.
     pub func rest(self) -> String
     /// Returns the UTF-8 bytes underlying the text.
     pub func bytes(self) -> Bytes
@@ -171,7 +193,8 @@ impl String {
 }
 
 impl StringCursor {
-    /// Creates a UTF-8 reader over an immutable string snapshot.
+    /// Creates an independent reader at UTF-8 byte offset zero.
+    /// Preserves `text`; subsequent reads advance only the new cursor.
     pub func from(text: String) -> StringCursor { cursor(text) }
     /// Returns the current UTF-8 byte offset.
     pub func checkpoint(self: StringCursor) -> Int { self.offset }
@@ -179,7 +202,9 @@ impl StringCursor {
     pub func peek(self: StringCursor) -> Option<CodePoint> {
         branch { self.offset >= self.data.length -> Option.None _ -> Option.Some(self.scalar()) }
     }
-    /// Restores a byte offset only when it is a complete scalar boundary.
+    /// Moves to a scalar-aligned UTF-8 byte offset in `[0, byte_length]`.
+    /// Returns false for an invalid boundary or out-of-range offset without moving.
+    /// Offsets do not encode source identity; use checkpoints from this snapshot.
     pub func restore(self: StringCursor, position: Int) -> Bool {
         return false if !self.boundary?(position)
         self.offset = position
@@ -192,7 +217,8 @@ impl StringCursor {
             Option.Some(text) -> Option.Some(text.code_points())
         }
     }
-    /// Copies a UTF-8 region with scalar-aligned boundaries.
+    /// Copies text between scalar-aligned byte offsets `[start, end)` without moving.
+    /// Returns `None` for reversed bounds, out-of-range offsets, or split UTF-8 scalars.
     pub func text_span(self: StringCursor, start: Int, end: Int) -> Option<String> {
         return Option.None if end < start || !self.boundary?(start) || !self.boundary?(end)
         Option.Some(decode_bytes(self.data.slice(start, end)))
@@ -264,7 +290,7 @@ impl String {
         }
     }
 
-    /// Returns the final code point without allocating intermediate suffixes.
+    /// Returns the final Unicode scalar, or `None` for an empty string.
     pub func last(self: String) -> Option<CodePoint> {
         let source = cursor(self)
         let last = Option.None
@@ -312,12 +338,12 @@ func matches_at(data: Bytes, pattern: Bytes, start: Int) -> Bool {
 }
 
 impl String {
-    /// Returns whether the text begins with `prefix`.
+    /// Returns whether the text begins with `prefix`; an empty prefix always matches.
     pub func starts_with?(self: String, prefix: String) -> Bool {
         matches_at(self.bytes, prefix.bytes, 0)
     }
 
-    /// Returns whether the text ends with `suffix`, without reversing either string.
+    /// Returns whether the text ends with `suffix`; an empty suffix always matches.
     pub func ends_with?(self: String, suffix: String) -> Bool {
         let data = self.bytes
         let pattern = suffix.bytes
@@ -325,7 +351,8 @@ impl String {
         matches_at(data, pattern, data.length - pattern.length)
     }
 
-    /// Searches validated UTF-8 byte ranges without constructing suffix strings.
+    /// Returns whether `fragment` occurs as an exact substring.
+    /// An empty fragment matches. No normalization or case folding is performed.
     pub func contains?(self: String, fragment: String) -> Bool {
         let data = self.bytes
         let pattern = fragment.bytes
@@ -429,7 +456,9 @@ impl String {
         (move output).finish()
     }
 
-    /// Returns the longest matching prefix, evaluating predicates once and from left to right.
+    /// Returns the longest prefix whose scalars satisfy `predicate`.
+    /// Calls the predicate once per inspected scalar, stopping at the first false result.
+    /// An empty input or a rejected first scalar returns `""`.
     pub func take_while(self: String, predicate: Predicate<CodePoint>) -> String {
         let source = cursor(self)
         let end = 0
@@ -441,7 +470,9 @@ impl String {
         decode_bytes(source.data.slice(0, end))
     }
 
-    /// Returns a clamped half-open range measured in Unicode scalar values.
+    /// Returns the half-open range `[start, end)` measured in Unicode scalars.
+    /// Bounds are clamped to the available text; reversed or empty ranges return `""`.
+    /// This differs from the asserting bounds checks on `List.slice` and `Bytes.slice`.
     pub func slice(self: String, start: Int, end: Int) -> String {
         return "" if end <= 0 || end <= start
         let source = cursor(self)
@@ -463,7 +494,8 @@ impl String {
     }
 
     /// Splits around nonoverlapping separators, preserving empty fields.
-    /// An empty separator produces one string per Unicode scalar.
+    /// An empty separator produces one string per Unicode scalar, with no extra empty fields.
+    /// Empty input yields `[]` with an empty separator and `[""]` otherwise.
     pub func split(self: String, separator: String) -> List<String> [consume self] {
         let data = self.bytes
         let pattern = separator.bytes

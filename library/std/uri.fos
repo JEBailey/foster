@@ -1,4 +1,9 @@
-//! URI resource identities without protocol-specific network access.
+//! Parsed URI values and resource identification without network access.
+//!
+//! Parsing validates the scheme and separates it from the remaining resource text.
+//! Authority, query, and fragment are not exposed as separate parsed components.
+//! Constructing or inspecting a Uri does not fetch its resource; protocol-specific
+//! I/O belongs to the provider that accepts the identifier.
 
 import core.result
 import std.resource

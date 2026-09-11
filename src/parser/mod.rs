@@ -5,6 +5,7 @@ use crate::lexer::{Token, TokenKind};
 mod cursor;
 mod declarations;
 mod expressions;
+mod iteration;
 
 pub fn parse(tokens: Vec<Token>) -> Result<Program, FosterError> {
     Parser::new(tokens).program()
@@ -44,6 +45,7 @@ struct Parser {
     tokens: Vec<Token>,
     current: usize,
     suppress_record_literal: bool,
+    iteration_span: Option<std::ops::Range<usize>>,
 }
 
 struct ParsedEffects {
@@ -59,6 +61,7 @@ impl Parser {
             tokens,
             current: 0,
             suppress_record_literal: false,
+            iteration_span: None,
         }
     }
 

@@ -1,4 +1,7 @@
-//! Immutable symbolic identifiers constructed from symbol literals.
+//! Immutable symbolic identifiers.
+//!
+//! Symbols represent named values such as :ready. Use their text conversion for
+//! display; use symbol equality when comparing symbolic identities.
 
 /// An immutable symbolic identifier.
 ///

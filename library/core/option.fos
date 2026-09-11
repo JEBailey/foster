@@ -1,4 +1,8 @@
 //! Optional values and transformations that preserve absence.
+//!
+//! Some carries a value; None represents absence without an error explanation.
+//! map and and_then invoke their callback only for Some. unwrap_or receives an
+//! already evaluated fallback; unwrap_or_else computes one only for None.
 
 import core.functions
 
@@ -11,13 +15,15 @@ pub enum Option<T> = Some(T)
         pub func map<U>(self, transform: func(T) -> U) -> Option<U> [read self, read transform]
         /// Applies an optional-producing transform to a present value and flattens the result.
         pub func and_then<U>(self, transform: func(T) -> Option<U>) -> Option<U> [read self, read transform]
-        /// Returns the contained value, or `fallback` when the option is `None`.
+        /// Returns the contained value, or `fallback` for `None`.
+        /// The fallback is evaluated before this call, even for `Some`; use
+        /// `unwrap_or_else` to defer computation.
         pub func unwrap_or(self, fallback: T) -> T [consume fallback, read self]
         /// Returns whether the option contains a value.
         pub func present?(self) -> Bool [read self]
         /// Returns whether the option contains no value.
         pub func absent?(self) -> Bool [read self]
-        /// Returns the contained value, or computes a fallback when the option is `None`.
+        /// Returns the contained value; calls `fallback` exactly once only for `None`.
         pub func unwrap_or_else(self, fallback: Supplier<T>) -> T [read fallback, read self]
         /// Preserves a present value, or computes another option when this option is `None`.
         pub func or_else(self, fallback: Supplier<Option<T>>) -> Option<T> [read fallback, read self]
@@ -40,7 +46,9 @@ impl Option {
         }
     }
 
-    /// Returns the contained value, or `fallback` when the option is `None`.
+    /// Returns the contained value, or `fallback` for `None`.
+        /// The fallback is evaluated before this call, even for `Some`; use
+        /// `unwrap_or_else` to defer computation.
     pub func unwrap_or<T>(self: Option<T>, fallback: T) -> T [consume fallback, read self] {
         branch self {
             Option.Some(value) -> value
@@ -64,7 +72,7 @@ impl Option {
         }
     }
 
-    /// Returns the contained value, or computes a fallback when the option is `None`.
+    /// Returns the contained value; calls `fallback` exactly once only for `None`.
     pub func unwrap_or_else<T>(self: Option<T>, fallback: Supplier<T>) -> T {
         branch self {
             Option.Some(value) -> value

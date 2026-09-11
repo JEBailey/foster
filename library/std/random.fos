@@ -1,4 +1,8 @@
-//! Random-source contracts, operating-system randomness, and unbiased uniform integer operations.
+//! Random-source contracts and unbiased integer sampling.
+//!
+//! Range bounds are half-open. Invalid ranges and source failures return RandomError.
+//! The requested width must fit the source's advertised range. Use seeded generators
+//! for reproducibility and SystemRandom for operating-system entropy.
 
 import core.bytes
 import core.result
@@ -48,7 +52,8 @@ pub type SystemRandom = & RandomSource & {
     marker: Symbol
 
     // Required public operations; implementations live in impl blocks.
-    /// Returns up to 1,048,576 bytes from the operating system's secure entropy source.
+    /// Returns exactly `count` bytes of operating-system entropy.
+    /// Accepts `0..1048576`, inclusive; invalid sizes or unavailable entropy return `RandomError`.
     pub func bytes(self, count: Int) -> Result<Bytes, RandomError>
 }
 
@@ -58,7 +63,8 @@ impl SystemRandom {
         SystemRandom { marker: :system_random }
     }
 
-    /// Returns up to 1,048,576 bytes from the operating system's secure entropy source.
+    /// Returns exactly `count` bytes of operating-system entropy.
+    /// Accepts `0..1048576`, inclusive; invalid sizes or unavailable entropy return `RandomError`.
     pub func bytes(self: SystemRandom, count: Int) -> Result<Bytes, RandomError> {
         return failure("bytes", count, "random byte count must not be negative") if count < 0
         return failure("bytes", count, "random byte count must not exceed 1048576") if count > 1048576
@@ -76,7 +82,9 @@ impl SystemRandom {
     pub func maximum(self: SystemRandom) -> Int { 2147483647 }
 }
 
-/// Returns an unbiased value from `source` in the half-open range `[0, count)`.
+/// Draws an unbiased integer in `[0, count)` and advances `source`.
+/// Requires `1 <= count <= source.maximum() + 1` and a representable source capacity.
+/// Invalid parameters, out-of-contract source values, and source failures return `RandomError`.
 pub func below_with(source: RandomSource, count: Int) -> Result<Int, RandomError> [mut source] {
     return failure("below", count, "random count must be positive") if count <= 0
     let maximum = source.maximum()
@@ -86,7 +94,9 @@ pub func below_with(source: RandomSource, count: Int) -> Result<Int, RandomError
     sample_below(source, count, capacity - capacity.modulo(count), maximum)
 }
 
-/// Returns an unbiased value from `source` in the half-open range `[start, end)`.
+/// Draws an unbiased integer in `[start, end)` and advances `source`.
+/// The range must be nonempty and its width must fit the source capacity.
+/// Invalid ranges and source failures return `RandomError`.
 pub func between_with(source: RandomSource, start: Int, end: Int) -> Result<Int, RandomError> [mut source] {
     let width = range_width(start, end, source.maximum() + 1)
     return failure("between", end, "random range must be nonempty and fit the source") if width <= 0

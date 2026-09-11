@@ -219,6 +219,26 @@ loop {
 A false initial condition skips the body; `continue` returns to the condition check. The condition
 is evaluated once per iteration, and the loop produces `()` when it exits.
 
+`for item in collection { ... }` iterates a collection through its `.iterator()` method:
+
+```foster
+for item in [1, 2, 3] {
+    continue if item == 2
+    println(item)
+}
+```
+
+The collection expression and `.iterator()` call are each evaluated once. A scoped cursor calls
+`.next()` before each iteration: `core.option.Option.Some(item)` runs the body and `Option.None`
+ends the loop. Built-in collections need no explicit iteration import. Custom collections must
+provide `.iterator()` returning a cursor whose `.next()` returns `Option<T>`; a bare iterator
+without `.iterator()` is not an iterable.
+
+The item binding exists only inside the body and may shadow an outer name; `_` discards the item.
+The body value is discarded and the loop produces `()`. `break` exits the loop, `continue`
+advances to the next item, and `return` leaves the enclosing function. Nested loops use the nearest
+enclosing loop for `break` and `continue`.
+
 `loop` repeats a statement block until control leaves it. `break` exits the nearest enclosing loop,
 and `continue` starts its next iteration. Both transfers
 may use the same postfix `if` guard as `return`:

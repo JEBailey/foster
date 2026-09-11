@@ -1,4 +1,8 @@
-//! Random choice, shuffling, and sampling over owned Foster lists.
+//! Random choice, shuffling, and sampling without replacement.
+//!
+//! The _with variants advance a caller-supplied random source. Other variants use
+//! operating-system randomness. Operations return RandomError for invalid requests
+//! or source failures; see individual functions for empty-input behavior.
 
 import core.list
 import core.option

@@ -1,4 +1,8 @@
-//! Persistent last-in, first-out stacks backed by Foster lists.
+//! An owned last-in, first-out collection.
+//!
+//! push returns the updated stack and pop removes its top value. Iteration visits
+//! the top first. Use the empty and length queries before operations that require
+//! an element, or handle the optional result of pop.
 
 import std.collections
 import std.iter

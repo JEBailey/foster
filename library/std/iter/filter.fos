@@ -1,4 +1,7 @@
-//! Lazy iterator filtering.
+//! Lazy selection of iterator items.
+//!
+//! Each next call advances until a predicate match or source exhaustion. Rejected
+//! items are consumed. A next call can therefore inspect several source items.
 
 import core.functions
 import core.option

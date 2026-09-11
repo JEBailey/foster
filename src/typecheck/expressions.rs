@@ -209,7 +209,22 @@ impl Checker<'_> {
                     })?;
                 Ok(Some(value))
             }
-            hir::Stmt::Expr(expression) => Ok(Some(self.infer_expression(function, *expression)?)),
+            hir::Stmt::Expr(expression) => {
+                // A discarded branch whose arms all transfer control has no value to infer.
+                // This also occurs in desugared for-loops with an unconditional break,
+                // continue, or return in the body.
+                if let hir::Expr::Branch { arms, .. } = &self.hir.expressions[*expression]
+                    && arms.iter().all(|arm| {
+                        let flow = crate::control_flow::summarize_arm(&arm.body);
+                        !flow.yields_value && !flow.falls_through
+                    })
+                {
+                    self.check_expression(function, *expression, Ty::Unit)?;
+                    Ok(None)
+                } else {
+                    Ok(Some(self.infer_expression(function, *expression)?))
+                }
+            }
         }
     }
 

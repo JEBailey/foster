@@ -1,4 +1,8 @@
-//! Process entry values supplied by a Foster command host.
+//! The executable name and command-line arguments passed to main.
+//!
+//! Accept Arguments as main's parameter to read process inputs. The executable
+//! name is separate from values, which contains the user arguments in order.
+//! This module does not launch subprocesses.
 
 import core.list
 

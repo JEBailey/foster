@@ -1,4 +1,8 @@
-//! Unicode 17.0.0 table lookup and locale-independent default casing, implemented in Foster.
+//! Unicode property lookup and case-mapping support.
+//!
+//! This module implements the tables and algorithms used by core.code_point and
+//! core.string. Most applications should use those receiver APIs. Generated
+//! Unicode 17.0.0 data is maintained separately in core.unicode.data.
 
 import core.bytes
 import core.list

@@ -171,7 +171,11 @@ impl FunctionLowerer<'_> {
         if path.len() != 2 {
             if path.len() == 3
                 && enum_accessor
-                && let Some(module) = self.imports.get(&path[0]).copied()
+                && let Some(module) = self.imports.get(&path[0]).copied().or_else(|| {
+                    (path[0] == ast::ITERATION_OPTION_MODULE)
+                        .then(|| self.hir.module_named("core.option"))
+                        .flatten()
+                })
                 && let Some(parent) = self.hir.variant_type_named(module, &path[1])
             {
                 if !self.hir.variant_types[parent].public {

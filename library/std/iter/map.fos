@@ -1,4 +1,7 @@
-//! Lazy iterator transformation.
+//! Lazy transformation of iterator items.
+//!
+//! map owns its input iterator and invokes the transform when an item is requested.
+//! Constructing the adaptor does not traverse the source or materialize a list.
 
 import core.option
 import std.iter

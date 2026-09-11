@@ -1,4 +1,9 @@
-//! A TOML 1.1 parser and deterministic renderer written in Foster.
+//! TOML 1.1 parsing, typed documents, lookup, and rendering.
+//!
+//! parse returns a typed document or positioned errors. Tables and array values
+//! can be inspected without converting to untyped host objects. Rendering emits
+//! TOML from the value model; it is not a source-preserving editor for comments
+//! and original formatting.
 
 import core.code_point
 import core.float
