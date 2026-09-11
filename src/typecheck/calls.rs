@@ -579,10 +579,10 @@ impl Checker<'_> {
             return match name {
                 "empty?" | "whitespace?" => Ok(Ty::Bool),
                 "length" => Ok(Ty::Int),
-                "head" => Ok(Ty::CodePoint),
+                "head" => Ok(self.string_type()),
                 "rest" => Ok(self.string_type()),
                 "bytes" => Ok(self.bytes_type()),
-                "iterator" => self.collection_iterator_method(Ty::CodePoint, function),
+                "iterator" => self.collection_iterator_method(self.string_type(), function),
                 member => {
                     self.primitive_method_type(function, self.string_type(), "core.string", member)
                 }

@@ -691,6 +691,35 @@ impl FunctionCompiler<'_> {
                 Ok(destination)
             }
             hir::Expr::Member { object, name } => {
+                if matches!(name.as_str(), "length" | "head" | "rest")
+                    && self.types.expression_type(*object).is_some_and(|mut ty| {
+                        while let crate::types::Type::Reference { value, .. } =
+                            &self.types.types[ty]
+                        {
+                            ty = *value;
+                        }
+                        matches!(&self.types.types[ty], crate::types::Type::Record { record, .. }
+                            if Some(*record) == self.types.core.string)
+                    })
+                {
+                    let module = self.hir.module_named("core.string").expect("String module");
+                    let function = self
+                        .hir
+                        .function_named(module, &format!("String.{name}"))
+                        .ok_or_else(|| self.unsupported("String grapheme accessor"))?;
+                    let argument = self.expression(*object)?;
+                    let destination = self.allocate();
+                    self.emit(
+                        Instruction::Call {
+                            destination,
+                            function,
+                            specialization: self.specialization(function, &[*object], id),
+                            arguments: vec![argument],
+                        },
+                        span,
+                    );
+                    return Ok(destination);
+                }
                 let object = self.expression(*object)?;
                 let destination = self.allocate();
                 self.emit(

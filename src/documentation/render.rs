@@ -1,5 +1,6 @@
 use std::fmt::Write;
 
+use super::type_links::TypeLinks;
 use crate::ast::{Effect, EffectKind, ParameterMode, TypeExpr};
 use crate::compiler::Compilation;
 use crate::hir::{ConstantId, FunctionId, ModuleId};
@@ -37,6 +38,9 @@ article { margin: 1rem 0; scroll-margin-top: 1rem; }
 article h2 { margin: 0 0 .65rem; font-size: 1.2rem; }
 .anchor { color: inherit; } .anchor:hover { text-decoration: none; } .anchor:hover::after { content: " #"; color: #8090aa; }
 pre { overflow-x: auto; padding: .85rem 1rem; border-radius: .45rem; color: #e7edf7; background: #202838; }
+.type-link { text-decoration: underline; text-underline-offset: .18em; }
+pre .type-link { color: #a8c9ff; }
+pre .type-link:hover { color: white; }
 code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
 p code, li code { padding: .08rem .3rem; border-radius: .25rem; background: #e8ebf1; }
 .badge { margin-left: .45rem; padding: .15rem .4rem; border-radius: 99px; font-size: .68rem; font-weight: 700; letter-spacing: .02em; color: #596273; background: #edf0f5; vertical-align: middle; }
@@ -211,7 +215,7 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
             &record.name,
             &record.name,
             record.public,
-            &record_signature(record),
+            &record_signature(compilation, record),
             record.documentation.as_deref(),
             "type",
         );
@@ -287,7 +291,7 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
     )
 }
 
-fn visible_type(public: bool, documentation: Option<&str>) -> bool {
+pub(super) fn visible_type(public: bool, documentation: Option<&str>) -> bool {
     public || documentation.is_some_and(|docs| !docs.trim().is_empty())
 }
 
@@ -309,7 +313,14 @@ fn provided_types(compilation: &Compilation, module_id: ModuleId) -> String {
             record
                 .fields
                 .iter()
-                .map(|field| format!("{}: {}", field.name, type_expr(&field.ty)))
+                .map(|field| {
+                    format!(
+                        "{}: {}",
+                        escape(&field.name),
+                        TypeLinks::new(compilation, module_id, &record.parameters)
+                            .source(&field.ty)
+                    )
+                })
                 .collect(),
             Vec::new(),
             record
@@ -336,7 +347,12 @@ fn provided_types(compilation: &Compilation, module_id: ModuleId) -> String {
             variant
                 .alternatives
                 .iter()
-                .map(|id| variant_alternative_signature(&compilation.hir.variants[*id]))
+                .map(|id| {
+                    variant_alternative_signature(
+                        &TypeLinks::new(compilation, module_id, &variant.parameters),
+                        &compilation.hir.variants[*id],
+                    )
+                })
                 .collect(),
             variant
                 .methods
@@ -384,14 +400,20 @@ fn type_card(
     type_members(
         cards,
         "Fields",
-        fields.iter().map(|value| (value.as_str(), None)),
+        fields.into_iter().map(|value| (value, None)),
     );
     type_members(
         cards,
         alternatives_title,
-        variants.iter().map(|value| (value.as_str(), None)),
+        variants.into_iter().map(|value| (value, None)),
     );
-    type_members(cards, "Required methods", requirements.into_iter());
+    type_members(
+        cards,
+        "Required methods",
+        requirements
+            .into_iter()
+            .map(|(name, docs)| (escape(name), docs)),
+    );
 
     let functions = compilation.hir.modules[module_id]
         .functions
@@ -430,7 +452,7 @@ fn type_card(
 fn type_members<'a>(
     cards: &mut String,
     heading: &str,
-    members: impl Iterator<Item = (&'a str, Option<&'a str>)>,
+    members: impl Iterator<Item = (String, Option<&'a str>)>,
 ) {
     let members = members.collect::<Vec<_>>();
     if members.is_empty() {
@@ -441,7 +463,7 @@ fn type_members<'a>(
         let _ = write!(
             cards,
             "<li><code>{}</code>{}</li>",
-            escape(name),
+            name,
             docs.map_or_else(String::new, |text| format!(
                 "<br><small>{}</small>",
                 escape(text)
@@ -474,11 +496,12 @@ fn visible_function(compilation: &Compilation, id: FunctionId) -> bool {
 
 fn constant_signature(compilation: &Compilation, id: ConstantId) -> String {
     let constant = &compilation.hir.constants[id];
+    let links = TypeLinks::new(compilation, constant.module, &[]);
     let ty = compilation
         .types
         .constants
         .get(&id)
-        .map(|ty| compilation.types.display(*ty))
+        .map(|ty| links.resolved(*ty))
         .unwrap_or_else(|| "_".into());
     format!(
         "{}const {}: {ty}",
@@ -512,7 +535,7 @@ fn declaration(
         escape(anchor),
         escape(name),
         if public { "public" } else { "private" },
-        escape(signature)
+        signature
     );
     if let Some(docs) = docs {
         body.push_str(&markdown(docs));
@@ -526,12 +549,19 @@ fn declaration(
 
 fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
     let function = &compilation.hir.functions[id];
+    let links = TypeLinks::new(compilation, function.module, &function.type_parameters);
     let signature = compilation.types.function_type(id);
-    let generics = angled(&function.type_parameters);
+    let generics = escape(&angled(&function.type_parameters));
     let group_entries = function
         .groups
         .iter()
-        .map(|group| format!("{}: group {}", group.name, type_expr(&group.element)))
+        .map(|group| {
+            format!(
+                "{}: group {}",
+                escape(&group.name),
+                links.source(&group.element)
+            )
+        })
         .collect::<Vec<_>>();
     let groups = squared(&group_entries);
     let parameters = function
@@ -542,7 +572,7 @@ fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
             let name = &compilation.hir.locals[*local].name;
             let ty = signature
                 .and_then(|sig| sig.parameters.get(index))
-                .map(|ty| compilation.types.display(*ty))
+                .map(|ty| links.resolved(*ty))
                 .unwrap_or_else(|| "_".into());
             let consume = signature
                 .and_then(|sig| sig.parameter_modes.get(index))
@@ -552,16 +582,21 @@ fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
         .collect::<Vec<_>>()
         .join(", ");
     let result = signature
-        .map(|sig| compilation.types.display(sig.result))
+        .map(|sig| links.resolved(sig.result))
         .unwrap_or_else(|| "()".into());
-    let effects = signature.map_or_else(String::new, |sig| effects(&sig.effects, sig.suspends));
+    let effects = signature.map_or_else(String::new, |sig| {
+        escape(&effects(&sig.effects, sig.suspends))
+    });
     let name = function.name.rsplit('.').next().unwrap_or(&function.name);
     let signature = format!(
-        "{}func {name}{generics}{groups}({parameters}) -> {result}{effects}",
+        "{}func {name}{generics}{groups}({parameters}) -&gt; {result}{effects}",
         if function.public { "pub " } else { "" },
     );
     match &function.owner {
-        Some(owner) => format!("impl {owner} {{\n    {signature}\n}}"),
+        Some(owner) => format!(
+            "impl {} {{\n    {signature}\n}}",
+            links.source(&TypeExpr::Named(owner.clone(), vec![]))
+        ),
         None => signature,
     }
 }
@@ -570,18 +605,19 @@ fn source_function_name(function: &crate::hir::Function) -> String {
     function.name.clone()
 }
 
-fn record_signature(record: &crate::hir::Record) -> String {
+fn record_signature(compilation: &Compilation, record: &crate::hir::Record) -> String {
+    let links = TypeLinks::new(compilation, record.module, &record.parameters);
     let compositions = if record.compositions.is_empty() {
         String::new()
     } else {
         format!(
-            " & {}",
+            " &amp; {}",
             record
                 .compositions
                 .iter()
-                .map(type_expr)
+                .map(|ty| links.source(ty))
                 .collect::<Vec<_>>()
-                .join(" & ")
+                .join(" &amp; ")
         )
     };
     let mut members = record
@@ -592,16 +628,17 @@ fn record_signature(record: &crate::hir::Record) -> String {
                 "    {}{}: {}",
                 if field.public { "pub " } else { "" },
                 field.name,
-                type_expr(&field.ty)
+                links.source(&field.ty)
             )
         })
         .collect::<Vec<_>>();
     members.extend(record.methods.iter().map(|method| {
+        let links = links.scoped(&method.type_parameters);
         let parameters = method
             .parameters
             .iter()
             .map(|parameter| match &parameter.ty {
-                Some(ty) => format!("{}: {}", parameter.name, type_expr(ty)),
+                Some(ty) => format!("{}: {}", parameter.name, links.source(ty)),
                 None => parameter.name.clone(),
             })
             .collect::<Vec<_>>()
@@ -609,14 +646,14 @@ fn record_signature(record: &crate::hir::Record) -> String {
         let result = method
             .return_type
             .as_ref()
-            .map(type_expr)
+            .map(|ty| links.source(ty))
             .unwrap_or_else(|| "()".into());
         format!(
-            "    {}func {}{}({parameters}) -> {result}{}",
+            "    {}func {}{}({parameters}) -&gt; {result}{}",
             if method.public { "pub " } else { "" },
             method.name,
-            angled(&method.type_parameters),
-            effects(&method.effects, method.suspends)
+            escape(&angled(&method.type_parameters)),
+            escape(&effects(&method.effects, method.suspends))
         )
     }));
     let members = members.join("\n");
@@ -624,16 +661,17 @@ fn record_signature(record: &crate::hir::Record) -> String {
         "{}type {}{}{compositions} {{\n{members}\n}}",
         if record.public { "pub " } else { "" },
         record.name,
-        angled(&record.parameters)
+        escape(&angled(&record.parameters))
     )
 }
 
 fn variant_signature(compilation: &Compilation, id: crate::hir::VariantTypeId) -> String {
     let variant = &compilation.hir.variant_types[id];
+    let links = TypeLinks::new(compilation, variant.module, &variant.parameters);
     let alternatives = variant
         .alternatives
         .iter()
-        .map(|id| variant_alternative_signature(&compilation.hir.variants[*id]))
+        .map(|id| variant_alternative_signature(&links, &compilation.hir.variants[*id]))
         .collect::<Vec<_>>();
     let alternatives = if variant.kind == crate::ast::VariantKind::Enum {
         alternatives.join("\n    | ")
@@ -649,13 +687,16 @@ fn variant_signature(compilation: &Compilation, id: crate::hir::VariantTypeId) -
             "type"
         },
         variant.name,
-        angled(&variant.parameters)
+        escape(&angled(&variant.parameters))
     )
 }
 
-fn variant_alternative_signature(alternative: &crate::hir::Variant) -> String {
+fn variant_alternative_signature(
+    links: &TypeLinks<'_>,
+    alternative: &crate::hir::Variant,
+) -> String {
     if let Some(member) = &alternative.member {
-        type_expr(member)
+        links.source(member)
     } else if alternative.payload.is_none() {
         alternative.name.clone()
     } else {
@@ -665,60 +706,14 @@ fn variant_alternative_signature(alternative: &crate::hir::Variant) -> String {
             alternative
                 .payload
                 .iter()
-                .map(type_expr)
+                .map(|ty| links.source(ty))
                 .next()
                 .expect("a payload-bearing enum case has a payload type")
         )
     }
 }
 
-fn type_expr(ty: &TypeExpr) -> String {
-    match ty {
-        TypeExpr::Unit => "()".into(),
-        TypeExpr::Named(name, arguments) => format!(
-            "{}{}",
-            name.replace('.', "::"),
-            angled(&arguments.iter().map(type_expr).collect::<Vec<_>>())
-        ),
-        TypeExpr::Intersection(members) => members
-            .iter()
-            .map(type_expr)
-            .collect::<Vec<_>>()
-            .join(" & "),
-        TypeExpr::Reference { group, value } => format!("ref[{group}] {}", type_expr(value)),
-        TypeExpr::Function {
-            parameters,
-            parameter_modes,
-            result,
-            effects: declared,
-            suspends,
-        } => {
-            let parameters = parameters
-                .iter()
-                .zip(parameter_modes)
-                .map(|(ty, mode)| {
-                    format!(
-                        "{}{}",
-                        if *mode == ParameterMode::Consume {
-                            "consume "
-                        } else {
-                            ""
-                        },
-                        type_expr(ty)
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!(
-                "func({parameters}) -> {}{}",
-                type_expr(result),
-                effects(declared, *suspends)
-            )
-        }
-    }
-}
-
-fn effects(declared: &[Effect], suspends: bool) -> String {
+pub(super) fn effects(declared: &[Effect], suspends: bool) -> String {
     let mut entries = declared
         .iter()
         .map(|effect| {
@@ -767,7 +762,7 @@ fn page(title: &str, heading: &str, body: &str, stylesheet: &str) -> String {
     )
 }
 
-fn module_file_name(name: &str) -> String {
+pub(super) fn module_file_name(name: &str) -> String {
     format!("{}.html", name.replace('.', "-"))
 }
 
@@ -783,7 +778,7 @@ fn markdown(source: &str) -> String {
     output
 }
 
-fn escape(value: &str) -> String {
+pub(super) fn escape(value: &str) -> String {
     value
         .replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -795,6 +790,108 @@ fn escape(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn type_links_resolve_imports_nested_types_and_generic_shadowing() {
+        let root = std::env::temp_dir().join(format!(
+            "foster-type-links-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("first.fos"),
+            "pub type Item = { pub value: Int }\npub type Box<T> = { pub value: T }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("second.fos"),
+            "pub type Item = { pub value: Int }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("main.fos"),
+            r#"
+import first as one
+import second as two
+pub type Holder = {
+    pub first: one::Box<one::Item>
+    pub second: two::Item
+    pub func convert<Item>(self, value: Item) -> Item [read self]
+}
+pub enum Outcome = Some(one::Item) | None
+type Hidden = { value: Int }
+func hidden(value: Hidden) -> Int { 0 }
+pub func compare(Item: one::Item, other: two::Item) -> Int { 0 }
+pub func generic<Item>(value: Item) -> Item { value }
+func main() -> Int { 0 }
+"#,
+        )
+        .unwrap();
+        let compilation = crate::check_package(&root).unwrap();
+        let site = site(&compilation);
+        let html = &site
+            .modules
+            .iter()
+            .find(|page| page.file_name == "main.html")
+            .unwrap()
+            .html;
+        assert!(html.contains("href=\"first.html#Box\""));
+        assert!(html.contains("href=\"first.html#Item\""));
+        assert!(html.contains("href=\"second.html#Item\""));
+        assert!(html.contains("Item: <a class=\"type-link\" href=\"first.html#Item\""));
+        let generic = function_signature(
+            &compilation,
+            compilation
+                .hir
+                .function_named(compilation.hir.module_named("main").unwrap(), "generic")
+                .unwrap(),
+        );
+        assert!(
+            generic.contains("func generic&lt;Item&gt;(value: consume Item) -&gt; Item"),
+            "{generic}"
+        );
+        assert!(html.contains("func convert&lt;Item&gt;(self, value: Item) -&gt; Item"));
+        assert!(!html.contains("href=\"#Hidden\""));
+        assert!(!html.contains("&lt;a class="));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn library_type_links_only_target_generated_pages_and_anchors() {
+        let compilation = crate::check_package("library").unwrap();
+        let site = site(&compilation);
+        let string = &site
+            .modules
+            .iter()
+            .find(|page| page.file_name == "core-string.html")
+            .unwrap()
+            .html;
+        assert!(string.contains("href=\"core-option.html#Option\""));
+        assert!(string.contains("href=\"core-code_point.html#module-overview\""));
+        assert!(string.contains("href=\"std-iter.html#Iterator\""));
+        for page in &site.modules {
+            for link in page.html.split("class=\"type-link\" href=\"").skip(1) {
+                let href = link.split('"').next().unwrap();
+                let (file, anchor) = href.split_once('#').unwrap();
+                let target = if file.is_empty() {
+                    page
+                } else {
+                    site.modules
+                        .iter()
+                        .find(|page| page.file_name == file)
+                        .expect("linked module must be generated")
+                };
+                assert!(
+                    target.html.contains(&format!("id=\"{anchor}\"")),
+                    "missing target: {href}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn documentation_is_escaped_and_inline_code_is_rendered() {
@@ -883,5 +980,6 @@ func main() -> Int { 0 }
         assert!(!site.index.contains("data-module=\"core"));
         assert_eq!(site.modules.len(), 1);
         assert_eq!(site.modules[0].file_name, "main.html");
+        assert!(!site.modules[0].html.contains("class=\"type-link\""));
     }
 }

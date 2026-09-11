@@ -1,0 +1,54 @@
+import core.string
+import core.list
+import core.option
+import std.iter
+import std.sequence
+
+func main() -> Int {
+    let text = "Aé🇺🇸👩‍💻Z"
+    assert(text.length == 5)
+    assert(text.length() == 5)
+    assert(text.scalar_length() == 9)
+    assert(text.byte_length() == 24)
+    assert(text.graphemes() == ["A", "é", "🇺🇸", "👩‍💻", "Z"])
+    assert(text.slice(1, 4) == "é🇺🇸👩‍💻")
+    assert(text.slice(-1, 2) == "Aé")
+    assert(text.slice(99, 100) == "")
+    assert(text.slice(2, 1) == "")
+    assert(text.reverse() == "Z👩‍💻🇺🇸éA")
+    assert("é!".head == "é")
+    assert("é!".head() == "é")
+    assert("é!".rest == "!")
+    assert("é!".rest() == "!")
+    assert("é".first() == Option.Some("é"))
+    assert("Aé".last() == Option.Some("é"))
+    assert("".first() == Option.None)
+    assert("".last() == Option.None)
+    assert("".length == 0)
+    assert("".rest == "")
+    assert("".graphemes() == [])
+    assert("\r\n".length == 1)
+    assert("👍🏽".length == 1)
+    assert("각".length == 1)
+    assert("क्ष".length == 1)
+    assert("é!".take_while((cluster: String) -> cluster != "!") == "é")
+    assert("é!".split("") == ["é", "!"])
+    assert("é".scalar_head() == 'e')
+    assert("é".scalar_rest() == "́")
+    assert("é".scalar_slice(1, 2) == "́")
+    assert("é".code_points() == ['e', '́'])
+    let items = []
+    for cluster in text { items.push(cluster) }
+    assert(items == text.graphemes())
+    assert(sequence_head("é!") == "é")
+    assert(sequence_length("é!") == 2)
+    let borrowed = ref text
+    assert(borrowed.length == 5)
+    assert(borrowed.head == "A")
+    assert(borrowed.rest == "é🇺🇸👩‍💻Z")
+    assert("©‍®".length == 1)
+    42
+}
+
+func sequence_head(text: Sequence<String>) -> String { text.head() }
+func sequence_length(text: Sequence<String>) -> Int { text.length() }

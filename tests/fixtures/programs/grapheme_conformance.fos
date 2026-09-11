@@ -1,0 +1,51 @@
+// Cases come from Unicode 17.0.0 auxiliary/GraphemeBreakTest.txt.
+import core.string
+import core.list
+import core.bytes
+import core.option
+import std.iter
+
+func hex(text: String) -> Int {
+    let encoded = text.bytes
+    let value = 0
+    let index = 0
+    loop {
+        break if index == encoded.length
+        let digit = encoded[index].int
+        value = value * 16 + branch { digit <= 57 -> digit - 48 _ -> digit - 55 }
+        index = index + 1
+    }
+    value
+}
+
+func verify(row: String) -> () {
+    let tokens = row.copy().split(" ")
+    let points = []
+    let boundaries = []
+    for token in tokens {
+        branch {
+            token == "÷" -> boundaries.push(points.length)
+            token == "×" || token.empty? -> ()
+            _ -> points.push(from_code_point(hex(token)))
+        }
+    }
+    let text = String.from_code_points(points)
+    let clusters = text.graphemes()
+    assert(clusters.length == boundaries.length - 1, row)
+    assert(text.length == clusters.length, row)
+    assert(text.iterator().collect() == clusters, row)
+    let index = 0
+    loop {
+        break if index == clusters.length
+        let expected = text.scalar_slice(boundaries[index], boundaries[index + 1])
+        assert(clusters[index] == expected, row)
+        assert(text.slice(index, index + 1) == expected, row)
+        index = index + 1
+    }
+}
+
+func main() -> Int {
+    let cases = "__CASES__".split("\n")
+    for row in cases { verify(row) }
+    42
+}

@@ -19,9 +19,6 @@ pub const FAIL: &str = "foster_rt_v4_fail";
 
 pub const STRING_CONSTANT: &str = "foster_rt_v4_string_constant";
 pub const STRING_EMPTY: &str = "foster_rt_v4_string_empty";
-pub const STRING_LENGTH: &str = "foster_rt_v4_string_length";
-pub const STRING_HEAD: &str = "foster_rt_v4_string_head";
-pub const STRING_REST: &str = "foster_rt_v4_string_rest";
 pub const STRING_WHITESPACE: &str = "foster_rt_v4_string_whitespace";
 pub const STRING_CONCAT: &str = "foster_rt_v4_string_concat";
 pub const STRING_GET: &str = "foster_rt_v4_string_get";
@@ -201,9 +198,6 @@ runtime_functions! {
     WRITE_NEWLINE: () -> U8 Scalar;
     STRING_CONSTANT: (I64 Value) -> Pointer Owned;
     STRING_EMPTY: (Pointer Borrowed) -> U8 Scalar;
-    STRING_LENGTH: (Pointer Borrowed) -> I64 Scalar;
-    STRING_HEAD: (Pointer Borrowed) -> U32 Scalar;
-    STRING_REST: (Pointer Borrowed) -> Pointer Owned;
     STRING_WHITESPACE: (Pointer Borrowed) -> U8 Scalar;
     STRING_CONCAT: (Pointer Borrowed, Pointer Borrowed) -> Pointer Owned;
     COPY_BYTES: (Pointer Borrowed, Pointer Borrowed, I64 Value) -> U8 Scalar;

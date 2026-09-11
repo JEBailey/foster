@@ -98,14 +98,20 @@ func main() -> Int {
 
 | API | Position unit | Invalid bounds |
 | --- | --- | --- |
-| `String.length`, `String.slice` | Unicode scalars | Slice bounds are clamped |
+| `String.length`, `String.slice` | Extended grapheme clusters | Slice bounds are clamped |
+| `String.scalar_length()`, `scalar_slice` | Unicode scalars | Slice bounds are clamped |
 | `String.byte_length()` | UTF-8 bytes | No bounds argument |
 | `StringCursor.checkpoint`, `text_span` | UTF-8 bytes | Split scalars and invalid ranges are rejected |
 | `Bytes.length`, `Bytes.slice` | Bytes | Slice bounds assert |
 | `List.length`, `List.slice` | Elements | Slice bounds assert |
 
 A scalar is not necessarily a displayed character: combining marks and emoji
-sequences can contain several scalars. Unicode casing can also change length.
+sequences can contain several scalars. String counting, slicing, iteration, head/rest,
+first/last, reversal, and splitting on an empty separator keep extended grapheme clusters
+together. Cluster values are strings: `"é".length == 1`, while
+`"é".scalar_length() == 2` and `"é".byte_length() == 3`.
+Use `code_points()`, `scalar_head`, `scalar_rest`, `scalar_slice`, and `scalar_take_while`
+when working with Unicode scalars explicitly. Unicode casing can also change length.
 Full `lower`, `upper`, and `case_fold` return strings; `CodePoint`'s `simple_*`
 methods return one scalar. Casing uses Unicode 17.0.0 without normalization or
 language-specific tailoring. `ascii_lower` and `ascii_upper` affect ASCII only.

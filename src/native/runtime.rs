@@ -537,7 +537,7 @@ import core.bytes
 import std.process
 import std.iter
 type Box = { text: String }
-impl Box { func deinit(self) -> () { assert(self.text.length >= 0) } }
+impl Box { func deinit(self) -> () { assert(self.text.length >= 0, "nonnegative length in destructor") } }
 type Token = { symbol: Symbol }
 type Echo = { text: String }
 func identity(text: String) -> String { String.from_utf8(text.bytes).unwrap_or("invalid") }
@@ -548,18 +548,18 @@ func main(args: Arguments) -> String {
     return "" if args.values.empty?
     assert(String.from_utf8(Bytes.from([Byte.unchecked(255)])).error?())
     let tokens = [Token { symbol: :ready }]
-    assert(tokens[0].symbol == :ready)
+    assert(tokens[0].symbol == :ready, "symbol read")
     let text = args.values[0].copy()
     let box = Box { text: identity(text) }
     let cursor = [Box { text: identity(text) }, Box { text: "unvisited" }].iterator()
     branch cursor.next() {
-        Option.Some(value) -> { assert(value.text == text) }
+        Option.Some(value) -> { assert(value.text == text, "list cursor text") }
         Option.None -> { assert(false) }
     }
     let letters = (text + "λ🙂").iterator()
-    assert(letters.next() == Option.Some('λ'))
+    assert(letters.next() == Option.Some("λ"), "grapheme cursor text")
     let octets = (text + "λ").bytes.iterator()
-    assert(octets.next() == Option.Some(Byte.unchecked(206)))
+    assert(octets.next() == Option.Some(Byte.unchecked(206)), "byte cursor text")
     let worker = remote Echo { text: identity(text) }
     let index = 0
     loop {
@@ -567,10 +567,10 @@ func main(args: Arguments) -> String {
         let pending = worker.read()
         let text_copy = box.text + "🙂"
         let encoded = text_copy.bytes
-        assert(String.from_utf8(move encoded).unwrap_or("invalid") == text_copy)
+        assert(String.from_utf8(move encoded).unwrap_or("invalid") == text_copy, "UTF-8 round trip")
         let captured = [move text_copy] () -> text_copy
-        assert(captured() == text + "🙂")
-        assert((await pending).unwrap_or("") == text)
+        assert(captured() == text + "🙂", "captured text")
+        assert((await pending).unwrap_or("") == text, "remote text")
         index = index + 1
     }
     branch box.text {

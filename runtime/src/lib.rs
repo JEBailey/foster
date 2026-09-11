@@ -380,28 +380,6 @@ extern "C" fn foster_rt_v4_string_empty(value: usize) -> u8 {
 }
 
 #[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_string_length(value: usize) -> i64 {
-    unsafe { string_value(value).chars().count() as i64 }
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_string_head(value: usize) -> u32 {
-    unsafe { string_value(value).chars().next() }
-        .map(|value| value as u32)
-        .unwrap_or_else(|| {
-            foster_execution_failure("string index 0 is outside 0..0".into());
-            0
-        })
-}
-
-#[unsafe(no_mangle)]
-extern "C" fn foster_rt_v4_string_rest(value: usize) -> usize {
-    let text = unsafe { string_value(value) };
-    let offset = text.chars().next().map_or(0, char::len_utf8);
-    owned_string(&text[offset..])
-}
-
-#[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_string_whitespace(value: usize) -> u8 {
     u8::from(unsafe { string_value(value).chars().all(char::is_whitespace) })
 }

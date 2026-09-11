@@ -102,6 +102,8 @@ inferred types and effects. It includes public and private declarations, their v
 attached Markdown documentation comments, but omits private types without nonempty documentation.
 Module pages summarize the public types they provide,
 including fields, enum cases, required methods, and linked functions or methods.
+Type references in signatures and fields link to their declarations in the generated site.
+Primitive types link to their library module; omitted types and modules remain plain text.
 Module pages keep an overview and declaration navigation alongside the reference on wide screens.
 Use **Find a declaration** to filter navigation by name or kind; press Escape to clear it.
 On smaller screens, **On this page** can be collapsed to make room for the reference.
@@ -136,7 +138,7 @@ The current implementation includes:
 - `impl` blocks for associated functions and instance methods, private-by-default declarations,
   transparent type aliases, and tagged enums with exhaustive pattern branches;
 - statically checked structural record adaptation, declaration-side composition such as
-  `type Text = & Sequence<CodePoint> & { ... }`, and intersection contracts such as
+  `type Text = & Sequence<String> & { ... }`, and intersection contracts such as
   `Named & Located`;
 - borrow-by-default calls, explicit `move`, positional consuming callable types, group references,
   closure capture modes, move/initialization checking, and structural invalidation;
@@ -177,7 +179,7 @@ Conditional `branch` expressions use `_` for their required fallback arm:
 func skip_whitespace(characters: String) -> String {
     branch {
         characters.empty? -> characters
-        characters.head.whitespace? -> skip_whitespace(characters.rest)
+        characters.scalar_head().whitespace? -> skip_whitespace(characters.scalar_rest())
         _ -> characters
     }
 }

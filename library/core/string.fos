@@ -1,17 +1,20 @@
 //! Immutable Unicode text, UTF-8 cursors, and text construction.
 //!
-//! `String` lengths and slice bounds count Unicode scalars, not bytes or grapheme
-//! clusters. byte_length and `StringCursor` checkpoints count UTF-8 bytes. Use a
+//! `String` lengths and slice bounds count Unicode 17.0.0 extended grapheme
+//! clusters. Iteration, head/rest, first/last, reversal, and empty-separator splitting
+//! also use whole clusters. `code_points()` and `StringCursor` provide scalar access.
+//! `byte_length()` and `StringCursor` checkpoints count UTF-8 bytes. Use a
 //! cursor for repeated sequential reads and `StringBuilder` for incremental output.
 //! Case conversion uses Unicode 17.0.0 without normalization or locale tailoring.
 //!
 //! ```foster
 //! import core.string
 //! func main() -> Int {
-//!     let text = "Aλ🙂"
+//!     let text = "Aé👩‍💻"
 //!     assert(text.length == 3)
-//!     assert(text.byte_length() == 7)
-//!     assert(text.slice(1, 2) == "λ")
+//!     assert(text.scalar_length() == 6)
+//!     assert(text.byte_length() == 15)
+//!     assert(text.slice(1, 2) == "é")
 //!     0
 //! }
 //! ```
@@ -36,13 +39,13 @@ pub type String = {
     // Required public operations; implementations live in impl blocks.
     /// Returns an independent text value; immutable byte storage may be shared.
     pub func copy(self) -> self [read self]
-    /// Creates an independent UTF-8 cursor over a stable byte snapshot.
-    pub func iterator(self) -> Iterator<CodePoint> [read self]
-    /// Returns the first code point, or `None` when the string is empty.
-    pub func first(self) -> Option<CodePoint> [read self]
-    /// Returns the final Unicode scalar, or `None` for an empty string.
-    pub func last(self) -> Option<CodePoint> [read self]
-    /// Returns the string with its Unicode scalar values in reverse order.
+    /// Creates an independent iterator yielding whole grapheme clusters as strings.
+    pub func iterator(self) -> Iterator<String> [read self]
+    /// Returns the first grapheme cluster, or `None` when the string is empty.
+    pub func first(self) -> Option<String> [read self]
+    /// Returns the final grapheme cluster, or `None` for an empty string.
+    pub func last(self) -> Option<String> [read self]
+    /// Returns the string with its extended grapheme clusters in reverse order.
     pub func reverse(self) -> String [read self]
     /// Returns whether the text begins with `prefix`; an empty prefix always matches.
     pub func starts_with?(self, prefix: String) -> Bool [read prefix, read self]
@@ -59,16 +62,28 @@ pub type String = {
     pub func trim(self) -> String [consume self]
     /// Materializes Unicode scalar values by scanning the UTF-8 bytes once.
     pub func code_points(self) -> List<CodePoint> [read self]
-    /// Returns the longest prefix whose scalars satisfy `predicate`.
-    /// Calls the predicate once per inspected scalar, stopping at the first false result.
-    /// An empty input or a rejected first scalar returns `""`.
-    pub func take_while(self, predicate: Predicate<CodePoint>) -> String [read predicate, read self]
-    /// Returns the half-open range `[start, end)` measured in Unicode scalars.
+    /// Materializes the text as complete extended grapheme clusters.
+    pub func graphemes(self) -> List<String> [read self]
+    /// Returns the first Unicode scalar; the string must not be empty.
+    pub func scalar_head(self) -> CodePoint [read self]
+    /// Returns text after the first Unicode scalar, preserving the empty string.
+    pub func scalar_rest(self) -> String [read self]
+    /// Counts Unicode scalar values. Use length for grapheme-cluster counts.
+    pub func scalar_length(self) -> Int [read self]
+    /// Returns the longest prefix whose Unicode scalars satisfy predicate.
+    pub func scalar_take_while(self, predicate: Predicate<CodePoint>) -> String [read predicate, read self]
+    /// Slices a clamped half-open scalar range; this may split a grapheme cluster.
+    pub func scalar_slice(self, start: Int, end: Int) -> String [read end, read self, read start]
+    /// Returns the longest prefix whose grapheme clusters satisfy `predicate`.
+    /// Calls the predicate once per inspected cluster, stopping at the first false result.
+    /// An empty input or a rejected first cluster returns `""`.
+    pub func take_while(self, predicate: Predicate<String>) -> String [read predicate, read self]
+    /// Returns the half-open range `[start, end)` measured in extended grapheme clusters.
     /// Bounds are clamped to the available text; reversed or empty ranges return `""`.
     /// This differs from the asserting bounds checks on `List.slice` and `Bytes.slice`.
     pub func slice(self, start: Int, end: Int) -> String [read end, read self, read start]
     /// Splits around nonoverlapping separators, preserving empty fields.
-    /// An empty separator produces one string per Unicode scalar, with no extra empty fields.
+    /// An empty separator produces one string per extended grapheme cluster, with no extra empty fields.
     /// Empty input yields `[]` with an empty separator and `[""]` otherwise.
     pub func split(self, separator: String) -> List<String> [consume self]
     /// Returns full Unicode lowercase text, including contextual final sigma.
@@ -84,14 +99,14 @@ pub type String = {
     /// Returns the number of bytes required by the UTF-8 encoding.
     pub func byte_length(self) -> Int [read self.value]
 
-    // Required accessors supplied by the builtin storage implementation.
-    /// Returns whether this string contains no Unicode scalars.
+    // Empty and byte access use builtin storage; length/head/rest are Foster algorithms.
+    /// Returns whether this string contains no text.
     pub func empty?(self) -> Bool
-    /// Returns the number of Unicode scalars, not UTF-8 bytes or grapheme clusters.
+    /// Returns the number of extended grapheme clusters, not scalars or UTF-8 bytes.
     pub func length(self) -> Int
-    /// Returns the first Unicode scalar; the string must not be empty.
-    pub func head(self) -> CodePoint
-    /// Returns the text after the first Unicode scalar.
+    /// Returns the first extended grapheme cluster; the string must not be empty.
+    pub func head(self) -> String
+    /// Returns the text after the first extended grapheme cluster.
     pub func rest(self) -> String
     /// Returns the UTF-8 bytes underlying the text.
     pub func bytes(self) -> Bytes
@@ -178,6 +193,134 @@ func decode_bytes(data: Bytes) -> String {
 pub type StringCursor = & Cursor<CodePoint> & {
     data: Bytes
     offset: Int
+
+    /// Copies text between scalar-aligned byte offsets without moving the cursor.
+    pub func text_span(self, start: Int, end: Int) -> Option<String> [read self]
+    /// Copies the text from the current position to the end.
+    pub func remaining(self) -> String [read self]
+    /// Reports whether the reader has reached the end.
+    pub func empty?(self) -> Bool [read self]
+}
+
+/// A forward iterator over extended grapheme clusters in a stable UTF-8 snapshot.
+/// Each item is a String containing one cluster; byte offsets remain internal.
+pub type GraphemeCursor = & Iterator<String> & {
+    source: StringCursor
+}
+
+impl GraphemeCursor {
+    /// Creates an independent grapheme iterator using Unicode 17.0.0 boundaries.
+    pub func from(text: String) -> GraphemeCursor {
+        GraphemeCursor { source: StringCursor.from(text) }
+    }
+
+    /// Returns the next complete cluster, or None at the end of the text.
+    pub func next(self: GraphemeCursor) -> Option<String> {
+        return Option.None if self.source.empty?()
+        let start = self.source.checkpoint()
+        let end = unicode::grapheme_end(self.source)
+        self.source.restore(end)
+        self.source.text_span(start, end)
+    }
+}
+
+impl String {
+    /// Counts Unicode 17.0.0 extended grapheme clusters without normalization.
+    pub func length(self: String) -> Int {
+        let source = StringCursor.from(self)
+        let count = 0
+        loop {
+            break if source.empty?()
+            unicode::grapheme_end(source)
+            count = count + 1
+        }
+        count
+    }
+
+    /// Returns the first complete grapheme cluster; the string must not be empty.
+    pub func head(self: String) -> String {
+        branch GraphemeCursor.from(self).next() {
+            Option.Some(cluster) -> cluster
+            Option.None -> { assert(false, "cannot take head of an empty string")
+                ""
+            }
+        }
+    }
+
+    /// Returns all text after the first grapheme cluster; empty text stays empty.
+    pub func rest(self: String) -> String {
+        let source = StringCursor.from(self)
+        unicode::grapheme_end(source)
+        source.remaining()
+    }
+
+    /// Materializes the text as complete extended grapheme clusters.
+    pub func graphemes(self: String) -> List<String> {
+        let source = GraphemeCursor.from(self)
+        let output = []
+        loop {
+            branch source.next() {
+                Option.None -> { break }
+                Option.Some(cluster) -> output.push(cluster)
+            }
+        }
+        output
+    }
+
+    /// Returns the first Unicode scalar; the string must not be empty.
+    pub func scalar_head(self: String) -> CodePoint {
+        assert(!self.empty?, "cannot take scalar_head of an empty string")
+        cursor(self).next_scalar()
+    }
+
+    /// Returns text after the first Unicode scalar, preserving the empty string.
+    pub func scalar_rest(self: String) -> String {
+        let source = cursor(self)
+        source.next()
+        source.remaining()
+    }
+
+    /// Counts Unicode scalar values. Use length for grapheme-cluster counts.
+    pub func scalar_length(self: String) -> Int {
+        let source = cursor(self)
+        let count = 0
+        loop {
+            break if source.empty?()
+            source.next_scalar()
+            count = count + 1
+        }
+        count
+    }
+
+    /// Returns the longest prefix whose Unicode scalars satisfy predicate.
+    pub func scalar_take_while(self: String, predicate: Predicate<CodePoint>) -> String {
+        let source = cursor(self)
+        let end = 0
+        loop {
+            break if source.empty?()
+            break if !predicate(source.next_scalar())
+            end = source.checkpoint()
+        }
+        decode_bytes(source.data.slice(0, end))
+    }
+
+    /// Slices a clamped half-open scalar range; this may split a grapheme cluster.
+    pub func scalar_slice(self: String, start: Int, end: Int) -> String {
+        return "" if end <= 0 || end <= start
+        let source = cursor(self)
+        let index = 0
+        let first = 0
+        loop {
+            break if source.empty?() || index >= end
+            source.next_scalar()
+            index = index + 1
+            branch { index <= start -> { first = source.checkpoint() } _ -> () }
+        }
+        branch source.text_span(first, source.checkpoint()) {
+            Option.Some(text) -> text
+            Option.None -> ""
+        }
+    }
 }
 
 /// Creates a byte cursor over validated text.
@@ -186,9 +329,9 @@ func cursor(text: String) -> StringCursor {
 }
 
 impl String {
-    /// Creates an independent UTF-8 cursor over a stable byte snapshot.
-    pub func iterator(self: String) -> Iterator<CodePoint> [read self] {
-        cursor(self)
+    /// Creates an independent iterator yielding whole grapheme clusters as strings.
+    pub func iterator(self: String) -> Iterator<String> [read self] {
+        GraphemeCursor.from(self)
     }
 }
 
@@ -282,46 +425,38 @@ impl StringCursor {
 }
 
 impl String {
-    /// Returns the first code point, or `None` when the string is empty.
-    pub func first(self: String) -> Option<CodePoint> {
+    /// Returns the first grapheme cluster, or `None` when the string is empty.
+    pub func first(self: String) -> Option<String> {
         branch {
             self.empty? -> Option.None
             _ -> Option.Some(self.head)
         }
     }
 
-    /// Returns the final Unicode scalar, or `None` for an empty string.
-    pub func last(self: String) -> Option<CodePoint> {
-        let source = cursor(self)
+    /// Returns the final grapheme cluster, or `None` for an empty string.
+    pub func last(self: String) -> Option<String> {
+        let source = GraphemeCursor.from(self)
         let last = Option.None
         loop {
-            break if source.offset >= source.data.length
-            last = Option.Some(source.next_scalar())
+            branch source.next() {
+                Option.None -> { break }
+                Option.Some(cluster) -> { last = Option.Some(cluster) }
+            }
         }
         last
     }
 
-    /// Returns the string with its Unicode scalar values in reverse order.
+    /// Returns the string with its extended grapheme clusters in reverse order.
     pub func reverse(self: String) -> String {
-        let data = self.bytes
-        let output = ByteBuffer.empty()
-        let end = data.length
+        let clusters = self.graphemes()
+        let output = StringBuilder.empty()
+        let index = clusters.length
         loop {
-            break if end == 0
-            let start = end - 1
-            loop {
-                break if start == 0 || data[start].int < 128 || data[start].int >= 192
-                start = start - 1
-            }
-            let index = start
-            loop {
-                break if index >= end
-                output.push(data[index])
-                index = index + 1
-            }
-            end = start
+            break if index == 0
+            index = index - 1
+            output.append(clusters[index])
         }
-        decode_bytes((move output).freeze())
+        (move output).finish()
     }
 }
 
@@ -456,47 +591,49 @@ impl String {
         (move output).finish()
     }
 
-    /// Returns the longest prefix whose scalars satisfy `predicate`.
-    /// Calls the predicate once per inspected scalar, stopping at the first false result.
-    /// An empty input or a rejected first scalar returns `""`.
-    pub func take_while(self: String, predicate: Predicate<CodePoint>) -> String {
-        let source = cursor(self)
-        let end = 0
+    /// Returns the longest prefix whose grapheme clusters satisfy `predicate`.
+    /// Calls the predicate once per inspected cluster, stopping at the first false result.
+    /// An empty input or a rejected first cluster returns `""`.
+    pub func take_while(self: String, predicate: Predicate<String>) -> String {
+        let source = GraphemeCursor.from(self)
+        let output = StringBuilder.empty()
         loop {
-            break if source.offset >= source.data.length
-            break if !predicate(source.next_scalar())
-            end = source.offset
+            branch source.next() {
+                Option.None -> { break }
+                Option.Some(cluster) -> {
+                    break if !predicate(cluster)
+                    output.append(cluster)
+                }
+            }
         }
-        decode_bytes(source.data.slice(0, end))
+        (move output).finish()
     }
 
-    /// Returns the half-open range `[start, end)` measured in Unicode scalars.
+    /// Returns the half-open range `[start, end)` measured in extended grapheme clusters.
     /// Bounds are clamped to the available text; reversed or empty ranges return `""`.
     /// This differs from the asserting bounds checks on `List.slice` and `Bytes.slice`.
     pub func slice(self: String, start: Int, end: Int) -> String {
         return "" if end <= 0 || end <= start
-        let source = cursor(self)
+        let source = StringCursor.from(self)
         let index = 0
         let first = 0
         loop {
-            break if source.offset >= source.data.length || index >= end
-            source.next_scalar()
+            break if source.empty?() || index >= end
+            unicode::grapheme_end(source)
             index = index + 1
-            branch {
-                index <= start -> {
-                    first = source.offset
-                    ()
-                }
-                _ -> ()
-            }
+            branch { index <= start -> { first = source.checkpoint() } _ -> () }
         }
-        decode_bytes(source.data.slice(first, source.offset))
+        branch source.text_span(first, source.checkpoint()) {
+            Option.Some(text) -> text
+            Option.None -> ""
+        }
     }
 
     /// Splits around nonoverlapping separators, preserving empty fields.
-    /// An empty separator produces one string per Unicode scalar, with no extra empty fields.
+    /// An empty separator produces one string per extended grapheme cluster, with no extra empty fields.
     /// Empty input yields `[]` with an empty separator and `[""]` otherwise.
     pub func split(self: String, separator: String) -> List<String> [consume self] {
+        return self.graphemes() if separator.empty?
         let data = self.bytes
         let pattern = separator.bytes
         let output = []
@@ -505,12 +642,6 @@ impl String {
         loop {
             break if index >= data.length
             branch {
-                pattern.empty? -> {
-                    let end = index + scalar_width(data[index].int)
-                    output.push(decode_bytes(data.slice(index, end)))
-                    index = end
-                    ()
-                }
                 matches_at(data, pattern, index) -> {
                     output.push(decode_bytes(data.slice(start, index)))
                     index = index + pattern.length
@@ -576,9 +707,9 @@ impl String {
     }
 }
 
-/// Returns whether a code point is an ASCII decimal digit.
-func ascii_digit?(value: CodePoint) -> Bool {
-    value >= '0' && value <= '9'
+/// Returns whether a cluster consists of one ASCII decimal digit.
+func ascii_digit?(value: String) -> Bool {
+    value.scalar_length() == 1 && value.scalar_head() >= '0' && value.scalar_head() <= '9'
 }
 
 test "string algorithms preserve Unicode text" {
@@ -588,9 +719,9 @@ test "string algorithms preserve Unicode text" {
     assert("aλ🙂".ends_with?("λ🙂"))
     assert("aλ🙂".contains?("λ"))
     assert("123abc".take_while(ascii_digit?) == "123")
-    assert("abc".take_while((_: CodePoint) -> false) == "")
-    assert("λδ1".take_while((value: CodePoint) -> value > 127) == "λδ")
-    assert("".take_while((_: CodePoint) -> true) == "")
+    assert("abc".take_while((_: String) -> false) == "")
+    assert("λδ1".take_while((value: String) -> value.scalar_head() > 127) == "λδ")
+    assert("".take_while((_: String) -> true) == "")
     assert("aλ🙂z".slice(1, 3) == "λ🙂")
     assert("aλ".slice(-9, 1) == "a")
     assert("aλ".slice(9, 99) == "")

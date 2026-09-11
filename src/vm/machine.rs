@@ -1649,16 +1649,6 @@ fn member(
             .map_err(|_| RuntimeError::runtime("Foster String contains invalid UTF-8"))?;
         return match field {
             "empty?" => Ok(Value::Bool(bytes.is_empty())),
-            "length" => Ok(Value::Integer(text.chars().count() as i64)),
-            "head" => text
-                .chars()
-                .next()
-                .map(Value::CodePoint)
-                .ok_or_else(|| RuntimeError::runtime("cannot take `head` of an empty string")),
-            "rest" => {
-                let offset = text.chars().next().map_or(0, char::len_utf8);
-                Ok(Value::string(string_record, bytes[offset..].to_vec()))
-            }
             "whitespace?" => Ok(Value::Bool(text.chars().all(char::is_whitespace))),
             "bytes" | "value" => Ok(Value::bytes(bytes.to_vec())),
             _ => Err(RuntimeError::runtime(format!(

@@ -2,6 +2,46 @@
 use foster::{native, vm};
 
 #[test]
+fn grapheme_accessors_work_without_imports() {
+    check(
+        "implicit-graphemes",
+        r#"
+func main() -> Int {
+    let text = "é👩‍💻"
+    let count = [move text] () -> text.length
+    assert(count() == 2)
+    assert("é!".head == "é")
+    assert("é!".rest == "!")
+    42
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
+fn grapheme_string_operations_agree_in_both_backends() {
+    check(
+        "graphemes",
+        include_str!("fixtures/programs/graphemes.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn grapheme_boundaries_conform_to_unicode_in_both_backends() {
+    let cases = include_str!("../tools/unicode/17.0.0/GraphemeBreakTest.txt")
+        .lines()
+        .map(|line| line.split('#').next().unwrap().trim())
+        .filter(|line| !line.is_empty())
+        .collect::<Vec<_>>();
+    assert!(cases.len() > 700);
+    let source = include_str!("fixtures/programs/grapheme_conformance.fos")
+        .replace("__CASES__", &cases.join("\\n"));
+    check("grapheme-conformance", &source, Ok("42"));
+}
+
+#[test]
 fn for_loops_agree_in_both_backends() {
     check(
         "for-loops",
@@ -500,15 +540,15 @@ func main() -> Bool {
     let letters = text.iterator()
     let other = text.iterator()
     text = "changed"
-    assert(letters.next() == Option.Some('a'))
-    assert(letters.next() == Option.Some('λ'))
-    assert(letters.next() == Option.Some('€'))
-    assert(letters.next() == Option.Some('🦀'))
+    assert(letters.next() == Option.Some("a"))
+    assert(letters.next() == Option.Some("λ"))
+    assert(letters.next() == Option.Some("€"))
+    assert(letters.next() == Option.Some("🦀"))
     assert(letters.next() == Option.None)
     assert(letters.next() == Option.None)
-    assert(other.collect() == ['a', 'λ', '€', '🦀'])
+    assert(other.collect() == ["a", "λ", "€", "🦀"])
     assert("".iterator().count() == 0)
-    assert("aλ€🦀".iterator().map((value: CodePoint) -> value).take(3).collect() == ['a', 'λ', '€'])
+    assert("aλ€🦀".iterator().map((value: String) -> value).take(3).collect() == ["a", "λ", "€"])
     let octets = "ab".bytes.iterator()
     assert(octets.next() == Option.Some(Byte.unchecked(97)))
     assert(octets.next() == Option.Some(Byte.unchecked(98)))
@@ -544,8 +584,8 @@ func main() -> Bool {
     assert(numbers.next() == Option.None)
     assert(numbers.next() == Option.None)
     let text = iterator("λ🦀")
-    assert(text.next() == Option.Some('λ'))
-    assert(text.next() == Option.Some('🦀'))
+    assert(text.next() == Option.Some("λ"))
+    assert(text.next() == Option.Some("🦀"))
     assert(text.next() == Option.None)
     let characters = iterator(['λ', '🦀'])
     assert(characters.collect() == ['λ', '🦀'])
@@ -581,25 +621,25 @@ fn generic_sequence_user_accessors_can_change_tail_representation() {
 import std.iter
 import std.sequence
 import core.string
-type TextSlice = & Sequence<CodePoint> & { text: String }
+type TextSlice = & Sequence<String> & { text: String }
 impl TextSlice {
     func empty?(self) -> Bool { self.text.empty? }
     func length(self) -> Int { self.text.length }
-    func head(self) -> CodePoint { self.text.head }
+    func head(self) -> String { self.text.head }
     func rest(self) -> String { self.text.rest }
 }
-func letters(values: Sequence<CodePoint>) -> List<CodePoint> [consume values] {
+func letters(values: Sequence<String>) -> List<String> [consume values] {
     let cursor = Iterator.from_sequence(move values)
     cursor.collect()
 }
 func measure<T>(values: Sequence<T>) -> Int { values.length() }
 func main() -> Bool {
-    assert(letters(TextSlice { text: "λ🦀!" }) == ['λ', '🦀', '!'])
-    assert(letters(TextSlice { text: "" }) == "".code_points())
-    assert(letters(['a', 'b']) == ['a', 'b'])
+    assert(letters(TextSlice { text: "λ🦀!" }) == ["λ", "🦀", "!"])
+    assert(letters(TextSlice { text: "" }) == "".graphemes())
+    assert(letters(["a", "b"]) == ["a", "b"])
     assert(measure(TextSlice { text: "λ🦀!" }) == 3)
     assert(measure([1, 2]) == 2)
-    assert(sequence::count("banana", (value: CodePoint) -> value == 'a') == 3)
+    assert(sequence::count("banana", (value: String) -> value == "a") == 3)
     assert(sequence::count([1, 2, 3], (value: Int) -> value > 1) == 2)
     true
 }
@@ -1129,7 +1169,7 @@ fn remote_runtime_failures_stop_nested_execution() {
         ("division", "Int", "value / 0"),
         ("shift", "Byte", "Byte.unchecked(value) << 8"),
         ("bounds", "Int", "[value][9]"),
-        ("text-head", "CodePoint", "\"\".head"),
+        ("text-head", "String", "\"\".head"),
         ("code-point", "CodePoint", "from_code_point(1114112)"),
         ("byte", "Byte", "Byte.unchecked(256)"),
         ("float", "Float", "parse_float(\"invalid\")"),

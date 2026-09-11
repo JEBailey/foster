@@ -93,7 +93,7 @@ impl Checker<'_> {
         if let Ty::Sequence(element) = &expected
             && self.is_string_type(&actual)
         {
-            return self.unify((**element).clone(), Ty::CodePoint, function);
+            return self.unify((**element).clone(), self.string_type(), function);
         }
         if let Ty::Sequence(element) = &expected
             && self.is_bytes_type(&actual)
@@ -547,7 +547,7 @@ impl Checker<'_> {
 
     pub(super) fn builtin_collection_method(&self, actual: &Ty, name: &str) -> Option<Ty> {
         let element = if self.is_string_type(actual) {
-            Ty::CodePoint
+            self.string_type()
         } else if self.is_bytes_type(actual) {
             Ty::Byte
         } else if let Some(element) = self.list_element(actual) {

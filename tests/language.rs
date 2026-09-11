@@ -387,7 +387,15 @@ test "another case" {}
     assert_eq!(parsed.tests[0].description, "empty list has zero length");
 
     let compilation = foster::compile(source).unwrap();
-    assert_eq!(compilation.hir.tests.len(), 2);
+    let main = compilation.hir.module_named("main").unwrap();
+    let tests = compilation
+        .hir
+        .tests
+        .iter()
+        .copied()
+        .filter(|test| compilation.hir.functions[*test].module == main)
+        .collect::<Vec<_>>();
+    assert_eq!(tests.len(), 2);
     assert!(
         compilation.hir.modules[compilation.hir.module_named("main").unwrap()]
             .functions
@@ -397,7 +405,7 @@ test "another case" {}
     );
     let program = foster::vm::compile(&compilation).unwrap();
     let machine = foster::vm::Machine::new(&program);
-    for test in &compilation.hir.tests {
+    for test in &tests {
         assert_eq!(machine.run_function(*test).unwrap(), Value::Unit);
     }
 }
@@ -1678,28 +1686,28 @@ fn declared_type_composition_conforms_without_runtime_conversion() {
     let source = r#"
 import core.string as strings
 
-type TextSlice = & Sequence<CodePoint> & {
+type TextSlice = & Sequence<String> & {
     text: String
 }
 
 impl TextSlice {
     func empty?(self: TextSlice) -> Bool { self.text.empty? }
     func length(self: TextSlice) -> Int { self.text.length }
-    func head(self: TextSlice) -> CodePoint { self.text.head }
+    func head(self: TextSlice) -> String { self.text.head }
     func rest(self: TextSlice) -> String { self.text.slice(1, self.text.length) }
 }
 
-func first(values: Sequence<CodePoint>) -> CodePoint {
+func first(values: Sequence<String>) -> String {
     values.head()
 }
 
-func main() -> CodePoint {
+func main() -> String {
     let value = TextSlice { text: "OK" }
     first(value)
     value.head()
 }
 "#;
-    assert_eq!(foster::run(source).unwrap(), Value::CodePoint('O'));
+    assert_string(foster::run(source).unwrap(), "O");
 }
 
 #[test]
@@ -2088,19 +2096,19 @@ fn matching_contracts_conform_without_an_explicit_composition_clause() {
 type TextSlice = {
     pub empty?: Bool
     pub length: Int
-    pub head: CodePoint
+    pub head: String
     pub rest: String
 }
 
-func first(values: Sequence<CodePoint>) -> CodePoint {
+func first(values: Sequence<String>) -> String {
     values.head()
 }
 
-func main() -> CodePoint {
-    first(TextSlice { empty?: false, length: 2, head: 'O', rest: "K" })
+func main() -> String {
+    first(TextSlice { empty?: false, length: 2, head: "O", rest: "K" })
 }
 "#;
-    assert_eq!(foster::run(source).unwrap(), Value::CodePoint('O'));
+    assert_string(foster::run(source).unwrap(), "O");
 }
 
 #[test]
@@ -2112,19 +2120,19 @@ type Named = {
     pub name: String
 }
 
-type TextSlice = & Named & Sequence<CodePoint> & {
+type TextSlice = & Named & Sequence<String> & {
     text: String
 }
 
 impl TextSlice {
     func empty?(self: TextSlice) -> Bool { self.text.empty? }
     func length(self: TextSlice) -> Int { self.text.length }
-    func head(self: TextSlice) -> CodePoint { self.text.head }
+    func head(self: TextSlice) -> String { self.text.head }
     func rest(self: TextSlice) -> String { self.text.slice(1, self.text.length) }
 }
 
-func describe(value: Named & Sequence<CodePoint>) -> String {
-    value.name + value.head().string
+func describe(value: Named & Sequence<String>) -> String {
+    value.name + value.head()
 }
 
 func main() -> String {
@@ -2435,7 +2443,7 @@ func main() -> Int {
     );
     assert_eq!(
         kind("head"),
-        MemberKind::ComputedValue(ComputedValueKind::Copy)
+        MemberKind::ComputedValue(ComputedValueKind::IndependentOwned)
     );
     assert_eq!(
         kind("rest"),
@@ -2738,7 +2746,7 @@ fn strings_and_lists_implement_sequence_without_conversion() {
 import std.sequence
 
 func main() -> Int {
-    let letters = sequence::count("banana", (value: CodePoint) -> value == 'a')
+    let letters = sequence::count("banana", (value: String) -> value == "a")
     let evens = sequence::count([1, 2, 3, 4], (value: Int) -> value / 2 * 2 == value)
     letters * 10 + evens
 }

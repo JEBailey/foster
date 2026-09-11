@@ -249,10 +249,10 @@ The parser and renderer implement the TOML 1.1 grammar in `std.toml` itself. Pro
 bootstraps the same embedded Foster module before package source loading, so `foster.toml` and user
 code share one parser and one set of validation rules.
 
-`String` implements `Sequence<CodePoint>`, and `List<T>` implements `Sequence<T>`. This is a
+`String` implements `Sequence<String>`, and `List<T>` implements `Sequence<T>`. This is a
 zero-conversion view: generic sequence functions operate on the original string or list value.
 Foster's settled declaration syntax composes the same contract into a user type as
-`type Foo = & Sequence<CodePoint> & { }`. Sequence members are required accessor functions rather than
+`type Foo = & Sequence<String> & { }`. Sequence members are required accessor functions rather than
 implied storage, so constructors do not initialize `empty?`, `length`, `head`, or `rest`. A user
 type supplies compatible instance functions before such a record is instantiated. Declared
 receiver functions always use call syntax,
@@ -271,8 +271,9 @@ observations such as `count`, `contains?`, `any?`, and `all?` borrow it.
 `for item in collection { ... }` opens `.iterator()` once and calls `.next()` until `Option.None`.
 It works directly with lists, strings, sequences, and custom iterable collections. Lists and strings
 need no explicit import for this syntax. List iteration sees a snapshot, so changing the source
-list inside the body does not add items to the active iteration. String items are Unicode code
-points. Use `_` in place of the item name when only the iteration count matters.
+list inside the body does not add items to the active iteration. String items are Unicode 17.0.0
+extended grapheme clusters represented as `String` values. Use `_` in place of the item name when
+only the iteration count matters.
 
 Iterator consumers are ordinary Foster-written receiver methods. `for_each`, `fold`, `find`,
 `any?`, `all?`, and `count` process the cursor's remaining elements and leave it exhausted unless a
@@ -299,7 +300,7 @@ Iterable<T>
 └── Collection<T>
     ├── Sequence<T>
     │   ├── List<T>
-    │   ├── String as Sequence<CodePoint>
+    │   ├── String as Sequence<String>
     │   ├── Bytes as Sequence<Byte>
     │   └── Range<T>
     ├── Set<T>

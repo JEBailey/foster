@@ -25,10 +25,14 @@ fn rejects_contract_result_metadata_that_disagrees_with_its_use() {
     ).unwrap();
     let mut program =
         compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let function = compilation.hir.function_named(module, "first").unwrap();
     let result = program
         .functions
-        .values_mut()
-        .flat_map(|function| &mut function.instructions)
+        .get_mut(&function)
+        .unwrap()
+        .instructions
+        .iter_mut()
         .find_map(|instruction| match instruction {
             Instruction::CallContractMethod {
                 name, result_type, ..

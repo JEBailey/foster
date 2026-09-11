@@ -1,7 +1,7 @@
 # Foster semantic specification
 
-Status: **draft normative specification**, revision 4, 2026-09-05.
-Baseline: **language version 7, ownership-model version 3**.
+Status: **draft normative specification**, revision 5, 2026-09-11.
+Baseline: **language version 8, ownership-model version 3**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
@@ -92,8 +92,10 @@ or allocation padding. Record/list/enum equality compares corresponding initiali
 floating-point members retain IEEE equality. No universal equality or ordering contract for every
 kind of callable, reference, or host handle is introduced here.
 
-**S-08 — Text and collections.** Strings contain valid UTF-8. String code-point operations count
-Unicode scalar values, not bytes or grapheme clusters; byte operations use byte offsets.
+**S-08 — Text and collections.** Strings contain valid UTF-8. String length, slicing,
+head/rest, first/last, reversal, and default iteration use Unicode 17.0.0 extended grapheme
+clusters. Each cluster is a String. Explicit scalar APIs and CodePoint operate on Unicode
+scalar values; byte operations use byte offsets. String conforms to `Sequence<String>`.
 String equality does not imply Unicode normalization. Lists are homogeneous ordered collections.
 Invalid checked indexing is a language failure, not unchecked memory access.
 
@@ -106,7 +108,7 @@ The following are library contracts, not new syntax:
 - `String.bytes` produces byte data without consuming the string. An ordinary stored field named
   `bytes` does not acquire that behavior merely from its spelling.
 - `List.slice` and `Bytes.slice` check half-open bounds and return range copies, not zero-copy views.
-  `String.slice` uses clamped half-open code-point bounds, as specified by its library implementation.
+  `String.slice` uses clamped half-open grapheme-cluster bounds, as specified by its library implementation.
 - Builder mutation accumulates output; consuming finalization returns an owned result. Allocation
   reuse and capacity growth must not change the resulting values or invalidate fewer loans than
   the published effect contract requires.

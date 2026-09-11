@@ -38,7 +38,7 @@ impl Uri {
     pub func parse(value: String) -> Result<Uri, UriError> {
         branch {
             value.empty? -> invalid_uri(move value, "URI must not be empty")
-            not scheme_start?(value.head) -> invalid_uri(move value, "URI scheme must begin with an ASCII letter")
+            not scheme_start?(value.scalar_head()) -> invalid_uri(move value, "URI scheme must begin with an ASCII letter")
             _ -> begin_scheme(move value)
         }
     }
@@ -46,7 +46,7 @@ impl Uri {
 
 /// Begins scanning after the already validated first scheme character.
 func begin_scheme(value: String) -> Result<Uri, UriError> [consume value] {
-    let remaining = value.rest
+    let remaining = value.scalar_rest()
     parse_scheme(move value, remaining, 1)
 }
 
@@ -57,32 +57,32 @@ impl Uri {
     }
 
     /// Returns the complete URI text.
-    pub func as_string(self: Uri) -> String { self.value.slice(0, self.value.length) }
+    pub func as_string(self: Uri) -> String { self.value.scalar_slice(0, self.value.scalar_length()) }
 
     /// Returns the stable identifier supplied to a protocol provider.
     pub func resource_id(self: Uri) -> String { self.as_string() }
 
     /// Returns the scheme spelling supplied to the parser.
-    pub func scheme(self: Uri) -> String { self.scheme_value.slice(0, self.scheme_value.length) }
+    pub func scheme(self: Uri) -> String { self.scheme_value.scalar_slice(0, self.scheme_value.scalar_length()) }
 
     /// Returns the resource portion following the URI scheme separator.
-    pub func path(self: Uri) -> String { self.path_value.slice(0, self.path_value.length) }
+    pub func path(self: Uri) -> String { self.path_value.scalar_slice(0, self.path_value.scalar_length()) }
 }
 
 /// Scans the URI scheme until its separator.
 func parse_scheme(value: String, remaining: String, index: Int) -> Result<Uri, UriError> {
     branch {
         remaining.empty? -> invalid_uri(move value, "URI must contain a scheme separator")
-        remaining.head == ':' -> parsed_uri(move value, index)
-        scheme_character?(remaining.head) -> parse_scheme(move value, remaining.rest, index + 1)
+        remaining.scalar_head() == ':' -> parsed_uri(move value, index)
+        scheme_character?(remaining.scalar_head()) -> parse_scheme(move value, remaining.scalar_rest(), index + 1)
         _ -> invalid_uri(move value, "URI scheme contains an invalid character")
     }
 }
 
 /// Separates validated URI text into its scheme and resource path.
 func parsed_uri(value: String, index: Int) -> Result<Uri, UriError> [consume value] {
-    let scheme_value = value.slice(0, index)
-    let path_value = value.slice(index + 1, value.length)
+    let scheme_value = value.scalar_slice(0, index)
+    let path_value = value.scalar_slice(index + 1, value.scalar_length())
     Result.Ok(Uri { value: move value, scheme_value, path_value })
 }
 

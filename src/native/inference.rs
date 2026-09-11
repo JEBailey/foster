@@ -658,7 +658,7 @@ pub(super) fn field_type(
     match (receiver, field) {
         (NativeType::String, "empty?") => Ok(NativeType::Bool),
         (NativeType::String, "length") => Ok(NativeType::Int),
-        (NativeType::String, "head") => Ok(NativeType::CodePoint),
+        (NativeType::String, "head") => Ok(NativeType::String),
         (NativeType::String, "rest") => Ok(NativeType::String),
         (NativeType::String, "whitespace?") => Ok(NativeType::Bool),
         (NativeType::String, "bytes" | "value") => layouts

@@ -1,4 +1,4 @@
-//! Unicode property lookup and case-mapping support.
+//! Unicode property lookup, case mapping, and grapheme segmentation.
 //!
 //! This module implements the tables and algorithms used by core.code_point and
 //! core.string. Most applications should use those receiver APIs. Generated
@@ -7,7 +7,67 @@
 import core.bytes
 import core.list
 import core.string
+import core.option
 import core.unicode.data as data
+
+/// Advances a scalar cursor over one extended grapheme cluster and returns its byte end.
+/// The cursor must start at a grapheme boundary. Implements Unicode 17.0.0
+/// UAX #29, GB3–GB999, without normalization or locale tailoring.
+pub func grapheme_end(source: StringCursor) -> Int {
+    let previous = -1
+    let regional = 0
+    let pictographic = false
+    let joined_pictographic = false
+    let conjunct = 0
+    loop {
+        let offset = source.checkpoint()
+        branch source.next() {
+            Option.None -> { return offset }
+            Option.Some(point) -> {
+                let scalar = point.as_int()
+                let current = branch {
+                    scalar == 13 -> 1
+                    scalar == 10 -> 2
+                    scalar < 32 || scalar >= 127 && scalar <= 159 || scalar == 173 -> 3
+                    scalar < 768 -> 0
+                    _ -> range_value(data::grapheme_break().bytes, scalar)
+                }
+                let emoji = scalar == 169 || scalar == 174 || scalar >= 768 && range_value(data::extended_pictographic().bytes, scalar) == 1
+                let indic = branch { scalar < 768 -> 0 _ -> range_value(data::indic_conjunct_break().bytes, scalar) }
+                let hangul_l = previous == 9 && (current == 9 || current == 10 || current == 12 || current == 13)
+                let hangul_v = (previous == 12 || previous == 10) && (current == 10 || current == 11)
+                let hangul_t = (previous == 13 || previous == 11) && current == 11
+                let boundary = branch {
+                    previous == -1 -> false
+                    previous == 1 && current == 2 -> false
+                    previous >= 1 && previous <= 3 -> true
+                    current >= 1 && current <= 3 -> true
+                    hangul_l || hangul_v || hangul_t -> false
+                    current == 4 || current == 5 || current == 8 -> false
+                    previous == 7 -> false
+                    conjunct == 2 && indic == 1 -> false
+                    joined_pictographic && emoji -> false
+                    previous == 6 && current == 6 && regional - regional / 2 * 2 == 1 -> false
+                    _ -> true
+                }
+                branch { boundary -> { source.restore(offset)
+                    return offset
+                } _ -> () }
+                joined_pictographic = current == 5 && pictographic
+                pictographic = emoji || (current == 4 && pictographic)
+                conjunct = branch {
+                    indic == 1 -> 1
+                    indic == 3 && conjunct > 0 -> 2
+                    indic == 2 -> conjunct
+                    _ -> 0
+                }
+                regional = branch { current == 6 -> regional + 1 _ -> 0 }
+                previous = current
+            }
+        }
+    }
+    source.checkpoint()
+}
 
 /// Reads an unsigned integer from a fixed-width ASCII hexadecimal table field.
 func hex(table: Bytes, offset: Int, width: Int) -> Int {

@@ -38,7 +38,7 @@ pub(super) fn lower(
         })
         .collect::<Vec<_>>();
     if arguments.is_empty() {
-        if receiver_type == NativeType::String {
+        if receiver_type == NativeType::String && candidates.is_empty() {
             let actual = field_type(
                 environment.program,
                 environment.layouts,
@@ -107,7 +107,7 @@ pub(super) fn lower(
         }
     }
     // The call's checked result type distinguishes, for example, Iterator<Int> from
-    // Iterator<CodePoint> when both implementations occur in the same native program.
+    // Iterator<String> when both implementations occur in the same native program.
     candidates.retain(|candidate| {
         candidate.result == result_type
             || opaque(result_type, environment.layouts)

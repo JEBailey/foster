@@ -264,12 +264,7 @@ pub(super) fn runtime_call(
     let result = builder.inst_results(call)[0];
     if matches!(
         name,
-        abi::CANCELLATION_POINT
-            | abi::ASSERT
-            | abi::FAIL
-            | abi::STRING_HEAD
-            | abi::STRING_GET
-            | abi::PARSE_FLOAT
+        abi::CANCELLATION_POINT | abi::ASSERT | abi::FAIL | abi::STRING_GET | abi::PARSE_FLOAT
     ) {
         propagate_native_failure(builder, module)?;
     }

@@ -505,9 +505,6 @@ pub enum NativeReceiverKind {
 pub fn native_member_runtime(receiver: NativeReceiverKind, member: &str) -> Option<&'static str> {
     match (receiver, member) {
         (NativeReceiverKind::String, "empty?") => Some(crate::native::abi::STRING_EMPTY),
-        (NativeReceiverKind::String, "length") => Some(crate::native::abi::STRING_LENGTH),
-        (NativeReceiverKind::String, "head") => Some(crate::native::abi::STRING_HEAD),
-        (NativeReceiverKind::String, "rest") => Some(crate::native::abi::STRING_REST),
         (NativeReceiverKind::String, "whitespace?") => Some(crate::native::abi::STRING_WHITESPACE),
         _ => None,
     }
@@ -780,7 +777,7 @@ mod tests {
         }
         assert_eq!(
             native_member_runtime(NativeReceiverKind::String, "length"),
-            Some(crate::native::abi::STRING_LENGTH)
+            None
         );
     }
 

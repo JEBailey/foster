@@ -71,8 +71,8 @@ pub func parse_date(source: String) -> Result<Date, FormatError> {
     let month = parse_digits(source, 5, 7)
     let day = parse_digits(source, 8, 10)
     branch {
-        source.length != 10 -> invalid_date(move source, "date must use YYYY-MM-DD")
-        source.slice(4, 5) != "-" || source.slice(7, 8) != "-" -> invalid_date(move source, "date separators must use YYYY-MM-DD")
+        source.scalar_length() != 10 -> invalid_date(move source, "date must use YYYY-MM-DD")
+        source.scalar_slice(4, 5) != "-" || source.scalar_slice(7, 8) != "-" -> invalid_date(move source, "date separators must use YYYY-MM-DD")
         _ -> parsed_date(move source, year, month, day)
     }
 }
@@ -82,24 +82,24 @@ pub func parse_time(source: String) -> Result<TimeOfDay, FormatError> {
     let hour = parse_digits(source, 0, 2)
     let minute = parse_digits(source, 3, 5)
     let second = parse_digits(source, 6, 8)
-    let fraction = fractional_nanoseconds(source, 9, source.length)
+    let fraction = fractional_nanoseconds(source, 9, source.scalar_length())
     branch {
-        source.length < 8 -> invalid_time(move source, "time must include HH:MM:SS")
-        source.slice(2, 3) != ":" || source.slice(5, 6) != ":" -> invalid_time(move source, "time separators must use HH:MM:SS")
-        source.length == 8 -> parsed_time(move source, hour, minute, second, 0)
-        source.slice(8, 9) != "." -> invalid_time(move source, "fractional seconds must follow a decimal point")
-        source.length > 18 -> invalid_time(move source, "fractional seconds support at most nine digits")
+        source.scalar_length() < 8 -> invalid_time(move source, "time must include HH:MM:SS")
+        source.scalar_slice(2, 3) != ":" || source.scalar_slice(5, 6) != ":" -> invalid_time(move source, "time separators must use HH:MM:SS")
+        source.scalar_length() == 8 -> parsed_time(move source, hour, minute, second, 0)
+        source.scalar_slice(8, 9) != "." -> invalid_time(move source, "fractional seconds must follow a decimal point")
+        source.scalar_length() > 18 -> invalid_time(move source, "fractional seconds support at most nine digits")
         _ -> parsed_time(move source, hour, minute, second, fraction)
     }
 }
 
 /// Parses an ISO civil date-time separated by `T`.
 pub func parse_date_time(source: String) -> Result<DateTime, FormatError> {
-    let parsed_date_value = parse_date(source.slice(0, 10))
-    let parsed_time_value = parse_time(source.slice(11, source.length))
+    let parsed_date_value = parse_date(source.scalar_slice(0, 10))
+    let parsed_time_value = parse_time(source.scalar_slice(11, source.scalar_length()))
     branch {
-        source.length < 19 -> invalid_date_time(move source, "date-time must include a date, T, and clock time")
-        source.slice(10, 11) != "T" -> invalid_date_time(move source, "date and time must be separated by T")
+        source.scalar_length() < 19 -> invalid_date_time(move source, "date-time must include a date, T, and clock time")
+        source.scalar_slice(10, 11) != "T" -> invalid_date_time(move source, "date and time must be separated by T")
         _ -> combine_date_time(move source, move parsed_date_value, move parsed_time_value)
     }
 }
@@ -109,12 +109,12 @@ pub func parse_offset(source: String) -> Result<Offset, FormatError> {
     return Result.Ok(Offset.utc()) if source == "Z"
     let hour = parse_digits(source, 1, 3)
     let minute = parse_digits(source, 4, 6)
-    let second = branch { source.length == 9 -> parse_digits(source, 7, 9) _ -> 0 }
+    let second = branch { source.scalar_length() == 9 -> parse_digits(source, 7, 9) _ -> 0 }
     branch {
-        source.length != 6 && source.length != 9 -> invalid_offset(move source, "offset must use Z or signed HH:MM[:SS]")
-        source.slice(0, 1) != "+" && source.slice(0, 1) != "-" -> invalid_offset(move source, "offset must begin with + or -")
-        source.slice(3, 4) != ":" -> invalid_offset(move source, "offset must separate hours and minutes with a colon")
-        source.length == 9 && source.slice(6, 7) != ":" -> invalid_offset(move source, "offset seconds must follow a colon")
+        source.scalar_length() != 6 && source.scalar_length() != 9 -> invalid_offset(move source, "offset must use Z or signed HH:MM[:SS]")
+        source.scalar_slice(0, 1) != "+" && source.scalar_slice(0, 1) != "-" -> invalid_offset(move source, "offset must begin with + or -")
+        source.scalar_slice(3, 4) != ":" -> invalid_offset(move source, "offset must separate hours and minutes with a colon")
+        source.scalar_length() == 9 && source.scalar_slice(6, 7) != ":" -> invalid_offset(move source, "offset seconds must follow a colon")
         _ -> parsed_offset(move source, hour, minute, second)
     }
 }
@@ -122,17 +122,17 @@ pub func parse_offset(source: String) -> Result<Offset, FormatError> {
 /// Parses an RFC-3339 instant with `Z` or a numeric UTC offset.
 pub func parse_instant(source: String) -> Result<Instant, FormatError> {
     branch {
-        source.length < 20 -> invalid_instant(move source, "instant must include a date, time, and UTC offset")
-        source.slice(source.length - 1, source.length) == "Z" -> instant_from_parts(source.slice(0, source.length - 1), "Z", move source)
-        source.length >= 25 && offset_sign_at?(source, source.length - 6) -> instant_from_parts(source.slice(0, source.length - 6), source.slice(source.length - 6, source.length), move source)
-        source.length >= 28 && offset_sign_at?(source, source.length - 9) -> instant_from_parts(source.slice(0, source.length - 9), source.slice(source.length - 9, source.length), move source)
+        source.scalar_length() < 20 -> invalid_instant(move source, "instant must include a date, time, and UTC offset")
+        source.scalar_slice(source.scalar_length() - 1, source.scalar_length()) == "Z" -> instant_from_parts(source.scalar_slice(0, source.scalar_length() - 1), "Z", move source)
+        source.scalar_length() >= 25 && offset_sign_at?(source, source.scalar_length() - 6) -> instant_from_parts(source.scalar_slice(0, source.scalar_length() - 6), source.scalar_slice(source.scalar_length() - 6, source.scalar_length()), move source)
+        source.scalar_length() >= 28 && offset_sign_at?(source, source.scalar_length() - 9) -> instant_from_parts(source.scalar_slice(0, source.scalar_length() - 9), source.scalar_slice(source.scalar_length() - 9, source.scalar_length()), move source)
         _ -> invalid_instant(move source, "instant must end in Z or a numeric UTC offset")
     }
 }
 
 /// Returns whether the indexed character begins a numeric UTC offset.
 func offset_sign_at?(source: String, index: Int) -> Bool {
-    source.slice(index, index + 1) == "+" || source.slice(index, index + 1) == "-"
+    source.scalar_slice(index, index + 1) == "+" || source.scalar_slice(index, index + 1) == "-"
 }
 
 /// Converts validated date fields into a typed date result.
@@ -165,7 +165,7 @@ func parsed_offset(source: String, hour: Int, minute: Int, second: Int) -> Resul
     return invalid_offset(move source, "offset contains a non-decimal field") if hour < 0 || minute < 0 || second < 0
     return invalid_offset(move source, "offset minute and second fields must be below 60") if minute > 59 || second > 59
     let magnitude = hour * 3600 + minute * 60 + second
-    let signed = branch { source.slice(0, 1) == "-" -> -magnitude _ -> magnitude }
+    let signed = branch { source.scalar_slice(0, 1) == "-" -> -magnitude _ -> magnitude }
     branch Offset.from_seconds(signed) {
         Result.Ok(value) -> Result.Ok(value)
         Result.Error(error) -> invalid_offset(move source, move error.message)
@@ -187,9 +187,9 @@ func parse_digits(source: String, start: Int, end: Int) -> Int {
 /// Accumulates decimal digits in one source range.
 func parse_digits_into(source: String, index: Int, end: Int, value: Int) -> Int {
     return value if index >= end
-    let character = source.slice(index, index + 1)
+    let character = source.scalar_slice(index, index + 1)
     return -1 if character.empty?
-    let digit = character.head.as_int() - 48
+    let digit = character.scalar_head().as_int() - 48
     return -1 if digit < 0 || digit > 9
     parse_digits_into(source, index + 1, end, value * 10 + digit)
 }

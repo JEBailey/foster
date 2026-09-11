@@ -58,7 +58,7 @@ test "lazy iterator adaptors compose" {
 }
 
 test "sequence algorithms operate without conversion" {
-    let letters = sequence::count("banana", (value: CodePoint) -> value == 'a')
+    let letters = sequence::count("banana", (value: String) -> value == "a")
     let evens = sequence::count([1, 2, 3, 4], (value: Int) -> value / 2 * 2 == value)
     assert(letters * 10 + evens == 32)
 }

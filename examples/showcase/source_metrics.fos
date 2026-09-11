@@ -1,6 +1,7 @@
 //! Sequence traversal and recursive source-text metrics.
 
 import std.sequence
+import core.string
 
 import core.result as outcomes
 import core.remote_error
@@ -19,14 +20,14 @@ type Analyzer = {
 func starts_with(source: String, prefix: String) -> Bool {
     return true if prefix.empty?
     return false if source.empty?
-    return false if source.head != prefix.head
-    starts_with(source.rest, prefix.rest)
+    return false if source.scalar_head() != prefix.scalar_head()
+    starts_with(source.scalar_rest(), prefix.scalar_rest())
 }
 
 func count_occurrences(source: String, word: String) -> Int {
     return 0 if source.empty?
-    return 1 + count_occurrences(source.rest, word) if starts_with(source, word)
-    count_occurrences(source.rest, word)
+    return 1 + count_occurrences(source.scalar_rest(), word) if starts_with(source, word)
+    count_occurrences(source.scalar_rest(), word)
 }
 
 func count_lines(source: String) -> Int {
@@ -35,7 +36,7 @@ func count_lines(source: String) -> Int {
 }
 
 func count_newlines(source: String) -> Int {
-    sequence::count(source, (character: CodePoint) -> character == '\n')
+    sequence::count(source.code_points(), (character: CodePoint) -> character == '\n')
 }
 
 func analyze(source: String) -> Metrics {

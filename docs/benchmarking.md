@@ -66,10 +66,12 @@ capability, returning a `Result` containing an independent element copy or a typ
 `List.slice` and `Bytes.slice` copy only their
 selected half-open ranges once; these APIs are value copies, not zero-copy slice views.
 
-String algorithms scan one UTF-8 byte snapshot. Trimming and code-point slicing select byte
+String algorithms scan one UTF-8 byte snapshot. Trimming and grapheme/scalar slicing select byte
 boundaries and copy the result once. `StringBuilder` encodes Unicode scalars and accumulates text
 over the Foster `ByteBuffer`; UTF-8 validation, casing, splitting, joining, and encoding remain
-Foster algorithms. ASCII casing preserves non-ASCII bytes. Substring search is a byte-range scan
+Foster algorithms. Grapheme segmentation uses pinned Unicode tables in Foster; counting and
+slicing scan forward, and reversal materializes the clusters before appending them in reverse.
+ASCII casing preserves non-ASCII bytes. Substring search is a byte-range scan
 without suffix allocations, but remains O(n*m) in the worst case.
 
 `ByteBuffer.push` and `extend` update list storage directly. Native copy-on-write reuses uniquely

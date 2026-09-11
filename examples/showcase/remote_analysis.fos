@@ -1,6 +1,7 @@
 //! Remote actors, futures, and asynchronous source-analysis aggregation.
 
 import std.sequence
+import core.string
 
 import core.result
 import core.remote_error
@@ -21,8 +22,8 @@ func contains(source: String, word: String) -> Bool {
     branch {
         word.empty? -> true
         source.empty? -> false
-        source.head == word.head -> contains_prefix_or_rest(source, word)
-        _ -> contains(source.rest, word)
+        source.scalar_head() == word.scalar_head() -> contains_prefix_or_rest(source, word)
+        _ -> contains(source.scalar_rest(), word)
     }
 }
 
@@ -30,15 +31,15 @@ func prefix(source: String, word: String) -> Bool {
     branch {
         word.empty? -> true
         source.empty? -> false
-        source.head != word.head -> false
-        _ -> prefix(source.rest, word.rest)
+        source.scalar_head() != word.scalar_head() -> false
+        _ -> prefix(source.scalar_rest(), word.scalar_rest())
     }
 }
 
 func contains_prefix_or_rest(source: String, word: String) -> Bool {
     branch {
         prefix(source, word) -> true
-        _ -> contains(source.rest, word)
+        _ -> contains(source.scalar_rest(), word)
     }
 }
 
@@ -46,7 +47,7 @@ impl SourceWorker {
     func analyze(self: SourceWorker) -> Analysis {
         Analysis {
             files: 1
-            lines: sequence::count(self.source, (character: CodePoint) -> character == '\n') + 1
+            lines: sequence::count(self.source.code_points(), (character: CodePoint) -> character == '\n') + 1
             todos: branch { contains(self.source, "TODO") -> 1 _ -> 0 }
             functions: branch { contains(self.source, "func ") -> 1 _ -> 0 }
             imports: branch { contains(self.source, "import ") -> 1 _ -> 0 }

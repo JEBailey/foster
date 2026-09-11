@@ -289,7 +289,7 @@ Implemented built-in and runtime types include:
 - symbols such as `:json_error`
 - homogeneous lists, enforced by the type checker
 - `Sequence<T>`, implemented without conversion by `List<T>` and by `String` as
-  `Sequence<CodePoint>`
+  `Sequence<String>`
 - unit, written `()`
 
 There is no universally nullable reference type. The core library represents absence with
@@ -302,8 +302,8 @@ enum Option<T> = Some(T)
 
 `Sequence<T>` is a read-oriented structural view, not a storage representation. Passing a list or
 string to a sequence parameter retains the original runtime value and ownership. Its common
-members are `empty?`, `length`, `head`, and `rest`. For strings, `head` returns a `CodePoint` and
-`rest` remains a `String` when accessed directly; through a `Sequence<CodePoint>` parameter,
+members are `empty?`, `length`, `head`, and `rest`. For strings, `head` returns one extended grapheme cluster as a `String` and
+`rest` remains a `String` when accessed directly; through a `Sequence<String>` parameter,
 `rest` has sequence type. A code point has the primitive `.whitespace?` query. Importing
 `core.code_point` adds the public `.as_string()` and `.as_int()` methods. `CodePoint` is a
 bounded integer-like primitive: it widens losslessly where `Int` is expected, integer arithmetic
@@ -318,7 +318,7 @@ The bootstrap compiler supplies the `String` and `List<T>` conformances. A type 
 after `=`, and each composed contract is aligned with `&` on the right-hand side:
 
 ```foster
-type Foo = & Sequence<CodePoint> & {
+type Foo = & Sequence<String> & {
     source: String
 }
 ```
@@ -744,18 +744,18 @@ does not participate outside its defining module.
 A type declaration may explicitly compose and assert contracts with right-hand-side `&` clauses:
 
 ```foster
-type TextCursor = & Sequence<CodePoint> & {
+type TextCursor = & Sequence<String> & {
     source: String
     offset: Int
 }
 ```
 
-The declaration imports the accessible `Sequence<CodePoint>` requirements into `TextCursor`'s
+The declaration imports the accessible `Sequence<String>` requirements into `TextCursor`'s
 effective contract. The requirements are functions, not record storage, so the constructor only
 initializes `source` and `offset`; the defining module supplies compatible `empty?`, `length`,
 `head`, and `rest` implementations. Conformance remains structural: a different type whose fields
 or accessor methods satisfy the same readable contract may be passed to the same functions without
-declaring `& Sequence<CodePoint>`.
+declaring `& Sequence<String>`.
 
 `A & B` is an intersection contract requiring the accessible fields of both record types:
 
@@ -845,7 +845,7 @@ The standard collection hierarchy is behavioral rather than representational:
 ```text
 Iterable<T>
 └── Collection<T>
-    ├── Sequence<T> → List<T>, String as Sequence<CodePoint>, Range<T>
+    ├── Sequence<T> → List<T>, String as Sequence<String>, Range<T>
     ├── Set<T>
     ├── Queue<T>
     ├── Deque<T>

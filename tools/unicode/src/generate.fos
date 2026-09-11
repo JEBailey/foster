@@ -309,7 +309,7 @@ func append_map(output: StringBuilder, name: String, input: List<Mapping>, simpl
 }
 
 func provenance(root: String) -> String {
-    let names = ["CaseFolding.txt", "DerivedCoreProperties.txt", "PropList.txt", "SpecialCasing.txt", "UnicodeData.txt"]
+    let names = ["CaseFolding.txt", "DerivedCoreProperties.txt", "PropList.txt", "SpecialCasing.txt", "UnicodeData.txt", "GraphemeBreakProperty.txt", "emoji-data.txt", "GraphemeBreakTest.txt"]
     let output = StringBuilder.empty()
     let index = 0
     loop {
@@ -328,7 +328,47 @@ func provenance(root: String) -> String {
     (move output).finish()
 }
 
-func tables(db: Database, hashes: String) -> String {
+/// Encodes UAX #29 properties using the IDs consumed by core.unicode.
+func grapheme_values(text: String, kind: Int) -> List<Int> [consume text] {
+    let values = zeros()
+    let names = "Other CR LF Control Extend ZWJ Regional_Indicator Prepend SpacingMark L V T LV LVT".split(" ")
+    let lines = (move text).split("\n")
+    let index = 0
+    loop {
+        break if index == lines.length
+        let row = fields(lines[index].copy())
+        index = index + 1
+        continue if row.empty?
+        let value = 0
+        branch {
+            kind == 0 -> {
+                loop {
+                    break if value == names.length || names[value] == row[1]
+                    value = value + 1
+                }
+                assert(value < names.length, "unknown grapheme break property")
+            }
+            kind == 1 -> { value = branch { row[1] == "Extended_Pictographic" -> 1 _ -> 0 } }
+            _ -> {
+                continue if row[1] != "InCB"
+                value = branch { row[2] == "Consonant" -> 1 row[2] == "Extend" -> 2 row[2] == "Linker" -> 3 _ -> 0 }
+            }
+        }
+        continue if value == 0
+        let ends = row[0].copy().split("..")
+        let point = number(ends[0])
+        let last = number(ends[ends.length - 1])
+        assert(point <= last && last < LIMIT, "invalid grapheme property range")
+        loop {
+            break if point > last
+            values[point] = value
+            point = point + 1
+        }
+    }
+    values
+}
+
+func tables(db: Database, hashes: String, root: String) -> String {
     let output = StringBuilder.empty()
     output.append("//! Generated Unicode 17.0.0 lookup tables; regenerate with tools/unicode/src/generate.fos.\n// Unicode 17.0.0; Unicode License V3: tools/unicode/LICENSE.txt.\n// Fixed-width ASCII hexadecimal records allow indexed binary searches in Foster.\n")
     output.append(hashes)
@@ -340,7 +380,10 @@ func tables(db: Database, hashes: String) -> String {
     append_map(output, "simple_lower", db.lower, true)
     append_map(output, "simple_upper", db.upper, true)
     append_map(output, "simple_title", db.title, true)
-    output.append("test \"generated Unicode tables contain records\" {\n    assert(categories().length > 0)\n    assert(fold().length > 0)\n}\n")
+    append_ranges(output, "grapheme_break", grapheme_values(source(root, "GraphemeBreakProperty.txt"), 0))
+    append_ranges(output, "extended_pictographic", grapheme_values(source(root, "emoji-data.txt"), 1))
+    append_ranges(output, "indic_conjunct_break", grapheme_values(source(root, "DerivedCoreProperties.txt"), 2))
+    output.append("test \"generated Unicode tables contain records\" {\n    assert(categories().byte_length() > 0)\n    assert(fold().byte_length() > 0)\n}\n")
     (move output).finish()
 }
 
@@ -441,7 +484,7 @@ pub func run(args: List<String>) -> Int {
     db = read_properties(move db, source(root, "PropList.txt"))
     // Capture insertion-ordered fixtures before sorting tables for binary searches.
     let fixture = conformance(db)
-    let generated = tables(db, provenance(root))
+    let generated = tables(db, provenance(root), root)
     branch { !check -> {
         ensure_directory(root + "/library/core/unicode")
         ensure_directory(root + "/tests/fixtures/programs")

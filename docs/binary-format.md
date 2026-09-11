@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Status: version 26, implemented by `foster::vm::{encode_program, decode_program}`.
+Status: version 27, implemented by `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -26,7 +26,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | Field | Encoding | Meaning |
 | --- | --- | --- |
 | magic | 8 bytes | ASCII `FOSTERBC` |
-| version | `u16` | `26` |
+| version | `u16` | `27` |
 | flags | `u16` | `0`; reserved |
 | constants | `vector<Constant>` | global constant pool |
 | functions | `vector<(FunctionId, Function)>` | sorted by ID |
@@ -159,8 +159,10 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 26 readers accept only version 26 with zero flags. Version 26 adds the symbolic module table;
-version 25 artifacts must be rebuilt. Contract calls retain their checked
+Version 27 readers accept only version 27 with zero flags. String accessors use Foster
+grapheme algorithms, and strings implement `Sequence<String>`; scalar-based artifacts
+from earlier versions must be rebuilt. The format retains the symbolic module table.
+Contract calls retain their checked
 generic result type, including when the receiver's concrete representation is erased.
 Development bytecode from another version
 must be rebuilt. Changing any existing tag, opcode, field, or meaning requires a new version. A

@@ -257,7 +257,7 @@ impl Parser {
 
     /// Internal helper for the Foster TOML implementation.
     func skip_horizontal_space(self: Parser) -> () [mut self] {
-        let prefix = self.remaining.take_while((character: CodePoint) -> character == ' ' || character == '\t')
+        let prefix = self.remaining.scalar_take_while((character: CodePoint) -> character == ' ' || character == '\t')
         self.consume_text(prefix)
     }
 
@@ -272,7 +272,7 @@ impl Parser {
     func skip_comment_text(self: Parser) -> () [mut self] {
         return () if self.remaining.empty?
         return () if self.newline?()
-        return self.fail("control character is not allowed in a comment") if control_character?(self.remaining.head)
+        return self.fail("control character is not allowed in a comment") if control_character?(self.remaining.scalar_head())
         self.take()
         self.skip_comment_text()
     }
@@ -291,7 +291,7 @@ impl Parser {
 
     /// Internal helper for the Foster TOML implementation.
     func take_crlf(self: Parser) -> () [mut self(remaining, line, column)] {
-        self.remaining = self.remaining.rest.rest
+        self.remaining = self.remaining.scalar_rest().scalar_rest()
         self.line = self.line + 1
         self.column = 1
         ()
@@ -299,7 +299,7 @@ impl Parser {
 
     /// Internal helper for the Foster TOML implementation.
     func take_lf(self: Parser) -> () [mut self(remaining, line, column)] {
-        self.remaining = self.remaining.rest
+        self.remaining = self.remaining.scalar_rest()
         self.line = self.line + 1
         self.column = 1
         ()
@@ -309,14 +309,14 @@ impl Parser {
     func peek?(self: Parser, expected: CodePoint) -> Bool {
         branch {
             self.remaining.empty? -> false
-            _ -> self.remaining.head == expected
+            _ -> self.remaining.scalar_head() == expected
         }
     }
 
     /// Internal helper for the Foster TOML implementation.
     func take(self: Parser) -> CodePoint [mut self(remaining, column)] {
-        let character = self.remaining.head
-        self.remaining = self.remaining.rest
+        let character = self.remaining.scalar_head()
+        self.remaining = self.remaining.scalar_rest()
         self.column = self.column + 1
         character
     }
@@ -374,7 +374,7 @@ impl Parser {
 
     /// Internal helper for the Foster TOML implementation.
     func parse_bare_key(self: Parser) -> String [mut self] {
-        let output = self.remaining.take_while(bare_key_character?)
+        let output = self.remaining.scalar_take_while(bare_key_character?)
         self.consume_text(output)
         self.finish_bare_key(move output)
     }
@@ -424,7 +424,7 @@ impl Parser {
         return self.close_basic(move output) if not multiline && self.peek?('\"')
         return self.start_escape(move output, multiline) if self.peek?('\\')
         return self.basic_newline(move output, multiline) if self.newline?()
-        return self.forbidden_basic(move output) if forbidden_string_character?(self.remaining.head)
+        return self.forbidden_basic(move output) if forbidden_string_character?(self.remaining.scalar_head())
         let character = self.take()
         self.parse_basic_characters(output + character.string, multiline)
     }
@@ -542,7 +542,7 @@ impl Parser {
     func take_hex_digits(self: Parser, remaining: Int, value: Int) -> Int [mut self] {
         return value if remaining == 0
         return self.incomplete_hex(value) if self.remaining.empty?
-        return self.invalid_hex(value) if not hex_digit?(self.remaining.head)
+        return self.invalid_hex(value) if not hex_digit?(self.remaining.scalar_head())
         let digit = hex_value(self.take())
         self.take_hex_digits(remaining - 1, value * 16 + digit)
     }
@@ -570,7 +570,7 @@ func fold_space_then_newline?(value: String) -> Bool {
     branch {
         value.starts_with?("\n") || value.starts_with?("\r\n") -> true
         value.empty? -> false
-        value.head == ' ' || value.head == '\t' -> fold_space_then_newline?(value.rest)
+        value.scalar_head() == ' ' || value.scalar_head() == '\t' -> fold_space_then_newline?(value.scalar_rest())
         _ -> false
     }
 }
@@ -627,7 +627,7 @@ impl Parser {
         return self.close_multiline_literal(move output) if multiline && self.remaining.starts_with?("'''")
         return self.close_literal(move output) if not multiline && self.peek?('\'')
         return self.literal_newline(move output, multiline) if self.newline?()
-        return self.forbidden_literal(move output) if forbidden_string_character?(self.remaining.head)
+        return self.forbidden_literal(move output) if forbidden_string_character?(self.remaining.scalar_head())
         let character = self.take()
         self.parse_literal_characters(output + character.string, multiline)
     }
@@ -693,7 +693,7 @@ impl Parser {
     func consume_text(self: Parser, text: String) -> () [mut self] {
         return () if text.empty?
         self.take()
-        self.consume_text(text.rest)
+        self.consume_text(text.scalar_rest())
     }
 }
 
@@ -915,7 +915,7 @@ impl Parser {
     func take_bare_value(self: Parser, output: String) -> String [mut self, consume output] {
         return output if self.remaining.empty?
         return self.take_date_time_space(move output) if date_time_space?(output, self.remaining)
-        return output if bare_value_end?(self.remaining.head)
+        return output if bare_value_end?(self.remaining.scalar_head())
         let character = self.take()
         self.take_bare_value(output + character.string)
     }
@@ -929,11 +929,11 @@ impl Parser {
 
 /// Internal helper for the Foster TOML implementation.
 func date_time_space?(output: String, remaining: String) -> Bool {
-    return false if output.length != 10
+    return false if output.scalar_length() != 10
     return false if not local_date?(output)
     return false if not remaining.starts_with?(" ")
-    return false if remaining.rest.empty?
-    decimal_digit?(remaining.rest.head)
+    return false if remaining.scalar_rest().empty?
+    decimal_digit?(remaining.scalar_rest().scalar_head())
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -955,8 +955,8 @@ func bare_delimiter?(character: CodePoint) -> Bool {
 func remove_underscores(value: String) -> String {
     branch {
         value.empty? -> ""
-        value.head == '_' -> remove_underscores(value.rest)
-        _ -> value.head.string + remove_underscores(value.rest)
+        value.scalar_head() == '_' -> remove_underscores(value.scalar_rest())
+        _ -> value.scalar_head().string + remove_underscores(value.scalar_rest())
     }
 }
 
@@ -966,11 +966,11 @@ func integer_text?(value: String) -> Bool {
     let signed = value.starts_with?("+") || value.starts_with?("-")
     return false if signed && based_prefix?(unsigned)
     branch {
-        unsigned.starts_with?("0x") -> based_digits?(unsigned.rest.rest, 16)
-        unsigned.starts_with?("0o") -> based_digits?(unsigned.rest.rest, 8)
-        unsigned.starts_with?("0b") -> based_digits?(unsigned.rest.rest, 2)
+        unsigned.starts_with?("0x") -> based_digits?(unsigned.scalar_rest().scalar_rest(), 16)
+        unsigned.starts_with?("0o") -> based_digits?(unsigned.scalar_rest().scalar_rest(), 8)
+        unsigned.starts_with?("0b") -> based_digits?(unsigned.scalar_rest().scalar_rest(), 2)
         unsigned.empty? -> false
-        unsigned.head == '0' && not unsigned.rest.empty? -> false
+        unsigned.scalar_head() == '0' && not unsigned.scalar_rest().empty? -> false
         _ -> based_digits?(unsigned, 10)
     }
 }
@@ -984,8 +984,8 @@ func based_prefix?(value: String) -> Bool {
 func drop_sign(value: String) -> String {
     branch {
         value.empty? -> ""
-        value.head == '+' || value.head == '-' -> value.slice(1, value.length)
-        _ -> value.slice(0, value.length)
+        value.scalar_head() == '+' || value.scalar_head() == '-' -> value.scalar_slice(1, value.scalar_length())
+        _ -> value.scalar_slice(0, value.scalar_length())
     }
 }
 
@@ -999,11 +999,11 @@ func based_digits?(value: String, base: Int) -> Bool {
 func based_digit_tail?(value: String, base: Int, saw_digit: Bool, previous_underscore: Bool) -> Bool {
     branch {
         value.empty? -> saw_digit && not previous_underscore
-        value.head == '_' -> branch {
+        value.scalar_head() == '_' -> branch {
             not saw_digit || previous_underscore -> false
-            _ -> based_digit_tail?(value.rest, base, true, true)
+            _ -> based_digit_tail?(value.scalar_rest(), base, true, true)
         }
-        digit_for_base?(value.head, base) -> based_digit_tail?(value.rest, base, true, false)
+        digit_for_base?(value.scalar_head(), base) -> based_digit_tail?(value.scalar_rest(), base, true, false)
         _ -> false
     }
 }
@@ -1022,9 +1022,9 @@ impl Parser {
         let negative = text.starts_with?("-")
         let unsigned = drop_sign(move text)
         branch {
-            unsigned.starts_with?("0x") -> self.accumulate_integer(unsigned.rest.rest, 16, negative, 0)
-            unsigned.starts_with?("0o") -> self.accumulate_integer(unsigned.rest.rest, 8, negative, 0)
-            unsigned.starts_with?("0b") -> self.accumulate_integer(unsigned.rest.rest, 2, negative, 0)
+            unsigned.starts_with?("0x") -> self.accumulate_integer(unsigned.scalar_rest().scalar_rest(), 16, negative, 0)
+            unsigned.starts_with?("0o") -> self.accumulate_integer(unsigned.scalar_rest().scalar_rest(), 8, negative, 0)
+            unsigned.starts_with?("0b") -> self.accumulate_integer(unsigned.scalar_rest().scalar_rest(), 2, negative, 0)
             _ -> self.accumulate_integer(move unsigned, 10, negative, 0)
         }
     }
@@ -1032,14 +1032,14 @@ impl Parser {
     /// Internal helper for the Foster TOML implementation.
     func accumulate_integer(self: Parser, text: String, base: Int, negative: Bool, value: Int) -> Int [mut self] {
         return value if text.empty?
-        return self.accumulate_integer(text.rest, base, negative, value) if text.head == '_'
-        let digit = hex_value(text.head)
+        return self.accumulate_integer(text.scalar_rest(), base, negative, value) if text.scalar_head() == '_'
+        let digit = hex_value(text.scalar_head())
         let minimum = -9223372036854775807 - 1
         let maximum = 9223372036854775807
         return self.integer_overflow() if negative && value < (minimum + digit) / base
-        return self.accumulate_integer(text.rest, base, true, value * base - digit) if negative
+        return self.accumulate_integer(text.scalar_rest(), base, true, value * base - digit) if negative
         return self.integer_overflow() if value > (maximum - digit) / base
-        self.accumulate_integer(text.rest, base, false, value * base + digit)
+        self.accumulate_integer(text.scalar_rest(), base, false, value * base + digit)
     }
 
     /// Internal helper for the Foster TOML implementation.
@@ -1063,26 +1063,26 @@ func float_text?(value: String) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func decimal_float?(value: String) -> Bool {
     let whole = take_decimal_prefix(value)
-    let normalized = remove_underscores(whole.slice(0, whole.length))
+    let normalized = remove_underscores(whole.scalar_slice(0, whole.scalar_length()))
     branch {
         whole.empty? -> false
         normalized.empty? -> false
-        normalized.length > 1 && normalized.head == '0' -> false
+        normalized.scalar_length() > 1 && normalized.scalar_head() == '0' -> false
         not decimal_component?(whole) -> false
-        _ -> decimal_float_suffix?(value.slice(whole.length, value.length))
+        _ -> decimal_float_suffix?(value.scalar_slice(whole.scalar_length(), value.scalar_length()))
     }
 }
 
 /// Internal helper for the Foster TOML implementation.
 func take_decimal_prefix(value: String) -> String {
-    value.take_while((character: CodePoint) -> decimal_digit?(character) || character == '_')
+    value.scalar_take_while((character: CodePoint) -> decimal_digit?(character) || character == '_')
 }
 
 /// Internal helper for the Foster TOML implementation.
 func decimal_float_suffix?(suffix: String) -> Bool {
     branch {
-        suffix.starts_with?(".") -> fraction_and_exponent?(suffix.rest)
-        suffix.starts_with?("e") || suffix.starts_with?("E") -> exponent?(suffix.rest)
+        suffix.starts_with?(".") -> fraction_and_exponent?(suffix.scalar_rest())
+        suffix.starts_with?("e") || suffix.starts_with?("E") -> exponent?(suffix.scalar_rest())
         _ -> false
     }
 }
@@ -1092,15 +1092,15 @@ func fraction_and_exponent?(value: String) -> Bool {
     let fraction = take_decimal_prefix(value)
     branch {
         not decimal_component?(fraction) -> false
-        fraction.length == value.length -> true
-        _ -> exponent_marker?(value.slice(fraction.length, value.length))
+        fraction.scalar_length() == value.scalar_length() -> true
+        _ -> exponent_marker?(value.scalar_slice(fraction.scalar_length(), value.scalar_length()))
     }
 }
 
 /// Internal helper for the Foster TOML implementation.
 func exponent_marker?(value: String) -> Bool {
     branch {
-        value.starts_with?("e") || value.starts_with?("E") -> exponent?(value.rest)
+        value.starts_with?("e") || value.starts_with?("E") -> exponent?(value.scalar_rest())
         _ -> false
     }
 }
@@ -1427,7 +1427,7 @@ func date_time?(value: String) -> Bool {
 
 /// Internal helper for the Foster TOML implementation.
 func local_date?(value: String) -> Bool {
-    return false if value.length != 10
+    return false if value.scalar_length() != 10
     return false if not digits_at?(value, 0, 4)
     return false if not character_at?(value, 4, '-')
     return false if not digits_at?(value, 5, 2)
@@ -1471,7 +1471,7 @@ func leap_year?(year: Int) -> Bool {
 
 /// Internal helper for the Foster TOML implementation.
 func local_time?(value: String) -> Bool {
-    return false if value.length < 5
+    return false if value.scalar_length() < 5
     return false if not digits_at?(value, 0, 2)
     return false if not character_at?(value, 2, ':')
     return false if not digits_at?(value, 3, 2)
@@ -1479,28 +1479,28 @@ func local_time?(value: String) -> Bool {
     let minute = decimal_at(value, 3, 2, 0)
     return false if hour > 23
     return false if minute > 59
-    return true if value.length == 5
-    return false if value.length < 8
+    return true if value.scalar_length() == 5
+    return false if value.scalar_length() < 8
     return false if not character_at?(value, 5, ':')
     return false if not digits_at?(value, 6, 2)
     return false if decimal_at(value, 6, 2, 0) > 59
-    return true if value.length == 8
+    return true if value.scalar_length() == 8
     return false if not character_at?(value, 8, '.')
     fraction_digits?(value, 9)
 }
 
 /// Internal helper for the Foster TOML implementation.
 func fraction_digits?(value: String, index: Int) -> Bool {
-    return false if index >= value.length
-    digits_at?(value, index, value.length - index)
+    return false if index >= value.scalar_length()
+    digits_at?(value, index, value.scalar_length() - index)
 }
 
 /// Internal helper for the Foster TOML implementation.
 func full_date_time?(value: String) -> Bool {
-    return false if value.length < 16
-    return false if not local_date?(value.slice(0, 10))
-    return false if not date_time_separator?(value.slice(10, 11))
-    valid_time_and_offset?(value.slice(11, value.length))
+    return false if value.scalar_length() < 16
+    return false if not local_date?(value.scalar_slice(0, 10))
+    return false if not date_time_separator?(value.scalar_slice(10, 11))
+    valid_time_and_offset?(value.scalar_slice(11, value.scalar_length()))
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1510,12 +1510,12 @@ func date_time_separator?(value: String) -> Bool {
 
 /// Internal helper for the Foster TOML implementation.
 func valid_time_and_offset?(value: String) -> Bool {
-    return local_time?(value.slice(0, value.length - 1)) if ends_in_z?(value)
+    return local_time?(value.scalar_slice(0, value.scalar_length() - 1)) if ends_in_z?(value)
     let offset = find_offset(value, 0)
     return local_time?(value) if offset < 0
-    return false if offset + 6 != value.length
-    return false if not local_time?(value.slice(0, offset))
-    valid_offset?(value.slice(offset, value.length))
+    return false if offset + 6 != value.scalar_length()
+    return false if not local_time?(value.scalar_slice(0, offset))
+    valid_offset?(value.scalar_slice(offset, value.scalar_length()))
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1526,13 +1526,13 @@ func ends_in_z?(value: String) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func find_offset(value: String, index: Int) -> Int {
     return -1 if value.empty?
-    return index if value.head == '+' || value.head == '-'
-    find_offset(value.rest, index + 1)
+    return index if value.scalar_head() == '+' || value.scalar_head() == '-'
+    find_offset(value.scalar_rest(), index + 1)
 }
 
 /// Internal helper for the Foster TOML implementation.
 func valid_offset?(value: String) -> Bool {
-    return false if value.length != 6
+    return false if value.scalar_length() != 6
     return false if not (character_at?(value, 0, '+') || character_at?(value, 0, '-'))
     return false if not digits_at?(value, 1, 2)
     return false if not character_at?(value, 3, ':')
@@ -1691,7 +1691,7 @@ func render_key(key: String) -> String {
 func bare_key?(key: String) -> Bool {
     branch {
         key.empty? -> true
-        bare_key_character?(key.head) -> bare_key?(key.rest)
+        bare_key_character?(key.scalar_head()) -> bare_key?(key.scalar_rest())
         _ -> false
     }
 }
@@ -1699,7 +1699,7 @@ func bare_key?(key: String) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func escape_basic(value: String) -> String {
     return "" if value.empty?
-    escape_character(value.head) + escape_basic(value.rest)
+    escape_character(value.scalar_head()) + escape_basic(value.scalar_rest())
 }
 
 /// Internal helper for the Foster TOML implementation.

@@ -504,7 +504,7 @@ fn string_method_hover_publishes_library_documentation() {
     assert!(
         hover
             .value
-            .contains("Returns a clamped half-open range measured in Unicode scalar values"),
+            .contains("measured in extended grapheme clusters"),
         "{}",
         hover.value
     );
@@ -541,7 +541,7 @@ fn method_hover_survives_an_error_in_another_function() {
     assert!(
         hover
             .value
-            .contains("Returns a clamped half-open range measured in Unicode scalar values"),
+            .contains("measured in extended grapheme clusters"),
         "{}",
         hover.value
     );
@@ -1320,9 +1320,16 @@ fn examples_compile_in_their_own_document_context() {
         published: HashSet::new(),
         compilations: Default::default(),
     };
+    let example_source = std::fs::read_to_string(&example).unwrap();
+    let (line, text) = example_source
+        .lines()
+        .enumerate()
+        .find(|(_, text)| text.contains("sequence::count"))
+        .unwrap();
+    let column = text.find("count").unwrap();
     let position = TextDocumentPositionParams::new(
         lsp_types::TextDocumentIdentifier::new(uri),
-        Position::new(48, 30),
+        Position::new(line as u32, column as u32),
     );
 
     let hover = workspace.hover(&position).unwrap();
@@ -1337,7 +1344,12 @@ fn examples_compile_in_their_own_document_context() {
         uri_to_path(&location.uri).unwrap(),
         root.join("library/std/sequence.fos")
     );
-    assert_eq!(location.range.start, Position::new(109, 9));
+    let sequence_source = include_str!("../../../library/std/sequence.fos");
+    let line = sequence_source
+        .lines()
+        .position(|line| line.starts_with("pub func count"))
+        .unwrap();
+    assert_eq!(location.range.start, Position::new(line as u32, 9));
 }
 
 #[test]

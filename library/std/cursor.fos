@@ -87,6 +87,9 @@ impl ListCursor {
 pub type BytesCursor = & Cursor<Byte> & {
     data: Bytes
     offset: Int
+
+    /// Copies a valid byte range without changing the current position.
+    pub func byte_span(self, start: Int, end: Int) -> Option<Bytes> [read self]
 }
 impl BytesCursor {
     /// Takes ownership of a byte snapshot.

@@ -37,8 +37,8 @@ func fail<T>(message: String) -> ParseResult<T> {
 }
 
 func skip_whitespace(characters: String) -> String {
-    let prefix = characters.take_while((character: CodePoint) -> [' ', '\n', '\r', '\t'].contains?(character))
-    characters.slice(prefix.length, characters.length)
+    let prefix = characters.scalar_take_while((character: CodePoint) -> [' ', '\n', '\r', '\t'].contains?(character))
+    characters.scalar_slice(prefix.scalar_length(), characters.scalar_length())
 }
 
 func digit_value(character: CodePoint) -> Int {
@@ -66,38 +66,38 @@ func consume_hex(characters: String, value: Int, remaining: Int) -> ParseResult<
     return ParseOk(Parsed { value, rest: characters }) if remaining == 0
     return fail("incomplete Unicode escape") if characters.empty?
 
-    let digit = hex_value(characters.head)
+    let digit = hex_value(characters.scalar_head())
     return fail("invalid hexadecimal digit in Unicode escape") if digit < 0
-    consume_hex(characters.rest, value * 16 + digit, remaining - 1)
+    consume_hex(characters.scalar_rest(), value * 16 + digit, remaining - 1)
 }
 
 func scan_digits(characters: String, token: String, count: Int) -> ScannedNumber {
-    let prefix = characters.take_while((character: CodePoint) -> digit_value(character) >= 0)
-    let matched = prefix.length
+    let prefix = characters.scalar_take_while((character: CodePoint) -> digit_value(character) >= 0)
+    let matched = prefix.scalar_length()
     ScannedNumber {
         token: token + prefix
-        rest: characters.slice(matched, characters.length)
+        rest: characters.scalar_slice(matched, characters.scalar_length())
         digits: count + matched
     }
 }
 
 func scan_fraction(characters: String, token: String) -> ParseResult<ScannedNumber> {
     return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if characters.empty?
-    return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if characters.head != '.'
-    let scanned = scan_digits(characters.rest, token + ".", 0)
+    return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if characters.scalar_head() != '.'
+    let scanned = scan_digits(characters.scalar_rest(), token + ".", 0)
     return fail("expected digits after decimal point") if scanned.digits == 0
     ParseOk(scanned)
 }
 
 func scan_exponent(characters: String, token: String) -> ParseResult<ScannedNumber> {
     return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if characters.empty?
-    return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if !['e', 'E'].contains?(characters.head)
-    let rest = characters.rest
-    let exponent = token + characters.head.string
+    return ParseOk(ScannedNumber { token, rest: characters, digits: 0 }) if !['e', 'E'].contains?(characters.scalar_head())
+    let rest = characters.scalar_rest()
+    let exponent = token + characters.scalar_head().string
     return fail("expected exponent digits") if rest.empty?
 
     let scanned = branch {
-        ['+', '-'].contains?(rest.head) -> scan_digits(rest.rest, exponent + rest.head.string, 0)
+        ['+', '-'].contains?(rest.scalar_head()) -> scan_digits(rest.scalar_rest(), exponent + rest.scalar_head().string, 0)
         _ -> scan_digits(move rest, move exponent, 0)
     }
     return fail("expected exponent digits") if scanned.digits == 0
@@ -106,14 +106,14 @@ func scan_exponent(characters: String, token: String) -> ParseResult<ScannedNumb
 
 func parse_number(characters: String) -> ParseResult<Parsed<Json>> {
     branch {
-        characters.head == '-' -> parse_unsigned_number(characters.rest, "-")
+        characters.scalar_head() == '-' -> parse_unsigned_number(characters.scalar_rest(), "-")
         _ -> parse_unsigned_number(move characters, "")
     }
 }
 
 func parse_unsigned_number(characters: String, prefix: String) -> ParseResult<Parsed<Json>> {
     return fail("expected a JSON number") if characters.empty?
-    let leading_zero = characters.head == '0'
+    let leading_zero = characters.scalar_head() == '0'
     let whole = scan_digits(move characters, move prefix, 0)
     branch {
         whole.digits == 0 -> fail("expected a JSON number")
@@ -155,10 +155,10 @@ func escaped_character(character: CodePoint) -> ParseResult<String> {
 
 func parse_escape(characters: String) -> ParseResult<Parsed<String>> {
     return fail("unterminated JSON string escape") if characters.empty?
-    return parse_unicode_escape(characters.rest) if characters.head == 'u'
-    branch escaped_character(characters.head) {
+    return parse_unicode_escape(characters.scalar_rest()) if characters.scalar_head() == 'u'
+    branch escaped_character(characters.scalar_head()) {
         ParseError(error) -> ParseError(error)
-        ParseOk(value) -> ParseOk(Parsed { value, rest: characters.rest })
+        ParseOk(value) -> ParseOk(Parsed { value, rest: characters.scalar_rest() })
     }
 }
 
@@ -186,10 +186,10 @@ const HIGH_SURROGATE_UNICODE_MESSAGE = "high surrogate must be followed by a Uni
 func parse_low_surrogate(high: Parsed<Int>) -> ParseResult<Parsed<String>> {
     branch {
         high.rest.empty? -> fail(HIGH_SURROGATE_LOW_MESSAGE)
-        high.rest.head != '\\' -> fail(HIGH_SURROGATE_LOW_MESSAGE)
-        high.rest.rest.empty? -> fail(HIGH_SURROGATE_LOW_MESSAGE)
-        high.rest.rest.head != 'u' -> fail(HIGH_SURROGATE_LOW_MESSAGE)
-        _ -> combine_surrogates(high.value, consume_hex(high.rest.rest.rest, 0, 4))
+        high.rest.scalar_head() != '\\' -> fail(HIGH_SURROGATE_LOW_MESSAGE)
+        high.rest.scalar_rest().empty? -> fail(HIGH_SURROGATE_LOW_MESSAGE)
+        high.rest.scalar_rest().scalar_head() != 'u' -> fail(HIGH_SURROGATE_LOW_MESSAGE)
+        _ -> combine_surrogates(high.value, consume_hex(high.rest.scalar_rest().scalar_rest(), 0, 4))
     }
 }
 
@@ -207,10 +207,10 @@ func combine_surrogates(high: Int, low_result: ParseResult<Parsed<Int>>) -> Pars
 func parse_string_characters(characters: String, result: String) -> ParseResult<Parsed<String>> {
     branch {
         characters.empty? -> fail("unterminated JSON string")
-        characters.head == '\"' -> ParseOk(Parsed { value: result, rest: characters.rest })
-        characters.head == '\\' -> append_escape(characters.rest, move result)
-        characters.head < 32 -> fail("unescaped control character in JSON string")
-        _ -> parse_string_characters(characters.rest, result + characters.head.string)
+        characters.scalar_head() == '\"' -> ParseOk(Parsed { value: result, rest: characters.scalar_rest() })
+        characters.scalar_head() == '\\' -> append_escape(characters.scalar_rest(), move result)
+        characters.scalar_head() < 32 -> fail("unescaped control character in JSON string")
+        _ -> parse_string_characters(characters.scalar_rest(), result + characters.scalar_head().string)
     }
 }
 
@@ -223,15 +223,15 @@ func append_escape(characters: String, result: String) -> ParseResult<Parsed<Str
 
 func parse_string(characters: String) -> ParseResult<Parsed<String>> {
     return fail("expected a JSON string") if characters.empty?
-    return fail("expected a JSON string") if characters.head != '\"'
-    parse_string_characters(characters.rest, "")
+    return fail("expected a JSON string") if characters.scalar_head() != '\"'
+    parse_string_characters(characters.scalar_rest(), "")
 }
 
 func consume_literal(characters: String, expected: String) -> ParseResult<String> {
     branch {
         expected.empty? -> ParseOk(characters)
         characters.empty? -> fail("incomplete JSON literal")
-        characters.head == expected.head -> consume_literal(characters.rest, expected.rest)
+        characters.scalar_head() == expected.scalar_head() -> consume_literal(characters.scalar_rest(), expected.scalar_rest())
         _ -> fail("invalid JSON literal")
     }
 }
@@ -246,7 +246,7 @@ func literal_value(characters: String, expected: String, value: Json) -> ParseRe
 func parse_array_items(characters: String, items: List<Json>) -> ParseResult<Parsed<Json>> {
     let rest = skip_whitespace(move characters)
     return fail("unterminated JSON array") if rest.empty?
-    return ParseOk(Parsed { value: Json.Array(items), rest: rest.rest }) if rest.head == ']'
+    return ParseOk(Parsed { value: Json.Array(items), rest: rest.scalar_rest() }) if rest.scalar_head() == ']'
     append_array_value(parse_value(move rest), move items)
 }
 
@@ -260,23 +260,23 @@ func append_array_value(parsed: ParseResult<Parsed<Json>>, items: List<Json>) ->
 func array_separator(characters: String, items: List<Json>) -> ParseResult<Parsed<Json>> {
     let rest = skip_whitespace(move characters)
     return fail("unterminated JSON array") if rest.empty?
-    return parse_required_array_item(rest.rest, move items) if rest.head == ','
-    return ParseOk(Parsed { value: Json.Array(items), rest: rest.rest }) if rest.head == ']'
+    return parse_required_array_item(rest.scalar_rest(), move items) if rest.scalar_head() == ','
+    return ParseOk(Parsed { value: Json.Array(items), rest: rest.scalar_rest() }) if rest.scalar_head() == ']'
     fail("expected `,` or `]` in JSON array")
 }
 
 func parse_required_array_item(characters: String, items: List<Json>) -> ParseResult<Parsed<Json>> {
     let rest = skip_whitespace(move characters)
     return fail("unterminated JSON array") if rest.empty?
-    return fail("trailing comma in JSON array") if rest.head == ']'
+    return fail("trailing comma in JSON array") if rest.scalar_head() == ']'
     append_array_value(parse_value(move rest), move items)
 }
 
 func parse_object_members(characters: String, members: List<JsonMember>) -> ParseResult<Parsed<Json>> {
     let rest = skip_whitespace(move characters)
     return fail("unterminated JSON object") if rest.empty?
-    return ParseOk(Parsed { value: Json.Object(members), rest: rest.rest }) if rest.head == '}'
-    return fail("expected a string key in JSON object") if rest.head != '\"'
+    return ParseOk(Parsed { value: Json.Object(members), rest: rest.scalar_rest() }) if rest.scalar_head() == '}'
+    return fail("expected a string key in JSON object") if rest.scalar_head() != '\"'
     parse_object_key(parse_string(move rest), move members)
 }
 
@@ -290,8 +290,8 @@ func parse_object_key(parsed: ParseResult<Parsed<String>>, members: List<JsonMem
 func require_object_colon(key: Parsed<String>, members: List<JsonMember>) -> ParseResult<Parsed<Json>> {
     let rest = skip_whitespace(move key.rest)
     return fail("expected `:` after JSON object key") if rest.empty?
-    return fail("expected `:` after JSON object key") if rest.head != ':'
-    parse_object_value(parse_value(rest.rest), move key.value, move members)
+    return fail("expected `:` after JSON object key") if rest.scalar_head() != ':'
+    parse_object_value(parse_value(rest.scalar_rest()), move key.value, move members)
 }
 
 func parse_object_value(parsed: ParseResult<Parsed<Json>>, key: String, members: List<JsonMember>) -> ParseResult<Parsed<Json>> {
@@ -304,25 +304,25 @@ func parse_object_value(parsed: ParseResult<Parsed<Json>>, key: String, members:
 func object_separator(characters: String, members: List<JsonMember>) -> ParseResult<Parsed<Json>> {
     let rest = skip_whitespace(move characters)
     return fail("unterminated JSON object") if rest.empty?
-    return parse_required_object_member(rest.rest, move members) if rest.head == ','
-    return ParseOk(Parsed { value: Json.Object(members), rest: rest.rest }) if rest.head == '}'
+    return parse_required_object_member(rest.scalar_rest(), move members) if rest.scalar_head() == ','
+    return ParseOk(Parsed { value: Json.Object(members), rest: rest.scalar_rest() }) if rest.scalar_head() == '}'
     fail("expected `,` or `}` in JSON object")
 }
 
 func parse_required_object_member(characters: String, members: List<JsonMember>) -> ParseResult<Parsed<Json>> {
     let rest = skip_whitespace(move characters)
     return fail("unterminated JSON object") if rest.empty?
-    return fail("trailing comma in JSON object") if rest.head == '}'
+    return fail("trailing comma in JSON object") if rest.scalar_head() == '}'
     parse_object_members(move rest, move members)
 }
 
 func parse_value(characters: String) -> ParseResult<Parsed<Json>> {
     let rest = skip_whitespace(move characters)
     return fail("expected a JSON value") if rest.empty?
-    branch rest.head {
+    branch rest.scalar_head() {
         '\"' -> string_json(parse_string(move rest))
-        '[' -> parse_array_items(rest.rest, [])
-        '{' -> parse_object_members(rest.rest, [])
+        '[' -> parse_array_items(rest.scalar_rest(), [])
+        '{' -> parse_object_members(rest.scalar_rest(), [])
         't' -> literal_value(move rest, "true", Json.Boolean(true))
         'f' -> literal_value(move rest, "false", Json.Boolean(false))
         'n' -> literal_value(move rest, "null", Json.Null)
@@ -347,4 +347,15 @@ pub func parse_json(source: String) -> ParseResult<Json> {
 func finish_json(parsed: Parsed<Json>) -> ParseResult<Json> {
     return fail("unexpected content after JSON value") if !skip_whitespace(move parsed.rest).empty?
     ParseOk(parsed.value)
+}
+
+test "JSON preserves combining marks and accepts CRLF whitespace" {
+    branch parse_json("\r\n\"é👩‍💻\"\r\n") {
+        ParseOk(Json.JsonString(text)) -> { assert(text == "é👩‍💻") }
+        _ -> { assert(false, "valid Unicode JSON string was rejected") }
+    }
+    branch parse_json("\"line\r\nbreak\"") {
+        ParseError(_) -> ()
+        _ -> { assert(false, "unescaped CRLF must be rejected") }
+    }
 }

@@ -520,7 +520,7 @@ func main() { 0 }
     let first_dump = first.ownership.debug_dump(&first.hir);
     let second_dump = second.ownership.debug_dump(&second.hir);
     assert_eq!(first_dump, second_dump);
-    assert!(first_dump.contains("foster-language=7 ownership-model=3"));
+    assert!(first_dump.contains("foster-language=8 ownership-model=3"));
     assert!(first_dump.contains("loan L"));
     assert!(first_dump.contains("region L"));
 
@@ -540,7 +540,7 @@ func main() -> Int {
 
 #[test]
 fn ownership_revision_and_diagnostic_catalog_match_current_contract() {
-    assert_eq!(foster::ownership::LANGUAGE_VERSION, 7);
+    assert_eq!(foster::ownership::LANGUAGE_VERSION, 8);
     assert_eq!(foster::ownership::MODEL_VERSION, 3);
     assert_eq!(
         foster::ownership::diagnostics::CATALOG

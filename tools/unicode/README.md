@@ -1,6 +1,7 @@
 # Unicode data
 
-Foster pins classification and default casing to Unicode **17.0.0**. Both the VM
+Foster pins classification, default casing, and extended grapheme segmentation to
+Unicode **17.0.0**. Both the VM
 and native backend execute `library/core/unicode.fos` using the generated Foster
 tables in `library/core/unicode/data.fos`. No Unicode intrinsics or Rust algorithms
 are required. The offline generator is Foster source in `src/` and imports
@@ -45,6 +46,13 @@ review new conditional SpecialCasing rules, regenerate, and run Unicode library 
 backend parity tests. Locale-specific mappings are excluded. The default
 Final_Sigma rule is implemented in Foster with Case_Ignorable context.
 Case folding uses the C and F mappings, without normalization.
+
+Grapheme segmentation follows [UAX #29 revision 47](https://www.unicode.org/reports/tr29/tr29-47.html).
+`GraphemeBreakProperty.txt`, `emoji-data.txt`, and the `InCB` records in
+`DerivedCoreProperties.txt` supply its properties. `GraphemeBreakTest.txt` is the
+official boundary conformance suite, exercised by `grapheme_boundaries_conform_to_unicode_in_both_backends`
+in `tests/backend_parity.rs` with and without optimization. The boundary state machine
+is Foster code in `core.unicode`; no host Unicode segmentation library is used.
 
 Tables contain fixed-width ASCII hexadecimal records. Category/property records
 contain inclusive start, end, and value fields (6+6+2 characters). Simple mappings

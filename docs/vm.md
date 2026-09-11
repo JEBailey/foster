@@ -42,7 +42,7 @@ builtin matches. Compiler-only intrinsics use the same registry model with opcod
 metadata, including an explicit read/mutate/consume receiver mode; `list.push` and `list.append`
 lower directly to `Push` and `Append` and deliberately have no builtin tag. Adding or changing one
 of those lowering-only entries therefore does not itself change the bytecode ABI. Builtin tags
-retired from source remain registered within the current format. Bytecode version 26 also retains
+retired from source remain registered within the current format. Bytecode version 27 also retains
 [symbolic modules and semantic callable descriptors](symbolic-modules.md); older format versions
 must be rebuilt.
 

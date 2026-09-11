@@ -9,6 +9,8 @@ use crate::ast::Program;
 use crate::error::FosterError;
 use crate::intrinsics::Intrinsic;
 
+mod string_accessors;
+
 #[derive(Debug, Clone)]
 struct CachedModule {
     source: String,
@@ -680,12 +682,13 @@ impl Package {
     ) -> Result<(), FosterError> {
         let imports_embedded = self.modules.values().any(|module| {
             module.program.as_ref().is_some_and(|program| {
-                program.imports.iter().any(|import| {
-                    import
-                        .path
-                        .first()
-                        .is_some_and(|name| matches!(name.as_str(), "core" | "std"))
-                })
+                string_accessors::required(program)
+                    || program.imports.iter().any(|import| {
+                        import
+                            .path
+                            .first()
+                            .is_some_and(|name| matches!(name.as_str(), "core" | "std"))
+                    })
             })
         });
         let library_needs_embedded = self.libraries.iter().any(|library| {
