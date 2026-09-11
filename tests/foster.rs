@@ -17,6 +17,13 @@ fn run_suite(path: &str, optimize: bool, minimum_tests: usize) {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8(output.stdout).unwrap();
+    if path == "library" {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !stdout.contains("unused-effect") && !stderr.contains("unused-effect"),
+            "library contracts should not publish unused or overly broad effects\n{stdout}\n{stderr}"
+        );
+    }
     assert!(stdout.contains("test result: ok"), "{stdout}");
     let discovered = stdout
         .lines()

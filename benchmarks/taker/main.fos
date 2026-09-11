@@ -1,0 +1,68 @@
+import taker.taker
+import taker.lexical
+import taker.numeric
+import taker.chars
+import std.time
+import core.int
+
+func numbers(parser: Taker<Int>, text: String, iterations: Int) -> Int {
+    let sum = 0
+    let index = 0
+    loop {
+        break if index == iterations
+        sum = sum + value(parse_all(parser, text))
+        index = index + 1
+    }
+    sum
+}
+func strings(parser: Taker<String>, text: String, iterations: Int) -> Int {
+    let sum = 0
+    let index = 0
+    loop {
+        break if index == iterations
+        sum = sum + value(parse_all(parser, text)).length
+        index = index + 1
+    }
+    sum
+}
+func measure(name: String, expected: Int, workload: func(Int) -> Int) {
+    let clock = ContinuousClock.new()
+    let iterations = 1
+    loop {
+        let start = clock.now()
+        let sum = workload(iterations)
+        let elapsed = start.until(clock.now()).total_nanoseconds()
+        assert(sum == expected * iterations)
+        break if elapsed >= 100000000
+        iterations = iterations * 2
+    }
+    let warm = 0
+    loop {
+        break if warm == 2
+        assert(workload(iterations) == expected * iterations)
+        warm = warm + 1
+    }
+    let sample = 0
+    loop {
+        break if sample == 5
+        let sample_start = clock.now()
+        let sample_sum = workload(iterations)
+        let sample_elapsed = sample_start.until(clock.now()).total_nanoseconds()
+        assert(sample_sum == expected * iterations)
+        println(name + "," + iterations.as_string() + "," + sample_elapsed.as_string() + "," + sample_sum.as_string())
+        sample = sample + 1
+    }
+}
+func main() -> Int {
+    let literal = string("abcdefghijklmnop")
+    measure("literal16", 16, (n: Int) -> strings(literal, "abcdefghijklmnop", n))
+    let number = long_value()
+    measure("integer9", 123456789, (n: Int) -> numbers(number, "123456789", n))
+    let scan = take_while((c: CodePoint) -> c >= 'a' && c <= 'z')
+    let text = "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuv"
+    assert(text.length == 256)
+    measure("scan256", 256, (n: Int) -> strings(scan, text, n))
+    let trimmed = trim_whitespace(long_value())
+    measure("trimmed_integer", 123456789, (n: Int) -> numbers(trimmed, " \t123456789\r\n ", n))
+    0
+}

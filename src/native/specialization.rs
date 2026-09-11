@@ -2,9 +2,9 @@
 use super::{
     BTreeSet, BytecodeFunction, Compilation, ContractCandidate, FosterError, FunctionId, HashMap,
     Instruction, LayoutKind, LayoutRegistry, NativeInstance, NativeIrEnvironment, NativeType,
-    Program, RawIdx, Register, SpecializationKey, Type, VerificationType, concrete_closure_result,
-    concrete_native_type, instruction_layout_type, ir, native_error, native_type,
-    record_uses_dynamic_dispatch, specialized_verification_type, vm,
+    Program, RawIdx, Register, SpecializationKey, Type, VerificationType, concrete_native_type,
+    instruction_layout_type, ir, native_error, native_type, record_uses_dynamic_dispatch,
+    specialized_verification_type, vm,
 };
 
 type RegisterTypes = Vec<Option<VerificationType>>;
@@ -737,17 +737,15 @@ pub(super) fn collect_function_types(
                     layouts.instantiate_type(ty)?;
                 }
             }
-            let result = if matches!(compilation.types.types[signature.result], Type::Function(_)) {
-                concrete_closure_result(program, layouts, &instance.key)?
-            } else {
-                native_type(
-                    compilation,
-                    layouts,
-                    signature.result,
-                    &instance.key.substitutions,
-                    &definition.name,
-                )?
-            };
+            // Function results use the same callable ABI as parameters and fields. A callee
+            // may forward another callable or select between distinct closure environments.
+            let result = native_type(
+                compilation,
+                layouts,
+                signature.result,
+                &instance.key.substitutions,
+                &definition.name,
+            )?;
             Ok((instance.ir_function, ir::Signature { parameters, result }))
         })
         .collect()

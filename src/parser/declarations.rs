@@ -906,11 +906,42 @@ impl Parser {
                 while self.take(&TokenKind::Dot) {
                     children.push(self.expect_member_ident("expected effect path component")?);
                 }
-                effects.push(Effect {
-                    kind,
-                    target: GroupPath { root, children },
-                });
-                spans.push(start..self.tokens[self.current.saturating_sub(1)].range.end);
+                if self.take(&TokenKind::LParen) {
+                    self.newlines();
+                    loop {
+                        let mut path = children.clone();
+                        path.push(self.expect_member_ident("expected grouped effect path")?);
+                        while self.take(&TokenKind::Dot) {
+                            path.push(self.expect_member_ident("expected effect path component")?);
+                        }
+                        effects.push(Effect {
+                            kind: kind.clone(),
+                            target: GroupPath {
+                                root: root.clone(),
+                                children: path,
+                            },
+                        });
+                        spans.push(start..self.tokens[self.current.saturating_sub(1)].range.end);
+                        self.newlines();
+                        if !self.take(&TokenKind::Comma) {
+                            break;
+                        }
+                        self.newlines();
+                        if self.at(&TokenKind::RParen) {
+                            break;
+                        }
+                    }
+                    self.expect(
+                        &TokenKind::RParen,
+                        "expected `)` after grouped effect paths",
+                    )?;
+                } else {
+                    effects.push(Effect {
+                        kind,
+                        target: GroupPath { root, children },
+                    });
+                    spans.push(start..self.tokens[self.current.saturating_sub(1)].range.end);
+                }
             }
             if !self.take(&TokenKind::Comma) && !self.at(&TokenKind::RBracket) {
                 self.expect(

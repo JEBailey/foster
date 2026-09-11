@@ -1,0 +1,1193 @@
+{
+  "timestamp": "2026-09-10T23:43:59.560Z",
+  "cpu": "AMD Ryzen 5 4500 6-Core Processor",
+  "platform": "win32",
+  "compilerSha256": "b02cdb712512b0f5cb3cd97bb8abf5ce66d9b479da9fb08bb80dfb8beb805b87",
+  "javaVersion": "java version \"21\" 2023-09-19 LTS\r\nJava(TM) SE Runtime Environment (build 21+35-LTS-2513)\r\nJava HotSpot(TM) 64-Bit Server VM (build 21+35-LTS-2513, mixed mode, sharing)\r\n",
+  "nativeBuild": {
+    "code": 1,
+    "error": "error: native function `take_while` returns an erased callable value"
+  },
+  "forks": 3,
+  "samples": [
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 8388608,
+      "elapsedNs": 192046100,
+      "checksum": 134217728,
+      "nsPerParse": 22.89367914199829
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 8388608,
+      "elapsedNs": 191163700,
+      "checksum": 134217728,
+      "nsPerParse": 22.78848886489868
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 8388608,
+      "elapsedNs": 199356800,
+      "checksum": 134217728,
+      "nsPerParse": 23.765182495117188
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 8388608,
+      "elapsedNs": 209272400,
+      "checksum": 134217728,
+      "nsPerParse": 24.947214126586914
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 8388608,
+      "elapsedNs": 190990200,
+      "checksum": 134217728,
+      "nsPerParse": 22.76780605316162
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 101992100,
+      "checksum": 258907651964928,
+      "nsPerParse": 48.633623123168945
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 102252300,
+      "checksum": 258907651964928,
+      "nsPerParse": 48.7576961517334
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 101597200,
+      "checksum": 258907651964928,
+      "nsPerParse": 48.44532012939453
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 101739500,
+      "checksum": 258907651964928,
+      "nsPerParse": 48.513174057006836
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 102990900,
+      "checksum": 258907651964928,
+      "nsPerParse": 49.10988807678223
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 158632800,
+      "checksum": 67108864,
+      "nsPerParse": 605.1361083984375
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 153620200,
+      "checksum": 67108864,
+      "nsPerParse": 586.0145568847656
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 150275400,
+      "checksum": 67108864,
+      "nsPerParse": 573.2551574707031
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 155590000,
+      "checksum": 67108864,
+      "nsPerParse": 593.5287475585938
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 153289500,
+      "checksum": 67108864,
+      "nsPerParse": 584.7530364990234
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 106865800,
+      "checksum": 129453825982464,
+      "nsPerParse": 101.91516876220703
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 113533100,
+      "checksum": 129453825982464,
+      "nsPerParse": 108.27360153198242
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 113770300,
+      "checksum": 129453825982464,
+      "nsPerParse": 108.49981307983398
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 111893200,
+      "checksum": 129453825982464,
+      "nsPerParse": 106.70967102050781
+    },
+    {
+      "fork": 0,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 106437700,
+      "checksum": 129453825982464,
+      "nsPerParse": 101.50690078735352
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 178197300,
+      "checksum": 8192,
+      "nsPerParse": 348041.6015625
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 171907800,
+      "checksum": 8192,
+      "nsPerParse": 335757.421875
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 172288800,
+      "checksum": 8192,
+      "nsPerParse": 336501.5625
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 170690700,
+      "checksum": 8192,
+      "nsPerParse": 333380.2734375
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 170054000,
+      "checksum": 8192,
+      "nsPerParse": 332136.71875
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 135739600,
+      "checksum": 31604937984,
+      "nsPerParse": 530232.8125
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 133848700,
+      "checksum": 31604937984,
+      "nsPerParse": 522846.484375
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 136456200,
+      "checksum": 31604937984,
+      "nsPerParse": 533032.03125
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 135241200,
+      "checksum": 31604937984,
+      "nsPerParse": 528285.9375
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 134582200,
+      "checksum": 31604937984,
+      "nsPerParse": 525711.71875
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 178803600,
+      "checksum": 8192,
+      "nsPerParse": 5587612.5
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 177964600,
+      "checksum": 8192,
+      "nsPerParse": 5561393.75
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 178453300,
+      "checksum": 8192,
+      "nsPerParse": 5576665.625
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 178031900,
+      "checksum": 8192,
+      "nsPerParse": 5563496.875
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 177795700,
+      "checksum": 8192,
+      "nsPerParse": 5556115.625
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 128,
+      "elapsedNs": 104327500,
+      "checksum": 15802468992,
+      "nsPerParse": 815058.59375
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 128,
+      "elapsedNs": 101225700,
+      "checksum": 15802468992,
+      "nsPerParse": 790825.78125
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 128,
+      "elapsedNs": 102371300,
+      "checksum": 15802468992,
+      "nsPerParse": 799775.78125
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 128,
+      "elapsedNs": 102167700,
+      "checksum": 15802468992,
+      "nsPerParse": 798185.15625
+    },
+    {
+      "fork": 0,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 128,
+      "elapsedNs": 100672600,
+      "checksum": 15802468992,
+      "nsPerParse": 786504.6875
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 166121200,
+      "checksum": 8192,
+      "nsPerParse": 324455.46875
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 192684500,
+      "checksum": 8192,
+      "nsPerParse": 376336.9140625
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 167105200,
+      "checksum": 8192,
+      "nsPerParse": 326377.34375
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 166212400,
+      "checksum": 8192,
+      "nsPerParse": 324633.59375
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 165411400,
+      "checksum": 8192,
+      "nsPerParse": 323069.140625
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 138993500,
+      "checksum": 31604937984,
+      "nsPerParse": 542943.359375
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 131928600,
+      "checksum": 31604937984,
+      "nsPerParse": 515346.09375
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 132441400,
+      "checksum": 31604937984,
+      "nsPerParse": 517349.21875
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 135382100,
+      "checksum": 31604937984,
+      "nsPerParse": 528836.328125
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 133386800,
+      "checksum": 31604937984,
+      "nsPerParse": 521042.1875
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 190428400,
+      "checksum": 8192,
+      "nsPerParse": 5950887.5
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 187211500,
+      "checksum": 8192,
+      "nsPerParse": 5850359.375
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 196010900,
+      "checksum": 8192,
+      "nsPerParse": 6125340.625
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 190448800,
+      "checksum": 8192,
+      "nsPerParse": 5951525
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 193570700,
+      "checksum": 8192,
+      "nsPerParse": 6049084.375
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 128,
+      "elapsedNs": 118606400,
+      "checksum": 15802468992,
+      "nsPerParse": 926612.5
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 128,
+      "elapsedNs": 121769300,
+      "checksum": 15802468992,
+      "nsPerParse": 951322.65625
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 128,
+      "elapsedNs": 112319400,
+      "checksum": 15802468992,
+      "nsPerParse": 877495.3125
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 128,
+      "elapsedNs": 116346000,
+      "checksum": 15802468992,
+      "nsPerParse": 908953.125
+    },
+    {
+      "fork": 1,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 128,
+      "elapsedNs": 107651900,
+      "checksum": 15802468992,
+      "nsPerParse": 841030.46875
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 4194304,
+      "elapsedNs": 99662700,
+      "checksum": 67108864,
+      "nsPerParse": 23.761439323425293
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 4194304,
+      "elapsedNs": 113257200,
+      "checksum": 67108864,
+      "nsPerParse": 27.002620697021484
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 4194304,
+      "elapsedNs": 99169500,
+      "checksum": 67108864,
+      "nsPerParse": 23.643851280212402
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 4194304,
+      "elapsedNs": 96304500,
+      "checksum": 67108864,
+      "nsPerParse": 22.960782051086426
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 4194304,
+      "elapsedNs": 97751600,
+      "checksum": 67108864,
+      "nsPerParse": 23.305797576904297
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 108497500,
+      "checksum": 258907651964928,
+      "nsPerParse": 51.735639572143555
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 106204700,
+      "checksum": 258907651964928,
+      "nsPerParse": 50.64234733581543
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 107916900,
+      "checksum": 258907651964928,
+      "nsPerParse": 51.45878791809082
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 110452600,
+      "checksum": 258907651964928,
+      "nsPerParse": 52.667903900146484
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 121803700,
+      "checksum": 258907651964928,
+      "nsPerParse": 58.08053016662598
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 151639200,
+      "checksum": 67108864,
+      "nsPerParse": 578.4576416015625
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 153457000,
+      "checksum": 67108864,
+      "nsPerParse": 585.3919982910156
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 153861000,
+      "checksum": 67108864,
+      "nsPerParse": 586.9331359863281
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 151898200,
+      "checksum": 67108864,
+      "nsPerParse": 579.4456481933594
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 150702800,
+      "checksum": 67108864,
+      "nsPerParse": 574.8855590820312
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 118527700,
+      "checksum": 129453825982464,
+      "nsPerParse": 113.03682327270508
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 117567700,
+      "checksum": 129453825982464,
+      "nsPerParse": 112.12129592895508
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 119972100,
+      "checksum": 129453825982464,
+      "nsPerParse": 114.41431045532227
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 115827600,
+      "checksum": 129453825982464,
+      "nsPerParse": 110.46180725097656
+    },
+    {
+      "fork": 1,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 117048300,
+      "checksum": 129453825982464,
+      "nsPerParse": 111.62595748901367
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 8388608,
+      "elapsedNs": 190205800,
+      "checksum": 134217728,
+      "nsPerParse": 22.67429828643799
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 8388608,
+      "elapsedNs": 190575400,
+      "checksum": 134217728,
+      "nsPerParse": 22.718358039855957
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 8388608,
+      "elapsedNs": 193527200,
+      "checksum": 134217728,
+      "nsPerParse": 23.070240020751953
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 8388608,
+      "elapsedNs": 222690600,
+      "checksum": 134217728,
+      "nsPerParse": 26.546788215637207
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "literal16",
+      "iterations": 8388608,
+      "elapsedNs": 195797600,
+      "checksum": 134217728,
+      "nsPerParse": 23.340892791748047
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 109427700,
+      "checksum": 258907651964928,
+      "nsPerParse": 52.1791934967041
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 109076200,
+      "checksum": 258907651964928,
+      "nsPerParse": 52.0115852355957
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 137204900,
+      "checksum": 258907651964928,
+      "nsPerParse": 65.42439460754395
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 109810500,
+      "checksum": 258907651964928,
+      "nsPerParse": 52.36172676086426
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "integer9",
+      "iterations": 2097152,
+      "elapsedNs": 116950500,
+      "checksum": 258907651964928,
+      "nsPerParse": 55.76634407043457
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 150545900,
+      "checksum": 67108864,
+      "nsPerParse": 574.2870330810547
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 151252000,
+      "checksum": 67108864,
+      "nsPerParse": 576.9805908203125
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 175792500,
+      "checksum": 67108864,
+      "nsPerParse": 670.5951690673828
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 150971900,
+      "checksum": 67108864,
+      "nsPerParse": 575.9120941162109
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "scan256",
+      "iterations": 262144,
+      "elapsedNs": 153830300,
+      "checksum": 67108864,
+      "nsPerParse": 586.8160247802734
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 133488200,
+      "checksum": 129453825982464,
+      "nsPerParse": 127.30426788330078
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 111299500,
+      "checksum": 129453825982464,
+      "nsPerParse": 106.14347457885742
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 117926400,
+      "checksum": 129453825982464,
+      "nsPerParse": 112.46337890625
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 109988500,
+      "checksum": 129453825982464,
+      "nsPerParse": 104.89320755004883
+    },
+    {
+      "fork": 2,
+      "backend": "java",
+      "workload": "trimmed_integer",
+      "iterations": 1048576,
+      "elapsedNs": 122787300,
+      "checksum": 129453825982464,
+      "nsPerParse": 117.09909439086914
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 166394900,
+      "checksum": 8192,
+      "nsPerParse": 324990.0390625
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 162723100,
+      "checksum": 8192,
+      "nsPerParse": 317818.5546875
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 163637900,
+      "checksum": 8192,
+      "nsPerParse": 319605.2734375
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 165369700,
+      "checksum": 8192,
+      "nsPerParse": 322987.6953125
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "literal16",
+      "iterations": 512,
+      "elapsedNs": 165348000,
+      "checksum": 8192,
+      "nsPerParse": 322945.3125
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 134583500,
+      "checksum": 31604937984,
+      "nsPerParse": 525716.796875
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 130552100,
+      "checksum": 31604937984,
+      "nsPerParse": 509969.140625
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 132466100,
+      "checksum": 31604937984,
+      "nsPerParse": 517445.703125
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 133126400,
+      "checksum": 31604937984,
+      "nsPerParse": 520025
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "integer9",
+      "iterations": 256,
+      "elapsedNs": 130677800,
+      "checksum": 31604937984,
+      "nsPerParse": 510460.15625
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 172352900,
+      "checksum": 8192,
+      "nsPerParse": 5386028.125
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 171490100,
+      "checksum": 8192,
+      "nsPerParse": 5359065.625
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 173341000,
+      "checksum": 8192,
+      "nsPerParse": 5416906.25
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 170228100,
+      "checksum": 8192,
+      "nsPerParse": 5319628.125
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "scan256",
+      "iterations": 32,
+      "elapsedNs": 171217100,
+      "checksum": 8192,
+      "nsPerParse": 5350534.375
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 256,
+      "elapsedNs": 195151900,
+      "checksum": 31604937984,
+      "nsPerParse": 762312.109375
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 256,
+      "elapsedNs": 198044000,
+      "checksum": 31604937984,
+      "nsPerParse": 773609.375
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 256,
+      "elapsedNs": 197890200,
+      "checksum": 31604937984,
+      "nsPerParse": 773008.59375
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 256,
+      "elapsedNs": 197235100,
+      "checksum": 31604937984,
+      "nsPerParse": 770449.609375
+    },
+    {
+      "fork": 2,
+      "backend": "foster-vm",
+      "workload": "trimmed_integer",
+      "iterations": 256,
+      "elapsedNs": 197058700,
+      "checksum": 31604937984,
+      "nsPerParse": 769760.546875
+    }
+  ],
+  "summary": [
+    {
+      "workload": "literal16",
+      "backend": "java",
+      "medianNs": 23.070240020751953,
+      "minForkMedianNs": 22.89367914199829,
+      "maxForkMedianNs": 23.643851280212402,
+      "forkMedianNs": [
+        22.89367914199829,
+        23.643851280212402,
+        23.070240020751953
+      ]
+    },
+    {
+      "workload": "literal16",
+      "backend": "foster-vm",
+      "medianNs": 324633.59375,
+      "minForkMedianNs": 322945.3125,
+      "maxForkMedianNs": 335757.421875,
+      "forkMedianNs": [
+        335757.421875,
+        324633.59375,
+        322945.3125
+      ]
+    },
+    {
+      "workload": "integer9",
+      "backend": "java",
+      "medianNs": 51.735639572143555,
+      "minForkMedianNs": 48.633623123168945,
+      "maxForkMedianNs": 52.36172676086426,
+      "forkMedianNs": [
+        48.633623123168945,
+        51.735639572143555,
+        52.36172676086426
+      ]
+    },
+    {
+      "workload": "integer9",
+      "backend": "foster-vm",
+      "medianNs": 521042.1875,
+      "minForkMedianNs": 517445.703125,
+      "maxForkMedianNs": 528285.9375,
+      "forkMedianNs": [
+        528285.9375,
+        521042.1875,
+        517445.703125
+      ]
+    },
+    {
+      "workload": "scan256",
+      "backend": "java",
+      "medianNs": 579.4456481933594,
+      "minForkMedianNs": 576.9805908203125,
+      "maxForkMedianNs": 586.0145568847656,
+      "forkMedianNs": [
+        586.0145568847656,
+        579.4456481933594,
+        576.9805908203125
+      ]
+    },
+    {
+      "workload": "scan256",
+      "backend": "foster-vm",
+      "medianNs": 5563496.875,
+      "minForkMedianNs": 5359065.625,
+      "maxForkMedianNs": 5951525,
+      "forkMedianNs": [
+        5563496.875,
+        5951525,
+        5359065.625
+      ]
+    },
+    {
+      "workload": "trimmed_integer",
+      "backend": "java",
+      "medianNs": 112.12129592895508,
+      "minForkMedianNs": 106.70967102050781,
+      "maxForkMedianNs": 112.46337890625,
+      "forkMedianNs": [
+        106.70967102050781,
+        112.12129592895508,
+        112.46337890625
+      ]
+    },
+    {
+      "workload": "trimmed_integer",
+      "backend": "foster-vm",
+      "medianNs": 798185.15625,
+      "minForkMedianNs": 770449.609375,
+      "maxForkMedianNs": 908953.125,
+      "forkMedianNs": [
+        798185.15625,
+        908953.125,
+        770449.609375
+      ]
+    }
+  ],
+  "compilerCommit": "cc0d7256711c632bdb45c9ddb3fd58b8e75d0fb0"
+}

@@ -36,17 +36,17 @@ pub type Duration = & Ordered<Duration> & {
     /// Returns this duration as signed nanoseconds.
     ///
     /// This conversion fails at runtime if the represented value exceeds `Int`.
-    pub func total_nanoseconds(self) -> Int [read self.nanosecond_value, read self.seconds_value]
+    pub func total_nanoseconds(self) -> Int [read self(nanosecond_value, seconds_value)]
     /// Returns this duration as signed milliseconds, truncated toward negative infinity.
-    pub func total_milliseconds(self) -> Int [read self.nanosecond_value, read self.seconds_value]
+    pub func total_milliseconds(self) -> Int [read self(nanosecond_value, seconds_value)]
     /// Adds two exact durations and returns a canonical result.
-    pub func add(self, other: Duration) -> Duration [read other.nanosecond_value, read other.seconds_value, read self.nanosecond_value, read self.seconds_value]
+    pub func add(self, other: Duration) -> Duration [read other(nanosecond_value, seconds_value), read self(nanosecond_value, seconds_value)]
     /// Subtracts another exact duration and returns a canonical result.
-    pub func subtract(self, other: Duration) -> Duration [read other.nanosecond_value, read other.seconds_value, read self.nanosecond_value, read self.seconds_value]
+    pub func subtract(self, other: Duration) -> Duration [read other(nanosecond_value, seconds_value), read self(nanosecond_value, seconds_value)]
     /// Returns the additive inverse of this duration.
-    pub func negated(self) -> Duration [read self.nanosecond_value, read self.seconds_value]
+    pub func negated(self) -> Duration [read self(nanosecond_value, seconds_value)]
     /// Returns whether this duration has zero length.
-    pub func zero?(self) -> Bool [read self.nanosecond_value, read self.seconds_value]
+    pub func zero?(self) -> Bool [read self(nanosecond_value, seconds_value)]
 }
 
 impl Duration {
@@ -150,13 +150,13 @@ pub type Instant = & Ordered<Instant> & {
     /// Returns the nonnegative fractional nanosecond component.
     pub func nanosecond(self) -> Int [read self.nanosecond_value]
     /// Returns signed Unix milliseconds, truncated toward negative infinity.
-    pub func epoch_milliseconds(self) -> Int [read self.epoch_seconds_value, read self.nanosecond_value]
+    pub func epoch_milliseconds(self) -> Int [read self(epoch_seconds_value, nanosecond_value)]
     /// Advances this instant by an exact duration.
-    pub func add(self, duration: Duration) -> Instant [read duration.nanosecond_value, read duration.seconds_value, read self.epoch_seconds_value, read self.nanosecond_value]
+    pub func add(self, duration: Duration) -> Instant [read duration(nanosecond_value, seconds_value), read self(epoch_seconds_value, nanosecond_value)]
     /// Moves this instant backward by an exact duration.
-    pub func subtract(self, duration: Duration) -> Instant [read duration.nanosecond_value, read duration.seconds_value, read self.epoch_seconds_value, read self.nanosecond_value]
+    pub func subtract(self, duration: Duration) -> Instant [read duration(nanosecond_value, seconds_value), read self(epoch_seconds_value, nanosecond_value)]
     /// Returns the exact elapsed duration from this instant until `other`.
-    pub func until(self, other: Instant) -> Duration [read other.epoch_seconds_value, read other.nanosecond_value, read self.epoch_seconds_value, read self.nanosecond_value]
+    pub func until(self, other: Instant) -> Duration [read other(epoch_seconds_value, nanosecond_value), read self(epoch_seconds_value, nanosecond_value)]
 }
 
 impl Instant {
@@ -235,9 +235,9 @@ pub type Interval = {
     /// Returns the exclusive interval end.
     pub func end(self) -> Instant [read self.end_value]
     /// Returns the exact interval length.
-    pub func duration(self) -> Duration [read self.end_value, read self.start_value.epoch_seconds_value, read self.start_value.nanosecond_value]
+    pub func duration(self) -> Duration [read self(end_value, start_value.epoch_seconds_value, start_value.nanosecond_value)]
     /// Returns whether this interval contains `instant`.
-    pub func contains?(self, instant: Instant) -> Bool [read instant.epoch_seconds_value, read instant.nanosecond_value, read self.end_value, read self.start_value]
+    pub func contains?(self, instant: Instant) -> Bool [read instant(epoch_seconds_value, nanosecond_value), read self(end_value, start_value)]
 }
 
 impl Interval {
@@ -299,7 +299,7 @@ pub type MonotonicInstant = & Ordered<MonotonicInstant> & {
     /// Returns the elapsed duration from this reading until `other`.
     pub func until(self, other: MonotonicInstant) -> Duration [read other.ticks_value, read self.ticks_value]
     /// Advances a monotonic reading for deterministic clock implementations.
-    pub func add(self, duration: Duration) -> MonotonicInstant [read duration.nanosecond_value, read duration.seconds_value, read self.ticks_value]
+    pub func add(self, duration: Duration) -> MonotonicInstant [read duration(nanosecond_value, seconds_value), read self.ticks_value]
 }
 
 impl MonotonicInstant {

@@ -85,9 +85,8 @@ use remote::{
 };
 mod representation;
 use representation::{
-    concrete_closure_result, concrete_native_type, instruction_layout_type,
-    native_builtin_result_types, native_type, record_uses_dynamic_dispatch,
-    specialized_verification_type,
+    concrete_native_type, instruction_layout_type, native_builtin_result_types, native_type,
+    record_uses_dynamic_dispatch, specialized_verification_type,
 };
 mod specialization;
 use specialization::{

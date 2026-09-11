@@ -1,8 +1,13 @@
 # Foster examples
 
 The examples are executable documentation for Foster. Each program focuses on a language or
-library capability and is exercised by the test suite with bytecode optimization both enabled and
-disabled.
+library capability. Validate examples with `foster check <path>` and run them with
+`foster run <path>`. Dedicated language and library tests live in `tests/foster` and `library`.
+
+Use precise effect bounds, grouping repeated sibling paths as `[mut state(left, right)]`.
+Ordinary `let` bindings are mutable; use `ref` to update caller-owned storage and `move`
+to pass an existing owned value to a consuming parameter. Call declared methods with `()`;
+stored fields and computed properties use member access.
 
 ## End-to-end examples
 

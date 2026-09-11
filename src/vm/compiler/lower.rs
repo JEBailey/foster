@@ -992,7 +992,24 @@ impl FunctionCompiler<'_> {
             }
         }
         if let Some(actual) = self.types.expression_type(result) {
-            match_generic_types(self.types, signature.result, actual, &mut substitutions);
+            if matches!(
+                self.hir.expressions[result],
+                hir::Expr::Closure { .. } | hir::Expr::Name(ResolvedName::Function(_))
+            ) {
+                if let crate::types::Type::Function(checked) = &self.types.types[actual] {
+                    for (schema, actual) in signature.parameters.iter().zip(&checked.parameters) {
+                        match_generic_types(self.types, *schema, *actual, &mut substitutions);
+                    }
+                    match_generic_types(
+                        self.types,
+                        signature.result,
+                        checked.result,
+                        &mut substitutions,
+                    );
+                }
+            } else {
+                match_generic_types(self.types, signature.result, actual, &mut substitutions);
+            }
         }
         let mut names = std::collections::BTreeSet::new();
         for parameter in &signature.parameters {

@@ -23,7 +23,7 @@ impl SecureRandom {
     }
 
     /// Returns the next uniformly distributed secure 31-bit integer.
-    pub func next(self: SecureRandom) -> Result<Int, RandomError> [mut self.source_value] {
+    pub func next(self: SecureRandom) -> Result<Int, RandomError> {
         self.source_value.next()
     }
 
@@ -31,7 +31,7 @@ impl SecureRandom {
     pub func maximum(self: SecureRandom) -> Int { self.source_value.maximum() }
 
     /// Returns exactly `count` operating-system entropy bytes.
-    pub func bytes(self: SecureRandom, count: Int) -> Result<Bytes, RandomError> [mut self.source_value] {
+    pub func bytes(self: SecureRandom, count: Int) -> Result<Bytes, RandomError> {
         self.source_value.bytes(count)
     }
 }

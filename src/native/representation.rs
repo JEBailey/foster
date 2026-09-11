@@ -1,7 +1,7 @@
 //! Logical-to-native type and layout conversion.
 use super::{
-    BytecodeFunction, Compilation, FosterError, HashMap, Instruction, LayoutRegistry, NativeType,
-    Program, Register, SpecializationKey, Type, TypeId, native_error, resolve_specialization,
+    Compilation, FosterError, HashMap, Instruction, LayoutRegistry, NativeType, Program, Type,
+    TypeId, native_error,
 };
 
 pub(super) fn native_builtin_result_types(
@@ -74,78 +74,6 @@ pub(super) fn instruction_layout_type(
         ),
         _ => None,
     }
-}
-
-pub(super) fn concrete_closure_result(
-    program: &Program,
-    layouts: &mut LayoutRegistry,
-    instance: &SpecializationKey,
-) -> Result<NativeType, FosterError> {
-    let body = &program.functions[&instance.function];
-    let mut result = None;
-    for (index, instruction) in body.instructions.iter().enumerate() {
-        let Instruction::Return { source } = instruction else {
-            continue;
-        };
-        let key = closure_definition_before(body, index, *source, &instance.substitutions)
-            .ok_or_else(|| {
-                native_error(format!(
-                    "native function `{}` returns an erased callable value",
-                    body.name
-                ))
-                .with_help(
-                    "return one statically known closure, or keep this explicitly dynamic call on the VM",
-                )
-            })?;
-        if result.as_ref().is_some_and(|previous| previous != &key) {
-            return Err(native_error(format!(
-                "native function `{}` returns multiple concrete closure layouts",
-                body.name
-            ))
-            .with_help("use the VM for a callable value selected dynamically"));
-        }
-        result = Some(key);
-    }
-    let key = result.ok_or_else(|| {
-        native_error(format!(
-            "native function `{}` has no concrete closure result",
-            body.name
-        ))
-    })?;
-    Ok(NativeType::Object(
-        layouts.instantiate_closure(key.function, &key.substitutions)?,
-    ))
-}
-
-fn closure_definition_before(
-    function: &BytecodeFunction,
-    before: usize,
-    register: Register,
-    outer: &crate::vm::Specialization,
-) -> Option<SpecializationKey> {
-    for (index, instruction) in function.instructions[..before].iter().enumerate().rev() {
-        match instruction {
-            Instruction::MakeClosure {
-                destination,
-                function,
-                specialization,
-                ..
-            } if *destination == register => {
-                return Some(SpecializationKey {
-                    function: *function,
-                    substitutions: resolve_specialization(specialization, outer),
-                });
-            }
-            Instruction::Move {
-                destination,
-                source,
-            } if *destination == register => {
-                return closure_definition_before(function, index, *source, outer);
-            }
-            _ => {}
-        }
-    }
-    None
 }
 
 pub(super) fn native_type(

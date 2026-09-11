@@ -104,3 +104,32 @@ impl BytesCursor {
         Option.Some(self.data.slice(start, end))
     }
 }
+
+test "list cursor restores checkpoints and rejects invalid offsets" {
+    let cursor = ListCursor.from([10, 20])
+    assert(cursor.peek().unwrap_or(0) == 10)
+    assert(cursor.checkpoint() == 0)
+    assert(cursor.next().unwrap_or(0) == 10)
+    let saved = cursor.checkpoint()
+    assert(cursor.next().unwrap_or(0) == 20)
+    assert(cursor.next().unwrap_or(0) == 0)
+    assert(cursor.checkpoint() == 2)
+    assert(!cursor.restore(-1))
+    assert(!cursor.restore(3))
+    assert(cursor.checkpoint() == 2)
+    assert(cursor.restore(saved))
+    assert(cursor.next().unwrap_or(0) == 20)
+}
+
+test "byte cursor spans preserve the current position" {
+    let cursor = BytesCursor.from("ab".bytes)
+    assert(cursor.next().unwrap_or("z".bytes[0]) == "a".bytes[0])
+    let saved = cursor.checkpoint()
+    let span = cursor.byte_span(0, 2).unwrap_or("".bytes)
+    assert(span.length == 2)
+    assert(cursor.checkpoint() == saved)
+    assert(!cursor.restore(3))
+    assert(cursor.checkpoint() == saved)
+    assert(cursor.restore(0))
+    assert(cursor.peek().unwrap_or("z".bytes[0]) == "a".bytes[0])
+}

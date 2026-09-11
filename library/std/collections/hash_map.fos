@@ -15,7 +15,7 @@ pub type HashMap<K, V> = & Map<K, V> & {
     hasher: func(K) -> Int
 
     /// Removes a key while preserving the table's hashing strategy and other entries.
-    pub func remove(self, key: K) -> HashMap<K, V> [mut self.buckets.items, mut self.size, consume self]
+    pub func remove(self, key: K) -> HashMap<K, V> [mut self(buckets.items, size), consume self]
 }
 
 impl HashMap {
@@ -47,7 +47,7 @@ impl HashMap {
     }
 
     /// Inserts or replaces a key and grows above a three-quarter load factor.
-    pub func put<K, V>(self: HashMap<K, V>, key: K, value: V) -> HashMap<K, V> [mut self.size, mut self.buckets.items, consume self, consume key, consume value] {
+    pub func put<K, V>(self: HashMap<K, V>, key: K, value: V) -> HashMap<K, V> [mut self(size, buckets.items), consume self, consume key, consume value] {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
         let index = find_index(self.buckets[bucket], key)
         branch {
@@ -67,7 +67,7 @@ impl HashMap {
     }
 
     /// Removes a key if present, leaving other colliding entries intact.
-    pub func remove<K, V>(self: HashMap<K, V>, key: K) -> HashMap<K, V> [mut self.buckets.items, mut self.size, consume self] {
+    pub func remove<K, V>(self: HashMap<K, V>, key: K) -> HashMap<K, V> [mut self(buckets.items, size), consume self] {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
         let index = find_index(self.buckets[bucket], key)
         branch {

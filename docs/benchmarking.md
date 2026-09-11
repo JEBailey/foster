@@ -126,6 +126,15 @@ Result mismatches do fail the cross-language run.
 Record results from a quiet machine, use release builds, and compare results from the same commit,
 toolchains, hardware, and power settings.
 
+## Taker runtime comparison
+
+With Java 21+, a Windows release Foster compiler, and sibling `taker/taker` and
+`taker_foster` repositories, run `node benchmarks/taker_runtime.cjs`. It compiles both
+libraries from current source, uses matching parser workloads with checked results, and
+reports in-process parse latency across three independent processes per backend. Java
+gets an explicit JIT warmup; Foster runs prebuilt optimized bytecode. Native compilation
+is attempted and failures are recorded separately. See the [measured results and scope](../benchmarks/results/taker-runtime.md).
+
 ## Language server latency
 
 ```text
@@ -142,3 +151,26 @@ use parsing only, so outline latency is not a proxy for full semantic-check late
 For edits, cover unchanged contracts, changed effects/signatures, and error repair.
 Compare diagnostics and current source ranges against a fresh checked compilation.
 The implementation boundaries are documented in [interactive checking](incremental-checking.md).
+
+### Source versus compiled library dependencies
+
+With `taker_foster` beside this repository and a current Windows release compiler, run:
+
+```text
+node benchmarks/lsp_libraries.cjs 7
+```
+
+This builds Taker into a `.flib` and compares its calculator and Unicode consumers using
+source dependencies and that artifact. It creates isolated consumer projects under
+`target/lsp-library-benchmark-*`; the original Taker projects are not edited. Each sample
+uses a fresh LSP process, with dependency order alternating between repetitions. A complete
+warmup for each variant precedes measurement, so initial analysis has an empty LSP cache
+but does not represent a cold operating-system filesystem cache.
+
+The harness measures opening a document to its initial diagnostics, cached semantic hover,
+three body edits, an intentional type error, and error repair. Edit timings end at diagnostics
+for the matching document version, and diagnostic/hover assertions guard against fast failures.
+Process initialization and the one-time library build are excluded from editor latency.
+Raw samples, per-process medians, ranges, library size/build time, and machine information
+are saved in `results.json`. Separate profiling runs capture frontend phases without adding
+profiling overhead to the timed samples.

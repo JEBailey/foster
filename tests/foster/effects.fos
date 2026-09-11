@@ -1,5 +1,21 @@
 //! Group-parameterized references and explicit callable effect contracts.
 
+type Counters = { accepted: Int, rejected: Int, limit: Int }
+
+func record_batch[g: group Counters](counts: ref[g] Counters) -> () [mut g(accepted, rejected)] {
+    counts.accepted = counts.accepted + 2
+    counts.rejected = counts.rejected + 1
+    ()
+}
+
+test "grouped effects mutate named fields and preserve other fields" {
+    let counts = Counters { accepted: 0, rejected: 0, limit: 10 }
+    record_batch(ref counts)
+    assert(counts.accepted == 2)
+    assert(counts.rejected == 1)
+    assert(counts.limit == 10)
+}
+
 func replace[g: group Int](value: ref[g] Int) -> Int [mut g] {
     value = 2
     value

@@ -1,0 +1,38 @@
+func scan(predicate: func(Int) -> Bool, minimum: Int) -> func(Int) -> Bool {
+    (value: Int) -> predicate(value) && value >= minimum
+}
+func take_while(predicate: func(Int) -> Bool) -> func(Int) -> Bool {
+    scan(move predicate, 1)
+}
+func forward(parser: func(Int) -> Bool) -> func(Int) -> Bool { parser }
+func choose(first: Bool) -> func(Int) -> Int {
+    branch {
+        first -> (value: Int) -> value + 1
+        _ -> (value: Int) -> value + 2
+    }
+}
+func factory() -> func(Int) -> func(Int) -> Int {
+    (offset: Int) -> (value: Int) -> offset + value
+}
+func identity<T>(value: T) -> T { value }
+type Pair<A, B> = { first: A, second: B }
+func apply<A, B>(value: A, transform: func(consume A) -> B) -> B {
+    transform(move value)
+}
+func first<A, B>(pair: Pair<A, B>) -> A {
+    apply(move pair, (item: Pair<A, B>) -> item.first)
+}
+func main() -> Int {
+    assert(first(Pair { first: 42, second: () }) == 42)
+    assert(first(Pair { first: "answer", second: 1 }) == "answer")
+    let parser = forward(take_while((value: Int) -> value < 10))
+    assert(parser(5))
+    assert(!parser(0))
+    assert(!parser(10))
+    assert(choose(true)(40) == 41)
+    assert(choose(false)(40) == 42)
+    let make_adder = factory()
+    let add = identity(make_adder(2))
+    assert(add(40) == 42)
+    42
+}

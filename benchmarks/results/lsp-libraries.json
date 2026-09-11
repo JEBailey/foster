@@ -1,0 +1,1945 @@
+{
+  "timestamp": "2026-09-10T23:16:38.707Z",
+  "node": "v24.18.0",
+  "cpu": "AMD Ryzen 5 4500 6-Core Processor              ",
+  "platform": "win32",
+  "buildMs": 2181.7684,
+  "artifactBytes": 3246392,
+  "repeats": 7,
+  "samples": [
+    {
+      "repeat": 0,
+      "example": "calculator",
+      "mode": "source",
+      "initialMs": 1956.6876000000047,
+      "cachedMs": 0.21710000000166474,
+      "editMs": 1248.6795000000056,
+      "errorMs": 1577.7718999999997,
+      "repairMs": 1266.3937000000005,
+      "cachedSamples": [
+        0.3708000000042375,
+        0.22839999999996508,
+        0.21710000000166474,
+        0.20530000000144355,
+        0.19950000000244472
+      ],
+      "editSamples": [
+        1214.5529000000024,
+        1298.3787000000011,
+        1248.6795000000056
+      ]
+    },
+    {
+      "repeat": 0,
+      "example": "calculator",
+      "mode": "flib",
+      "initialMs": 1900.5816999999952,
+      "cachedMs": 0.19189999999798601,
+      "editMs": 1228.8007999999973,
+      "errorMs": 1448.884299999998,
+      "repairMs": 1197.9656000000032,
+      "cachedSamples": [
+        0.3672999999980675,
+        0.19950000000244472,
+        0.1819000000032247,
+        0.18650000000343425,
+        0.19189999999798601
+      ],
+      "editSamples": [
+        1200.7234000000026,
+        1228.8007999999973,
+        1242.1600000000035
+      ]
+    },
+    {
+      "repeat": 0,
+      "example": "unicode",
+      "mode": "source",
+      "initialMs": 1961.1505000000034,
+      "cachedMs": 0.29140000000188593,
+      "editMs": 1252.0495999999985,
+      "errorMs": 1582.3718000000008,
+      "repairMs": 1261.3934000000008,
+      "cachedSamples": [
+        0.5084999999962747,
+        0.4282999999995809,
+        0.29140000000188593,
+        0.2727000000013504,
+        0.2657000000035623
+      ],
+      "editSamples": [
+        1237.969100000002,
+        1252.0495999999985,
+        1268.0737999999983
+      ]
+    },
+    {
+      "repeat": 0,
+      "example": "unicode",
+      "mode": "flib",
+      "initialMs": 1939.3220999999976,
+      "cachedMs": 0.22620000000461005,
+      "editMs": 1236.6074000000008,
+      "errorMs": 1528.2456000000093,
+      "repairMs": 1230.945900000006,
+      "cachedSamples": [
+        0.3882999999987078,
+        0.20650000000023283,
+        0.18549999999959255,
+        0.22620000000461005,
+        0.2595000000001164
+      ],
+      "editSamples": [
+        1200.8488999999972,
+        1236.6074000000008,
+        1261.0084999999963
+      ]
+    },
+    {
+      "repeat": 1,
+      "example": "calculator",
+      "mode": "flib",
+      "initialMs": 1911.3908000000083,
+      "cachedMs": 0.18009999999776483,
+      "editMs": 1202.8724999999977,
+      "errorMs": 1503.0622000000003,
+      "repairMs": 1227.1423000000068,
+      "cachedSamples": [
+        0.3705000000045402,
+        0.2039000000077067,
+        0.17719999999098945,
+        0.18009999999776483,
+        0.16820000000006985
+      ],
+      "editSamples": [
+        1160.4146000000037,
+        1207.2114000000001,
+        1202.8724999999977
+      ]
+    },
+    {
+      "repeat": 1,
+      "example": "calculator",
+      "mode": "source",
+      "initialMs": 2010.1665999999968,
+      "cachedMs": 0.7044000000023516,
+      "editMs": 1294.799199999994,
+      "errorMs": 1727.0651999999973,
+      "repairMs": 1295.098100000003,
+      "cachedSamples": [
+        0.8169999999954598,
+        0.7602999999944586,
+        0.7044000000023516,
+        0.5394000000087544,
+        0.64879999999539
+      ],
+      "editSamples": [
+        1340.1889999999985,
+        1294.799199999994,
+        1266.6575000000012
+      ]
+    },
+    {
+      "repeat": 1,
+      "example": "unicode",
+      "mode": "flib",
+      "initialMs": 1934.5166000000027,
+      "cachedMs": 0.17299999999522697,
+      "editMs": 1203.8591999999917,
+      "errorMs": 1416.64929999999,
+      "repairMs": 1184.5385999999999,
+      "cachedSamples": [
+        0.3518999999942025,
+        0.1967000000004191,
+        0.17299999999522697,
+        0.1678000000101747,
+        0.16890000000421423
+      ],
+      "editSamples": [
+        1164.652099999992,
+        1208.5060999999987,
+        1203.8591999999917
+      ]
+    },
+    {
+      "repeat": 1,
+      "example": "unicode",
+      "mode": "source",
+      "initialMs": 1961.506600000008,
+      "cachedMs": 0.3168000000005122,
+      "editMs": 1259.332699999999,
+      "errorMs": 1564.9042999999947,
+      "repairMs": 1329.9348000000027,
+      "cachedSamples": [
+        0.41140000001178123,
+        0.25559999998949934,
+        0.2497999999905005,
+        0.3337000000028638,
+        0.3168000000005122
+      ],
+      "editSamples": [
+        1231.8769999999931,
+        1259.332699999999,
+        1275.7672999999922
+      ]
+    },
+    {
+      "repeat": 2,
+      "example": "calculator",
+      "mode": "source",
+      "initialMs": 1991.4979000000021,
+      "cachedMs": 0.2480000000068685,
+      "editMs": 1260.1925999999949,
+      "errorMs": 1633.4994000000006,
+      "repairMs": 1256.7442999999912,
+      "cachedSamples": [
+        0.4386999999987893,
+        0.3220000000001164,
+        0.2480000000068685,
+        0.21149999999033753,
+        0.19640000000072177
+      ],
+      "editSamples": [
+        1211.5889000000025,
+        1260.1925999999949,
+        1282.1013999999996
+      ]
+    },
+    {
+      "repeat": 2,
+      "example": "calculator",
+      "mode": "flib",
+      "initialMs": 1908.0795999999973,
+      "cachedMs": 0.1755000000121072,
+      "editMs": 1196.900099999999,
+      "errorMs": 1437.891599999988,
+      "repairMs": 1203.9468999999954,
+      "cachedSamples": [
+        0.44439999999303836,
+        0.20410000000265427,
+        0.1755000000121072,
+        0.16800000000512227,
+        0.1635999999998603
+      ],
+      "editSamples": [
+        1144.1790000000037,
+        1196.900099999999,
+        1200.1080999999976
+      ]
+    },
+    {
+      "repeat": 2,
+      "example": "unicode",
+      "mode": "source",
+      "initialMs": 1949.7387000000017,
+      "cachedMs": 0.299299999998766,
+      "editMs": 1260.9772999999986,
+      "errorMs": 1571.147299999997,
+      "repairMs": 1251.2448000000004,
+      "cachedSamples": [
+        0.4337999999988824,
+        0.2856000000028871,
+        0.31540000000677537,
+        0.299299999998766,
+        0.27479999999923166
+      ],
+      "editSamples": [
+        1213.6147999999957,
+        1262.9741000000067,
+        1260.9772999999986
+      ]
+    },
+    {
+      "repeat": 2,
+      "example": "unicode",
+      "mode": "flib",
+      "initialMs": 2032.5159999999887,
+      "cachedMs": 0.24220000000786968,
+      "editMs": 1216.9422000000195,
+      "errorMs": 1467.8022999999812,
+      "repairMs": 1208.7277000000176,
+      "cachedSamples": [
+        0.36019999999552965,
+        0.20879999999306165,
+        0.27600000001257285,
+        0.24220000000786968,
+        0.19560000000637956
+      ],
+      "editSamples": [
+        1189.025500000018,
+        1241.2304000000004,
+        1216.9422000000195
+      ]
+    },
+    {
+      "repeat": 3,
+      "example": "calculator",
+      "mode": "flib",
+      "initialMs": 1990.211099999986,
+      "cachedMs": 0.24399999997694977,
+      "editMs": 1205.1340999999957,
+      "errorMs": 1477.6019999999844,
+      "repairMs": 1304.1498000000138,
+      "cachedSamples": [
+        0.42170000000623986,
+        0.2784000000101514,
+        0.24399999997694977,
+        0.21229999998467974,
+        0.18929999999818392
+      ],
+      "editSamples": [
+        1155.0268000000215,
+        1207.5706000000064,
+        1205.1340999999957
+      ]
+    },
+    {
+      "repeat": 3,
+      "example": "calculator",
+      "mode": "source",
+      "initialMs": 2088.9450999999826,
+      "cachedMs": 0.29399999999441206,
+      "editMs": 1252.5342000000237,
+      "errorMs": 1622.2969999999914,
+      "repairMs": 1334.017200000002,
+      "cachedSamples": [
+        0.3552999999956228,
+        0.2872999999963213,
+        0.29399999999441206,
+        0.30460000000311993,
+        0.20800000001327135
+      ],
+      "editSamples": [
+        1246.6833999999799,
+        1289.1192000000156,
+        1252.5342000000237
+      ]
+    },
+    {
+      "repeat": 3,
+      "example": "unicode",
+      "mode": "flib",
+      "initialMs": 1999.0683999999892,
+      "cachedMs": 0.4170999999914784,
+      "editMs": 1180.8258999999962,
+      "errorMs": 1391.8438000000024,
+      "repairMs": 1156.4653000000108,
+      "cachedSamples": [
+        0.42720000000554137,
+        0.4170999999914784,
+        0.37309999999706633,
+        0.5160999999789055,
+        0.40580000000773
+      ],
+      "editSamples": [
+        1180.8258999999962,
+        1180.7451,
+        1195.7733000000007
+      ]
+    },
+    {
+      "repeat": 3,
+      "example": "unicode",
+      "mode": "source",
+      "initialMs": 1965.791499999992,
+      "cachedMs": 0.181799999991199,
+      "editMs": 1229.7641000000003,
+      "errorMs": 1500.8831000000064,
+      "repairMs": 1213.181899999996,
+      "cachedSamples": [
+        0.3249000000068918,
+        0.19130000000586733,
+        0.181799999991199,
+        0.17869999998947605,
+        0.1760000000067521
+      ],
+      "editSamples": [
+        1229.7641000000003,
+        1216.7439000000013,
+        1231.8660999999847
+      ]
+    },
+    {
+      "repeat": 4,
+      "example": "calculator",
+      "mode": "source",
+      "initialMs": 2047.9081000000006,
+      "cachedMs": 0.20230000000447035,
+      "editMs": 1216.637800000026,
+      "errorMs": 1499.6852999999828,
+      "repairMs": 1197.5011999999988,
+      "cachedSamples": [
+        0.33209999999962747,
+        0.20499999998719431,
+        0.1875,
+        0.18220000001019798,
+        0.20230000000447035
+      ],
+      "editSamples": [
+        1216.637800000026,
+        1219.7216999999946,
+        1213.745900000009
+      ]
+    },
+    {
+      "repeat": 4,
+      "example": "calculator",
+      "mode": "flib",
+      "initialMs": 1947.5013000000035,
+      "cachedMs": 0.2507000000041444,
+      "editMs": 1152.0849999999919,
+      "errorMs": 1405.6576999999816,
+      "repairMs": 1168.3775000000023,
+      "cachedSamples": [
+        0.3246999999973923,
+        0.26010000001406297,
+        0.2507000000041444,
+        0.208199999993667,
+        0.17920000001322478
+      ],
+      "editSamples": [
+        1152.0849999999919,
+        1167.43299999999,
+        1141.8452000000107
+      ]
+    },
+    {
+      "repeat": 4,
+      "example": "unicode",
+      "mode": "source",
+      "initialMs": 2031.1502999999793,
+      "cachedMs": 0.22449999998207204,
+      "editMs": 1211.6069000000134,
+      "errorMs": 1492.3490999999922,
+      "repairMs": 1183.6977999999945,
+      "cachedSamples": [
+        0.3540999999968335,
+        0.22449999998207204,
+        0.1840000000083819,
+        0.18490000002202578,
+        0.2621999999973923
+      ],
+      "editSamples": [
+        1218.2164000000048,
+        1202.788899999985,
+        1211.6069000000134
+      ]
+    },
+    {
+      "repeat": 4,
+      "example": "unicode",
+      "mode": "flib",
+      "initialMs": 1895.7901999999885,
+      "cachedMs": 0.17449999999371357,
+      "editMs": 1176.6413999999932,
+      "errorMs": 1366.0876999999746,
+      "repairMs": 1146.7051999999967,
+      "cachedSamples": [
+        0.31739999999990687,
+        0.17449999999371357,
+        0.1661000000021886,
+        0.1675999999861233,
+        0.3003000000026077
+      ],
+      "editSamples": [
+        1176.6413999999932,
+        1180.4091999999946,
+        1151.0466000000015
+      ]
+    },
+    {
+      "repeat": 5,
+      "example": "calculator",
+      "mode": "flib",
+      "initialMs": 1925.4403000000166,
+      "cachedMs": 0.18909999998868443,
+      "editMs": 1154.6778999999806,
+      "errorMs": 1378.1022999999986,
+      "repairMs": 1156.8781999999774,
+      "cachedSamples": [
+        0.3527999999932945,
+        0.18909999998868443,
+        0.17099999997299165,
+        0.19380000000819564,
+        0.16589999999268912
+      ],
+      "editSamples": [
+        1144.1662999999826,
+        1154.6778999999806,
+        1164.9504000000015
+      ]
+    },
+    {
+      "repeat": 5,
+      "example": "calculator",
+      "mode": "source",
+      "initialMs": 1959.5847000000067,
+      "cachedMs": 0.18780000001424924,
+      "editMs": 1211.9134000000195,
+      "errorMs": 1526.7183000000077,
+      "repairMs": 1202.574900000007,
+      "cachedSamples": [
+        0.3236999999789987,
+        0.1925000000046566,
+        0.18780000001424924,
+        0.18169999998644926,
+        0.17970000000786968
+      ],
+      "editSamples": [
+        1198.3875000000116,
+        1211.9134000000195,
+        1228.9856999999902
+      ]
+    },
+    {
+      "repeat": 5,
+      "example": "unicode",
+      "mode": "flib",
+      "initialMs": 1899.7123999999894,
+      "cachedMs": 0.2973000000056345,
+      "editMs": 1152.1970000000147,
+      "errorMs": 1382.6914999999863,
+      "repairMs": 1141.1201,
+      "cachedSamples": [
+        0.3341000000073109,
+        0.17669999998179264,
+        0.16279999999096617,
+        0.30590000000665896,
+        0.2973000000056345
+      ],
+      "editSamples": [
+        1173.8938999999955,
+        1152.1970000000147,
+        1142.6906000000017
+      ]
+    },
+    {
+      "repeat": 5,
+      "example": "unicode",
+      "mode": "source",
+      "initialMs": 1993.270600000018,
+      "cachedMs": 0.1812999999965541,
+      "editMs": 1231.9127000000153,
+      "errorMs": 1542.739499999996,
+      "repairMs": 1207.914699999994,
+      "cachedSamples": [
+        0.3451000000059139,
+        0.2051999999966938,
+        0.1812999999965541,
+        0.17540000000735745,
+        0.17269999999552965
+      ],
+      "editSamples": [
+        1223.4509999999718,
+        1231.9127000000153,
+        1258.342399999994
+      ]
+    },
+    {
+      "repeat": 6,
+      "example": "calculator",
+      "mode": "source",
+      "initialMs": 2064.299800000008,
+      "cachedMs": 0.18230000001494773,
+      "editMs": 1218.1192999999912,
+      "errorMs": 1510.4372000000149,
+      "repairMs": 1231.5255999999936,
+      "cachedSamples": [
+        0.31390000000828877,
+        0.19139999998151325,
+        0.18090000000665896,
+        0.18230000001494773,
+        0.1767999999865424
+      ],
+      "editSamples": [
+        1221.9964000000036,
+        1218.1192999999912,
+        1217.4704000000202
+      ]
+    },
+    {
+      "repeat": 6,
+      "example": "calculator",
+      "mode": "flib",
+      "initialMs": 1929.006699999998,
+      "cachedMs": 0.2532000000064727,
+      "editMs": 1169.8689000000013,
+      "errorMs": 1358.5995999999868,
+      "repairMs": 1156.529899999994,
+      "cachedSamples": [
+        0.3665000000037253,
+        0.3249000000068918,
+        0.2532000000064727,
+        0.20410000000265427,
+        0.16999999998370185
+      ],
+      "editSamples": [
+        1171.5941000000166,
+        1169.8689000000013,
+        1154.9860000000044
+      ]
+    },
+    {
+      "repeat": 6,
+      "example": "unicode",
+      "mode": "source",
+      "initialMs": 1956.1981000000087,
+      "cachedMs": 0.19510000001173466,
+      "editMs": 1215.1667000000016,
+      "errorMs": 1493.3654999999853,
+      "repairMs": 1194.8203000000212,
+      "cachedSamples": [
+        0.31330000000889413,
+        0.18619999999646097,
+        0.18890000000828877,
+        0.19510000001173466,
+        0.20730000000912696
+      ],
+      "editSamples": [
+        1188.2168999999994,
+        1219.6592999999993,
+        1215.1667000000016
+      ]
+    },
+    {
+      "repeat": 6,
+      "example": "unicode",
+      "mode": "flib",
+      "initialMs": 1902.0138000000152,
+      "cachedMs": 0.1728000000002794,
+      "editMs": 1163.8612999999896,
+      "errorMs": 1386.3779999999679,
+      "repairMs": 1148.5027000000118,
+      "cachedSamples": [
+        0.34799999999813735,
+        0.1840000000083819,
+        0.1728000000002794,
+        0.1631000000052154,
+        0.1640000000479631
+      ],
+      "editSamples": [
+        1178.3816000000224,
+        1151.4519999999902,
+        1163.8612999999896
+      ]
+    }
+  ],
+  "summary": [
+    {
+      "example": "calculator",
+      "mode": "source",
+      "initialMs": {
+        "median": 2010.1665999999968,
+        "min": 1956.6876000000047,
+        "max": 2088.9450999999826
+      },
+      "cachedMs": {
+        "median": 0.21710000000166474,
+        "min": 0.18230000001494773,
+        "max": 0.7044000000023516
+      },
+      "editMs": {
+        "median": 1248.6795000000056,
+        "min": 1211.9134000000195,
+        "max": 1294.799199999994
+      },
+      "errorMs": {
+        "median": 1577.7718999999997,
+        "min": 1499.6852999999828,
+        "max": 1727.0651999999973
+      },
+      "repairMs": {
+        "median": 1256.7442999999912,
+        "min": 1197.5011999999988,
+        "max": 1334.017200000002
+      }
+    },
+    {
+      "example": "calculator",
+      "mode": "flib",
+      "initialMs": {
+        "median": 1925.4403000000166,
+        "min": 1900.5816999999952,
+        "max": 1990.211099999986
+      },
+      "cachedMs": {
+        "median": 0.19189999999798601,
+        "min": 0.1755000000121072,
+        "max": 0.2532000000064727
+      },
+      "editMs": {
+        "median": 1196.900099999999,
+        "min": 1152.0849999999919,
+        "max": 1228.8007999999973
+      },
+      "errorMs": {
+        "median": 1437.891599999988,
+        "min": 1358.5995999999868,
+        "max": 1503.0622000000003
+      },
+      "repairMs": {
+        "median": 1197.9656000000032,
+        "min": 1156.529899999994,
+        "max": 1304.1498000000138
+      }
+    },
+    {
+      "example": "unicode",
+      "mode": "source",
+      "initialMs": {
+        "median": 1961.506600000008,
+        "min": 1949.7387000000017,
+        "max": 2031.1502999999793
+      },
+      "cachedMs": {
+        "median": 0.22449999998207204,
+        "min": 0.1812999999965541,
+        "max": 0.3168000000005122
+      },
+      "editMs": {
+        "median": 1231.9127000000153,
+        "min": 1211.6069000000134,
+        "max": 1260.9772999999986
+      },
+      "errorMs": {
+        "median": 1542.739499999996,
+        "min": 1492.3490999999922,
+        "max": 1582.3718000000008
+      },
+      "repairMs": {
+        "median": 1213.181899999996,
+        "min": 1183.6977999999945,
+        "max": 1329.9348000000027
+      }
+    },
+    {
+      "example": "unicode",
+      "mode": "flib",
+      "initialMs": {
+        "median": 1934.5166000000027,
+        "min": 1895.7901999999885,
+        "max": 2032.5159999999887
+      },
+      "cachedMs": {
+        "median": 0.22620000000461005,
+        "min": 0.1728000000002794,
+        "max": 0.4170999999914784
+      },
+      "editMs": {
+        "median": 1180.8258999999962,
+        "min": 1152.1970000000147,
+        "max": 1236.6074000000008
+      },
+      "errorMs": {
+        "median": 1391.8438000000024,
+        "min": 1366.0876999999746,
+        "max": 1528.2456000000093
+      },
+      "repairMs": {
+        "median": 1156.4653000000108,
+        "min": 1141.1201,
+        "max": 1230.945900000006
+      }
+    }
+  ],
+  "compilerCommit": "cc0d7256711c632bdb45c9ddb3fd58b8e75d0fb0",
+  "compilerSha256": "b02cdb712512b0f5cb3cd97bb8abf5ce66d9b479da9fb08bb80dfb8beb805b87",
+  "profileSamples": [
+    {
+      "example": "calculator",
+      "mode": "source",
+      "phase": "initial",
+      "analysis": {
+        "body_hit_rate": 0.23652526161809384,
+        "counters": {
+          "body.checked": 6785,
+          "body.empty_checked": 280,
+          "body.hit": 2102,
+          "body.miss.dependency": 706,
+          "body.miss.ineligible": 896,
+          "body.miss.no_entry": 1811,
+          "body.miss.no_session": 3303,
+          "body.miss.signature": 69,
+          "body.store_skip.ineligible_or_shared_constraints": 1408,
+          "body.store_skip.unresolved_input": 8,
+          "body.transaction_commit": 20,
+          "body_cache.declaration_reset": 1,
+          "compilation.miss": 1,
+          "effects.caller_enqueued": 1950,
+          "effects.derived": 8954,
+          "effects.reused": 1849,
+          "effects.summary_changed": 4178,
+          "ownership.iterations": 4,
+          "parse.miss": 68,
+          "pipeline.runs": 2,
+          "types.iterations": 7
+        },
+        "phases": {
+          "cache.complete": {
+            "calls": 1,
+            "inclusive_ms": 1.4923
+          },
+          "cache.prepare": {
+            "calls": 1,
+            "inclusive_ms": 172.9001
+          },
+          "capture.effects": {
+            "calls": 2,
+            "inclusive_ms": 0.0927
+          },
+          "capture.modes": {
+            "calls": 2,
+            "inclusive_ms": 0.1149
+          },
+          "closures.validate": {
+            "calls": 2,
+            "inclusive_ms": 0.7422
+          },
+          "compilation.rebuild": {
+            "calls": 1,
+            "inclusive_ms": 1824.4243
+          },
+          "compiler.recovering": {
+            "calls": 1,
+            "inclusive_ms": 1014.0229999999999
+          },
+          "effects.validate": {
+            "calls": 4,
+            "inclusive_ms": 1.9333
+          },
+          "hir.lower": {
+            "calls": 2,
+            "inclusive_ms": 40.585
+          },
+          "ownership.lower": {
+            "calls": 4,
+            "inclusive_ms": 73.342
+          },
+          "ownership.provenance": {
+            "calls": 4,
+            "inclusive_ms": 26.9009
+          },
+          "ownership.reborrow": {
+            "calls": 4,
+            "inclusive_ms": 3.0185
+          },
+          "ownership.requirements": {
+            "calls": 2,
+            "inclusive_ms": 11.7991
+          },
+          "ownership.summary": {
+            "calls": 4,
+            "inclusive_ms": 3.3726000000000003
+          },
+          "ownership.total": {
+            "calls": 2,
+            "inclusive_ms": 142.7373
+          },
+          "ownership.validate": {
+            "calls": 2,
+            "inclusive_ms": 25.893
+          },
+          "package.load": {
+            "calls": 1,
+            "inclusive_ms": 50.4796
+          },
+          "parse": {
+            "calls": 68,
+            "inclusive_ms": 24.744299999999996
+          },
+          "types.body_check": {
+            "calls": 7065,
+            "inclusive_ms": 493.8524999999984
+          },
+          "types.cache_lookup": {
+            "calls": 9167,
+            "inclusive_ms": 51.94730000000033
+          },
+          "types.cache_store": {
+            "calls": 7065,
+            "inclusive_ms": 39.682599999999915
+          },
+          "types.checkpoint": {
+            "calls": 20,
+            "inclusive_ms": 0.059200000000000016
+          },
+          "types.commit": {
+            "calls": 20,
+            "inclusive_ms": 0.0383
+          },
+          "types.declarations": {
+            "calls": 7,
+            "inclusive_ms": 60.3431
+          },
+          "types.effects": {
+            "calls": 7,
+            "inclusive_ms": 71.04509999999999
+          },
+          "types.effects_validate": {
+            "calls": 4,
+            "inclusive_ms": 0.41000000000000003
+          },
+          "types.final": {
+            "calls": 2,
+            "inclusive_ms": 455.74780000000004
+          },
+          "types.finish": {
+            "calls": 7,
+            "inclusive_ms": 404.28889999999996
+          },
+          "types.initial": {
+            "calls": 2,
+            "inclusive_ms": 697.3606
+          }
+        },
+        "total_ms": 1824.6666
+      }
+    },
+    {
+      "example": "calculator",
+      "mode": "source",
+      "phase": "first edit",
+      "analysis": {
+        "body_hit_rate": 0.46525787965616044,
+        "counters": {
+          "body.checked": 2986,
+          "body.empty_checked": 160,
+          "body.hit": 2598,
+          "body.miss.dependency": 1135,
+          "body.miss.ineligible": 896,
+          "body.miss.no_entry": 852,
+          "body.miss.signature": 102,
+          "body.miss.source_or_shape": 1,
+          "body.store_skip.ineligible_or_shared_constraints": 1408,
+          "body.store_skip.unresolved_input": 8,
+          "body.transaction_commit": 20,
+          "compilation.miss": 1,
+          "effects.caller_enqueued": 767,
+          "effects.derived": 3756,
+          "effects.reused": 2561,
+          "effects.summary_changed": 1629,
+          "ownership.iterations": 2,
+          "parse.hit": 67,
+          "parse.miss": 1,
+          "pipeline.runs": 1,
+          "types.iterations": 4
+        },
+        "phases": {
+          "cache.complete": {
+            "calls": 1,
+            "inclusive_ms": 1.535
+          },
+          "cache.prepare": {
+            "calls": 1,
+            "inclusive_ms": 175.5727
+          },
+          "capture.effects": {
+            "calls": 1,
+            "inclusive_ms": 0.059
+          },
+          "capture.modes": {
+            "calls": 1,
+            "inclusive_ms": 0.066
+          },
+          "closures.validate": {
+            "calls": 1,
+            "inclusive_ms": 0.3864
+          },
+          "compilation.rebuild": {
+            "calls": 1,
+            "inclusive_ms": 1037.0252
+          },
+          "compiler.recovering": {
+            "calls": 1,
+            "inclusive_ms": 1005.3422999999999
+          },
+          "effects.validate": {
+            "calls": 2,
+            "inclusive_ms": 1.1718000000000002
+          },
+          "hir.lower": {
+            "calls": 1,
+            "inclusive_ms": 21.6701
+          },
+          "ownership.lower": {
+            "calls": 2,
+            "inclusive_ms": 40.9465
+          },
+          "ownership.provenance": {
+            "calls": 2,
+            "inclusive_ms": 13.9971
+          },
+          "ownership.reborrow": {
+            "calls": 2,
+            "inclusive_ms": 1.8313000000000001
+          },
+          "ownership.requirements": {
+            "calls": 1,
+            "inclusive_ms": 6.4322
+          },
+          "ownership.summary": {
+            "calls": 2,
+            "inclusive_ms": 2.0404999999999998
+          },
+          "ownership.total": {
+            "calls": 1,
+            "inclusive_ms": 78.175
+          },
+          "ownership.validate": {
+            "calls": 1,
+            "inclusive_ms": 14.475200000000001
+          },
+          "package.load": {
+            "calls": 1,
+            "inclusive_ms": 20.9628
+          },
+          "parse": {
+            "calls": 1,
+            "inclusive_ms": 0.1075
+          },
+          "types.body_check": {
+            "calls": 3146,
+            "inclusive_ms": 255.60110000000063
+          },
+          "types.cache_lookup": {
+            "calls": 5744,
+            "inclusive_ms": 60.111600000000564
+          },
+          "types.cache_store": {
+            "calls": 3146,
+            "inclusive_ms": 38.44720000000018
+          },
+          "types.checkpoint": {
+            "calls": 20,
+            "inclusive_ms": 0.004999999999999999
+          },
+          "types.commit": {
+            "calls": 20,
+            "inclusive_ms": 0.03609999999999999
+          },
+          "types.declarations": {
+            "calls": 4,
+            "inclusive_ms": 36.188900000000004
+          },
+          "types.effects": {
+            "calls": 4,
+            "inclusive_ms": 37.3086
+          },
+          "types.effects_validate": {
+            "calls": 2,
+            "inclusive_ms": 0.24600000000000002
+          },
+          "types.final": {
+            "calls": 1,
+            "inclusive_ms": 309.3804
+          },
+          "types.finish": {
+            "calls": 4,
+            "inclusive_ms": 257.2381
+          },
+          "types.initial": {
+            "calls": 1,
+            "inclusive_ms": 404.94989999999996
+          }
+        },
+        "total_ms": 1051.9413
+      }
+    },
+    {
+      "example": "calculator",
+      "mode": "flib",
+      "phase": "initial",
+      "analysis": {
+        "body_hit_rate": 0.17577948486217804,
+        "counters": {
+          "body.checked": 5472,
+          "body.empty_checked": 1071,
+          "body.hit": 1167,
+          "body.miss.dependency": 644,
+          "body.miss.ineligible": 135,
+          "body.miss.no_entry": 1337,
+          "body.miss.no_session": 3303,
+          "body.miss.signature": 53,
+          "body.store_skip.ineligible_or_shared_constraints": 522,
+          "body.transaction_commit": 17,
+          "body_cache.declaration_reset": 1,
+          "compilation.miss": 1,
+          "effects.caller_enqueued": 1639,
+          "effects.derived": 7346,
+          "effects.reused": 932,
+          "effects.summary_changed": 3386,
+          "ownership.iterations": 4,
+          "parse.miss": 56,
+          "pipeline.runs": 2,
+          "types.iterations": 6
+        },
+        "phases": {
+          "cache.complete": {
+            "calls": 1,
+            "inclusive_ms": 1.2321
+          },
+          "cache.prepare": {
+            "calls": 1,
+            "inclusive_ms": 138.34869999999998
+          },
+          "capture.effects": {
+            "calls": 2,
+            "inclusive_ms": 0.0935
+          },
+          "capture.modes": {
+            "calls": 2,
+            "inclusive_ms": 0.0901
+          },
+          "closures.validate": {
+            "calls": 2,
+            "inclusive_ms": 0.6416
+          },
+          "compilation.rebuild": {
+            "calls": 1,
+            "inclusive_ms": 1777.5093
+          },
+          "compiler.recovering": {
+            "calls": 1,
+            "inclusive_ms": 704.4532999999999
+          },
+          "effects.validate": {
+            "calls": 4,
+            "inclusive_ms": 2.066
+          },
+          "hir.lower": {
+            "calls": 2,
+            "inclusive_ms": 39.005700000000004
+          },
+          "ownership.lower": {
+            "calls": 4,
+            "inclusive_ms": 62.8908
+          },
+          "ownership.provenance": {
+            "calls": 4,
+            "inclusive_ms": 22.4239
+          },
+          "ownership.reborrow": {
+            "calls": 4,
+            "inclusive_ms": 2.6511000000000005
+          },
+          "ownership.requirements": {
+            "calls": 2,
+            "inclusive_ms": 9.7825
+          },
+          "ownership.summary": {
+            "calls": 4,
+            "inclusive_ms": 3.0981
+          },
+          "ownership.total": {
+            "calls": 2,
+            "inclusive_ms": 120.7435
+          },
+          "ownership.validate": {
+            "calls": 2,
+            "inclusive_ms": 21.4481
+          },
+          "package.load": {
+            "calls": 1,
+            "inclusive_ms": 307.8233
+          },
+          "parse": {
+            "calls": 56,
+            "inclusive_ms": 17.461
+          },
+          "types.body_check": {
+            "calls": 6543,
+            "inclusive_ms": 391.7861000000017
+          },
+          "types.cache_lookup": {
+            "calls": 7710,
+            "inclusive_ms": 27.12409999999988
+          },
+          "types.cache_store": {
+            "calls": 6543,
+            "inclusive_ms": 29.322499999999685
+          },
+          "types.checkpoint": {
+            "calls": 17,
+            "inclusive_ms": 0.006399999999999999
+          },
+          "types.commit": {
+            "calls": 17,
+            "inclusive_ms": 0.037500000000000006
+          },
+          "types.declarations": {
+            "calls": 6,
+            "inclusive_ms": 52.5224
+          },
+          "types.effects": {
+            "calls": 6,
+            "inclusive_ms": 55.6178
+          },
+          "types.effects_validate": {
+            "calls": 4,
+            "inclusive_ms": 0.5161
+          },
+          "types.final": {
+            "calls": 2,
+            "inclusive_ms": 269.0831
+          },
+          "types.finish": {
+            "calls": 6,
+            "inclusive_ms": 329.25570000000005
+          },
+          "types.initial": {
+            "calls": 2,
+            "inclusive_ms": 644.6994
+          }
+        },
+        "total_ms": 1777.689
+      }
+    },
+    {
+      "example": "calculator",
+      "mode": "flib",
+      "phase": "first edit",
+      "analysis": {
+        "body_hit_rate": 0.49670263788968827,
+        "counters": {
+          "body.checked": 1679,
+          "body.empty_checked": 951,
+          "body.hit": 1657,
+          "body.miss.dependency": 1066,
+          "body.miss.ineligible": 135,
+          "body.miss.no_entry": 405,
+          "body.miss.signature": 72,
+          "body.miss.source_or_shape": 1,
+          "body.store_skip.ineligible_or_shared_constraints": 522,
+          "body.transaction_commit": 17,
+          "compilation.miss": 1,
+          "effects.caller_enqueued": 468,
+          "effects.derived": 2148,
+          "effects.reused": 1656,
+          "effects.summary_changed": 855,
+          "ownership.iterations": 2,
+          "parse.hit": 55,
+          "parse.miss": 1,
+          "pipeline.runs": 1,
+          "types.iterations": 3
+        },
+        "phases": {
+          "cache.complete": {
+            "calls": 1,
+            "inclusive_ms": 1.2809
+          },
+          "cache.prepare": {
+            "calls": 1,
+            "inclusive_ms": 143.0042
+          },
+          "capture.effects": {
+            "calls": 1,
+            "inclusive_ms": 0.0359
+          },
+          "capture.modes": {
+            "calls": 1,
+            "inclusive_ms": 0.0396
+          },
+          "closures.validate": {
+            "calls": 1,
+            "inclusive_ms": 0.29100000000000004
+          },
+          "compilation.rebuild": {
+            "calls": 1,
+            "inclusive_ms": 975.8540999999999
+          },
+          "compiler.recovering": {
+            "calls": 1,
+            "inclusive_ms": 693.2916
+          },
+          "effects.validate": {
+            "calls": 2,
+            "inclusive_ms": 1.1389
+          },
+          "hir.lower": {
+            "calls": 1,
+            "inclusive_ms": 18.0502
+          },
+          "ownership.lower": {
+            "calls": 2,
+            "inclusive_ms": 30.539299999999997
+          },
+          "ownership.provenance": {
+            "calls": 2,
+            "inclusive_ms": 10.0735
+          },
+          "ownership.reborrow": {
+            "calls": 2,
+            "inclusive_ms": 1.2612999999999999
+          },
+          "ownership.requirements": {
+            "calls": 1,
+            "inclusive_ms": 5.0196
+          },
+          "ownership.summary": {
+            "calls": 2,
+            "inclusive_ms": 1.5245000000000002
+          },
+          "ownership.total": {
+            "calls": 1,
+            "inclusive_ms": 56.5928
+          },
+          "ownership.validate": {
+            "calls": 1,
+            "inclusive_ms": 10.2749
+          },
+          "package.load": {
+            "calls": 1,
+            "inclusive_ms": 271.6577
+          },
+          "parse": {
+            "calls": 1,
+            "inclusive_ms": 0.1027
+          },
+          "types.body_check": {
+            "calls": 2630,
+            "inclusive_ms": 156.19429999999957
+          },
+          "types.cache_lookup": {
+            "calls": 4287,
+            "inclusive_ms": 36.699600000000444
+          },
+          "types.cache_store": {
+            "calls": 2630,
+            "inclusive_ms": 28.59509999999971
+          },
+          "types.checkpoint": {
+            "calls": 17,
+            "inclusive_ms": 0.0044
+          },
+          "types.commit": {
+            "calls": 17,
+            "inclusive_ms": 0.0299
+          },
+          "types.declarations": {
+            "calls": 3,
+            "inclusive_ms": 26.9653
+          },
+          "types.effects": {
+            "calls": 3,
+            "inclusive_ms": 19.311200000000003
+          },
+          "types.effects_validate": {
+            "calls": 2,
+            "inclusive_ms": 0.29259999999999997
+          },
+          "types.final": {
+            "calls": 1,
+            "inclusive_ms": 125.47910000000002
+          },
+          "types.finish": {
+            "calls": 3,
+            "inclusive_ms": 168.2671
+          },
+          "types.initial": {
+            "calls": 1,
+            "inclusive_ms": 336.358
+          }
+        },
+        "total_ms": 992.7996
+      }
+    },
+    {
+      "example": "unicode",
+      "mode": "source",
+      "phase": "initial",
+      "analysis": {
+        "body_hit_rate": 0.2372670807453416,
+        "counters": {
+          "body.checked": 6754,
+          "body.empty_checked": 280,
+          "body.hit": 2101,
+          "body.miss.dependency": 701,
+          "body.miss.ineligible": 872,
+          "body.miss.no_entry": 1809,
+          "body.miss.no_session": 3303,
+          "body.miss.signature": 69,
+          "body.store_skip.ineligible_or_shared_constraints": 1384,
+          "body.store_skip.unresolved_input": 8,
+          "body.transaction_commit": 5,
+          "body_cache.declaration_reset": 1,
+          "compilation.miss": 1,
+          "effects.caller_enqueued": 1926,
+          "effects.derived": 8901,
+          "effects.reused": 1847,
+          "effects.summary_changed": 4157,
+          "ownership.iterations": 4,
+          "parse.miss": 68,
+          "pipeline.runs": 2,
+          "types.iterations": 7
+        },
+        "phases": {
+          "cache.complete": {
+            "calls": 1,
+            "inclusive_ms": 1.4368
+          },
+          "cache.prepare": {
+            "calls": 1,
+            "inclusive_ms": 174.5717
+          },
+          "capture.effects": {
+            "calls": 2,
+            "inclusive_ms": 0.09090000000000001
+          },
+          "capture.modes": {
+            "calls": 2,
+            "inclusive_ms": 0.10930000000000001
+          },
+          "closures.validate": {
+            "calls": 2,
+            "inclusive_ms": 0.8346
+          },
+          "compilation.rebuild": {
+            "calls": 1,
+            "inclusive_ms": 1885.5382
+          },
+          "compiler.recovering": {
+            "calls": 1,
+            "inclusive_ms": 1029.9813
+          },
+          "effects.validate": {
+            "calls": 4,
+            "inclusive_ms": 2.4038
+          },
+          "hir.lower": {
+            "calls": 2,
+            "inclusive_ms": 38.8686
+          },
+          "ownership.lower": {
+            "calls": 4,
+            "inclusive_ms": 73.2374
+          },
+          "ownership.provenance": {
+            "calls": 4,
+            "inclusive_ms": 27.569200000000002
+          },
+          "ownership.reborrow": {
+            "calls": 4,
+            "inclusive_ms": 2.9497
+          },
+          "ownership.requirements": {
+            "calls": 2,
+            "inclusive_ms": 11.9937
+          },
+          "ownership.summary": {
+            "calls": 4,
+            "inclusive_ms": 3.6949
+          },
+          "ownership.total": {
+            "calls": 2,
+            "inclusive_ms": 145.5038
+          },
+          "ownership.validate": {
+            "calls": 2,
+            "inclusive_ms": 25.914
+          },
+          "package.load": {
+            "calls": 1,
+            "inclusive_ms": 47.0568
+          },
+          "parse": {
+            "calls": 68,
+            "inclusive_ms": 22.3363
+          },
+          "types.body_check": {
+            "calls": 7034,
+            "inclusive_ms": 502.0398999999982
+          },
+          "types.cache_lookup": {
+            "calls": 9135,
+            "inclusive_ms": 55.0107000000004
+          },
+          "types.cache_store": {
+            "calls": 7034,
+            "inclusive_ms": 41.114099999999965
+          },
+          "types.checkpoint": {
+            "calls": 5,
+            "inclusive_ms": 0.0022
+          },
+          "types.commit": {
+            "calls": 5,
+            "inclusive_ms": 0.0066
+          },
+          "types.declarations": {
+            "calls": 7,
+            "inclusive_ms": 62.6578
+          },
+          "types.effects": {
+            "calls": 7,
+            "inclusive_ms": 71.2854
+          },
+          "types.effects_validate": {
+            "calls": 4,
+            "inclusive_ms": 0.42660000000000003
+          },
+          "types.final": {
+            "calls": 2,
+            "inclusive_ms": 455.89289999999994
+          },
+          "types.finish": {
+            "calls": 7,
+            "inclusive_ms": 405.06199999999995
+          },
+          "types.initial": {
+            "calls": 2,
+            "inclusive_ms": 713.6326
+          }
+        },
+        "total_ms": 1885.7483
+      }
+    },
+    {
+      "example": "unicode",
+      "mode": "source",
+      "phase": "first edit",
+      "analysis": {
+        "body_hit_rate": 0.46811959654178675,
+        "counters": {
+          "body.checked": 2953,
+          "body.empty_checked": 160,
+          "body.hit": 2599,
+          "body.miss.dependency": 1126,
+          "body.miss.ineligible": 872,
+          "body.miss.no_entry": 852,
+          "body.miss.signature": 102,
+          "body.miss.source_or_shape": 1,
+          "body.store_skip.ineligible_or_shared_constraints": 1384,
+          "body.store_skip.unresolved_input": 8,
+          "body.transaction_commit": 3,
+          "compilation.miss": 1,
+          "effects.caller_enqueued": 743,
+          "effects.derived": 3699,
+          "effects.reused": 2563,
+          "effects.summary_changed": 1608,
+          "ownership.iterations": 2,
+          "parse.hit": 67,
+          "parse.miss": 1,
+          "pipeline.runs": 1,
+          "types.iterations": 4
+        },
+        "phases": {
+          "cache.complete": {
+            "calls": 1,
+            "inclusive_ms": 1.6038000000000001
+          },
+          "cache.prepare": {
+            "calls": 1,
+            "inclusive_ms": 174.9087
+          },
+          "capture.effects": {
+            "calls": 1,
+            "inclusive_ms": 0.054400000000000004
+          },
+          "capture.modes": {
+            "calls": 1,
+            "inclusive_ms": 0.0678
+          },
+          "closures.validate": {
+            "calls": 1,
+            "inclusive_ms": 0.3779
+          },
+          "compilation.rebuild": {
+            "calls": 1,
+            "inclusive_ms": 1055.6162
+          },
+          "compiler.recovering": {
+            "calls": 1,
+            "inclusive_ms": 1024.2004
+          },
+          "effects.validate": {
+            "calls": 2,
+            "inclusive_ms": 1.1743999999999999
+          },
+          "hir.lower": {
+            "calls": 1,
+            "inclusive_ms": 22.1741
+          },
+          "ownership.lower": {
+            "calls": 2,
+            "inclusive_ms": 45.9307
+          },
+          "ownership.provenance": {
+            "calls": 2,
+            "inclusive_ms": 16.008
+          },
+          "ownership.reborrow": {
+            "calls": 2,
+            "inclusive_ms": 1.8872
+          },
+          "ownership.requirements": {
+            "calls": 1,
+            "inclusive_ms": 7.3098
+          },
+          "ownership.summary": {
+            "calls": 2,
+            "inclusive_ms": 2.0321999999999996
+          },
+          "ownership.total": {
+            "calls": 1,
+            "inclusive_ms": 86.7049
+          },
+          "ownership.validate": {
+            "calls": 1,
+            "inclusive_ms": 15.8353
+          },
+          "package.load": {
+            "calls": 1,
+            "inclusive_ms": 20.4521
+          },
+          "parse": {
+            "calls": 1,
+            "inclusive_ms": 0.08310000000000001
+          },
+          "types.body_check": {
+            "calls": 3113,
+            "inclusive_ms": 254.55910000000014
+          },
+          "types.cache_lookup": {
+            "calls": 5712,
+            "inclusive_ms": 61.321500000000555
+          },
+          "types.cache_store": {
+            "calls": 3113,
+            "inclusive_ms": 38.186700000000044
+          },
+          "types.checkpoint": {
+            "calls": 3,
+            "inclusive_ms": 0.0021999999999999997
+          },
+          "types.commit": {
+            "calls": 3,
+            "inclusive_ms": 0.0048000000000000004
+          },
+          "types.declarations": {
+            "calls": 4,
+            "inclusive_ms": 36.9764
+          },
+          "types.effects": {
+            "calls": 4,
+            "inclusive_ms": 36.5944
+          },
+          "types.effects_validate": {
+            "calls": 2,
+            "inclusive_ms": 0.30800000000000005
+          },
+          "types.final": {
+            "calls": 1,
+            "inclusive_ms": 312.1604
+          },
+          "types.finish": {
+            "calls": 4,
+            "inclusive_ms": 267.5816
+          },
+          "types.initial": {
+            "calls": 1,
+            "inclusive_ms": 412.4633
+          }
+        },
+        "total_ms": 1070.5948999999998
+      }
+    },
+    {
+      "example": "unicode",
+      "mode": "flib",
+      "phase": "initial",
+      "analysis": {
+        "body_hit_rate": 0.1764172335600907,
+        "counters": {
+          "body.checked": 5448,
+          "body.empty_checked": 1071,
+          "body.hit": 1167,
+          "body.miss.dependency": 640,
+          "body.miss.ineligible": 117,
+          "body.miss.no_entry": 1335,
+          "body.miss.no_session": 3303,
+          "body.miss.signature": 53,
+          "body.store_skip.ineligible_or_shared_constraints": 504,
+          "body.transaction_commit": 5,
+          "body_cache.declaration_reset": 1,
+          "compilation.miss": 1,
+          "effects.caller_enqueued": 1639,
+          "effects.derived": 7324,
+          "effects.reused": 930,
+          "effects.summary_changed": 3370,
+          "ownership.iterations": 4,
+          "parse.miss": 56,
+          "pipeline.runs": 2,
+          "types.iterations": 6
+        },
+        "phases": {
+          "cache.complete": {
+            "calls": 1,
+            "inclusive_ms": 1.3558000000000001
+          },
+          "cache.prepare": {
+            "calls": 1,
+            "inclusive_ms": 140.2304
+          },
+          "capture.effects": {
+            "calls": 2,
+            "inclusive_ms": 0.0796
+          },
+          "capture.modes": {
+            "calls": 2,
+            "inclusive_ms": 0.0959
+          },
+          "closures.validate": {
+            "calls": 2,
+            "inclusive_ms": 0.6995
+          },
+          "compilation.rebuild": {
+            "calls": 1,
+            "inclusive_ms": 1747.5428
+          },
+          "compiler.recovering": {
+            "calls": 1,
+            "inclusive_ms": 699.3974
+          },
+          "effects.validate": {
+            "calls": 4,
+            "inclusive_ms": 2.2306
+          },
+          "hir.lower": {
+            "calls": 2,
+            "inclusive_ms": 34.5899
+          },
+          "ownership.lower": {
+            "calls": 4,
+            "inclusive_ms": 63.1343
+          },
+          "ownership.provenance": {
+            "calls": 4,
+            "inclusive_ms": 22.502
+          },
+          "ownership.reborrow": {
+            "calls": 4,
+            "inclusive_ms": 2.5869999999999997
+          },
+          "ownership.requirements": {
+            "calls": 2,
+            "inclusive_ms": 10.1242
+          },
+          "ownership.summary": {
+            "calls": 4,
+            "inclusive_ms": 2.8556
+          },
+          "ownership.total": {
+            "calls": 2,
+            "inclusive_ms": 120.9783
+          },
+          "ownership.validate": {
+            "calls": 2,
+            "inclusive_ms": 21.5644
+          },
+          "package.load": {
+            "calls": 1,
+            "inclusive_ms": 305.2943
+          },
+          "parse": {
+            "calls": 56,
+            "inclusive_ms": 17.145300000000002
+          },
+          "types.body_check": {
+            "calls": 6519,
+            "inclusive_ms": 380.4975000000026
+          },
+          "types.cache_lookup": {
+            "calls": 7686,
+            "inclusive_ms": 27.8349999999998
+          },
+          "types.cache_store": {
+            "calls": 6519,
+            "inclusive_ms": 29.01119999999974
+          },
+          "types.checkpoint": {
+            "calls": 5,
+            "inclusive_ms": 0.0021000000000000003
+          },
+          "types.commit": {
+            "calls": 5,
+            "inclusive_ms": 0.006699999999999999
+          },
+          "types.declarations": {
+            "calls": 6,
+            "inclusive_ms": 50.727000000000004
+          },
+          "types.effects": {
+            "calls": 6,
+            "inclusive_ms": 53.07059999999999
+          },
+          "types.effects_validate": {
+            "calls": 4,
+            "inclusive_ms": 0.5326
+          },
+          "types.final": {
+            "calls": 2,
+            "inclusive_ms": 269.1509
+          },
+          "types.finish": {
+            "calls": 6,
+            "inclusive_ms": 323.8509
+          },
+          "types.initial": {
+            "calls": 2,
+            "inclusive_ms": 623.711
+          }
+        },
+        "total_ms": 1747.7051000000001
+      }
+    },
+    {
+      "example": "unicode",
+      "mode": "flib",
+      "phase": "first edit",
+      "analysis": {
+        "body_hit_rate": 0.5009057971014492,
+        "counters": {
+          "body.checked": 1653,
+          "body.empty_checked": 951,
+          "body.hit": 1659,
+          "body.miss.dependency": 1058,
+          "body.miss.ineligible": 117,
+          "body.miss.no_entry": 405,
+          "body.miss.signature": 72,
+          "body.miss.source_or_shape": 1,
+          "body.store_skip.ineligible_or_shared_constraints": 504,
+          "body.transaction_commit": 3,
+          "compilation.miss": 1,
+          "effects.caller_enqueued": 468,
+          "effects.derived": 2122,
+          "effects.reused": 1658,
+          "effects.summary_changed": 839,
+          "ownership.iterations": 2,
+          "parse.hit": 55,
+          "parse.miss": 1,
+          "pipeline.runs": 1,
+          "types.iterations": 3
+        },
+        "phases": {
+          "cache.complete": {
+            "calls": 1,
+            "inclusive_ms": 1.3994
+          },
+          "cache.prepare": {
+            "calls": 1,
+            "inclusive_ms": 141.7614
+          },
+          "capture.effects": {
+            "calls": 1,
+            "inclusive_ms": 0.034999999999999996
+          },
+          "capture.modes": {
+            "calls": 1,
+            "inclusive_ms": 0.0428
+          },
+          "closures.validate": {
+            "calls": 1,
+            "inclusive_ms": 0.2928
+          },
+          "compilation.rebuild": {
+            "calls": 1,
+            "inclusive_ms": 987.5110999999999
+          },
+          "compiler.recovering": {
+            "calls": 1,
+            "inclusive_ms": 697.6982
+          },
+          "effects.validate": {
+            "calls": 2,
+            "inclusive_ms": 1.1374
+          },
+          "hir.lower": {
+            "calls": 1,
+            "inclusive_ms": 18.231299999999997
+          },
+          "ownership.lower": {
+            "calls": 2,
+            "inclusive_ms": 30.8492
+          },
+          "ownership.provenance": {
+            "calls": 2,
+            "inclusive_ms": 10.5016
+          },
+          "ownership.reborrow": {
+            "calls": 2,
+            "inclusive_ms": 1.3595000000000002
+          },
+          "ownership.requirements": {
+            "calls": 1,
+            "inclusive_ms": 4.312
+          },
+          "ownership.summary": {
+            "calls": 2,
+            "inclusive_ms": 1.512
+          },
+          "ownership.total": {
+            "calls": 1,
+            "inclusive_ms": 56.9038
+          },
+          "ownership.validate": {
+            "calls": 1,
+            "inclusive_ms": 9.653699999999999
+          },
+          "package.load": {
+            "calls": 1,
+            "inclusive_ms": 279.0374
+          },
+          "parse": {
+            "calls": 1,
+            "inclusive_ms": 0.0778
+          },
+          "types.body_check": {
+            "calls": 2604,
+            "inclusive_ms": 157.2039999999997
+          },
+          "types.cache_lookup": {
+            "calls": 4263,
+            "inclusive_ms": 35.55510000000045
+          },
+          "types.cache_store": {
+            "calls": 2604,
+            "inclusive_ms": 28.59829999999972
+          },
+          "types.checkpoint": {
+            "calls": 3,
+            "inclusive_ms": 0.0015999999999999999
+          },
+          "types.commit": {
+            "calls": 3,
+            "inclusive_ms": 0.0052
+          },
+          "types.declarations": {
+            "calls": 3,
+            "inclusive_ms": 25.673499999999997
+          },
+          "types.effects": {
+            "calls": 3,
+            "inclusive_ms": 20.3664
+          },
+          "types.effects_validate": {
+            "calls": 2,
+            "inclusive_ms": 0.3083
+          },
+          "types.final": {
+            "calls": 1,
+            "inclusive_ms": 127.5713
+          },
+          "types.finish": {
+            "calls": 3,
+            "inclusive_ms": 172.3711
+          },
+          "types.initial": {
+            "calls": 1,
+            "inclusive_ms": 339.2336
+          }
+        },
+        "total_ms": 1004.6987
+      }
+    }
+  ]
+}

@@ -44,7 +44,13 @@ itself. For example, an iterator may yield its current element under `[mut self]
 its cursor; transferring ownership of the complete iterator still requires `[consume self]`.
 
 Effects use structured paths. A root permission covers its descendants, while a child permission
-does not cover its parent or siblings:
+does not cover its parent or siblings.
+
+Paths sharing a prefix can be grouped: `[mut list(item, size)]` expands to
+`[mut list.item, mut list.size]`. This grants access only to the listed paths, not
+the entire `list`. Grouping also works for `read`, `reshape`, and `consume`, and
+members may be dotted paths, such as `[read inventory(items.count, owner)]`.
+Groups must be nonempty; a trailing comma is allowed. Dotted paths remain valid.
 
 ```text
 mut inventory          covers mut inventory.items and mut inventory.items.count

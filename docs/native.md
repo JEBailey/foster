@@ -74,7 +74,8 @@ use the target pointer type. It supports:
   concrete signatures, layouts, destructors, and call targets cached per substitution;
 - concrete closure construction and calls, capture-prefix ABIs, and specialized environment
   destructors; a uniform `(code thunk, environment, release thunk)` callable representation lets
-  higher-order Foster functions accept independently shaped closure environments;
+  higher-order Foster functions accept and return independently shaped closure environments;
+  forwarded callables, nested factories, and runtime-selected closure results use this same ABI;
 - owned erased boxes for dynamic contract ABI boundaries, with scalar-or-pointer
   payloads and type-specific release thunks;
 - whole, indexed, and field references lowered as typed addresses, including typed reference

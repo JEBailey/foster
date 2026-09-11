@@ -4,7 +4,7 @@ import core.range
 import std.collections.set
 
 func size<T>(values: Collection<T>) -> Int {
-    values.length
+    values.length()
 }
 
 func value_or(candidate: Option<Int>, fallback: Int) -> Int {

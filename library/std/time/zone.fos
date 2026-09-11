@@ -164,9 +164,9 @@ pub type OffsetDateTime = & Ordered<OffsetDateTime> & {
     /// Returns the fixed offset.
     pub func offset(self) -> Offset [read self.offset_value.seconds_value]
     /// Returns the corresponding civil date-time.
-    pub func local(self) -> DateTime [read self.instant_value, read self.offset_value]
+    pub func local(self) -> DateTime [read self(instant_value, offset_value)]
     /// Advances the exact instant while preserving the offset.
-    pub func add(self, duration: Duration) -> OffsetDateTime [consume self.offset_value, read duration, read self.instant_value.epoch_seconds_value, read self.instant_value.nanosecond_value]
+    pub func add(self, duration: Duration) -> OffsetDateTime [consume self.offset_value, read duration, read self(instant_value.epoch_seconds_value, instant_value.nanosecond_value)]
 }
 
 impl OffsetDateTime {
@@ -190,7 +190,7 @@ impl OffsetDateTime {
     }
 
     /// Advances the exact instant while preserving the offset.
-    pub func add(self: OffsetDateTime, duration: Duration) -> OffsetDateTime [consume self.offset_value, read duration, read self.instant_value.epoch_seconds_value, read self.instant_value.nanosecond_value] {
+    pub func add(self: OffsetDateTime, duration: Duration) -> OffsetDateTime [consume self.offset_value, read duration, read self(instant_value.epoch_seconds_value, instant_value.nanosecond_value)] {
         OffsetDateTime { instant_value: self.instant_value.add(duration), offset_value: self.offset_value }
     }
 
@@ -224,7 +224,7 @@ pub type ZonedDateTime = & Ordered<ZonedDateTime> & {
     /// Returns a fixed-offset view at the offset active for this instant.
     pub func as_offset(self) -> OffsetDateTime [consume self.instant_value]
     /// Adds an exact elapsed duration on the time line.
-    pub func add_duration(self, duration: Duration) -> ZonedDateTime [consume self.zone_value, read duration, read self.instant_value.epoch_seconds_value, read self.instant_value.nanosecond_value]
+    pub func add_duration(self, duration: Duration) -> ZonedDateTime [consume self.zone_value, read duration, read self(instant_value.epoch_seconds_value, instant_value.nanosecond_value)]
     /// Adds a calendar-aware span in local time, then resolves the result explicitly.
     pub func add_span(self, span: Span, overflow: Overflow, disambiguation: Disambiguation) -> Result<ZonedDateTime, ZoneError> [consume self.zone_value, read disambiguation, read overflow, read self.instant_value, read span]
 }
@@ -266,7 +266,7 @@ impl ZonedDateTime {
     }
 
     /// Adds an exact elapsed duration on the time line.
-    pub func add_duration(self: ZonedDateTime, duration: Duration) -> ZonedDateTime [consume self.zone_value, read duration, read self.instant_value.epoch_seconds_value, read self.instant_value.nanosecond_value] {
+    pub func add_duration(self: ZonedDateTime, duration: Duration) -> ZonedDateTime [consume self.zone_value, read duration, read self(instant_value.epoch_seconds_value, instant_value.nanosecond_value)] {
         ZonedDateTime { instant_value: self.instant_value.add(duration), zone_value: self.zone_value }
     }
 

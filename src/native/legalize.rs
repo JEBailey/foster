@@ -662,6 +662,14 @@ fn lower_shared_instruction(
         };
         let mut sources = Vec::new();
         match portable {
+            ir::PortableInstruction::Move {
+                destination,
+                source,
+            } => {
+                if let Some(layout) = object_layout(*destination) {
+                    sources.push((source, Some(layout)));
+                }
+            }
             ir::PortableInstruction::MakeRecord {
                 destination,
                 fields,
@@ -941,6 +949,29 @@ fn lower_shared_instruction(
                     *operand = loaded;
                 }
             }
+            if matches!(
+                operator,
+                BinaryOp::Add | BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Divide
+            ) && value_types[destination.0 as usize] == NativeType::Int
+            {
+                for operand in [&mut left, &mut right] {
+                    if matches!(
+                        value_types[operand.0 as usize],
+                        NativeType::Byte | NativeType::CodePoint
+                    ) {
+                        let extended =
+                            allocate_shared_value(value_types, storage_hints, NativeType::Int);
+                        result.push((
+                            ir::Instruction::IntegerExtend {
+                                destination: extended,
+                                operand: *operand,
+                            },
+                            Vec::new(),
+                        ));
+                        *operand = extended;
+                    }
+                }
+            }
             if value_types[left.0 as usize] == NativeType::Int
                 && matches!(
                     value_types[right.0 as usize],
@@ -1126,9 +1157,23 @@ fn lower_shared_instruction(
                 &mut result,
                 &metadata.name,
             )?;
+            let layout = environment
+                .layouts
+                .closure_instance(*function, &specialization)
+                .ok_or_else(|| native_error("closure construction has no concrete layout"))?;
+            let wrapped = callable_conversion(
+                NativeType::Object(layout),
+                value_types[destination.0 as usize],
+                environment.layouts,
+            );
+            let concrete = if wrapped {
+                allocate_shared_value(value_types, storage_hints, NativeType::Object(layout))
+            } else {
+                *destination
+            };
             result.push((
                 ir::Instruction::Portable(ir::PortableInstruction::MakeClosure {
-                    destination: *destination,
+                    destination: concrete,
                     function: target,
                     specialization: Vec::new(),
                     captures: captures
@@ -1138,6 +1183,19 @@ fn lower_shared_instruction(
                 }),
                 consumed,
             ));
+            if wrapped {
+                result.push((
+                    ir::Instruction::WrapCallable {
+                        destination: *destination,
+                        source: concrete,
+                    },
+                    Vec::new(),
+                ));
+                result.push((
+                    ir::Instruction::Portable(ir::PortableInstruction::Drop { value: concrete }),
+                    Vec::new(),
+                ));
+            }
             Ok(result)
         }
         ir::PortableInstruction::CallValue {

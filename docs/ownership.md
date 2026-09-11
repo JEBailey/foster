@@ -29,6 +29,19 @@ The central ideas are:
 
 ## Values, locals, and places
 
+Local values are mutable by default: `let` does not make a binding or its stored fields
+immutable. Mutation requires a valid stored place and must respect ownership, live loans,
+and the enclosing function's effect bounds. It does not require a separate `mut` binding
+or mutable-reference type. Constants and computed properties are not assignable places.
+
+Calls expose their inferred effects, or an explicitly declared upper bound checked against
+the body. A mutable value does not make every call a mutation: a read-only operation keeps
+its read-only contract. Explicit bounds may intentionally be broader than the body's effects.
+
+`move` transfers ownership rather than freezing a value. The recipient may mutate its new
+value; the old place cannot be used until reinitialized. Existing places passed to consuming
+parameters require `move`, while copy values and fresh temporaries need no such marker.
+
 A **value** is data such as an `Int`, `String`, list, record, closure, or remote handle. A local name
 identifies a **place** that can contain a value. A declared stored field or indexed element extends
 a root place, while a computed member produces a value:

@@ -1,5 +1,20 @@
 # Foster standard library
 
+## Writing library code
+
+Use mutable `let` bindings and explicit `move` when transferring an existing owned
+value to a consuming parameter. Use references when a helper must update caller-owned
+storage. Keep public effect bounds precise and checked; allow private helpers to infer
+effects where an explicit contract adds no useful constraint.
+
+Group sibling paths with the same effect and owner when this reduces repetition:
+`[mut self(buckets.items, size), consume self]`. Keep different owners and effect kinds
+separate, and use dotted syntax for a single path. Do not replace a list of field
+permissions with a broader root permission just to shorten the declaration.
+
+Run `foster test library` and `foster test tests/foster` after changing shared library
+code. Examples should use the same syntax and ownership conventions as library code.
+
 `std.crypto.sha256` provides `sha256::digest(bytes)`, returning a 64-character
 lowercase hexadecimal SHA-256 digest. It is implemented entirely in Foster and
 preserves its input bytes:

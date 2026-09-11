@@ -58,12 +58,22 @@ func main() -> Result<PipelineReport, RemoteError> {
     let second = parser_b.parse_document("[1,2,3,4]")
     let third = parser_a.parse_document("{broken json}")
 
-    let first_recorded = statistics.record_result(try await first)
-    let second_recorded = statistics.record_result(try await second)
-    let third_recorded = statistics.record_result(try await third)
+    // Join all parsing requests before propagating any remote error.
+    let first_result = await first
+    let second_result = await second
+    let third_result = await third
+    let first_document = try first_result
+    let second_document = try second_result
+    let third_document = try third_result
 
-    try await first_recorded
-    try await second_recorded
-    try await third_recorded
+    let first_recorded = statistics.record_result(first_document)
+    let second_recorded = statistics.record_result(second_document)
+    let third_recorded = statistics.record_result(third_document)
+    let first_status = await first_recorded
+    let second_status = await second_recorded
+    let third_status = await third_recorded
+    try first_status
+    try second_status
+    try third_status
     await statistics.snapshot()
 }

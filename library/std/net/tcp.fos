@@ -71,7 +71,7 @@ pub type TcpEndpoint = & ResourceIdentifier & {
 
     // Required public operations; implementations live in impl blocks.
     /// Returns this endpoint's URI spelling.
-    pub func as_string(self) -> String [read self.address_value, read self.port_value]
+    pub func as_string(self) -> String [read self(address_value, port_value)]
     /// Returns the host address without URI brackets.
     pub func address(self) -> String [read self.address_value]
     /// Returns the TCP port.
@@ -114,21 +114,22 @@ impl TcpEndpoint {
 }
 
 /// An opaque connected TCP stream associated with the endpoint that created it.
+/// I/O reads the Foster handle without replacing it; socket state is managed by the host.
 pub type Connection = & Resource<TcpEndpoint> & Duplex<NetworkError> & Closable<NetworkError> & {
     pub location: TcpEndpoint
     handle: Int
 
     // Required public operations; implementations live in impl blocks.
     /// Reads at most `maximum` bytes of UTF-8 text from a connection.
-    pub func read_text(self, maximum: Int) -> Result<String, NetworkError> [mut self.handle]
+    pub func read_text(self, maximum: Int) -> Result<String, NetworkError> [read self.handle]
     /// Writes the complete UTF-8 string to a connection.
-    pub func write_text(self, text: String) -> Result<(), NetworkError> [mut self.handle]
+    pub func write_text(self, text: String) -> Result<(), NetworkError> [read self.handle]
     /// Compatibility spelling for binary `read`.
-    pub func read_bytes(self, maximum: Int) -> Result<Bytes, NetworkError> [mut self.handle]
+    pub func read_bytes(self, maximum: Int) -> Result<Bytes, NetworkError> [read self.handle]
     /// Explicit binary spelling for `write`.
-    pub func write_bytes(self, contents: Bytes) -> Result<Int, NetworkError> [mut self.handle]
+    pub func write_bytes(self, contents: Bytes) -> Result<Int, NetworkError> [read self.handle]
     /// Sets the connection's read and write timeout in milliseconds.
-    pub func set_timeout(self, milliseconds: Int) -> Result<(), NetworkError> [mut self.handle]
+    pub func set_timeout(self, milliseconds: Int) -> Result<(), NetworkError> [read self.handle]
 }
 
 /// An opaque listening TCP socket associated with its bound endpoint.
@@ -179,7 +180,7 @@ func wrap_listener(endpoint: TcpEndpoint, outcome: Result<Int, NetworkError>) ->
 
 impl Listener {
     /// Waits for and accepts one incoming connection.
-    pub func accept(self: Listener) -> Result<Connection, NetworkError> [mut self.handle, read self.location] {
+    pub func accept(self: Listener) -> Result<Connection, NetworkError> [read self(handle, location.address_value, location.port_value)] {
         let endpoint = TcpEndpoint.at(self.location.address(), self.location.port())
         wrap_connection(move endpoint, TcpHost.accept(self.handle))
     }
@@ -193,42 +194,42 @@ func wrap_connection(endpoint: TcpEndpoint, outcome: Result<Int, NetworkError>) 
 
 impl Connection {
     /// Reads at most `maximum` bytes, returning empty bytes after an orderly peer shutdown.
-    pub func read(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [mut self.handle] {
+    pub func read(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [read self.handle] {
         TcpHost.read_bytes(self.handle, maximum)
     }
 
     /// Writes the complete byte sequence and reports its length.
-    pub func write(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [mut self.handle] {
+    pub func write(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [read self.handle] {
         written_bytes(TcpHost.write_bytes(self.handle, contents), contents.length)
     }
 
     /// Flushes the TCP stream's host writer.
-    pub func flush(self: Connection) -> Result<(), NetworkError> [mut self.handle] {
+    pub func flush(self: Connection) -> Result<(), NetworkError> [read self.handle] {
         TcpHost.write_bytes(self.handle, Bytes.empty())
     }
 
     /// Reads at most `maximum` bytes of UTF-8 text from a connection.
-    pub func read_text(self: Connection, maximum: Int) -> Result<String, NetworkError> [mut self.handle] {
+    pub func read_text(self: Connection, maximum: Int) -> Result<String, NetworkError> [read self.handle] {
         TcpHost.read(self.handle, maximum)
     }
 
     /// Writes the complete UTF-8 string to a connection.
-    pub func write_text(self: Connection, text: String) -> Result<(), NetworkError> [mut self.handle] {
+    pub func write_text(self: Connection, text: String) -> Result<(), NetworkError> [read self.handle] {
         TcpHost.write(self.handle, text)
     }
 
     /// Compatibility spelling for binary `read`.
-    pub func read_bytes(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [mut self.handle] {
+    pub func read_bytes(self: Connection, maximum: Int) -> Result<Bytes, NetworkError> [read self.handle] {
         self.read(maximum)
     }
 
     /// Explicit binary spelling for `write`.
-    pub func write_bytes(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [mut self.handle] {
+    pub func write_bytes(self: Connection, contents: Bytes) -> Result<Int, NetworkError> [read self.handle] {
         self.write(contents)
     }
 
     /// Sets the connection's read and write timeout in milliseconds.
-    pub func set_timeout(self: Connection, milliseconds: Int) -> Result<(), NetworkError> [mut self.handle] {
+    pub func set_timeout(self: Connection, milliseconds: Int) -> Result<(), NetworkError> [read self.handle] {
         TcpHost.set_timeout(self.handle, milliseconds)
     }
 }

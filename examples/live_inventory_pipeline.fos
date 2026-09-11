@@ -53,7 +53,7 @@ impl Auditor {
 }
 
 impl Inventory {
-    func restock(self: Inventory, apples: Int, bolts: Int) -> Int {
+    func restock(self: Inventory, apples: Int, bolts: Int) -> Int [mut self(apples, bolts, version)] {
         self.apples = self.apples + apples
         self.bolts = self.bolts + bolts
         self.version = self.version + 1
@@ -101,8 +101,11 @@ func main() -> Result<Int, RemoteError> {
     let first_future = auditor_a.evaluate(inventory, policy)
     let second_future = auditor_b.evaluate(inventory, policy)
 
-    let first = try await first_future
-    let second = try await second_future
+    // Join both requests before propagating an error: either `try` may return early.
+    let first_result = await first_future
+    let second_result = await second_future
+    let first = try first_result
+    let second = try second_result
     try await report.submit(first)
     try await report.submit(second)
 

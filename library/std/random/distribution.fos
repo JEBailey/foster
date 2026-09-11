@@ -37,7 +37,7 @@ impl UniformInt {
     pub func end(self: UniformInt) -> Int { self.end_value }
 
     /// Draws one uniformly distributed integer in this distribution's range.
-    pub func sample(self: UniformInt, source: RandomSource) -> Result<Int, RandomError> [read self.start_value, read self.end_value, mut source] {
+    pub func sample(self: UniformInt, source: RandomSource) -> Result<Int, RandomError> [read self(start_value, end_value), mut source] {
         random::between_with(source, self.start_value, self.end_value)
     }
 }
@@ -68,7 +68,7 @@ impl UniformFloat {
     pub func end(self: UniformFloat) -> Float { self.end_value }
 
     /// Draws one uniformly distributed floating-point value in this distribution's range.
-    pub func sample(self: UniformFloat, source: RandomSource) -> Result<Float, RandomError> [read self.start_value, read self.end_value, mut source] {
+    pub func sample(self: UniformFloat, source: RandomSource) -> Result<Float, RandomError> [read self(start_value, end_value), mut source] {
         let capacity = try source_capacity(source, "uniform_float")
         let raw = try random::below_with(source, capacity)
         let unit = parse_float(raw.as_string()) / parse_float(capacity.as_string())
@@ -133,7 +133,7 @@ impl WeightedIndex {
     pub func total(self: WeightedIndex) -> Int { self.total_value }
 
     /// Draws one index in proportion to its configured weight.
-    pub func sample(self: WeightedIndex, source: RandomSource) -> Result<Int, RandomError> [read self.weights_value, read self.total_value, mut source] {
+    pub func sample(self: WeightedIndex, source: RandomSource) -> Result<Int, RandomError> [read self(weights_value, total_value), mut source] {
         let target = try random::below_with(source, self.total_value)
         Result.Ok(weighted_index(self.weights_value, target, 0, 0))
     }

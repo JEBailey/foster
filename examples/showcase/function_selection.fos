@@ -23,14 +23,15 @@ func render_report(report: func(String, Int) -> (), name: String, score: Int) ->
 
 func for_each_report(reports: List<func(String, Int) -> ()>, name: String, score: Int) -> () {
     branch {
-        reports.empty? -> println()
+        reports.empty?() -> println()
         _ -> render_then_continue(reports, name, score)
     }
 }
 
 func render_then_continue(reports: List<func(String, Int) -> ()>, name: String, score: Int) -> () {
-    reports.head(name, score)
-    for_each_report(reports.rest, name, score)
+    let report = reports.head()
+    report(name, score)
+    for_each_report(reports.rest(), name, score)
 }
 
 func main() -> Int {

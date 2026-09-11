@@ -15,8 +15,11 @@ pub(super) fn infer_register_types(
     remote_calls: &HashMap<u16, VerifiedRemoteCall>,
 ) -> Result<Vec<Option<NativeType>>, FosterError> {
     let mut result = vec![None; usize::from(function.registers)];
+    let mut definitions = HashMap::new();
+    let mut merged = std::collections::HashSet::new();
     for (index, ty) in parameter_types.iter().enumerate() {
         result[index] = Some(*ty);
+        definitions.insert(index, *ty);
     }
     for instruction in &function.instructions {
         match instruction {
@@ -71,10 +74,15 @@ pub(super) fn infer_register_types(
                     | BinaryOp::BitXor
                     | BinaryOp::ShiftLeft
                     | BinaryOp::ShiftRight => NativeType::Byte,
-                    _ => dereference_native_type(
-                        register_type(&result, *left, function)?,
-                        environment,
-                    )?,
+                    BinaryOp::Add | BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Divide => {
+                        match dereference_native_type(
+                            register_type(&result, *left, function)?,
+                            environment,
+                        )? {
+                            NativeType::CodePoint | NativeType::Byte => NativeType::Int,
+                            ty => ty,
+                        }
+                    }
                 });
             }
             Instruction::Call {
@@ -479,6 +487,73 @@ pub(super) fn infer_register_types(
                 }
             }
             _ => {}
+        }
+        let destination = match instruction {
+            Instruction::MakeClosure { destination, .. }
+            | Instruction::Move { destination, .. }
+            | Instruction::Call { destination, .. }
+            | Instruction::CallMethod { destination, .. }
+            | Instruction::CallClosure { destination, .. }
+            | Instruction::CallValue { destination, .. }
+            | Instruction::LoadField { destination, .. } => Some(usize::from(destination.0)),
+            _ => None,
+        };
+        if let Some(destination) = destination
+            && let Some(ty) = result[destination]
+            && definitions
+                .insert(destination, ty)
+                .is_some_and(|previous| previous != ty)
+        {
+            merged.insert(destination);
+        }
+    }
+    let mut aliases = HashMap::<usize, Vec<usize>>::new();
+    for instruction in &function.instructions {
+        if let Instruction::Move {
+            destination,
+            source,
+        } = instruction
+        {
+            aliases
+                .entry(usize::from(source.0))
+                .or_default()
+                .push(usize::from(destination.0));
+        }
+    }
+    let mut pending = merged.iter().copied().collect::<Vec<_>>();
+    while let Some(source) = pending.pop() {
+        for &destination in aliases.get(&source).into_iter().flatten() {
+            if merged.insert(destination) {
+                pending.push(destination);
+            }
+        }
+    }
+    // A storage home may receive different closures on different control-flow paths.
+    // Keep its signature stable; concrete environments are local to MakeClosure.
+    for home in merged {
+        let Some(ty) = result[home].as_mut() else {
+            continue;
+        };
+        if let NativeType::Object(layout) = *ty
+            && let LayoutKind::Closure {
+                function,
+                specialization,
+                ..
+            } = &environment.layouts.get(layout).kind
+        {
+            let function = &environment.program.functions[function];
+            let callable = VerificationType::Function {
+                parameters: function.parameter_types.clone(),
+                parameter_modes: function.parameter_modes.clone(),
+                result: Box::new(function.result_type.clone()),
+            }
+            .specialize(specialization);
+            *ty = native_verification_type(
+                environment.program,
+                environment.layouts,
+                &callable,
+                None,
+            )?;
         }
     }
     Ok(result)

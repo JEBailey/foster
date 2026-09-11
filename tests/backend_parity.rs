@@ -2,6 +2,32 @@
 use foster::{native, vm};
 
 #[test]
+fn returned_callables_can_be_forwarded_selected_and_nested() {
+    check(
+        "returned-callables",
+        include_str!("fixtures/programs/returned_callables.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn code_point_arithmetic_promotes_both_operands_to_int() {
+    check(
+        "code-point-arithmetic",
+        r#"
+func main() -> Int {
+    assert('9' - '0' == 9)
+    assert('0' - '9' == -9)
+    assert('😀' - 'a' == 128415)
+    assert('a' + 'b' == 195)
+    42
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
 fn standard_library_sha256_agrees_in_both_backends() {
     check(
         "sha256",

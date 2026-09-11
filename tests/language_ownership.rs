@@ -2,6 +2,114 @@ use foster::vm::Value;
 use std::path::Path;
 
 #[test]
+fn grouped_effect_paths_match_expanded_contracts() {
+    let source = r#"
+type Pair = { left: Int, right: Int }
+func update[g: group Pair](pair: ref[g] Pair) -> () [mut g(left, right)] {
+    pair.left = 3
+    pair.right = 4
+    ()
+}
+func main() -> Int {
+    let pair = Pair { left: 1, right: 2 }
+    update(ref pair)
+    pair.left + pair.right
+}
+"#;
+    let grouped = foster::compile(source).unwrap();
+    let expanded =
+        foster::compile(&source.replace("mut g(left, right)", "mut g.left, mut g.right")).unwrap();
+    let module = grouped.hir.module_named("main").unwrap();
+    let id = grouped.hir.function_named(module, "update").unwrap();
+    assert_eq!(
+        grouped.hir.functions[id].effects,
+        expanded.hir.functions[id].effects
+    );
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(7));
+    let narrower = source.replace("mut g(left, right)", "mut g(left)");
+    assert!(
+        foster::compile(&narrower)
+            .unwrap_err()
+            .message
+            .contains("undeclared effect")
+    );
+    for kind in ["read", "mut", "reshape", "consume"] {
+        let text = format!(
+            "func f[g: group Pair](p: ref[g] Pair) -> () [{kind} g(left, nested.right,)] {{ () }}"
+        );
+        foster::parse(&text).unwrap();
+    }
+    assert!(foster::parse(&source.replace("mut g(left, right)", "mut g()")).is_err());
+}
+
+#[test]
+fn mutable_defaults_preserve_checked_effects_and_explicit_transfers() {
+    let source = r#"
+type Item = { value: Int }
+func inspect(item: Item) -> Int { item.value }
+func update[g: group Item](item: ref[g] Item) -> () {
+    item.value = item.value + 1
+    ()
+}
+func finish(item: Item) -> Int [mut item, consume item] {
+    item.value = item.value + 1
+    item.value
+}
+func main() -> Int {
+    let item = Item { value: 1 }
+    item.value = 3
+    update(ref item)
+    let observed = inspect(item)
+    let result = finish(move item)
+    item = Item { value: 10 }
+    observed + result + item.value
+}
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let inspect = compilation.hir.function_named(module, "inspect").unwrap();
+    let update = compilation.hir.function_named(module, "update").unwrap();
+    assert!(
+        compilation.hir.functions[inspect]
+            .effects
+            .iter()
+            .all(|effect| effect.kind == foster::ast::EffectKind::Read)
+    );
+    assert!(
+        compilation.hir.functions[update]
+            .effects
+            .iter()
+            .any(|effect| effect.kind == foster::ast::EffectKind::Mut)
+    );
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(19));
+
+    let missing_move = source.replace("finish(move item)", "finish(item)");
+    assert!(
+        foster::compile(&missing_move)
+            .unwrap_err()
+            .message
+            .contains("pass this argument with `move`")
+    );
+    let moved_use = source.replace("item = Item { value: 10 }", "let invalid = item.value");
+    assert!(
+        foster::compile(&moved_use)
+            .unwrap_err()
+            .message
+            .contains("moved")
+    );
+    let invalid_bound = source.replace(
+        "func update[g: group Item](item: ref[g] Item) -> ()",
+        "func update[g: group Item](item: ref[g] Item) -> () [read g]",
+    );
+    assert!(
+        foster::compile(&invalid_bound)
+            .unwrap_err()
+            .message
+            .contains("function body requires undeclared effect")
+    );
+}
+
+#[test]
 fn strings_do_not_expose_utf8_property_alias() {
     assert!(foster::compile("func main() -> Bytes { \"text\".utf8 }").is_err());
 }
