@@ -218,6 +218,11 @@ loop {
 
 A false initial condition skips the body; `continue` returns to the condition check. The condition
 is evaluated once per iteration, and the loop produces `()` when it exits.
+Body declarations are local to the loop, for both `while` and `loop`; assignments to
+existing outer bindings remain visible after the loop.
+Record literals in a loop header may appear inside call arguments, parentheses, lists,
+and index expressions. Parenthesize a record literal used directly as the header expression
+to distinguish its braces from the loop body.
 
 `for item in collection { ... }` iterates a collection through its `.iterator()` method:
 
@@ -235,6 +240,26 @@ provide `.iterator()` returning a cursor whose `.next()` returns `Option<T>`; a 
 without `.iterator()` is not an iterable.
 
 The item binding exists only inside the body and may shadow an outer name; `_` discards the item.
+Conceptually, the syntax expands to the following, with a compiler-generated cursor name and
+an enclosing scope that keeps the cursor private:
+
+```foster
+let cursor = collection.iterator()
+loop {
+    branch cursor.next() {
+        Option.None -> { break }
+        Option.Some(item) -> {
+            // body
+            ()
+        }
+    }
+}
+```
+
+`next()` is evaluated once per iteration. The `Some` pattern unwraps the yielded value, so
+`item` has the element type rather than `Option<T>`. `None` exits before the body runs.
+The generated patterns resolve to `core.option.Option` even if a user declares another `Option`.
+
 The body value is discarded and the loop produces `()`. `break` exits the loop, `continue`
 advances to the next item, and `return` leaves the enclosing function. Nested loops use the nearest
 enclosing loop for `break` and `continue`.

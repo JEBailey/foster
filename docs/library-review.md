@@ -53,9 +53,6 @@ Socket-lifetime and native collection/iterator regressions cover automatic clean
 - `Collection.empty?` remains a required method supplied by each implementation. Adding a shared
   body exposed a native distinction between partial inherited defaults and concrete implementation
   storage; that compiler work is recorded in the roadmap.
-- The `graphemes.fos` parity fixture has a type-checking failure when `std.sequence` is imported:
-  `Sequence<String>` is expected where a `String` is supplied. This also occurs with the TCP
-  declarations from before automatic cleanup and is independent of the native lifetime fixes.
 - Host operations retain conservative mutation effects because reading an integer handle can
   mutate the external socket or random source. Some TOML helpers also retain broader private effect
   annotations. The compiler reports these as warnings, not missing type information.

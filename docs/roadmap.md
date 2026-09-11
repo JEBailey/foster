@@ -52,8 +52,6 @@ general without weakening its current guarantees.
 - Validate partial inherited defaults on abstract library contracts before adding a shared
   `Collection.empty?` body. Native representation selection must distinguish an abstract contract
   with some defaults from a concrete implementation.
-- Resolve the `String`/`Sequence<String>` method-selection failure in the `graphemes.fos` parity
-  fixture when `std.sequence` is imported; it fails during type checking before backend execution.
 
 The focused [ownership](ownership.md), [closure](closures.md), and
 [effect derivation](effect-derivation.md) documents contain the detailed constraints behind this

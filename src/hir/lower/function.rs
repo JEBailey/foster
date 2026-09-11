@@ -87,6 +87,7 @@ impl FunctionLowerer<'_> {
                     .transpose()?,
             }),
             ast::Stmt::Loop { body } => {
+                let locals = self.locals.clone();
                 self.loop_depth += 1;
                 let mut lowered = crate::block::Block::new();
                 for (statement, statement_span) in body.iter_spanned() {
@@ -100,6 +101,7 @@ impl FunctionLowerer<'_> {
                     lowered.push(result, statement_span.clone());
                 }
                 self.loop_depth -= 1;
+                self.locals = locals;
                 Ok(Stmt::Loop { body: lowered })
             }
             ast::Stmt::Break { guard } => {

@@ -29,6 +29,38 @@ fn grapheme_string_operations_agree_in_both_backends() {
 }
 
 #[test]
+fn builtin_sequence_tail_calls_preserve_concrete_types() {
+    check(
+        "concrete-sequence-tails",
+        r#"
+import core.string
+import core.list
+import core.bytes
+import std.sequence
+
+func tail<T>(values: Sequence<T>) -> Sequence<T> { values.rest() }
+func main() -> Int {
+    let text = "Aé!"
+    let numbers = [1, 2, 3]
+    let octets = "abc".bytes
+    assert(text.rest() == text.rest)
+    assert(text.rest().rest() == "!")
+    assert(numbers.rest() == numbers.rest)
+    assert(numbers.rest().rest() == [3])
+    assert(octets.rest() == octets.rest)
+    assert(octets.rest().hex() == "6263")
+    assert("".rest() == "")
+    assert(tail(text).head() == "é")
+    assert(tail(numbers).head() == 2)
+    assert(tail(octets).length() == 2)
+    42
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
 fn grapheme_boundaries_conform_to_unicode_in_both_backends() {
     let cases = include_str!("../tools/unicode/17.0.0/GraphemeBreakTest.txt")
         .lines()

@@ -249,6 +249,16 @@ impl Parser {
         self.postfix()
     }
 
+    // Parentheses and brackets delimit expressions independently of an enclosing
+    // loop header, so record braces inside them cannot be mistaken for its body.
+    fn delimited_expression(&mut self) -> Result<Expr, FosterError> {
+        let previous = self.suppress_record_literal;
+        self.suppress_record_literal = false;
+        let expression = self.expression();
+        self.suppress_record_literal = previous;
+        expression
+    }
+
     pub(super) fn postfix(&mut self) -> Result<Expr, FosterError> {
         let mut expr = self.primary()?;
         loop {
@@ -257,7 +267,7 @@ impl Parser {
                 let mut arguments = Vec::new();
                 if !self.at(&TokenKind::RParen) {
                     loop {
-                        arguments.push(self.expression()?);
+                        arguments.push(self.delimited_expression()?);
                         if !self.take(&TokenKind::Comma) {
                             break;
                         }
@@ -289,7 +299,7 @@ impl Parser {
                     },
                 );
             } else if self.take(&TokenKind::LBracket) {
-                let index = self.expression()?;
+                let index = self.delimited_expression()?;
                 self.expect(&TokenKind::RBracket, "expected `]` after index")?;
                 expr = self.spanned(
                     start,
@@ -360,7 +370,7 @@ impl Parser {
                 } else if self.take(&TokenKind::RParen) {
                     Expr::Unit
                 } else {
-                    let expr = self.expression()?;
+                    let expr = self.delimited_expression()?;
                     self.expect(&TokenKind::RParen, "expected `)`")?;
                     return Ok(self.spanned(start, expr));
                 }
@@ -375,7 +385,7 @@ impl Parser {
                     let mut items = Vec::new();
                     if !self.at(&TokenKind::RBracket) {
                         loop {
-                            items.push(self.expression()?);
+                            items.push(self.delimited_expression()?);
                             if !self.take(&TokenKind::Comma) {
                                 break;
                             }

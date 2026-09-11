@@ -922,11 +922,8 @@ impl Checker<'_> {
             && (self.is_string_type(&object)
                 || self.is_bytes_type(&object)
                 || self.list_element(&object).is_some())
-            && let Ty::Record(record, arguments) = self.resolved(object.clone())
         {
-            return self
-                .record_method_type(function, record, arguments, name, false, false)
-                .map(Some);
+            return Ok(Some(self.sequence_accessor_method(self.resolved(object))));
         }
         match self.resolved(object) {
             Ty::Record(record, arguments) => {
