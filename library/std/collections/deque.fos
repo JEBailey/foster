@@ -1,8 +1,8 @@
 //! An owned collection with access at both ends.
 //!
 //! Insert and remove at the front or back. Iteration runs from front to back.
-//! Operations use list-backed storage; the API does not promise constant-time
-//! insertion or removal at both ends.
+//! Deque defines the contract; ListDeque supplies list-backed storage. Neither promises
+//! constant-time insertion or removal at both ends.
 
 import std.collections
 import std.iter
@@ -10,60 +10,67 @@ import core.option
 
 /// A double-ended queue.
 pub type Deque<T> = & Collection<T> & {
-    values: List<T>
-
-    // Required public operations; implementations live in impl blocks.
     /// Returns a deque with `value` added at the front.
-    pub func push_front(self, value: T) -> Deque<T> [consume self, consume value]
+    pub func push_front(self, value: T) -> self [consume self, consume value]
     /// Returns a deque with `value` added at the back.
-    pub func push_back(self, value: T) -> Deque<T> [consume self, consume value]
+    pub func push_back(self, value: T) -> self [consume self, consume value]
     /// Removes the front value and returns the remaining deque.
-    pub func pop_front(self) -> Option<DequeItem<T>> [consume self]
+    pub func pop_front(self) -> Option<DequeItem<T, self>> [consume self]
     /// Removes the back value and returns the remaining deque.
-    pub func pop_back(self) -> Option<DequeItem<T>> [consume self]
+    pub func pop_back(self) -> Option<DequeItem<T, self>> [consume self]
 }
 
 impl Deque {
+    /// Creates an empty list-backed collection.
+    pub func empty<T>() -> ListDeque<T> { ListDeque.empty() }
+}
+
+/// A list-backed implementation of Deque. Updates do not promise constant-time work.
+pub type ListDeque<T> = & Deque<T> & {
+    values: List<T>
+}
+
+impl ListDeque {
     /// Creates an empty deque.
-    pub func empty<T>() -> Deque<T> {
-        Deque { values: [] }
+    pub func empty<T>() -> ListDeque<T> {
+        ListDeque { values: [] }
     }
 
     /// Returns the number of values in the deque.
-    pub func length<T>(self: Deque<T>) -> Int {
+    pub func length<T>(self: ListDeque<T>) -> Int {
         self.values.length
     }
 
     /// Returns whether the deque contains no values.
-    pub func empty?<T>(self: Deque<T>) -> Bool {
+    pub func empty?<T>(self: ListDeque<T>) -> Bool {
         self.values.empty?
     }
 
     /// Creates an independent iterator from front to back.
-    pub func iterator<T>(self: Deque<T>) -> Iterator<T> {
+    pub func iterator<T>(self: ListDeque<T>) -> Iterator<T> {
         self.values.iterator()
     }
 
     /// Returns a deque with `value` added at the front.
-    pub func push_front<T>(self: Deque<T>, value: T) -> Deque<T> [consume self, consume value] {
-        Deque { values: append_all(move self.values, [value]) }
+    pub func push_front<T>(self: ListDeque<T>, value: T) -> ListDeque<T> [consume self, consume value] {
+        ListDeque { values: append_all(move self.values, [value]) }
     }
 
     /// Returns a deque with `value` added at the back.
-    pub func push_back<T>(self: Deque<T>, value: T) -> Deque<T> [consume self, consume value] {
-        Deque { values: self.values.append(value) }
+    pub func push_back<T>(self: ListDeque<T>, value: T) -> ListDeque<T> [consume self, consume value] {
+        ListDeque { values: self.values.append(value) }
     }
 
     /// Removes the front value and returns the remaining deque.
-    pub func pop_front<T>(self: Deque<T>) -> Option<DequeItem<T>> [consume self] {
+    pub func pop_front<T>(self: ListDeque<T>) -> Option<DequeItem<T, ListDeque<T>>> [consume self] {
         branch {
             self.values.empty? -> Option.None
-            _ -> Option.Some(DequeItem { value: self.values.head, remaining: Deque { values: self.values.rest } })
+            _ -> Option.Some(DequeItem { value: self.values.head, remaining: ListDeque { values: self.values.rest } })
         }
     }
 
     /// Removes the back value and returns the remaining deque.
-    pub func pop_back<T>(self: Deque<T>) -> Option<DequeItem<T>> [consume self] {
+    pub func pop_back<T>(self: ListDeque<T>) -> Option<DequeItem<T, ListDeque<T>>> [consume self] {
         branch {
             self.values.empty? -> Option.None
             _ -> pop_back_values(move self.values, [])
@@ -72,21 +79,22 @@ impl Deque {
 }
 
 /// The result of removing one value from a deque.
-pub type DequeItem<T> = {
+pub type DequeItem<T, C> = {
     pub value: T
-    pub remaining: Deque<T>
+    // The remaining collection preserves its implementation type.
+    pub remaining: C
 }
 
 test "deques accept values at both ends" {
-    let deque = Deque { values: [1, 2] }
+    let deque = ListDeque { values: [1, 2] }
     assert(deque.length() == 2)
     ()
 }
 
 /// Walks to the final value while rebuilding the preceding values.
-func pop_back_values<T>(remaining: List<T>, prefix: List<T>) -> Option<DequeItem<T>> [consume remaining, consume prefix] {
+func pop_back_values<T>(remaining: List<T>, prefix: List<T>) -> Option<DequeItem<T, ListDeque<T>>> [consume remaining, consume prefix] {
     branch {
-        remaining.rest.empty? -> Option.Some(DequeItem { value: remaining.head, remaining: Deque { values: prefix } })
+        remaining.rest.empty? -> Option.Some(DequeItem { value: remaining.head, remaining: ListDeque { values: prefix } })
         _ -> pop_back_values(remaining.rest, prefix.append(remaining.head))
     }
 }

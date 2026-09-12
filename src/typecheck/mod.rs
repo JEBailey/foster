@@ -615,13 +615,12 @@ impl<'a> Checker<'a> {
                     )));
                 }
             }
+            let mut result_generics = generics.clone();
+            if function.receiver.is_some() {
+                result_generics.insert("self".into(), parameters[0].clone());
+            }
             let result = match function.return_type.as_ref() {
-                Some(crate::ast::TypeExpr::Named(name, arguments))
-                    if name == "self" && arguments.is_empty() && function.receiver.is_some() =>
-                {
-                    parameters[0].clone()
-                }
-                Some(annotation) => self.annotation_type(module, annotation, &generics)?,
+                Some(annotation) => self.annotation_type(module, annotation, &result_generics)?,
                 None => self.fresh(),
             };
             if function.public

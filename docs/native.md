@@ -1,6 +1,6 @@
 # Native compilation
 
-Status: host-native AOT backend implemented with Cranelift; scalar, aggregate, concrete and erased
+The host-native AOT backend uses Cranelift; scalar, aggregate, concrete and erased
 callable, list, string/bytes, erased-value, local-reference, closed-world structural-contract,
 local remote-actor, and stackful virtual-thread execution is supported. Filesystem, path, environment,
 clock, entropy, and TCP host services are executable. Actors use the same May coroutine scheduler
@@ -50,7 +50,7 @@ Use `--emit native-ir` to print the deterministic, verified code-generation IR w
 foster build benchmarks/fibonacci.fos --native --emit native-ir
 ```
 
-## Implemented subset
+## Supported subset
 
 The internal native ABI uses target-independent scalar representations: `Bool`, `Byte`, and `()`
 use `i8`; `CodePoint` uses `i32`; `Int` uses `i64`; `Float` uses `f64`; and runtime-backed values
@@ -83,6 +83,10 @@ use the target pointer type. It supports:
   forwarded callables, nested factories, and runtime-selected closure results use this same ABI;
 - owned erased boxes for dynamic contract ABI boundaries, with scalar-or-pointer
   payloads and type-specific release thunks;
+- receiver-dependent pop results for `Queue`, `Deque`, and `Stack`, including owned payloads
+  and concrete remainders viewed through the corresponding structural contract. Native dispatch
+  rebuilds matching record/enum containers when their nested contract representation changes;
+  this conversion is bounded and excludes containers with custom destructors or borrowed fields;
 - whole, indexed, and field references lowered as typed addresses, including typed reference
   parameters, load/store, move-out, and mutation observed through a closure capture;
 - descriptor-addressed allocation, strong retain/release, ownership transfer at calls and returns,
@@ -290,12 +294,12 @@ Every linked Rust shim also contains compile-time function-pointer checks for al
 exports, catching drift on either side of the ABI. Text-producing helpers return managed owned
 values; callback-governed payloads retain their explicit transfer contracts.
 These checks establish signature compatibility; they do not by themselves prove runtime ownership
-behavior or eliminate the correctness gaps below.
+behavior; the cleanup guarantees and limits are described below.
 
-## Known runtime correctness gaps
+## Runtime cleanup guarantees and limits
 
 The [remote lifecycle contract](remote-semantics.md) implements scoped cancellation and conservative
-request-lifetime checks (G-06). Native workers contain language execution failures
+request-lifetime checks. Native workers contain language execution failures
 and deliver `Result<T, RemoteError>` through futures. Failure is terminal for the worker, including
 when the failing future is discarded. Queued and later calls receive the original failure without
 invoking their methods; rejected messages release transferred arguments.
@@ -307,20 +311,20 @@ Cranelift frames or treating placeholder return values as owned results. Allocat
 exercise successful exits and failures in both optimization modes, checking for leaks and duplicate
 deallocation, including opaque host response buffers.
 
-G-04 is implemented: `deinit(self) -> ()` runs once at ownership end before child values are
+`deinit(self) -> ()` runs once at ownership end before child values are
 released. Compiler-owned Copy/Drop dispatch slots select concrete implementations, and generated
 layout destructors invoke the callback while the receiver is intact. A header flag transfers the
 cleanup obligation across internal copy-on-write updates and prevents recursive invocation.
 Cleanup saves and restores an existing language failure while running subsequent callbacks.
 Host wrappers close external resources automatically only when they implement `deinit`; scoped
-remote cancellation is implemented, while process shutdown ordering remains open. Host-fatal events
+remote cancellation follows owner lifetimes, while process shutdown ordering remains open. Host-fatal events
 such as allocation failure and invalid compiler/runtime metadata are
 outside modeled language failure cleanup.
 
 Locals passed by reference retain addressable storage across control-flow edges. Native
 instruction operands and branch arguments reload that storage after possible alias mutations,
 including replacement of aggregate storage during copy-on-write. Nested indexed writes preserve
-their projected destination and detach shared ancestors before taking child addresses (G-08).
+their projected destination and detach shared ancestors before taking child addresses.
 Loaded reference parameters remain borrowed during cleanup. Failure cleanup reloads address-taken
 owners after a failing call, releasing replacement storage rather than its pre-call pointer.
 

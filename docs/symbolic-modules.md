@@ -1,6 +1,6 @@
 # Symbolic modules and callable descriptors
 
-Status: descriptor version 1, carried by bytecode version 27. Implemented in `foster::symbols`.
+Descriptor version 1, carried by bytecode version 27. Defined in `foster::symbols`.
 
 Foster groups compiled functions and nominal type bindings by package and module. Symbol resolution
 happens before execution; the VM and native backend continue to use program-local function IDs.

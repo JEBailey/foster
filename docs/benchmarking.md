@@ -148,7 +148,7 @@ python benchmarks/lsp_latency.py target/release/foster.exe path/to/module.fos --
 
 Use a release `foster lsp` process and the real project root. Measure cold semantic
 requests, repeated requests, and requests after a body edit separately. Also measure
-diagnostic publication and cancellation during active checking. Document symbols now
+diagnostic publication and cancellation during active checking. Document symbols
 use parsing only, so outline latency is not a proxy for full semantic-check latency.
 For edits, cover unchanged contracts, changed effects/signatures, and error repair.
 Compare diagnostics and current source ranges against a fresh checked compilation.

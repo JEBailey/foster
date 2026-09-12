@@ -261,6 +261,42 @@ fn main() {"#)
     }
 
     #[test]
+    fn sequence_collection_contract_results_release_native_allocations() {
+        let compilation = crate::compile(include_str!(
+            "../../tests/fixtures/programs/sequence_collections.fos"
+        ))
+        .unwrap();
+        let prepared = prepare(&compilation).unwrap();
+        let temporary = TemporaryDirectory::create().unwrap();
+        for optimize in [false, true] {
+            let options = CompileOptions { optimize };
+            let artifact = prepared.compile_object(options).unwrap();
+            let source = track_allocations(entry_source(
+                artifact.result,
+                artifact.accepts_arguments,
+                &artifact.runtime_strings,
+                artifact.releases_result,
+            ))
+            .replace(
+                "foster_runtime_check_execution();",
+                "foster_runtime_check_execution(); check_reclamation();",
+            );
+            let executable = temporary.path.join(format!(
+                "collections-{optimize}{}",
+                std::env::consts::EXE_SUFFIX
+            ));
+            link_source(artifact, &executable, options, &source, None).unwrap();
+            let output = Command::new(executable).output().unwrap();
+            assert!(
+                output.status.success(),
+                "optimize={optimize}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+        }
+    }
+
+    #[test]
     fn failures_release_native_frames_and_transferred_arguments() {
         let compilation = crate::compile(
             r#"

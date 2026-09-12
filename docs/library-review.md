@@ -1,28 +1,7 @@
-# Library review
+# Library verification and limits
 
-This review covers all 51 Foster source modules under `library/core` and `library/std`, their public
-type declarations and signatures, the embedded-library checks, and VM/native integration coverage.
-It follows the current language: `&` composes contracts, implementations live in `impl` blocks,
-transparent aliases have one target, and alternatives belong to enums.
-
-## Changes
-
-- `Map<K, V>` and `Set<T>` are storage-free contracts composing `Collection`. `ListMap` and `ListSet`
-  provide the insertion-ordered implementations; `HashMap` and `HashSet` compose the same respective
-  contracts. `Map.empty()`, `Set.empty()`, and `Set.from(values)` remain forwarding factories.
-- Consuming updates return `self` in the contracts, preserving the concrete implementation when a
-  function accepts a map or set abstractly. Concrete-only operations, such as `HashMap.remove` and
-  `HashSet.values`, now have explicit declarations in their type bodies.
-- List-backed map search, replacement, and extraction use indexed loops and snapshot iterators.
-  Replacement retains the original key position, and extraction does not require `Copy` values.
-- TCP wrapper construction uses qualified `Result.Ok` consistently with the rest of the library.
-- The generic `Range<T>` module description no longer incorrectly restricts its views to integers.
-- The library module inventory and collection documentation distinguish abstract contracts,
-  concrete storage, ownership, and iteration-order guarantees.
-
-Use `Map<K, V>` and `Set<T>` annotations for functions that accept either storage implementation.
-Use `ListMap<K, V>` and `ListSet<T>` where insertion order or that concrete representation is part
-of the API. Factory call sites using inferred types retain their existing behavior.
+See [the library reference](core-library.md) and [contract audit](library-contract-audit.md)
+for public APIs, structural contracts, and ownership semantics.
 
 ## Verification
 
@@ -43,19 +22,10 @@ The library integration suites can be run with:
 cargo test --release --offline --test backend_parity --test library_contracts --test core_host --test foster --test native -- --test-threads=4
 ```
 
-TCP listeners and connections implement `Drop`, with explicit consuming `close()` for error
-reporting. Native move-out projections detach shared storage, moved and consumed homes remain
-empty across control-flow edges, and retain operations preserve partially moved null slots.
-Socket-lifetime and native collection/iterator regressions cover automatic cleanup.
-
 ## Remaining boundaries
 
-- `Collection.empty?` remains a required method supplied by each implementation. The focused
-  [partial inherited default regression](../tests/fixtures/programs/partial_inherited_defaults.fos)
-  passes in both backends with optimization enabled and disabled, including calls through a
-  contract view over two different concrete layouts. It does not reproduce the previously recorded
-  native representation issue. Adding the shared body to `Collection` and validating all standard
-  collection implementations remains roadmap work.
+- A shared body for `Collection.empty?` needs validation across all standard collection
+  implementations before adoption. Each implementation currently supplies its own method.
 - Host operations retain conservative mutation effects because reading an integer handle can
   mutate the external socket or random source. Some TOML helpers also retain broader private effect
   annotations. The compiler reports these as warnings, not missing type information.
@@ -63,7 +33,7 @@ Socket-lifetime and native collection/iterator regressions cover automatic clean
   for those elements. Borrowing operations and consuming collection lookup have different ownership
   contracts; they should not be made interchangeable by implicit copying.
 - `Arena`, shared interior mutability, effect-polymorphic callbacks, and re-exports remain roadmap
-  work. This review does not introduce those language or runtime features.
+  work.
 
 See [the library reference](core-library.md), [hash collections](hash-collections.md), and
 [the roadmap](roadmap.md) for the maintained API and remaining work.

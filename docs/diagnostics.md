@@ -1,7 +1,5 @@
 # Foster diagnostics
 
-**Status:** structured compiler diagnostics and stable ownership-code catalog implemented.
-
 Compiler diagnostics are semantic data rather than preformatted strings. A diagnostic can carry:
 
 - a stable error or warning code;

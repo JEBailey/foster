@@ -10,14 +10,6 @@ Transitive compositions count: for example, `HashMap` composes `Map`, which comp
 `Collection`, which composes `Iterable`. Repeating each ancestor in every declaration is unnecessary.
 Structural compatibility alone does not prove a semantic promise.
 
-## Changes from the wider audit
-
-- `File` composes `ReadWrite<IoError>` (covering its existing `Readable` and `Writable`
-  promises) and `TextWriter<IoError>`.
-- `Connection` composes `TextWriter<NetworkError>` alongside `Duplex` and `Closable`.
-- `SystemRandom` composes `std.random.secure.EntropySource` alongside `RandomSource`.
-- Previously added compositions cover copying, sequences, collections, equality, and hashing.
-
 ## Deliberate non-relationships
 
 | Candidate | Decision |
@@ -53,7 +45,7 @@ it does not prohibit structural use. Alias targets retain their own contracts. C
 definitions appear in this inventory too. The table lists direct compositions; inherited
 contracts are reachable through these links in generated documentation.
 
-Reviewed **121 public type declarations** across the full library.
+The library exposes **121 public type declarations**.
 
 | Type | Direct contracts |
 | --- | --- |
@@ -84,6 +76,7 @@ Reviewed **121 public type declarations** across the full library.
 | [core.string.GraphemeCursor](../library/core/string.fos) | `Iterator<String>` |
 | [core.symbol.Symbol](../library/core/symbol.fos) | `Copy` |
 | [std.collections.deque.Deque](../library/std/collections/deque.fos) | `Collection<T>` |
+| [std.collections.deque.ListDeque](../library/std/collections/deque.fos) | `Deque<T>` |
 | [std.collections.deque.DequeItem](../library/std/collections/deque.fos) | None |
 | [std.collections.hash_map.HashMap](../library/std/collections/hash_map.fos) | `Map<K, V>` |
 | [std.collections.hash_set.HashSet](../library/std/collections/hash_set.fos) | `Set<T>` |
@@ -91,10 +84,12 @@ Reviewed **121 public type declarations** across the full library.
 | [std.collections.map.Map](../library/std/collections/map.fos) | `Collection<Entry<K, V>>` |
 | [std.collections.map.ListMap](../library/std/collections/map.fos) | `Map<K, V>` |
 | [std.collections.queue.Queue](../library/std/collections/queue.fos) | `Collection<T>` |
+| [std.collections.queue.ListQueue](../library/std/collections/queue.fos) | `Queue<T>` |
 | [std.collections.queue.QueueItem](../library/std/collections/queue.fos) | None |
 | [std.collections.set.Set](../library/std/collections/set.fos) | `Collection<T>` |
 | [std.collections.set.ListSet](../library/std/collections/set.fos) | `Set<T>` |
 | [std.collections.stack.Stack](../library/std/collections/stack.fos) | `Collection<T>` |
+| [std.collections.stack.ListStack](../library/std/collections/stack.fos) | `Stack<T>` |
 | [std.collections.stack.StackItem](../library/std/collections/stack.fos) | None |
 | [std.collections.Collection](../library/std/collections.fos) | `Iterable<T>` |
 | [std.cursor.Cursor](../library/std/cursor.fos) | `Iterator<T>` |

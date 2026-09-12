@@ -45,9 +45,9 @@ being added accidentally.
 | `std.io` | Generic binary/text stream contracts and binary transfer algorithms |
 | `std.resource` | Typed resource association and independent I/O capability contracts |
 | `std.collections.set` | Storage-free `Set<T>` contract and insertion-ordered `ListSet<T>` |
-| `std.collections.queue` | First-in, first-out `Queue<T>` |
-| `std.collections.deque` | Double-ended `Deque<T>` |
-| `std.collections.stack` | Last-in, first-out `Stack<T>` |
+| `std.collections.queue` | Storage-free FIFO `Queue<T>` contract and `ListQueue<T>` |
+| `std.collections.deque` | Storage-free double-ended `Deque<T>` contract and `ListDeque<T>` |
+| `std.collections.stack` | Storage-free LIFO `Stack<T>` contract and `ListStack<T>` |
 | `core.range` | Generic reusable `Range<T>` sequence view |
 | `core.remote_error` | Remote execution failures and the reserved shutdown outcome |
 | `core.result` | Success/error values, transformations, recovery, eager and lazy fallbacks, flattening, and queries |
@@ -194,7 +194,7 @@ only when applied to a civil or zoned value.
 
 `LocalResolution` exposes `Unique`, `Ambiguous`, and `Skipped` outcomes. Converting a local value to
 a zoned value requires a `Disambiguation` policy, so daylight-saving overlaps and gaps cannot be
-silently discarded. `FixedOffsetZone` supplies the complete `TimeZone` contract now; regional IANA
+silently discarded. `FixedOffsetZone` supplies the `TimeZone` contract; regional IANA
 rule data is a provider-layer roadmap item. `Calendar` and `TimeZoneDatabase` are structural
 contracts so additional calendars and versioned zone databases do not require changing the value
 taxonomy.
@@ -315,9 +315,9 @@ Iterable<T>
     ├── Set<T>
     │   ├── ListSet<T>
     │   └── HashSet<T>
-    ├── Queue<T>
-    ├── Deque<T>
-    └── Stack<T>
+    ├── Queue<T> → ListQueue<T>
+    ├── Deque<T> → ListDeque<T>
+    └── Stack<T> → ListStack<T>
 
 Map<K, V> & Collection<Entry<K, V>>
 ├── ListMap<K, V>
@@ -332,7 +332,13 @@ value view, so advancing it neither consumes nor mutates the collection. The exp
 `Map<K, V>` iterates public `Entry<K, V>` values. `Map` and `Set` contain no storage and do not
 promise an iteration order. `ListMap` and `ListSet` preserve insertion order; hash collection order
 is unspecified. `Map.empty()`, `Set.empty()`, and `Set.from(values)` construct the list-backed types.
-These concrete collections, along with `Queue`, `Deque`, `Stack`, and `Range`, are implemented in
+`Queue`, `Deque`, and `Stack` are storage-free contracts. Their `empty()` constructors return
+`ListQueue`, `ListDeque`, and `ListStack`, respectively. Push operations return the implementation
+type; pop operations return `Option<QueueItem<T, C>>`, `Option<DequeItem<T, C>>`, or
+`Option<StackItem<T, C>>`, with the removed `value` and the `remaining` collection of type `C`.
+Queues iterate FIFO, stacks top-first, and deques front-to-back. These contracts make no
+constant-time complexity promise for updates.
+These concrete collections, along with `Range`, are implemented in
 Foster on top of `List`, keeping only representation primitives in the compiler and VM.
 Collection implementations supply `length`, `empty?`, and `iterator`. For contracts with shared
 default bodies, later compatible composed defaults override earlier defaults, and a concrete type's

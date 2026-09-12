@@ -1,13 +1,10 @@
-# G-07: Ownership analysis precision
-
-Status: parts 1 and 2 implemented for the bounded supported forms below. This work improves
-compiler precision without changing the language contract.
+# Ownership analysis precision
 
 ## Problem
 
 The checker sometimes rejects safe programs because it cannot prove that a result is independent
 of an input loan, or that an invalidation and a later use occur on mutually exclusive paths.
-G-07 should accept specified additional safe cases while preserving S-13 and S-14 in
+The analysis preserves the loan guarantees S-13 and S-14 in
 [the semantic specification](semantics.md#6-loans-groups-and-invalidation).
 
 A result's provenance is the set of storage origins it may still depend on. For example, a
@@ -15,14 +12,14 @@ returned reference depends on its source; a newly produced independent string ne
 on the list element used to compute it. Keeping an unnecessary dependency can prevent reshaping
 that list while the string is still used.
 
-## Existing baseline
+## Analysis model
 
 - Direct calls use inferred receiver/parameter result summaries, propagated to a fixed point
   through direct call chains. Declared result groups must cover the actual returned origins.
 - Indirect calls use known callable summaries or a typed fallback as described below. Unknown
   relationships retain conservative dependencies.
 - Stable boolean places, enum patterns, and direct scalar comparisons retain branch facts.
-  Equality/inequality normalization and some dynamic-index disjointness already work.
+  Equality/inequality normalization and some dynamic-index disjointness are supported.
 - Boolean combinations and saved local Boolean conditions retain the bounded facts described below.
   Comparisons of computed values remain conservative. The loan checker widens to shared facts
   after sixteen alternatives; more reasoning must remain bounded.
@@ -34,13 +31,12 @@ points are `call_result_borrow_value` in `src/ownership/lower.rs`, result-summar
 
 ## 1. Precise results through indirect callables
 
-Target behavior: passing a function through a variable, parameter, record, or callable adapter
-should preserve a provable result dependency instead of automatically adding all input origins.
-For example, invoking an independent-string producer through a callable should permit the same
-later list mutation that its direct invocation permits. A callable returning a reference into
-that list must continue to prevent an invalidating mutation before the reference's last use.
+Passing a function through the supported variable, parameter, record, or callable-adapter forms
+preserves provable result dependencies. An independent-string producer permits later list mutation;
+a callable returning a reference into that list prevents invalidating mutation before the
+reference's last use.
 
-Implemented approach and supported forms:
+Supported forms:
 
 1. Ownership MIR carries inferred result-parameter dependencies separately from a callable's
    captured loans. Bindings, moves, fixed fields/indices, and control-flow joins preserve this
@@ -62,37 +58,25 @@ This metadata lives on ownership MIR values and CFG states, not in a new source 
 runtime lifetime mechanism. There is no new callable syntax or serialized callable-summary ABI.
 Separately compiled or otherwise unknown targets use the checked contract fallback.
 
-Constant-index selection from fixed local lists already preserves the selected callable's
+Constant-index selection from fixed local lists preserves the selected callable's
 reference-parameter summary. Both `callbacks[0](...)` and assigning `callbacks[0]` to a local
 retain the selected slot's dependencies, rather than combining all list elements. Replacing a
 slot invalidates its previous summary. Tests distinguish two functions returning references to
 different inputs, reject invalidation of the selected input, and verify VM/native results with
 optimization enabled and disabled. An index supplied at runtime remains conservative.
 
-Remaining limits within part 1: dynamic-index target selection, target identity returned through
+Dynamic-index target selection, target identity returned through
 opaque factories, capture-specific result summaries, and hidden borrowers in aggregate parameters
 remain conservative. Known targets can still retain unnecessary environment dependencies for
 borrow-containing results. Effectful calls and reference captures may discard more target knowledge
 than necessary. Pending remote-request relationships are tracked separately and are not discharged by these proofs.
 
-Acceptance criteria:
-
-- Safe independent results work through local callable aliases and known-target joins, then
-  through the explicitly supported parameter, aggregate, capture, and erased-callable cases.
-- Borrowed results keep every possible parameter/capture origin, including after moves,
-  adaptation, reborrowing, and recursive summary propagation.
-- A join containing one dependent target still rejects invalidation before result use. Unknown
-  targets and incompatible contracts cannot silently discard dependencies.
-- Paired direct/indirect regression cases demonstrate the intended precision gain; accepted
-  runnable cases agree in VM and native execution with optimization enabled and disabled.
-
 ## 2. Bounded reasoning for compound conditions
 
-Target behavior: recognize mutually exclusive paths expressed using supported boolean
-combinations, rather than requiring the same simple comparison to appear on both branches.
+The analysis recognizes mutually exclusive paths expressed using supported boolean combinations.
 For example, reshape under `a && b` and use an earlier loan only under `not a || not b` are
 mutually exclusive while both operands remain unchanged. Reshape and use under the same
-condition remain a conflict. These cases are supported.
+condition remain a conflict.
 
 The analysis supports `&&`, `||`, and `not` over existing supported facts. Preserve short-circuit evaluation
 and any effects of evaluated operands. Add computed-value comparisons only in a later bounded
@@ -109,7 +93,7 @@ including across loop backedges. Each join retains at most 16 alternatives befor
 common facts. Computed predicates (including dynamically indexed predicate places), repeated calls, and general arithmetic equivalence remain
 conservative.
 
-Saving a pure Boolean condition in a local now preserves its relationship to the input locals.
+Saving a pure Boolean condition in a local preserves its relationship to the input locals.
 For example, after `let can_update = ready && allowed`, a branch on `can_update` can be correlated
 with `not ready || not allowed`. This supports Boolean local reads, constants, `not`, and pure
 Boolean selections including `&&`/`||`, bounded to 64 HIR expression nodes per initializer.
@@ -132,32 +116,8 @@ reference/closure/call mutation, loop reassignment, snapshots, and aliases. VM/n
 check every two-input combination and ensure effectful and short-circuited initializers execute
 their operands only as required.
 
-Release validation: the nine compound-condition tests (including all 256 truth-table pairs) took
-1.52 seconds. All 38 VM/native parity tests passed in 162.55 seconds using the shared native runtime
-cache, compared with 164.55 seconds for the preceding 37-test baseline. These are local suite timings,
-not a portable benchmark. Path solving is skipped when conservative loan analysis finds no candidate
-conflict; alias invalidation is computed once per operation rather than once per path alternative.
+## Limits
 
-Acceptance criteria:
-
-- Recognize conjunction, disjunction, negation, and their complementary paths over stable facts.
-- Forget affected facts after assignment, overlapping mutation, or a call whose effects can
-  change their operands. Facts must not incorrectly survive loop backedges or altered indices.
-- Every newly accepted case has a nearby rejected case with a feasible invalidation/use path,
-  including operand mutation between tests and side effects during predicate evaluation.
-- Exhaustive small-CFG reference-model checks cover the new fact operations. State growth and
-  compile time remain bounded; reaching a precision limit falls back conservatively and never
-  converts an unknown relationship into proven disjointness.
-
-## Scope and completion
-
-Part 1 precedes part 2. Track their completion separately, with a documented list of
-supported forms, remaining conservative cases, and regression/performance results. G-07 is
-complete for this scope when the acceptance criteria above pass; it does not mean the compiler
-can prove every safe program.
-
-This work does not change ownership transfer, `Copy`, `Drop`, group syntax, or runtime lifetime
-rules. G-08's nested indexed writes were corrected separately. G-06's pending remote-request
-transfers need request/owner relationships in addition to ordinary loan provenance; improving a
-callable's loan summary alone must not remove those restrictions. Unbounded theorem proving,
-general arithmetic/alias analysis, and remote scheduling are outside this issue.
+The analysis does not prove every safe program. Unbounded theorem proving and general
+arithmetic/alias analysis are outside its scope. Remote request completion requires separate
+request/owner relationships; a callable's loan summary cannot discharge those obligations.

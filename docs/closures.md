@@ -1,30 +1,11 @@
 # Foster Closures and Group Borrowing
 
-Status: **accepted design; executable closure and group-borrowing foundation complete**
-
-Implemented today:
-
-- anonymous expression and block closures;
-- nested named functions;
-- lexical free-name resolution and minimal local capture sets in HIR;
-- concrete synthetic HIR functions for closure bodies;
-- inferred `copy` capture for primitive copy types and `move` capture otherwise;
-- closure parameter/result inference and direct calls;
-- concrete closure environments in the register VM;
-- explicit `[copy ...]`, `[move ...]`, and `[ref ...]` capture clauses;
-- identity-bearing places and mutable borrowed captures;
-- group-parameterized reference types and `read`/`mut`/`reshape`/`consume` effects;
-- effect-checked callable contracts with compiler-inferred representation erasure;
-- projected list references with structural-invalidation diagnostics;
-- `_` placeholder partial application.
-
 Move and initialization analysis runs over ownership MIR control flow, including conservative
 branch joins. Direct references, aggregate-held references, and captured references share one HIR
 provenance analysis. Structural invalidation is driven by callable `reshape`/`consume` metadata
 rather than a list of recognized method names.
 
-This document records Foster's accepted closure model and the parts implemented by the compiler
-and VM. Capture semantics affect parsing, type inference, ownership, groups, effects, HIR, and the
+This document describes Foster's closure model. Capture semantics affect parsing, type inference, ownership, groups, effects, HIR, and the
 runtime representation of functions.
 
 ## Design goals
@@ -350,8 +331,10 @@ Closure values follow ordinary single ownership:
 let other = closure // moves the closure
 ```
 
-Closure values are currently ownership-bearing even when every capture is a copy type. Foster does
-not yet expose general `Copy` or `Clone` protocols for aggregate or closure values.
+Closure values are ownership-bearing even when every capture is a copy type. The structural
+`Copy` capability supports explicit user-defined copying of aggregate values, but does not make
+assignment or capture implicitly copy them. Closure values do not automatically implement `Copy`,
+and Foster does not expose a general `Clone` protocol.
 
 Closures that may `consume self` are not callable after their consuming call.
 
@@ -427,27 +410,7 @@ mutation. Sending or sharing a closure depends on its captures:
 
 The exact `Send`, `Share`, task, and synchronization model is deferred to the concurrency design.
 
-## Compiler implementation status
-
-1. Parse anonymous closures, nested functions, and capture clauses. **Complete.**
-2. Add closure expressions, nested function IDs, and free-name references to HIR. **Complete.**
-3. Resolve free names lexically and compute minimal local capture sets. **Complete.**
-4. Infer copy/move capture modes and explicit borrow effects; diagnose escaping local borrows.
-   **Complete for the executable type/place foundation.**
-5. Lower concrete capture layouts and calls through shared SSA to VM bytecode. **Complete.**
-   Ownership MIR records capture uses; VM closure frames materialize the environment.
-6. Extend place/group validity analysis across closure construction, storage, and calls.
-   **Complete for local and projected list places, with conservative control-flow joins.**
-7. Execute concrete closure environments in the VM. **Complete for copy, move, mutable-reference,
-   and shared-reference captures.**
-8. Add compiler-inferred representation erasure for callable values. **Complete in the VM.**
-9. Add `_` partial application sugar. **Complete.**
-
-The VM now supports owned, copied, and shared-place environments. The compiler
-rejects use after move, invalid explicit copies, escaping borrows whose group is absent from the
-result type, effect-unsafe erasure, and calls after a projected capture is structurally invalidated.
-
-## Accepted decisions
+## Closure rules
 
 1. Arrow syntax for anonymous closures and ordinary `func` syntax for nested named closures.
 2. Minimal inferred capture sets with `[ref ...]`, `[move ...]`, and `[copy ...]` overrides.

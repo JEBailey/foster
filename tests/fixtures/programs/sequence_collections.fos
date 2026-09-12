@@ -1,0 +1,213 @@
+import core.option
+import core.drop
+import std.iter
+import std.collections
+import std.collections.deque
+import std.collections.queue
+import std.collections.stack
+
+func count<T>(collection: Collection<T>) -> Int { collection.length() }
+func queue_push(fifo: Queue<Int>) -> Queue<Int> [consume fifo] { fifo.push(2) }
+func queue_pop(fifo: Queue<Int>) -> Option<QueueItem<Int, Queue<Int>>> [consume fifo] { fifo.pop() }
+func stack_push(lifo: Stack<Int>) -> Stack<Int> [consume lifo] { lifo.push(2) }
+func stack_pop(lifo: Stack<Int>) -> Option<StackItem<Int, Stack<Int>>> [consume lifo] { lifo.pop() }
+func deque_push(ends: Deque<Int>) -> Deque<Int> [consume ends] { ends.push_front(1).push_back(3) }
+func deque_pop(ends: Deque<Int>) -> Option<DequeItem<Int, Deque<Int>>> [consume ends] { ends.pop_back() }
+
+func main() -> Int {
+    custom_implementations()
+    owned_payloads()
+    let fifo = Queue.empty().push(1).push(2)
+    assert(count(fifo) == 2)
+    let qi = fifo.iterator()
+    assert(qi.next() == Option.Some(1))
+    assert(qi.next() == Option.Some(2))
+    branch fifo.pop() {
+        Option.Some(item) -> {
+            assert(item.value == 1)
+            let remaining = move item.remaining
+            branch remaining.pop() {
+                Option.Some(last) -> { assert(last.value == 2)
+                    assert(last.remaining.empty?()) }
+                Option.None -> { assert(false) }
+            }
+        }
+        Option.None -> { assert(false) }
+    }
+    let lifo = Stack.empty().push(1).push(2)
+    let si = lifo.iterator()
+    assert(si.next() == Option.Some(2))
+    assert(si.next() == Option.Some(1))
+    branch lifo.pop() {
+        Option.Some(item) -> {
+            assert(item.value == 2)
+            let remaining = move item.remaining
+            branch remaining.pop() {
+                Option.Some(last) -> { assert(last.value == 1)
+                    assert(last.remaining.empty?()) }
+                Option.None -> { assert(false) }
+            }
+        }
+        Option.None -> { assert(false) }
+    }
+    let ends = Deque.empty().push_back(2).push_front(1).push_back(3)
+    let di = ends.iterator()
+    assert(di.next() == Option.Some(1))
+    assert(di.next() == Option.Some(2))
+    assert(di.next() == Option.Some(3))
+    branch ends.pop_back() {
+        Option.Some(item) -> {
+            assert(item.value == 3)
+            let remaining = move item.remaining
+            branch remaining.pop_front() {
+                Option.Some(front) -> { assert(front.value == 1)
+                    assert(front.remaining.length() == 1) }
+                Option.None -> { assert(false) }
+            }
+        }
+        Option.None -> { assert(false) }
+    }
+    let empty_queue = empty_queue()
+    let empty_stack = empty_stack()
+    let empty_deque = empty_deque()
+    branch empty_queue.pop() { Option.None -> ()
+        Option.Some(item) -> { assert(false) } }
+    branch empty_stack.pop() { Option.None -> ()
+        Option.Some(item) -> { assert(false) } }
+    branch empty_deque.pop_front() { Option.None -> ()
+        Option.Some(item) -> { assert(false) } }
+    42
+}
+
+// Different storage fields and an extra marker must not be imposed by the contracts.
+type OtherQueue = & Queue<Int> & { data: ListQueue<Int>, marker: Int }
+impl OtherQueue {
+    func length(self) -> Int { self.data.length() }
+    func empty?(self) -> Bool { self.data.empty?() }
+    func iterator(self) -> Iterator<Int> { self.data.iterator() }
+    func push(self, value: Int) -> self [consume self, consume value] {
+        OtherQueue { data: self.data.push(value), marker: self.marker }
+    }
+    func pop(self) -> Option<QueueItem<Int, self>> [consume self] {
+        branch self.data.pop() {
+            Option.None -> Option.None
+            Option.Some(item) -> Option.Some(QueueItem { value: item.value, remaining: OtherQueue { data: move item.remaining, marker: self.marker } })
+        }
+    }
+}
+type OtherStack = & Stack<Int> & { marker: Int, data: ListStack<Int> }
+impl OtherStack {
+    func length(self) -> Int { self.data.length() }
+    func empty?(self) -> Bool { self.data.empty?() }
+    func iterator(self) -> Iterator<Int> { self.data.iterator() }
+    func push(self, value: Int) -> self [consume self, consume value] {
+        OtherStack { data: self.data.push(value), marker: self.marker }
+    }
+    func pop(self) -> Option<StackItem<Int, self>> [consume self] {
+        branch self.data.pop() {
+            Option.None -> Option.None
+            Option.Some(item) -> Option.Some(StackItem { value: item.value, remaining: OtherStack { data: move item.remaining, marker: self.marker } })
+        }
+    }
+}
+type OtherDeque = & Deque<Int> & { marker: Int, data: ListDeque<Int> }
+impl OtherDeque {
+    func length(self) -> Int { self.data.length() }
+    func empty?(self) -> Bool { self.data.empty?() }
+    func iterator(self) -> Iterator<Int> { self.data.iterator() }
+    func push_front(self, value: Int) -> self [consume self, consume value] {
+        OtherDeque { data: self.data.push_front(value), marker: self.marker }
+    }
+    func push_back(self, value: Int) -> self [consume self, consume value] {
+        OtherDeque { data: self.data.push_back(value), marker: self.marker }
+    }
+    func pop_front(self) -> Option<DequeItem<Int, self>> [consume self] {
+        branch self.data.pop_front() {
+            Option.None -> Option.None
+            Option.Some(item) -> Option.Some(DequeItem { value: item.value, remaining: OtherDeque { data: move item.remaining, marker: self.marker } })
+        }
+    }
+    func pop_back(self) -> Option<DequeItem<Int, self>> [consume self] {
+        branch self.data.pop_back() {
+            Option.None -> Option.None
+            Option.Some(item) -> Option.Some(DequeItem { value: item.value, remaining: OtherDeque { data: move item.remaining, marker: self.marker } })
+        }
+    }
+}
+func custom_implementations() -> () {
+    branch queue_pop(queue_push(OtherQueue { data: ListQueue.empty(), marker: 1 })) {
+        Option.Some(item) -> { assert(item.value == 2 && item.remaining.empty?()) }
+        Option.None -> { assert(false) }
+    }
+    branch stack_pop(stack_push(OtherStack { data: ListStack.empty(), marker: 1 })) {
+        Option.Some(item) -> { assert(item.value == 2 && item.remaining.empty?()) }
+        Option.None -> { assert(false) }
+    }
+    branch deque_pop(deque_push(OtherDeque { data: ListDeque.empty(), marker: 1 })) {
+        Option.Some(item) -> { assert(item.value == 3 && item.remaining.length() == 1) }
+        Option.None -> { assert(false) }
+    }
+    let fifo = (OtherQueue { data: ListQueue.empty(), marker: 10 }).push(2)
+    branch fifo.pop() {
+        Option.Some(item) -> { assert(item.value == 2)
+            assert(item.remaining.marker == 10) }
+        Option.None -> { assert(false) }
+    }
+    let lifo = (OtherStack { data: ListStack.empty(), marker: 20 }).push(2)
+    branch lifo.pop() {
+        Option.Some(item) -> { assert(item.value == 2)
+            assert(item.remaining.marker == 20) }
+        Option.None -> { assert(false) }
+    }
+    let ends = (OtherDeque { data: ListDeque.empty(), marker: 30 }).push_front(1).push_back(3)
+    branch ends.pop_back() {
+        Option.Some(item) -> { assert(item.value == 3)
+            assert(item.remaining.marker == 30) }
+        Option.None -> { assert(false) }
+    }
+}
+func empty_queue() -> ListQueue<Int> { ListQueue.empty() }
+
+func empty_stack() -> ListStack<Int> { ListStack.empty() }
+
+func empty_deque() -> ListDeque<Int> { ListDeque.empty() }
+
+type Payload = & Drop & { text: String }
+impl Payload {
+    func deinit(self) -> () { assert(not self.text.empty?, "payload released intact") }
+}
+func take_queue(items: Queue<Payload>) -> Option<QueueItem<Payload, Queue<Payload>>> [consume items] { items.pop() }
+func take_stack(items: Stack<Payload>) -> Option<StackItem<Payload, Stack<Payload>>> [consume items] { items.pop() }
+func take_deque(items: Deque<Payload>) -> Option<DequeItem<Payload, Deque<Payload>>> [consume items] { items.pop_front() }
+func owned_payloads() -> () {
+    let fifo = ListQueue.empty().push(Payload { text: "front" + " value" }).push(Payload { text: "back" + " value" })
+    branch take_queue(move fifo) {
+        Option.Some(item) -> {
+            assert(item.value.text == "front value")
+            branch take_queue(move item.remaining) {
+                Option.Some(last) -> { assert(last.value.text == "back value")
+                    assert(last.remaining.empty?()) }
+                Option.None -> { assert(false) }
+            }
+        }
+        Option.None -> { assert(false) }
+    }
+    let lifo = ListStack.empty().push(Payload { text: "top" + " value" })
+    branch take_stack(move lifo) {
+        Option.Some(item) -> { assert(item.value.text == "top value")
+            branch take_stack(move item.remaining) {
+                Option.None -> ()
+                Option.Some(extra) -> { assert(false) }
+            } }
+        Option.None -> { assert(false) }
+    }
+    let ends = ListDeque.empty().push_front(Payload { text: "end" + " value" })
+    branch take_deque(move ends) {
+        Option.Some(item) -> { assert(item.value.text == "end value")
+            branch take_deque(move item.remaining) {
+                Option.None -> ()
+                Option.Some(extra) -> { assert(false) }
+            } }
+        Option.None -> { assert(false) }
+    }
+}

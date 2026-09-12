@@ -1,7 +1,6 @@
 # Foster Ownership and Borrowing
 
-**Status:** language version 8, ownership-model version 3; implemented foundation with provisional
-rules and known conservative checks.
+Language version 8, ownership-model version 3.
 
 This document describes Foster's ownership model, its source-level behavior, and how the compiler
 implements it today. It is intentionally separate from
@@ -343,8 +342,11 @@ borrower of itself and makes the runtime borrow graph non-owning and acyclic.
 
 The accepted [remote lifecycle rules](remote-semantics.md) require the remote owner to outlive its
 outstanding requests. Owner destruction cancels pending work and resolves its futures as errors;
-statically established violations must be compilation errors. That completion analysis and scoped
-cancellation contract are not yet implemented. The following describes the existing loan boundary.
+statically established violations are rejected with `E0730`. Both backends implement scoped
+cancellation, and the ownership checker tracks supported completion proofs. Pending transfers
+across function boundaries and unmodeled completion proofs remain conservative; see
+[supported static proofs](remote-semantics.md#supported-static-proofs). The following describes
+the loan boundary.
 
 `remote value` transfers an owned object to a worker. Calls on its remote handle enqueue messages
 and return futures. Ordinary explicit reference values cannot be transferred as owned mailbox
@@ -472,7 +474,7 @@ returned. Direct calls substitute these summaries at their arguments. Indirect c
 result types and reference groups when the target is unknown. Results proven recursively free of
 borrowers do not inherit input loans. Borrow-containing results retain their possible parameter
 origins and captured environment; unknown relationships remain conservative. See
-[G-07 supported forms](analysis-precision.md#1-precise-results-through-indirect-callables).
+[Supported callable forms](analysis-precision.md#1-precise-results-through-indirect-callables).
 
 An `await` parks the complete invocation frame without relocating its storage. Loans into named
 frame locals and borrowed parameters may cross suspension when ordinary region analysis proves
@@ -636,21 +638,21 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   comparison proves them unequal and conservatively overlap otherwise.
 - Provenance flows through the implemented aggregate and closure expressions. Direct calls
   substitute the callee's inferred result provenance at matching receiver and argument places;
-  summaries are propagated to a fixed point across chains of direct calls. Indirect calls now preserve known result-parameter summaries through moves, fixed aggregate
+  summaries are propagated to a fixed point across chains of direct calls. Indirect calls preserve known result-parameter summaries through moves, fixed aggregate
   storage, and joins; erased/unknown callables use checked result-type and group contracts.
   Hidden environment dependencies and dynamic target selection remain conservative.
 - Implicit copy behavior is a built-in classification. The structural `Copy` capability supports
   explicit user-defined copying without changing assignment or capture semantics.
-- Runtime values still use managed host representations in the VM. Records now use shared layouts
+- Runtime values still use managed host representations in the VM. Records use shared layouts
   with dense indexed fields, and enums share their runtime names. Ordinary registers are inline
   and promote to stable slots only when their identity becomes observable. The bytecode compiler
   anchors observable cleanup to ownership boundaries and emits `Drop` instructions for remaining
   temporaries after their last use. Borrow edges are weak and therefore do not create reference
   cycles. Target-aware native object layouts and ownership drop plans are calculated and emitted as
-  object descriptors. Cranelift record/enum code now executes strong retain/release, copy-on-write,
+  object descriptors. Cranelift record/enum code executes strong retain/release, copy-on-write,
   and recursive tag-aware destruction plans, including collections, closures, and exceptional
   frame exits. Both backends invoke `deinit` before releasing child values. Arbitrary cyclic owned
-  graphs remain open; scoped remote cancellation is implemented under G-06.
+  graphs remain open.
 - Assertions, checked integer arithmetic and negation, byte shifts, indexed bounds checks, abrupt
   host failures, and synchronous call propagation are represented in ownership MIR. Runtime frame
   teardown also handles execution errors outside these modeled operations; process-fatal events

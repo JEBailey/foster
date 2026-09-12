@@ -371,10 +371,15 @@ compiler checks parameter ownership modes, result types, effects, suspension, an
 Naming a contract is not required for conformance: another type with matching accessible fields and
 methods is accepted structurally.
 
+Method result annotations may use `self`, including inside a generic result such as
+`Option<self>` or `Option<QueueItem<T, self>>`. It denotes the implementing receiver type;
+adapting a value to a structural contract presents that result through the contract view.
+
 The declarations inside `type` define what is required; the bodies inside `impl` define what is
 implemented. An additional public function written only in `impl` is available on that concrete
 type, but does not become a requirement when another type composes its contract. Associated
-constructors likewise remain in `impl`. Composition carries requirements, not implementation bodies.
+constructors likewise remain in `impl`. Composition carries requirements and eligible public
+instance-method bodies under the [ordered default implementation rules](#ordered-default-implementations).
 
 Required functions can introduce their own type parameters, independently of the enclosing type:
 
@@ -595,10 +600,11 @@ shift, and arithmetic operators. Parentheses can make a different grouping expli
 
 ## Remote objects and virtual threads
 
-The section below describes the current executable interface. The accepted
-[remote lifecycle contract](remote-semantics.md) additionally requires owner-scoped cancellation,
-and compile-time outstanding-request checks. Those lifetime requirements remain pending.
-Both runtimes implement terminal failure containment and typed error outcomes.
+The section below describes the current executable interface. Both runtimes implement the
+[remote lifecycle contract](remote-semantics.md), including owner-scoped cancellation, terminal
+failure containment, and typed error outcomes. Compile-time outstanding-request checks reject
+unproven completion at owner destruction with `E0730`; the
+[supported static proofs](remote-semantics.md#supported-static-proofs) describe their conservative limits.
 
 `remote` transfers a record into an isolated virtual thread. An owner-qualified function whose
 first parameter is the semantic `self` receiver is an instance method. Calling that method through a
@@ -872,9 +878,9 @@ Iterable<T>
 └── Collection<T>
     ├── Sequence<T> → List<T>, String as Sequence<String>, Range<T>
     ├── Set<T>
-    ├── Queue<T>
-    ├── Deque<T>
-    └── Stack<T>
+    ├── Queue<T> → ListQueue<T>
+    ├── Deque<T> → ListDeque<T>
+    └── Stack<T> → ListStack<T>
 
 Map<K, V> & Collection<Entry<K, V>>
 ```

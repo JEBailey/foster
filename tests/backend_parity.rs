@@ -2,6 +2,15 @@
 use foster::{native, vm};
 
 #[test]
+fn sequence_collection_contracts_preserve_implementations() {
+    check(
+        "sequence-collections",
+        include_str!("fixtures/programs/sequence_collections.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn constant_index_callable_selection_preserves_reference_results() {
     check_stdout(
         "constant-callable-index",

@@ -4,49 +4,58 @@
 //! the top first. Use the empty and length queries before operations that require
 //! an element, or handle the optional result of pop.
 
+//! Stack defines the storage-free contract; ListStack supplies list-backed storage.
+
 import std.collections
 import std.iter
 import core.option
 
 /// A last-in, first-out collection.
 pub type Stack<T> = & Collection<T> & {
-    values: List<T>
-
-    // Required public operations; implementations live in impl blocks.
     /// Returns a stack with `value` placed on top.
-    pub func push(self, value: T) -> Stack<T> [consume self, consume value]
+    pub func push(self, value: T) -> self [consume self, consume value]
     /// Removes the top value and returns the remaining stack.
-    pub func pop(self) -> Option<StackItem<T>> [consume self]
+    pub func pop(self) -> Option<StackItem<T, self>> [consume self]
 }
 
 impl Stack {
+    /// Creates an empty list-backed collection.
+    pub func empty<T>() -> ListStack<T> { ListStack.empty() }
+}
+
+/// A list-backed implementation of Stack. Updates do not promise constant-time work.
+pub type ListStack<T> = & Stack<T> & {
+    values: List<T>
+}
+
+impl ListStack {
     /// Creates an empty stack.
-    pub func empty<T>() -> Stack<T> {
-        Stack { values: [] }
+    pub func empty<T>() -> ListStack<T> {
+        ListStack { values: [] }
     }
 
     /// Returns the number of stacked values.
-    pub func length<T>(self: Stack<T>) -> Int {
+    pub func length<T>(self: ListStack<T>) -> Int {
         self.values.length
     }
 
     /// Returns whether the stack contains no values.
-    pub func empty?<T>(self: Stack<T>) -> Bool {
+    pub func empty?<T>(self: ListStack<T>) -> Bool {
         self.values.empty?
     }
 
     /// Creates an independent iterator from top to bottom.
-    pub func iterator<T>(self: Stack<T>) -> Iterator<T> {
+    pub func iterator<T>(self: ListStack<T>) -> Iterator<T> {
         reverse(self.values, []).iterator()
     }
 
     /// Returns a stack with `value` placed on top.
-    pub func push<T>(self: Stack<T>, value: T) -> Stack<T> [consume self, consume value] {
-        Stack { values: self.values.append(value) }
+    pub func push<T>(self: ListStack<T>, value: T) -> ListStack<T> [consume self, consume value] {
+        ListStack { values: self.values.append(value) }
     }
 
     /// Removes the top value and returns the remaining stack.
-    pub func pop<T>(self: Stack<T>) -> Option<StackItem<T>> [consume self] {
+    pub func pop<T>(self: ListStack<T>) -> Option<StackItem<T, ListStack<T>>> [consume self] {
         branch {
             self.values.empty? -> Option.None
             _ -> pop_values(move self.values, [])
@@ -55,21 +64,22 @@ impl Stack {
 }
 
 /// The result of removing one value from a stack.
-pub type StackItem<T> = {
+pub type StackItem<T, C> = {
     pub value: T
-    pub remaining: Stack<T>
+    // The remaining collection preserves its implementation type.
+    pub remaining: C
 }
 
 test "stacks retain pushed values" {
-    let stack = Stack { values: [1, 2] }
+    let stack = ListStack { values: [1, 2] }
     assert(stack.length() == 2)
     ()
 }
 
 /// Walks to the final stored value while rebuilding the remaining prefix.
-func pop_values<T>(remaining: List<T>, prefix: List<T>) -> Option<StackItem<T>> [consume remaining, consume prefix] {
+func pop_values<T>(remaining: List<T>, prefix: List<T>) -> Option<StackItem<T, ListStack<T>>> [consume remaining, consume prefix] {
     branch {
-        remaining.rest.empty? -> Option.Some(StackItem { value: remaining.head, remaining: Stack { values: prefix } })
+        remaining.rest.empty? -> Option.Some(StackItem { value: remaining.head, remaining: ListStack { values: prefix } })
         _ -> pop_values(remaining.rest, prefix.append(remaining.head))
     }
 }

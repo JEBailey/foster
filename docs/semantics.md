@@ -300,7 +300,7 @@ requests and resolves outstanding futures with shutdown errors; futures do not k
 alive. Statically established outstanding requests at owner exit must be rejected. Remote execution
 failure is contained, terminal for that worker, and resolves outstanding and subsequent requests
 with errors. The awaited outcome is `Result<T, RemoteError>` in both backends, including an outer Result
-when the method returns a domain Result. Owner cancellation and conservative lifetime checks enforce G-06.
+when the method returns a domain Result. Owner cancellation and conservative lifetime checks enforce this boundary.
 
 **S-20 — Remote loans.** Owned messages transfer only supported transferable values. Ordinary
 explicit references, closures, and futures cannot be transferred as owned mailbox arguments in
@@ -313,7 +313,7 @@ mutation uses exclusive access and commits atomically with respect to those remo
 is not a blanket guarantee for unsynchronized mutation of arbitrary shared state. Loans across
 suspension must remain live and valid. Cancellation must preserve storage needed by executing code
 and release loans safely. Fairness, deadlock freedom, host interruption latency, and global shutdown
-ordering remain open; owner-driven cancellation instead of draining is now an accepted decision.
+ordering remain open. Owner destruction cancels work instead of draining the queue.
 
 ## 10. Host and library boundary
 
@@ -346,7 +346,7 @@ Existing witnesses provide regression evidence, not a proof or exhaustive confor
 | S-09–S-10 | [backend parity](../tests/backend_parity.rs) for assignment, call, aggregate, branch, and partial-application ordering; [language tests](../tests/language.rs), [portable tests](../tests/foster/), [control-flow lowering](../src/control_flow.rs) |
 | S-11–S-16 | [ownership tests](../tests/language_ownership.rs) for accepted and rejected partial capture, moves, loans, and computed results; [rule-indexed witnesses](../tests/ownership_soundness.rs), [reference model](../src/ownership/model.rs) |
 | S-17–S-18 | [ownership tests](../tests/language_ownership.rs) for reverse cleanup and transfer/failure edges, [backend parity](../tests/backend_parity.rs) for borrowed full-expression temporaries |
-| S-19–S-20 | [remote ownership tests](../tests/language_ownership.rs), [native tests](../tests/native.rs); failure gap below |
+| S-19–S-20 | [remote ownership tests](../tests/language_ownership.rs), [remote lifetime tests](../tests/remote_lifetime.rs), [backend parity tests](../tests/backend_parity.rs), [native tests](../tests/native.rs) |
 | S-21 | [host tests](../tests/core_host.rs), [intrinsic registry](../src/intrinsics/registry.rs) |
 | S-22 | [backend parity](../tests/backend_parity.rs), [native tests](../tests/native.rs) |
 
@@ -360,45 +360,15 @@ explicitly rather than hidden by weakening an assertion. See [testing](testing.m
 
 ## 12. Open decisions and implementation gaps
 
-These entries distinguish missing language decisions from missing implementation work. `G-01`
-(evaluation order) is closed by S-09, and `G-02` (member/accessor classification) is closed by
-S-08. Their decisions are normative rules above rather than open entries:
+Remaining work is organized in the [roadmap](roadmap.md). The main semantic limits are:
 
-- **G-03 — Remote failure implementation (closed):** both backends contain execution failures,
-  reject queued and later execution after failure, and deliver `Result<T, RemoteError>` outcomes.
-  Cross-backend tests cover discarded failures, completed results, domain errors, and nested failures
-  with optimization enabled and disabled. Owner cancellation
-  and lifetime checking are implemented under G-06.
-- **G-04 — Reclamation (closed):** modeled native failures release live managed values and
-  active temporaries while generated frames return from callee to caller. Both backends invoke
-  user-defined `deinit` at ownership end, before releasing fields, and preserve the original error
-  while continuing cleanup. Explicit `Copy`, typed `List.at` failures, moves, replacement, loop
-  exits, enum payloads, remote argument transfer, and failure cleanup have backend parity tests.
-  Scoped remote owner cancellation is implemented under G-06; host wrappers need a `deinit` implementation to
-  close their external resources automatically.
-- **G-05 — Generic sequence execution (closed):** native contract dispatch resolves sequence
-  accessors through erased stored values, preserving checked generic result types. Built-in
-  lists, strings, bytes, user-defined sequences, mixed iterator element types, lazy adapters,
-  exhaustion, and failure cleanup have VM/native parity coverage. Head/rest adapters can still
-  copy tails; structural conformance and slicing do not promise zero-copy traversal.
-- **G-06 — Scoped remote lifetime (implemented):** owner destruction cancels running and queued
-  requests in both backends, preserving completed outcomes and retaining executing storage safely.
-  `E0730` tracks completion through moves, storage, branches and loops; dropping a future does not
-  discharge its request. Pending transfers across function boundaries and unmodeled completion
-  proofs remain conservative; see [supported proofs](remote-semantics.md#supported-static-proofs).
-  Cross-worker scheduling, liveness, host interruption and process-wide shutdown ordering remain open.
-- **G-07 — Analysis precision (implemented for the bounded scope):** indirect callable results now use known
-  target summaries or checked type/group contracts. Moves, fixed aggregate storage, and joins
-  preserve supported dependencies; unknown targets and hidden environments remain conservative.
-  Bounded compound boolean path reasoning supports `&&`, `||`, and `not`, preserving short-circuit
-  effects and forgetting facts after operand mutation. See [supported forms and limits](analysis-precision.md).
-- **G-08 — Nested indexed assignment (closed):** rooted field/index assignments preserve
-  their projected place in both backends, so `items[0].field = value` updates the original
-  element. Writable ancestors detach shared storage before taking child addresses, preserving
-  iterator snapshots. Writes through reference parameters update their caller's storage without
-  taking ownership of it. Regression tests cover mixed projections, generic and callable fields,
-  RHS-before-index evaluation with each index evaluated once, bounds failures, replacement/drop
-  order, and preservation of disjoint loans. Overlapping structural replacements remain rejected.
+- Remote completion proofs remain conservative for pending transfers across function boundaries
+  and unmodeled completion patterns. See [supported proofs](remote-semantics.md#supported-static-proofs).
+- Cross-worker scheduling, liveness, host interruption, and process-wide shutdown ordering remain open.
+- Loan analysis remains conservative for dynamic callable targets, hidden borrowers, computed
+  predicates, and richer arithmetic relationships. See [analysis precision](analysis-precision.md).
+- Generic sequence head/rest adapters can copy tails; structural conformance and slicing do not
+  promise zero-copy traversal.
 
 Resolving an open decision requires a documented rule, implementation, and conformance tests.
 Fixing an implementation violation should restore the contract without redefining the violating

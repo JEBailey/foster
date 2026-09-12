@@ -425,19 +425,8 @@ impl Checker<'_> {
                     .cloned()
                     .zip(parameters)
                     .all(|(expected, actual)| self.unify(expected, actual, function).is_ok());
-                if parameters_match
-                    && self
-                        .coerce(
-                            if method.returns_self {
-                                actual.clone()
-                            } else {
-                                method.result.clone()
-                            },
-                            *result,
-                            function,
-                        )
-                        .is_ok()
-                {
+                let required_result = self.method_result_for_receiver(&method, actual.clone());
+                if parameters_match && self.coerce(required_result, *result, function).is_ok() {
                     matched = Some((self.substitutions.clone(), self.next_variable));
                     break;
                 }

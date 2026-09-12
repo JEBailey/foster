@@ -1,8 +1,5 @@
 # Foster effect derivation
 
-**Status:** implemented. This document describes the current compiler rather than the historical
-v1 implementation plan.
-
 Effects state what a function may do to an ownership group. Most functions omit an effect clause;
 the compiler derives their contract from typed HIR and stores it on the function. Explicit clauses
 are useful for callable contracts and for APIs that intentionally publish an upper bound.
@@ -197,7 +194,7 @@ then performs a final checked type/effect pass before loan and ownership validat
 
 ## Current limits
 
-The effect contract is implemented, but provenance can still become conservative:
+Provenance can become conservative:
 
 - provenance through indirect or erased callable results is conservative;
 - structural invalidation metadata currently covers the implemented list-storage model rather

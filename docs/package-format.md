@@ -1,6 +1,6 @@
 # Foster executable package format
 
-Status: container version 1, implemented by `foster::archive`.
+Container version 1; read and written by `foster::archive`.
 
 A Foster package (`.fpk`) is a deterministic ZIP archive containing an executable `.fbc` program
 and optional application resources. It is analogous to an executable JAR: the Foster runtime is

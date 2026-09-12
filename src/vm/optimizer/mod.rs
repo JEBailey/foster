@@ -25,7 +25,7 @@ pub fn optimize(program: &mut Program) {
         .into_iter()
         .filter_map(|id| program.functions.remove(&id).map(|function| (id, function)))
         .collect::<Vec<_>>();
-    inlining::inline_small_leaf_functions(program);
+    inlining::inline_small_functions(program);
     constants::fold(program);
     control_flow::simplify(program);
     copies::propagate(program);

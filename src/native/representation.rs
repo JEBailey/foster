@@ -125,7 +125,7 @@ pub(super) fn native_type(
             ref arguments,
         } if Some(record) == compilation.types.core.list && arguments.len() == 1 => {
             let element =
-                specialized_verification_type(compilation, arguments[0], substitutions, 0)?;
+                specialized_verification_type(compilation, arguments[0], substitutions, 1)?;
             let concrete = crate::vm::VerificationType::List(Box::new(element));
             layouts.instantiate_type(&concrete)?;
             layouts
@@ -139,7 +139,7 @@ pub(super) fn native_type(
         } => {
             let arguments = arguments
                 .iter()
-                .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 0))
+                .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 1))
                 .collect::<Result<Vec<_>, _>>()?;
             let concrete = crate::vm::VerificationType::Record {
                 record,
@@ -157,7 +157,7 @@ pub(super) fn native_type(
         } if compilation.hir.variant_types[variant].kind == crate::ast::VariantKind::Alias => {
             let members = arguments
                 .iter()
-                .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 0))
+                .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 1))
                 .collect::<Result<Vec<_>, _>>()?;
             layouts.instantiate_type(&crate::vm::VerificationType::Union(members))?;
             Ok(NativeType::Object(layouts.opaque()))
@@ -168,7 +168,7 @@ pub(super) fn native_type(
         } => {
             let arguments = arguments
                 .iter()
-                .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 0))
+                .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 1))
                 .collect::<Result<Vec<_>, _>>()?;
             let concrete = crate::vm::VerificationType::Variant {
                 variant,
@@ -248,6 +248,12 @@ pub(super) fn specialized_verification_type(
             if Some(*record) == compilation.types.core.list && arguments.len() == 1 =>
         {
             VerificationType::List(Box::new(nested(arguments[0])?))
+        }
+        // Structural contracts nested in aggregates use the same erased layout as shared SSA.
+        Type::Record { record, .. }
+            if depth > 0 && record_uses_dynamic_dispatch(compilation, *record) =>
+        {
+            VerificationType::Unknown
         }
         Type::Record { record, arguments } => VerificationType::Record {
             record: *record,

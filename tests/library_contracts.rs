@@ -1,6 +1,24 @@
 use foster::ast::{TypeExpr, VariantKind};
 
 #[test]
+fn nested_receiver_results_reject_an_unrelated_implementation() {
+    let error = foster::compile(
+        r#"
+import core.option
+type Wrapped = { pub func wrap(self) -> Option<self> [consume self] }
+type Invalid = & Wrapped & { value: Int }
+impl Invalid {
+    func wrap(self) -> Option<Int> [consume self] { Option.Some(self.value) }
+}
+func main() -> Int { let invalid = Invalid { value: 42 }
+    0 }
+"#,
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("wrap"), "{error}");
+}
+
+#[test]
 fn library_declarations_use_current_type_forms_and_explicit_public_signatures() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("library");
     let mut modules = 0;
@@ -97,6 +115,9 @@ fn library_declarations_use_current_type_forms_and_explicit_public_signatures() 
                 "Collection",
                 "Map",
                 "Set",
+                "Queue",
+                "Deque",
+                "Stack",
                 "Iterable",
                 "Iterator",
                 "Reader",

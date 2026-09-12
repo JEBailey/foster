@@ -18,12 +18,31 @@ pub(super) struct EffectiveMethod {
     pub(super) parameter_modes: Vec<crate::ast::ParameterMode>,
     pub(super) result: Ty,
     pub(super) returns_self: bool,
+    /// Unbound nested receiver result, retained when adapting a contract to another receiver.
+    pub(super) receiver_result: Option<Ty>,
     pub(super) effects: Vec<crate::ast::Effect>,
     pub(super) suspends: bool,
     pub(super) requirement: Option<(RecordId, usize)>,
 }
 
 impl Checker<'_> {
+    pub(super) fn method_result_for_receiver(
+        &mut self,
+        method: &EffectiveMethod,
+        receiver: Ty,
+    ) -> Ty {
+        if method.returns_self {
+            return receiver;
+        }
+        if let Some(template) = &method.receiver_result {
+            let mut generics = HashMap::new();
+            preserve_generics(template, &mut generics);
+            generics.insert("$receiver".into(), receiver);
+            return self.instantiate(template.clone(), &mut generics);
+        }
+        method.result.clone()
+    }
+
     pub(super) fn can_access_module(&self, caller: FunctionId, module: hir::ModuleId) -> bool {
         self.hir.functions[caller].module == module
             || self.hir.composition_owners.get(&caller) == Some(&module)
@@ -168,9 +187,8 @@ impl Checker<'_> {
                 Self::merge_variant_method(&definition.name, &mut methods, method)?;
             }
             for method in &mut methods {
-                if method.returns_self {
-                    method.result = Ty::Variant(variant, arguments.clone());
-                }
+                method.result = self
+                    .method_result_for_receiver(method, Ty::Variant(variant, arguments.clone()));
                 self.check_variant_method_implementation(variant, &arguments, method)?;
             }
         }
@@ -237,6 +255,7 @@ impl Checker<'_> {
         if existing.parameter_modes != incoming.parameter_modes
             || existing.result != incoming.result
             || existing.returns_self != incoming.returns_self
+            || existing.receiver_result != incoming.receiver_result
             || existing.effects != incoming.effects
             || existing.suspends != incoming.suspends
         {
@@ -435,9 +454,8 @@ impl Checker<'_> {
         }
         let mut methods = self.collect_record_methods(record, arguments, &mut HashSet::new())?;
         for method in &mut methods {
-            if method.returns_self {
-                method.result = Ty::Record(record, arguments.to_vec());
-            }
+            method.result =
+                self.method_result_for_receiver(method, Ty::Record(record, arguments.to_vec()));
         }
         if !arguments.iter().any(contains_variable)
             && !methods.iter().any(|method| {
@@ -578,6 +596,7 @@ impl Checker<'_> {
                             parameter_modes: Vec::new(),
                             result,
                             returns_self: false,
+                            receiver_result: None,
                             effects: Vec::new(),
                             suspends: false,
                             requirement: None,
@@ -677,6 +696,8 @@ impl Checker<'_> {
             .collect();
         let returns_self = matches!(requirement.return_type.as_ref(),
             Some(crate::ast::TypeExpr::Named(name, arguments)) if name == "self" && arguments.is_empty());
+        // Only result annotations bind `self`; it is not a user-declared generic.
+        generics.insert("self".into(), Ty::Generic("$receiver".into()));
         let result = requirement
             .return_type
             .as_ref()
@@ -684,6 +705,11 @@ impl Checker<'_> {
             .map(|ty| self.annotation_type(owner_module, ty, &generics))
             .transpose()?
             .unwrap_or(Ty::Unit);
+        let mut result_generics = HashMap::new();
+        preserve_generics(&result, &mut result_generics);
+        let receiver_result = result_generics
+            .contains_key("$receiver")
+            .then(|| result.clone());
         Ok(EffectiveMethod {
             type_parameters,
             name: requirement.name.clone(),
@@ -692,6 +718,7 @@ impl Checker<'_> {
             parameter_modes,
             result,
             returns_self,
+            receiver_result,
             effects: requirement.effects.clone(),
             suspends: requirement.suspends,
             requirement: origin,
@@ -707,6 +734,9 @@ impl Checker<'_> {
             preserve_generics(parameter, &mut generics);
         }
         preserve_generics(&method.result, &mut generics);
+        if let Some(template) = &method.receiver_result {
+            preserve_generics(template, &mut generics);
+        }
         for name in &method.type_parameters {
             generics.insert(name.clone(), self.fresh());
         }
@@ -716,6 +746,9 @@ impl Checker<'_> {
             .map(|ty| self.instantiate(ty, &mut generics))
             .collect();
         method.result = self.instantiate(method.result, &mut generics);
+        method.receiver_result = method
+            .receiver_result
+            .map(|ty| self.instantiate(ty, &mut generics));
         method
     }
 
@@ -933,6 +966,7 @@ impl Checker<'_> {
         let compatible = existing.parameter_modes == incoming.parameter_modes
             && existing.result == incoming.result
             && existing.returns_self == incoming.returns_self
+            && existing.receiver_result == incoming.receiver_result
             && existing.effects == incoming.effects
             && existing.suspends == incoming.suspends;
         if !compatible {

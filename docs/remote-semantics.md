@@ -1,10 +1,8 @@
 # Remote ownership, requests, and failure
 
-Status: **scoped cancellation, typed outcomes, and conservative lifetime checking implemented**, 2026-09-06.
-
 This document encapsulates the remote lifecycle decisions accompanying
 [S-19 and S-20 of the semantic specification](semantics.md#9-remote-execution).
-It specifies required behavior. The implementation status below documents cancellation points and
+It specifies required behavior. The implementation details below document cancellation points and
 the completion proofs supported by the compiler.
 
 ## Ownership and request lifetime

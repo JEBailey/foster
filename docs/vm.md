@@ -1,9 +1,5 @@
 # Foster register VM
 
-Status: typed-HIR construction, mandatory shared-SSA sealing, optimizing portable bytecode,
-CFG-aware verifier, and reference execution core implemented. A strict subset of the shared SSA
-also feeds the Cranelift AOT backend.
-
 Foster uses a custom register VM as its executable semantic reference. The pipeline is:
 
 ```text
@@ -83,7 +79,11 @@ as long as that identity remains observable. Conditional branches receive cleanu
 edges when their condition dies at the branch. Frame teardown remains the final cleanup boundary
 for protected slots and returned values.
 
-The interprocedural tier inlines small straight-line leaf functions. Inlined parameters receive
+The interprocedural tier inlines small leaf functions, including forward branches and early returns
+in scalar bodies. Up to four rounds expose wrapper chains without expanding recursive call cycles.
+Candidates are limited to 16 instructions; the complete expanded caller, including parameter copies
+and early-return jumps, must fit a 128-instruction budget. Loops, reference results, and branching
+aggregate bodies remain excluded. Inlined parameters receive
 fresh virtual registers before copy propagation, so assigning to a parameter cannot mutate the
 caller's argument slot. Escape analysis recognizes single-use closure values when delaying capture
 is safe and replaces the allocation plus dynamic dispatch pair with `CallClosure`. Reference
