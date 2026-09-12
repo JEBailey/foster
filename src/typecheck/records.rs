@@ -672,7 +672,7 @@ impl Checker<'_> {
         for method in self.effective_record_methods(record, &arguments)? {
             self.check_method_implementation(function, record, &arguments, &method)?;
         }
-        Ok(Ty::Record(record, arguments))
+        Ok(self.resolved(Ty::Record(record, arguments)))
     }
 
     pub(super) fn record_field_type(

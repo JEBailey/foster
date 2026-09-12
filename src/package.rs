@@ -485,6 +485,15 @@ impl Package {
 
     fn finish_loading(&mut self, cache: &mut Option<&mut ModuleCache>) -> Result<(), FosterError> {
         self.install_standard_modules_if_imported(cache)?;
+        self.install_bootstrap(
+            BootstrapModule::types_and_functions(
+                "core.int",
+                include_str!("../library/core/int.fos"),
+                &["RawInt", "Int"],
+                &["Int.copy"],
+            ),
+            cache,
+        )?;
         self.install_bytes_bootstrap(cache)?;
         self.install_byte_buffer_bootstrap(cache)?;
         self.install_list_bootstrap(cache)?;
@@ -944,7 +953,9 @@ impl Package {
                 if record.intrinsic
                     && !matches!(
                         (module.name.as_str(), record.name.as_str()),
-                        ("core.bytes", "RawBytes") | ("core.list", "RawList")
+                        ("core.bytes", "RawBytes")
+                            | ("core.list", "RawList")
+                            | ("core.int", "RawInt")
                     )
                 {
                     return Err(FosterError::runtime(format!(

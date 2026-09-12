@@ -265,6 +265,7 @@ impl<'a> Context<'a> {
             Type::Unit => SymbolType::Primitive("unit".into()),
             Type::Bool => SymbolType::Primitive("bool".into()),
             Type::Int => SymbolType::Primitive("int".into()),
+            Type::RawInt => SymbolType::Primitive("raw_int".into()),
             Type::Float => SymbolType::Primitive("float".into()),
             Type::CodePoint => SymbolType::Primitive("code_point".into()),
             Type::Byte => SymbolType::Primitive("byte".into()),

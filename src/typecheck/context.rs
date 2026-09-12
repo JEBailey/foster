@@ -8,6 +8,7 @@ pub(super) enum Ty {
     Unit,
     Bool,
     Int,
+    RawInt,
     Float,
     CodePoint,
     Byte,

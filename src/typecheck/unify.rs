@@ -300,6 +300,9 @@ impl Checker<'_> {
                     return Ty::Reference(group, Box::new(self.resolved(*value)));
                 }
                 Ty::Record(record, arguments) => {
+                    if self.is_int_record(record) && arguments.is_empty() {
+                        return Ty::Int;
+                    }
                     return Ty::Record(
                         record,
                         arguments

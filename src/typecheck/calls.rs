@@ -641,6 +641,14 @@ impl Checker<'_> {
             (Ty::Bool, member) => {
                 self.primitive_method_type(function, Ty::Bool, "core.bool", member)
             }
+            (Ty::Int, "value") => {
+                let module = self.hir.module_named("core.int").expect("Int module");
+                let record = self
+                    .hir
+                    .record_named(module, "Int")
+                    .expect("Int declaration");
+                self.record_field_type(function, record, &[], "value")
+            }
             (Ty::Int, member) => self.primitive_method_type(function, Ty::Int, "core.int", member),
             (Ty::Float, member) => {
                 self.primitive_method_type(function, Ty::Float, "core.float", member)

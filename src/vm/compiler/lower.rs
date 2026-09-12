@@ -658,6 +658,9 @@ impl FunctionCompiler<'_> {
                 Ok(unwrapped)
             }
             hir::Expr::Record { record, fields } => {
+                if Some(*record) == self.types.core.int {
+                    return self.expression(fields[0].1);
+                }
                 // Evaluate initializers in source order, independently of the
                 // physical field order selected for the record layout.
                 let values = fields
@@ -691,6 +694,14 @@ impl FunctionCompiler<'_> {
                 Ok(destination)
             }
             hir::Expr::Member { object, name } => {
+                if name == "value"
+                    && self
+                        .types
+                        .expression_type(*object)
+                        .is_some_and(|ty| matches!(self.types.types[ty], crate::types::Type::Int))
+                {
+                    return self.expression(*object);
+                }
                 if matches!(name.as_str(), "length" | "head" | "rest")
                     && self.types.expression_type(*object).is_some_and(|mut ty| {
                         while let crate::types::Type::Reference { value, .. } =

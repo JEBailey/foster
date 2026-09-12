@@ -32,8 +32,9 @@ Structural compatibility alone does not prove a semantic promise.
 
 ## Builtin types
 
-`Bool`, `Byte`, `Int`, `Float`, and `CodePoint` implement the library's scalar `copy`
+`Bool`, `Byte`, `Float`, and `CodePoint` implement the library's scalar `copy`
 operation; their modules document `Copy`. They have no source record declaration to compose into.
+`Int` is declared in Foster with private `RawInt` storage and explicitly composes `Copy`.
 `Sequence<T>` is compiler-provided; concrete `List<T>`, `String`, `Bytes`, and `Range<T>`
 explicitly compose it with their actual element types. Operator support is not treated as
 an implementation of similarly named public methods.
@@ -45,7 +46,7 @@ it does not prohibit structural use. Alias targets retain their own contracts. C
 definitions appear in this inventory too. The table lists direct compositions; inherited
 contracts are reachable through these links in generated documentation.
 
-The library exposes **121 public type declarations**.
+The library exposes **122 public type declarations**.
 
 | Type | Direct contracts |
 | --- | --- |
@@ -60,6 +61,7 @@ The library exposes **121 public type declarations**.
 | [core.functions.Predicate](../library/core/functions.fos) | Callable alias |
 | [core.functions.Consumer](../library/core/functions.fos) | Callable alias |
 | [core.functions.Supplier](../library/core/functions.fos) | Callable alias |
+| [core.int.Int](../library/core/int.fos) | `Copy` |
 | [core.list.List](../library/core/list.fos) | `Sequence<T>`, `Collection<T>` |
 | [core.list.ListReadError](../library/core/list.fos) | None |
 | [core.option.Option](../library/core/option.fos) | None |

@@ -139,6 +139,11 @@ impl<'a> Checker<'a> {
         }
     }
 
+    fn is_int_record(&self, record: RecordId) -> bool {
+        self.hir.records[record].name == "Int"
+            && self.hir.modules[self.hir.records[record].module].name == "core.int"
+    }
+
     fn string_type(&self) -> Ty {
         let module = self
             .hir
@@ -172,7 +177,7 @@ impl<'a> Checker<'a> {
     fn is_copy_type(&self, ty: &Ty) -> bool {
         matches!(
             self.resolved(ty.clone()),
-            Ty::Unit | Ty::Bool | Ty::Int | Ty::Float | Ty::CodePoint | Ty::Byte
+            Ty::Unit | Ty::Bool | Ty::Int | Ty::RawInt | Ty::Float | Ty::CodePoint | Ty::Byte
         ) || self.resolved(ty.clone()) == self.symbol_type()
     }
 

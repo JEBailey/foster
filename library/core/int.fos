@@ -7,10 +7,20 @@
 //! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
 import core.ordering
+import core.copy
+
+/// Private signed 64-bit primitive storage.
+intrinsic type RawInt
+
+/// A signed 64-bit integer with private scalar storage.
+/// The compiler keeps this representation inline, including during arithmetic.
+pub type Int = & Copy & {
+    value: RawInt
+}
 
 impl Int {
     /// Explicitly copies this scalar value.
-    pub func copy(self: Int) -> self [read self] { self }
+    pub func copy(self: Int) -> self [read self] { Int { value: self.value } }
 
     /// Returns the absolute value of this integer.
     /// The signed minimum has no positive `Int` counterpart and must not be supplied.

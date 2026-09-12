@@ -274,6 +274,7 @@ fn annotation(
                     "byte" => "Byte",
                     "code_point" => "CodePoint",
                     "raw_bytes" => "RawBytes",
+                    "raw_int" => "RawInt",
                     "raw_byte_buffer" => "RawByteBuffer",
                     _ => return Err(error("unknown primitive type")),
                 }

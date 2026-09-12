@@ -98,7 +98,7 @@ pub(super) fn native_type(
     match compilation.types.types[ty] {
         Type::Unit => Ok(NativeType::Unit),
         Type::Bool => Ok(NativeType::Bool),
-        Type::Int => Ok(NativeType::Int),
+        Type::Int | Type::RawInt => Ok(NativeType::Int),
         Type::Float => Ok(NativeType::Float),
         Type::CodePoint => Ok(NativeType::CodePoint),
         Type::Byte => Ok(NativeType::Byte),
@@ -220,7 +220,7 @@ pub(super) fn specialized_verification_type(
             .unwrap_or_else(|| VerificationType::Generic(name.clone())),
         Type::Unit => VerificationType::Unit,
         Type::Bool => VerificationType::Bool,
-        Type::Int => VerificationType::Integer,
+        Type::Int | Type::RawInt => VerificationType::Integer,
         Type::Float => VerificationType::Float,
         Type::CodePoint => VerificationType::CodePoint,
         Type::Byte => VerificationType::Byte,

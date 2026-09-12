@@ -2,6 +2,36 @@
 use foster::{native, vm};
 
 #[test]
+fn library_integer_storage_preserves_scalar_behavior() {
+    check(
+        "integer-storage",
+        r#"
+import core.int
+type Pair = { left: Int, right: Int }
+func identity<T>(value: T) -> T [consume value] { value }
+func copied(value: int::Int) -> int::Int { value.copy() }
+func update[g: group Int](value: ref[g] Int) -> () [mut g] { value = value.copy() + 1
+    () }
+func main() -> Int {
+    let minimum = -9223372036854775807 - 1
+    let maximum = 9223372036854775807
+    assert(copied(minimum) == minimum)
+    assert(copied(maximum) == maximum)
+    assert(copied(-1) == -1)
+    let values = [identity(20.copy()), 21.copy()]
+    update(ref values[1])
+    let pair = Pair { left: values[0].copy(), right: values[1].copy() }
+    let captured = [move pair] () -> pair.left + pair.right
+    assert(minimum.as_string() == "-9223372036854775808")
+    assert(maximum.as_string() == "9223372036854775807")
+    captured()
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
 fn sequence_collection_contracts_preserve_implementations() {
     check(
         "sequence-collections",

@@ -13,6 +13,7 @@ pub enum Type {
     Unit,
     Bool,
     Int,
+    RawInt,
     Float,
     CodePoint,
     Byte,
@@ -55,6 +56,7 @@ pub enum DispatchTypeKey {
     Unit,
     Bool,
     Int,
+    RawInt,
     Float,
     CodePoint,
     Byte,
@@ -118,6 +120,7 @@ impl ResolvedCall {
 /// Canonical standard-library record identities, resolved once after lowering.
 #[derive(Debug, Default)]
 pub struct CoreRecords {
+    pub int: Option<RecordId>,
     pub string: Option<RecordId>,
     pub symbol: Option<RecordId>,
     pub bytes: Option<RecordId>,
@@ -131,6 +134,7 @@ impl CoreRecords {
                 .and_then(|id| hir.record_named(id, name))
         };
         Self {
+            int: find("core.int", "Int"),
             string: find("core.string", "String"),
             symbol: find("core.symbol", "Symbol"),
             bytes: find("core.bytes", "Bytes"),
@@ -207,7 +211,13 @@ impl TypeInformation {
     pub fn is_copy(&self, ty: TypeId) -> bool {
         matches!(
             self.types[ty],
-            Type::Unit | Type::Bool | Type::Int | Type::Float | Type::CodePoint | Type::Byte
+            Type::Unit
+                | Type::Bool
+                | Type::Int
+                | Type::RawInt
+                | Type::Float
+                | Type::CodePoint
+                | Type::Byte
         ) || matches!(
             self.types[ty],
             Type::Record { record, .. }
@@ -264,6 +274,7 @@ impl TypeInformation {
             Type::Unit => DispatchTypeKey::Unit,
             Type::Bool => DispatchTypeKey::Bool,
             Type::Int => DispatchTypeKey::Int,
+            Type::RawInt => DispatchTypeKey::RawInt,
             Type::Float => DispatchTypeKey::Float,
             Type::CodePoint => DispatchTypeKey::CodePoint,
             Type::Byte => DispatchTypeKey::Byte,
@@ -333,6 +344,7 @@ impl TypeInformation {
             Type::Unit => "()".into(),
             Type::Bool => "Bool".into(),
             Type::Int => "Int".into(),
+            Type::RawInt => "RawInt".into(),
             Type::Float => "Float".into(),
             Type::CodePoint => "CodePoint".into(),
             Type::Byte => "Byte".into(),

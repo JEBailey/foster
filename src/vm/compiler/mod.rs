@@ -85,6 +85,7 @@ fn collect_generic_names(
         Type::Unit
         | Type::Bool
         | Type::Int
+        | Type::RawInt
         | Type::Float
         | Type::CodePoint
         | Type::Byte
@@ -605,7 +606,7 @@ fn verification_type_inner(
         }
         crate::types::Type::Unit => VerificationType::Unit,
         crate::types::Type::Bool => VerificationType::Bool,
-        crate::types::Type::Int => VerificationType::Integer,
+        crate::types::Type::Int | crate::types::Type::RawInt => VerificationType::Integer,
         crate::types::Type::Float => VerificationType::Float,
         crate::types::Type::CodePoint => VerificationType::CodePoint,
         crate::types::Type::Byte => VerificationType::Byte,

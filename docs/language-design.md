@@ -677,7 +677,10 @@ function result has an expected `Int` type. The compiler records the conversion 
 produces an `Int` value; it does not merely reinterpret the source value. Widening is not reversed,
 does not lift through containers, and does not change unconstrained generic inference. Converting an
 `Int` to `Byte` or `CodePoint` remains explicit and checked because not every integer is valid.
-`String`, `Symbol`, `Bytes`, `ByteBuffer`, and `List<T>` are instead always-available opaque Foster
+`Int` is an always-available Foster type containing private signed 64-bit `RawInt` storage.
+Its wrapper construction and storage reads lower directly to scalar values, with no wrapper
+allocation. Integer literals, checked arithmetic, and the native 64-bit integer ABI are unchanged.
+`String`, `Symbol`, `Bytes`, `ByteBuffer`, and `List<T>` are also always-available opaque Foster
 types declared in their respective core modules. `String` contains private `Bytes`, `Symbol`
 contains private `String`, `Bytes` contains private compact `RawBytes`, `List<T>` contains private
 `RawList<T>`, and `ByteBuffer` contains a private `List<Byte>`. Literals and trusted constructors

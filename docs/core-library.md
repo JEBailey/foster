@@ -65,7 +65,7 @@ being added accidentally.
 | `std.crypto.sha256` | One-shot SHA-256 returning 64 lowercase hexadecimal characters |
 | `core.string` | Boundary queries, slicing, splitting, joining, prefix predicates, case conversion, trimming, and characters |
 | `core.bool` | Boolean composition and conditional singleton-list construction |
-| `core.int` | Bounds, comparison, sign, parity, ranges, formatting, and integer powers |
+| `core.int` | `Int` with private primitive storage, bounds, comparison, sign, parity, ranges, formatting, and integer powers |
 | `core.float` | Bounds, comparison, sign, clamping, and round-trippable formatting |
 | `std.fs` | `File` resources, typed whole-file I/O, directory operations, copying, moving, and path-kind queries |
 | `std.path` | Typed `Path` values plus compatible string-based platform path operations |

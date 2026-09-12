@@ -42,6 +42,9 @@ impl Checker<'_> {
                 let builtin = match (name.as_str(), arguments.as_slice()) {
                     ("Bool", []) => Some(Ty::Bool),
                     ("Int", []) => Some(Ty::Int),
+                    ("RawInt", []) if self.hir.modules[module].name == "core.int" => {
+                        Some(Ty::RawInt)
+                    }
                     ("Float", []) => Some(Ty::Float),
                     ("String", []) => Some(self.string_type()),
                     ("CodePoint", []) => Some(Ty::CodePoint),
@@ -250,6 +253,7 @@ impl Checker<'_> {
 
     pub(super) fn private_type_in(&self, ty: &Ty) -> Option<String> {
         match ty {
+            Ty::RawInt => Some("RawInt".into()),
             Ty::Record(record, arguments) => (!self.hir.records[*record].public)
                 .then(|| self.hir.records[*record].name.clone())
                 .or_else(|| arguments.iter().find_map(|ty| self.private_type_in(ty))),

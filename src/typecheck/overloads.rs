@@ -94,6 +94,7 @@ impl Checker<'_> {
             Ty::Unit => DispatchTypeKey::Unit,
             Ty::Bool => DispatchTypeKey::Bool,
             Ty::Int => DispatchTypeKey::Int,
+            Ty::RawInt => DispatchTypeKey::RawInt,
             Ty::Float => DispatchTypeKey::Float,
             Ty::CodePoint => DispatchTypeKey::CodePoint,
             Ty::Byte => DispatchTypeKey::Byte,

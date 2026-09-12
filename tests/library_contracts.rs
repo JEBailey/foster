@@ -1,6 +1,27 @@
 use foster::ast::{TypeExpr, VariantKind};
 
 #[test]
+fn integer_storage_is_private_and_bootstrapped() {
+    let compilation = foster::compile("func main() -> Int { 42.copy() }").unwrap();
+    let int = compilation.types.core.int.expect("Foster Int declaration");
+    let declaration = &compilation.hir.records[int];
+    assert_eq!(declaration.fields.len(), 1);
+    assert_eq!(declaration.fields[0].name, "value");
+    assert!(!declaration.fields[0].public);
+    assert_eq!(foster::vm::run(&compilation).unwrap().to_string(), "42");
+    for source in [
+        "import core.int\nfunc main() -> Int { 42.value }",
+        "import core.int\nfunc main() -> Int { Int { value: 42 } }",
+        "import core.int\nfunc expose(value: RawInt) -> RawInt { value }\nfunc main() -> Int { 0 }",
+    ] {
+        assert!(
+            foster::compile(source).is_err(),
+            "private storage accepted: {source}"
+        );
+    }
+}
+
+#[test]
 fn nested_receiver_results_reject_an_unrelated_implementation() {
     let error = foster::compile(
         r#"

@@ -13,6 +13,7 @@ pub(super) fn slots(
             D::Unit => S::Primitive("unit".into()),
             D::Bool => S::Primitive("bool".into()),
             D::Int => S::Primitive("int".into()),
+            D::RawInt => S::Primitive("raw_int".into()),
             D::Float => S::Primitive("float".into()),
             D::CodePoint => S::Primitive("code_point".into()),
             D::Byte => S::Primitive("byte".into()),
