@@ -14,8 +14,8 @@ general without weakening its current guarantees.
   subtraction, multiplication, and saved integer comparisons to richer computed predicates and
   range facts. Algebraic equivalence, other arithmetic operators, dynamically indexed operands,
   effectful initializers, and larger formulas remain conservative.
-- Extend result provenance and projected-reference invalidation precision for dynamically selected
-  callables, opaque factories, hidden captured borrowers, and effectful calls.
+- Extend result provenance beyond bounded known-target sets and runtime selection from known
+  callable lists to opaque factories, hidden captured borrowers, and effectful calls.
 - Define effect-polymorphic callable contracts beyond the concrete effect annotations.
 - Decide whether public APIs require explicit annotations beyond the checks already performed by
   inference.

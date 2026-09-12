@@ -990,6 +990,7 @@ impl<'a> Builder<'a> {
                     .collect(),
             ),
             hir::Expr::Closure { function, captures } => BorrowValue::Callable {
+                target: *function,
                 parameters: self.callable_parameters(*function),
                 environment: Box::new(BorrowValue::Merge(
                     captures
@@ -1020,6 +1021,7 @@ impl<'a> Builder<'a> {
                 )),
             },
             hir::Expr::Name(ResolvedName::Function(function)) => BorrowValue::Callable {
+                target: *function,
                 parameters: self.callable_parameters(*function),
                 environment: Box::new(BorrowValue::Empty),
             },

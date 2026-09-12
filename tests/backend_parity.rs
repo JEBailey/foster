@@ -2,6 +2,30 @@
 use foster::{native, vm};
 
 #[test]
+fn dynamic_callable_selection_preserves_shared_reference_results() {
+    check_stdout(
+        "dynamic-callable-selection",
+        r#"
+func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref left }
+func also_first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref left }
+func choose(index: Int, flag: Bool) -> Int {
+    let left = [21]
+    let right = [99]
+    let callbacks = branch flag { true -> [first, also_first]
+        _ -> [also_first, first] }
+    let callback = callbacks[index]
+    let selected = callback(ref left[0], ref right[0])
+    right.push(100)
+    println(selected)
+    21
+}
+func main() -> Int { choose(0, true) + choose(1, false) }
+"#,
+        "21\n21\n42",
+    );
+}
+
+#[test]
 fn computed_integer_predicates_preserve_snapshots_and_failures() {
     check(
         "computed-integer-predicates",

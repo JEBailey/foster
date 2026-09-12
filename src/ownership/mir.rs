@@ -245,6 +245,7 @@ pub struct LoanDefinition {
 pub enum BorrowValue {
     /// A callable's result parameter dependencies, distinct from its captured loans.
     Callable {
+        target: FunctionId,
         parameters: Vec<usize>,
         environment: Box<BorrowValue>,
     },
@@ -292,8 +293,31 @@ pub struct ProvenanceAnalysis {
 pub struct ProvenanceState {
     /// Missing entries are unknown, never independent. Joins union dependencies only
     /// when every predecessor knows the callable at this exact place.
-    pub callables: HashMap<Place, std::collections::BTreeSet<usize>>,
+    pub callables: HashMap<CallableLocation, CallableTargets>,
     pub contents: HashMap<Place, std::collections::HashSet<LoanId>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct CallableLocation {
+    pub place: Place,
+    /// The summary covers every element of this list, not the list value itself.
+    pub elements: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CallableTargets {
+    pub targets: std::collections::BTreeSet<FunctionId>,
+    pub parameters: std::collections::BTreeSet<usize>,
+}
+
+impl CallableTargets {
+    /// Widen to unknown when the bounded target set is exceeded. Never keep a
+    /// truncated set: an omitted target could add a result dependency.
+    pub fn merge(&mut self, other: &Self) -> bool {
+        self.targets.extend(&other.targets);
+        self.parameters.extend(&other.parameters);
+        self.targets.len() <= 8
+    }
 }
 
 #[derive(Debug, Clone, Default)]

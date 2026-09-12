@@ -8,6 +8,144 @@ func invoke(callback: func(Int) -> String, value: Int) -> String { callback(valu
 func make() -> func(Int) -> String { describe }
 "#;
 
+fn dynamic_source(setup: &str, call: &str, changed: &str) -> String {
+    format!(
+        r#"
+type Holder<T> = {{ value: T }}
+func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}
+func also_first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}
+func second[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref right }}
+func choose(index: Int, flag: Bool) -> Int {{
+    let left = [10]
+    let right = [32]
+    {setup}
+    let selected = {call}(ref left[0], ref right[0])
+    {changed}
+    println(selected)
+    0
+}}
+func main() -> Int {{ choose(0, true) + choose(1, false) }}
+"#
+    )
+}
+
+#[test]
+fn bounded_dynamic_targets_preserve_shared_result_dependencies() {
+    for (setup, call) in [
+        ("let callbacks = [first, also_first]", "callbacks[index]"),
+        (
+            "let callbacks = [first, also_first]\nlet callback = callbacks[index]",
+            "callback",
+        ),
+        (
+            "let callbacks = [first, also_first]\nlet moved = move callbacks",
+            "moved[index]",
+        ),
+        (
+            "let held = Holder { value: [first, also_first] }",
+            "held.value[index]",
+        ),
+        (
+            "let callbacks = branch flag { true -> [first, also_first]\n_ -> [also_first, first] }",
+            "callbacks[index]",
+        ),
+        (
+            "let callback = branch flag { true -> first\n_ -> also_first }",
+            "callback",
+        ),
+    ] {
+        let source = dynamic_source(setup, call, "right.push(99)");
+        assert_eq!(
+            foster::run(&source).unwrap_or_else(|error| panic!("{setup}: {error:?}")),
+            Value::Integer(0)
+        );
+        assert_eq!(
+            foster::compile(&source.replace("right.push(99)", "left.push(99)"))
+                .unwrap_err()
+                .code
+                .as_deref(),
+            Some("E0401")
+        );
+    }
+}
+
+#[test]
+fn dynamic_target_unions_keep_all_origins_and_forget_mutated_lists() {
+    for setup in [
+        "let callbacks = [first, second]",
+        "let callbacks = [first, also_first]\ncallbacks[index] = second",
+        "let callbacks = [first, also_first]\ncallbacks[0] = second",
+        "let callbacks = [first, also_first]\ncallbacks.push(second)",
+        "let callbacks = [first, also_first]\nlet alias = ref callbacks[0]\nalias = second",
+        "let callbacks = [first, also_first]\nlet change = [ref callbacks] () -> { callbacks[0] = second\n() }\nchange()",
+        "let callbacks = branch flag { true -> [first, also_first]\n_ -> [first, second] }",
+    ] {
+        let source = dynamic_source(setup, "callbacks[index]", "right.push(99)");
+        foster::compile(&source.replace("right.push(99)", "()"))
+            .unwrap_or_else(|error| panic!("{setup}: {error:?}"));
+        assert_eq!(
+            foster::compile(&source).unwrap_err().code.as_deref(),
+            Some("E0401"),
+            "{setup}"
+        );
+    }
+}
+
+#[test]
+fn dynamic_target_limits_and_unknown_entries_use_the_full_contract() {
+    for count in [8, 9] {
+        let functions = (0..count).map(|index| format!(
+            "func target{index}[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}\n"
+        )).collect::<String>();
+        let names = (0..count)
+            .map(|index| format!("target{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let source = format!(
+            "{functions}{}",
+            dynamic_source(
+                &format!("let callbacks = [{names}]"),
+                "callbacks[index]",
+                "right.push(99)"
+            )
+        );
+        let checked = foster::compile(&source);
+        if count == 8 {
+            checked.unwrap();
+        } else {
+            assert_eq!(checked.unwrap_err().code.as_deref(), Some("E0401"));
+        }
+    }
+    let source = dynamic_source("let callbacks = [unknown, first]", "callbacks[index]", "right.push(99)")
+        .replace("func choose(index: Int, flag: Bool)", "func choose[g: group Int](unknown: func(ref[g] Int, ref[g] Int) -> ref[g] Int, index: Int, flag: Bool)")
+        .replace("choose(0, true) + choose(1, false)", "choose(second, 0, true)");
+    foster::compile(&source.replace("right.push(99)", "()")).unwrap();
+    assert_eq!(
+        foster::compile(&source).unwrap_err().code.as_deref(),
+        Some("E0401")
+    );
+}
+
+#[test]
+fn dynamic_targets_retain_captured_loans() {
+    let source = r#"
+func choose(index: Int) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    let callbacks = [[ref selected] () -> selected, [ref selected] () -> selected]
+    let callback = callbacks[index]
+    values.push(20)
+    callback()
+}
+func main() -> Int { choose(1) }
+"#;
+    foster::compile(&source.replace("values.push(20)", "()")).unwrap();
+    assert_eq!(
+        foster::compile(source).unwrap_err().code.as_deref(),
+        Some("E0401")
+    );
+}
+
 #[test]
 fn independent_results_survive_callable_storage_adaptation_and_capture() {
     for (setup, call) in [

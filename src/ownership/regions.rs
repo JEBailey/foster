@@ -4,7 +4,7 @@ use crate::error::FosterError;
 use crate::hir::{FunctionId, PackageHir, Projection, VariantId};
 use crate::types::TypeInformation;
 
-use super::mir::{place_contains, places_overlap};
+use super::mir::{CallableLocation, CallableTargets, place_contains, places_overlap};
 use super::{
     BlockId, BorrowValue, Comparison, ComparisonKind, ComparisonOperand, Function,
     InvalidationKind, LoanId, Operation, Place, PlaceRoot, Program, ProvenanceAnalysis,
@@ -1676,56 +1676,108 @@ fn store(destination: &Place, value: &BorrowValue, state: &mut ProvenanceState) 
             replace(destination, loans, state);
         }
     }
-    for (suffix, parameters) in callables {
+    for (suffix, elements, targets) in callables {
         let mut place = destination.clone();
         place.projections.extend(suffix);
-        state.callables.insert(place, parameters);
+        state
+            .callables
+            .insert(CallableLocation { place, elements }, targets);
     }
 }
 
 fn callable_fields(
     value: &BorrowValue,
     state: &ProvenanceState,
-) -> Vec<(Vec<Projection>, std::collections::BTreeSet<usize>)> {
+) -> Vec<(Vec<Projection>, bool, CallableTargets)> {
     match value {
-        BorrowValue::Callable { parameters, .. } => {
-            vec![(vec![], parameters.iter().copied().collect())]
+        BorrowValue::Callable {
+            target, parameters, ..
+        } => {
+            vec![(
+                vec![],
+                false,
+                CallableTargets {
+                    targets: std::collections::BTreeSet::from([*target]),
+                    parameters: parameters.iter().copied().collect(),
+                },
+            )]
         }
         BorrowValue::Tracked { loans, .. } => callable_fields(loans, state),
-        BorrowValue::Place(place) | BorrowValue::MovePlace(place) => state
-            .callables
-            .iter()
-            .filter(|(stored, _)| {
-                place_contains(place, stored)
-                    && stored.projections.iter().all(|projection| {
-                        matches!(
-                            projection,
-                            Projection::Field(_)
-                                | Projection::Index {
-                                    constant: Some(_),
-                                    ..
-                                }
-                        )
+        BorrowValue::Place(place) | BorrowValue::MovePlace(place) => {
+            if matches!(
+                place.projections.last(),
+                Some(Projection::Index { constant: None, .. })
+            ) {
+                let mut list = place.clone();
+                list.projections.pop();
+                return state
+                    .callables
+                    .get(&CallableLocation {
+                        place: list,
+                        elements: true,
                     })
-            })
-            .map(|(stored, parameters)| {
-                (
-                    stored.projections[place.projections.len()..].to_vec(),
-                    parameters.clone(),
-                )
-            })
-            .collect(),
-        BorrowValue::Fields(fields) => fields
-            .iter()
-            .flat_map(|(prefix, value)| {
-                callable_fields(value, state)
-                    .into_iter()
-                    .map(|(suffix, parameters)| {
-                        (prefix.iter().cloned().chain(suffix).collect(), parameters)
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .collect(),
+                    .map(|targets| vec![(vec![], false, targets.clone())])
+                    .unwrap_or_default();
+            }
+            state
+                .callables
+                .iter()
+                .filter(|(stored, _)| {
+                    place_contains(place, &stored.place)
+                        && stored.place.projections.iter().all(|projection| {
+                            matches!(
+                                projection,
+                                Projection::Field(_)
+                                    | Projection::Index {
+                                        constant: Some(_),
+                                        ..
+                                    }
+                            )
+                        })
+                })
+                .map(|(stored, parameters)| {
+                    (
+                        stored.place.projections[place.projections.len()..].to_vec(),
+                        stored.elements,
+                        parameters.clone(),
+                    )
+                })
+                .collect()
+        }
+        BorrowValue::Fields(fields) => {
+            let mut result: Vec<_> = fields
+                .iter()
+                .flat_map(|(prefix, value)| {
+                    callable_fields(value, state)
+                        .into_iter()
+                        .map(|(suffix, elements, targets)| {
+                            (
+                                prefix.iter().cloned().chain(suffix).collect(),
+                                elements,
+                                targets,
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            // Only a complete list literal proves that every possible element
+            // has a known target. An unknown entry invalidates the whole summary.
+            let mut summary: Option<CallableTargets> = None;
+            let complete = !fields.is_empty() && fields.iter().enumerate().all(|(index, (path, _))| {
+                if !matches!(path.as_slice(), [Projection::Index { constant: Some(value), .. }] if *value == index as i64) {
+                    return false;
+                }
+                let entry = result.iter()
+                    .find(|(candidate, elements, _)| candidate == path && !elements);
+                let Some((_, _, targets)) = entry else { return false; };
+                if let Some(summary) = &mut summary { summary.merge(targets) }
+                else { summary = Some(targets.clone()); true }
+            });
+            if complete {
+                result.push((vec![], true, summary.expect("nonempty list")));
+            }
+            result
+        }
         _ => vec![],
     }
 }
@@ -1741,8 +1793,8 @@ fn evaluate(value: &BorrowValue, state: &mut ProvenanceState) -> HashSet<LoanId>
             let fields = callable_fields(callee, state);
             let known = fields
                 .iter()
-                .find(|(path, _)| path.is_empty())
-                .map(|(_, parameters)| parameters);
+                .find(|(path, elements, _)| path.is_empty() && !elements)
+                .map(|(_, _, targets)| &targets.parameters);
             let parameters = known
                 .cloned()
                 .unwrap_or_else(|| fallback_parameters.iter().copied().collect());
@@ -1778,7 +1830,7 @@ fn evaluate(value: &BorrowValue, state: &mut ProvenanceState) -> HashSet<LoanId>
                 .retain(|stored, _| !place_contains(place, stored));
             state
                 .callables
-                .retain(|stored, _| !place_contains(place, stored));
+                .retain(|stored, _| !places_overlap(place, &stored.place));
             loans
         }
         BorrowValue::Merge(values) => values
@@ -1796,7 +1848,7 @@ fn replace(destination: &Place, loans: HashSet<LoanId>, state: &mut ProvenanceSt
     // Any overlapping write loses target identity (including a dynamic index).
     state
         .callables
-        .retain(|stored, _| !places_overlap(destination, stored));
+        .retain(|stored, _| !places_overlap(destination, &stored.place));
     state
         .contents
         .retain(|stored, _| !place_contains(destination, stored));
@@ -1809,8 +1861,7 @@ fn join(existing: &mut ProvenanceState, incoming: &ProvenanceState) -> bool {
     let previous = existing.callables.clone();
     existing.callables.retain(|place, parameters| {
         if let Some(other) = incoming.callables.get(place) {
-            parameters.extend(other);
-            true
+            parameters.merge(other)
         } else {
             false
         }

@@ -645,9 +645,14 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   comparison proves them unequal and conservatively overlap otherwise.
 - Provenance flows through the implemented aggregate and closure expressions. Direct calls
   substitute the callee's inferred result provenance at matching receiver and argument places;
-  summaries are propagated to a fixed point across chains of direct calls. Indirect calls preserve known result-parameter summaries through moves, fixed aggregate
-  storage, and joins; erased/unknown callables use checked result-type and group contracts.
-  Hidden environment dependencies and dynamic target selection remain conservative.
+  summaries are propagated to a fixed point across chains of direct calls. Indirect calls preserve
+  sets of up to eight known targets through moves, fixed aggregate storage, and joins, combining
+  every target's result-parameter dependencies. Runtime indexing into a list with entirely known
+  callable elements uses the union for all possible elements. Writes to the list invalidate that
+  summary; effectful calls and alias writes retain conservative invalidation. Unknown elements,
+  unknown predecessors, and larger target sets fall back to checked result-type and group contracts.
+  Captured loans remain dependencies independently of the target's argument summary. Hidden
+  environment dependencies and other dynamic target sources remain conservative.
 - Implicit copy behavior is a built-in classification. The structural `Copy` capability supports
   explicit user-defined copying without changing assignment or capture semantics.
 - Runtime values still use managed host representations in the VM. Records use shared layouts
