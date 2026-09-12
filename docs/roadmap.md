@@ -49,9 +49,11 @@ general without weakening its current guarantees.
   inference.
 - Define explicit re-exports while preserving the filesystem-derived module model and declarations
   that are private by default.
-- Validate partial inherited defaults on abstract library contracts before adding a shared
-  `Collection.empty?` body. Native representation selection must distinguish an abstract contract
-  with some defaults from a concrete implementation.
+- Validate a shared `Collection.empty?` body across the standard collection implementations before
+  adopting it. A focused partial-default regression passes in both backends and optimization modes:
+  a default calls a required method on two concrete layouts, directly and through a contract view.
+  That case does not reproduce the previously recorded native representation issue; the full
+  `Collection` integration remains to be checked.
 
 The focused [ownership](ownership.md), [closure](closures.md), and
 [effect derivation](effect-derivation.md) documents contain the detailed constraints behind this

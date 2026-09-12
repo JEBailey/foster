@@ -2,6 +2,15 @@
 use foster::{native, vm};
 
 #[test]
+fn partial_inherited_defaults_preserve_concrete_receivers() {
+    check(
+        "partial-inherited-defaults",
+        include_str!("fixtures/programs/partial_inherited_defaults.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn grapheme_accessors_work_without_imports() {
     check(
         "implicit-graphemes",

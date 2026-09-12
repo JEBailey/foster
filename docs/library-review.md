@@ -50,9 +50,12 @@ Socket-lifetime and native collection/iterator regressions cover automatic clean
 
 ## Remaining boundaries
 
-- `Collection.empty?` remains a required method supplied by each implementation. Adding a shared
-  body exposed a native distinction between partial inherited defaults and concrete implementation
-  storage; that compiler work is recorded in the roadmap.
+- `Collection.empty?` remains a required method supplied by each implementation. The focused
+  [partial inherited default regression](../tests/fixtures/programs/partial_inherited_defaults.fos)
+  passes in both backends with optimization enabled and disabled, including calls through a
+  contract view over two different concrete layouts. It does not reproduce the previously recorded
+  native representation issue. Adding the shared body to `Collection` and validating all standard
+  collection implementations remains roadmap work.
 - Host operations retain conservative mutation effects because reading an integer handle can
   mutate the external socket or random source. Some TOML helpers also retain broader private effect
   annotations. The compiler reports these as warnings, not missing type information.
