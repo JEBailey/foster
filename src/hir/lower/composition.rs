@@ -25,6 +25,28 @@ pub(super) fn materialize(
     package: &Package,
     source_functions: &HashMap<(ModuleId, usize), FunctionId>,
 ) -> Result<(), FosterError> {
+    // Imported materialized methods still live in the donor's lexical module.
+    // Restore compiler identities in their checked signatures so a private
+    // recipient type remains accessible without making it public to consumers.
+    let imported = hir
+        .external_functions
+        .keys()
+        .copied()
+        .filter(|function| hir.composition_owners.contains_key(function))
+        .collect::<Vec<_>>();
+    for function in imported {
+        let mut definition = hir.functions[function].clone();
+        for ty in definition.parameter_types.iter_mut().flatten() {
+            *ty = qualify(hir, definition.module, ty);
+        }
+        if let Some(ty) = &mut definition.return_type {
+            *ty = qualify(hir, definition.module, ty);
+        }
+        for group in &mut definition.groups {
+            group.element = qualify(hir, definition.module, &group.element);
+        }
+        hir.functions[function] = definition;
+    }
     let owners = hir
         .records
         .iter()
@@ -119,11 +141,6 @@ pub(super) fn materialize(
             let key = (member.clone(), format!("{parameters:?}"));
             let own = hir.functions[candidate.original].module == record.module
                 && candidate.source.owner.as_deref() == Some(record.name.as_str());
-            // A compiled method has no source body to adapt to a new receiver layout.
-            // Client compositions must supply their implementations explicitly.
-            if !own && hir.external_functions.contains_key(&candidate.original) {
-                continue;
-            }
             let function = if own {
                 candidate.original
             } else {
@@ -131,6 +148,22 @@ pub(super) fn materialize(
                 // helpers in a default body must not resolve in the recipient's scope.
                 let alias = type_identity(hir, record.nominal);
                 let mut definition = hir.functions[candidate.original].clone();
+                // A donor's inferred effects describe its old receiver. Re-infer them
+                // for the recipient, while preserving explicit template annotations,
+                // exactly as for a source-defined inherited body.
+                if hir.external_functions.contains_key(&candidate.original) {
+                    definition.parameter_types = candidate
+                        .source
+                        .parameters
+                        .iter()
+                        .map(|p| p.ty.clone())
+                        .collect();
+                    definition.return_type = candidate.source.return_type.clone();
+                    definition.effects = candidate.source.effects.clone();
+                    definition.effects_explicit = candidate.source.effects_explicit;
+                    definition.groups = candidate.source.groups.clone();
+                    definition.suspends = candidate.source.suspends;
+                }
                 definition.public &= record.public;
                 definition.name =
                     format!("{}.{member}$default{}", record.name, hir.functions.len());
@@ -251,6 +284,15 @@ fn collect(
         && let Some(program) = &package.modules[&hir.modules[definition.module].name].program
     {
         for (index, source) in program.functions.iter().enumerate() {
+            let original = sources[&(definition.module, index)];
+            let source = if let Some(external) = hir.external_functions.get(&original) {
+                let Some(template) = external.context.default_template.as_ref() else {
+                    continue;
+                };
+                template
+            } else {
+                source
+            };
             if source.owner.as_deref() != Some(definition.name.as_str())
                 || !source.receiver
                 || !source.public
@@ -274,7 +316,7 @@ fn collect(
             candidates.push(Candidate {
                 module: definition.module,
                 source: source.clone(),
-                original: sources[&(definition.module, index)],
+                original,
                 substitutions: method_substitutions,
             });
         }

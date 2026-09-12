@@ -18,7 +18,7 @@ mod interface;
 mod linking;
 
 const MAGIC: &[u8; 8] = b"FOSTERLB";
-pub const FORMAT_VERSION: u16 = 1;
+pub const FORMAT_VERSION: u16 = 2;
 const MAX_SECTION: usize = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
@@ -42,6 +42,8 @@ pub struct Interface {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FunctionContext {
+    /// Receiver-adaptable body for a public default; ordinary calls use compiled code.
+    pub default_template: Option<ast::Function>,
     pub composition_owner: Option<String>,
     pub dispatch: bool,
     pub registrations: Vec<(String, String)>,
@@ -177,6 +179,31 @@ impl Library {
                 module.declarations.functions.iter().zip(&module.functions)
             {
                 interface::validate_function(module, declaration, binding, &names)?;
+                if let Some(template) = self
+                    .interface
+                    .contexts
+                    .get(&binding.function)
+                    .and_then(|context| context.default_template.as_ref())
+                    && (!declaration.public
+                        || !declaration.receiver
+                        || !template.public
+                        || !template.receiver
+                        || template.intrinsic.is_some()
+                        || template.body_is_recovery_stub
+                        || template.name != declaration.name
+                        || template.owner != declaration.owner
+                        || template.type_parameters != declaration.type_parameters
+                        || template.parameters.len() != declaration.parameters.len()
+                        || template
+                            .parameters
+                            .iter()
+                            .map(|p| &p.name)
+                            .collect::<BTreeSet<_>>()
+                            .len()
+                            != template.parameters.len())
+                {
+                    return Err(error("invalid default adaptation template"));
+                }
                 if !declaration.body.is_empty()
                     || !declaration.body_is_recovery_stub
                     || !declaration.effects_explicit

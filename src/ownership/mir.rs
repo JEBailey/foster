@@ -463,6 +463,8 @@ impl Terminator {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FailureOperation {
+    /// Checked integer arithmetic or a byte shift with a checked shift count.
+    Arithmetic { expression: crate::hir::ExprId },
     /// Read, write, move, or borrow of an indexed place.
     Bounds { expression: crate::hir::ExprId },
     /// An unhandled host failure, as opposed to an ordinary `Result.Error` value.

@@ -90,6 +90,33 @@ pub(super) fn build(
             contexts.insert(
                 binding.function,
                 FunctionContext {
+                    default_template: compilation
+                        .hir
+                        .external_functions
+                        .get(&id)
+                        .and_then(|external| external.context.default_template.clone())
+                        .or_else(|| {
+                            program
+                                .functions
+                                .iter()
+                                .find(|source| {
+                                    source.name == function.name
+                                        && source.span == function.span
+                                        && source.public
+                                        && source.receiver
+                                        && source.intrinsic.is_none()
+                                        && !source.body_is_recovery_stub
+                                        && source.owner.as_ref().is_some_and(|owner| {
+                                            module.records.get(owner).is_some_and(|record| {
+                                                !compilation.hir.records[*record]
+                                                    .fields
+                                                    .iter()
+                                                    .any(|field| !field.public)
+                                            })
+                                        })
+                                })
+                                .cloned()
+                        }),
                     composition_owner: compilation
                         .hir
                         .composition_owners
@@ -367,6 +394,12 @@ pub(crate) fn mount(
                 .get(&binding.function)
                 .cloned()
                 .unwrap_or_default();
+            if let Some(template) = &mut context.default_template {
+                let mut carrier = module.declarations.clone();
+                carrier.functions = vec![template.clone()];
+                rewrite(&mut carrier, &names);
+                *template = carrier.functions.remove(0);
+            }
             if let Some(owner) = &mut context.composition_owner {
                 *owner = names[owner].clone();
             }
@@ -461,6 +494,135 @@ fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {
             ty(&mut g.element, names);
         }
     }
+    fn function(f: &mut ast::Function, names: &BTreeMap<String, String>) {
+        for p in &mut f.parameters {
+            if let Some(t) = &mut p.ty {
+                ty(t, names);
+            }
+        }
+        if let Some(t) = &mut f.return_type {
+            ty(t, names);
+        }
+        for g in &mut f.groups {
+            ty(&mut g.element, names);
+        }
+        block(&mut f.body, names);
+    }
+    fn block(body: &mut crate::block::Block<ast::Stmt>, names: &BTreeMap<String, String>) {
+        let original = std::mem::take(body);
+        for (statement, span) in original.iter_spanned() {
+            let mut statement = statement.clone();
+            match &mut statement {
+                ast::Stmt::Return { value, guard } => {
+                    expression(value, names);
+                    if let Some(guard) = guard {
+                        expression(guard, names);
+                    }
+                }
+                ast::Stmt::Assert { condition, message } => {
+                    expression(condition, names);
+                    if let Some(message) = message {
+                        expression(message, names);
+                    }
+                }
+                ast::Stmt::Loop { body } => block(body, names),
+                ast::Stmt::Break { guard } | ast::Stmt::Continue { guard } => {
+                    if let Some(guard) = guard {
+                        expression(guard, names);
+                    }
+                }
+                ast::Stmt::Bind { value, .. }
+                | ast::Stmt::Assign { value, .. }
+                | ast::Stmt::Expr(value) => expression(value, names),
+                ast::Stmt::Set { place, value } => {
+                    expression(place, names);
+                    expression(value, names);
+                }
+                ast::Stmt::Function(f) => function(f, names),
+            }
+            body.push(statement, span.clone());
+        }
+    }
+    fn expression(value: &mut ast::Expr, names: &BTreeMap<String, String>) {
+        use ast::Expr as E;
+        match value {
+            E::Spanned {
+                expression: inner, ..
+            }
+            | E::Reference(inner)
+            | E::MoveOut(inner)
+            | E::Remote(inner)
+            | E::Await(inner)
+            | E::Try(inner)
+            | E::Unary { operand: inner, .. }
+            | E::Member { object: inner, .. }
+            | E::Qualified {
+                namespace: inner, ..
+            } => expression(inner, names),
+            E::List(items) => {
+                for item in items {
+                    expression(item, names);
+                }
+            }
+            E::Call { callee, arguments } | E::PartialApplication { callee, arguments } => {
+                expression(callee, names);
+                for argument in arguments {
+                    expression(argument, names);
+                }
+            }
+            E::Index {
+                object: left,
+                index: right,
+            }
+            | E::Binary { left, right, .. }
+            | E::Logical { left, right, .. } => {
+                expression(left, names);
+                expression(right, names);
+            }
+            E::Record {
+                constructor,
+                fields,
+            } => {
+                expression(constructor, names);
+                for field in fields {
+                    expression(&mut field.value, names);
+                }
+            }
+            E::Branch { subject, arms } => {
+                if let Some(subject) = subject {
+                    expression(subject, names);
+                }
+                for arm in arms {
+                    if let ast::BranchTest::Condition(condition) = &mut arm.test {
+                        expression(condition, names);
+                    }
+                    block(&mut arm.body, names);
+                }
+            }
+            E::Closure {
+                parameters, body, ..
+            } => {
+                for parameter in parameters {
+                    if let Some(t) = &mut parameter.ty {
+                        ty(t, names);
+                    }
+                }
+                match body {
+                    ast::ClosureBody::Expression(value) => expression(value, names),
+                    ast::ClosureBody::Block(body) => block(body, names),
+                }
+            }
+            E::Unit
+            | E::Bool(_)
+            | E::Integer(_)
+            | E::Float(_)
+            | E::String(_)
+            | E::CodePoint(_)
+            | E::Symbol(_)
+            | E::Name(_)
+            | E::Placeholder => {}
+        }
+    }
     for import in &mut program.imports {
         if let Some(name) = names.get(&import.path.join(".")) {
             if import.alias.is_none() {
@@ -499,17 +661,7 @@ fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {
         }
     }
     for f in &mut program.functions {
-        for p in &mut f.parameters {
-            if let Some(t) = &mut p.ty {
-                ty(t, names);
-            }
-        }
-        if let Some(t) = &mut f.return_type {
-            ty(t, names);
-        }
-        for g in &mut f.groups {
-            ty(&mut g.element, names);
-        }
+        function(f, names);
     }
 }
 

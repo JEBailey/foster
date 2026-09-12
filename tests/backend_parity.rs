@@ -282,6 +282,47 @@ fn check_stdout(name: &str, source: &str, expected: &str) {
     check_process_output(name, source, expected, None);
 }
 
+#[test]
+fn checked_arithmetic_failures_clean_staged_arguments_without_invoking_callee() {
+    for (name, expression, message) in [
+        ("add", "maximum + one", "overflow"),
+        ("subtract", "minimum - one", "overflow"),
+        ("multiply", "maximum * two", "overflow"),
+        ("divide", "one / zero", "division"),
+        ("divide-overflow", "minimum / negative_one", "division"),
+        ("negate", "-minimum", "overflow"),
+        ("shift-left", "Byte.unchecked(1) << eight", "shift"),
+        ("shift-right", "Byte.unchecked(1) >> negative_one", "shift"),
+    ] {
+        let source = r#"
+import core.drop
+import core.byte
+type Item = & Drop & { id: Int }
+impl Item {
+    func deinit(self) -> () { println(self.id) }
+    func receive(self, argument: Item, value: Int, later: Item) -> Int [consume self, consume argument, consume later] {
+        println(999)
+        value
+    }
+}
+func make(id: Int) -> Item { println(id + 10)
+    Item { id: id }
+}
+func evaluate(maximum: Int, minimum: Int, one: Int, two: Int, zero: Int, negative_one: Int, eight: Int) -> Int {
+    let owner = Item { id: 3 }
+    make(1).receive(make(2), __EXPRESSION__, make(4))
+}
+func main() -> Int { evaluate(9223372036854775807, -9223372036854775807 - 1, 1, 2, 0, -1, 8) }
+"#.replace("__EXPRESSION__", expression);
+        check_process_output(
+            &format!("arithmetic-cleanup-{name}"),
+            &source,
+            "11\n12\n2\n1\n3",
+            Some(message),
+        );
+    }
+}
+
 fn check_process_output(name: &str, source: &str, expected: &str, failure: Option<&str>) {
     let compilation = foster::compile(source).unwrap();
     let prepared = native::prepare(&compilation).unwrap();

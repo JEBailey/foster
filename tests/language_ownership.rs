@@ -2845,6 +2845,131 @@ func main() -> Int { consume_value("owned") + inspect("borrowed") }
 }
 
 #[test]
+fn ownership_mir_classifies_checked_arithmetic_by_type() {
+    use foster::ownership::{FailureOperation, Operation, Terminator};
+    for (parameters, expression, checked) in [
+        ("a: Int, b: Int", "a + b", true),
+        ("a: Int, b: Int", "a - b", true),
+        ("a: Int, b: Int", "a * b", true),
+        ("a: Int, b: Int", "a / b", true),
+        ("a: Int", "-a", true),
+        ("a: Byte, b: Int", "a << b", true),
+        ("a: Byte, b: Int", "a >> b", true),
+        ("a: CodePoint, b: Int", "a + b", true),
+        ("a: Float, b: Float", "a + b", false),
+        ("a: Float, b: Float", "a / b", false),
+        ("a: Float", "-a", false),
+        ("a: Byte", "-a", false),
+        ("a: CodePoint", "-a", false),
+        ("a: Byte, b: Byte", "a & b", false),
+        ("a: Int, b: Int", "a < b", false),
+        ("a: String, b: String", "a + b", false),
+    ] {
+        let source = format!(
+            "func operation({parameters}) {{ let result = {expression}\n result }}\nfunc main() {{}}"
+        );
+        let compilation = foster::compile(&source).unwrap();
+        let module = compilation.hir.module_named("main").unwrap();
+        let id = compilation.hir.function_named(module, "operation").unwrap();
+        let function = &compilation.ownership.functions[&id];
+        let edges = function
+            .blocks
+            .iter()
+            .filter_map(|block| match &block.terminator {
+                Terminator::Checked {
+                    operation: FailureOperation::Arithmetic { expression },
+                    span,
+                    targets,
+                } => {
+                    assert_eq!(compilation.hir.expression_spans[expression], *span);
+                    Some(targets)
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            edges.len(),
+            usize::from(checked),
+            "{parameters}: {expression}"
+        );
+        for targets in edges {
+            assert!(matches!(
+                function.blocks[targets[1]].terminator,
+                Terminator::Fail
+            ));
+            assert!(
+                !function.blocks[targets[1]]
+                    .operations
+                    .iter()
+                    .any(|op| matches!(op, Operation::Initialize { .. }))
+            );
+            assert!(
+                function.blocks[targets[0]]
+                    .operations
+                    .iter()
+                    .any(|op| matches!(op, Operation::Initialize { .. })),
+                "only success initializes result"
+            );
+        }
+    }
+}
+
+#[test]
+fn arithmetic_failure_cleans_staged_arguments_before_invocation() {
+    use foster::ownership::{Operation, PlaceRoot, Terminator};
+    let source = r#"
+type Receiver = {}
+impl Receiver {
+    func receive(self, value: String, number: Int) -> Int [consume self, consume value] { number }
+}
+func checked(borrowed: String, numerator: Int, denominator: Int) -> Int {
+    let owned = "owned"
+    Receiver {}.receive(move owned, numerator / denominator)
+}
+func main() -> Int { checked("borrowed", 42, 1) }
+"#;
+    let compilation = foster::compile(source).unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let id = compilation.hir.function_named(module, "checked").unwrap();
+    let function = &compilation.ownership.functions[&id];
+    let borrowed = compilation.hir.functions[id].parameters[0];
+    let start = source.find("numerator / denominator").unwrap();
+    let (_, targets) = function
+        .blocks
+        .iter()
+        .find_map(|block| match &block.terminator {
+            Terminator::Checked { span, targets, .. } if span.start == start => {
+                Some((span, targets))
+            }
+            _ => None,
+        })
+        .expect("division must have an explicit ownership failure edge");
+    let failure = &function.blocks[targets[1]];
+    assert!(matches!(failure.terminator, Terminator::Fail));
+    assert_eq!(
+        failure
+            .operations
+            .iter()
+            .filter(|op| matches!(op,
+                Operation::Destroy { place, .. } if matches!(place.root, PlaceRoot::Temporary(_))
+            ))
+            .count(),
+        2,
+        "the staged receiver and argument must both be destroyed"
+    );
+    assert!(!failure.operations.iter().any(|op| matches!(op,
+        Operation::Destroy { place, .. } if place.root == PlaceRoot::Local(borrowed)
+    )));
+    assert!(
+        matches!(
+            function.blocks[targets[0]].terminator,
+            Terminator::Checked { .. }
+        ),
+        "only the success path may invoke the callee"
+    );
+}
+
+#[test]
 fn bounds_failures_have_cleanup_edges_before_transfer_and_result_initialization() {
     use foster::ownership::{FailureOperation, Operation, PlaceRoot, Terminator, UseMode};
     let compilation = foster::compile(

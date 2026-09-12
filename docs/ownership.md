@@ -450,7 +450,7 @@ program outside the implemented model. The current status is:
 | Rules | Status | Production requirement |
 | --- | --- | --- |
 | 1-4, 6-7, 9-10, 14, 16 | Enforced, with bounded comparison-based dynamic-index disjointness and conservative erased callable calls | Maintain compile-pass and compile-fail coverage for every rule and CFG shape. |
-| 5, 8, 11, 13 | Enforced for named locals, consumed parameters, expression temporaries, ordinary and guarded return, assertion failure, `try`, loop transfer, `await`, and cancellation; arbitrary runtime-error MIR edges remain partial | Finish generalized failure-edge lowering; runtime cleanup already invokes deinit. |
+| 5, 8, 11, 13 | Enforced for named locals, consumed parameters, expression temporaries, ordinary and guarded return, assertion failure, checked arithmetic and bounds, `try`, loop transfer, `await`, and cancellation | Preserve failure-edge coverage as new fallible operations are introduced; runtime cleanup invokes deinit. |
 | 12 | Partial | Loans remain governed by task ownership and effects; crossing-task storage and exclusivity still require a complete specification. |
 | 15 | Unsupported as a general boundary | Host and foreign interfaces must not retain references until retention contracts are implemented. |
 
@@ -506,9 +506,11 @@ can also prove that two stable dynamic-index operands differ. A write, move, des
 that overlaps a fact operand forgets the fact. Unsupported predicates and excess alternatives widen
 to the ordinary conservative union.
 
-Assertions, indexed reads/writes/moves/borrows, abrupt host operations, and synchronous calls have
-explicit success and failure successors in ownership MIR. `Checked` identifies bounds, host, and
-call failures and carries the source span. Its failure block destroys active expression temporaries
+Assertions, checked integer arithmetic and negation, byte shifts, indexed reads/writes/moves/borrows,
+abrupt host operations, and synchronous calls have explicit success and failure successors in
+ownership MIR. `Checked` identifies arithmetic, bounds, host, and call failures and carries the
+source span. Floating-point arithmetic, comparisons, and non-shift bitwise operations do not add
+arithmetic failure edges. Its failure block destroys active expression temporaries
 followed by owned function storage and terminates with `Fail`; only its success block can initialize
 the result. Consumed arguments and temporary receivers remain caller-owned while later arguments
 are evaluated, and transfer at invocation. Ordinary host `Result.Error` values follow normal result
@@ -647,9 +649,10 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   and recursive tag-aware destruction plans, including collections, closures, and exceptional
   frame exits. Both backends invoke `deinit` before releasing child values. Arbitrary cyclic owned
   graphs remain open; scoped remote cancellation is implemented under G-06.
-- Assertions, indexed bounds checks, abrupt host failures, and synchronous call propagation are
-  represented in ownership MIR. Other runtime checks, including primitive arithmetic failures,
-  retain deterministic runtime frame teardown without per-operation MIR successors.
+- Assertions, checked integer arithmetic and negation, byte shifts, indexed bounds checks, abrupt
+  host failures, and synchronous call propagation are represented in ownership MIR. Runtime frame
+  teardown also handles execution errors outside these modeled operations; process-fatal events
+  do not acquire language cleanup guarantees from these edges.
 
 The intended evolution is path-sensitive loan states and precise provenance through erased
 callables and future aggregate forms while preserving the source model: ownership transfer stays

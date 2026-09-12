@@ -30,10 +30,13 @@ The library source and its original project directory are not needed by the cons
 ## Compilation and linking
 
 The artifact contains declaration metadata, checked callable descriptors, and portable generic
-register code. Function bodies are compiled when the library is built. At consumption, Foster
+register code. Public defaults on composable record surfaces also retain syntax-tree adaptation
+templates, separate from the declaration stubs. Function bodies are compiled when the library is
+built. At consumption, Foster
 checks callers against explicit signatures, structural declarations, constants, ownership modes,
 reference groups, effects, suspension contracts, and result-provenance summaries. It does not
-parse or type-check the library's original function bodies.
+parse the original source or recheck ordinary compiled calls. Inheriting a default onto a new
+receiver instantiates its template and checks the resulting body for that receiver.
 
 The linker resolves package/module/name/descriptor bindings, relocates functions, nominal types,
 enum cases, constant pools and structural dispatch slots, and checks nominal layouts. Private
@@ -48,18 +51,21 @@ library, language, ownership-model, or bytecode format version changes. This for
 promise compatibility across arbitrary compiler releases or a stable C/native ABI.
 
 Methods materialized by composition *inside* a library retain their compiled implementations.
-A new consumer-defined composition must provide its own method implementations: adapting an
-inherited source default body to a new receiver is not supported across the binary boundary.
-Structural calls from libraries into consumer-defined implementations are supported.
+A new consumer-defined composition can inherit defaults through the artifact's adaptation
+templates. These preserve the donor's lexical module, private helper calls, generic parameters,
+and nested closures. Explicit effects remain checked; inferred effects are recomputed for the new
+receiver. Local overrides and rightmost compatible defaults retain the source-composition rules.
+Private representation methods are not exported as adaptable defaults. Structural calls from
+libraries into consumer-defined implementations are supported.
 
-## Container version 1
+## Container version 2
 
 All integers are little endian. The file contains:
 
 | Field | Representation |
 | --- | --- |
 | Magic | 8 bytes, `FOSTERLB` |
-| Library format version | `u16`, currently 1 |
+| Library format version | `u16`, currently 2 |
 | Interface length | `u32` |
 | Interface | UTF-8 JSON declaration and symbolic metadata |
 | Code length | `u32` |
@@ -68,7 +74,9 @@ All integers are little endian. The file contains:
 Each section is limited to 256 MiB. Unsupported versions, truncated sections, trailing bytes,
 incomplete bindings, inconsistent function declarations/descriptors, and invalid bytecode are
 rejected. The interface records the Foster language and ownership-model versions. Constants are
-stored as evaluated literal values; function and test source bodies are absent. Structural
+stored as evaluated literal values; declaration stubs and ordinary compiled functions contain no
+source bodies. Adaptable defaults have separate syntax-tree bodies in their function contexts;
+test bodies are absent. Version 1 libraries must be rebuilt to use this format. Structural
 conformance and effect summaries remain checked-compiler facts, not proofs of arbitrary
 untrusted implementations.
 

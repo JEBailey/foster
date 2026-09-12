@@ -66,6 +66,105 @@ fn run(compilation: &foster::compiler::Compilation) -> Value {
 }
 
 #[test]
+fn consumers_inherit_compiled_defaults_for_new_receivers() {
+    let w = Workspace::new();
+    w.library(
+        r#"
+pub type Sized = { pub func length(self) -> Int }
+func adjustment(value: Int) -> Int { value + 2 }
+impl Sized {
+    pub func score(self) -> Int { adjustment(self.length()) }
+    pub func twice(self) -> Int { self.score() * 2 }
+    pub func closure(self) -> func(Int) -> Int {
+        let offset = self.length()
+        (value: Int) -> adjustment(value) + offset
+    }
+}
+pub type Provider<T> = {}
+impl Provider {
+    pub func echo<T>(self: Provider<T>, value: T) -> T [consume value] { value }
+    pub func number<T>(self: Provider<T>, value: Int) -> Int { value + 1 }
+    pub func number<T>(self: Provider<T>, value: String) -> Int { 9 }
+}
+pub type Middle<U> = & Provider<U> & {}
+pub type Other = {}
+impl Other { pub func score(self) -> Int { 21 } }
+"#,
+    );
+    let app = w
+        .consumer(
+            r#"
+import api
+pub type Local = & Sized & { count: Int }
+impl Local { pub func length(self) -> Int { self.count } }
+pub type Ordered = & Sized & Other & {}
+impl Ordered { pub func length(self) -> Int { 100 } }
+pub type Override = & Sized & Other & {}
+impl Override {
+    pub func length(self) -> Int { 100 }
+    pub func score(self) -> Int { 7 }
+}
+pub type Generic<V> = & Middle<V> & {}
+type Concrete = & Generic<Int> & {}
+func adjustment(value: Int) -> Int { 999 }
+func main() -> Int {
+    let local = Local { count: 40 }
+    assert(local.twice() == 84)
+    assert(local.closure()(0) == 42)
+    assert(Ordered {}.twice() == 42)
+    assert(Override {}.twice() == 14)
+    let generic = Concrete {}
+    assert(generic.echo(42) == 42)
+    assert(generic.number(10) == 11)
+    assert(generic.number("text") == 9)
+    local.score()
+}
+"#,
+        )
+        .unwrap();
+    assert_eq!(run(&app), Value::Integer(42));
+    let prepared = foster::native::prepare(&app).unwrap();
+    for optimize in [false, true] {
+        let executable = w.0.join(format!(
+            "defaults-{optimize}{}",
+            std::env::consts::EXE_SUFFIX
+        ));
+        prepared
+            .build_executable(&executable, foster::native::CompileOptions { optimize })
+            .unwrap();
+        let output = Command::new(executable).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+    }
+    // A second compiled boundary must retain the original donor templates and imports.
+    fs::write(
+        w.0.join("example.flib"),
+        library::encode(&library::build(&app).unwrap()).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        w.0.join("foster.toml"),
+        "[package]\nname = 'final_consumer'\n[dependencies]\napi = { path = 'example.flib' }\n",
+    )
+    .unwrap();
+    fs::write(
+        w.0.join("src/main.fos"),
+        r#"
+import api
+type Final = & Generic<Int> & {}
+func main() -> Int { Final {}.echo(42) }
+"#,
+    )
+    .unwrap();
+    let final_app = foster::check_project(&foster::project::Project::load(&w.0).unwrap()).unwrap();
+    assert_eq!(run(&final_app), Value::Integer(42));
+}
+
+#[test]
 fn generic_records_closures_and_private_calls_link_without_bodies() {
     let w = Workspace::new();
     let lib = w.library(
@@ -121,6 +220,9 @@ fn malformed_library_is_rejected() {
     let mut trailing = bytes.clone();
     trailing.push(0);
     assert!(library::decode(&trailing).is_err());
+    let mut old_format = bytes.clone();
+    old_format[8..10].copy_from_slice(&1u16.to_le_bytes());
+    assert!(library::decode(&old_format).is_err());
     let mut lib = lib;
     lib.interface.modules[0].declarations.functions[0].body_is_recovery_stub = false;
     assert!(library::encode(&lib).is_err());
@@ -131,6 +233,43 @@ fn malformed_library_is_rejected() {
     let mut lib = library::decode(&bytes).unwrap();
     lib.interface.ownership_version += 1;
     assert!(library::encode(&lib).is_err());
+}
+
+#[test]
+fn default_templates_preserve_explicit_ownership_and_reject_invalid_metadata() {
+    let w = Workspace::new();
+    let mut lib = w.library(
+        r#"
+pub type Provider = {}
+impl Provider { pub func take(self, value: String) -> String [consume value] { value } }
+"#,
+    );
+    let error = w
+        .consumer(
+            r#"
+import api
+type Local = & Provider & {}
+func main() -> String { let text = "owned"
+    Local {}.take(text)
+}
+"#,
+        )
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("move"), "{error}");
+    let template = lib
+        .interface
+        .contexts
+        .values_mut()
+        .find_map(|context| context.default_template.as_mut())
+        .unwrap();
+    template.parameters.clear();
+    assert!(
+        library::encode(&lib)
+            .unwrap_err()
+            .to_string()
+            .contains("default adaptation template")
+    );
 }
 
 fn cli(args: &[&str], path: &Path) -> std::process::Output {
@@ -276,7 +415,7 @@ fn composition_materialized_inside_a_library_is_retained() {
     let w = Workspace::new();
     w.library("pub type Base = { pub value: Int, pub func score(self) -> Int }\nimpl Base { pub func score(self: Base) -> Int { self.value } }\npub type Derived = & Base & {}\npub func derived() -> Derived { Derived { value: 42 } }");
     let app = w
-        .consumer("import api\nfunc main() -> Int { derived().score() }")
+        .consumer("import api\ntype New = & Derived & { pub extra: Int }\nfunc main() -> Int { assert(derived().score() == 42)\nNew { extra: 99, value: 42 }.score() }")
         .unwrap();
     assert_eq!(run(&app), Value::Integer(42));
 }
@@ -337,7 +476,26 @@ fn materialized_methods_keep_cross_module_receiver_types() {
     let root = w.0.join("library");
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("foster.toml"), "[package]\nname = 'composed'\n").unwrap();
-    fs::write(root.join("src/base.fos"),"pub type Base = { pub value: Int, pub func score(self) -> Int }\nimpl Base { pub func score(self: Base) -> Int { self.value } }").unwrap();
+    fs::write(
+        root.join("src/tokens.fos"),
+        "pub type Token = { pub value: Int }",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/base.fos"),
+        r#"
+import tokens
+pub type Base = { pub value: Int, pub func score(self) -> Int }
+impl Base {
+    pub func score(self: Base) -> Int { self.value }
+    pub func closure(self) -> func(tokens::Token) -> Int {
+        let offset = self.value
+        (token: tokens::Token) -> token.value + offset
+    }
+}
+"#,
+    )
+    .unwrap();
     fs::write(root.join("src/main.fos"),"import base\npub type Derived = & Base & {}\npub func derived() -> Derived { Derived { value: 42 } }").unwrap();
     let compilation =
         foster::check_project(&foster::project::Project::load(&root).unwrap()).unwrap();
@@ -348,7 +506,7 @@ fn materialized_methods_keep_cross_module_receiver_types() {
     .unwrap();
     fs::remove_dir_all(&root).unwrap();
     let app = w
-        .consumer("import api\nfunc main() -> Int { derived().score() }")
+        .consumer("import api\nimport api.tokens\ntype New = & Derived & { pub extra: Int }\nfunc main() -> Int { assert(derived().score() == 42)\nlet value = New { extra: 99, value: 42 }\nassert(value.closure()(Token { value: 0 }) == 42)\nvalue.score() }")
         .unwrap();
     assert_eq!(run(&app), Value::Integer(42));
 }

@@ -611,10 +611,36 @@ impl<'a> Builder<'a> {
                     self.expression(*value, Context::Consume);
                 }
             }
-            hir::Expr::Unary { operand, .. } => self.expression(*operand, Context::Read),
-            hir::Expr::Binary { left, right, .. } => {
+            hir::Expr::Unary { operand, operator } => {
+                self.expression(*operand, Context::Read);
+                if *operator == crate::ast::UnaryOp::Negate
+                    && self
+                        .types
+                        .expression_type(*operand)
+                        .is_some_and(|ty| matches!(self.types.types[ty], crate::types::Type::Int))
+                {
+                    self.failure_edge(FailureOperation::Arithmetic { expression }, expression);
+                }
+            }
+            hir::Expr::Binary {
+                left,
+                right,
+                operator,
+            } => {
                 self.expression(*left, Context::Read);
                 self.expression(*right, Context::Read);
+                use crate::ast::BinaryOp;
+                let checked_integer = matches!(
+                    operator,
+                    BinaryOp::Add | BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Divide
+                ) && self
+                    .types
+                    .expression_type(expression)
+                    .is_some_and(|ty| matches!(self.types.types[ty], crate::types::Type::Int));
+                if checked_integer || matches!(operator, BinaryOp::ShiftLeft | BinaryOp::ShiftRight)
+                {
+                    self.failure_edge(FailureOperation::Arithmetic { expression }, expression);
+                }
             }
             hir::Expr::Branch { subject, arms } => {
                 let subject = *subject;
