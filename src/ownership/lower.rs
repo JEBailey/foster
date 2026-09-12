@@ -244,8 +244,7 @@ impl<'a> Builder<'a> {
             }
             hir::Stmt::Bind { local, value } => {
                 self.begin_full_expression();
-                self.expression_into(*value, Context::Consume, Some(Self::local_place(*local)));
-                self.initialize(*local, self.span(*value));
+                self.local_value(*local, *value);
                 if is_last {
                     self.emit(Operation::ReturnBorrower {
                         value: BorrowValue::Place(Self::local_place(*local)),
@@ -257,8 +256,7 @@ impl<'a> Builder<'a> {
             }
             hir::Stmt::Assign { local, value } => {
                 self.begin_full_expression();
-                self.expression_into(*value, Context::Consume, Some(Self::local_place(*local)));
-                self.initialize(*local, self.span(*value));
+                self.local_value(*local, *value);
                 self.end_full_expression(self.span(*value));
             }
             hir::Stmt::Expr(value) => {
@@ -1266,6 +1264,76 @@ impl<'a> Builder<'a> {
         self.types
             .expression_type(expression)
             .is_some_and(|ty| self.types.is_copy(ty))
+    }
+
+    fn local_value(&mut self, local: hir::LocalId, value: ExprId) {
+        if !self.saved_boolean(value, &mut 64) {
+            self.expression_into(value, Context::Consume, Some(Self::local_place(local)));
+            self.initialize(local, self.span(value));
+            return;
+        }
+        let paths = [self.block(), self.block()];
+        let continued = self.block();
+        self.condition(value, paths);
+        for (index, path) in paths.into_iter().enumerate() {
+            self.current = path;
+            self.emit(Operation::StoreBorrower {
+                destination: Self::local_place(local),
+                value: BorrowValue::Empty,
+                span: self.span(value),
+            });
+            self.initialize(local, self.span(value));
+            self.terminate(Terminator::BooleanValue {
+                destination: Self::local_place(local),
+                value: index == 0,
+                target: continued,
+            });
+        }
+        self.current = continued;
+    }
+
+    // Keep the initial scope to pure boolean locals, constants, and boolean
+    // selection (the HIR form of &&/||). Never replay calls or projected reads.
+    fn saved_boolean(&self, expression: ExprId, budget: &mut usize) -> bool {
+        if *budget == 0 {
+            return false;
+        }
+        *budget -= 1;
+        match &self.hir.expressions[expression] {
+            hir::Expr::Bool(_) => true,
+            hir::Expr::Name(ResolvedName::Local(_)) => self
+                .types
+                .expression_type(expression)
+                .is_some_and(|ty| matches!(self.types.types[ty], crate::types::Type::Bool)),
+            hir::Expr::Unary {
+                operator: crate::ast::UnaryOp::Not,
+                operand,
+            } => self.saved_boolean(*operand, budget),
+            hir::Expr::Branch {
+                subject: None,
+                arms,
+            } if arms.len() == 2 && arms[0].body.len() == 1 && arms[1].body.len() == 1 => {
+                match (
+                    &arms[0].test,
+                    &arms[1].test,
+                    &arms[0].body[0],
+                    &arms[1].body[0],
+                ) {
+                    (
+                        BranchTest::Condition(test),
+                        BranchTest::Wildcard,
+                        hir::Stmt::Expr(yes),
+                        hir::Stmt::Expr(no),
+                    ) => {
+                        self.saved_boolean(*test, budget)
+                            && self.saved_boolean(*yes, budget)
+                            && self.saved_boolean(*no, budget)
+                    }
+                    _ => false,
+                }
+            }
+            _ => false,
+        }
     }
 
     /// Lower boolean value selection directly to control flow. HIR represents

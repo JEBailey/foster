@@ -560,6 +560,14 @@ enum EdgeFact<'a> {
 
 fn edge_fact(terminator: &super::Terminator, successor: BlockId) -> Option<EdgeFact<'_>> {
     match terminator {
+        super::Terminator::BooleanValue {
+            destination,
+            value,
+            target,
+        } if *target == successor => Some(EdgeFact::Boolean {
+            place: destination,
+            value: *value,
+        }),
         super::Terminator::BooleanBranch { condition, targets }
             if targets[0] != targets[1] && targets[0] == successor =>
         {

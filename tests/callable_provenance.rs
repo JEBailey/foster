@@ -56,11 +56,13 @@ fn known_callable_results_keep_only_the_used_reference_parameter() {
         "let held = Holder { value: first }\nlet callback = move held.value",
         "let original = first\nlet callback = move original",
         "let callback = branch flag { true -> first\n_ -> first }",
+        "let callbacks = [first, second]\nlet callback = callbacks[0]",
     ] {
         let source = format!(
             r#"
 type Holder<T> = {{ value: T }}
 func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}
+func second[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref right }}
 func check(flag: Bool) -> Int {{
     let left = [10]
     let right = [20]
@@ -78,6 +80,68 @@ func main() -> Int {{ check(true) }}
         assert_eq!(
             foster::compile(&invalid).unwrap_err().code.as_deref(),
             Some("E0401")
+        );
+    }
+}
+
+#[test]
+fn constant_index_selection_preserves_each_slots_reference_summary() {
+    for (index, changed, valid) in [
+        (0, "right", true),
+        (1, "left", true),
+        (0, "left", false),
+        (1, "right", false),
+    ] {
+        let source = format!(
+            r#"
+func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}
+func second[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref right }}
+func main() -> Int {{
+    let left = [10]
+    let right = [32]
+    let callbacks = [first, second]
+    let selected = callbacks[{index}](ref left[0], ref right[0])
+    {changed}.push(99)
+    println(selected)
+    0
+}}
+"#
+        );
+        if valid {
+            assert_eq!(foster::run(&source).unwrap(), Value::Integer(0));
+        } else {
+            assert_eq!(
+                foster::compile(&source).unwrap_err().code.as_deref(),
+                Some("E0401")
+            );
+        }
+    }
+}
+
+#[test]
+fn constant_index_selection_does_not_reuse_replaced_or_dynamic_targets() {
+    for (setup, index) in [("callbacks[0] = second", "0"), ("", "index")] {
+        let source = format!(
+            r#"
+func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}
+func second[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref right }}
+func choose(index: Int) -> Int {{
+    let left = [10]
+    let right = [32]
+    let callbacks = [first, second]
+    {setup}
+    let selected = callbacks[{index}](ref left[0], ref right[0])
+    right.push(99)
+    println(selected)
+    0
+}}
+func main() -> Int {{ choose(1) }}
+"#
+        );
+        assert_eq!(
+            foster::compile(&source).unwrap_err().code.as_deref(),
+            Some("E0401"),
+            "{setup}/{index}"
         );
     }
 }

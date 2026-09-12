@@ -36,6 +36,102 @@ fn formula(mask: u8) -> String {
 }
 
 #[test]
+fn saved_boolean_truth_tables_match_feasible_conflicts() {
+    for mutation in 0..16 {
+        for usage in 0..16 {
+            let source = program("saved", &formula(usage), "").replace(
+                "let values =",
+                &format!("let saved = {}\nlet values =", formula(mutation)),
+            );
+            let result = foster::compile(&source);
+            if mutation & usage == 0 {
+                result
+                    .unwrap_or_else(|error| panic!("saved {mutation:04b}/{usage:04b}: {error:?}"));
+            } else {
+                assert_eq!(
+                    result.unwrap_err().code.as_deref(),
+                    Some("E0401"),
+                    "saved {mutation:04b}/{usage:04b}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn saved_boolean_relations_forget_mutated_inputs_and_destinations() {
+    let prelude =
+        "func clear[g: group Bool](value: ref[g] Bool) -> Bool [mut g] { value = false }\n";
+    for between in [
+        "a = false",
+        "let alias = ref a\nalias = false",
+        "clear(ref a)",
+        "let change = [ref a] () -> { a = false }\nchange()",
+    ] {
+        let source = format!(
+            "{prelude}{}",
+            program("saved", "not a || not b", between)
+                .replace("let values =", "let saved = a && b\nlet values =")
+        );
+        let error = foster::compile(&source).unwrap_err();
+        assert_eq!(error.code.as_deref(), Some("E0401"), "{between}: {error:?}");
+    }
+    let source = program("saved", "not a || not b", "").replace(
+        "let values =",
+        "let saved = a && b\nsaved = true\nlet values =",
+    );
+    assert_eq!(
+        foster::compile(&source).unwrap_err().code.as_deref(),
+        Some("E0401")
+    );
+    let source = program("saved", "not saved", "a = false\nsaved = a && b")
+        .replace("let values =", "let saved = a && b\nlet values =");
+    assert_eq!(
+        foster::compile(&source).unwrap_err().code.as_deref(),
+        Some("E0401")
+    );
+}
+
+#[test]
+fn saved_boolean_reassignment_in_loops_does_not_hide_invalidation() {
+    let source = r#"
+func choose(a: Bool, b: Bool) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    let saved = a && b
+    loop {
+        branch { saved -> values.push(20)
+            _ -> () }
+        a = false
+        saved = a && b
+        break
+    }
+    branch { not saved -> selected
+        _ -> 0 }
+}
+func main() -> Int { choose(true, true) }
+"#;
+    assert_eq!(
+        foster::compile(source).unwrap_err().code.as_deref(),
+        Some("E0401")
+    );
+}
+
+#[test]
+fn saved_boolean_snapshots_and_aliases_remain_valid() {
+    let source = program("saved", "not alias", "a = false").replace(
+        "let values =",
+        "let saved = a && b\nlet alias = saved\nlet values =",
+    );
+    assert_eq!(foster::run(&source).unwrap(), Value::Integer(10));
+    let source = program("saved", "not a || not b", "").replace(
+        "let values =",
+        "let saved = false\nsaved = a && b\nlet values =",
+    );
+    assert_eq!(foster::run(&source).unwrap(), Value::Integer(10));
+}
+
+#[test]
 fn exhaustive_two_boolean_truth_tables_match_feasible_conflicts() {
     for mutation in 0..16 {
         for usage in 0..16 {

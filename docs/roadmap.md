@@ -40,10 +40,12 @@ general without weakening its current guarantees.
 
 - Generalize path-correlated loan states to computed predicates, computed-value comparisons, and
   richer range facts. Bounded `&&`, `||`, and `not` reasoning over supported stable facts is
-  already implemented; arithmetic equivalence and stored predicate formulas remain conservative.
+  already implemented, including saved pure Boolean conditions over locals. Arithmetic equivalence,
+  saved comparisons, projected or effectful initializers, and larger formulas remain conservative.
 - Extend result provenance and projected-reference invalidation precision for dynamically selected
   callables, opaque factories, hidden captured borrowers, and effectful calls. Direct fixed-point
-  summaries, supported indirect-target summaries, and checked type/group fallbacks already exist.
+  summaries, supported indirect-target summaries (including constant-index selection from fixed
+  local lists), and checked type/group fallbacks already exist.
 - Define effect-polymorphic callable contracts beyond the implemented concrete effect annotations.
 - Decide whether public APIs require explicit annotations beyond the checks already performed by
   inference.

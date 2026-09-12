@@ -414,6 +414,13 @@ pub enum Terminator {
     #[default]
     Unreachable,
     Goto(BlockId),
+    /// The preceding initialization stored this known boolean result. Its fact
+    /// shares the ordinary mutation invalidation and bounded path analysis.
+    BooleanValue {
+        destination: Place,
+        value: bool,
+        target: BlockId,
+    },
     Branch(Vec<BlockId>),
     /// A two-way branch whose condition is a stable boolean place. The first
     /// target is reached when the place is true and the second when it is
@@ -450,7 +457,7 @@ pub enum Terminator {
 impl Terminator {
     pub(crate) fn successors(&self) -> &[BlockId] {
         match self {
-            Self::Goto(target) => std::slice::from_ref(target),
+            Self::Goto(target) | Self::BooleanValue { target, .. } => std::slice::from_ref(target),
             Self::Branch(targets) => targets,
             Self::BooleanBranch { targets, .. }
             | Self::VariantBranch { targets, .. }

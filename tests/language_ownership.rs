@@ -1444,6 +1444,29 @@ func main() -> Int {
 }
 
 #[test]
+fn saved_boolean_conditions_preserve_operand_correlations() {
+    let source = r#"
+func choose(ready: Bool, allowed: Bool) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    let can_update = ready && allowed
+    branch { can_update -> values.push(20)
+        _ -> () }
+    branch { not ready || not allowed -> selected
+        _ -> 0 }
+}
+func main() -> Int {
+    assert(choose(false, false) == 10)
+    assert(choose(false, true) == 10)
+    assert(choose(true, false) == 10)
+    assert(choose(true, true) == 0)
+    42
+}
+"#;
+    assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
+}
+
+#[test]
 fn correlates_stable_boolean_conditions_across_branch_joins() {
     let source = r#"
 func choose(flag: Bool) -> Int {

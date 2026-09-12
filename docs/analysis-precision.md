@@ -23,8 +23,9 @@ that list while the string is still used.
   relationships retain conservative dependencies.
 - Stable boolean places, enum patterns, and direct scalar comparisons retain branch facts.
   Equality/inequality normalization and some dynamic-index disjointness already work.
-- Compound predicates and comparisons of computed values remain conservative. The loan checker
-  widens to shared facts after sixteen alternatives; more reasoning must remain bounded.
+- Boolean combinations and saved local Boolean conditions retain the bounded facts described below.
+  Comparisons of computed values remain conservative. The loan checker widens to shared facts
+  after sixteen alternatives; more reasoning must remain bounded.
 
 See [ownership analysis](ownership.md#current-limitations-and-evolution) and
 [verification](ownership-verification.md#place-reasoning). The principal implementation entry
@@ -60,6 +61,13 @@ Implemented approach and supported forms:
 This metadata lives on ownership MIR values and CFG states, not in a new source annotation or
 runtime lifetime mechanism. There is no new callable syntax or serialized callable-summary ABI.
 Separately compiled or otherwise unknown targets use the checked contract fallback.
+
+Constant-index selection from fixed local lists already preserves the selected callable's
+reference-parameter summary. Both `callbacks[0](...)` and assigning `callbacks[0]` to a local
+retain the selected slot's dependencies, rather than combining all list elements. Replacing a
+slot invalidates its previous summary. Tests distinguish two functions returning references to
+different inputs, reject invalidation of the selected input, and verify VM/native results with
+optimization enabled and disabled. An index supplied at runtime remains conservative.
 
 Remaining limits within part 1: dynamic-index target selection, target identity returned through
 opaque factories, capture-specific result summaries, and hidden borrowers in aggregate parameters
@@ -99,12 +107,30 @@ reborrows. Calls forget facts for their declared mutation targets, including eve
 forget all predicate facts. The forward and backward analyses use the same invalidation rules,
 including across loop backedges. Each join retains at most 16 alternatives before widening to
 common facts. Computed predicates (including dynamically indexed predicate places), repeated calls, and general arithmetic equivalence remain
-conservative; assigning a compound result to a boolean does not preserve its defining formula.
+conservative.
+
+Saving a pure Boolean condition in a local now preserves its relationship to the input locals.
+For example, after `let can_update = ready && allowed`, a branch on `can_update` can be correlated
+with `not ready || not allowed`. This supports Boolean local reads, constants, `not`, and pure
+Boolean selections including `&&`/`||`, bounded to 64 HIR expression nodes per initializer.
+Assignments and local aliases use the same tracking. Calls, projected reads, comparisons, and
+larger expressions in initializers retain the conservative behavior.
+
+The stored Boolean remains a snapshot: changing `ready` never changes `can_update`. Writes to an
+input invalidate facts about that input, while the saved value and its unchanged aliases retain
+their own facts. Assigning to the saved local invalidates its old facts and records the new result
+when supported. Ownership MIR represents these results with `BooleanValue` edges after
+initialization, sharing the existing forward/backward path analysis, alias invalidation, and
+sixteen-alternative widening rather than re-evaluating the initializer.
 
 Validation includes all 256 pairs of two-boolean truth tables, complementary and conflicting scalar
 conditions, boolean subjects, guarded exits, assignment/alias/call invalidation, short-circuit side
 effects, and loop backedges. A VM/native parity case runs all four boolean inputs and verifies
 skipped and executed RHS calls in both optimization modes.
+Saved-condition tests additionally cover all 256 truth-table pairs, input and destination writes,
+reference/closure/call mutation, loop reassignment, snapshots, and aliases. VM/native parity tests
+check every two-input combination and ensure effectful and short-circuited initializers execute
+their operands only as required.
 
 Release validation: the nine compound-condition tests (including all 256 truth-table pairs) took
 1.52 seconds. All 38 VM/native parity tests passed in 162.55 seconds using the shared native runtime

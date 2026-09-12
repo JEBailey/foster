@@ -2,6 +2,82 @@
 use foster::{native, vm};
 
 #[test]
+fn constant_index_callable_selection_preserves_reference_results() {
+    check_stdout(
+        "constant-callable-index",
+        r#"
+func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref left }
+func second[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref right }
+func choose_first() -> () {
+    let left = [10]
+    let right = [32]
+    let callbacks = [first, second]
+    let callback = callbacks[0]
+    let selected = callback(ref left[0], ref right[0])
+    right.push(99)
+    println(selected)
+}
+func choose_second() -> () {
+    let left = [10]
+    let right = [32]
+    let callbacks = [first, second]
+    let selected = callbacks[1](ref left[0], ref right[0])
+    left.push(99)
+    println(selected)
+}
+func main() -> Int { choose_first()
+    choose_second()
+    42 }
+"#,
+        "10\n32\n42",
+    );
+}
+
+#[test]
+fn saved_boolean_conditions_preserve_snapshots_and_safe_borrows() {
+    check(
+        "saved-booleans",
+        r#"
+func choose(ready: Bool, allowed: Bool) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    let can_update = ready && allowed
+    branch { can_update -> values.push(20)
+        _ -> () }
+    branch { not ready || not allowed -> selected
+        _ -> 0 }
+}
+func tick[g: group Int](count: ref[g] Int) -> Bool [mut g] {
+    count = count + 1
+    true
+}
+func main() -> Int {
+    assert(choose(false, false) == 10)
+    assert(choose(false, true) == 10)
+    assert(choose(true, false) == 10)
+    assert(choose(true, true) == 0)
+    let ready = true
+    let allowed = true
+    let snapshot = ready && allowed
+    let alias = snapshot
+    ready = false
+    allowed = false
+    assert(snapshot)
+    assert(alias)
+    let count = 0
+    let once = tick(ref count) && false
+    let skipped = false && tick(ref count)
+    assert(not once)
+    assert(not skipped)
+    assert(count == 1)
+    42
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
 fn partial_inherited_defaults_preserve_concrete_receivers() {
     check(
         "partial-inherited-defaults",
