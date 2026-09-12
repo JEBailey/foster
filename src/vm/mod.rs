@@ -518,7 +518,9 @@ func main() -> Int {
                 .iter()
                 .all(|instruction| !matches!(instruction, Instruction::Move { .. }))
         );
-        assert_eq!(function.registers, 2);
+        // The parameter home stays pinned; the three intermediate results
+        // share two temporary homes without writing through borrowed storage.
+        assert_eq!(function.registers, 3);
         assert_eq!(
             Machine::new(&program).run_main().unwrap(),
             Value::Integer(42)

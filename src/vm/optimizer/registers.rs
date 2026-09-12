@@ -123,7 +123,10 @@ pub(super) fn compact(program: &mut Program) {
 }
 
 fn pinned(function: &BytecodeFunction) -> HashSet<Register> {
-    let mut pinned = (0..function.captures).map(Register).collect::<HashSet<_>>();
+    // A borrowed parameter may hold a projected place even when its logical
+    // type is a value type. Reusing that home would write through to the caller.
+    let prefix = function.captures.saturating_add(function.parameters);
+    let mut pinned = (0..prefix).map(Register).collect::<HashSet<_>>();
     for instruction in &function.instructions {
         if let Instruction::MakeClosure { captures, .. }
         | Instruction::CallClosure { captures, .. } = instruction
@@ -192,6 +195,7 @@ pub(super) fn rewrite_registers(
     mapping: &HashMap<Register, Register>,
 ) {
     match instruction {
+        Instruction::Drop { register } => rewrite(register, mapping),
         Instruction::LoadConstant { destination, .. } => rewrite(destination, mapping),
         Instruction::Move {
             destination,

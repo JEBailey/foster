@@ -27,9 +27,12 @@ optimized, serialized, or executed.
 
 The VM de-SSA backend splits critical edges, resolves parallel-copy cycles, and assigns storage
 homes. Its structured bytecode is both the optimizer-facing IR and executable form. The explicit
-optimizer pipeline performs typed constant and branch folding, control-flow cleanup, CFG-aware copy
+optimizer pipeline performs CFG-aware typed constant and branch folding, control-flow cleanup, copy
 propagation, liveness-based dead-write elimination and register reuse, and constant-pool
-deduplication. Rewrites preserve the parallel instruction source-span table. Capture/parameter
+deduplication. Constant propagation retains facts that agree on every reachable incoming path,
+including loop back edges. Functions with ownership, mutation, or concurrency barriers are excluded
+from these rewrites and inlining candidates independently; their constants participate in the final
+shared-pool remapping. Rewrites preserve the parallel instruction source-span table. Capture/parameter
 frame prefixes and reference origins are pinned where identity is observable. The structured
 program has a deterministic, versioned
 [compiled bytecode format](binary-format.md) for caching and distribution. Bytecode is verified

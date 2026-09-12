@@ -13,31 +13,18 @@ mod registers;
 
 /// Optimizes a complete bytecode program while retaining one source span per instruction.
 pub fn optimize(program: &mut Program) {
-    // Ownership, mutation, and concurrency instructions are optimization barriers
-    // until the data-flow passes model their aliasing and suspension semantics.
-    // Constant-free barrier functions can be set aside safely while independent
-    // pure functions are optimized. This is important for owner-qualified
-    // intrinsic methods that are installed with bootstrap types but never called.
+    // Exclude barrier functions from local rewrites and inlining candidates.
+    // Restore them before remapping the shared constant pool.
     let deferred_ids = program
         .functions
         .iter()
-        .filter(|(_, function)| {
-            optimization_barrier(function)
-                && !function
-                    .instructions
-                    .iter()
-                    .any(|instruction| matches!(instruction, Instruction::LoadConstant { .. }))
-        })
+        .filter(|(_, function)| optimization_barrier(function))
         .map(|(id, _)| *id)
         .collect::<Vec<_>>();
     let deferred = deferred_ids
         .into_iter()
         .filter_map(|id| program.functions.remove(&id).map(|function| (id, function)))
         .collect::<Vec<_>>();
-    if program.functions.values().any(optimization_barrier) {
-        program.functions.extend(deferred);
-        return;
-    }
     inlining::inline_small_leaf_functions(program);
     constants::fold(program);
     control_flow::simplify(program);
@@ -50,8 +37,8 @@ pub fn optimize(program: &mut Program) {
     registers::compact(program);
     control_flow::simplify(program);
     registers::compact(program);
-    constants::deduplicate(program);
     program.functions.extend(deferred);
+    constants::deduplicate(program);
 }
 
 fn optimization_barrier(function: &super::BytecodeFunction) -> bool {
@@ -60,6 +47,10 @@ fn optimization_barrier(function: &super::BytecodeFunction) -> bool {
             matches!(
                 instruction,
                 Instruction::StoreField { .. }
+                    | Instruction::LoadField {
+                        by_reference: true,
+                        ..
+                    }
                     | Instruction::StoreIndex { .. }
                     | Instruction::MakeReference { .. }
                     | Instruction::MakeWholeReference { .. }
@@ -82,4 +73,114 @@ fn optimization_barrier(function: &super::BytecodeFunction) -> bool {
 /// Inserts deterministic register releases after all representational rewrites.
 pub(crate) fn insert_drops(program: &mut Program) {
     drops::insert(program);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::vm::{self, Constant, Machine, Value};
+
+    #[test]
+    fn direct_and_contract_calls_preserve_receiver_storage() {
+        let compilation = crate::compile(
+            "type Probe = { func done(self) -> Bool }
+             type Counter = & Probe & { value: Int }
+             impl Counter { func done(self: Counter) -> Bool { false } }
+             func check(value: Probe) -> Bool { value.done() }
+             func main() -> Int {
+                 let counter = Counter { value: 42 }
+                 assert(not counter.done())
+                 assert(not check(counter))
+                 counter.value
+             }",
+        )
+        .unwrap();
+        for optimize in [false, true] {
+            let program =
+                vm::compile_with_options(&compilation, vm::CompileOptions { optimize }).unwrap();
+            vm::verify(&program).unwrap();
+            assert_eq!(
+                Machine::new(&program).run_main().unwrap(),
+                Value::Integer(42)
+            );
+        }
+    }
+
+    #[test]
+    fn barrier_functions_keep_constants_without_disabling_pure_optimization() {
+        let compilation = crate::compile(
+            "func answer() -> Int { 20 + 22 }
+             func replace[g: group Int](value: ref[g] Int) -> Int [mut g] {
+                 value = 7
+                 value
+             }
+             func main() -> Int {
+                 let value = 0
+                 replace(ref value)
+                 answer() + value
+             }",
+        )
+        .unwrap();
+        let mut program =
+            vm::compile_with_options(&compilation, vm::CompileOptions { optimize: false }).unwrap();
+        let baseline = Machine::new(&program).run_main().unwrap();
+        let barrier_id = *program
+            .functions
+            .iter()
+            .find(|(_, f)| f.name == "replace")
+            .unwrap()
+            .0;
+        let before = program.functions[&barrier_id].clone();
+        optimize(&mut program);
+        vm::verify(&program).unwrap();
+        assert_eq!(Machine::new(&program).run_main().unwrap(), baseline);
+        assert_eq!(baseline, Value::Integer(49));
+        let answer = program
+            .functions
+            .values()
+            .find(|f| f.name == "answer")
+            .unwrap();
+        assert!(
+            !answer
+                .instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::Binary { .. }))
+        );
+        let after = &program.functions[&barrier_id];
+        assert_eq!(before.instructions.len(), after.instructions.len());
+        assert_eq!(before.instruction_spans, after.instruction_spans);
+        assert!(after.instructions.iter().any(|i| matches!(i, Instruction::LoadConstant { constant, .. } if program.constants[usize::from(*constant)] == Constant::Integer(7))));
+        let bytes = vm::encode_program(&program).unwrap();
+        let decoded = vm::decode_program(&bytes).unwrap();
+        assert_eq!(Machine::new(&decoded).run_main().unwrap(), baseline);
+    }
+
+    #[test]
+    fn folds_arithmetic_after_agreeing_branch_assignments() {
+        let compilation = crate::compile(
+            "func answer(condition: Bool) -> Int {
+                 let value = branch { condition -> 40 _ -> 40 }
+                 value + 2
+             }
+             func main() -> Int { answer(true) + answer(false) }",
+        )
+        .unwrap();
+        let program = vm::compile(&compilation).unwrap();
+        vm::verify(&program).unwrap();
+        let answer = program
+            .functions
+            .values()
+            .find(|f| f.name == "answer")
+            .unwrap();
+        assert!(
+            !answer
+                .instructions
+                .iter()
+                .any(|i| matches!(i, Instruction::Binary { .. }))
+        );
+        assert_eq!(
+            Machine::new(&program).run_main().unwrap(),
+            Value::Integer(84)
+        );
+    }
 }
