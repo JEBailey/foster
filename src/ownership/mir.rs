@@ -491,6 +491,13 @@ pub struct Comparison {
 pub enum ComparisonOperand {
     Place(Place),
     Integer(i64),
+    /// Structurally identical checked integer expressions share a fact only
+    /// while all of their input places remain unchanged.
+    Arithmetic {
+        left: Box<ComparisonOperand>,
+        operator: crate::ast::BinaryOp,
+        right: Box<ComparisonOperand>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

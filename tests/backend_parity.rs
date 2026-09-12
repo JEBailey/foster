@@ -2,6 +2,45 @@
 use foster::{native, vm};
 
 #[test]
+fn computed_integer_predicates_preserve_snapshots_and_failures() {
+    check(
+        "computed-integer-predicates",
+        r#"
+func choose(a: Int, limit: Int) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    let change = (a + 1) * 2 < limit - 1
+    branch { change -> values.push(20)
+        _ -> () }
+    branch { (a + 1) * 2 >= limit - 1 -> selected
+        _ -> 0 }
+}
+func main() -> Int {
+    assert(choose(1, 10) == 0)
+    assert(choose(5, 10) == 10)
+    let value = 3
+    let saved = value + 1 > 2
+    value = 0
+    assert(saved)
+    42
+}
+"#,
+        Ok("42"),
+    );
+    check(
+        "computed-integer-predicate-overflow",
+        r#"
+func compare(value: Int) -> Bool {
+    let saved = value + 1 > 0
+    saved
+}
+func main() -> Bool { compare(9223372036854775807) }
+"#,
+        Err("overflow"),
+    );
+}
+
+#[test]
 fn library_integer_storage_preserves_scalar_behavior() {
     check(
         "integer-storage",

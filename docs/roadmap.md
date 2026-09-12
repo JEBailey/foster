@@ -10,9 +10,10 @@ after the compiler, runtime, and tests agree on their behavior.
 The immediate priority is to make the ownership, group, effect, and structural-contract model more
 general without weakening its current guarantees.
 
-- Generalize path-correlated loan states to computed predicates, computed-value comparisons, and
-  richer range facts. Arithmetic equivalence, saved comparisons, projected or effectful
-  initializers, and larger formulas remain conservative.
+- Generalize path-correlated loan states beyond structurally repeated integer addition,
+  subtraction, multiplication, and saved integer comparisons to richer computed predicates and
+  range facts. Algebraic equivalence, other arithmetic operators, dynamically indexed operands,
+  effectful initializers, and larger formulas remain conservative.
 - Extend result provenance and projected-reference invalidation precision for dynamically selected
   callables, opaque factories, hidden captured borrowers, and effectful calls.
 - Define effect-polymorphic callable contracts beyond the concrete effect annotations.

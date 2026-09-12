@@ -632,7 +632,14 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   short-circuit effects. Saved pure Boolean conditions over locals preserve these correlations
   within a bounded initializer size. A saved Boolean remains a snapshot when its inputs change;
   writes and calls discard affected facts, including alias origins, rather than changing that value.
-  Comparisons of computed values still join conservatively.
+  Integer comparisons also correlate structurally identical, bounded expressions built from
+  addition, subtraction, and multiplication over stable places and integer literals. Saved
+  integer comparisons retain the same facts, including stored-field dependencies. Changing any
+  input through assignment, aliases, or effects discards the affected comparison facts; the saved
+  Boolean itself remains a snapshot. Checked arithmetic still executes and can fail normally.
+  There is no algebraic rewriting: `a + 1` and `1 + a` are different expressions for this analysis.
+  Other computed values, dynamic indices, calls, and expressions beyond the analysis budget
+  remain conservative.
 - Ownership and loan places model field, index, and dereference projections. Different named fields
   and different constant indices are disjoint. Stable dynamic indices are disjoint while a live
   comparison proves them unequal and conservatively overlap otherwise.

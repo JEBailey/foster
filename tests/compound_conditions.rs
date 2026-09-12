@@ -194,6 +194,134 @@ fn scalar_comparisons_and_guarded_exits_share_compound_facts() {
     }
 }
 
+fn integer_program(mutation: &str, usage: &str, between: &str) -> String {
+    program(mutation, usage, between)
+        .replace("a: Bool", "a: Int")
+        .replace("choose(false, true)", "choose(3, true)")
+}
+
+#[test]
+fn computed_integer_comparisons_preserve_path_correlations() {
+    for expression in ["a + 1", "a - 1", "a * 2", "(a + 1) * (a - 2)"] {
+        for saved in [false, true] {
+            let condition = format!("{expression} < 2");
+            let direct = format!("{condition} && b");
+            let mut source = integer_program(
+                if saved { "saved && b" } else { &direct },
+                &format!("{expression} >= 2 || not b"),
+                "",
+            );
+            if saved {
+                source = source.replace(
+                    "let values =",
+                    &format!("let saved = {condition}\nlet values ="),
+                );
+            }
+            assert_eq!(
+                foster::run(&source).unwrap(),
+                Value::Integer(10),
+                "{source}"
+            );
+            let unsafe_source = source.replace(&format!("{expression} >= 2 || not b"), &condition);
+            assert_eq!(
+                foster::compile(&unsafe_source).unwrap_err().code.as_deref(),
+                Some("E0401")
+            );
+        }
+    }
+}
+
+#[test]
+fn computed_comparisons_forget_every_changed_input() {
+    for between in [
+        "a = 0",
+        "alias = 0",
+        "clear(ref a)",
+        "clear(ref alias)",
+        "change()",
+        "other = 100",
+    ] {
+        let source = format!(
+            "func clear[g: group Int](value: ref[g] Int) -> Int [mut g] {{ value = 0 }}\n{}",
+            integer_program("saved", "a + 1 >= other * 2", between)
+                .replace("let values =", "let other = 1\nlet alias = ref a\nlet change = [ref a] () -> { a = 0 }\nlet saved = a + 1 < other * 2\nlet values =")
+        );
+        assert_eq!(
+            foster::compile(&source).unwrap_err().code.as_deref(),
+            Some("E0401"),
+            "{source}"
+        );
+        foster::compile(&source.replace("-> selected", "-> 0")).unwrap();
+    }
+}
+
+#[test]
+fn saved_integer_comparisons_remain_snapshots() {
+    let source = integer_program("saved", "not saved", "a = 0")
+        .replace("let values =", "let saved = a + 1 < 2\nlet values =");
+    assert_eq!(foster::run(&source).unwrap(), Value::Integer(10));
+    let source = integer_program(
+        "a + 1 < 2",
+        "a + 1 >= 2",
+        "let unrelated = 5\nunrelated = 6",
+    );
+    assert_eq!(foster::run(&source).unwrap(), Value::Integer(10));
+}
+
+#[test]
+fn computed_comparisons_do_not_assume_calls_are_repeatable() {
+    let source = format!(
+        "func identity(value: Int) -> Int {{ value }}\n{}",
+        integer_program("identity(a) + 1 < 2", "identity(a) + 1 >= 2", "")
+    );
+    assert_eq!(
+        foster::compile(&source).unwrap_err().code.as_deref(),
+        Some("E0401")
+    );
+}
+
+#[test]
+fn computed_comparisons_track_stored_fields_and_loop_mutations() {
+    let source = format!(
+        "type Inputs = {{ value: Int }}\n{}",
+        integer_program("saved", "input.value + 1 >= 2", "").replace(
+            "let values =",
+            "let input = Inputs { value: a }\nlet saved = input.value + 1 < 2\nlet values ="
+        )
+    );
+    assert_eq!(foster::run(&source).unwrap(), Value::Integer(10));
+    for mutation in ["input.value = 0", "input = Inputs { value: 0 }"] {
+        let invalid = source.replace(
+            "branch { input.value",
+            &format!("{mutation}\nbranch {{ input.value"),
+        );
+        assert_eq!(
+            foster::compile(&invalid).unwrap_err().code.as_deref(),
+            Some("E0401")
+        );
+    }
+    let source = r#"
+func choose(a: Int) -> Int {
+    let values = [10]
+    let selected = ref values[0]
+    loop {
+        let change = a + 1 < 2
+        branch { change -> values.push(20)
+            _ -> () }
+        branch { a + 1 >= 2 -> { return selected }
+            _ -> () }
+        a = 3
+    }
+    0
+}
+func main() -> Int { choose(0) }
+"#;
+    assert_eq!(
+        foster::compile(source).unwrap_err().code.as_deref(),
+        Some("E0401")
+    );
+}
+
 #[test]
 fn calls_and_short_circuit_operand_effects_forget_changed_facts() {
     let prelude =

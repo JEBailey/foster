@@ -515,12 +515,19 @@ impl PathCondition {
 }
 
 fn comparison_places(comparison: &Comparison) -> impl Iterator<Item = &Place> {
-    [&comparison.left, &comparison.right]
-        .into_iter()
-        .filter_map(|operand| match operand {
-            ComparisonOperand::Place(place) => Some(place),
-            ComparisonOperand::Integer(_) => None,
-        })
+    let mut pending = vec![&comparison.left, &comparison.right];
+    std::iter::from_fn(move || {
+        while let Some(operand) = pending.pop() {
+            match operand {
+                ComparisonOperand::Place(place) => return Some(place),
+                ComparisonOperand::Integer(_) => {}
+                ComparisonOperand::Arithmetic { left, right, .. } => {
+                    pending.extend([left.as_ref(), right.as_ref()]);
+                }
+            }
+        }
+        None
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

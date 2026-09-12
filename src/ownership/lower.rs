@@ -1292,8 +1292,8 @@ impl<'a> Builder<'a> {
         self.current = continued;
     }
 
-    // Keep the initial scope to pure boolean locals, constants, and boolean
-    // selection (the HIR form of &&/||). Never replay calls or projected reads.
+    // Bound pure Boolean selection and integer comparison trees. Condition
+    // lowering evaluates them once, including checked arithmetic failure edges.
     fn saved_boolean(&self, expression: ExprId, budget: &mut usize) -> bool {
         if *budget == 0 {
             return false;
@@ -1309,6 +1309,19 @@ impl<'a> Builder<'a> {
                 operator: crate::ast::UnaryOp::Not,
                 operand,
             } => self.saved_boolean(*operand, budget),
+            hir::Expr::Binary { left, right, .. }
+                if self.comparison_condition(expression).is_some()
+                    && [*left, *right].into_iter().all(|operand| {
+                        self.types.expression_type(operand).is_some_and(|ty| {
+                            matches!(self.types.types[ty], crate::types::Type::Int)
+                        })
+                    }) =>
+            {
+                self.comparison_operand_with_budget(*left, budget).is_some()
+                    && self
+                        .comparison_operand_with_budget(*right, budget)
+                        .is_some()
+            }
             hir::Expr::Branch {
                 subject: None,
                 arms,
@@ -1471,8 +1484,38 @@ impl<'a> Builder<'a> {
     }
 
     fn comparison_operand(&self, expression: ExprId) -> Option<ComparisonOperand> {
+        self.comparison_operand_with_budget(expression, &mut 64)
+    }
+
+    fn comparison_operand_with_budget(
+        &self,
+        expression: ExprId,
+        budget: &mut usize,
+    ) -> Option<ComparisonOperand> {
+        *budget = budget.checked_sub(1)?;
         match self.hir.expressions[expression] {
             hir::Expr::Integer(value) => Some(ComparisonOperand::Integer(value)),
+            hir::Expr::Binary {
+                left,
+                operator,
+                right,
+            } if matches!(
+                operator,
+                crate::ast::BinaryOp::Add
+                    | crate::ast::BinaryOp::Subtract
+                    | crate::ast::BinaryOp::Multiply
+            ) && [expression, left, right].into_iter().all(|operand| {
+                self.types
+                    .expression_type(operand)
+                    .is_some_and(|ty| matches!(self.types.types[ty], crate::types::Type::Int))
+            }) =>
+            {
+                Some(ComparisonOperand::Arithmetic {
+                    left: Box::new(self.comparison_operand_with_budget(left, budget)?),
+                    operator,
+                    right: Box::new(self.comparison_operand_with_budget(right, budget)?),
+                })
+            }
             _ => self
                 .predicate_place(expression)
                 .map(ComparisonOperand::Place),

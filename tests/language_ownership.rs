@@ -779,8 +779,8 @@ func main() { 0 }
 fn discovers_implicit_and_companion_modules() {
     let compilation = foster::check_package(Path::new("tests/fixtures/modules")).unwrap();
     let package = &compilation.package;
-    assert_eq!(package.modules.len(), 16);
-    assert_eq!(package.explicit_module_count(), 13);
+    assert_eq!(package.modules.len(), 17);
+    assert_eq!(package.explicit_module_count(), 14);
     assert_eq!(package.implicit_module_count(), 3);
     assert_eq!(package.input_module_count(), 6);
     assert_eq!(package.input_explicit_module_count(), 4);
@@ -788,6 +788,7 @@ fn discovers_implicit_and_companion_modules() {
     assert!(!package.module("json").unwrap().is_implicit());
     assert!(package.module("json").unwrap().is_input());
     assert!(!package.module("core.bytes").unwrap().is_input());
+    assert!(!package.module("core.int").unwrap().is_input());
     assert!(package.module("tools").unwrap().is_implicit());
     assert!(package.module("tools.text").unwrap().is_implicit());
     assert!(package.module("tools.text.trim").is_some());
