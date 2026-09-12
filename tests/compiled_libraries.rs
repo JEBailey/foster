@@ -66,6 +66,44 @@ fn run(compilation: &foster::compiler::Compilation) -> Value {
 }
 
 #[test]
+fn closure_factory_metadata_preserves_hidden_parameter_dependencies() {
+    let workspace = Workspace::new();
+    workspace.library(
+        r#"
+pub func wrap(keep: func() -> Int, discard: func() -> Int) -> func() -> Int {
+    [move keep] () -> keep()
+}
+"#,
+    );
+    let source = r#"
+import api
+func main() -> Int {
+    let left = [42]
+    let right = [99]
+    let selected = ref left[0]
+    let ignored = ref right[0]
+    let keep = [ref selected] () -> selected
+    let discard = [ref ignored] () -> ignored
+    let reader = wrap(move keep, discard)
+    right.push(100)
+    reader()
+}
+"#;
+    assert_eq!(
+        run(&workspace.consumer(source).unwrap()),
+        Value::Integer(42)
+    );
+    assert_eq!(
+        workspace
+            .consumer(&source.replace("right.push(100)", "left.push(100)"))
+            .expect_err("captured loan must remain live")
+            .code
+            .as_deref(),
+        Some("E0401")
+    );
+}
+
+#[test]
 fn consumers_inherit_compiled_defaults_for_new_receivers() {
     let w = Workspace::new();
     w.library(

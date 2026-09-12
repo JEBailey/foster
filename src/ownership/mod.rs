@@ -119,6 +119,7 @@ fn lower_and_infer(
         if let Some(function) = program.functions.get_mut(id) {
             let descriptor = &external.definition.descriptor;
             function.result_provenance = ResultProvenance {
+                callable: None,
                 parameters: descriptor
                     .result_dependencies
                     .iter()

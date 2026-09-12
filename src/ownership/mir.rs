@@ -9,6 +9,8 @@ pub struct TemporaryId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum PlaceRoot {
     Local(LocalId),
+    /// Symbolic caller-owned loans carried inside an incoming value.
+    ParameterContents(LocalId),
     Temporary(TemporaryId),
 }
 
@@ -43,7 +45,7 @@ impl Place {
     pub fn local_root(&self) -> Option<LocalId> {
         match self.root {
             PlaceRoot::Local(local) => Some(local),
-            PlaceRoot::Temporary(_) => None,
+            PlaceRoot::Temporary(_) | PlaceRoot::ParameterContents(_) => None,
         }
     }
 }
@@ -197,6 +199,7 @@ impl Program {
 fn place_label(hir: &crate::hir::PackageHir, place: &Place) -> String {
     let mut label = match place.root {
         PlaceRoot::Local(local) => hir.locals[local].name.clone(),
+        PlaceRoot::ParameterContents(local) => format!("contents({})", hir.locals[local].name),
         PlaceRoot::Temporary(temporary) => format!("temporary#{}", temporary.0),
     };
     for projection in &place.projections {
@@ -225,6 +228,7 @@ pub struct Function {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ResultProvenance {
+    pub callable: Option<CallableTargets>,
     pub parameters: Vec<usize>,
     pub receiver: bool,
     pub fresh_owned: bool,
@@ -245,8 +249,7 @@ pub struct LoanDefinition {
 pub enum BorrowValue {
     /// A callable's result parameter dependencies, distinct from its captured loans.
     Callable {
-        target: FunctionId,
-        parameters: Vec<usize>,
+        targets: CallableTargets,
         environment: Box<BorrowValue>,
     },
     /// Resolve known-target dependencies at this CFG point, otherwise use the typed contract.

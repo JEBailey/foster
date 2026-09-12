@@ -651,8 +651,19 @@ The implemented model is useful but is not yet a general Rust-equivalent borrow 
   callable elements uses the union for all possible elements. Writes to the list invalidate that
   summary; effectful calls and alias writes retain conservative invalidation. Unknown elements,
   unknown predecessors, and larger target sets fall back to checked result-type and group contracts.
-  Captured loans remain dependencies independently of the target's argument summary. Hidden
-  environment dependencies and other dynamic target sources remain conservative.
+  Captured loans remain dependencies independently of the target's argument summary. Incoming
+  parameters that can contain borrowers carry symbolic contents dependencies, including generic
+  and aggregate parameters: factories can forward them through
+  returned closures, nested closures, and result records without retaining discarded callable
+  arguments. These dependencies propagate through direct-call summaries and compiled-library
+  metadata. Borrowing the factory's local callable slot remains distinct from forwarding its
+  contents and cannot escape. Callers substitute actual loans and enforce their lifetime;
+  symbolic contents do not create additional local lifetime requirements inside the factory.
+  Known callable targets returned by source factories propagate through direct-call chains;
+  every returned target must be known and the set must fit the existing eight-target limit.
+  Unknown factory parameters and opaque external factory targets still use conservative contracts.
+  Inferred and declared reshape effects on indirect calls invalidate captured origins;
+  reshaping through a reference alias also checks the possible underlying origins.
 - Implicit copy behavior is a built-in classification. The structural `Copy` capability supports
   explicit user-defined copying without changing assignment or capture semantics.
 - Runtime values still use managed host representations in the VM. Records use shared layouts

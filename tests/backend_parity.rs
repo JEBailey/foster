@@ -2,6 +2,41 @@
 use foster::{native, vm};
 
 #[test]
+fn nested_closure_factories_preserve_hidden_borrowers() {
+    check(
+        "nested-closure-factories",
+        r#"
+func wrap(keep: func() -> Int, discard: func() -> Int) -> func() -> Int {
+    [move keep] () -> keep()
+}
+func choose<T>(keep: T, discard: T) -> T { keep }
+func get_factory() -> func(consume func() -> Int, func() -> Int) -> func() -> Int { wrap }
+func nested(keep: func() -> Int, discard: func() -> Int) -> func() -> func() -> Int {
+    [move keep] () -> { let inner = move keep
+        [move inner] () -> inner() }
+}
+func main() -> Int {
+    let left = [21]
+    let right = [99]
+    let selected = ref left[0]
+    let ignored = ref right[0]
+    let keep = [ref selected] () -> selected
+    let discard = [ref ignored] () -> ignored
+    let factory = get_factory()
+    let chosen = choose(move keep, discard)
+    let first = factory(move chosen, discard)
+    let outer = nested(move first, discard)
+    let reader = outer()
+    let change = [ref right] () -> right.push(100)
+    change()
+    reader() + reader()
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
 fn dynamic_callable_selection_preserves_shared_reference_results() {
     check_stdout(
         "dynamic-callable-selection",

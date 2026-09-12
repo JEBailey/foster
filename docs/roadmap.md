@@ -15,7 +15,9 @@ general without weakening its current guarantees.
   range facts. Algebraic equivalence, other arithmetic operators, dynamically indexed operands,
   effectful initializers, and larger formulas remain conservative.
 - Extend result provenance beyond bounded known-target sets and runtime selection from known
-  callable lists to opaque factories, hidden captured borrowers, and effectful calls.
+  callable lists, source-factory return targets, and hidden-parameter dependencies through closure
+  factories to opaque external factory targets, more precise field-level parameter dependencies,
+  and effectful calls. Unknown targets and sets beyond the analysis bound remain conservative.
 - Define effect-polymorphic callable contracts beyond the concrete effect annotations.
 - Decide whether public APIs require explicit annotations beyond the checks already performed by
   inference.

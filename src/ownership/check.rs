@@ -49,7 +49,7 @@ pub(super) fn check_function(
                     if !place_is_usable(&state, place) {
                         let definition = &hir.functions[function];
                         let (name, declared_at) = match place.root {
-                            PlaceRoot::Local(local) => (
+                            PlaceRoot::Local(local) | PlaceRoot::ParameterContents(local) => (
                                 hir.locals[local].name.clone(),
                                 hir.locals[local].span.clone(),
                             ),

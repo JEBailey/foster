@@ -106,6 +106,31 @@ impl<'a> Builder<'a> {
         let definition = &self.hir.functions[self.function];
         for (index, parameter) in definition.parameters.iter().enumerate() {
             self.initialize(*parameter, definition.span.clone());
+            if self
+                .types
+                .function_type(self.function)
+                .is_some_and(|signature| {
+                    !matches!(
+                        self.types.types[signature.parameters[index]],
+                        crate::types::Type::Reference { .. }
+                    ) && super::callables::may_borrow(
+                        self.hir,
+                        self.types,
+                        signature.parameters[index],
+                    )
+                })
+            {
+                let origin = Place {
+                    root: super::PlaceRoot::ParameterContents(*parameter),
+                    projections: vec![],
+                };
+                let value = self.issue_reborrow(origin, definition.span.clone());
+                self.emit(Operation::StoreBorrower {
+                    destination: Self::local_place(*parameter),
+                    value,
+                    span: definition.span.clone(),
+                });
+            }
             if matches!(
                 definition.parameter_types[index],
                 Some(crate::ast::TypeExpr::Reference { .. })
@@ -990,8 +1015,7 @@ impl<'a> Builder<'a> {
                     .collect(),
             ),
             hir::Expr::Closure { function, captures } => BorrowValue::Callable {
-                target: *function,
-                parameters: self.callable_parameters(*function),
+                targets: self.callable_targets(*function),
                 environment: Box::new(BorrowValue::Merge(
                     captures
                         .iter()
@@ -1021,8 +1045,7 @@ impl<'a> Builder<'a> {
                 )),
             },
             hir::Expr::Name(ResolvedName::Function(function)) => BorrowValue::Callable {
-                target: *function,
-                parameters: self.callable_parameters(*function),
+                targets: self.callable_targets(*function),
                 environment: Box::new(BorrowValue::Empty),
             },
             hir::Expr::Call { callee, arguments } => {
@@ -1103,22 +1126,15 @@ impl<'a> Builder<'a> {
         visit(self, ty, &std::collections::HashMap::new(), 0)
     }
 
-    fn callable_parameters(&self, function: FunctionId) -> Vec<usize> {
-        let mut parameters = self.result_provenance[&function].parameters.clone();
-        if let Some(signature) = self.types.function_type(function) {
-            // Existing inferred summaries seed explicit reference parameters. Hidden
-            // borrowers in aggregate/callable parameters still require a fallback.
-            for (index, ty) in signature.parameters.iter().enumerate() {
-                if !matches!(self.types.types[*ty], crate::types::Type::Reference { .. })
-                    && super::callables::may_borrow(self.hir, self.types, *ty)
-                {
-                    parameters.push(index);
-                }
-            }
+    fn callable_targets(&self, function: FunctionId) -> super::mir::CallableTargets {
+        super::mir::CallableTargets {
+            targets: std::collections::BTreeSet::from([function]),
+            parameters: self.result_provenance[&function]
+                .parameters
+                .iter()
+                .copied()
+                .collect(),
         }
-        parameters.sort_unstable();
-        parameters.dedup();
-        parameters
     }
 
     fn call_result_borrow_value(&mut self, callee: ExprId, arguments: &[ExprId]) -> BorrowValue {
@@ -1168,7 +1184,14 @@ impl<'a> Builder<'a> {
                 .filter_map(|parameter| arguments.get(parameter))
                 .map(|argument| self.borrow_value(*argument)),
         );
-        BorrowValue::Merge(values)
+        let environment = BorrowValue::Merge(values);
+        match &summary.callable {
+            Some(targets) => BorrowValue::Callable {
+                targets: targets.clone(),
+                environment: Box::new(environment),
+            },
+            None => environment,
+        }
     }
 
     fn issue_reborrow(&mut self, origin: Place, span: std::ops::Range<usize>) -> BorrowValue {
@@ -1236,6 +1259,14 @@ impl<'a> Builder<'a> {
             );
         if indirect {
             self.emit(Operation::ForgetPathFacts { place: None });
+            if self.types.expression_type(callee).is_some_and(|ty| {
+                matches!(&self.types.types[ty], crate::types::Type::Function(signature)
+                    if signature.effects.iter().any(|effect| effect.kind == crate::ast::EffectKind::Reshape))
+            }) && let Some(place) = self.owned_place(callee) {
+                self.emit(Operation::Invalidate {
+                    place, kind: InvalidationKind::Reshape, span: self.span(expression),
+                });
+            }
         }
         for (place, _) in super::effects::call_mutations(self.hir, self.types, callee, arguments) {
             self.emit(Operation::ForgetPathFacts {

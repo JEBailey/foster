@@ -50,6 +50,32 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             );
         }
         let mut owners = HashMap::new();
+        if !definition.effects_explicit && definition.name.contains('$') {
+            for (_, expression) in checker.hir.expressions.iter() {
+                let hir::Expr::Closure {
+                    function: closure,
+                    captures,
+                } = expression
+                else {
+                    continue;
+                };
+                if *closure != function {
+                    continue;
+                }
+                for capture in captures {
+                    if capture.mode == hir::CaptureMode::Ref {
+                        let name = checker
+                            .locals
+                            .get(&capture.local)
+                            .and_then(|ty| reference_group(&checker.resolved(ty.clone())))
+                            .filter(|group| group != FRAME_GROUP)
+                            .unwrap_or_else(|| checker.hir.locals[capture.local].name.clone());
+                        contract.insert(name.clone());
+                        owners.insert(capture.local, crate::ast::GroupPath::root(name));
+                    }
+                }
+            }
+        }
         for (index, local) in definition.parameters.iter().enumerate() {
             let reference_parameter_group = checker.functions[&function]
                 .parameters

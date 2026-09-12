@@ -14,6 +14,7 @@ use super::{
 fn place_name(hir: &PackageHir, place: &Place) -> String {
     match place.root {
         PlaceRoot::Local(local) => hir.locals[local].name.clone(),
+        PlaceRoot::ParameterContents(local) => format!("contents({})", hir.locals[local].name),
         PlaceRoot::Temporary(temporary) => format!("temporary#{}", temporary.0),
     }
 }
@@ -68,6 +69,8 @@ pub(super) fn infer_result_provenance(hir: &PackageHir, program: &mut Program) {
         let analysis = &program.provenance[function_id];
         let mut parameters = HashSet::new();
         let mut returns_borrower = false;
+        let mut callable: Option<CallableTargets> = None;
+        let mut all_callable = true;
         for (block, basic_block) in function.blocks.iter().enumerate() {
             let Some(points) = &analysis.points[block] else {
                 continue;
@@ -77,6 +80,18 @@ pub(super) fn infer_result_provenance(hir: &PackageHir, program: &mut Program) {
                     continue;
                 };
                 let mut state = points[operation_index].clone();
+                let target = callable_fields(value, &state)
+                    .into_iter()
+                    .find(|(path, elements, _)| path.is_empty() && !elements);
+                if let Some((_, _, targets)) = target {
+                    if let Some(known) = &mut callable {
+                        all_callable &= known.merge(&targets);
+                    } else {
+                        callable = Some(targets);
+                    }
+                } else {
+                    all_callable = false;
+                }
                 let loans = evaluate(value, &mut state);
                 returns_borrower |= !loans.is_empty();
                 for loan in loans {
@@ -94,6 +109,7 @@ pub(super) fn infer_result_provenance(hir: &PackageHir, program: &mut Program) {
         parameters.sort_unstable();
         let receiver = parameters.first() == Some(&0) && definition.receiver.is_some();
         function.result_provenance = super::ResultProvenance {
+            callable: if all_callable { callable } else { None },
             fresh_owned: !returns_borrower,
             parameters,
             receiver,
@@ -112,11 +128,13 @@ fn collect_parameter_origins(
         return;
     }
     let loan = &function.loans[loan.0];
-    if let Some(local) = loan.origin.local_root()
-        && let Some(parameter) = definition
-            .parameters
-            .iter()
-            .position(|parameter| *parameter == local)
+    if let Some(local) = match loan.origin.root {
+        PlaceRoot::ParameterContents(local) => Some(local),
+        _ => loan.origin.local_root(),
+    } && let Some(parameter) = definition
+        .parameters
+        .iter()
+        .position(|parameter| *parameter == local)
     {
         parameters.insert(parameter);
     }
@@ -251,6 +269,12 @@ fn transfer_requirement(
             let before =
                 &provenance.points[block].as_ref().expect("reachable block")[operation_index];
             for loan in contents_at(before, place) {
+                if matches!(
+                    function.loans[loan.0].origin.root,
+                    PlaceRoot::ParameterContents(_)
+                ) {
+                    continue;
+                }
                 state
                     .loans
                     .entry(loan)
@@ -266,6 +290,12 @@ fn transfer_requirement(
                 &provenance.points[block].as_ref().expect("reachable block")[operation_index];
             let mut temporary = before.clone();
             for loan in evaluate(value, &mut temporary) {
+                if matches!(
+                    function.loans[loan.0].origin.root,
+                    PlaceRoot::ParameterContents(_)
+                ) {
+                    continue;
+                }
                 state
                     .loans
                     .entry(loan)
@@ -302,6 +332,12 @@ fn require_ancestors(function: &Function, state: &mut RequirementState) {
             continue;
         };
         for parent in &function.loans[child.0].parents {
+            if matches!(
+                function.loans[parent.0].origin.root,
+                PlaceRoot::ParameterContents(_)
+            ) {
+                continue;
+            }
             if !state.loans.contains_key(parent) {
                 state.loans.insert(*parent, required_use.clone());
                 work.push(*parent);
@@ -889,6 +925,12 @@ fn transfer_guarded_requirement(
             let before =
                 &provenance.points[block].as_ref().expect("reachable block")[operation_index];
             for loan in contents_at(before, place) {
+                if matches!(
+                    function.loans[loan.0].origin.root,
+                    PlaceRoot::ParameterContents(_)
+                ) {
+                    continue;
+                }
                 let _ = merge_guarded_uses(
                     state.entry(loan).or_default(),
                     vec![GuardedRequiredUse {
@@ -907,6 +949,12 @@ fn transfer_guarded_requirement(
                 &provenance.points[block].as_ref().expect("reachable block")[operation_index];
             let mut temporary = before.clone();
             for loan in evaluate(value, &mut temporary) {
+                if matches!(
+                    function.loans[loan.0].origin.root,
+                    PlaceRoot::ParameterContents(_)
+                ) {
+                    continue;
+                }
                 let _ = merge_guarded_uses(
                     state.entry(loan).or_default(),
                     vec![GuardedRequiredUse {
@@ -960,6 +1008,12 @@ fn require_guarded_ancestors(function: &Function, state: &mut GuardedRequirement
             continue;
         };
         for parent in &function.loans[child.0].parents {
+            if matches!(
+                function.loans[parent.0].origin.root,
+                PlaceRoot::ParameterContents(_)
+            ) {
+                continue;
+            }
             if merge_guarded_uses(state.entry(*parent).or_default(), required_uses.clone()) {
                 work.push(*parent);
             }
@@ -1246,6 +1300,17 @@ fn collect_root_loans(
     if definition.parents.is_empty() {
         roots.insert(loan);
     } else {
+        // Borrowing the parameter slot is distinct from forwarding the loans
+        // inside its callable. Preserve the slot loan for escape validation.
+        if definition.parents.iter().any(|parent| {
+            matches!(
+                function.loans[parent.0].origin.root,
+                PlaceRoot::ParameterContents(_)
+            )
+        }) && !matches!(definition.origin.root, PlaceRoot::ParameterContents(_))
+        {
+            roots.insert(loan);
+        }
         for parent in &definition.parents {
             collect_root_loans(function, *parent, visited, roots);
         }
@@ -1260,6 +1325,10 @@ fn validate_returned_loan(
     kind: super::ReturnKind,
     returned_at: &std::ops::Range<usize>,
 ) -> Result<(), FosterError> {
+    if matches!(loan.origin.root, PlaceRoot::ParameterContents(_)) {
+        // The caller substitutes the actual captured loans from this parameter.
+        return Ok(());
+    }
     let module = &hir.modules[function.module].name;
     let Some(origin) = loan.origin.local_root() else {
         let noun = match kind {
@@ -1419,10 +1488,21 @@ fn find_conflict_inner(
                     let Some((place, kind, _)) = invalidating_operation(operation) else {
                         return false;
                     };
-                    points[index + 1]
-                        .loans
-                        .keys()
-                        .any(|loan| invalidates(place, kind, &function.loans[loan.0].origin))
+                    let aliases = if kind == InvalidationKind::Reshape {
+                        operation_fact_invalidation(
+                            operation,
+                            function,
+                            &provenance.points[block].as_ref().unwrap()[index],
+                        )
+                        .places
+                    } else {
+                        vec![place.clone()]
+                    };
+                    points[index + 1].loans.keys().any(|loan| {
+                        aliases
+                            .iter()
+                            .any(|place| invalidates(place, kind, &function.loans[loan.0].origin))
+                    })
                 })
         });
     if !has_candidate {
@@ -1445,6 +1525,16 @@ fn find_conflict_inner(
                 continue;
             };
             let required_after = &points[operation_index + 1];
+            let aliases = if kind == InvalidationKind::Reshape {
+                operation_fact_invalidation(
+                    operation,
+                    function,
+                    &provenance.points[block].as_ref().unwrap()[operation_index],
+                )
+                .places
+            } else {
+                vec![place.clone()]
+            };
             let guarded_after = &guarded_points[operation_index + 1];
             let reaching = &reachability_points[operation_index];
             if let Some((loan, required_use)) = required_after
@@ -1452,6 +1542,9 @@ fn find_conflict_inner(
                 .iter()
                 .filter_map(|(id, conservative_use)| {
                     let loan = &function.loans[id.0];
+                    let place = aliases
+                        .iter()
+                        .find(|place| invalidates(place, kind, &loan.origin))?;
                     let issued_here = loan.issued_at.block == block
                         && loan.issued_at.operation == operation_index;
                     let replacement_through_parameter =
@@ -1690,18 +1783,7 @@ fn callable_fields(
     state: &ProvenanceState,
 ) -> Vec<(Vec<Projection>, bool, CallableTargets)> {
     match value {
-        BorrowValue::Callable {
-            target, parameters, ..
-        } => {
-            vec![(
-                vec![],
-                false,
-                CallableTargets {
-                    targets: std::collections::BTreeSet::from([*target]),
-                    parameters: parameters.iter().copied().collect(),
-                },
-            )]
-        }
+        BorrowValue::Callable { targets, .. } => vec![(vec![], false, targets.clone())],
         BorrowValue::Tracked { loans, .. } => callable_fields(loans, state),
         BorrowValue::Place(place) | BorrowValue::MovePlace(place) => {
             if matches!(
