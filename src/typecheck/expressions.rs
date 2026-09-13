@@ -18,18 +18,18 @@ impl Checker<'_> {
         let signature = self.functions[&function_id].clone();
         for (local, ty) in function.parameters.iter().zip(&signature.parameters) {
             let group = reference_group(ty).unwrap_or_else(|| {
-                if function.receiver == Some(*local) {
+                if function.receiver == Some(local.local) {
                     "self".to_owned()
                 } else {
                     FRAME_GROUP.to_owned()
                 }
             });
-            self.local_groups.insert(*local, group);
+            self.local_groups.insert(local.local, group);
             let local_ty = match ty {
                 Ty::Reference(_, value) => (**value).clone(),
                 ty => ty.clone(),
             };
-            self.locals.insert(*local, local_ty);
+            self.locals.insert(local.local, local_ty);
         }
 
         let body = function.body.clone();
@@ -671,7 +671,7 @@ impl Checker<'_> {
         if !definition
             .parameters
             .iter()
-            .any(|local| self.hir.locals[*local].name.starts_with("$partial"))
+            .any(|local| self.hir.locals[local.local].name.starts_with("$partial"))
         {
             return Ok(());
         }
@@ -712,7 +712,9 @@ impl Checker<'_> {
                     continue;
                 };
                 if mode == crate::ast::ParameterMode::Consume
-                    && let Some(index) = parameters.iter().position(|parameter| *parameter == local)
+                    && let Some(index) = parameters
+                        .iter()
+                        .position(|parameter| parameter.local == local)
                 {
                     updates.push(index);
                 }

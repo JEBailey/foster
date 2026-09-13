@@ -167,12 +167,12 @@ pub(super) fn check_function(
     let mut initial = State::default();
     for parameter in &hir.functions[function].parameters {
         if types
-            .local_type(*parameter)
+            .local_type(parameter.local)
             .is_some_and(|ty| matches!(types.types[ty], crate::types::Type::Remote(_)))
         {
             initial.contents.insert(
-                Place::local(*parameter),
-                BTreeSet::from([Identity::Owner(Owner::Parameter(*parameter))]),
+                Place::local(parameter.local),
+                BTreeSet::from([Identity::Owner(Owner::Parameter(parameter.local))]),
             );
         }
     }
@@ -357,11 +357,11 @@ pub(super) fn check_function(
                         Owner::Parameter(parameter) => hir.functions[function]
                             .parameters
                             .iter()
-                            .position(|local| local == parameter)
+                            .position(|local| local.local == *parameter)
                             .and_then(|index| {
                                 types
                                     .function_type(function)
-                                    .map(|signature| signature.parameter_modes[index])
+                                    .map(|signature| signature.parameters[index].mode)
                             })
                             .is_some_and(|mode| mode == crate::ast::ParameterMode::Consume),
                     })

@@ -695,7 +695,7 @@ fn function_owner(compilation: &Compilation, id: FunctionId) -> Option<String> {
     if let Some((owner, _)) = function.name.split_once('.') {
         return Some(owner.to_owned());
     }
-    let first = *function.parameters.first()?;
+    let first = function.parameters.first()?.local;
     if compilation.hir.locals[first].name != "self" {
         return None;
     }
@@ -703,7 +703,7 @@ fn function_owner(compilation: &Compilation, id: FunctionId) -> Option<String> {
         .types
         .function_type(id)
         .and_then(|signature| signature.parameters.first())
-        .map(|ty| compilation.types.display(*ty))
+        .map(|ty| compilation.types.display(ty.ty))
         .map(|ty| ty.split('<').next().unwrap_or(&ty).to_owned())
 }
 
@@ -786,13 +786,13 @@ fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
         .iter()
         .enumerate()
         .map(|(index, local)| {
-            let name = &compilation.hir.locals[*local].name;
+            let name = &compilation.hir.locals[local.local].name;
             let ty = signature
                 .and_then(|sig| sig.parameters.get(index))
-                .map(|ty| links.resolved(*ty))
+                .map(|ty| links.resolved(ty.ty))
                 .unwrap_or_else(|| "_".into());
             let consume = signature
-                .and_then(|sig| sig.parameter_modes.get(index))
+                .and_then(|sig| sig.parameters.get(index).map(|p| &p.mode))
                 .is_some_and(|mode| *mode == ParameterMode::Consume);
             format!("{name}: {}{ty}", if consume { "consume " } else { "" })
         })

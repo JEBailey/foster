@@ -88,7 +88,7 @@ pub(super) fn parameter_origins(types: &TypeInformation, signature: &FunctionTyp
         .iter()
         .enumerate()
         .filter_map(|(index, parameter)| {
-            let excluded = matches!((&types.types[signature.result], &types.types[*parameter]),
+            let excluded = matches!((&types.types[signature.result], &types.types[parameter.ty]),
             (Type::Reference { group: result, .. }, Type::Reference { group: input, .. })
                 if result != "_" && input != "_" && result != "<frame>" && input != "<frame>" && result != input);
             (!excluded).then_some(index)

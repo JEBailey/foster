@@ -110,20 +110,19 @@ impl Checker<'_> {
                 } else {
                     false
                 };
-            let normalize_effects = |function: FunctionId| {
-                let definition = &self.hir.functions[function];
-                let mut effects = definition.effects.clone();
-                for effect in &mut effects {
-                    if let Some(index) = definition
-                        .parameters
-                        .iter()
-                        .position(|local| self.hir.locals[*local].name == effect.target.root)
-                    {
-                        effect.target.root = format!("argument{index}");
+            let normalize_effects =
+                |function: FunctionId| {
+                    let definition = &self.hir.functions[function];
+                    let mut effects = definition.effects.clone();
+                    for effect in &mut effects {
+                        if let Some(index) = definition.parameters.iter().position(|local| {
+                            self.hir.locals[local.local].name == effect.target.root
+                        }) {
+                            effect.target.root = format!("argument{index}");
+                        }
                     }
-                }
-                effects
-            };
+                    effects
+                };
             if !compatible
                 || (self.hir.functions[earlier].public && !self.hir.functions[later].public)
                 || (!contract_checked
@@ -362,7 +361,9 @@ impl Checker<'_> {
             if *mode == crate::ast::ParameterMode::Borrow {
                 allowed_effects.push(crate::ast::Effect {
                     kind: crate::ast::EffectKind::Read,
-                    target: crate::ast::GroupPath::root(self.hir.locals[*parameter].name.clone()),
+                    target: crate::ast::GroupPath::root(
+                        self.hir.locals[parameter.local].name.clone(),
+                    ),
                 });
             }
         }
@@ -898,7 +899,9 @@ impl Checker<'_> {
             if *mode == crate::ast::ParameterMode::Borrow {
                 allowed_effects.push(crate::ast::Effect {
                     kind: crate::ast::EffectKind::Read,
-                    target: crate::ast::GroupPath::root(self.hir.locals[*parameter].name.clone()),
+                    target: crate::ast::GroupPath::root(
+                        self.hir.locals[parameter.local].name.clone(),
+                    ),
                 });
             }
         }

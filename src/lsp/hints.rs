@@ -43,8 +43,8 @@ pub(super) fn inlay_hints(
                 function
                     .parameters
                     .iter()
-                    .position(|parameter| *parameter == local_id)
-                    .and_then(|index| function.parameter_types.get(index))
+                    .find(|parameter| parameter.local == local_id)
+                    .map(|p| &p.ty)
                     .is_some_and(Option::is_none)
             }
         };

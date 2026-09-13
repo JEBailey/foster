@@ -282,7 +282,11 @@ fn declaration_key(hir: &hir::PackageHir) -> String {
                 &function.intrinsic,
                 &function.type_parameters,
                 &function.groups,
-                &function.parameter_types,
+                function
+                    .parameters
+                    .iter()
+                    .map(|p| &p.ty)
+                    .collect::<Vec<_>>(),
                 &function.return_type
             )
         ));
@@ -352,7 +356,7 @@ impl Checker<'_> {
         let Some(input) = input else { return };
         let definition = &self.hir.functions[function];
         if definition.return_type.is_none()
-            || !definition.parameter_types.iter().all(Option::is_some)
+            || !definition.parameters.iter().all(|p| p.ty.is_some())
             || !shape.eligible
             || !self.body_cacheable
             || error.labels.is_empty()

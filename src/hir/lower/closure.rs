@@ -21,8 +21,6 @@ impl FunctionLowerer<'_> {
             type_parameters: parent.type_parameters.clone(),
             groups: parent.groups.clone(),
             parameters: Vec::new(),
-            parameter_types: Vec::new(),
-            parameter_type_spans: Vec::new(),
             return_type: None,
             effects_explicit: false,
             effects: Vec::new(),
@@ -64,7 +62,11 @@ impl FunctionLowerer<'_> {
                     name,
                     kind: LocalKind::Parameter,
                 });
-                parameters.push(local);
+                parameters.push(Parameter {
+                    local,
+                    ty: None,
+                    type_span: None,
+                });
                 call_arguments.push(self.alloc_expression(Expr::Name(ResolvedName::Local(local))));
             } else {
                 let source = self.lower_expression(argument)?;
@@ -77,10 +79,6 @@ impl FunctionLowerer<'_> {
             arguments: call_arguments,
         });
         self.hir.functions[function].parameters = parameters;
-        self.hir.functions[function].parameter_types =
-            vec![None; self.hir.functions[function].parameters.len()];
-        self.hir.functions[function].parameter_type_spans =
-            vec![None; self.hir.functions[function].parameters.len()];
         self.hir.functions[function]
             .body
             .push(Stmt::Expr(call), span);
@@ -137,14 +135,6 @@ impl FunctionLowerer<'_> {
             type_parameters: self.hir.functions[self.function].type_parameters.clone(),
             groups: self.hir.functions[self.function].groups.clone(),
             parameters: Vec::new(),
-            parameter_types: parameters
-                .iter()
-                .map(|parameter| parameter.ty.clone())
-                .collect(),
-            parameter_type_spans: parameters
-                .iter()
-                .map(|parameter| parameter.type_span.clone())
-                .collect(),
             return_type,
             effects_explicit: !effects.is_empty() || suspends,
             effects: effects.to_vec(),

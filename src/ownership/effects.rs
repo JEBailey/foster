@@ -56,8 +56,8 @@ fn call_effects(
         } else if let Some(function) = function {
             let definition = &hir.functions[function];
             for (index, parameter) in definition.parameters.iter().enumerate() {
-                if hir.locals[*parameter].name != effect.target.root
-                    && !matches!(definition.parameter_types[index].as_ref(),
+                if hir.locals[parameter.local].name != effect.target.root
+                    && !matches!(parameter.ty.as_ref(),
                         Some(crate::ast::TypeExpr::Reference { group, .. }) if *group == effect.target.root)
                 {
                     continue;

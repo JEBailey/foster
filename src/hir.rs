@@ -132,6 +132,15 @@ pub struct RecordField {
 }
 
 #[derive(Debug, Clone)]
+/// One parameter binding and its source annotation; inferred parameters have neither
+/// an annotation nor an annotation span. Ownership modes are derived during type checking.
+pub struct Parameter {
+    pub local: LocalId,
+    pub ty: Option<ast::TypeExpr>,
+    pub type_span: Option<std::ops::Range<usize>>,
+}
+
+#[derive(Debug, Clone)]
 pub struct Function {
     pub span: std::ops::Range<usize>,
     pub documentation: Option<String>,
@@ -144,9 +153,7 @@ pub struct Function {
     pub intrinsic: Option<String>,
     pub type_parameters: Vec<String>,
     pub groups: Vec<ast::GroupParameter>,
-    pub parameters: Vec<LocalId>,
-    pub parameter_types: Vec<Option<ast::TypeExpr>>,
-    pub parameter_type_spans: Vec<Option<std::ops::Range<usize>>>,
+    pub parameters: Vec<Parameter>,
     pub return_type: Option<ast::TypeExpr>,
     pub effects_explicit: bool,
     pub effects: Vec<ast::Effect>,

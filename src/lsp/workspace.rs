@@ -1191,7 +1191,7 @@ fn add_module_completions(
                     signature
                         .parameters
                         .iter()
-                        .map(|ty| compilation.types.display(*ty))
+                        .map(|ty| compilation.types.display(ty.ty))
                         .collect::<Vec<_>>()
                         .join(", "),
                     compilation.types.display(signature.result)
@@ -1289,7 +1289,7 @@ fn add_associated_completions(
                 signature
                     .parameters
                     .iter()
-                    .map(|ty| compilation.types.display(*ty))
+                    .map(|ty| compilation.types.display(ty.ty))
                     .collect::<Vec<_>>()
                     .join(", "),
                 compilation.types.display(signature.result)
@@ -1404,7 +1404,7 @@ pub(super) fn callable_presentation(
             .parameters
             .iter()
             .skip(usize::from(receiver))
-            .map(|parameter| compilation.hir.locals[*parameter].name.clone())
+            .map(|parameter| compilation.hir.locals[parameter.local].name.clone())
             .collect(),
         documentation: definition.documentation.clone(),
         definition: symbol_declaration(compilation, SymbolIdentity::Function(function)),
@@ -1465,19 +1465,19 @@ fn member_function(
                     .and_then(|signature| signature.parameters.first())
                     .is_some_and(|ty| {
                         matches!(
-                            (owner, &compilation.types.types[*ty]),
+                            (owner, &compilation.types.types[ty.ty]),
                             (
                                 NominalOwner::Record(expected),
                                 crate::types::Type::Record { record, .. }
                             ) if expected == *record
                         ) || matches!(
-                            (owner, &compilation.types.types[*ty]),
+                            (owner, &compilation.types.types[ty.ty]),
                             (
                                 NominalOwner::Variant(expected),
                                 crate::types::Type::Variant { variant, .. }
                             ) if expected == *variant
                         ) || matches!(
-                            (owner, &compilation.types.types[*ty]),
+                            (owner, &compilation.types.types[ty.ty]),
                             (NominalOwner::Bool, crate::types::Type::Bool)
                                 | (NominalOwner::Int, crate::types::Type::Int)
                                 | (NominalOwner::Float, crate::types::Type::Float)
@@ -1564,14 +1564,14 @@ pub(super) fn function_signature(
         .map(|(index, local)| {
             let ty = signature
                 .and_then(|signature| signature.parameters.get(index))
-                .map(|ty| compilation.types.display(*ty))
+                .map(|ty| compilation.types.display(ty.ty))
                 .unwrap_or_else(|| "_".into());
             let consumed = signature
-                .and_then(|signature| signature.parameter_modes.get(index))
+                .and_then(|signature| signature.parameters.get(index).map(|p| &p.mode))
                 .is_some_and(|mode| *mode == crate::ast::ParameterMode::Consume);
             format!(
                 "{}: {}{ty}",
-                compilation.hir.locals[*local].name,
+                compilation.hir.locals[local.local].name,
                 if consumed { "consume " } else { "" }
             )
         })

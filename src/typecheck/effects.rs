@@ -26,7 +26,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 definition
                     .parameters
                     .iter()
-                    .map(|parameter| checker.hir.locals[*parameter].name.clone()),
+                    .map(|parameter| checker.hir.locals[parameter.local].name.clone()),
             );
         }
         contract.extend(
@@ -34,10 +34,9 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 .effects
                 .iter()
                 .filter(|effect| {
-                    definition
-                        .parameters
-                        .iter()
-                        .any(|parameter| checker.hir.locals[*parameter].name == effect.target.root)
+                    definition.parameters.iter().any(|parameter| {
+                        checker.hir.locals[parameter.local].name == effect.target.root
+                    })
                 })
                 .map(|effect| effect.target.root.clone()),
         );
@@ -87,19 +86,19 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 .iter()
                 .any(|effect| {
                     effect.kind != crate::ast::EffectKind::Consume
-                        && effect.target.root == checker.hir.locals[*local].name
+                        && effect.target.root == checker.hir.locals[local.local].name
                 })
-                .then(|| crate::ast::GroupPath::root(checker.hir.locals[*local].name.clone()));
+                .then(|| crate::ast::GroupPath::root(checker.hir.locals[local.local].name.clone()));
             let owner = reference_parameter_group
                 .or(declared_parameter_group)
                 .unwrap_or_else(|| {
                     if definition.effects_explicit {
                         crate::ast::GroupPath::root(FRAME_GROUP)
                     } else {
-                        crate::ast::GroupPath::root(checker.hir.locals[*local].name.clone())
+                        crate::ast::GroupPath::root(checker.hir.locals[local.local].name.clone())
                     }
                 });
-            owners.insert(*local, owner);
+            owners.insert(local.local, owner);
         }
         if let Some(self_local) = definition.receiver {
             owners.insert(self_local, crate::ast::GroupPath::root("self"));
@@ -440,7 +439,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                         .parameters
                         .iter()
                         .skip(1)
-                        .map(|parameter| self.checker.hir.locals[*parameter].name.clone())
+                        .map(|parameter| self.checker.hir.locals[parameter.local].name.clone())
                         .collect::<Vec<_>>();
                     let effects = self.callee_effects(method).0.to_vec();
                     for effect in effects {
@@ -567,7 +566,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                         .iter()
                         .enumerate()
                         .find(|(index, local)| {
-                            self.checker.hir.locals[**local].name == effect.target.root
+                            self.checker.hir.locals[local.local].name == effect.target.root
                                 || self.checker.functions[&target]
                                     .parameters
                                     .get(*index)

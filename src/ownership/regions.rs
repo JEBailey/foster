@@ -134,7 +134,7 @@ fn collect_parameter_origins(
     } && let Some(parameter) = definition
         .parameters
         .iter()
-        .position(|parameter| *parameter == local)
+        .position(|parameter| parameter.local == local)
     {
         parameters.insert(parameter);
     }
@@ -1242,10 +1242,9 @@ fn validate_storage_and_escape(
                         .map(|loan| &function.loans[loan.0])
                         .filter(|loan| places_overlap(destination, &loan.origin))
                         .filter(|loan| {
-                            !(destination
-                                .local_root()
-                                .is_some_and(|local| definition.parameters.contains(&local))
-                                && loan.origin == *destination
+                            !(destination.local_root().is_some_and(|local| {
+                                definition.parameters.iter().any(|p| p.local == local)
+                            }) && loan.origin == *destination
                                 && loan.issued_at.block == block
                                 && loan.issued_at.operation == operation_index)
                         })
@@ -1355,7 +1354,7 @@ fn validate_returned_loan(
     let Some(parameter) = function
         .parameters
         .iter()
-        .position(|parameter| *parameter == origin)
+        .position(|parameter| parameter.local == origin)
     else {
         let noun = match kind {
             super::ReturnKind::Closure => "closure",
@@ -1376,7 +1375,7 @@ fn validate_returned_loan(
         .with_help("return an owned value, or borrow from a reference parameter whose group appears in the result type"));
     };
     let Some(crate::ast::TypeExpr::Reference { group, .. }) =
-        function.parameter_types[parameter].as_ref()
+        function.parameters[parameter].ty.as_ref()
     else {
         return Err(FosterError::runtime(format!(
             "in `{module}.{}`: returned reference borrows parameter `{name}` without an exposed group",

@@ -273,7 +273,7 @@ impl<'a> Checker<'a> {
             // Explicit signatures isolate body constraints. With an inferred signature, stop
             // at the first failure rather than attributing speculative downstream errors.
             let independent = definition.return_type.is_some()
-                && definition.parameter_types.iter().all(Option::is_some);
+                && definition.parameters.iter().all(|p| p.ty.is_some());
             let checkpoint = (independent
                 && recover.is_some_and(|modules| modules.contains(&definition.module)))
             .then(|| crate::compiler::profile::measure("types.checkpoint", || self.begin_body()));
@@ -339,10 +339,10 @@ impl<'a> Checker<'a> {
                         .map(|(index, group)| (group.name.as_str(), index))
                         .collect::<HashMap<_, _>>();
                     let signature = definition
-                        .parameter_types
+                        .parameters
                         .iter()
                         .map(|parameter| {
-                            parameter
+                            parameter.ty
                                 .as_ref()
                                 .map(|parameter| overload_type_key(parameter, &generics, &groups))
                                 .ok_or_else(|| {
@@ -562,14 +562,17 @@ impl<'a> Checker<'a> {
                 .map(|parameter| (parameter.clone(), Ty::Generic(parameter.clone())))
                 .collect::<HashMap<_, _>>();
             let parameters = function
-                .parameter_types
+                .parameters
                 .iter()
-                .zip(&function.parameter_type_spans)
-                .map(|(annotation, span)| match annotation {
+                .map(|parameter| match &parameter.ty {
                     Some(annotation) => self
                         .annotation_type(module, annotation, &generics)
                         .map_err(|error| {
-                            located_annotation_error(error, span.as_ref(), &source_module)
+                            located_annotation_error(
+                                error,
+                                parameter.type_span.as_ref(),
+                                &source_module,
+                            )
                         }),
                     None => Ok(self.fresh()),
                 })
@@ -580,15 +583,15 @@ impl<'a> Checker<'a> {
                     .as_deref()
                     .expect("package validation requires receivers to have an owner");
                 let receiver_annotation = function
-                    .parameter_types
+                    .parameters
                     .first()
-                    .and_then(Option::as_ref)
+                    .and_then(|p| p.ty.as_ref())
                     .ok_or_else(|| {
-                        FosterError::runtime(format!(
-                            "method `{}` must give `self` the owner type `{owner}`",
-                            function.name
-                        ))
-                    })?;
+                    FosterError::runtime(format!(
+                        "method `{}` must give `self` the owner type `{owner}`",
+                        function.name
+                    ))
+                })?;
                 let receiver_annotation = match receiver_annotation {
                     crate::ast::TypeExpr::Reference { value, .. } => value.as_ref(),
                     value => value,

@@ -152,7 +152,7 @@ func main() -> Int { inspect([42]) }
 
 fn general_receiver(function: &foster::hir::Function, owner: &str, parameters: &[String]) -> bool {
     let Some(Some(foster::ast::TypeExpr::Named(name, arguments))) =
-        function.parameter_types.first()
+        function.parameters.first().map(|p| &p.ty)
     else {
         return false;
     };

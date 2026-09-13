@@ -234,16 +234,6 @@ impl PackageHir {
                     type_parameters: source_function.type_parameters.clone(),
                     groups: source_function.groups.clone(),
                     parameters: Vec::new(),
-                    parameter_types: source_function
-                        .parameters
-                        .iter()
-                        .map(|parameter| parameter.ty.clone())
-                        .collect(),
-                    parameter_type_spans: source_function
-                        .parameters
-                        .iter()
-                        .map(|parameter| parameter.type_span.clone())
-                        .collect(),
                     return_type: source_function.return_type.clone(),
                     effects_explicit: source_function.effects_explicit,
                     effects: source_function.effects.clone(),
@@ -298,8 +288,6 @@ impl PackageHir {
                     type_parameters: Vec::new(),
                     groups: Vec::new(),
                     parameters: Vec::new(),
-                    parameter_types: Vec::new(),
-                    parameter_type_spans: Vec::new(),
                     return_type: Some(ast::TypeExpr::Unit),
                     effects_explicit: false,
                     effects: Vec::new(),

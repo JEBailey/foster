@@ -89,7 +89,10 @@ pub(super) fn check_function(
                                 .with_primary_label(span.clone(), "deinit needs the complete value until ownership ends"));
                         }
                         if let Some(local) = place.local_root()
-                            && hir.functions[function].parameters.contains(&local)
+                            && hir.functions[function]
+                                .parameters
+                                .iter()
+                                .any(|p| p.local == local)
                             && !parameter_can_be_consumed(hir, types, function, local)
                             && types.local_type(local).is_none_or(|ty| !types.is_copy(ty))
                         {
@@ -230,15 +233,17 @@ fn parameter_can_be_consumed(
     let index = definition
         .parameters
         .iter()
-        .position(|candidate| *candidate == parameter)
+        .position(|candidate| candidate.local == parameter)
         .expect("parameter belongs to its function");
     let name = &hir.locals[parameter].name;
     if types.function_type(function).is_some_and(|signature| {
-        signature.parameter_modes.get(index) == Some(&crate::ast::ParameterMode::Consume)
+        signature.parameters.get(index).map(|p| &p.mode)
+            == Some(&crate::ast::ParameterMode::Consume)
     }) {
         return true;
     }
-    let reference_group = definition.parameter_types[index]
+    let reference_group = definition.parameters[index]
+        .ty
         .as_ref()
         .and_then(|annotation| match annotation {
             crate::ast::TypeExpr::Reference { group, .. } => Some(group.as_str()),

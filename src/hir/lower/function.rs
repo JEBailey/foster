@@ -3,9 +3,15 @@ use super::*;
 
 impl FunctionLowerer<'_> {
     pub(super) fn lower_function(&mut self, source: &ast::Function) -> Result<(), FosterError> {
+        // Inherited defaults may already carry specialized parameter annotations.
+        let declared = &self.hir.functions[self.function].parameters;
+        assert!(
+            declared.is_empty() || declared.len() == source.parameters.len(),
+            "inherited parameter declarations must match their source"
+        );
         let mut parameters = Vec::new();
         let mut parameter_names = std::collections::HashSet::new();
-        for parameter in &source.parameters {
+        for (index, parameter) in source.parameters.iter().enumerate() {
             if !parameter_names.insert(parameter.name.as_str()) {
                 let error = self.error(format!(
                     "function `{}` has more than one parameter named `{}`",
@@ -24,7 +30,13 @@ impl FunctionLowerer<'_> {
                 kind: LocalKind::Parameter,
             });
             self.locals.insert(parameter.name.clone(), local);
-            parameters.push(local);
+            let previous = self.hir.functions[self.function].parameters.get(index);
+            parameters.push(Parameter {
+                local,
+                ty: previous.map_or_else(|| parameter.ty.clone(), |p| p.ty.clone()),
+                type_span: previous
+                    .map_or_else(|| parameter.type_span.clone(), |p| p.type_span.clone()),
+            });
         }
 
         let mut body = crate::block::Block::new();
@@ -45,7 +57,7 @@ impl FunctionLowerer<'_> {
         self.hir.functions[self.function].parameters = parameters;
         self.hir.functions[self.function].receiver = source
             .receiver
-            .then(|| self.hir.functions[self.function].parameters[0]);
+            .then(|| self.hir.functions[self.function].parameters[0].local);
         self.hir.functions[self.function].body = body;
         Ok(())
     }

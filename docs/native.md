@@ -50,6 +50,30 @@ Use `--emit native-ir` to print the deterministic, verified code-generation IR w
 foster build benchmarks/fibonacci.fos --native --emit native-ir
 ```
 
+## Shared executable type conversion
+
+`src/codegen/type_conversion.rs` owns the recursive conversion from semantic types to
+`VerificationType`, which both bytecode verification and native layout selection consume.
+The `Bytecode` and `Native` policies explicitly preserve these backend differences:
+
+| Decision | Bytecode | Native |
+| --- | --- | --- |
+| Intersections and alias argument metadata | Erase to `Unknown` | Retain members in `Union` |
+| Record erasure | Erase fieldless records without copy/deinit capabilities | Erase nested structural dispatch contracts; preserve root nominal identity |
+| Empty remote receiver | Preserve nominal identity for dispatch | Apply ordinary nested conversion |
+| Nesting at depth 64 | Return `Unknown` | Report the native specialization nesting error |
+| Builtin list arguments | Use the first argument, or `Unknown` if absent | Recognize the builtin only with exactly one argument |
+
+Native `Union` here retains member metadata behind an opaque representation; it does not
+change an intersection's source-level requirement into a union. Native record classification
+preserves private storage and distinguishes concrete implementations from inherited defaults.
+Both policies erase sequence views and modules, and share scalar, container, callable, nominal,
+and generic conversion. Native specialization supplies executable generic substitutions;
+bytecode conversion retains generic names. Already-converted substitutions are copied as leaves.
+
+These policies document existing behavior rather than requiring identical runtime layouts.
+The shared converter's tests cover agreement, intentional differences, and the depth boundary.
+
 ## Supported subset
 
 The internal native ABI uses target-independent scalar representations: `Bool`, `Byte`, and `()`

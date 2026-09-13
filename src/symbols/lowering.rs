@@ -67,7 +67,7 @@ impl Table {
             }
             for (index, parameter) in function.parameters.iter().enumerate() {
                 context.roots.insert(
-                    compilation.hir.locals[*parameter].name.clone(),
+                    compilation.hir.locals[parameter.local].name.clone(),
                     format!("p{index}"),
                 );
             }
@@ -240,10 +240,9 @@ impl<'a> Context<'a> {
         let parameters = signature
             .parameters
             .iter()
-            .zip(&signature.parameter_modes)
-            .map(|(ty, mode)| Parameter {
-                ty: self.ty(*ty),
-                mode: (*mode).into(),
+            .map(|parameter| Parameter {
+                ty: self.ty(parameter.ty),
+                mode: parameter.mode.into(),
             })
             .collect();
         let result = self.ty(signature.result);

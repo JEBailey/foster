@@ -206,86 +206,18 @@ pub(super) fn specialized_verification_type(
     substitutions: &crate::vm::Specialization,
     depth: usize,
 ) -> Result<crate::vm::VerificationType, FosterError> {
-    use crate::vm::VerificationType;
-    if depth >= 64 {
-        return Err(native_error(
-            "native specialization type nesting exceeds 64 levels",
-        ));
-    }
-    let nested = |ty| specialized_verification_type(compilation, ty, substitutions, depth + 1);
-    Ok(match &compilation.types.types[ty] {
-        Type::Generic(name) => substitutions
-            .iter()
-            .find_map(|(candidate, ty)| (candidate == name).then(|| ty.clone()))
-            .unwrap_or_else(|| VerificationType::Generic(name.clone())),
-        Type::Unit => VerificationType::Unit,
-        Type::Bool => VerificationType::Bool,
-        Type::Int | Type::RawInt => VerificationType::Integer,
-        Type::Float => VerificationType::Float,
-        Type::CodePoint => VerificationType::CodePoint,
-        Type::Byte => VerificationType::Byte,
-        Type::RawBytes => VerificationType::Bytes,
-        Type::RawByteBuffer => VerificationType::ByteBuffer,
-        Type::Reference { value, .. } => VerificationType::Reference(Box::new(nested(*value)?)),
-        Type::RawList(value) => VerificationType::List(Box::new(nested(*value)?)),
-        // Sequence is a behavioral view, not a promise of list storage.
-        Type::Sequence(_) => VerificationType::Unknown,
-        Type::Remote(value) => VerificationType::Remote(Box::new(nested(*value)?)),
-        Type::Future(value) => VerificationType::Future(Box::new(nested(*value)?)),
-        Type::Function(function) => VerificationType::Function {
-            parameters: function
-                .parameters
-                .iter()
-                .map(|ty| nested(*ty))
-                .collect::<Result<_, _>>()?,
-            parameter_modes: function.parameter_modes.clone(),
-            result: Box::new(nested(function.result)?),
-        },
-        Type::Record { record, .. } if Some(*record) == compilation.types.core.bytes => {
-            VerificationType::Bytes
-        }
-        Type::Record { record, arguments }
-            if Some(*record) == compilation.types.core.list && arguments.len() == 1 =>
-        {
-            VerificationType::List(Box::new(nested(arguments[0])?))
-        }
-        // Structural contracts nested in aggregates use the same erased layout as shared SSA.
-        Type::Record { record, .. }
-            if depth > 0 && record_uses_dynamic_dispatch(compilation, *record) =>
-        {
-            VerificationType::Unknown
-        }
-        Type::Record { record, arguments } => VerificationType::Record {
-            record: *record,
-            arguments: arguments
-                .iter()
-                .map(|ty| nested(*ty))
-                .collect::<Result<_, _>>()?,
-        },
-        Type::Variant { variant, arguments }
-            if compilation.hir.variant_types[*variant].kind == crate::ast::VariantKind::Alias =>
-        {
-            VerificationType::Union(
-                arguments
-                    .iter()
-                    .map(|ty| nested(*ty))
-                    .collect::<Result<_, _>>()?,
-            )
-        }
-        Type::Variant { variant, arguments } => VerificationType::Variant {
-            variant: *variant,
-            arguments: arguments
-                .iter()
-                .map(|ty| nested(*ty))
-                .collect::<Result<_, _>>()?,
-        },
-        Type::Intersection(members) => VerificationType::Union(
-            members
-                .iter()
-                .map(|ty| nested(*ty))
-                .collect::<Result<_, _>>()?,
-        ),
-        Type::Module(_) => VerificationType::Unknown,
+    use crate::codegen::type_conversion::{MAX_TYPE_DEPTH, Native, convert};
+    convert::<Native>(
+        &compilation.hir,
+        &compilation.types,
+        ty,
+        substitutions,
+        depth,
+    )
+    .map_err(|_| {
+        native_error(format!(
+            "native specialization type nesting exceeds {MAX_TYPE_DEPTH} levels"
+        ))
     })
 }
 
@@ -375,30 +307,9 @@ pub(super) fn record_uses_dynamic_dispatch(
     compilation: &Compilation,
     record: crate::hir::RecordId,
 ) -> bool {
-    let declaration = &compilation.hir.records[record];
-    // Private storage is nominal implementation state, so values of this exact type always keep
-    // their concrete descriptor. Pure public structural surfaces may be erased when they have no
-    // implementation of their own.
-    if declaration.fields.iter().any(|field| !field.public) {
-        return false;
-    }
-    let has_contract_surface =
-        !declaration.methods.is_empty() || !declaration.compositions.is_empty();
-    // Inherited defaults add dispatch entries but do not give a structural
-    // contract its own concrete implementation storage.
-    let has_implementation = compilation
-        .types
-        .dispatch
-        .iter()
-        .any(|((nominal, _), function)| {
-            *nominal == crate::types::NominalTypeId::Record(record)
-                && !compilation.hir.composition_owners.contains_key(function)
-        });
-    let provides_defaults = compilation.hir.composition_dispatch.iter().any(|function| {
-        let method = &compilation.hir.functions[*function];
-        !compilation.hir.composition_owners.contains_key(function)
-            && method.module == declaration.module
-            && method.owner.as_deref() == Some(declaration.name.as_str())
-    });
-    (has_contract_surface && !has_implementation) || provides_defaults
+    crate::codegen::type_conversion::record_uses_dynamic_dispatch(
+        &compilation.hir,
+        &compilation.types,
+        record,
+    )
 }

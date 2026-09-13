@@ -81,7 +81,7 @@ pub(crate) fn validate_groups_and_effects(hir: &PackageHir) -> Result<(), Foster
         let parameter_names = function
             .parameters
             .iter()
-            .map(|parameter| hir.locals[*parameter].name.as_str())
+            .map(|parameter| hir.locals[parameter.local].name.as_str())
             .collect::<std::collections::HashSet<_>>();
         let mut type_parameters = std::collections::HashSet::new();
         for parameter in &function.type_parameters {
@@ -122,16 +122,15 @@ pub(crate) fn validate_groups_and_effects(hir: &PackageHir) -> Result<(), Foster
                 ));
             }
         }
-        for (annotation, span) in function
-            .parameter_types
-            .iter()
-            .zip(&function.parameter_type_spans)
-        {
-            if let Some(annotation) = annotation {
+        for parameter in &function.parameters {
+            if let Some(annotation) = &parameter.ty {
                 validate_type_groups(annotation, &declared, &function.name).map_err(|error| {
                     error.with_fallback_location(
                         hir.modules[function.module].name.clone(),
-                        span.clone().unwrap_or_else(|| function.span.clone()),
+                        parameter
+                            .type_span
+                            .clone()
+                            .unwrap_or_else(|| function.span.clone()),
                         "this type annotation uses an invalid group",
                     )
                 })?;
@@ -243,8 +242,8 @@ pub(crate) fn infer_ref_capture_effects(hir: &mut PackageHir) {
             let target = owner
                 .parameters
                 .iter()
-                .position(|parameter| *parameter == capture.local)
-                .and_then(|index| owner.parameter_types[index].as_ref())
+                .find(|parameter| parameter.local == capture.local)
+                .and_then(|parameter| parameter.ty.as_ref())
                 .and_then(|annotation| match annotation {
                     ast::TypeExpr::Reference { group, .. } => Some(group.clone()),
                     _ => None,

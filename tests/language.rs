@@ -1661,7 +1661,10 @@ func main() -> () {
             .types
             .function_type(sink)
             .unwrap()
-            .parameter_modes,
+            .parameters
+            .iter()
+            .map(|p| p.mode)
+            .collect::<Vec<_>>(),
         vec![foster::ast::ParameterMode::Consume]
     );
 
@@ -2643,7 +2646,7 @@ func main() -> Int {
         .unwrap();
     let signature = compilation.types.function_type(label).unwrap();
     assert_eq!(
-        compilation.types.display(signature.parameters[0]),
+        compilation.types.display(signature.parameters[0].ty),
         "Named & Located"
     );
     assert_eq!(foster::run(source).unwrap(), Value::Integer(511));

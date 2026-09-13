@@ -105,37 +105,34 @@ impl<'a> Builder<'a> {
     fn lower(mut self) -> Function {
         let definition = &self.hir.functions[self.function];
         for (index, parameter) in definition.parameters.iter().enumerate() {
-            self.initialize(*parameter, definition.span.clone());
+            self.initialize(parameter.local, definition.span.clone());
             if self
                 .types
                 .function_type(self.function)
                 .is_some_and(|signature| {
                     !matches!(
-                        self.types.types[signature.parameters[index]],
+                        self.types.types[signature.parameters[index].ty],
                         crate::types::Type::Reference { .. }
                     ) && super::callables::may_borrow(
                         self.hir,
                         self.types,
-                        signature.parameters[index],
+                        signature.parameters[index].ty,
                     )
                 })
             {
                 let origin = Place {
-                    root: super::PlaceRoot::ParameterContents(*parameter),
+                    root: super::PlaceRoot::ParameterContents(parameter.local),
                     projections: vec![],
                 };
                 let value = self.issue_reborrow(origin, definition.span.clone());
                 self.emit(Operation::StoreBorrower {
-                    destination: Self::local_place(*parameter),
+                    destination: Self::local_place(parameter.local),
                     value,
                     span: definition.span.clone(),
                 });
             }
-            if matches!(
-                definition.parameter_types[index],
-                Some(crate::ast::TypeExpr::Reference { .. })
-            ) {
-                let destination = Self::local_place(*parameter);
+            if matches!(parameter.ty, Some(crate::ast::TypeExpr::Reference { .. })) {
+                let destination = Self::local_place(parameter.local);
                 let value = self.issue_reborrow(destination.clone(), definition.span.clone());
                 self.emit(Operation::StoreBorrower {
                     destination,
@@ -420,7 +417,7 @@ impl<'a> Builder<'a> {
                         .resolved_function_for_callee(*callee)
                         .and_then(|function| self.types.function_type(function))
                         .is_some_and(|signature| {
-                            signature.parameter_modes.first()
+                            signature.parameters.first().map(|p| &p.mode)
                                 == Some(&crate::ast::ParameterMode::Consume)
                         })
                         || self.types.expression_type(*callee).is_some_and(|ty| {
@@ -444,9 +441,13 @@ impl<'a> Builder<'a> {
                     .types
                     .expression_type(*callee)
                     .and_then(|ty| match &self.types.types[ty] {
-                        crate::types::Type::Function(function) => {
-                            Some(function.parameter_modes.clone())
-                        }
+                        crate::types::Type::Function(function) => Some(
+                            function
+                                .parameters
+                                .iter()
+                                .map(|p| p.mode)
+                                .collect::<Vec<_>>(),
+                        ),
                         _ => None,
                     })
                     .unwrap_or_default();
@@ -1785,14 +1786,14 @@ impl<'a> Builder<'a> {
         let parameter_modes = self
             .types
             .function_type(self.function)
-            .map(|function| function.parameter_modes.as_slice())
+            .map(|function| function.parameters.as_slice())
             .unwrap_or_default();
         let owned_parameters = definition
             .parameters
             .iter()
             .zip(parameter_modes)
             .filter_map(|(parameter, mode)| {
-                (*mode == crate::ast::ParameterMode::Consume).then_some(*parameter)
+                (mode.mode == crate::ast::ParameterMode::Consume).then_some(parameter.local)
             })
             .collect::<std::collections::HashSet<_>>();
         let mut locals = self

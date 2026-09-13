@@ -9,6 +9,9 @@ pub type TypeId = Idx<Type>;
 
 mod dispatch;
 
+#[cfg(test)]
+mod parameter_tests;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Generic(String),
@@ -42,10 +45,32 @@ pub enum Type {
     Module(String),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// A checked callable requirement: type and ownership mode always travel together.
+pub struct Parameter {
+    pub ty: TypeId,
+    pub mode: ast::ParameterMode,
+}
+
+impl Parameter {
+    /// Bridge inference's separate vectors without silently truncating compiler mistakes.
+    pub(crate) fn from_parts(types: Vec<TypeId>, modes: Vec<ast::ParameterMode>) -> Vec<Self> {
+        assert_eq!(
+            types.len(),
+            modes.len(),
+            "parameter types and modes must align"
+        );
+        types
+            .into_iter()
+            .zip(modes)
+            .map(|(ty, mode)| Self { ty, mode })
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionType {
-    pub parameters: Vec<TypeId>,
-    pub parameter_modes: Vec<ast::ParameterMode>,
+    pub parameters: Vec<Parameter>,
     pub result: TypeId,
     pub erased: bool,
     pub effects: Vec<ast::Effect>,
@@ -249,11 +274,10 @@ impl TypeInformation {
                     .parameters
                     .iter()
                     .skip(1)
-                    .zip(signature.parameter_modes.iter().skip(1))
-                    .map(|(parameter, mode)| {
+                    .map(|parameter| {
                         (
-                            *mode,
-                            self.dispatch_type_key_with_generics(*parameter, &mut generics),
+                            parameter.mode,
+                            self.dispatch_type_key_with_generics(parameter.ty, &mut generics),
                         )
                     })
                     .collect(),
@@ -303,12 +327,14 @@ impl TypeInformation {
             )),
             Type::Function(function) => DispatchTypeKey::Function(
                 function
-                    .parameter_modes
+                    .parameters
                     .iter()
-                    .copied()
-                    .zip(function.parameters.iter().map(|parameter| {
-                        self.dispatch_type_key_with_generics(*parameter, generics)
-                    }))
+                    .map(|parameter| {
+                        (
+                            parameter.mode,
+                            self.dispatch_type_key_with_generics(parameter.ty, generics),
+                        )
+                    })
                     .collect(),
                 Box::new(self.dispatch_type_key_with_generics(function.result, generics)),
             ),
@@ -370,11 +396,10 @@ impl TypeInformation {
                     function
                         .parameters
                         .iter()
-                        .zip(&function.parameter_modes)
-                        .map(|(parameter, mode)| match mode {
-                            ast::ParameterMode::Borrow => self.display(*parameter),
+                        .map(|parameter| match parameter.mode {
+                            ast::ParameterMode::Borrow => self.display(parameter.ty),
                             ast::ParameterMode::Consume => {
-                                format!("consume {}", self.display(*parameter))
+                                format!("consume {}", self.display(parameter.ty))
                             }
                         })
                         .collect::<Vec<_>>()

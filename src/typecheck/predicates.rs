@@ -57,18 +57,14 @@ pub(super) fn function_parameter_modes(
         .parameters
         .iter()
         .map(|parameter| {
-            let name = &hir.locals[*parameter].name;
-            let index = definition
-                .parameters
-                .iter()
-                .position(|candidate| candidate == parameter)
-                .expect("parameter belongs to function");
-            let reference_group = definition.parameter_types[index].as_ref().and_then(
-                |annotation| match annotation {
+            let name = &hir.locals[parameter.local].name;
+            let reference_group = parameter
+                .ty
+                .as_ref()
+                .and_then(|annotation| match annotation {
                     crate::ast::TypeExpr::Reference { group, .. } => Some(group.as_str()),
                     _ => None,
-                },
-            );
+                });
             if definition.effects.iter().any(|effect| {
                 effect.kind == crate::ast::EffectKind::Consume
                     && (effect.target.root == *name
@@ -96,7 +92,7 @@ pub(super) fn callable_effects(
                     || !definition
                         .parameters
                         .iter()
-                        .any(|parameter| hir.locals[*parameter].name == effect.target.root))
+                        .any(|parameter| hir.locals[parameter.local].name == effect.target.root))
         })
         .cloned()
         .collect()

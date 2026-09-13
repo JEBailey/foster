@@ -640,11 +640,7 @@ func main() { 0 }
     let module = compilation.hir.module_named("main").unwrap();
     let take = compilation.hir.function_named(module, "take").unwrap();
     assert_eq!(
-        compilation
-            .types
-            .function_type(take)
-            .unwrap()
-            .parameter_modes[0],
+        compilation.types.function_type(take).unwrap().parameters[0].mode,
         foster::ast::ParameterMode::Consume
     );
 
@@ -732,7 +728,10 @@ func main() -> () {}
             .types
             .function_type(change)
             .unwrap()
-            .parameter_modes,
+            .parameters
+            .iter()
+            .map(|p| p.mode)
+            .collect::<Vec<_>>(),
         vec![
             foster::ast::ParameterMode::Borrow,
             foster::ast::ParameterMode::Consume,
@@ -1016,7 +1015,7 @@ fn infers_types_across_function_calls() {
     assert_eq!(compilation.types.types[main_type.result], Type::Int);
     let identity_type = compilation.types.function_type(identity).unwrap();
     assert_eq!(
-        compilation.types.types[identity_type.parameters[0]],
+        compilation.types.types[identity_type.parameters[0].ty],
         Type::Int
     );
     assert_eq!(compilation.types.types[identity_type.result], Type::Int);
@@ -2841,8 +2840,8 @@ func main() -> Int { consume_value("owned") + inspect("borrowed") }
         .function_named(module, "consume_value")
         .unwrap();
     let inspected = compilation.hir.function_named(module, "inspect").unwrap();
-    let consumed_parameter = compilation.hir.functions[consumed].parameters[0];
-    let inspected_parameter = compilation.hir.functions[inspected].parameters[0];
+    let consumed_parameter = compilation.hir.functions[consumed].parameters[0].local;
+    let inspected_parameter = compilation.hir.functions[inspected].parameters[0].local;
     assert!(
         compilation.ownership.functions[&consumed]
             .blocks
@@ -2956,7 +2955,7 @@ func main() -> Int { checked("borrowed", 42, 1) }
     let module = compilation.hir.module_named("main").unwrap();
     let id = compilation.hir.function_named(module, "checked").unwrap();
     let function = &compilation.ownership.functions[&id];
-    let borrowed = compilation.hir.functions[id].parameters[0];
+    let borrowed = compilation.hir.functions[id].parameters[0].local;
     let start = source.find("numerator / denominator").unwrap();
     let (_, targets) = function
         .blocks
@@ -3013,7 +3012,7 @@ func main() -> Int { checked([42], 0) }
     let module = compilation.hir.module_named("main").unwrap();
     let id = compilation.hir.function_named(module, "checked").unwrap();
     let function = &compilation.ownership.functions[&id];
-    let borrowed = compilation.hir.functions[id].parameters[0];
+    let borrowed = compilation.hir.functions[id].parameters[0].local;
     let bounds = function
         .blocks
         .iter()

@@ -550,7 +550,7 @@ impl Checker<'_> {
             unreachable!("declared methods have callable types")
         };
         for (parameter, mode) in definition.parameters.iter().skip(1).zip(&parameter_modes) {
-            let parameter_name = &self.hir.locals[*parameter].name;
+            let parameter_name = &self.hir.locals[parameter.local].name;
             if *mode == crate::ast::ParameterMode::Borrow
                 && definition.effects.iter().any(|effect| {
                     effect.target.root == *parameter_name

@@ -40,7 +40,7 @@ pub(crate) fn accepts_arguments(
         .ok_or_else(|| FosterError::runtime("`main` is missing type information"))?;
     match signature.parameters.as_slice() {
         [] => Ok(false),
-        [parameter] if is_arguments_type(hir, types, *parameter) => Ok(true),
+        [parameter] if is_arguments_type(hir, types, parameter.ty) => Ok(true),
         _ => Err(FosterError::new(
             "`main` must take no parameters or one `std.process.Arguments` parameter",
             0,

@@ -172,8 +172,22 @@ mod tests {
                 function.name
             );
             assert_eq!(
-                incremental.types.function_type(id).unwrap().parameter_modes,
-                fresh.types.function_type(id).unwrap().parameter_modes
+                incremental
+                    .types
+                    .function_type(id)
+                    .unwrap()
+                    .parameters
+                    .iter()
+                    .map(|p| p.mode)
+                    .collect::<Vec<_>>(),
+                fresh
+                    .types
+                    .function_type(id)
+                    .unwrap()
+                    .parameters
+                    .iter()
+                    .map(|p| p.mode)
+                    .collect::<Vec<_>>()
             );
         }
     }

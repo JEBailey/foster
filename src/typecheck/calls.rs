@@ -1169,7 +1169,7 @@ impl Checker<'_> {
         parameter_modes.remove(0);
         if remote {
             for (parameter, mode) in definition.parameters.iter().skip(1).zip(&parameter_modes) {
-                let name = &self.hir.locals[*parameter].name;
+                let name = &self.hir.locals[parameter.local].name;
                 if *mode == crate::ast::ParameterMode::Borrow
                     && definition.effects.iter().any(|effect| {
                         effect.target.root == *name && effect.kind != crate::ast::EffectKind::Read

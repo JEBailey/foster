@@ -36,7 +36,11 @@ pub(super) fn materialize(
         .collect::<Vec<_>>();
     for function in imported {
         let mut definition = hir.functions[function].clone();
-        for ty in definition.parameter_types.iter_mut().flatten() {
+        for ty in definition
+            .parameters
+            .iter_mut()
+            .filter_map(|p| p.ty.as_mut())
+        {
             *ty = qualify(hir, definition.module, ty);
         }
         if let Some(ty) = &mut definition.return_type {
@@ -152,12 +156,18 @@ pub(super) fn materialize(
                 // for the recipient, while preserving explicit template annotations,
                 // exactly as for a source-defined inherited body.
                 if hir.external_functions.contains_key(&candidate.original) {
-                    definition.parameter_types = candidate
-                        .source
+                    assert_eq!(
+                        definition.parameters.len(),
+                        candidate.source.parameters.len()
+                    );
+                    for (parameter, source) in definition
                         .parameters
-                        .iter()
-                        .map(|p| p.ty.clone())
-                        .collect();
+                        .iter_mut()
+                        .zip(&candidate.source.parameters)
+                    {
+                        parameter.ty = source.ty.clone();
+                        parameter.type_span = source.type_span.clone();
+                    }
                     definition.return_type = candidate.source.return_type.clone();
                     definition.effects = candidate.source.effects.clone();
                     definition.effects_explicit = candidate.source.effects_explicit;
@@ -169,14 +179,16 @@ pub(super) fn materialize(
                     format!("{}.{member}$default{}", record.name, hir.functions.len());
                 definition.owner = Some(record.name.clone());
                 definition.body = crate::block::Block::new();
-                definition.parameters.clear();
                 definition.receiver = None;
                 definition.type_parameters = generic_names;
-                for annotation in definition.parameter_types.iter_mut().flatten() {
+                for annotation in definition
+                    .parameters
+                    .iter_mut()
+                    .filter_map(|p| p.ty.as_mut())
+                {
                     *annotation = substitute(annotation, &candidate.substitutions);
                 }
-                definition.parameter_types[0] =
-                    Some(ast::TypeExpr::Named(alias, arguments.clone()));
+                definition.parameters[0].ty = Some(ast::TypeExpr::Named(alias, arguments.clone()));
                 if let Some(result) = &mut definition.return_type {
                     *result = substitute(result, &candidate.substitutions);
                 }
@@ -230,7 +242,7 @@ pub(super) fn materialize(
         let owner_module = hir.composition_owners[&function];
         for (id, closure) in hir.functions.iter_mut().skip(first_closure) {
             hir.composition_owners.insert(id, owner_module);
-            for annotation in closure.parameter_types.iter_mut().flatten() {
+            for annotation in closure.parameters.iter_mut().filter_map(|p| p.ty.as_mut()) {
                 *annotation = substitute(annotation, &candidate.substitutions);
             }
             if let Some(result) = &mut closure.return_type {

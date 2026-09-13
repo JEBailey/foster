@@ -33,6 +33,13 @@ types, effects, group names, suspension, and result dependencies. Those are chec
 Nested callable parameter types retain their argument/result shapes, but omit effect restrictions
 from the lookup key. No overload search is repeated at link time.
 
+Compiler signatures use `types::Parameter { ty, mode }` for each parameter, including nested
+callables. Symbol lowering maps those entries directly to descriptor parameters. HIR uses
+`hir::Parameter { local, ty, type_span }` so annotations and diagnostic locations follow their
+bindings through closure and inherited-default lowering. Inference's separate type/mode vectors
+enter semantic signatures through a length-checked adapter; mismatches are compiler invariant
+failures. Bytecode still stores separate vectors and validates their lengths before execution.
+
 Project identities come from `foster.toml` package names. Dependency mount aliases are removed from
 their module paths, so importing the same package under a different alias does not rename its
 exports. Embedded library modules use package `foster`. Standalone source without a manifest uses

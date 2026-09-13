@@ -50,7 +50,7 @@ impl FunctionCompiler<'_> {
             let pointee_type = self
                 .types
                 .expression_type(place)
-                .map(|ty| layout_verification_type(self.hir, self.types, ty, 0))
+                .map(|ty| verification_type(self.hir, self.types, ty, 0))
                 .unwrap_or(VerificationType::Unknown);
             let destination = self.allocate();
             self.emit(
@@ -67,7 +67,7 @@ impl FunctionCompiler<'_> {
         let mut object_type = self
             .types
             .local_type(place.root)
-            .map(|ty| layout_verification_type(self.hir, self.types, ty, 0))
+            .map(|ty| verification_type(self.hir, self.types, ty, 0))
             .unwrap_or(VerificationType::Unknown);
         if place.projections.is_empty() {
             let pointee_type = match object_type {
@@ -191,7 +191,7 @@ impl FunctionCompiler<'_> {
                 let element_type = self
                     .types
                     .expression_type(id)
-                    .map(|ty| layout_verification_type(self.hir, self.types, ty, 0))
+                    .map(|ty| verification_type(self.hir, self.types, ty, 0))
                     .and_then(|ty| match ty {
                         VerificationType::List(element) => Some(*element),
                         _ => None,
@@ -409,9 +409,9 @@ impl FunctionCompiler<'_> {
                                 remote: receiver,
                                 function,
                                 arguments: modes
-                                    .parameter_modes
+                                    .parameters
                                     .iter()
-                                    .copied()
+                                    .map(|p| p.mode)
                                     .skip(1)
                                     .zip(arguments)
                                     .collect(),
@@ -1009,7 +1009,7 @@ impl FunctionCompiler<'_> {
         let mut substitutions = std::collections::BTreeMap::new();
         for (schema, argument) in signature.parameters.iter().zip(arguments) {
             if let Some(actual) = self.types.expression_type(*argument) {
-                match_generic_types(self.types, *schema, actual, &mut substitutions);
+                match_generic_types(self.types, schema.ty, actual, &mut substitutions);
             }
         }
         // A structural implementation can have a different nominal identity from its
@@ -1028,7 +1028,7 @@ impl FunctionCompiler<'_> {
                 &[]
             };
             for (schema, actual) in parameters.iter().zip(&checked.parameters) {
-                match_generic_types(self.types, *schema, *actual, &mut substitutions);
+                match_generic_types(self.types, schema.ty, actual.ty, &mut substitutions);
             }
         }
         if let Some(actual) = self.types.expression_type(result) {
@@ -1038,7 +1038,7 @@ impl FunctionCompiler<'_> {
             ) {
                 if let crate::types::Type::Function(checked) = &self.types.types[actual] {
                     for (schema, actual) in signature.parameters.iter().zip(&checked.parameters) {
-                        match_generic_types(self.types, *schema, *actual, &mut substitutions);
+                        match_generic_types(self.types, schema.ty, actual.ty, &mut substitutions);
                     }
                     match_generic_types(
                         self.types,
@@ -1053,7 +1053,7 @@ impl FunctionCompiler<'_> {
         }
         let mut names = std::collections::BTreeSet::new();
         for parameter in &signature.parameters {
-            collect_generic_names(self.types, *parameter, &mut names);
+            collect_generic_names(self.types, parameter.ty, &mut names);
         }
         collect_generic_names(self.types, signature.result, &mut names);
         for capture in self.closure_captures.get(&function).into_iter().flatten() {
@@ -1066,7 +1066,7 @@ impl FunctionCompiler<'_> {
             .map(|name| {
                 let ty = substitutions.get(&name).map_or_else(
                     || VerificationType::Generic(name.clone()),
-                    |ty| layout_verification_type(self.hir, self.types, *ty, 0),
+                    |ty| verification_type(self.hir, self.types, *ty, 0),
                 );
                 (name, ty)
             })
@@ -1084,7 +1084,7 @@ impl FunctionCompiler<'_> {
         };
         arguments
             .iter()
-            .map(|ty| layout_verification_type(self.hir, self.types, *ty, 0))
+            .map(|ty| verification_type(self.hir, self.types, *ty, 0))
             .collect()
     }
 

@@ -68,7 +68,7 @@ fn collect_generic_names(
         | Type::Future(value) => collect_generic_names(information, *value, names),
         Type::Function(function) => {
             for parameter in &function.parameters {
-                collect_generic_names(information, *parameter, names);
+                collect_generic_names(information, parameter.ty, names);
             }
             collect_generic_names(information, function.result, names);
         }
@@ -143,7 +143,7 @@ fn match_generic_types(
         }
         (Type::Function(left), Type::Function(right)) => {
             for (left, right) in left.parameters.iter().zip(&right.parameters) {
-                match_generic_types(information, *left, *right, substitutions);
+                match_generic_types(information, left.ty, right.ty, substitutions);
             }
             match_generic_types(information, left.result, right.result, substitutions);
         }
@@ -193,12 +193,7 @@ fn compile_construction(compilation: &Compilation) -> Result<Program, FosterErro
                         .map(|(name, ty)| {
                             (
                                 name.clone(),
-                                layout_verification_type(
-                                    &compilation.hir,
-                                    &compilation.types,
-                                    *ty,
-                                    0,
-                                ),
+                                verification_type(&compilation.hir, &compilation.types, *ty, 0),
                             )
                         })
                         .unzip()
@@ -257,9 +252,7 @@ fn compile_construction(compilation: &Compilation) -> Result<Program, FosterErro
                         .variant_payloads
                         .get(&id)
                         .and_then(|payload| *payload)
-                        .map(|ty| {
-                            layout_verification_type(&compilation.hir, &compilation.types, ty, 0)
-                        })
+                        .map(|ty| verification_type(&compilation.hir, &compilation.types, ty, 0))
                         .into_iter()
                         .collect(),
                 },
@@ -394,7 +387,7 @@ impl Compiler<'_> {
                 let ty = self
                     .types
                     .local_type(capture.local)
-                    .map(|ty| layout_verification_type(self.hir, self.types, ty, 0))
+                    .map(|ty| verification_type(self.hir, self.types, ty, 0))
                     .unwrap_or(VerificationType::Unknown);
                 if capture.mode == crate::hir::CaptureMode::Ref
                     && !matches!(ty, VerificationType::Reference(_))
@@ -411,13 +404,13 @@ impl Compiler<'_> {
         }
         for (index, parameter) in function.parameters.iter().enumerate() {
             let register = lower.allocate();
-            lower.locals.insert(*parameter, register);
+            lower.locals.insert(parameter.local, register);
             if lower.observable_cleanup
                 && self
                     .types
                     .function_type(function_id)
                     .is_some_and(|signature| {
-                        signature.parameter_modes[index] == crate::ast::ParameterMode::Consume
+                        signature.parameters[index].mode == crate::ast::ParameterMode::Consume
                     })
             {
                 lower.scopes[0].push(register);
@@ -436,8 +429,8 @@ impl Compiler<'_> {
                 lower.emit_list_intrinsic(
                     opcode,
                     destination,
-                    lower.locals[receiver],
-                    lower.locals[value],
+                    lower.locals[&receiver.local],
+                    lower.locals[&value.local],
                     function.span.clone(),
                 );
                 destination
@@ -472,14 +465,14 @@ impl Compiler<'_> {
                         signature
                             .parameters
                             .iter()
-                            .map(|ty| verification_type(self.hir, self.types, *ty, 0))
+                            .map(|ty| verification_type(self.hir, self.types, ty.ty, 0))
                             .collect()
                     })
                     .unwrap_or_else(|| vec![VerificationType::Unknown; function.parameters.len()]),
                 parameter_modes: self
                     .types
                     .function_type(function_id)
-                    .map(|signature| signature.parameter_modes.clone())
+                    .map(|signature| signature.parameters.iter().map(|p| p.mode).collect())
                     .unwrap_or_else(|| {
                         vec![crate::ast::ParameterMode::Borrow; function.parameters.len()]
                     }),
@@ -491,11 +484,11 @@ impl Compiler<'_> {
                         let Some(signature) = self.types.function_type(function_id) else {
                             return false;
                         };
-                        if signature.parameter_modes[index] != crate::ast::ParameterMode::Borrow {
+                        if signature.parameters[index].mode != crate::ast::ParameterMode::Borrow {
                             return false;
                         }
                         let crate::types::Type::Reference { group, .. } =
-                            &self.types.types[signature.parameters[index]]
+                            &self.types.types[signature.parameters[index].ty]
                         else {
                             return false;
                         };
@@ -538,16 +531,14 @@ fn verification_type(
     ty: crate::types::TypeId,
     depth: usize,
 ) -> VerificationType {
-    layout_verification_type(hir, information, ty, depth)
-}
-
-fn layout_verification_type(
-    hir: &hir::PackageHir,
-    information: &TypeInformation,
-    ty: crate::types::TypeId,
-    depth: usize,
-) -> VerificationType {
-    verification_type_inner(hir, information, ty, depth)
+    crate::codegen::type_conversion::convert::<crate::codegen::type_conversion::Bytecode>(
+        hir,
+        information,
+        ty,
+        &Vec::new(),
+        depth,
+    )
+    .unwrap_or_else(|never| match never {})
 }
 
 fn projected_field_verification_type(
@@ -572,10 +563,7 @@ fn projected_field_verification_type(
                 .cloned()
                 .zip(arguments.iter().cloned())
                 .collect::<HashMap<_, _>>();
-            Some(
-                layout_verification_type(hir, information, *field_type, 0)
-                    .substitute(&substitutions),
-            )
+            Some(verification_type(hir, information, *field_type, 0).substitute(&substitutions))
         }
         VerificationType::List(element) => match field {
             "empty?" => Some(VerificationType::Bool),
@@ -589,98 +577,6 @@ fn projected_field_verification_type(
     }
 }
 
-fn verification_type_inner(
-    hir: &hir::PackageHir,
-    information: &TypeInformation,
-    ty: crate::types::TypeId,
-    depth: usize,
-) -> VerificationType {
-    if depth >= 64 {
-        return VerificationType::Unknown;
-    }
-    let nested = |ty| verification_type_inner(hir, information, ty, depth + 1);
-    match &information.types[ty] {
-        crate::types::Type::Generic(name) => VerificationType::Generic(name.clone()),
-        crate::types::Type::Intersection(_) | crate::types::Type::Module(_) => {
-            VerificationType::Unknown
-        }
-        crate::types::Type::Unit => VerificationType::Unit,
-        crate::types::Type::Bool => VerificationType::Bool,
-        crate::types::Type::Int | crate::types::Type::RawInt => VerificationType::Integer,
-        crate::types::Type::Float => VerificationType::Float,
-        crate::types::Type::CodePoint => VerificationType::CodePoint,
-        crate::types::Type::Byte => VerificationType::Byte,
-        crate::types::Type::RawBytes => VerificationType::Bytes,
-        crate::types::Type::RawByteBuffer => VerificationType::ByteBuffer,
-        crate::types::Type::Reference { value, .. } => {
-            VerificationType::Reference(Box::new(nested(*value)))
-        }
-        crate::types::Type::RawList(value) => VerificationType::List(Box::new(nested(*value))),
-        // Sequence is a structural view implemented by multiple runtime representations.
-        crate::types::Type::Sequence(_) => VerificationType::Unknown,
-        crate::types::Type::Remote(value) => {
-            let receiver = match &information.types[*value] {
-                crate::types::Type::Record { record, arguments }
-                    if hir.records[*record].fields.is_empty() =>
-                {
-                    VerificationType::Record {
-                        record: *record,
-                        arguments: arguments.iter().copied().map(nested).collect(),
-                    }
-                }
-                _ => nested(*value),
-            };
-            VerificationType::Remote(Box::new(receiver))
-        }
-        crate::types::Type::Future(value) => VerificationType::Future(Box::new(nested(*value))),
-        crate::types::Type::Function(function) => VerificationType::Function {
-            parameters: function.parameters.iter().map(|ty| nested(*ty)).collect(),
-            parameter_modes: function.parameter_modes.clone(),
-            result: Box::new(nested(function.result)),
-        },
-        crate::types::Type::Record { record, arguments } => {
-            match Some(*record) {
-                id if id == information.core.list => VerificationType::List(Box::new(
-                    arguments
-                        .first()
-                        .copied()
-                        .map(nested)
-                        .unwrap_or(VerificationType::Unknown),
-                )),
-                id if id == information.core.bytes => VerificationType::Bytes,
-                // Method-only records are structural contracts and carry no unique runtime
-                // representation. Their conformance proof has already been checked.
-                _ if hir.records[*record].fields.is_empty()
-                    && ![crate::types::COPY_SLOT, crate::types::DEINIT_SLOT]
-                        .iter()
-                        .any(|slot| {
-                            information.dispatch.contains_key(&(
-                                crate::types::NominalTypeId::Record(*record),
-                                *slot,
-                            ))
-                        }) =>
-                {
-                    VerificationType::Unknown
-                }
-                _ => VerificationType::Record {
-                    record: *record,
-                    arguments: arguments.iter().copied().map(nested).collect(),
-                },
-            }
-        }
-        crate::types::Type::Variant { variant, .. }
-            if hir.variant_types[*variant].kind == crate::ast::VariantKind::Alias =>
-        {
-            // Aliases are transparent views; their value keeps its target representation.
-            VerificationType::Unknown
-        }
-        crate::types::Type::Variant { variant, arguments } => VerificationType::Variant {
-            variant: *variant,
-            arguments: arguments.iter().copied().map(nested).collect(),
-        },
-    }
-}
-
 impl FunctionCompiler<'_> {
     fn reference_binding(&self, local: LocalId) -> bool {
         self.types
@@ -689,14 +585,17 @@ impl FunctionCompiler<'_> {
             || self.hir.functions[self.function]
                 .parameters
                 .iter()
-                .position(|parameter| *parameter == local)
+                .position(|parameter| parameter.local == local)
                 .and_then(|index| {
                     self.types
                         .function_type(self.function)
                         .map(|signature| signature.parameters[index])
                 })
                 .is_some_and(|ty| {
-                    matches!(self.types.types[ty], crate::types::Type::Reference { .. })
+                    matches!(
+                        self.types.types[ty.ty],
+                        crate::types::Type::Reference { .. }
+                    )
                 })
             || self
                 .closure_captures

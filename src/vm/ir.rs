@@ -15,7 +15,7 @@ pub struct Register(pub u16);
 /// Names are sorted so the same instantiation has one stable bytecode and native-code identity.
 pub type Specialization = Vec<(String, VerificationType)>;
 
-/// Runtime-visible type information retained solely for bytecode verification.
+/// Executable type information shared by bytecode verification and backend layout selection.
 ///
 /// Groups and effects have already served their purpose by this stage. Generic identities and
 /// nominal arguments are retained for physical layout selection. `Unknown` is used for erased

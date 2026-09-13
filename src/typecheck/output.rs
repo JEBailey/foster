@@ -164,8 +164,10 @@ impl Checker<'_> {
             information.functions.insert(
                 *function,
                 FunctionType {
-                    parameters,
-                    parameter_modes: signature.parameter_modes.clone(),
+                    parameters: crate::types::Parameter::from_parts(
+                        parameters,
+                        signature.parameter_modes.clone(),
+                    ),
                     result,
                     erased: false,
                     effects: callable_effects(self.hir, *function),
@@ -188,7 +190,7 @@ impl Checker<'_> {
             let signature = &information.functions[&function];
             if definition.receiver.is_none()
                 || signature.parameters.len() != 1
-                || signature.parameter_modes[0] != crate::ast::ParameterMode::Borrow
+                || signature.parameters[0].mode != crate::ast::ParameterMode::Borrow
                 || definition.suspends
                 || definition
                     .effects
@@ -204,7 +206,7 @@ impl Checker<'_> {
                 continue;
             }
             let valid_result = if slot == crate::types::COPY_SLOT {
-                signature.result == signature.parameters[0]
+                signature.result == signature.parameters[0].ty
             } else {
                 matches!(information.types[signature.result], Type::Unit)
             };
@@ -214,7 +216,7 @@ impl Checker<'_> {
                 }
                 continue;
             }
-            let nominal = match information.types[signature.parameters[0]] {
+            let nominal = match information.types[signature.parameters[0].ty] {
                 Type::Record { record, .. } => NominalTypeId::Record(record),
                 Type::Variant { variant, .. } => NominalTypeId::Variant(variant),
                 _ => continue,
@@ -411,7 +413,7 @@ fn receiver_is_record(
     information
         .function_type(function)
         .and_then(|signature| signature.parameters.first())
-        .is_some_and(|ty| matches!(information.types[*ty], Type::Record { record: receiver, .. } if receiver == record))
+        .is_some_and(|ty| matches!(information.types[ty.ty], Type::Record { record: receiver, .. } if receiver == record))
 }
 
 fn receiver_is_variant(
@@ -422,7 +424,7 @@ fn receiver_is_variant(
     information
         .function_type(function)
         .and_then(|signature| signature.parameters.first())
-        .is_some_and(|ty| matches!(information.types[*ty], Type::Variant { variant: receiver, .. } if receiver == variant))
+        .is_some_and(|ty| matches!(information.types[ty.ty], Type::Variant { variant: receiver, .. } if receiver == variant))
 }
 
 fn best_dispatch_method(
@@ -513,8 +515,7 @@ fn intern_type(
             let parameter_modes = vec![crate::ast::ParameterMode::Borrow; parameters.len()];
             let result = intern_type(information, interner, *result);
             Type::Function(FunctionType {
-                parameters,
-                parameter_modes,
+                parameters: crate::types::Parameter::from_parts(parameters, parameter_modes),
                 result,
                 erased: false,
                 effects: Vec::new(),
@@ -535,8 +536,7 @@ fn intern_type(
                 .collect();
             let result = intern_type(information, interner, *result);
             Type::Function(FunctionType {
-                parameters,
-                parameter_modes,
+                parameters: crate::types::Parameter::from_parts(parameters, parameter_modes),
                 result,
                 erased,
                 effects,

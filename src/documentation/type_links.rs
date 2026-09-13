@@ -237,15 +237,14 @@ impl<'a> TypeLinks<'a> {
                 function
                     .parameters
                     .iter()
-                    .zip(&function.parameter_modes)
-                    .map(|(ty, mode)| format!(
+                    .map(|parameter| format!(
                         "{}{}",
-                        if *mode == ParameterMode::Consume {
+                        if parameter.mode == ParameterMode::Consume {
                             "consume "
                         } else {
                             ""
                         },
-                        self.resolved(*ty)
+                        self.resolved(parameter.ty)
                     ))
                     .collect::<Vec<_>>()
                     .join(", "),

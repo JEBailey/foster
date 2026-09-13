@@ -224,7 +224,7 @@ pub(super) fn reachable_instances(
                 let parameter_types = hir_signature
                     .parameters
                     .iter()
-                    .map(|ty| specialized_verification_type(compilation, *ty, &Vec::new(), 0))
+                    .map(|ty| specialized_verification_type(compilation, ty.ty, &Vec::new(), 0))
                     .collect::<Result<Vec<_>, _>>()?;
                 if let Some(receiver) = parameter_types.first() {
                     receiver.infer_specialization(ty, &mut substitutions);
@@ -365,7 +365,7 @@ fn remote_specialization(
     let schemas = signature
         .parameters
         .iter()
-        .map(|ty| specialized_verification_type(compilation, *ty, &Vec::new(), 0))
+        .map(|ty| specialized_verification_type(compilation, ty.ty, &Vec::new(), 0))
         .collect::<Result<Vec<_>, _>>()?;
     let mut substitutions = std::collections::BTreeMap::new();
     schemas[0].infer_specialization(receiver, &mut substitutions);
@@ -669,7 +669,7 @@ pub(super) fn collect_function_types(
                         // receiver. Other values of a default-providing contract stay erased.
                         if index == 0
                             && definition.receiver.is_some()
-                            && let Type::Record { record, .. } = compilation.types.types[*ty]
+                            && let Type::Record { record, .. } = compilation.types.types[ty.ty]
                             && record_uses_dynamic_dispatch(compilation, record)
                             && compilation
                                 .types
@@ -695,7 +695,7 @@ pub(super) fn collect_function_types(
                         {
                             let concrete = specialized_verification_type(
                                 compilation,
-                                *ty,
+                                ty.ty,
                                 &instance.key.substitutions,
                                 0,
                             )?;
@@ -712,7 +712,7 @@ pub(super) fn collect_function_types(
                         native_type(
                             compilation,
                             layouts,
-                            *ty,
+                            ty.ty,
                             &instance.key.substitutions,
                             &definition.name,
                         )
