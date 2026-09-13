@@ -217,13 +217,21 @@ Record schemas store paired `RecordField` entries. Construction derives their im
 layout and rejects duplicate names; linking remaps field types without changing storage order.
 
 
+The public `codegen::vm` entry points are re-exported from focused implementation modules:
+`src/codegen/vm/program.rs` owns program sealing and transactional lowering; `src/codegen/vm/construction.rs` builds SSA;
+`src/codegen/vm/emission.rs` assigns registers and emits edge copies; `src/codegen/vm/instructions.rs` holds opcode mappings.
+Differential evidence checks and regression tests live separately. The single
+`src/vm/schema.rs` adapter constructs logical function schemas for both verification and sealing.
+
 `codegen::flow` owns logical flow analysis. A sealed program retains paired logical function
 schemas, immutable per-function facts, and the exact SSA graphs those facts describe. A query at
 a block/instruction site distinguishes unreachable code, an unavailable definition, and a known
 logical type (which may itself be `Unknown`). Representation types never reconstruct this evidence.
 
-The shared engine owns transfer rules, type joins, pattern-binding availability, and excluded
-variant facts. The VM adapter analyzes consuming slots and still validates serialized bytecode.
+The flow engine entry module owns the worklist. Its `state` module owns availability and state
+joins; `types` owns logical type rules; `transfer` and `calls` own operation and call transfer;
+`operations` defines the existing logical operation vocabulary. Together they track pattern-binding
+availability and excluded variant facts. The VM adapter analyzes consuming slots and still validates serialized bytecode.
 The SSA adapter analyzes immutable identities, transfers block arguments in parallel, and remaps
 pattern evidence on edges. Sealing preserves prior SSA bindings for writes that can assign through
 a reference, including bindings that ordinary value liveness would discard. Consuming an owner does not erase the type of its immutable SSA aliases;
@@ -264,7 +272,10 @@ does not change repeated object emission.
 The native entry module contains the public API and shared compilation contexts. Preparation
 uses `specialization.rs` for reachability and shared flow-fact queries, `representation.rs` and
 `inference.rs` for type conversion, `validation.rs` for native restrictions, and `legalize.rs`
-for converting shared IR to native IR. Machine emission uses `lowering.rs` for blocks and
+for converting shared IR to native IR. Legalization is split into `legalize/function.rs` for
+function preparation and cleanup, `legalize/instructions.rs` for instruction lowering, and
+`legalize/conversions.rs` for return, argument, capture, callable, and erased-value conversions.
+Machine emission uses `lowering.rs` for blocks and
 patterns, `portable.rs` for portable instructions, `operations.rs` for arithmetic and control
 flow, and `machine.rs` for signatures and scalar storage. Host calls, remote calls, buffers,
 record fields, runtime handles, and callable thunks each have a separate module. These modules

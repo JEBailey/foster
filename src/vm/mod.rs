@@ -14,6 +14,7 @@ mod operations;
 pub(crate) mod optimizer;
 mod patterns;
 mod runtime;
+pub(crate) mod schema;
 mod value;
 mod verifier;
 
