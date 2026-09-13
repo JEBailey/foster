@@ -66,6 +66,54 @@ fn run(compilation: &foster::compiler::Compilation) -> Value {
 }
 
 #[test]
+fn intersection_dispatch_links_reordered_client_implementations() {
+    let workspace = Workspace::new();
+    let mut compiled = workspace.library(
+        r#"
+pub type A<T> = { pub first: T }
+pub type B<T> = { pub second: T }
+pub type Contract = { pub func apply<T, U>(self, value: A<T> & B<U>, marker: T) -> Int }
+pub func invoke<T, U>(receiver: Contract, value: A<T> & B<U>, marker: T) -> Int {
+    receiver.apply(value, marker)
+}
+"#,
+    );
+    let client = r#"
+import api
+type Item = { pub first: Int, pub second: Bool }
+type Implementation = & Contract & {}
+impl Implementation {
+    func apply<X, Y>(self: Implementation, value: B<Y> & A<X>, marker: X) -> Int { 42 }
+}
+func main() -> Int { invoke(Implementation {}, Item { first: 7, second: true }, 5) }
+"#;
+    let compilation = workspace.consumer(client).unwrap();
+    assert_eq!(run(&compilation), Value::Integer(42));
+
+    // Older artifacts may retain source member order. Normalize those keys while relocating
+    // slots, rather than requiring callers to rebuild every dependency with this compiler.
+    let slot = compiled
+        .interface
+        .slots
+        .iter_mut()
+        .find(|slot| slot.key.name == "apply")
+        .unwrap();
+    let foster::symbols::SymbolType::Intersection(members) = &mut slot.key.parameters[0].ty else {
+        panic!("expected an intersection dispatch parameter");
+    };
+    members.reverse();
+    fs::write(
+        workspace.0.join("example.flib"),
+        library::encode(&compiled).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        run(&workspace.consumer(client).unwrap()),
+        Value::Integer(42)
+    );
+}
+
+#[test]
 fn discovered_library_runs_without_an_explicit_dependency() {
     let workspace = Workspace::new();
     workspace.library("pub func answer() -> Int { 42 }");

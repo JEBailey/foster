@@ -7,6 +7,8 @@ use crate::hir::{ConstantId, ExprId, FunctionId, LocalId, RecordId, VariantId, V
 
 pub type TypeId = Idx<Type>;
 
+mod dispatch;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
     Generic(String),
@@ -240,25 +242,29 @@ impl TypeInformation {
     pub fn method_dispatch_key(&self, function: FunctionId, name: &str) -> Option<MethodKey> {
         let signature = self.function_type(function)?;
         let mut generics = HashMap::new();
-        Some(MethodKey {
-            name: name.to_owned(),
-            parameters: signature
-                .parameters
-                .iter()
-                .skip(1)
-                .zip(signature.parameter_modes.iter().skip(1))
-                .map(|(parameter, mode)| {
-                    (
-                        *mode,
-                        self.dispatch_type_key_with_generics(*parameter, &mut generics),
-                    )
-                })
-                .collect(),
-        })
+        Some(
+            MethodKey {
+                name: name.to_owned(),
+                parameters: signature
+                    .parameters
+                    .iter()
+                    .skip(1)
+                    .zip(signature.parameter_modes.iter().skip(1))
+                    .map(|(parameter, mode)| {
+                        (
+                            *mode,
+                            self.dispatch_type_key_with_generics(*parameter, &mut generics),
+                        )
+                    })
+                    .collect(),
+            }
+            .canonical(),
+        )
     }
 
     pub fn dispatch_type_key(&self, ty: TypeId) -> DispatchTypeKey {
-        self.dispatch_type_key_with_generics(ty, &mut HashMap::new())
+        crate::dispatch::canonical(&[self.dispatch_type_key_with_generics(ty, &mut HashMap::new())])
+            .remove(0)
     }
 
     fn dispatch_type_key_with_generics(

@@ -16,6 +16,20 @@ intrinsic type RawInt
 /// The compiler keeps this representation inline, including during arithmetic.
 pub type Int = & Copy & {
     value: RawInt
+
+    pub func absolute(self) -> Int [read self]
+    pub func minimum(self, right: Int) -> Int [read self, read right]
+    pub func maximum(self, right: Int) -> Int [read self, read right]
+    pub func clamp(self, lower: Int, upper: Int) -> Int [read self, read lower, read upper]
+    pub func sign(self) -> Int [read self]
+    pub func compare(self, right: Int) -> Ordering [read self, read right]
+    pub func between?(self, lower: Int, upper: Int) -> Bool [read self, read lower, read upper]
+    pub func even?(self) -> Bool [read self]
+    pub func odd?(self) -> Bool [read self]
+    pub func power(self, exponent: Int) -> Int [read self, read exponent]
+    pub func modulo(self, divisor: Int) -> Int [read self, read divisor]
+    pub func range(self, end: Int) -> List<Int> [read self, read end]
+    pub func as_string(self) -> String [read self]
 }
 
 impl Int {

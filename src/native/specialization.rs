@@ -570,14 +570,21 @@ pub(super) fn contract_candidates(
     Ok(candidates)
 }
 
-// A concrete closure can use the existing callable-wrapper conversion when
-// its complete specialized signature satisfies the contract argument.
+// Candidate selection precedes ABI argument legalization. A checked concrete value may
+// be boxed into an erased structural parameter; shared_call_arguments owns that conversion.
+// Do not accept arbitrary unboxing here, which could select an incompatible specialization.
 pub(super) fn contract_argument_matches(
     actual: NativeType,
     expected: NativeType,
     environment: NativeIrEnvironment<'_>,
 ) -> bool {
     if actual == expected {
+        return true;
+    }
+    if matches!(
+        super::erased_conversion(actual, expected, environment.layouts),
+        Some(super::ErasedConversion::Box)
+    ) {
         return true;
     }
     let (NativeType::Object(actual), NativeType::Object(expected)) = (actual, expected) else {

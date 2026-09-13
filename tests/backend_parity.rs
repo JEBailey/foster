@@ -2,6 +2,67 @@
 use foster::{native, vm};
 
 #[test]
+fn reordered_generic_intersection_dispatch_runs_on_both_backends() {
+    check(
+        "reordered-intersection-dispatch",
+        r#"
+type A<T> = { pub first: T }
+type B<T> = { pub second: T }
+type Item = { pub first: Int, pub second: Bool }
+type Contract = { pub func apply<T, U>(self, value: A<T> & B<U>, marker: T) -> Int }
+type Implementation = & Contract & {}
+impl Implementation {
+    func apply<X, Y>(self: Implementation, value: B<Y> & A<X>, marker: X) -> Int { 42 }
+}
+
+func through(receiver: Contract, value: Item) -> Int { receiver.apply(value, 5) }
+func main() -> Int { through(Implementation {}, Item { first: 7, second: true }) }
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
+fn concrete_intersection_arguments_preserve_borrow_and_consume_cleanup() {
+    check_stdout(
+        "concrete-intersection-ownership",
+        r#"
+import core.drop
+type A = { pub func first(self) -> Int }
+type B = { pub func second(self) -> Int }
+type Item = & A & B & Drop & { value: Int }
+impl Item {
+    func first(self: Item) -> Int { self.value }
+    func second(self: Item) -> Int { self.value }
+    func deinit(self: Item) -> () { println(99) }
+}
+type Contract = {
+    pub func read(self, value: A & B) -> Int
+    pub func take(self, value: A & B) -> Int [consume value]
+}
+type Implementation = & Contract & {}
+impl Implementation {
+    func read(self: Implementation, value: B & A) -> Int {
+        value.first() + value.second()
+    }
+    func take(self: Implementation, value: B & A) -> Int [consume value] {
+        value.first() + value.second()
+    }
+}
+func through(receiver: Contract) -> Int {
+    let value = Item { value: 21 }
+    println(receiver.read(value))
+    println(value.first())
+    println(receiver.take(move value))
+    42
+}
+func main() -> Int { through(Implementation {}) }
+"#,
+        "42\n21\n99\n42\n42",
+    );
+}
+
+#[test]
 fn nested_closure_factories_preserve_hidden_borrowers() {
     check(
         "nested-closure-factories",

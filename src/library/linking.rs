@@ -13,42 +13,18 @@ fn method_key(definition: &symbols::Definition) -> Option<MethodKey> {
     if !definition.descriptor.receiver {
         return None;
     }
-    fn normalize(ty: &mut symbols::SymbolType, generics: &mut BTreeMap<u32, u32>) {
-        use symbols::SymbolType as T;
-        match ty {
-            T::Generic(index) => {
-                let next = generics.len() as u32;
-                *index = *generics.entry(*index).or_insert(next);
-            }
-            T::Nominal(_, args) | T::Applied(_, args) | T::Intersection(args) => {
-                for arg in args {
-                    normalize(arg, generics);
-                }
-            }
-            T::Reference(_, value) => normalize(value, generics),
-            T::Function(signature) => {
-                for p in &mut signature.parameters {
-                    normalize(&mut p.ty, generics);
-                }
-                normalize(&mut signature.result, generics);
-            }
-            _ => {}
+    Some(
+        MethodKey {
+            name: definition.symbol.name.name.rsplit('.').next()?.to_owned(),
+            parameters: definition
+                .descriptor
+                .overload()
+                .into_iter()
+                .skip(1)
+                .collect(),
         }
-    }
-    let mut parameters = definition
-        .descriptor
-        .overload()
-        .into_iter()
-        .skip(1)
-        .collect::<Vec<_>>();
-    let mut generics = BTreeMap::new();
-    for p in &mut parameters {
-        normalize(&mut p.ty, &mut generics);
-    }
-    Some(MethodKey {
-        name: definition.symbol.name.name.rsplit('.').next()?.to_owned(),
-        parameters,
-    })
+        .canonical(),
+    )
 }
 
 pub(crate) fn link(
@@ -140,7 +116,7 @@ pub(crate) fn link(
         }
         for slot in &library.interface.slots {
             let target = *slot_keys
-                .get(&slot.key)
+                .get(&slot.key.clone().canonical())
                 .ok_or_else(|| error("unresolved dispatch signature"))?;
             if target >= u32::MAX - 2 {
                 return Err(error("dispatch slot limit exceeded"));

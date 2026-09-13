@@ -804,6 +804,11 @@ func locate(value: Named & Located) -> String {
 ```
 
 The bootstrap implementation accepts record and `Sequence<T>` contracts in intersections.
+Intersection member order does not affect a method parameter's dispatch identity: a requirement
+accepting `A & B` can be implemented with `B & A`. Dispatch keys canonicalize member order and
+generic names across the whole signature, preserving shared generic relationships and parameter
+ownership modes. This rule concerns intersection types in signatures, not declaration-side
+composition order.
 Overlapping fields and methods must have compatible contracts. Declaration-side composition
 contributes each requirement once. A declaration does not need to provide implementations merely
 to describe that contract; construction rejects a record whose concrete type lacks a required

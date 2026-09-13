@@ -94,16 +94,18 @@ pub(super) fn slots(
                             })
                         })
                         .collect::<Result<_, FosterError>>()?,
-                },
+                }
+                .canonical(),
             })
         })
         .collect::<Result<Vec<_>, FosterError>>()?;
     for library in &compilation.package.libraries {
         for slot in &library.interface.slots {
-            if !result.iter().any(|s| s.key == slot.key) {
+            let key = slot.key.clone().canonical();
+            if !result.iter().any(|s| s.key == key) {
                 result.push(Slot {
                     id: result.len() as u32,
-                    key: slot.key.clone(),
+                    key,
                 });
             }
         }
@@ -112,40 +114,104 @@ pub(super) fn slots(
 }
 
 pub(super) fn matches(pattern: &MethodKey, concrete: &MethodKey) -> bool {
-    fn ty(a: &S, b: &S, g: &mut BTreeMap<u32, S>) -> bool {
-        if let S::Generic(i) = a {
-            return g.entry(*i).or_insert_with(|| b.clone()) == b;
-        }
-        match (a, b) {
-            (S::Nominal(n, a), S::Nominal(m, b)) => n == m && list(a, b, g),
-            (S::Applied(n, a), S::Applied(m, b)) => n == m && list(a, b, g),
-            (S::Reference(_, a), S::Reference(_, b)) => ty(a, b, g),
-            (S::Intersection(a), S::Intersection(b)) => list(a, b, g),
-            (S::Function(a), S::Function(b)) => {
-                params(&a.parameters, &b.parameters, g) && ty(&a.result, &b.result, g)
-            }
-            _ => a == b,
-        }
-    }
-    fn list(a: &[S], b: &[S], g: &mut BTreeMap<u32, S>) -> bool {
-        a.len() == b.len() && a.iter().zip(b).all(|(a, b)| ty(a, b, g))
-    }
-    fn params(
-        a: &[symbols::Parameter],
-        b: &[symbols::Parameter],
-        g: &mut BTreeMap<u32, S>,
-    ) -> bool {
-        a.len() == b.len()
-            && a.iter()
-                .zip(b)
-                .all(|(a, b)| a.mode == b.mode && ty(&a.ty, &b.ty, g))
-    }
     pattern.name == concrete.name
-        && params(
-            &pattern.parameters,
-            &concrete.parameters,
-            &mut BTreeMap::new(),
+        && pattern
+            .parameters
+            .iter()
+            .map(|p| p.mode)
+            .eq(concrete.parameters.iter().map(|p| p.mode))
+        && crate::dispatch::matches(
+            &pattern
+                .parameters
+                .iter()
+                .map(|p| p.ty.clone())
+                .collect::<Vec<_>>(),
+            &concrete
+                .parameters
+                .iter()
+                .map(|p| p.ty.clone())
+                .collect::<Vec<_>>(),
         )
+}
+
+impl MethodKey {
+    pub(super) fn canonical(mut self) -> Self {
+        let types = self
+            .parameters
+            .iter()
+            .map(|p| p.ty.clone())
+            .collect::<Vec<_>>();
+        for (parameter, ty) in self
+            .parameters
+            .iter_mut()
+            .zip(crate::dispatch::canonical(&types))
+        {
+            parameter.ty = ty;
+        }
+        self
+    }
+}
+
+impl crate::dispatch::Tree for S {
+    fn generic(&self) -> Option<u32> {
+        if let Self::Generic(index) = self {
+            Some(*index)
+        } else {
+            None
+        }
+    }
+    fn renamed_generic(index: u32) -> Self {
+        Self::Generic(index)
+    }
+    fn unordered(&self) -> bool {
+        matches!(self, Self::Intersection(_))
+    }
+    fn children(&self) -> Vec<&Self> {
+        match self {
+            Self::Reference(_, value) => vec![value],
+            Self::Nominal(_, args) | Self::Applied(_, args) | Self::Intersection(args) => {
+                args.iter().collect()
+            }
+            Self::Function(signature) => signature
+                .parameters
+                .iter()
+                .map(|p| &p.ty)
+                .chain(std::iter::once(&signature.result))
+                .collect(),
+            _ => vec![],
+        }
+    }
+    fn with_children(&self, children: Vec<Self>) -> Self {
+        let mut children = children.into_iter();
+        match self {
+            Self::Reference(_, _) => {
+                Self::Reference(String::new(), Box::new(children.next().unwrap()))
+            }
+            Self::Nominal(name, _) => Self::Nominal(name.clone(), children.collect()),
+            Self::Applied(name, _) => Self::Applied(name.clone(), children.collect()),
+            Self::Intersection(_) => Self::Intersection(children.collect()),
+            // Dispatch ignores callable effects and provenance, just as source MethodKey does.
+            Self::Function(signature) => Self::Function(Box::new(symbols::Descriptor {
+                generics: 0,
+                receiver: false,
+                parameters: signature
+                    .parameters
+                    .iter()
+                    .map(|p| symbols::Parameter {
+                        mode: p.mode,
+                        ty: children.next().unwrap(),
+                    })
+                    .collect(),
+                result: children.next().unwrap(),
+                groups: vec![],
+                effects: vec![],
+                suspends: false,
+                result_dependencies: vec![],
+                fresh_result: false,
+            })),
+            _ => self.clone(),
+        }
+    }
 }
 
 pub(super) fn generic_count(key: &MethodKey) -> usize {

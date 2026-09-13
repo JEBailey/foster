@@ -65,6 +65,7 @@ impl Checker<'_> {
                 }))
                 .collect(),
         }
+        .canonical()
     }
 
     fn dispatch_type_key(

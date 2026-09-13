@@ -449,67 +449,7 @@ fn best_dispatch_method(
 }
 
 fn method_key_matches(pattern: &MethodKey, concrete: &MethodKey) -> bool {
-    let mut generics = HashMap::new();
-    pattern.name == concrete.name
-        && pattern.parameters.len() == concrete.parameters.len()
-        && pattern.parameters.iter().zip(&concrete.parameters).all(
-            |((left_mode, left), (right_mode, right))| {
-                left_mode == right_mode && dispatch_type_matches(left, right, &mut generics)
-            },
-        )
-}
-
-fn dispatch_type_matches(
-    pattern: &DispatchTypeKey,
-    concrete: &DispatchTypeKey,
-    generics: &mut HashMap<u32, DispatchTypeKey>,
-) -> bool {
-    if let DispatchTypeKey::Generic(index) = pattern {
-        return generics.entry(*index).or_insert_with(|| concrete.clone()) == concrete;
-    }
-    match (pattern, concrete) {
-        (DispatchTypeKey::Reference(left), DispatchTypeKey::Reference(right))
-        | (DispatchTypeKey::RawList(left), DispatchTypeKey::RawList(right))
-        | (DispatchTypeKey::Sequence(left), DispatchTypeKey::Sequence(right))
-        | (DispatchTypeKey::Remote(left), DispatchTypeKey::Remote(right))
-        | (DispatchTypeKey::Future(left), DispatchTypeKey::Future(right)) => {
-            dispatch_type_matches(left, right, generics)
-        }
-        (DispatchTypeKey::Record(left, left_args), DispatchTypeKey::Record(right, right_args)) => {
-            left == right && dispatch_types_match(left_args, right_args, generics)
-        }
-        (
-            DispatchTypeKey::Variant(left, left_args),
-            DispatchTypeKey::Variant(right, right_args),
-        ) => left == right && dispatch_types_match(left_args, right_args, generics),
-        (DispatchTypeKey::Intersection(left), DispatchTypeKey::Intersection(right)) => {
-            dispatch_types_match(left, right, generics)
-        }
-        (
-            DispatchTypeKey::Function(left, left_result),
-            DispatchTypeKey::Function(right, right_result),
-        ) => {
-            left.len() == right.len()
-                && left
-                    .iter()
-                    .zip(right)
-                    .all(|((lm, lt), (rm, rt))| lm == rm && dispatch_type_matches(lt, rt, generics))
-                && dispatch_type_matches(left_result, right_result, generics)
-        }
-        _ => pattern == concrete,
-    }
-}
-
-fn dispatch_types_match(
-    pattern: &[DispatchTypeKey],
-    concrete: &[DispatchTypeKey],
-    generics: &mut HashMap<u32, DispatchTypeKey>,
-) -> bool {
-    pattern.len() == concrete.len()
-        && pattern
-            .iter()
-            .zip(concrete)
-            .all(|(left, right)| dispatch_type_matches(left, right, generics))
+    pattern.matches(concrete)
 }
 
 fn dispatch_generics(key: &MethodKey) -> usize {

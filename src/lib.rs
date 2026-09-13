@@ -8,6 +8,7 @@ pub mod codegen;
 pub mod compiler;
 mod control_flow;
 pub mod diagnostic;
+mod dispatch;
 pub mod documentation;
 pub mod entry;
 pub mod error;

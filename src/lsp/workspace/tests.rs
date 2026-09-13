@@ -1249,7 +1249,7 @@ func main() -> Int {
     let core = include_str!("../../../library/core/int.fos");
     let line = core
         .lines()
-        .position(|line| line.contains("pub func power("))
+        .position(|line| line.contains("pub func power(self: Int,"))
         .unwrap() as u32;
     assert_eq!(location.range.start, Position::new(line, 13));
 }
