@@ -90,9 +90,8 @@ use representation::{
 };
 mod specialization;
 use specialization::{
-    FlowFacts, VerifiedRemoteCall, collect_function_types, contract_argument_matches,
-    contract_candidates, executable_type_for_native, reachable_instances, resolve_specialization,
-    verified_remote_calls,
+    VerifiedRemoteCall, collect_function_types, contract_argument_matches, contract_candidates,
+    executable_type_for_native, reachable_instances, resolve_specialization, verified_remote_calls,
 };
 mod thunks;
 use thunks::{
@@ -303,6 +302,15 @@ func main() -> Int {
         assert!(function.blocks.len() > 1);
         function.verify(function_types).unwrap();
         let mut definitions = function.parameters.iter().copied().collect::<HashSet<_>>();
+        // Captures and maybe-uninitialized entry tokens also define SSA identities.
+        for value in function
+            .captures
+            .iter()
+            .map(|capture| capture.value)
+            .chain(function.entry_seeds.iter().copied())
+        {
+            assert!(definitions.insert(value));
+        }
         let mut has_branch = false;
         let mut has_back_edge = false;
         let mut has_pruned_parameters = false;

@@ -185,6 +185,15 @@ pub(crate) fn liveness_with_exit_uses(
     function: &BytecodeFunction,
     exit_uses: &HashSet<Register>,
 ) -> Liveness {
+    liveness_with_write_bindings(function, exit_uses, &HashSet::new())
+}
+
+/// Sealing also needs the previous binding when a write may assign through a reference.
+pub(crate) fn liveness_with_write_bindings(
+    function: &BytecodeFunction,
+    exit_uses: &HashSet<Register>,
+    reference_homes: &HashSet<Register>,
+) -> Liveness {
     let count = function.instructions.len();
     let successors = (0..count)
         .map(|index| successors(&function.instructions, index))
@@ -202,6 +211,13 @@ pub(crate) fn liveness_with_exit_uses(
             reads.extend(exit_uses);
         }
         let writes = definitions(instruction);
+        if !matches!(instruction, Instruction::Drop { .. }) {
+            reads.extend(
+                writes
+                    .iter()
+                    .filter(|value| reference_homes.contains(value)),
+            );
+        }
         for register in reads.iter().chain(&writes) {
             words = words.max(usize::from(register.0) / 64 + 1);
         }

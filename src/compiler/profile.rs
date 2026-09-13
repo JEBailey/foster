@@ -113,7 +113,12 @@ mod tests {
             .map(|function| function.source_function())
             .collect::<std::collections::HashSet<_>>();
         assert!(prepared.functions().len() > bodies.len());
-        assert_eq!(report.counters["native.flow_analysis"], bodies.len());
+        assert!(!report.counters.contains_key("native.flow_analysis"));
+        let shared = crate::vm::compile_shared(&compilation).unwrap();
+        assert_eq!(
+            report.counters["shared.flow_analysis"],
+            shared.functions().len()
+        );
     }
 
     #[test]

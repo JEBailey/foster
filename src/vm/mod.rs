@@ -27,6 +27,7 @@ pub use machine::{Machine, release_value};
 pub use optimizer::optimize;
 pub use runtime::Capture;
 pub use value::Value;
+#[cfg(test)]
 pub(crate) use verifier::type_states;
 pub use verifier::verify;
 

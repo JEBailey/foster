@@ -1,9 +1,12 @@
 //! Sealing from VM construction form into shared SSA and de-SSA lowering to portable bytecode.
+#[cfg(test)]
+use crate::codegen::flow::PointFacts;
 
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
 
+use crate::codegen::flow::{FunctionFacts, FunctionSchema};
 use crate::codegen::ir::{self, Block, Type, Value};
 use crate::codegen::metadata::{Constant, ProgramMetadata};
 use crate::codegen::types::ExecutableType;
@@ -37,9 +40,17 @@ pub struct SharedProgram {
     drops_inserted: bool,
     functions: HashMap<FunctionId, ir::Function>,
     signatures: HashMap<FunctionId, ir::Signature>,
+    schemas: HashMap<FunctionId, FunctionSchema>,
+    facts: HashMap<FunctionId, FunctionFacts>,
 }
 
 impl SharedProgram {
+    pub fn schemas(&self) -> &HashMap<FunctionId, FunctionSchema> {
+        &self.schemas
+    }
+    pub fn facts(&self, function: FunctionId) -> &FunctionFacts {
+        &self.facts[&function]
+    }
     pub fn metadata(&self) -> &ProgramMetadata {
         &self.metadata
     }
@@ -51,7 +62,13 @@ impl SharedProgram {
     }
 
     /// Consuming extraction for backend transformation; the result is no longer a sealed program.
-    pub(crate) fn into_parts(self) -> (vm::Program, HashMap<FunctionId, ir::Function>) {
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        vm::Program,
+        HashMap<FunctionId, ir::Function>,
+        HashMap<FunctionId, FunctionFacts>,
+    ) {
         (
             vm::Program {
                 metadata: self.metadata,
@@ -59,6 +76,7 @@ impl SharedProgram {
                 drops_inserted: self.drops_inserted,
             },
             self.functions,
+            self.facts,
         )
     }
 }
@@ -68,6 +86,8 @@ pub fn seal_program(construction: vm::Program) -> Result<SharedProgram, LowerErr
     let SealedFunctions {
         functions,
         signatures,
+        schemas,
+        facts,
     } = seal_construction(&construction)?;
     Ok(SharedProgram {
         metadata: construction.metadata,
@@ -75,11 +95,15 @@ pub fn seal_program(construction: vm::Program) -> Result<SharedProgram, LowerErr
         drops_inserted: construction.drops_inserted,
         functions,
         signatures,
+        schemas,
+        facts,
     })
 }
 
 /// Both program consumers receive the same complete, verified SSA graph and signatures.
 struct SealedFunctions {
+    schemas: HashMap<FunctionId, FunctionSchema>,
+    facts: HashMap<FunctionId, FunctionFacts>,
     functions: HashMap<FunctionId, ir::Function>,
     signatures: HashMap<FunctionId, ir::Signature>,
 }
@@ -90,17 +114,24 @@ fn seal_construction(construction: &vm::Program) -> Result<SealedFunctions, Lowe
     let result_types = construction
         .functions
         .iter()
-        .map(|(id, function)| (*id, shared_type(&function.result_type)))
+        .map(|(id, function)| (*id, function.result_type.clone()))
         .collect::<HashMap<_, _>>();
+    let schemas = construction
+        .functions
+        .iter()
+        .map(|(id, body)| (*id, logical_schema(body)))
+        .collect();
+    let mut facts = HashMap::new();
+    let mut source_maps = HashMap::new();
     let mut functions = HashMap::with_capacity(construction.functions.len());
     for (id, function) in &construction.functions {
         if function.intrinsic_stub {
             continue;
         }
-        functions.insert(
-            *id,
-            seal_function_with_types(&construction.metadata.constants, &result_types, function)?,
-        );
+        let (shared, _sources) =
+            seal_function_with_evidence(&construction.metadata.constants, &result_types, function)?;
+        source_maps.insert(*id, _sources);
+        functions.insert(*id, shared);
     }
     let signatures = functions
         .iter()
@@ -111,9 +142,31 @@ fn seal_construction(construction: &vm::Program) -> Result<SealedFunctions, Lowe
             .verify(&signatures)
             .map_err(|error| LowerError(format!("invalid shared IR: {error}")))?;
     }
+    for (id, shared) in &functions {
+        let analyzed = crate::codegen::flow::analyze(
+            &construction.metadata,
+            &schemas,
+            &schemas[id],
+            shared,
+            &source_maps[id].write_bindings,
+        )
+        .map_err(|e| LowerError(e.to_string()))?;
+        #[cfg(test)]
+        compare_flow(
+            construction,
+            &construction.functions[id],
+            shared,
+            &source_maps[id],
+            &analyzed,
+            &schemas,
+        )?;
+        facts.insert(*id, analyzed);
+    }
     Ok(SealedFunctions {
         functions,
         signatures,
+        schemas,
+        facts,
     })
 }
 
@@ -122,6 +175,7 @@ pub fn lower_program_through_shared_ir(program: &mut vm::Program) -> Result<(), 
     let SealedFunctions {
         functions,
         signatures,
+        ..
     } = seal_construction(program)?;
     // Keep original bodies until every lowering succeeds, without cloning instruction payloads.
     // Lowering only appends constants, so truncation also restores metadata after an error.
@@ -189,16 +243,123 @@ pub fn seal_function(
     let result_types = program
         .functions
         .iter()
-        .map(|(id, function)| (*id, shared_type(&function.result_type)))
+        .map(|(id, function)| (*id, function.result_type.clone()))
         .collect::<HashMap<_, _>>();
     seal_function_with_types(&program.metadata.constants, &result_types, function)
 }
 
+fn logical_schema(function: &vm::BytecodeFunction) -> FunctionSchema {
+    FunctionSchema {
+        name: function.name.clone(),
+        parameters: crate::types::Parameter::from_parts(
+            function.parameter_types.clone(),
+            function.parameter_modes.clone(),
+        ),
+        captures: function.capture_types.clone(),
+        result_type: function.result_type.clone(),
+        returns_reference: function.returns_reference,
+        intrinsic_stub: function.intrinsic_stub,
+    }
+}
+
+#[derive(Default)]
+struct SealingEvidence {
+    // Prior SSA binding of a destination: Reference values denote assignment through a place.
+    write_bindings: HashMap<Value, Value>,
+    #[cfg(test)]
+    sites: Vec<Vec<usize>>,
+    #[cfg(test)]
+    bindings: HashMap<usize, Vec<Option<Value>>>,
+}
+
+#[cfg(test)]
+fn construction_facts(
+    program: &vm::Program,
+    body: &vm::BytecodeFunction,
+    shared: &ir::Function,
+    sources: &SealingEvidence,
+    schemas: &HashMap<FunctionId, FunctionSchema>,
+) -> Result<FunctionFacts, LowerError> {
+    let states = vm::type_states(program, body, schemas).map_err(|e| LowerError(e.to_string()))?;
+    let mut values = vec![std::collections::BTreeSet::new(); shared.values.len()];
+    let points = shared
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(block_index, block)| {
+            sources.sites[block_index]
+                .iter()
+                .enumerate()
+                .map(|(instruction_index, source)| {
+                    let Some(state) = &states[*source] else {
+                        return PointFacts::Unreachable;
+                    };
+                    let operands =
+                        if let Some(instruction) = block.instructions.get(instruction_index) {
+                            instruction.operands()
+                        } else {
+                            match &block.terminator {
+                                ir::Terminator::Return(value) => vec![*value],
+                                ir::Terminator::Jump { arguments, .. } => arguments.clone(),
+                                ir::Terminator::Branch {
+                                    condition,
+                                    then_arguments,
+                                    else_arguments,
+                                    ..
+                                } => std::iter::once(*condition)
+                                    .chain(then_arguments.iter().copied())
+                                    .chain(else_arguments.iter().copied())
+                                    .collect(),
+                            }
+                        };
+                    let mut available = HashMap::new();
+                    for value in operands {
+                        let ty = sources.bindings[source]
+                            .iter()
+                            .enumerate()
+                            .find_map(|(home, binding)| {
+                                (*binding == Some(value))
+                                    .then(|| state[home].as_ref())
+                                    .flatten()
+                            })
+                            .or_else(|| {
+                                shared
+                                    .values
+                                    .hint(value.index())
+                                    .and_then(|home| state[usize::from(home)].as_ref())
+                            });
+                        available.insert(value, ty.cloned());
+                        if let Some(ty) = ty {
+                            values[value.index()].insert(ty.clone());
+                        }
+                    }
+                    PointFacts::Reachable(available)
+                })
+                .collect()
+        })
+        .collect();
+    Ok(FunctionFacts {
+        points,
+        values: values
+            .into_iter()
+            .map(|types| types.into_iter().collect())
+            .collect(),
+    })
+}
+
 fn seal_function_with_types(
     constants: &[Constant],
-    result_types: &HashMap<FunctionId, Type>,
+    result_types: &HashMap<FunctionId, ExecutableType>,
     function: &vm::BytecodeFunction,
 ) -> Result<ir::Function, LowerError> {
+    seal_function_with_evidence(constants, result_types, function).map(|(function, _)| function)
+}
+
+fn seal_function_with_evidence(
+    constants: &[Constant],
+    result_types: &HashMap<FunctionId, ExecutableType>,
+    function: &vm::BytecodeFunction,
+) -> Result<(ir::Function, SealingEvidence), LowerError> {
     if function.instructions.is_empty() {
         return Err(LowerError(
             "cannot seal an empty executable function into shared SSA".into(),
@@ -271,7 +432,57 @@ fn seal_function_with_types(
             break;
         }
     }
-    let liveness = crate::vm::optimizer::analysis::liveness_with_exit_uses(function, &origins);
+    let mut reference_homes = function
+        .capture_types
+        .iter()
+        .chain(&function.parameter_types)
+        .enumerate()
+        .filter_map(|(index, ty)| {
+            matches!(ty, ExecutableType::Reference(_)).then_some(Register(index as u16))
+        })
+        .collect::<std::collections::HashSet<_>>();
+    for instruction in &function.instructions {
+        let destination = match instruction {
+            vm::Instruction::MakeReference { destination, .. }
+            | vm::Instruction::MakeWholeReference { destination, .. }
+            | vm::Instruction::MakeFieldReference { destination, .. }
+            | vm::Instruction::LoadField { destination, by_reference: true, .. }
+            // These reads can produce a reference depending on their operand's logical schema.
+            | vm::Instruction::Index { destination, .. }
+            | vm::Instruction::MoveOut { destination, .. }
+            | vm::Instruction::CallValue { destination, .. }
+            | vm::Instruction::CallContractMethod { destination, .. }
+            | vm::Instruction::Await { destination, .. }
+            | vm::Instruction::Binary { destination, operator: crate::ast::BinaryOp::Add, .. } => Some(*destination),
+            vm::Instruction::Call { destination, function, specialization, .. }
+            | vm::Instruction::CallMethod { destination, function, specialization, .. }
+            | vm::Instruction::CallClosure { destination, function, specialization, .. }
+                if result_types.get(function).is_some_and(|ty| matches!(ty.specialize(specialization), ExecutableType::Reference(_))) => Some(*destination),
+            _ => None,
+        };
+        reference_homes.extend(destination);
+    }
+    loop {
+        let before = reference_homes.len();
+        for instruction in &function.instructions {
+            if let vm::Instruction::Move {
+                destination,
+                source,
+            } = instruction
+                && reference_homes.contains(source)
+            {
+                reference_homes.insert(*destination);
+            }
+        }
+        if before == reference_homes.len() {
+            break;
+        }
+    }
+    let liveness = crate::vm::optimizer::analysis::liveness_with_write_bindings(
+        function,
+        &origins,
+        &reference_homes,
+    );
     let mut values = ir::ValueBuilder::default();
     let mut externals = Vec::new();
     for (register, ty) in hints
@@ -325,6 +536,8 @@ fn seal_function_with_types(
         })
         .collect::<Vec<_>>();
 
+    #[allow(unused_mut)]
+    let mut sources = SealingEvidence::default();
     let mut blocks = Vec::new();
     for (block_index, start) in leaders.iter().copied().enumerate() {
         let end = leaders
@@ -342,7 +555,17 @@ fn seal_function_with_types(
         let mut instruction_spans = Vec::new();
         let mut terminator = None;
         let mut terminator_span = Range::default();
+        #[cfg(test)]
+        let mut origins = Vec::new();
+        #[cfg(test)]
+        let mut previous_source = start;
         for source_index in start..end {
+            #[cfg(test)]
+            {
+                origins.resize(instructions.len(), previous_source);
+                previous_source = source_index;
+                sources.bindings.insert(source_index, state.clone());
+            }
             let operation = &function.instructions[source_index];
             let source_span = function
                 .instruction_spans
@@ -559,6 +782,9 @@ fn seal_function_with_types(
                     }));
                     instruction_spans.push(source_span);
                     state[usize::from(object.0)] = Some(unique);
+                    if let Some(previous) = state[usize::from(destination.0)] {
+                        sources.write_bindings.insert(result, previous);
+                    }
                     state[usize::from(destination.0)] = Some(result);
                 }
                 operation => {
@@ -573,6 +799,9 @@ fn seal_function_with_types(
                             hints[usize::from(register.0)],
                             register,
                         );
+                        if let Some(previous) = state[usize::from(register.0)] {
+                            sources.write_bindings.insert(value, previous);
+                        }
                         destinations.push((register, value));
                     }
                     instructions.push(ir::Instruction::Portable(portable_instruction(
@@ -630,6 +859,12 @@ fn seal_function_with_types(
                 )));
             }
         };
+        #[cfg(test)]
+        {
+            origins.resize(instructions.len(), previous_source);
+            origins.push(previous_source);
+            sources.sites.push(origins);
+        }
         blocks.push(ir::BlockData {
             parameters: block_parameters[block_index].clone(),
             instructions: ir::SpannedInstruction::from_parts(instructions, instruction_spans),
@@ -637,29 +872,32 @@ fn seal_function_with_types(
             terminator_span,
         });
     }
-    Ok(ir::Function {
-        name: function.name.clone(),
-        signature: ir::Signature {
-            parameters: (capture_count..capture_count + usize::from(function.parameters))
-                .map(|register| hints[register])
+    Ok((
+        ir::Function {
+            name: function.name.clone(),
+            signature: ir::Signature {
+                parameters: (capture_count..capture_count + usize::from(function.parameters))
+                    .map(|register| hints[register])
+                    .collect(),
+                result: shared_type(&function.result_type),
+            },
+            parameters,
+            captures: captures
+                .into_iter()
+                .enumerate()
+                .map(|(register, value)| ir::Capture {
+                    value,
+                    ty: hints[register],
+                })
                 .collect(),
-            result: shared_type(&function.result_type),
+            entry_seeds,
+            entry: Block(0),
+            entry_arguments,
+            values: values.finish(),
+            blocks,
         },
-        parameters,
-        captures: captures
-            .into_iter()
-            .enumerate()
-            .map(|(register, value)| ir::Capture {
-                value,
-                ty: hints[register],
-            })
-            .collect(),
-        entry_seeds,
-        entry: Block(0),
-        entry_arguments,
-        values: values.finish(),
-        blocks,
-    })
+        sources,
+    ))
 }
 
 fn allocate_lifted_value(values: &mut ir::ValueBuilder, ty: Type, register: Register) -> Value {
@@ -732,7 +970,7 @@ fn shared_type(ty: &ExecutableType) -> Type {
 
 fn register_type_hints(
     constants: &[Constant],
-    result_types: &HashMap<FunctionId, Type>,
+    result_types: &HashMap<FunctionId, ExecutableType>,
     function: &vm::BytecodeFunction,
 ) -> Vec<Type> {
     let mut hints = vec![Type::Opaque; usize::from(function.registers)];
@@ -816,7 +1054,10 @@ fn register_type_hints(
                 ..
             } => (
                 Some(*destination),
-                result_types.get(function).copied().unwrap_or(Type::Opaque),
+                result_types
+                    .get(function)
+                    .map(shared_type)
+                    .unwrap_or(Type::Opaque),
             ),
             _ => (None, Type::Opaque),
         };
@@ -2069,7 +2310,7 @@ mod tests {
             assert_eq!(sealed.signatures()[id], function.signature);
         }
         assert_eq!(sealed.metadata(), &program.metadata);
-        let (restored, _) = sealed.into_parts();
+        let (restored, _, _) = sealed.into_parts();
         assert_eq!(restored, program);
         let mut invalid = program;
         invalid
@@ -2316,4 +2557,65 @@ mod tests {
             vm::Value::Integer(41)
         );
     }
+}
+
+#[cfg(test)]
+fn compare_flow(
+    program: &vm::Program,
+    body: &vm::BytecodeFunction,
+    shared: &ir::Function,
+    sources: &SealingEvidence,
+    actual: &FunctionFacts,
+    schemas: &HashMap<FunctionId, FunctionSchema>,
+) -> Result<(), LowerError> {
+    use crate::codegen::flow::{Site, ValueFact};
+    let expected = construction_facts(program, body, shared, sources, schemas)?;
+    for (b, block) in shared.blocks.iter().enumerate() {
+        for i in 0..=block.instructions.len() {
+            let instruction = block.instructions.get(i);
+            let site = Site {
+                block: Block(b as u32),
+                instruction: i,
+            };
+            assert_eq!(
+                actual.reachable(site),
+                expected.reachable(site),
+                "reachability in {} at {site:?}",
+                body.name
+            );
+            if matches!(
+                instruction.map(|i| &i.instruction),
+                Some(ir::Instruction::Portable(
+                    ir::PortableInstruction::Drop { .. }
+                ))
+            ) {
+                continue;
+            }
+            let operands = match instruction {
+                Some(instruction) => instruction.operands(),
+                None => match &block.terminator {
+                    ir::Terminator::Return(value) => vec![*value],
+                    ir::Terminator::Branch { condition, .. } => vec![*condition],
+                    // Edge arguments may include true-only pattern bindings before the branch.
+                    ir::Terminator::Jump { .. } => vec![],
+                },
+            };
+            for value in operands {
+                if let ValueFact::Known(expected) = expected.at(site, value) {
+                    match actual.at(site, value) {
+                        ValueFact::Known(found) => assert_eq!(
+                            found, expected,
+                            "flow in {} at {site:?} for {value:?}: {:?}",
+                            body.name, instruction
+                        ),
+                        found => panic!(
+                            "flow in {} at {site:?} for {value:?}: {found:?}, expected {expected:?}",
+                            body.name
+                        ),
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
 }

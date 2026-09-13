@@ -7,17 +7,29 @@ use super::{
     native_intrinsic_result_type, native_verification_type, reference_load_helper,
     reference_store_helper, resolve_specialization, runtime_signature, verified_remote_calls,
 };
-use crate::codegen::types::ExecutableType;
 
 pub(super) fn lower_shared_to_native_ir(
     shared: &ir::Function,
     metadata: &BytecodeFunction,
-    source_states: &[Option<Vec<Option<ExecutableType>>>],
+    source_states: &crate::codegen::flow::FunctionFacts,
     function_signature: &ir::Signature,
     instance: &SpecializationKey,
     environment: NativeIrEnvironment<'_>,
 ) -> Result<(ir::Function, FailureCleanup), FosterError> {
-    let remote_calls = verified_remote_calls(metadata, source_states, instance, environment)?;
+    let remote_calls = verified_remote_calls(shared, source_states, instance, environment)?;
+    // Temporary bridge for construction-based physical representation inference only.
+    // Preserve construction order if multiple SSA results reuse one home.
+    let mut ordered_remote_calls = remote_calls.iter().collect::<Vec<_>>();
+    ordered_remote_calls.sort_by_key(|(value, _)| value.index());
+    let home_remote_calls = ordered_remote_calls
+        .into_iter()
+        .filter_map(|(value, call)| {
+            shared
+                .values
+                .hint(value.index())
+                .map(|home| (home, call.clone()))
+        })
+        .collect();
     let external_values = shared
         .captures
         .iter()
@@ -45,7 +57,7 @@ pub(super) fn lower_shared_to_native_ir(
         &function_signature.parameters,
         instance,
         environment,
-        &remote_calls,
+        &home_remote_calls,
     )?;
     let mut values = shared.values.clone().into_builder();
     for (index, ty) in shared.values.iter().enumerate() {
@@ -670,7 +682,7 @@ fn allocate_shared_value(values: &mut ir::ValueBuilder, ty: NativeType) -> ir::V
 
 struct NativeFunctionFacts<'a> {
     reference_homes: &'a HashMap<u16, ir::Value>,
-    remote_calls: &'a HashMap<u16, VerifiedRemoteCall>,
+    remote_calls: &'a HashMap<ir::Value, VerifiedRemoteCall>,
 }
 
 fn lower_shared_instruction(
@@ -1567,9 +1579,9 @@ fn lower_shared_instruction(
             arguments,
             ..
         } => {
-            let target = values
-                .hint(destination.0 as usize)
-                .and_then(|home| facts.remote_calls.get(&home))
+            let target = facts
+                .remote_calls
+                .get(destination)
                 .ok_or_else(|| native_error("remote SSA call has no verified specialization"))?
                 .target;
             let modes = arguments.iter().map(|(mode, _)| *mode).collect::<Vec<_>>();

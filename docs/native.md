@@ -59,7 +59,7 @@ legalized SSA types and physical layouts select representation, sizes, alignment
 The shared definitions and substitution helpers have no VM dependency. Layout construction
 still consumes VM program metadata through its existing adapter.
 
-`Unknown` means unavailable or erased shape: it is the verifier's top type and selects an opaque
+`Unknown` means erased or unknown shape: it is the verifier's top type and selects an opaque
 native representation, without proving source conformance. `Generic` names can remain during
 intermediate specialization but must be resolved or explicitly handled for materialized layouts.
 Specializations contain sorted, unique names; their values can still contain generic leaves.
@@ -211,10 +211,29 @@ lookup also lives there; it has no VM values or physical offsets. `vm::Program` 
 with bytecode functions and the drop-insertion flag. The binary field order and format are unchanged.
 `SharedProgram::metadata()` and `NativeProgram::metadata()` expose only the neutral data.
 Nominal layout construction and native representation/ownership helpers accept neutral metadata.
-Shared sealing retains construction bodies separately, and native verification and specialization
-still use them for register-flow evidence; extracting metadata does not remove that dependency.
+Shared sealing retains construction bodies separately for physical representation inference and
+backend validation. Native logical flow consumers use the sealed SSA facts described below.
 Record schemas store paired `RecordField` entries. Construction derives their immutable lookup
 layout and rejects duplicate names; linking remaps field types without changing storage order.
+
+
+`codegen::flow` owns logical flow analysis. A sealed program retains paired logical function
+schemas, immutable per-function facts, and the exact SSA graphs those facts describe. A query at
+a block/instruction site distinguishes unreachable code, an unavailable definition, and a known
+logical type (which may itself be `Unknown`). Representation types never reconstruct this evidence.
+
+The shared engine owns transfer rules, type joins, pattern-binding availability, and excluded
+variant facts. The VM adapter analyzes consuming slots and still validates serialized bytecode.
+The SSA adapter analyzes immutable identities, transfers block arguments in parallel, and remaps
+pattern evidence on edges. Sealing preserves prior SSA bindings for writes that can assign through
+a reference, including bindings that ordinary value liveness would discard. Consuming an owner does not erase the type of its immutable SSA aliases;
+ownership permission remains separately checked. Sealing tests compare reachable use-site evidence
+against the VM slot adapter; the source correspondence exists only in test builds.
+
+Native contract arguments and remote receivers/arguments query these SSA sites. Remote call targets
+are keyed by SSA result identity, and logical summaries no longer combine unrelated values that
+reuse a storage home. Native physical representation inference still has a construction-register
+bridge; removing that bridge is a separate remaining boundary, not a source of logical flow facts.
 
 The portable, versioned bytecode remains the VM's execution and distribution format. The native
 IR is a shared internal backend boundary rather than a replacement for bytecode, leaving room for
@@ -227,10 +246,10 @@ calculation, native SSA lowering, and verification happen once. Its `emit_ir`, `
 and `build_executable` methods reuse those exact functions and layouts, including across optimization
 modes. The convenience functions with the same names prepare a fresh program for a single request.
 Each prepared function retains its specialized logical signature and parameter ownership modes,
-compact verified logical alternatives by source storage home, and a per-value memory-management
+compact verified logical alternatives by original SSA value, and a per-value memory-management
 classification. This preserves distinctions such as String versus Symbol after both become pointers.
-ABI-only temporaries have no source logical identity; storage-home alternatives are not a
-path-sensitive type assertion for each SSA value. Mutable parameter homes and storage types are
+ABI-only temporaries have no source logical identity. Value summaries aggregate that identity
+across paths; specialization queries the separate use-site facts. Mutable parameter homes and storage types are
 also calculated during preparation rather than reconstructed during emission.
 
 The backend separates program preparation (`native/program.rs`), object assembly
@@ -243,7 +262,7 @@ retain/release protocol. Helper definitions are emitted in stable key order, so 
 does not change repeated object emission.
 
 The native entry module contains the public API and shared compilation contexts. Preparation
-uses `specialization.rs` for reachability and cached flow facts, `representation.rs` and
+uses `specialization.rs` for reachability and shared flow-fact queries, `representation.rs` and
 `inference.rs` for type conversion, `validation.rs` for native restrictions, and `legalize.rs`
 for converting shared IR to native IR. Machine emission uses `lowering.rs` for blocks and
 patterns, `portable.rs` for portable instructions, `operations.rs` for arithmetic and control
@@ -267,9 +286,8 @@ tags and payloads, closure environments and capture ownership, reference place h
 runtime-backed structural values. Portable bytecode version 25 retains generic identities, nominal
 parameters and arguments, and sorted substitutions at statically resolved calls and closure
 construction. Native
-reachability is keyed by function plus substitutions. Per-body verifier flow facts are cached for
-one preparation and reused by all specializations and layout/lowering passes; the cache is
-discarded when preparation returns. Built-in representation selection uses canonical record IDs.
+reachability is keyed by function plus substitutions. Logical SSA facts are calculated once per
+sealed function and reused by all specializations and layout/lowering passes. Built-in representation selection uses canonical record IDs.
 Native preparation materializes concrete signatures and
 record/enum/closure and runtime-backed generic layouts before target-specific physical layout
 calculation. Generic lists, callable signatures, remote/future handles, and places are cached by

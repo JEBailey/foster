@@ -1,41 +1,33 @@
 //! Reachability, specialization, and cached verification facts.
 use super::{
-    BTreeSet, BytecodeFunction, Compilation, ContractCandidate, FosterError, FunctionId, HashMap,
-    Instruction, LayoutKind, LayoutRegistry, NativeInstance, NativeIrEnvironment, NativeType,
-    Program, RawIdx, Register, SpecializationKey, Type, concrete_native_type,
-    instruction_layout_type, ir, native_error, native_type, record_uses_dynamic_dispatch,
-    specialized_executable_type, vm,
+    BTreeSet, Compilation, ContractCandidate, FosterError, FunctionId, HashMap, Instruction,
+    LayoutKind, LayoutRegistry, NativeInstance, NativeIrEnvironment, NativeType, Program, RawIdx,
+    SpecializationKey, Type, concrete_native_type, instruction_layout_type, ir, native_error,
+    native_type, record_uses_dynamic_dispatch, specialized_executable_type,
 };
 use crate::codegen::types::ExecutableType;
 
-type RegisterTypes = Vec<Option<ExecutableType>>;
-type FunctionFlow = Vec<Option<RegisterTypes>>;
-
-/// Verified flow facts for the immutable construction program, shared by all specializations.
-#[derive(Default)]
-pub(super) struct FlowFacts {
-    functions: HashMap<FunctionId, FunctionFlow>,
-}
-impl FlowFacts {
-    pub(super) fn get(
-        &mut self,
-        program: &Program,
-        function: FunctionId,
-    ) -> Result<&[Option<RegisterTypes>], FosterError> {
-        if let std::collections::hash_map::Entry::Vacant(entry) = self.functions.entry(function) {
-            crate::compiler::profile::count("native.flow_analysis");
-            entry.insert(vm::type_states(program, &program.functions[&function])?);
-        }
-        Ok(&self.functions[&function])
+use crate::codegen::flow::{FunctionFacts, Site, ValueFact};
+pub(super) type FlowFacts = HashMap<FunctionId, FunctionFacts>;
+fn known(
+    facts: &FunctionFacts,
+    site: Site,
+    value: ir::Value,
+) -> Result<&ExecutableType, FosterError> {
+    match facts.at(site, value) {
+        ValueFact::Known(ty) => Ok(ty),
+        _ => Err(native_error(format!(
+            "SSA value {} at {site:?} has no logical evidence",
+            value.index()
+        ))),
     }
 }
-
 pub(super) fn reachable_instances(
     compilation: &Compilation,
     program: &Program,
     shared_functions: &HashMap<FunctionId, ir::Function>,
     main: FunctionId,
-    facts: &mut FlowFacts,
+    facts: &FlowFacts,
 ) -> Result<Vec<NativeInstance>, FosterError> {
     let mut reachable = BTreeSet::new();
     let mut concrete_nominals = BTreeSet::new();
@@ -89,84 +81,72 @@ pub(super) fn reachable_instances(
                 collect_nominal_types(&ty, &mut concrete_nominals);
             }
         }
-        let type_states = facts.get(program, instance.function)?;
-        for (index, instruction) in body.instructions.iter().enumerate() {
-            let Some(state) = type_states[index].as_ref() else {
-                continue;
-            };
-            match instruction {
-                Instruction::CallContractMethod {
-                    slot, arguments, ..
-                } => {
-                    let argument_types = arguments
-                        .iter()
-                        .map(|argument| {
-                            state[usize::from(argument.0)]
-                                .as_ref()
-                                .map(|ty| ty.specialize(&instance.substitutions))
-                                .ok_or_else(|| {
-                                    native_error(format!(
-                                        "contract argument r{} in `{}` has no verified type",
-                                        argument.0, body.name
-                                    ))
-                                })
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    contract_calls.insert((
-                        if *slot == crate::types::CAN_COPY_SLOT {
-                            crate::types::COPY_SLOT
-                        } else {
-                            *slot
-                        },
-                        argument_types,
-                    ));
+        let flow = &facts[&instance.function];
+        for (block_index, block) in shared.blocks.iter().enumerate() {
+            for (index, instruction) in block.instructions.iter().enumerate() {
+                let site = Site {
+                    block: ir::Block(block_index as u32),
+                    instruction: index,
+                };
+                if !flow.reachable(site) {
+                    continue;
                 }
-                Instruction::RemoteCall {
-                    remote,
-                    function,
-                    arguments,
-                    ..
-                } => {
-                    let receiver = state[usize::from(remote.0)]
-                        .as_ref()
-                        .map(|ty| ty.specialize(&instance.substitutions))
-                        .ok_or_else(|| {
-                            native_error(format!(
-                                "remote receiver r{} in `{}` has no verified type",
-                                remote.0, body.name
-                            ))
-                        })?;
-                    let ExecutableType::Remote(receiver) = receiver else {
-                        return Err(native_error(format!(
-                            "remote receiver in `{}` does not have a Remote type",
-                            body.name
-                        )));
-                    };
-                    let argument_types = arguments
-                        .iter()
-                        .map(|(_, argument)| {
-                            state[usize::from(argument.0)]
-                                .as_ref()
-                                .map(|ty| ty.specialize(&instance.substitutions))
-                                .ok_or_else(|| {
-                                    native_error(format!(
-                                        "remote argument r{} in `{}` has no verified type",
-                                        argument.0, body.name
-                                    ))
-                                })
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
-                    pending.push(SpecializationKey {
-                        function: *function,
-                        substitutions: remote_specialization(
-                            compilation,
-                            *function,
-                            &receiver,
-                            &argument_types,
-                        )?,
-                    });
+                let ir::Instruction::Portable(instruction) = &instruction.instruction else {
+                    continue;
+                };
+                match instruction {
+                    ir::PortableInstruction::CallContractMethod {
+                        slot, arguments, ..
+                    } => {
+                        let argument_types = arguments
+                            .iter()
+                            .map(|argument| {
+                                known(flow, site, *argument)
+                                    .map(|ty| ty.specialize(&instance.substitutions))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        contract_calls.insert((
+                            if *slot == crate::types::CAN_COPY_SLOT {
+                                crate::types::COPY_SLOT
+                            } else {
+                                *slot
+                            },
+                            argument_types,
+                        ));
+                    }
+                    ir::PortableInstruction::RemoteCall {
+                        remote,
+                        function,
+                        arguments,
+                        ..
+                    } => {
+                        let receiver = known(flow, site, *remote)
+                            .map(|ty| ty.specialize(&instance.substitutions))?;
+                        let ExecutableType::Remote(receiver) = receiver else {
+                            return Err(native_error(format!(
+                                "remote receiver in `{}` does not have a Remote type",
+                                body.name
+                            )));
+                        };
+                        let argument_types = arguments
+                            .iter()
+                            .map(|(_, argument)| {
+                                known(flow, site, *argument)
+                                    .map(|ty| ty.specialize(&instance.substitutions))
+                            })
+                            .collect::<Result<Vec<_>, _>>()?;
+                        pending.push(SpecializationKey {
+                            function: *function,
+                            substitutions: remote_specialization(
+                                compilation,
+                                *function,
+                                &receiver,
+                                &argument_types,
+                            )?,
+                        });
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
         }
         for instruction in shared.blocks.iter().flat_map(|block| &block.instructions) {
@@ -444,59 +424,65 @@ pub(super) fn executable_type_for_native(
     }
 }
 
+#[derive(Clone)]
 pub(super) struct VerifiedRemoteCall {
     pub(super) target: FunctionId,
     pub(super) result: ExecutableType,
 }
 
 pub(super) fn verified_remote_calls(
-    function: &BytecodeFunction,
-    states: &[Option<Vec<Option<ExecutableType>>>],
+    function: &ir::Function,
+    facts: &FunctionFacts,
     instance: &SpecializationKey,
     environment: NativeIrEnvironment<'_>,
-) -> Result<HashMap<u16, VerifiedRemoteCall>, FosterError> {
+) -> Result<HashMap<ir::Value, VerifiedRemoteCall>, FosterError> {
     let mut calls = HashMap::new();
-    for (instruction, state) in function.instructions.iter().zip(states) {
-        let Instruction::RemoteCall {
-            destination,
-            remote,
-            function: target,
-            arguments,
-        } = instruction
-        else {
-            continue;
-        };
-        let Some(state) = state else {
-            continue;
-        };
-        let logical_type = |register: Register| {
-            state[usize::from(register.0)]
-                .as_ref()
-                .map(|ty| ty.specialize(&instance.substitutions))
-                .ok_or_else(|| native_error("remote call operand has no verified type"))
-        };
-        let ExecutableType::Remote(receiver) = logical_type(*remote)? else {
-            return Err(native_error(
-                "remote call receiver has no verified Remote type",
-            ));
-        };
-        let arguments = arguments
-            .iter()
-            .map(|(_, argument)| logical_type(*argument))
-            .collect::<Result<Vec<_>, _>>()?;
-        let substitutions =
-            remote_specialization(environment.compilation, *target, &receiver, &arguments)?;
-        let result = environment.program.functions[target]
-            .result_type
-            .specialize(&substitutions);
-        let key = SpecializationKey {
-            function: *target,
-            substitutions,
-        };
-        let target = environment.instances.get(&key).copied().ok_or_else(|| {
-            native_error("verified remote specialization was not included in native reachability")
-        })?;
-        calls.insert(destination.0, VerifiedRemoteCall { target, result });
+    for (block_index, block) in function.blocks.iter().enumerate() {
+        for (index, instruction) in block.instructions.iter().enumerate() {
+            let site = Site {
+                block: ir::Block(block_index as u32),
+                instruction: index,
+            };
+            if !facts.reachable(site) {
+                continue;
+            }
+            let ir::Instruction::Portable(ir::PortableInstruction::RemoteCall {
+                destination,
+                remote,
+                function: target,
+                arguments,
+            }) = &instruction.instruction
+            else {
+                continue;
+            };
+            let logical_type = |value: ir::Value| {
+                known(facts, site, value).map(|ty| ty.specialize(&instance.substitutions))
+            };
+            let ExecutableType::Remote(receiver) = logical_type(*remote)? else {
+                return Err(native_error(
+                    "remote call receiver has no verified Remote type",
+                ));
+            };
+            let arguments = arguments
+                .iter()
+                .map(|(_, argument)| logical_type(*argument))
+                .collect::<Result<Vec<_>, _>>()?;
+            let substitutions =
+                remote_specialization(environment.compilation, *target, &receiver, &arguments)?;
+            let result = environment.program.functions[target]
+                .result_type
+                .specialize(&substitutions);
+            let key = SpecializationKey {
+                function: *target,
+                substitutions,
+            };
+            let target = environment.instances.get(&key).copied().ok_or_else(|| {
+                native_error(
+                    "verified remote specialization was not included in native reachability",
+                )
+            })?;
+            calls.insert(*destination, VerifiedRemoteCall { target, result });
+        }
     }
     Ok(calls)
 }
@@ -662,7 +648,7 @@ pub(super) fn collect_function_types(
         crate::codegen::types::ExecutableType,
     >,
     layouts: &mut LayoutRegistry,
-    facts: &mut FlowFacts,
+    facts: &FlowFacts,
 ) -> Result<HashMap<FunctionId, ir::Signature>, FosterError> {
     instances
         .iter()
@@ -747,10 +733,8 @@ pub(super) fn collect_function_types(
             if layouts.closure(function).is_some() {
                 layouts.instantiate_closure(function, &instance.key.substitutions)?;
             }
-            for state in facts.get(program, function)?.iter().flatten() {
-                for ty in state.iter().flatten() {
-                    layouts.instantiate_type(&ty.specialize(&instance.key.substitutions))?;
-                }
+            for ty in facts[&function].types() {
+                layouts.instantiate_type(&ty.specialize(&instance.key.substitutions))?;
             }
             for instruction in &program.functions[&function].instructions {
                 if let Some(ty) = instruction_layout_type(

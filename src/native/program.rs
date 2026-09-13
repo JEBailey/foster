@@ -18,8 +18,8 @@ pub struct NativeFunction {
     pub(super) failure_cleanup: FailureCleanup,
     logical_signature: LogicalSignature,
     management: Vec<MemoryManagement>,
-    // Compact logical evidence keyed by construction storage home, retaining CFG alternatives.
-    logical_register_types: Vec<Vec<ExecutableType>>,
+    // Logical evidence keyed by the original SSA identity, retaining CFG alternatives.
+    logical_value_types: Vec<Vec<ExecutableType>>,
 }
 
 impl NativeFunction {
@@ -39,17 +39,16 @@ impl NativeFunction {
     pub fn management(&self) -> &[MemoryManagement] {
         &self.management
     }
-    /// Verified logical alternatives for each construction register (before ABI lowering).
-    pub fn logical_register_types(&self) -> &[Vec<ExecutableType>] {
-        &self.logical_register_types
+    /// Verified logical alternatives for each original SSA value (before ABI lowering).
+    pub fn logical_value_types(&self) -> &[Vec<ExecutableType>] {
+        &self.logical_value_types
     }
-    /// Source-level logical alternatives for an SSA value, when it has a source storage home.
+    /// Source-level logical alternatives for an original SSA value.
     /// ABI-only temporaries have no separate Foster identity and return an empty slice.
     pub fn logical_types(&self, value: ir::Value) -> &[ExecutableType] {
-        self.ir
-            .values
-            .hint(value.0 as usize)
-            .map_or(&[], |home| &self.logical_register_types[usize::from(home)])
+        self.logical_value_types
+            .get(value.index())
+            .map_or(&[], Vec::as_slice)
     }
 }
 
@@ -76,7 +75,7 @@ pub struct NativeProgram<'a> {
 /// Prepare once, then render or emit any number of objects without repeating specialization.
 pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterError> {
     let shared = vm::compile_shared(compilation)?;
-    let (mut program, shared_functions) = shared.into_parts();
+    let (mut program, shared_functions, facts) = shared.into_parts();
     let mut layouts = crate::codegen::layout::legalize(&mut program)?;
     if let Some(record) = program.metadata.string_record {
         layouts.instantiate_type(&ExecutableType::Record {
@@ -89,9 +88,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         .metadata
         .main
         .ok_or_else(|| native_error("native compilation requires a `main` function"))?;
-    let mut facts = FlowFacts::default();
-    let instances =
-        reachable_instances(compilation, &program, &shared_functions, main, &mut facts)?;
+    let instances = reachable_instances(compilation, &program, &shared_functions, main, &facts)?;
     let instance_ids = instances
         .iter()
         .map(|instance| (instance.key.clone(), instance.ir_function))
@@ -103,7 +100,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         &instances,
         &builtin_result_types,
         &mut layouts,
-        &mut facts,
+        &facts,
     )?;
     // Projected mutable fields are addresses, not the objects stored at those addresses.
     // Materialize typed borrowed pointers before freezing the physical-layout registry.
@@ -146,7 +143,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
     };
     for instance in &prepared.instances {
         let source = &prepared.program.functions[&instance.key.function];
-        let source_states = facts.get(&prepared.program, instance.key.function)?;
+        let source_states = &facts[&instance.key.function];
         let environment = prepared.environment();
         let (lowered, failure_cleanup) = lower_shared_to_native_ir(
             &shared_functions[&instance.key.function],
@@ -205,17 +202,17 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
             }
         }
         let specialize = |ty: &ExecutableType| ty.specialize(&instance.key.substitutions);
-        let mut logical_register_types = vec![BTreeSet::new(); usize::from(source.registers)];
-        for registers in source_states.iter().flatten() {
-            for (types, ty) in logical_register_types.iter_mut().zip(registers) {
-                if let Some(ty) = ty {
-                    types.insert(specialize(ty));
-                }
-            }
-        }
-        let logical_register_types = logical_register_types
-            .into_iter()
-            .map(|types| types.into_iter().collect())
+        let logical_value_types = shared_functions[&instance.key.function]
+            .values
+            .iter()
+            .enumerate()
+            .map(|(index, _)| {
+                source_states
+                    .value_types(ir::Value(index as u32))
+                    .iter()
+                    .map(specialize)
+                    .collect()
+            })
             .collect();
         prepared.functions.push(NativeFunction {
             instance: instance.clone(),
@@ -232,7 +229,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
                 ),
                 result: specialize(&source.result_type),
             },
-            logical_register_types,
+            logical_value_types,
         });
     }
     Ok(prepared)
@@ -370,7 +367,7 @@ func main() -> Int {
             assert_eq!(function.ir.signature.result, NativeType::String);
             assert!(
                 function
-                    .logical_register_types()
+                    .logical_value_types()
                     .iter()
                     .any(|types| types.contains(expected))
             );
