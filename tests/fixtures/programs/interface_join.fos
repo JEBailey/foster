@@ -1,0 +1,38 @@
+import core.result
+import core.string
+
+pub type Named = { pub func id(self) -> String }
+pub type First = & Named & { text: String }
+pub type Second = & Named & { text: String }
+impl First { pub func id(self) -> String { "first:" + self.text } }
+impl Second { pub func id(self) -> String { "second:" + self.text } }
+
+func found(value: Named) -> Result<Named, String> [consume value] {
+    Result.Ok(move value)
+}
+
+func forward(outcome: Result<Named, String>) -> Named [consume outcome] {
+    branch move outcome {
+        Result.Ok(value) -> move value
+        Result.Error(message) -> First { text: move message }
+    }
+}
+
+func reverse(outcome: Result<Named, String>) -> Named [consume outcome] {
+    branch move outcome {
+        Result.Error(message) -> Second { text: move message }
+        Result.Ok(value) -> move value
+    }
+}
+
+func main() -> Int {
+    let first = forward(found(Second { text: "payload" + " one" }))
+    let second = forward(Result.Error("fallback" + " one"))
+    let third = reverse(found(First { text: "payload" + " two" }))
+    let fourth = reverse(Result.Error("fallback" + " two"))
+    assert(first.id() == "second:payload one")
+    assert(second.id() == "first:fallback one")
+    assert(third.id() == "first:payload two")
+    assert(fourth.id() == "second:fallback two")
+    42
+}

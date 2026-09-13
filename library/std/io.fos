@@ -9,6 +9,19 @@ import core.bytes.buffer as byte_buffer
 import core.bytes
 import core.result
 
+/// Timed readiness for reading or accepting. Zero polls without waiting; negative timeouts fail.
+/// True includes EOF and pending I/O errors. Readiness is advisory when consumers race.
+pub type ReadReady<E> = {
+    /// Waits up to `milliseconds`; false means timeout, Error means the wait failed.
+    pub func wait_readable(self, milliseconds: Int) -> Result<Bool, E> [read self]
+}
+
+/// Timed readiness for writing. Readiness does not promise a complete write will fit.
+pub type WriteReady<E> = {
+    /// Waits up to `milliseconds`; zero polls, false means timeout, negative values fail.
+    pub func wait_writable(self, milliseconds: Int) -> Result<Bool, E> [read self]
+}
+
 /// Describes a failed host I/O operation.
 /// `operation` identifies the failing action and `path` its target when available.
 /// `message` is human-readable host text whose wording may vary by platform.

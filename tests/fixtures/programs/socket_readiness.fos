@@ -1,0 +1,51 @@
+import core.result
+import std.host
+import std.io
+import std.net.tcp
+
+func readable(socket: ReadReady<NetworkError>, timeout: Int) -> Bool {
+    socket.wait_readable(timeout).unwrap_or(false)
+}
+
+func exercise(socket: Connection) -> Int [consume socket] {
+    assert(!readable(socket, 0), "initial read poll")
+    assert(!readable(socket, 5), "read timeout")
+    assert(socket.wait_readable(-1).error?(), "negative timeout")
+    assert(socket.wait_writable(1000).unwrap_or(false), "write readiness")
+    assert(!socket.write_text("x").error?(), "write request")
+    assert(readable(socket, 2000), "response readiness")
+    assert(socket.read_text(1).unwrap_or("") == "y", "response")
+    assert(readable(socket, 2000), "EOF readiness")
+    assert(socket.read_text(1).unwrap_or("failure") == "", "EOF")
+    21
+}
+
+func connect(provider: NetworkProvider<Connection, Listener>, port: Int) -> Int {
+    branch provider.connect("127.0.0.1", port) {
+        Result.Ok(socket) -> exercise(move socket)
+        Result.Error(_) -> -1
+    }
+}
+
+type Worker = {}
+impl Worker {
+    func check(self, port: Int) -> Int { connect(RuntimeHost.new(), port) }
+}
+
+func check_listener(listener: Listener) -> Int [consume listener] {
+    assert(!readable(listener, 0), "listener poll")
+    assert(!readable(listener, 5), "listener timeout")
+    assert(listener.wait_readable(-1).error?(), "negative listener timeout")
+    0
+}
+
+func main() -> Int {
+    let listening = branch RuntimeHost.new().listen("127.0.0.1", 0) {
+        Result.Ok(listener) -> check_listener(move listener)
+        Result.Error(_) -> -1
+    }
+    let direct = connect(RuntimeHost.new(), PORT)
+    let worker = remote Worker {}
+    let pending = worker.check(PORT)
+    listening + direct + (await pending).unwrap_or(-1)
+}

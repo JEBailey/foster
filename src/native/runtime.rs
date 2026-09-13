@@ -91,6 +91,20 @@ fn runtime_source() -> String {
             &format!(
                 "pub mod services {{\n{}\n}}",
                 include_str!("../../host/src/lib.rs")
+                    .replace(
+                        "mod provider;",
+                        &format!(
+                            "mod provider {{\n{}\n}}",
+                            include_str!("../../host/src/provider.rs")
+                        )
+                    )
+                    .replace(
+                        "mod readiness;",
+                        &format!(
+                            "mod readiness {{\n{}\n}}",
+                            include_str!("../../host/src/readiness.rs")
+                        )
+                    )
             ),
         )
         .replace(
@@ -213,6 +227,89 @@ fn link_source(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn compiled_program_uses_installed_host_provider_and_preserves_cleanup() {
+        let compilation = crate::compile(
+            r#"
+import core.result
+import std.fs
+import std.time
+import std.net.tcp
+func use_socket(socket: Connection) -> Int [consume socket] {
+    assert(socket.wait_readable(0).unwrap_or(false))
+    assert(socket.wait_writable(0).error?())
+    1
+}
+func main() -> Int {
+    let file = File.from("virtual-file")
+    let bytes = branch file.read() { Result.Ok(value) -> value.length
+        Result.Error(_) -> -1 }
+    let ready = branch tcp::connect("virtual", 1) { Result.Ok(socket) -> use_socket(move socket)
+        Result.Error(_) -> -1 }
+    assert(ContinuousClock.new().now().ticks() == 789, "provider monotonic clock")
+    SystemClock.new().now().epoch_seconds() + bytes + ready
+}
+"#,
+        )
+        .unwrap();
+        let prepared = prepare(&compilation).unwrap();
+        let temporary = TemporaryDirectory::create().unwrap();
+        for optimize in [false, true] {
+            let options = CompileOptions { optimize };
+            let artifact = prepared.compile_object(options).unwrap();
+            let source = entry_source(
+                artifact.result,
+                artifact.accepts_arguments,
+                &artifact.runtime_strings,
+                artifact.releases_result,
+            );
+            let source = source.replace("fn main() {", r#"
+struct TestHost;
+static CLOSED: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+impl services::HostProvider for TestHost {
+    fn filesystem(&self, request: services::FileRequest<'_>) -> std::io::Result<services::FileResponse> {
+        match request {
+            services::FileRequest::Read(path) => {
+                assert!(path.is_absolute());
+                Ok(services::FileResponse::Bytes(vec![1, 2, 3]))
+            }
+            _ => Err(std::io::Error::other("denied")),
+        }
+    }
+    fn wall_now(&self) -> Result<(i64, i64), String> { Ok((38, 0)) }
+    fn monotonic_nanoseconds(&self) -> Result<i64, String> { Ok(789) }
+    fn network(&self, request: services::NetworkRequest<'_>) -> Result<services::NetworkResponse, String> {
+        match request {
+            services::NetworkRequest::Connect(_, _) => Ok(services::NetworkResponse::Handle(1)),
+            services::NetworkRequest::WaitReadable(1, 0) => Ok(services::NetworkResponse::Ready(true)),
+            services::NetworkRequest::CloseConnection(1) => {
+                CLOSED.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(services::NetworkResponse::Unit)
+            }
+            _ => Err("denied".into()),
+        }
+    }
+}
+fn main() {
+    assert!(foster_runtime_install_host(services::HostContext::with_provider(".", std::sync::Arc::new(TestHost))).is_ok());
+    assert!(foster_runtime_install_host(services::HostContext::new(".")).is_err());
+"#).replace("foster_rt_v4_write_int(value);", "assert_eq!(CLOSED.load(std::sync::atomic::Ordering::SeqCst), 1); foster_rt_v4_write_int(value);");
+            let source = track_allocations(source);
+            let executable = temporary.path.join(format!(
+                "provider-{optimize}{}",
+                std::env::consts::EXE_SUFFIX
+            ));
+            link_source(artifact, &executable, options, &source, None).unwrap();
+            let output = Command::new(executable).output().unwrap();
+            assert!(
+                output.status.success(),
+                "optimize={optimize}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+        }
+    }
+
     use super::*;
 
     fn track_allocations(source: String) -> String {
@@ -283,6 +380,46 @@ fn main() {"#)
             );
             let executable = temporary.path.join(format!(
                 "collections-{optimize}{}",
+                std::env::consts::EXE_SUFFIX
+            ));
+            link_source(artifact, &executable, options, &source, None).unwrap();
+            let output = Command::new(executable).output().unwrap();
+            assert!(
+                output.status.success(),
+                "optimize={optimize}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+        }
+    }
+
+    #[test]
+    fn mixed_interface_joins_preserve_dispatch_and_release_native_allocations() {
+        let compilation = crate::compile(include_str!(
+            "../../tests/fixtures/programs/interface_join.fos"
+        ))
+        .unwrap();
+        assert_eq!(
+            crate::vm::run(&compilation).unwrap(),
+            crate::vm::Value::Integer(42)
+        );
+        let prepared = prepare(&compilation).unwrap();
+        let temporary = TemporaryDirectory::create().unwrap();
+        for optimize in [false, true] {
+            let options = CompileOptions { optimize };
+            let artifact = prepared.compile_object(options).unwrap();
+            let source = track_allocations(entry_source(
+                artifact.result,
+                artifact.accepts_arguments,
+                &artifact.runtime_strings,
+                artifact.releases_result,
+            ))
+            .replace(
+                "foster_runtime_check_execution();",
+                "foster_runtime_check_execution(); check_reclamation();",
+            );
+            let executable = temporary.path.join(format!(
+                "interface-join-{optimize}{}",
                 std::env::consts::EXE_SUFFIX
             ));
             link_source(artifact, &executable, options, &source, None).unwrap();

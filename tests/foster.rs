@@ -57,7 +57,13 @@ fn standard_library_suite_passes_with_and_without_optimization() {
 #[test]
 fn public_library_modules_declare_tests_or_have_external_coverage() {
     let library = Path::new(env!("CARGO_MANIFEST_DIR")).join("library");
-    let host_integrated = ["std/env.fos", "std/fs.fos", "std/net/tcp.fos"];
+    let host_integrated = [
+        "std/env.fos",
+        "std/fs.fos",
+        // Runtime adapters and application providers: tests/host_providers.rs.
+        "std/host.fos",
+        "std/net/tcp.fos",
+    ];
     let externally_tested = ["core/range.fos"];
     let mut uncovered = Vec::new();
     for entry in walkdir::WalkDir::new(&library) {

@@ -1,0 +1,43 @@
+//! Explicit provider contracts for applications. Pass a provider to choose resource
+//! implementations; the default adapters use the embedding runtime's HostContext.
+//! Clock providers use the existing std.time.Clock<T> contract.
+
+import core.result
+import std.fs
+import std.io
+import std.net.tcp
+import std.path as paths
+
+/// Supplies located file resources. Implementations choose their own resource type.
+pub type FileProvider<F> = {
+    /// Resolves a location to a resource without requiring an OS file handle.
+    pub func file(self, location: paths::Path) -> Result<F, IoError> [read self, consume location]
+}
+
+/// Supplies connected streams and listeners, including in-memory implementations.
+pub type NetworkProvider<C, L> = {
+    /// Connects to an endpoint using this provider's namespace and policy.
+    pub func connect(self, address: String, port: Int) -> Result<C, NetworkError> [read self, consume address]
+    /// Binds an endpoint using this provider's namespace and policy.
+    pub func listen(self, address: String, port: Int) -> Result<L, NetworkError> [read self, consume address]
+}
+
+/// File and TCP adapters backed by the runtime's installed host provider.
+pub type RuntimeHost = & FileProvider<File> & NetworkProvider<Connection, Listener> & {}
+
+impl RuntimeHost {
+    /// Creates an adapter without performing host I/O.
+    pub func new() -> RuntimeHost { RuntimeHost {} }
+    /// Creates a located file; actual I/O may subsequently fail.
+    pub func file(self, location: paths::Path) -> Result<File, IoError> [consume location] {
+        Result.Ok(File.at(move location))
+    }
+    /// Connects through the installed runtime provider.
+    pub func connect(self, address: String, port: Int) -> Result<Connection, NetworkError> [consume address] {
+        tcp::connect(move address, port)
+    }
+    /// Binds through the installed runtime provider.
+    pub func listen(self, address: String, port: Int) -> Result<Listener, NetworkError> [consume address] {
+        tcp::listen(move address, port)
+    }
+}

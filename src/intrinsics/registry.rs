@@ -280,6 +280,15 @@ macro_rules! native_builtin {
     (TcpWriteBytes) => {
         NativeIntrinsic::Host
     };
+    (TcpWaitReadable) => {
+        NativeIntrinsic::Host
+    };
+    (TcpWaitWritable) => {
+        NativeIntrinsic::Host
+    };
+    (TcpWaitAccept) => {
+        NativeIntrinsic::Host
+    };
     (TcpSetTimeout) => {
         NativeIntrinsic::Host
     };
@@ -456,6 +465,12 @@ builtin_descriptors! {
         execution: Host, signature: [] -> Integer;
     RandomBytes = 61, source: None, intrinsic: Some("random.bytes") => Some("std.random"),
         execution: Host, signature: [Read Integer] -> Any;
+    TcpWaitReadable = 62, source: None, intrinsic: Some("tcp.wait_readable") => Some("std.net.tcp"),
+        execution: Host, signature: [Read Integer, Read Integer] -> Any;
+    TcpWaitWritable = 63, source: None, intrinsic: Some("tcp.wait_writable") => Some("std.net.tcp"),
+        execution: Host, signature: [Read Integer, Read Integer] -> Any;
+    TcpWaitAccept = 64, source: None, intrinsic: Some("tcp.wait_accept") => Some("std.net.tcp"),
+        execution: Host, signature: [Read Integer, Read Integer] -> Any;
 }
 
 impl Builtin {

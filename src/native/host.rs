@@ -183,7 +183,12 @@ fn call_native_host(
             vec![NativeType::Int, NativeType::Int],
             &[operation, arguments.lowered[0]],
         ),
-        Builtin::TcpRead | Builtin::TcpReadBytes | Builtin::TcpSetTimeout => call(
+        Builtin::TcpRead
+        | Builtin::TcpReadBytes
+        | Builtin::TcpSetTimeout
+        | Builtin::TcpWaitReadable
+        | Builtin::TcpWaitWritable
+        | Builtin::TcpWaitAccept => call(
             builder,
             module,
             abi::HOST_CALL_INTS,
@@ -385,6 +390,10 @@ fn lower_native_host_success(
         | Builtin::TcpSetTimeout
         | Builtin::TcpCloseListener
         | Builtin::TcpCloseConnection => Ok(builder.ins().iconst(types::I8, 0)),
+        Builtin::TcpWaitReadable | Builtin::TcpWaitWritable | Builtin::TcpWaitAccept => {
+            let ready = native_host_integer(builder, module, response, 0)?;
+            Ok(builder.ins().ireduce(types::I8, ready))
+        }
         Builtin::IoAppendBytes
         | Builtin::IoFileLength
         | Builtin::IoCopyFile

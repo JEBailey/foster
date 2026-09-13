@@ -18,6 +18,36 @@ separate structural test requires the optimizer to reduce instruction and regist
 representative program. These are stable CI gates; elapsed-time assertions are deliberately
 excluded because scheduler load and machine differences make them unreliable.
 
+## Optimizer analysis cost
+
+Liveness precomputes operands and CFG edges and uses a predecessor worklist with dense bitsets.
+The four dense matrices are capped at 32 MiB; larger layouts use a sparse worklist instead.
+Results retain the existing set interface used by SSA sealing, drop insertion, and register allocation.
+Constant propagation keeps fixed-point states at basic-block entries and processes each block in
+order, avoiding a growing map snapshot per instruction. Constant interning uses a hash index with
+float-bit equality, and pool deduplication caches each old index's remapping.
+
+The compiler benchmarks include `bytecode_many_constants` (256 distinct additions) and
+`bytecode_loop_liveness` (64 values live across a loop). Source generation and front-end checking
+are excluded from their timings. Compare changes using Criterion baselines:
+
+```text
+cargo bench --bench compiler -- bytecode --save-baseline optimizer-before
+# Apply the optimizer changes, then run:
+cargo bench --bench compiler -- bytecode --baseline optimizer-before
+```
+
+A local Windows release run on 2026-09-12 measured these central timing estimates:
+
+| Workload | Before | After |
+| --- | ---: | ---: |
+| Many constants | 13.74 ms | 2.52 ms |
+| Loop liveness | 54.31 ms | 32.37 ms |
+
+Both stress workloads improved significantly in Criterion's comparison. The small Fibonacci
+optimized and unoptimized lowering benchmarks showed no statistically significant change.
+These are local measurements, not timing thresholds enforced by tests.
+
 ## Language-server latency
 
 Measure cold requests, repeated requests without edits, and requests after an open-buffer change

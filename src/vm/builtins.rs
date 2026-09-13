@@ -1,4 +1,3 @@
-use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::{Arc, OnceLock};
 
 use crate::error::RuntimeError;
@@ -315,7 +314,9 @@ impl HostServices for super::host::HostContext {
                 Ok(io_result(
                     "read_text",
                     path,
-                    std::fs::read(resolved).map(|bytes| Value::string(string_record, bytes)),
+                    self.files()
+                        .read(resolved)
+                        .map(|bytes| Value::string(string_record, bytes)),
                     string_record,
                 ))
             }
@@ -327,7 +328,9 @@ impl HostServices for super::host::HostContext {
                 Ok(io_result(
                     "write_text",
                     path,
-                    std::fs::write(resolved, text.string_bytes().unwrap()).map(|()| Value::Unit),
+                    self.files()
+                        .write(resolved, text.string_bytes().unwrap())
+                        .map(|()| Value::Unit),
                     string_record,
                 ))
             }
@@ -337,7 +340,7 @@ impl HostServices for super::host::HostContext {
                 Ok(io_result(
                     "read_bytes",
                     path,
-                    std::fs::read(resolved).map(Value::bytes),
+                    self.files().read(resolved).map(Value::bytes),
                     string_record,
                 ))
             }
@@ -349,7 +352,9 @@ impl HostServices for super::host::HostContext {
                 Ok(io_result(
                     "write_bytes",
                     path,
-                    std::fs::write(resolved, bytes.bytes_value().unwrap()).map(|()| Value::Unit),
+                    self.files()
+                        .write(resolved, bytes.bytes_value().unwrap())
+                        .map(|()| Value::Unit),
                     string_record,
                 ))
             }
@@ -374,12 +379,9 @@ impl HostServices for super::host::HostContext {
                                 "read maximum must be between 1 and 1048576",
                             )
                         })?;
-                    let mut file = std::fs::File::open(resolved)?;
-                    file.seek(SeekFrom::Start(offset))?;
-                    let mut bytes = vec![0; maximum];
-                    let read = file.read(&mut bytes)?;
-                    bytes.truncate(read);
-                    Ok(Value::bytes(bytes))
+                    self.files()
+                        .read_range(resolved, offset, maximum)
+                        .map(Value::bytes)
                 })();
                 Ok(io_result("read_range", path, result, string_record))
             }
@@ -389,18 +391,16 @@ impl HostServices for super::host::HostContext {
                 let path = path.string_text()?;
                 let resolved = self.resolve_path(path);
                 let bytes = bytes.bytes_value().unwrap();
-                let result = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(resolved)
-                    .and_then(|mut file| file.write_all(bytes))
+                let result = self
+                    .files()
+                    .append(resolved, bytes)
                     .map(|()| Value::Integer(i64::try_from(bytes.len()).unwrap_or(i64::MAX)));
                 Ok(io_result("append_bytes", path, result, string_record))
             }
             (Builtin::IoFileLength, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;
                 let resolved = self.resolve_path(path);
-                let result = std::fs::metadata(resolved).and_then(|metadata| {
+                let result = self.files().metadata(resolved).and_then(|metadata| {
                     if !metadata.is_file() {
                         return Err(std::io::Error::new(
                             std::io::ErrorKind::InvalidInput,
@@ -421,38 +421,32 @@ impl HostServices for super::host::HostContext {
             (Builtin::IoListDirectory, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;
                 let resolved = self.resolve_path(path);
-                let entries = std::fs::read_dir(resolved).and_then(|entries| {
-                    let mut names = Vec::new();
-                    for entry in entries {
-                        let name = entry?.file_name().into_string().map_err(|_| {
-                            std::io::Error::new(
-                                std::io::ErrorKind::InvalidData,
-                                "directory entry name is not valid UTF-8",
-                            )
-                        })?;
-                        names.push(Value::string(string_record, name.into_bytes()));
-                    }
-                    names.sort_by_key(|name| name.to_string());
-                    Ok(Value::list(names))
+                let entries = self.files().list(resolved).map(|names| {
+                    Value::list(
+                        names
+                            .into_iter()
+                            .map(|name| Value::string(string_record, name.into_bytes()))
+                            .collect(),
+                    )
                 });
                 Ok(io_result("list_directory", path, entries, string_record))
             }
-            (Builtin::IoExists, [path]) if path.string_bytes().is_some() => {
-                Ok(Value::Bool(self.resolve_path(path.string_text()?).exists()))
-            }
-            (Builtin::IoIsFile, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
-                self.resolve_path(path.string_text()?).is_file(),
+            (Builtin::IoExists, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
+                self.files().exists(self.resolve_path(path.string_text()?)),
             )),
-            (Builtin::IoIsDirectory, [path]) if path.string_bytes().is_some() => {
-                Ok(Value::Bool(self.resolve_path(path.string_text()?).is_dir()))
-            }
+            (Builtin::IoIsFile, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
+                self.files().is_file(self.resolve_path(path.string_text()?)),
+            )),
+            (Builtin::IoIsDirectory, [path]) if path.string_bytes().is_some() => Ok(Value::Bool(
+                self.files().is_dir(self.resolve_path(path.string_text()?)),
+            )),
             (Builtin::IoCreateDirectory, [path]) if path.string_bytes().is_some() => {
                 let path = path.string_text()?;
                 let resolved = self.resolve_path(path);
                 Ok(io_result(
                     "create_directory",
                     path,
-                    std::fs::create_dir(resolved).map(|()| Value::Unit),
+                    self.files().create_dir(resolved).map(|()| Value::Unit),
                     string_record,
                 ))
             }
@@ -462,7 +456,7 @@ impl HostServices for super::host::HostContext {
                 Ok(io_result(
                     "create_directory_all",
                     path,
-                    std::fs::create_dir_all(resolved).map(|()| Value::Unit),
+                    self.files().create_dir_all(resolved).map(|()| Value::Unit),
                     string_record,
                 ))
             }
@@ -472,7 +466,7 @@ impl HostServices for super::host::HostContext {
                 Ok(io_result(
                     "remove_file",
                     path,
-                    std::fs::remove_file(resolved).map(|()| Value::Unit),
+                    self.files().remove_file(resolved).map(|()| Value::Unit),
                     string_record,
                 ))
             }
@@ -482,7 +476,7 @@ impl HostServices for super::host::HostContext {
                 Ok(io_result(
                     "remove_directory",
                     path,
-                    std::fs::remove_dir(resolved).map(|()| Value::Unit),
+                    self.files().remove_dir(resolved).map(|()| Value::Unit),
                     string_record,
                 ))
             }
@@ -496,7 +490,9 @@ impl HostServices for super::host::HostContext {
                 Ok(io_result(
                     "rename",
                     from,
-                    std::fs::rename(resolved_from, resolved_to).map(|()| Value::Unit),
+                    self.files()
+                        .rename(resolved_from, resolved_to)
+                        .map(|()| Value::Unit),
                     string_record,
                 ))
             }
@@ -510,11 +506,13 @@ impl HostServices for super::host::HostContext {
                 Ok(io_result(
                     "copy_file",
                     from,
-                    std::fs::copy(resolved_from, resolved_to).and_then(|bytes| {
-                        i64::try_from(bytes)
-                            .map(Value::Integer)
-                            .map_err(|_| std::io::Error::other("copied byte count exceeds Int"))
-                    }),
+                    self.files()
+                        .copy(resolved_from, resolved_to)
+                        .and_then(|bytes| {
+                            i64::try_from(bytes)
+                                .map(Value::Integer)
+                                .map_err(|_| std::io::Error::other("copied byte count exceeds Int"))
+                        }),
                     string_record,
                 ))
             }
@@ -552,7 +550,8 @@ impl HostServices for super::host::HostContext {
                 Ok(io_result(
                     "canonicalize",
                     path,
-                    std::fs::canonicalize(resolved)
+                    self.files()
+                        .canonicalize(resolved)
                         .and_then(|path| path_value_io(path, string_record)),
                     string_record,
                 ))
@@ -563,7 +562,13 @@ impl HostServices for super::host::HostContext {
                 path_value_io(self.working_directory().to_path_buf(), string_record),
                 string_record,
             )),
-            (Builtin::TimeWallNow, []) => wall_now(),
+            (Builtin::TimeWallNow, []) => {
+                let (seconds, nanos) = self.wall_now().map_err(RuntimeError::runtime)?;
+                Ok(Value::list(vec![
+                    Value::Integer(seconds),
+                    Value::Integer(nanos),
+                ]))
+            }
             (Builtin::TimeMonotonicNow, []) => self
                 .monotonic_nanoseconds()
                 .map(Value::Integer)
@@ -643,6 +648,27 @@ impl HostServices for super::host::HostContext {
                     .map(|()| Value::Unit),
                 string_record,
             )),
+            (Builtin::TcpWaitReadable, [Value::Integer(handle), Value::Integer(timeout)]) => {
+                Ok(tcp_result(
+                    "wait_readable",
+                    self.wait_readable(*handle, *timeout).map(Value::Bool),
+                    string_record,
+                ))
+            }
+            (Builtin::TcpWaitWritable, [Value::Integer(handle), Value::Integer(timeout)]) => {
+                Ok(tcp_result(
+                    "wait_writable",
+                    self.wait_writable(*handle, *timeout).map(Value::Bool),
+                    string_record,
+                ))
+            }
+            (Builtin::TcpWaitAccept, [Value::Integer(handle), Value::Integer(timeout)]) => {
+                Ok(tcp_result(
+                    "wait_readable",
+                    self.wait_accept(*handle, *timeout).map(Value::Bool),
+                    string_record,
+                ))
+            }
             (Builtin::TcpCloseListener, [Value::Integer(listener)]) => Ok(tcp_result(
                 "close_listener",
                 self.close_listener(*listener).map(|()| Value::Unit),
@@ -656,33 +682,6 @@ impl HostServices for super::host::HostContext {
             _ => Err(RuntimeError::runtime("invalid builtin arguments")),
         }
     }
-}
-
-fn wall_now() -> Result<Value, RuntimeError> {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let (seconds, nanosecond) = match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(duration) => (
-            i64::try_from(duration.as_secs())
-                .map_err(|_| RuntimeError::runtime("wall clock seconds exceed Int"))?,
-            i64::from(duration.subsec_nanos()),
-        ),
-        Err(error) => {
-            let duration = error.duration();
-            let seconds = i64::try_from(duration.as_secs())
-                .map_err(|_| RuntimeError::runtime("wall clock seconds exceed Int"))?;
-            let nanosecond = i64::from(duration.subsec_nanos());
-            if nanosecond == 0 {
-                (-seconds, 0)
-            } else {
-                (-seconds - 1, 1_000_000_000 - nanosecond)
-            }
-        }
-    };
-    Ok(Value::list(vec![
-        Value::Integer(seconds),
-        Value::Integer(nanosecond),
-    ]))
 }
 
 fn system_random_bytes(count: i64) -> Result<Vec<u8>, String> {

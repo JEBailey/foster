@@ -364,6 +364,24 @@ pub(super) fn info(id: Builtin) -> BuiltinInfo {
             &["connection", "contents"],
             "Writes raw bytes to a TCP connection.",
         ),
+        Builtin::TcpWaitReadable => builtin(
+            "TcpHost.wait_readable",
+            "TcpHost.wait_readable(connection: Int, milliseconds: Int) -> Result<Bool, NetworkError>",
+            &["connection", "milliseconds"],
+            "Waits for data, EOF, or a socket error; false means timeout.",
+        ),
+        Builtin::TcpWaitWritable => builtin(
+            "TcpHost.wait_writable",
+            "TcpHost.wait_writable(connection: Int, milliseconds: Int) -> Result<Bool, NetworkError>",
+            &["connection", "milliseconds"],
+            "Waits for write readiness; false means timeout.",
+        ),
+        Builtin::TcpWaitAccept => builtin(
+            "TcpHost.wait_accept",
+            "TcpHost.wait_accept(listener: Int, milliseconds: Int) -> Result<Bool, NetworkError>",
+            &["listener", "milliseconds"],
+            "Waits for an incoming connection; false means timeout.",
+        ),
         Builtin::TcpSetTimeout => builtin(
             "TcpHost.set_timeout",
             "TcpHost.set_timeout(connection: Int, milliseconds: Int) -> Result<(), NetworkError>",

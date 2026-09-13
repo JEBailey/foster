@@ -17,6 +17,8 @@ pub(super) fn infer_register_types(
     let mut result = vec![None; usize::from(function.registers)];
     let mut definitions = HashMap::new();
     let mut merged = std::collections::HashSet::new();
+    let mut erased_homes = std::collections::HashSet::new();
+    let is_erased = |ty| matches!(ty, NativeType::Object(layout) if matches!(environment.layouts.get(layout).kind, LayoutKind::Opaque));
     for (index, ty) in parameter_types.iter().enumerate() {
         result[index] = Some(*ty);
         definitions.insert(index, *ty);
@@ -491,6 +493,7 @@ pub(super) fn infer_register_types(
         let destination = match instruction {
             Instruction::MakeClosure { destination, .. }
             | Instruction::Move { destination, .. }
+            | Instruction::MoveOut { destination, .. }
             | Instruction::Call { destination, .. }
             | Instruction::CallMethod { destination, .. }
             | Instruction::CallClosure { destination, .. }
@@ -500,11 +503,13 @@ pub(super) fn infer_register_types(
         };
         if let Some(destination) = destination
             && let Some(ty) = result[destination]
-            && definitions
-                .insert(destination, ty)
-                .is_some_and(|previous| previous != ty)
+            && let Some(previous) = definitions.insert(destination, ty)
+            && previous != ty
         {
             merged.insert(destination);
+            if is_erased(previous) || is_erased(ty) {
+                erased_homes.insert(destination);
+            }
         }
     }
     let mut aliases = HashMap::<usize, Vec<usize>>::new();
@@ -512,6 +517,11 @@ pub(super) fn infer_register_types(
         if let Instruction::Move {
             destination,
             source,
+        }
+        | Instruction::MoveOut {
+            destination,
+            source,
+            by_reference: false,
         } = instruction
         {
             aliases
@@ -527,6 +537,20 @@ pub(super) fn infer_register_types(
                 pending.push(destination);
             }
         }
+    }
+    // An interface box and a concrete value can meet at the same branch home.
+    // Preserve erasure across that join and its aliases; legalization boxes the
+    // concrete incoming values before storing them in the shared home.
+    let mut pending = erased_homes.iter().copied().collect::<Vec<_>>();
+    while let Some(source) = pending.pop() {
+        for &destination in aliases.get(&source).into_iter().flatten() {
+            if erased_homes.insert(destination) {
+                pending.push(destination);
+            }
+        }
+    }
+    for &home in &erased_homes {
+        result[home] = Some(NativeType::Object(environment.layouts.opaque()));
     }
     // A storage home may receive different closures on different control-flow paths.
     // Keep its signature stable; concrete environments are local to MakeClosure.

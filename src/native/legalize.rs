@@ -675,8 +675,8 @@ fn lower_shared_instruction(
     storage_hints: &mut Vec<Option<u16>>,
     facts: NativeFunctionFacts<'_>,
 ) -> Result<Vec<(ir::Instruction, Vec<ir::Value>)>, FosterError> {
-    // Stored callable fields use the erased callable ABI, even when the source
-    // expression is a concrete closure. Normalize before retaining it in storage.
+    // Interface and callable storage may receive concrete values. Normalize
+    // their representation before retaining them in an erased storage home.
     let mut adapted = instruction.clone();
     let mut wrappers = Vec::new();
     let mut prefix = Vec::new();
@@ -784,16 +784,37 @@ fn lower_shared_instruction(
         for (source, layout) in sources {
             if let Some(layout) = layout {
                 let expected = NativeType::Object(layout);
-                if callable_conversion(
+                let conversion = if callable_conversion(
                     value_types[source.0 as usize],
                     expected,
                     environment.layouts,
                 ) {
+                    Some(true)
+                } else if matches!(
+                    erased_conversion(
+                        value_types[source.0 as usize],
+                        expected,
+                        environment.layouts
+                    ),
+                    Some(ErasedConversion::Box)
+                ) {
+                    Some(false)
+                } else {
+                    None
+                };
+                if let Some(callable) = conversion {
                     let wrapper = allocate_shared_value(value_types, storage_hints, expected);
                     prefix.push((
-                        ir::Instruction::WrapCallable {
-                            destination: wrapper,
-                            source: *source,
+                        if callable {
+                            ir::Instruction::WrapCallable {
+                                destination: wrapper,
+                                source: *source,
+                            }
+                        } else {
+                            ir::Instruction::BoxValue {
+                                destination: wrapper,
+                                source: *source,
+                            }
                         },
                         Vec::new(),
                     ));

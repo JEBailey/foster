@@ -86,12 +86,14 @@ storage and borrowing contract than the proposed list-backed arena.
 
 ## Runtime and platform
 
-- Generalize the per-machine `HostContext` into a pluggable host-provider boundary and
-  expose explicit filesystem, network, wall-clock, and monotonic-clock capability tokens suitable
-  for production, sandboxed, deterministic, and in-memory hosts. These would complement the
-  existing structural resource and `Clock<T>` contracts.
-- Supply a versioned IANA time-zone database behind `TimeZoneDatabase`, including aliases,
-  transition lookup, a deliberate system-zone API, and reproducible tzdata selection.
+- Build reusable in-memory and policy-restricted providers on the shared `HostProvider` boundary.
+  Filesystem, network, wall-clock, and monotonic-clock operations now support embedding-provider
+  injection in the VM and native runtime. Foster applications can pass `FileProvider<F>`,
+  `NetworkProvider<C, L>`, and `Clock<T>` values explicitly; `RuntimeHost` adapts the installed host.
+  These APIs do not yet provide language-enforced capability isolation.
+- Add a deliberate operating-system zone discovery API. The optional `tzdata.flib` package now
+  supplies pinned IANA data, aliases, historical offset lookup, recurring future rules, and explicit
+  local-time resolution behind `TimeZoneDatabase`; generation and version selection are reproducible.
 - Extend the time modules with unit-selected `until`/`since`, rounding and balancing, calendar-span
   difference, transition introspection, reusable format patterns, and locale providers. Add
   non-ISO calendar implementations behind `Calendar` only when their era and month semantics have
@@ -100,8 +102,9 @@ storage and borrowing contract than the proposed list-backed arena.
   weighted indices when concrete use cases justify normal, exponential, or other models. Add a
   stronger named portable generator only with a frozen algorithm, seed mapping, output sequence,
   and cross-target compatibility suite; `LehmerRandom` remains the current portable baseline.
-- Add socket readiness and TLS support to the I/O boundary, and extend resource providers beyond
-  the existing filesystem and TCP implementations.
+- Add TLS support and additional resource providers beyond filesystem and TCP. Timed TCP
+  readiness is implemented for listeners and connections; consolidate per-operation host waits
+  into a scalable shared reactor and integrate general task cancellation in future work.
 - Refine scalar inference for dynamically erased values in the shared SSA verifier. Erased
   heterogeneous joins retain an explicit opaque type until
   the bytecode ownership/type verifier resolves their concrete flow state.

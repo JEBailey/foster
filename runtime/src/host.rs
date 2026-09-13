@@ -1,8 +1,8 @@
 use may::sync::mpsc;
-use std::io::{Read, Seek, SeekFrom, Write};
+#[cfg(unix)]
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 // HostContext currently exposes blocking OS calls. Offload them so an actor
 // waiting on filesystem/TCP work cannot pin a May scheduler worker. The closure
@@ -109,6 +109,12 @@ fn foster_host_network(
 }
 
 static FOSTER_HOST: OnceLock<services::HostContext> = OnceLock::new();
+/// Install a provider before runtime initialization. Existing contexts cannot be replaced.
+pub fn foster_runtime_install_host(
+    context: services::HostContext,
+) -> Result<(), services::HostContext> {
+    FOSTER_HOST.set(context)
+}
 fn foster_host() -> &'static services::HostContext {
     FOSTER_HOST
         .get_or_init(|| services::HostContext::new(std::env::current_dir().unwrap_or_default()))
@@ -146,7 +152,7 @@ fn foster_host_component(value: Option<&std::ffi::OsStr>) -> Result<String, Stri
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_host_call_nullary(operation: i64) -> usize {
-    let response = match operation {
+    let response = foster_host_blocking(move || match operation {
         45 => foster_host_io(
             "current_directory",
             "",
@@ -160,15 +166,10 @@ extern "C" fn foster_rt_v4_host_call_nullary(operation: i64) -> usize {
         },
         60 => match foster_host().monotonic_nanoseconds() {
             Ok(value) => FosterHostResponse::success(FosterHostValue::Integer(value)),
-            Err(_) => FosterHostResponse::error(
-                "monotonic_now",
-                "",
-                0,
-                "monotonic clock reading exceeds Int",
-            ),
+            Err(error) => FosterHostResponse::error("monotonic_now", "", 0, error),
         },
         _ => FosterHostResponse::error("host", "", operation, "unknown nullary host operation"),
-    };
+    });
     foster_host_response(response)
 }
 
@@ -181,42 +182,60 @@ extern "C" fn foster_rt_v4_host_call_string(operation: i64, value: usize) -> usi
             26 => foster_host_io(
                 "read_text",
                 value,
-                std::fs::read_to_string(foster_host_resolve(value)).map(FosterHostValue::Text),
+                foster_host()
+                    .files()
+                    .read_to_string(foster_host_resolve(value))
+                    .map(FosterHostValue::Text),
             ),
             28 => foster_host_io(
                 "read_bytes",
                 value,
-                std::fs::read(foster_host_resolve(value)).map(FosterHostValue::Bytes),
+                foster_host()
+                    .files()
+                    .read(foster_host_resolve(value))
+                    .map(FosterHostValue::Bytes),
             ),
             30 => foster_host_list_directory(value),
             31 => FosterHostResponse::success(FosterHostValue::Integer(i64::from(
-                foster_host_resolve(value).exists(),
+                foster_host().files().exists(foster_host_resolve(value)),
             ))),
             32 => FosterHostResponse::success(FosterHostValue::Integer(i64::from(
-                foster_host_resolve(value).is_file(),
+                foster_host().files().is_file(foster_host_resolve(value)),
             ))),
             33 => FosterHostResponse::success(FosterHostValue::Integer(i64::from(
-                foster_host_resolve(value).is_dir(),
+                foster_host().files().is_dir(foster_host_resolve(value)),
             ))),
             34 => foster_host_io(
                 "create_directory",
                 value,
-                std::fs::create_dir(foster_host_resolve(value)).map(|()| FosterHostValue::Unit),
+                foster_host()
+                    .files()
+                    .create_dir(foster_host_resolve(value))
+                    .map(|()| FosterHostValue::Unit),
             ),
             35 => foster_host_io(
                 "create_directory_all",
                 value,
-                std::fs::create_dir_all(foster_host_resolve(value)).map(|()| FosterHostValue::Unit),
+                foster_host()
+                    .files()
+                    .create_dir_all(foster_host_resolve(value))
+                    .map(|()| FosterHostValue::Unit),
             ),
             36 => foster_host_io(
                 "remove_file",
                 value,
-                std::fs::remove_file(foster_host_resolve(value)).map(|()| FosterHostValue::Unit),
+                foster_host()
+                    .files()
+                    .remove_file(foster_host_resolve(value))
+                    .map(|()| FosterHostValue::Unit),
             ),
             37 => foster_host_io(
                 "remove_directory",
                 value,
-                std::fs::remove_dir(foster_host_resolve(value)).map(|()| FosterHostValue::Unit),
+                foster_host()
+                    .files()
+                    .remove_dir(foster_host_resolve(value))
+                    .map(|()| FosterHostValue::Unit),
             ),
             41 => match Path::new(value).parent().map(Path::to_path_buf) {
                 Some(path) => match foster_host_path_text(path) {
@@ -236,7 +255,9 @@ extern "C" fn foster_rt_v4_host_call_string(operation: i64, value: usize) -> usi
             44 => foster_host_io(
                 "canonicalize",
                 value,
-                std::fs::canonicalize(foster_host_resolve(value))
+                foster_host()
+                    .files()
+                    .canonicalize(foster_host_resolve(value))
                     .and_then(foster_host_path_text)
                     .map(FosterHostValue::Text),
             ),
@@ -260,25 +281,30 @@ extern "C" fn foster_rt_v4_host_call_strings(operation: i64, first: usize, secon
             27 => foster_host_io(
                 "write_text",
                 first,
-                std::fs::write(foster_host_resolve(first), second.as_bytes())
+                foster_host()
+                    .files()
+                    .write(foster_host_resolve(first), second.as_bytes())
                     .map(|()| FosterHostValue::Unit),
             ),
             38 => foster_host_io(
                 "rename",
                 first,
-                std::fs::rename(foster_host_resolve(first), foster_host_resolve(second))
+                foster_host()
+                    .files()
+                    .rename(foster_host_resolve(first), foster_host_resolve(second))
                     .map(|()| FosterHostValue::Unit),
             ),
             39 => foster_host_io(
                 "copy_file",
                 first,
-                std::fs::copy(foster_host_resolve(first), foster_host_resolve(second)).and_then(
-                    |size| {
+                foster_host()
+                    .files()
+                    .copy(foster_host_resolve(first), foster_host_resolve(second))
+                    .and_then(|size| {
                         i64::try_from(size)
                             .map(FosterHostValue::Integer)
                             .map_err(|_| std::io::Error::other("copied byte count exceeds Int"))
-                    },
-                ),
+                    }),
             ),
             40 => match foster_host_path_text(Path::new(first).join(second)) {
                 Ok(path) => FosterHostResponse::success(FosterHostValue::Text(path)),
@@ -361,6 +387,24 @@ extern "C" fn foster_rt_v4_host_call_ints(operation: i64, first: i64, second: i6
             "read_bytes",
             foster_network_read_bytes(first, second).map(FosterHostValue::Bytes),
         ),
+        62 => foster_host_network(
+            "wait_readable",
+            foster_host()
+                .wait_readable(first, second)
+                .map(|ready| FosterHostValue::Integer(i64::from(ready))),
+        ),
+        63 => foster_host_network(
+            "wait_writable",
+            foster_host()
+                .wait_writable(first, second)
+                .map(|ready| FosterHostValue::Integer(i64::from(ready))),
+        ),
+        64 => foster_host_network(
+            "wait_readable",
+            foster_host()
+                .wait_accept(first, second)
+                .map(|ready| FosterHostValue::Integer(i64::from(ready))),
+        ),
         53 => foster_host_network(
             "set_timeout",
             foster_network_set_timeout(first, second).map(|()| FosterHostValue::Unit),
@@ -388,7 +432,10 @@ extern "C" fn foster_rt_v4_host_call_string_bytes(
             29 => foster_host_io(
                 "write_bytes",
                 text,
-                std::fs::write(foster_host_resolve(text), bytes).map(|()| FosterHostValue::Unit),
+                foster_host()
+                    .files()
+                    .write(foster_host_resolve(text), bytes)
+                    .map(|()| FosterHostValue::Unit),
             ),
             57 => foster_host_append_bytes(text, bytes),
             _ => FosterHostResponse::error(
@@ -848,20 +895,10 @@ extern "C" fn foster_rt_v4_future_release(future: usize) -> u8 {
 }
 
 fn foster_host_list_directory(path: &str) -> FosterHostResponse {
-    let result = (|| {
-        let mut names = Vec::new();
-        for entry in std::fs::read_dir(foster_host_resolve(path))? {
-            let name = entry?.file_name().into_string().map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "directory entry name is not valid UTF-8",
-                )
-            })?;
-            names.push(name);
-        }
-        names.sort();
-        Ok(FosterHostValue::Strings(names))
-    })();
+    let result = foster_host()
+        .files()
+        .list(foster_host_resolve(path))
+        .map(FosterHostValue::Strings);
     foster_host_io("list_directory", path, result)
 }
 
@@ -882,65 +919,47 @@ fn foster_host_read_range(path: &str, offset: i64, maximum: i64) -> FosterHostRe
                     "read maximum must be between 1 and 1048576",
                 )
             })?;
-        let mut file = std::fs::File::open(foster_host_resolve(path))?;
-        file.seek(SeekFrom::Start(offset))?;
-        let mut bytes = vec![0; maximum];
-        let read = file.read(&mut bytes)?;
-        bytes.truncate(read);
-        Ok(FosterHostValue::Bytes(bytes))
+        foster_host()
+            .files()
+            .read_range(foster_host_resolve(path), offset, maximum)
+            .map(FosterHostValue::Bytes)
     })();
     foster_host_io("read_range", path, result)
 }
 
 fn foster_host_append_bytes(path: &str, bytes: &[u8]) -> FosterHostResponse {
-    let result = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(foster_host_resolve(path))
-        .and_then(|mut file| file.write_all(bytes))
+    let result = foster_host()
+        .files()
+        .append(foster_host_resolve(path), bytes)
         .map(|()| FosterHostValue::Integer(i64::try_from(bytes.len()).unwrap_or(i64::MAX)));
     foster_host_io("append_bytes", path, result)
 }
 
 fn foster_host_file_length(path: &str) -> FosterHostResponse {
-    let result = std::fs::metadata(foster_host_resolve(path)).and_then(|metadata| {
-        if !metadata.is_file() {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "path is not a regular file",
-            ));
-        }
-        i64::try_from(metadata.len())
-            .map(FosterHostValue::Integer)
-            .map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    "file length exceeds Foster Int",
-                )
-            })
-    });
+    let result = foster_host()
+        .files()
+        .metadata(foster_host_resolve(path))
+        .and_then(|metadata| {
+            if !metadata.is_file() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "path is not a regular file",
+                ));
+            }
+            i64::try_from(metadata.len())
+                .map(FosterHostValue::Integer)
+                .map_err(|_| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "file length exceeds Foster Int",
+                    )
+                })
+        });
     foster_host_io("file_length", path, result)
 }
 
 fn foster_host_wall_now() -> Result<(i64, i64), String> {
-    match SystemTime::now().duration_since(UNIX_EPOCH) {
-        Ok(duration) => Ok((
-            i64::try_from(duration.as_secs())
-                .map_err(|_| "wall clock seconds exceed Int".to_owned())?,
-            i64::from(duration.subsec_nanos()),
-        )),
-        Err(error) => {
-            let duration = error.duration();
-            let seconds = i64::try_from(duration.as_secs())
-                .map_err(|_| "wall clock seconds exceed Int".to_owned())?;
-            let nanosecond = i64::from(duration.subsec_nanos());
-            if nanosecond == 0 {
-                Ok((-seconds, 0))
-            } else {
-                Ok((-seconds - 1, 1_000_000_000 - nanosecond))
-            }
-        }
-    }
+    foster_host().wall_now()
 }
 
 #[cfg(unix)]

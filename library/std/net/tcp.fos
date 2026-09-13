@@ -45,6 +45,12 @@ impl TcpHost {
     func write_bytes(connection: Int, contents: Bytes) -> Result<(), NetworkError> = intrinsic("tcp.write_bytes")
     /// Sets host TCP read and write timeouts.
     func set_timeout(connection: Int, milliseconds: Int) -> Result<(), NetworkError> = intrinsic("tcp.set_timeout")
+    /// Waits for readable data, EOF, or an error.
+    func wait_readable(connection: Int, milliseconds: Int) -> Result<Bool, NetworkError> = intrinsic("tcp.wait_readable")
+    /// Waits for write readiness.
+    func wait_writable(connection: Int, milliseconds: Int) -> Result<Bool, NetworkError> = intrinsic("tcp.wait_writable")
+    /// Waits for an incoming connection.
+    func wait_accept(listener: Int, milliseconds: Int) -> Result<Bool, NetworkError> = intrinsic("tcp.wait_accept")
     /// Closes a host TCP listener.
     func close_listener(listener: Int) -> Result<(), NetworkError> = intrinsic("tcp.close_listener")
     /// Closes a host TCP connection.
@@ -122,7 +128,7 @@ impl TcpEndpoint {
 
 /// An opaque connected TCP stream associated with the endpoint that created it.
 /// I/O reads the Foster handle without replacing it; socket state is managed by the host.
-pub type Connection = & Drop & Resource<TcpEndpoint> & Duplex<NetworkError> & TextWriter<NetworkError> & Closable<NetworkError> & {
+pub type Connection = & Drop & Resource<TcpEndpoint> & Duplex<NetworkError> & TextWriter<NetworkError> & Closable<NetworkError> & ReadReady<NetworkError> & WriteReady<NetworkError> & {
     pub location: TcpEndpoint
     handle: Int
 
@@ -138,7 +144,7 @@ pub type Connection = & Drop & Resource<TcpEndpoint> & Duplex<NetworkError> & Te
 }
 
 /// An opaque listening TCP socket associated with its bound endpoint.
-pub type Listener = & Drop & Resource<TcpEndpoint> & Accepting<Connection, NetworkError> & Closable<NetworkError> & {
+pub type Listener = & Drop & Resource<TcpEndpoint> & Accepting<Connection, NetworkError> & Closable<NetworkError> & ReadReady<NetworkError> & {
     pub location: TcpEndpoint
     handle: Int
 }
@@ -184,6 +190,11 @@ func wrap_listener(endpoint: TcpEndpoint, outcome: Result<Int, NetworkError>) ->
 }
 
 impl Listener {
+    /// Waits for an incoming connection; false means the timeout elapsed.
+    pub func wait_readable(self: Listener, milliseconds: Int) -> Result<Bool, NetworkError> [read self.handle] {
+        TcpHost.wait_accept(self.handle, milliseconds)
+    }
+
     /// Releases an owned socket when its ownership ends.
     pub func deinit(self) -> () {
         return () if self.handle == 0
@@ -257,6 +268,16 @@ impl Listener {
 }
 
 impl Connection {
+    /// Waits for data, EOF, or an I/O error; false means timeout. Zero polls immediately.
+    pub func wait_readable(self: Connection, milliseconds: Int) -> Result<Bool, NetworkError> [read self.handle] {
+        TcpHost.wait_readable(self.handle, milliseconds)
+    }
+
+    /// Waits for write readiness; false means timeout. Negative timeouts fail.
+    pub func wait_writable(self: Connection, milliseconds: Int) -> Result<Bool, NetworkError> [read self.handle] {
+        TcpHost.wait_writable(self.handle, milliseconds)
+    }
+
     /// Releases an owned socket when its ownership ends.
     pub func deinit(self) -> () {
         return () if self.handle == 0

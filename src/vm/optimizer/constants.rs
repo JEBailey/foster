@@ -1,64 +1,114 @@
 use std::collections::{HashMap, VecDeque};
+use std::hash::{Hash, Hasher};
 
 use crate::vm::Value;
 
 use super::super::{Constant, Instruction, Program, Register, operations};
-use super::analysis::{definitions, successors};
+use super::analysis::definitions;
 
 type Constants = HashMap<Register, Constant>;
 
 pub(super) fn fold(program: &mut Program) {
     let (constants, functions) = (&mut program.constants, &mut program.functions);
+    let mut interner = None;
     for function in functions.values_mut() {
         // Converge before rewriting: back edges can invalidate initial facts.
-        let incoming = available_constants(&function.instructions, constants);
-        for (index, instruction) in function.instructions.iter_mut().enumerate() {
-            let Some(known) = &incoming[index] else {
-                continue;
-            };
-            if let Instruction::JumpIfFalse { condition, target } = instruction
-                && let Some(Constant::Bool(condition)) = known.get(condition)
-            {
-                *instruction = Instruction::Jump {
-                    target: if *condition { index + 1 } else { *target },
-                };
-            } else if matches!(
-                instruction,
-                Instruction::Unary { .. } | Instruction::Binary { .. }
-            ) && let Some((destination, value)) = evaluate(instruction, known, constants)
-                && let Some(constant) = intern(constants, value)
-            {
-                *instruction = Instruction::LoadConstant {
-                    destination,
-                    constant,
-                };
+        // Keep snapshots only at block entries, not after every instruction.
+        let facts = constant_blocks(&function.instructions, constants);
+        for (range, incoming) in facts.ranges.into_iter().zip(facts.incoming) {
+            let Some(mut known) = incoming else { continue };
+            for index in range {
+                let instruction = &mut function.instructions[index];
+                if let Instruction::JumpIfFalse { condition, target } = instruction
+                    && let Some(Constant::Bool(condition)) = known.get(condition)
+                {
+                    *instruction = Instruction::Jump {
+                        target: if *condition { index + 1 } else { *target },
+                    };
+                } else if matches!(
+                    instruction,
+                    Instruction::Unary { .. } | Instruction::Binary { .. }
+                ) && let Some((destination, value)) =
+                    evaluate(instruction, &known, constants)
+                    && let Some(constant) = interner
+                        .get_or_insert_with(|| ConstantInterner::new(constants))
+                        .intern(constants, value)
+                {
+                    *instruction = Instruction::LoadConstant {
+                        destination,
+                        constant,
+                    };
+                }
+                known = transfer(instruction, known, constants);
             }
         }
     }
 }
 
-fn available_constants(
-    instructions: &[Instruction],
-    constants: &[Constant],
-) -> Vec<Option<Constants>> {
-    // None means unreachable; a missing register in a reachable map is unknown.
-    // Meet retains only bit-identical constants from all incoming paths.
-    let mut incoming = vec![None; instructions.len()];
-    if instructions.is_empty() {
-        return incoming;
+struct ConstantBlocks {
+    ranges: Vec<std::ops::Range<usize>>,
+    incoming: Vec<Option<Constants>>,
+}
+
+fn constant_blocks(instructions: &[Instruction], constants: &[Constant]) -> ConstantBlocks {
+    let count = instructions.len();
+    if count == 0 {
+        return ConstantBlocks {
+            ranges: Vec::new(),
+            incoming: Vec::new(),
+        };
     }
+    let mut leaders = vec![false; count];
+    leaders[0] = true;
+    for (index, instruction) in instructions.iter().enumerate() {
+        match instruction {
+            Instruction::Jump { target } | Instruction::JumpIfFalse { target, .. } => {
+                leaders[*target] = true;
+            }
+            Instruction::Return { .. } => {}
+            _ => continue,
+        }
+        if index + 1 < count {
+            leaders[index + 1] = true;
+        }
+    }
+    let mut starts = leaders
+        .iter()
+        .enumerate()
+        .filter_map(|(index, &leader)| leader.then_some(index))
+        .collect::<Vec<_>>();
+    starts.push(count);
+    let ranges = starts
+        .windows(2)
+        .map(|pair| pair[0]..pair[1])
+        .collect::<Vec<_>>();
+    let mut block_at = vec![0; count];
+    for (block, range) in ranges.iter().enumerate() {
+        block_at[range.clone()].fill(block);
+    }
+    let successors = ranges
+        .iter()
+        .map(|range| {
+            super::analysis::successors(instructions, range.end - 1)
+                .into_iter()
+                .map(|index| block_at[index])
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    // None is unreachable; missing registers in a reachable map are unknown.
+    // Meet retains bit-identical constants from every incoming path.
+    let mut incoming = vec![None; ranges.len()];
     incoming[0] = Some(Constants::new());
     let mut pending = VecDeque::from([0]);
-    let mut queued = vec![false; instructions.len()];
+    let mut queued = vec![false; ranges.len()];
     queued[0] = true;
-    while let Some(index) = pending.pop_front() {
-        queued[index] = false;
-        let outgoing = transfer(
-            &instructions[index],
-            incoming[index].as_ref().unwrap().clone(),
-            constants,
-        );
-        for next in successors(instructions, index) {
+    while let Some(block) = pending.pop_front() {
+        queued[block] = false;
+        let mut outgoing = incoming[block].as_ref().unwrap().clone();
+        for index in ranges[block].clone() {
+            outgoing = transfer(&instructions[index], outgoing, constants);
+        }
+        for &next in &successors[block] {
             let changed = match &mut incoming[next] {
                 None => {
                     incoming[next] = Some(outgoing.clone());
@@ -78,6 +128,23 @@ fn available_constants(
                 queued[next] = true;
                 pending.push_back(next);
             }
+        }
+    }
+    ConstantBlocks { ranges, incoming }
+}
+
+#[cfg(test)]
+fn available_constants(
+    instructions: &[Instruction],
+    constants: &[Constant],
+) -> Vec<Option<Constants>> {
+    let facts = constant_blocks(instructions, constants);
+    let mut incoming = vec![None; instructions.len()];
+    for (range, known) in facts.ranges.into_iter().zip(facts.incoming) {
+        let Some(mut known) = known else { continue };
+        for index in range {
+            incoming[index] = Some(known.clone());
+            known = transfer(&instructions[index], known, constants);
         }
     }
     incoming
@@ -157,19 +224,20 @@ fn transfer(instruction: &Instruction, mut known: Constants, constants: &[Consta
 
 pub(super) fn deduplicate(program: &mut Program) {
     let old = std::mem::take(&mut program.constants);
-    let mut unique = Vec::<Constant>::new();
+    let mut unique = Vec::new();
+    let mut interner = ConstantInterner::new(&[]);
+    // Most instructions reuse an existing constant index. Remap each old index
+    // once rather than hashing its value at every use.
+    let mut remapped = vec![None; old.len()];
     for function in program.functions.values_mut() {
         for instruction in &mut function.instructions {
             if let Instruction::LoadConstant { constant, .. } = instruction {
-                let value = &old[usize::from(*constant)];
-                let index = unique
-                    .iter()
-                    .position(|candidate| same_constant(candidate, value))
-                    .unwrap_or_else(|| {
-                        unique.push(value.clone());
-                        unique.len() - 1
-                    });
-                *constant = index as u16;
+                let old_index = usize::from(*constant);
+                *constant = *remapped[old_index].get_or_insert_with(|| {
+                    interner
+                        .intern(&mut unique, old[old_index].clone())
+                        .expect("referenced constants fit the bytecode index space")
+                });
             }
         }
     }
@@ -193,16 +261,54 @@ fn value_constant(value: Value) -> Option<Constant> {
     }
 }
 
-fn intern(constants: &mut Vec<Constant>, value: Constant) -> Option<u16> {
-    if let Some(index) = constants
-        .iter()
-        .position(|constant| same_constant(constant, &value))
-    {
-        return u16::try_from(index).ok();
+// Float keys use bit identity: signed zero and distinct NaN payloads must not
+// be merged, and identical NaNs must remain reflexive HashMap keys.
+#[derive(Clone, Debug)]
+struct ConstantKey(Constant);
+
+impl PartialEq for ConstantKey {
+    fn eq(&self, other: &Self) -> bool {
+        same_constant(&self.0, &other.0)
     }
-    let index = u16::try_from(constants.len()).ok()?;
-    constants.push(value);
-    Some(index)
+}
+impl Eq for ConstantKey {}
+impl Hash for ConstantKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        std::mem::discriminant(&self.0).hash(state);
+        match &self.0 {
+            Constant::Unit => {}
+            Constant::Bool(value) => value.hash(state),
+            Constant::Integer(value) => value.hash(state),
+            Constant::Float(value) => value.to_bits().hash(state),
+            Constant::String(value) | Constant::Symbol(value) => value.hash(state),
+            Constant::CodePoint(value) => value.hash(state),
+        }
+    }
+}
+
+struct ConstantInterner {
+    indices: HashMap<ConstantKey, usize>,
+}
+impl ConstantInterner {
+    fn new(constants: &[Constant]) -> Self {
+        let mut indices = HashMap::with_capacity(constants.len());
+        for (index, value) in constants.iter().enumerate() {
+            // Keep the first index, matching the previous linear search.
+            indices.entry(ConstantKey(value.clone())).or_insert(index);
+        }
+        Self { indices }
+    }
+
+    fn intern(&mut self, constants: &mut Vec<Constant>, value: Constant) -> Option<u16> {
+        let key = ConstantKey(value.clone());
+        if let Some(&index) = self.indices.get(&key) {
+            return u16::try_from(index).ok();
+        }
+        let index = u16::try_from(constants.len()).ok()?;
+        self.indices.insert(key, usize::from(index));
+        constants.push(value);
+        Some(index)
+    }
 }
 
 fn same_constant(left: &Constant, right: &Constant) -> bool {
@@ -320,5 +426,189 @@ mod tests {
             arguments: vec![],
         };
         assert!(transfer(&call, known, &[]).is_empty());
+    }
+    #[test]
+    fn interning_preserves_typed_bit_identity_and_first_indices() {
+        let nan = f64::from_bits(0x7ff8_0000_0000_0001);
+        let mut pool = vec![
+            Constant::Float(nan),
+            Constant::Float(nan),
+            Constant::Float(f64::from_bits(0x7ff8_0000_0000_0002)),
+            Constant::Float(0.0),
+            Constant::Float(-0.0),
+            Constant::Integer(1),
+            Constant::Float(1.0),
+            Constant::Bool(true),
+            Constant::String("x".into()),
+            Constant::Symbol("x".into()),
+            Constant::CodePoint('x'),
+            Constant::Unit,
+        ];
+        let original = pool.clone();
+        let mut interner = ConstantInterner::new(&pool);
+        for value in &original {
+            let expected = original
+                .iter()
+                .position(|other| same_constant(value, other))
+                .unwrap() as u16;
+            assert_eq!(interner.intern(&mut pool, value.clone()), Some(expected));
+        }
+        assert_eq!(pool.len(), original.len());
+        let added = Constant::String("new".into());
+        assert_eq!(
+            interner.intern(&mut pool, added.clone()),
+            Some(original.len() as u16)
+        );
+        assert_eq!(
+            interner.intern(&mut pool, added),
+            Some(original.len() as u16)
+        );
+    }
+
+    #[test]
+    fn full_pool_can_reuse_constants_but_cannot_append() {
+        let mut pool = (0..=u16::MAX)
+            .map(|index| Constant::Integer(i64::from(index)))
+            .collect::<Vec<_>>();
+        let mut interner = ConstantInterner::new(&pool);
+        assert_eq!(interner.intern(&mut pool, Constant::Integer(42)), Some(42));
+        assert_eq!(interner.intern(&mut pool, Constant::Integer(-1)), None);
+        assert_eq!(pool.len(), usize::from(u16::MAX) + 1);
+    }
+
+    #[test]
+    fn deduplication_remaps_repeated_indices_without_changing_values() {
+        let compilation = crate::compile("func main() -> Int { 0 }").unwrap();
+        let mut program = crate::vm::compile_library(&compilation).unwrap();
+        let nan = f64::from_bits(0x7ff8_0000_0000_0001);
+        let old = vec![
+            Constant::Float(nan),
+            Constant::Float(nan),
+            Constant::Float(0.0),
+            Constant::Float(-0.0),
+            Constant::Integer(99),
+        ];
+        let indices = [3, 1, 0, 2, 3, 1];
+        let function = program
+            .functions
+            .values_mut()
+            .find(|f| f.name == "main")
+            .unwrap();
+        function.instructions = indices.iter().map(|&index| load(0, index)).collect();
+        program.constants = old.clone();
+        deduplicate(&mut program);
+        let function = program
+            .functions
+            .values()
+            .find(|f| f.name == "main")
+            .unwrap();
+        for (&old_index, instruction) in indices.iter().zip(&function.instructions) {
+            let Instruction::LoadConstant { constant, .. } = instruction else {
+                unreachable!()
+            };
+            assert!(same_constant(
+                &old[usize::from(old_index)],
+                &program.constants[usize::from(*constant)]
+            ));
+        }
+        assert_eq!(program.constants.len(), 3);
+    }
+    fn reference_constants(
+        instructions: &[Instruction],
+        constants: &[Constant],
+    ) -> Vec<Option<Constants>> {
+        // None means unreachable; a missing register in a reachable map is unknown.
+        // Meet retains only bit-identical constants from all incoming paths.
+        let mut incoming = vec![None; instructions.len()];
+        if instructions.is_empty() {
+            return incoming;
+        }
+        incoming[0] = Some(Constants::new());
+        let mut pending = VecDeque::from([0]);
+        let mut queued = vec![false; instructions.len()];
+        queued[0] = true;
+        while let Some(index) = pending.pop_front() {
+            queued[index] = false;
+            let outgoing = transfer(
+                &instructions[index],
+                incoming[index].as_ref().unwrap().clone(),
+                constants,
+            );
+            for next in crate::vm::optimizer::analysis::successors(instructions, index) {
+                let changed = match &mut incoming[next] {
+                    None => {
+                        incoming[next] = Some(outgoing.clone());
+                        true
+                    }
+                    Some(known) => {
+                        let old_len = known.len();
+                        known.retain(|register, value| {
+                            outgoing
+                                .get(register)
+                                .is_some_and(|other| same_constant(value, other))
+                        });
+                        known.len() != old_len
+                    }
+                };
+                if changed && !queued[next] {
+                    queued[next] = true;
+                    pending.push_back(next);
+                }
+            }
+        }
+        incoming
+    }
+
+    #[test]
+    fn block_states_match_instruction_states_on_generated_control_flow() {
+        let constants = [
+            Constant::Integer(1),
+            Constant::Integer(2),
+            Constant::Bool(true),
+        ];
+        let mut seed = 19u32;
+        for case in 0..32 {
+            let mut next = || {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                seed
+            };
+            let instructions = (0..32)
+                .map(|_| {
+                    let opcode = next() % 7;
+                    let destination = Register((next() % 8) as u16);
+                    let source = Register((next() % 8) as u16);
+                    let target = next() as usize % 32;
+                    match opcode {
+                        0 => load(destination.0, (next() % 3) as u16),
+                        1 => Instruction::Move {
+                            destination,
+                            source,
+                        },
+                        2 => Instruction::Binary {
+                            destination,
+                            operator: BinaryOp::Add,
+                            left: source,
+                            right: Register(0),
+                        },
+                        3 => Instruction::JumpIfFalse {
+                            condition: source,
+                            target,
+                        },
+                        4 => Instruction::Jump { target },
+                        5 => Instruction::Return { source },
+                        _ => Instruction::CallValue {
+                            destination,
+                            callee: source,
+                            arguments: vec![],
+                        },
+                    }
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                available_constants(&instructions, &constants),
+                reference_constants(&instructions, &constants),
+                "case {case}"
+            );
+        }
     }
 }

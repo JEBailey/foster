@@ -479,6 +479,9 @@ impl Checker<'_> {
             Builtin::TcpReadBytes => (vec![Ty::Int, Ty::Int], tcp_result(bytes.clone())?),
             Builtin::TcpWriteBytes => (vec![Ty::Int, bytes], tcp_result(Ty::Unit)?),
             Builtin::TcpSetTimeout => (vec![Ty::Int, Ty::Int], tcp_result(Ty::Unit)?),
+            Builtin::TcpWaitReadable | Builtin::TcpWaitWritable | Builtin::TcpWaitAccept => {
+                (vec![Ty::Int, Ty::Int], tcp_result(Ty::Bool)?)
+            }
             Builtin::TcpCloseListener | Builtin::TcpCloseConnection => {
                 (vec![Ty::Int], tcp_result(Ty::Unit)?)
             }

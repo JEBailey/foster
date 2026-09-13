@@ -1151,6 +1151,7 @@ const EMBEDDED_MODULES: &[(&str, &str)] = &[
     ("core.byte", include_str!("../library/core/byte.fos")),
     ("core.bytes", include_str!("../library/core/bytes.fos")),
     ("std.io", include_str!("../library/std/io.fos")),
+    ("std.host", include_str!("../library/std/host.fos")),
     ("std.resource", include_str!("../library/std/resource.fos")),
     (
         "core.bytes.buffer",

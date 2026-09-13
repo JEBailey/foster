@@ -1,0 +1,89 @@
+import core.byte
+import core.bytes
+import core.int
+import core.list
+import core.result
+import core.string
+import std.time
+import std.time.civil
+import std.time.zone
+import tzdata
+
+func require(outcome: Result<TimeZone, ZoneError>) -> TimeZone [consume outcome] {
+    branch move outcome {
+        Result.Ok(value) -> value
+        Result.Error(error) -> { assert(false, error.zone + ": " + error.message)
+            FixedOffsetZone.utc() }
+    }
+}
+
+func expect_offset(database: TimeZoneDatabase, name: String, ticks: Int, expected: Int) -> () {
+    let rules = require(database.find(name))
+    assert(rules.offset_at(Instant.from_epoch_seconds(ticks)).seconds() == expected, name + " offset at " + ticks.as_string())
+}
+
+func overlap(database: TimeZoneDatabase, name: String, wall: Int, early: Int, late: Int) -> () {
+    let rules = require(database.find(name))
+    branch rules.resolve(DateTime.from_epoch_parts(wall, 123456789)) {
+        LocalResolution.Ambiguous(values) -> {
+            assert(values.earlier().epoch_seconds() == early, name + " overlap earlier")
+            assert(values.later().epoch_seconds() == late, name + " overlap later")
+            assert(values.earlier().nanosecond() == 123456789, "overlap nanoseconds")
+            assert(values.later().nanosecond() == 123456789, "overlap nanoseconds")
+        }
+        _ -> { assert(false, name + " expected overlap") }
+    }
+}
+
+func gap(database: TimeZoneDatabase, name: String, wall: Int, edge: Int) -> () {
+    let rules = require(database.find(name))
+    branch rules.resolve(DateTime.from_epoch_parts(wall, 1)) {
+        LocalResolution.Skipped(values) -> {
+            assert(values.before().epoch_seconds() == edge - 1, name + " gap before")
+            assert(values.before().nanosecond() == 999999999, name + " gap nanoseconds")
+            assert(values.after().epoch_seconds() == edge, name + " gap after")
+            assert(values.after().nanosecond() == 0, name + " gap after nanoseconds")
+        }
+        _ -> { assert(false, name + " expected gap") }
+    }
+}
+
+func main() -> Int {
+    let database = IanaDatabase.new()
+    assert(database.version() == "2026d", "pinned release")
+    assert(database.identifiers().length == 597, "zone and alias count")
+    assert(database.find("america/new_york").error?(), "case-sensitive identifiers")
+    assert(database.find("Unknown/Nowhere").error?(), "unknown identifier")
+    assert(database.find("../America/New_York").error?(), "no filesystem lookup")
+    let alias = require(database.find("US/Eastern"))
+    assert(alias.id() == "US/Eastern", "alias spelling is preserved")
+    expect_offset(database, "US/Eastern", 1784073600, -14400)
+    expect_offset(database, "America/New_York", 1710053999, -18000)
+    expect_offset(database, "America/New_York", 1710054000, -14400)
+    expect_offset(database, "Asia/Kathmandu", 0, 19800)
+    expect_offset(database, "Asia/Kathmandu", 1784073600, 20700)
+    expect_offset(database, "Europe/Paris", -2208988800, 561)
+    expect_offset(database, "Australia/Sydney", 13570675200, 39600)
+    expect_offset(database, "Australia/Sydney", 13586400000, 36000)
+    expect_offset(database, "America/New_York", 13570675200, -18000)
+    expect_offset(database, "America/New_York", 13586400000, -14400)
+    expect_offset(database, "Etc/GMT+5", 0, -18000)
+    expect_offset(database, "UTC", -9223372036854775807 - 1, 0)
+    expect_offset(database, "UTC", 9223372036854775807, 0)
+    overlap(database, "America/New_York", 1730597400, 1730611800, 1730615400)
+    overlap(database, "Australia/Lord_Howe", 1712454300, 1712414700, 1712416500)
+    overlap(database, "Europe/Dublin", 1729992600, 1729989000, 1729992600)
+    gap(database, "America/New_York", 1710037800, 1710054000)
+    gap(database, "Australia/Lord_Howe", 1728180900, 1728142200)
+    gap(database, "Pacific/Apia", 1325246400, 1325239200)
+    gap(database, "Asia/Kathmandu", 504921900, 504901800)
+    gap(database, "America/New_York", 16731455400, 16731471600)
+    let utc = require(database.find("UTC"))
+    branch utc.resolve(DateTime.from_epoch_parts(-1, 999999999)) {
+        LocalResolution.Unique(value) -> {
+            assert(value.epoch_seconds() == -1 && value.nanosecond() == 999999999, "unique nanoseconds")
+        }
+        _ -> { assert(false, "UTC must resolve uniquely") }
+    }
+    42
+}

@@ -119,8 +119,8 @@ pub type TimeZone = {
 }
 
 /// A contract for providers of named time-zone rule sets.
-/// The standard library supplies no IANA database implementation; applications
-/// needing regional transitions must provide a conforming provider.
+/// Regional data is supplied separately: the optional tzdata.flib package implements
+/// this contract with a pinned IANA release. Fixed offsets need no database dependency.
 pub type TimeZoneDatabase = {
     /// Looks up a time zone by stable identifier.
     pub func find(self, identifier: String) -> Result<TimeZone, ZoneError>

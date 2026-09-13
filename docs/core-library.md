@@ -42,7 +42,8 @@ being added accidentally.
 | `core.byte` | Bounded byte construction and `ByteError` |
 | `core.bytes` | Immutable compact bytes, hexadecimal conversion, and UTF-8 decoding |
 | `core.bytes.buffer` | Mutable growable byte storage |
-| `std.io` | Generic binary/text stream contracts and binary transfer algorithms |
+| `std.io` | Generic binary/text streams, timed read/write readiness contracts, and binary transfer algorithms |
+| `std.host` | Explicit `FileProvider<F>` and `NetworkProvider<C, L>` contracts with `RuntimeHost` adapters |
 | `std.resource` | Typed resource association and independent I/O capability contracts |
 | `std.collections.set` | Storage-free `Set<T>` contract and insertion-ordered `ListSet<T>` |
 | `std.collections.queue` | Storage-free FIFO `Queue<T>` contract and `ListQueue<T>` |
@@ -76,7 +77,7 @@ being added accidentally.
 | `std.net.tcp` | Typed TCP listeners and connections |
 | `std.time` | Exact instants and durations, intervals, and generic wall/monotonic clocks |
 | `std.time.civil` | ISO civil dates and times, calendar spans, partial dates, and civil intervals |
-| `std.time.zone` | UTC offsets, time-zone contracts, explicit local resolution, and zoned values |
+| `std.time.zone` | UTC offsets, time-zone contracts, explicit local resolution, and zoned values; regional data is in the optional [tzdata.flib package](../packages/tzdata/README.md) |
 | `std.time.format` | ISO-8601 and RFC-3339 parsing and formatting |
 | `std.random` | Random-source contracts, operating-system randomness, and unbiased uniform integers |
 | `std.random.generator` | Portable seeded and default fast deterministic generators |

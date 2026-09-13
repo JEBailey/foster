@@ -1,0 +1,48 @@
+import core.bytes
+import core.int
+import core.list
+import core.result
+import core.string
+import std.time
+import std.time.zone
+import tzdata
+
+func expected(records: Bytes, position: Int) -> Int {
+    let number = 0
+    let index = position + 1
+    loop {
+        break if index == position + 7
+        number = number * 10 + records[index].int - 48
+        index = index + 1
+    }
+    branch { records[position].int == 45 -> -number _ -> number }
+}
+
+func verify(rules: TimeZone, records: Bytes, position: Int) -> () {
+    let instants = [-2208988800, 0, 1768435200, 1784073600, 2525817600, 2541456000, 13570675200, 13586400000]
+    let index = 0
+    loop {
+        break if index == instants.length
+        let ticks = instants[index]
+        let wanted = expected(records, position + 40 + index * 7)
+        assert(rules.offset_at(Instant.from_epoch_seconds(ticks)).seconds() == wanted, rules.id() + " reference offset at " + ticks.as_string())
+        index = index + 1
+    }
+}
+
+func main() -> Int {
+    let records = REFERENCE_DATA.bytes
+    let database = IanaDatabase.new()
+    let index = 0
+    loop {
+        break if index >= records.length / 96
+        let position = index * 96
+        let name = String.from_utf8(records.slice(position, position + 40)).unwrap_or("").trim()
+        branch database.find(name) {
+            Result.Ok(rules) -> verify(rules, records, position)
+            Result.Error(error) -> { assert(false, error.zone + " missing from database") }
+        }
+        index = index + REFERENCE_STRIDE
+    }
+    42
+}

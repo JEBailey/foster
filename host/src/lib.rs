@@ -5,19 +5,23 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod provider;
+mod readiness;
+pub use provider::*;
+
 /// Host-owned state shared by a Foster machine and the remote objects it creates.
 ///
 /// Relative filesystem paths are resolved against the captured working directory;
 /// absolute paths remain absolute. Network handles are private to this context.
 /// Dropping the last context owner releases every listener and connection that
 /// remains open.
-pub struct HostContext {
+pub struct SystemHost {
     working_directory: PathBuf,
     network: Mutex<NetworkHost>,
     monotonic_origin: Instant,
 }
 
-impl HostContext {
+impl SystemHost {
     /// Creates an isolated host context based at `working_directory`.
     pub fn new(working_directory: impl Into<PathBuf>) -> Self {
         let working_directory = working_directory.into();
@@ -81,9 +85,13 @@ impl HostContext {
             .map_err(|error| format!("could not accept TCP connection: {error}"))?;
         let mut network = self.network()?;
         let handle = network.next_handle()?;
-        network
-            .connections
-            .insert(handle, Arc::new(Mutex::new(connection)));
+        network.connections.insert(
+            handle,
+            Arc::new(NetworkConnection {
+                stream: connection,
+                io: Mutex::new(()),
+            }),
+        );
         Ok(handle)
     }
 
@@ -94,9 +102,13 @@ impl HostContext {
             .map_err(|error| format!("could not connect to {address}:{port}: {error}"))?;
         let mut network = self.network()?;
         let handle = network.next_handle()?;
-        network
-            .connections
-            .insert(handle, Arc::new(Mutex::new(connection)));
+        network.connections.insert(
+            handle,
+            Arc::new(NetworkConnection {
+                stream: connection,
+                io: Mutex::new(()),
+            }),
+        );
         Ok(handle)
     }
 
@@ -112,9 +124,11 @@ impl HostContext {
             .ok_or_else(|| "read maximum must be between 1 and 1048576".to_owned())?;
         let connection = self.connection(connection)?;
         let mut bytes = vec![0; maximum];
-        let read = connection
+        let _guard = connection
+            .io
             .lock()
-            .map_err(|_| "TCP connection lock was poisoned".to_owned())?
+            .map_err(|_| "TCP connection lock was poisoned".to_owned())?;
+        let read = (&connection.stream)
             .read(&mut bytes)
             .map_err(|error| format!("could not read TCP connection: {error}"))?;
         bytes.truncate(read);
@@ -126,9 +140,12 @@ impl HostContext {
     }
 
     pub fn write_bytes(&self, connection: i64, bytes: &[u8]) -> Result<(), String> {
-        self.connection(connection)?
+        let connection = self.connection(connection)?;
+        let _guard = connection
+            .io
             .lock()
-            .map_err(|_| "TCP connection lock was poisoned".to_owned())?
+            .map_err(|_| "TCP connection lock was poisoned".to_owned())?;
+        (&connection.stream)
             .write_all(bytes)
             .map_err(|error| format!("could not write TCP connection: {error}"))
     }
@@ -138,12 +155,10 @@ impl HostContext {
             u64::try_from(milliseconds).map_err(|_| "TCP timeout cannot be negative".to_owned())?;
         let duration = Some(Duration::from_millis(milliseconds));
         let connection = self.connection(connection)?;
-        let connection = connection
-            .lock()
-            .map_err(|_| "TCP connection lock was poisoned".to_owned())?;
         connection
+            .stream
             .set_read_timeout(duration)
-            .and_then(|()| connection.set_write_timeout(duration))
+            .and_then(|()| connection.stream.set_write_timeout(duration))
             .map_err(|error| format!("could not set TCP timeout: {error}"))
     }
 
@@ -169,7 +184,7 @@ impl HostContext {
             .map_err(|_| "network host lock was poisoned".to_owned())
     }
 
-    fn connection(&self, handle: i64) -> Result<Arc<Mutex<TcpStream>>, String> {
+    fn connection(&self, handle: i64) -> Result<Arc<NetworkConnection>, String> {
         self.network()?
             .connections
             .get(&handle)
@@ -181,7 +196,12 @@ impl HostContext {
 struct NetworkHost {
     next_handle: i64,
     listeners: HashMap<i64, Arc<TcpListener>>,
-    connections: HashMap<i64, Arc<Mutex<TcpStream>>>,
+    connections: HashMap<i64, Arc<NetworkConnection>>,
+}
+
+struct NetworkConnection {
+    stream: TcpStream,
+    io: Mutex<()>,
 }
 
 impl Default for NetworkHost {
@@ -210,8 +230,8 @@ mod tests {
 
     #[test]
     fn contexts_isolate_network_handles() {
-        let first = HostContext::new("first");
-        let second = HostContext::new("second");
+        let first = SystemHost::new("first");
+        let second = SystemHost::new("second");
 
         let first_listener = first.listen("127.0.0.1", 0).unwrap();
         let second_listener = second.listen("127.0.0.1", 0).unwrap();
@@ -224,7 +244,7 @@ mod tests {
 
     #[test]
     fn relative_paths_resolve_from_the_context_directory() {
-        let context = HostContext::new(PathBuf::from("runtime-root"));
+        let context = SystemHost::new(PathBuf::from("runtime-root"));
         assert_eq!(
             context.resolve_path("resources/config.toml"),
             std::env::current_dir()

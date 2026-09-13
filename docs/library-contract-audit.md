@@ -46,7 +46,7 @@ it does not prohibit structural use. Alias targets retain their own contracts. C
 definitions appear in this inventory too. The table lists direct compositions; inherited
 contracts are reachable through these links in generated documentation.
 
-The library exposes **122 public type declarations**.
+The library exposes **127 public type declarations**.
 
 | Type | Direct contracts |
 | --- | --- |
@@ -99,6 +99,11 @@ The library exposes **122 public type declarations**.
 | [std.cursor.BytesCursor](../library/std/cursor.fos) | `Cursor<Byte>` |
 | [std.fs.File](../library/std/fs.fos) | `Resource<paths::Path>`, `ReadWrite<IoError>`, `TextWriter<IoError>`, `PositionedReadable<IoError>`, `Appendable<IoError>`, `Sized<IoError>` |
 | [std.io.IoError](../library/std/io.fos) | None |
+| [std.host.FileProvider](../library/std/host.fos) | None |
+| [std.host.NetworkProvider](../library/std/host.fos) | None |
+| [std.host.RuntimeHost](../library/std/host.fos) | `FileProvider<File>`, `NetworkProvider<Connection, Listener>` |
+| [std.io.ReadReady](../library/std/io.fos) | None |
+| [std.io.WriteReady](../library/std/io.fos) | None |
 | [std.io.Reader](../library/std/io.fos) | None |
 | [std.io.Writer](../library/std/io.fos) | None |
 | [std.io.TextReader](../library/std/io.fos) | None |
@@ -108,8 +113,8 @@ The library exposes **122 public type declarations**.
 | [std.iter.Iterable](../library/std/iter.fos) | None |
 | [std.net.tcp.NetworkError](../library/std/net/tcp.fos) | None |
 | [std.net.tcp.TcpEndpoint](../library/std/net/tcp.fos) | `ResourceIdentifier` |
-| [std.net.tcp.Connection](../library/std/net/tcp.fos) | `Drop`, `Resource<TcpEndpoint>`, `Duplex<NetworkError>`, `TextWriter<NetworkError>`, `Closable<NetworkError>` |
-| [std.net.tcp.Listener](../library/std/net/tcp.fos) | `Drop`, `Resource<TcpEndpoint>`, `Accepting<Connection, NetworkError>`, `Closable<NetworkError>` |
+| [std.net.tcp.Connection](../library/std/net/tcp.fos) | `Drop`, `Resource<TcpEndpoint>`, `Duplex<NetworkError>`, `TextWriter<NetworkError>`, `Closable<NetworkError>`, `ReadReady<NetworkError>`, `WriteReady<NetworkError>` |
+| [std.net.tcp.Listener](../library/std/net/tcp.fos) | `Drop`, `Resource<TcpEndpoint>`, `Accepting<Connection, NetworkError>`, `Closable<NetworkError>`, `ReadReady<NetworkError>` |
 | [std.path.Path](../library/std/path.fos) | `ResourceIdentifier` |
 | [std.process.Arguments](../library/std/process.fos) | None |
 | [std.random.distribution.Distribution](../library/std/random/distribution.fos) | None |

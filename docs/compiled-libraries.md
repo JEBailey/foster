@@ -82,3 +82,7 @@ untrusted implementations.
 
 The Rust API is `foster::library::{build, encode, decode, read}`. `.fbc` remains an executable
 format and `.fpk` remains a runnable resource archive; `.flib` is a compiler dependency input.
+
+The optional [tzdata package](../packages/tzdata/README.md) is a complete example: its `.flib`
+bundles a pinned IANA dataset as constants and a Foster `TimeZoneDatabase` implementation.
+Applications load it as an ordinary dependency, with no source or external database files required.

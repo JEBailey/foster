@@ -37,6 +37,37 @@ fn compiler_benchmarks(criterion: &mut Criterion) {
         });
     });
 
+    // Stress many distinct constants and values kept live across a loop.
+    // Source generation and front-end checking stay outside the timed region.
+    let mut constants = String::from("func main() -> Int { let value = 0\n");
+    for value in 1..=256 {
+        constants.push_str(&format!("value = value + {value}\n"));
+    }
+    constants.push_str("value }");
+    let mut loop_source = String::from("func work(seed: Int) -> Int {\n");
+    for index in 0..64 {
+        loop_source.push_str(&format!("let value{index} = seed + {}\n", index + 1000));
+    }
+    loop_source.push_str("let total = seed\nloop { break if total >= 64\ntotal = total + 1 }\n");
+    for index in 0..64 {
+        loop_source.push_str(&format!("value{index} + "));
+    }
+    loop_source.push_str("total }\nfunc main() -> Int { work(1) }");
+    for (name, source) in [
+        ("bytecode_many_constants", constants),
+        ("bytecode_loop_liveness", loop_source),
+    ] {
+        let compilation = foster::compile(&source).unwrap();
+        group.bench_function(name, |bencher| {
+            bencher.iter(|| {
+                foster::vm::compile_with_options(
+                    black_box(&compilation),
+                    CompileOptions { optimize: true },
+                )
+                .unwrap()
+            });
+        });
+    }
     group.finish();
 }
 

@@ -51,7 +51,9 @@ pre .type-link { color: #a8c9ff; }
 pre .type-link:hover { color: white; }
 code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
 p code, li code { padding: .08rem .3rem; border-radius: .25rem; background: #e8ebf1; }
-.badge { margin-left: .45rem; padding: .15rem .4rem; border-radius: 99px; font-size: .68rem; font-weight: 700; letter-spacing: .02em; color: #596273; background: #edf0f5; vertical-align: middle; }
+.badge { display: inline-block; white-space: nowrap; font-family: Inter, ui-sans-serif, system-ui, sans-serif; line-height: 1.4; margin-left: .45rem; padding: .15rem .5rem; border-radius: 99px; font-size: .68rem; font-weight: 700; letter-spacing: .02em; color: #596273; background: #edf0f5; vertical-align: middle; }
+.visibility-public { color: #14532d; background: #dcfce7; border: 1px solid #86efac; }
+.visibility-private { color: #7c2d12; background: #ffedd5; border: 1px solid #fdba74; }
 .kind { color: #2356a8; background: #e8f0ff; }
 .empty, .no-results { color: #667085; font-style: italic; }
 [hidden] { display: none !important; }
@@ -83,6 +85,7 @@ article:target { outline: 2px solid #628ae0; outline-offset: 3px; }
 @media (max-width: 36rem) { header { padding-block: 2rem; } main { padding-top: 1.25rem; } .on-this-page ul { display: block; } }
 @media (prefers-color-scheme: dark) { body { color: #e5e7eb; background: #111827; } article, .module-list a, .on-this-page, .summary span, .filter { border-color: #344052; background: #1b2434; } p code, li code { background: #303b4d; } a { color: #8db4ff; } .module-list small, .summary, .type-summary small, .type-summary h4 { color: #aab5c5; } .kind { color: #b9d2ff; background: #263c60; } }
 @media (prefers-color-scheme: dark) { .empty, .no-results, .filter-status, .on-this-page small { color: #aab5c5; } .on-this-page a[aria-current="location"] { background: #263c60; } .skip-link { background: #1b2434; } }
+@media (prefers-color-scheme: dark) { .visibility-public { color: #bbf7d0; background: #163c2b; border-color: #39825a; } .visibility-private { color: #fed7aa; background: #482d1c; border-color: #a56735; } }
 "#;
 
 const SCRIPT: &str = r##"<script>
@@ -439,6 +442,14 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
     )
 }
 
+fn visibility_badge(public: bool) -> &'static str {
+    if public {
+        "<span class=\"badge visibility-public\">public</span>"
+    } else {
+        "<span class=\"badge visibility-private\">private</span>"
+    }
+}
+
 pub(super) fn visible_type(public: bool, documentation: Option<&str>) -> bool {
     public || documentation.is_some_and(|docs| !docs.trim().is_empty())
 }
@@ -463,10 +474,11 @@ fn provided_types(compilation: &Compilation, module_id: ModuleId) -> String {
                 .iter()
                 .map(|field| {
                     format!(
-                        "{}: {}",
+                        "{}: {}{}",
                         escape(&field.name),
                         TypeLinks::new(compilation, module_id, &record.parameters)
-                            .source(&field.ty)
+                            .source(&field.ty),
+                        visibility_badge(field.public)
                     )
                 })
                 .collect(),
@@ -538,9 +550,9 @@ fn type_card(
 ) {
     let _ = write!(
         cards,
-        "<article class=\"type-summary\"><h3><a href=\"#{0}\">{0}</a><span class=\"badge\">{1}</span></h3>",
+        "<article class=\"type-summary\"><h3><a href=\"#{0}\">{0}</a>{1}</h3>",
         escape(name),
-        if public { "public" } else { "private" }
+        visibility_badge(public)
     );
     if let Some(docs) = docs {
         cards.push_str(&markdown(docs));
@@ -700,11 +712,11 @@ fn declaration(
 ) {
     let _ = write!(
         body,
-        "<article id=\"{}\"><h2><a class=\"anchor\" href=\"#{}\">{}</a><span class=\"badge kind\">{kind}</span><span class=\"badge\">{}</span></h2><pre><code>{}</code></pre>",
+        "<article id=\"{}\"><h2><a class=\"anchor\" href=\"#{}\">{}</a><span class=\"badge kind\">{kind}</span>{}</h2><pre><code>{}</code></pre>",
         escape(anchor),
         escape(anchor),
         escape(name),
-        if public { "public" } else { "private" },
+        visibility_badge(public),
         signature
     );
     if let Some(docs) = docs {
@@ -788,10 +800,11 @@ fn record_signature(compilation: &Compilation, record: &crate::hir::Record) -> S
         .iter()
         .map(|field| {
             format!(
-                "    {}{}: {}",
+                "    {}{}: {}{}",
                 if field.public { "pub " } else { "" },
                 field.name,
-                links.source(&field.ty)
+                links.source(&field.ty),
+                visibility_badge(field.public)
             )
         })
         .collect::<Vec<_>>();
@@ -1105,6 +1118,41 @@ func main() -> Int { 0 }
         let rendered = markdown("- first\n- second\n\n**important**");
         assert!(rendered.contains("<ul>"));
         assert!(rendered.contains("<strong>important</strong>"));
+    }
+
+    #[test]
+    fn field_visibility_is_explicit_in_summaries_and_signatures() {
+        let compilation = crate::compile(
+            "pub type Example = { pub exposed: Int, hidden: Bool }\n\
+             /// A documented private type.\n\
+             type Internal = { pub exposed: Int, hidden: Bool }\n\
+             func main() {}",
+        )
+        .unwrap();
+        let site = site(&compilation);
+        let html = &site.modules[0].html;
+        let overview = html.split("<article id=\"Example\">").next().unwrap();
+        assert!(overview.contains("Int<span class=\"badge visibility-public\">public</span>"));
+        assert!(overview.contains("Bool<span class=\"badge visibility-private\">private</span>"));
+        for name in ["Example", "Internal"] {
+            let declaration = html
+                .split(&format!("<article id=\"{name}\">"))
+                .nth(1)
+                .unwrap()
+                .split("</pre>")
+                .next()
+                .unwrap();
+            assert!(
+                declaration.contains(
+                    "pub exposed: Int<span class=\"badge visibility-public\">public</span>"
+                )
+            );
+            assert!(
+                declaration.contains(
+                    "hidden: Bool<span class=\"badge visibility-private\">private</span>"
+                )
+            );
+        }
     }
 
     #[test]

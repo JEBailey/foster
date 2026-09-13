@@ -298,6 +298,10 @@ behavior; the cleanup guarantees and limits are described below.
 
 ## Runtime cleanup guarantees and limits
 
+Filesystem, clocks, TCP, and timed socket readiness share the injectable host-provider boundary
+with the VM. See [host providers](host-providers.md) for embedding setup, Foster provider contracts,
+and the current limits of per-operation readiness offloading.
+
 The [remote lifecycle contract](remote-semantics.md) implements scoped cancellation and conservative
 request-lifetime checks. Native workers contain language execution failures
 and deliver `Result<T, RemoteError>` through futures. Failure is terminal for the worker, including

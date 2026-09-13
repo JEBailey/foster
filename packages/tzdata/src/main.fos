@@ -1,0 +1,348 @@
+//! Optional, versioned IANA time-zone database. Build this package as tzdata.flib.
+//! All lookup and calendar logic runs in Foster; no host database or network is used.
+
+import core.byte
+import core.bytes
+import core.int
+import core.list
+import core.result
+import core.string
+import std.time
+import std.time.civil
+import std.time.zone
+import data
+
+/// A provider backed by the IANA release bundled into this library.
+pub type IanaDatabase = & TimeZoneDatabase & {
+    /// Returns the exact IANA release bundled into this provider.
+    pub func version(self) -> String
+    /// Lists canonical identifiers and aliases in bytewise sorted order.
+    pub func identifiers(self) -> List<String>
+}
+
+impl IanaDatabase {
+    /// Creates a database without host I/O.
+    pub func new() -> IanaDatabase { IanaDatabase {} }
+
+    /// Returns the exact IANA release used by this provider.
+    pub func version(self) -> String { data::version() }
+
+    /// Looks up a case-sensitive IANA identifier or alias; unknown names return ZoneError.
+    pub func find(self, identifier: String) -> Result<TimeZone, ZoneError> [read identifier] {
+        let index = lookup(data::names().bytes, identifier)
+        branch {
+            index < 0 -> Result.Error(ZoneError { zone: identifier.copy(), message: "unknown IANA time zone" })
+            _ -> found(IanaZone { identifier: identifier.copy(), table: zone_table(index) })
+        }
+    }
+
+    /// Returns every supported identifier, including aliases, in sorted order.
+    pub func identifiers(self) -> List<String> {
+        let encoded = data::names().bytes
+        let names = []
+        let index = 0
+        loop {
+            break if index == encoded.length
+            names.push(name_at(encoded, index))
+            index = index + 44
+        }
+        names
+    }
+}
+
+/// An immutable IANA rule set obtained from IanaDatabase.find, with private storage.
+pub type IanaZone = & TimeZone & { identifier: String, table: Bytes }
+
+impl IanaZone {
+    /// Preserves the requested identifier, including aliases.
+    pub func id(self) -> String { self.identifier.copy() }
+
+    /// Finds the active historical offset or evaluates the recurring future rules.
+    pub func offset_at(self, instant: Instant) -> Offset {
+        checked_offset(offset_seconds(self.table, instant.epoch_seconds()))
+    }
+
+    /// Resolves a local value as unique, overlapping, or skipped, preserving nanoseconds.
+    pub func resolve(self, local: DateTime) -> LocalResolution {
+        resolve_local(self.table, local)
+    }
+}
+
+/// Adapts a concrete zone before placing it in the generic result.
+func found(value: TimeZone) -> Result<TimeZone, ZoneError> [consume value] { Result.Ok(move value) }
+
+/// Slices one rule set from the indexed data block without a generated dispatch tree.
+func zone_table(index: Int) -> Bytes {
+    let positions = data::positions().bytes
+    let start = unsigned_number(positions, index * 14, 7)
+    let length = unsigned_number(positions, index * 14 + 7, 7)
+    data::rules().bytes.slice(start, start + length)
+}
+
+/// Decodes the name portion of one fixed-width index record.
+func name_at(encoded: Bytes, position: Int) -> String {
+    let end = position
+    loop {
+        break if end == position + 40 || encoded[end].int == 32
+        end = end + 1
+    }
+    String.from_utf8(encoded.slice(position, end)).unwrap_or("")
+}
+
+/// Binary-searches the sorted identifier table without scanning the transition payloads.
+func lookup(encoded: Bytes, identifier: String) -> Int {
+    let low = 0
+    let high = encoded.length / 44
+    loop {
+        break if low >= high
+        let middle = low + (high - low) / 2
+        let name = name_at(encoded, middle * 44)
+        return unsigned_number(encoded, middle * 44 + 40, 4) if name == identifier
+        branch {
+            less(name.bytes, identifier.bytes) -> { low = middle + 1 }
+            _ -> { high = middle }
+        }
+    }
+    -1
+}
+
+/// Compares ASCII zone names using bytewise lexicographic order.
+func less(left: Bytes, right: Bytes) -> Bool {
+    let index = 0
+    loop {
+        break if index == left.length || index == right.length
+        let a = left[index].int
+        let b = right[index].int
+        return a < b if a != b
+        index = index + 1
+    }
+    left.length < right.length
+}
+
+/// Parses trusted generated unsigned decimal digits.
+func unsigned_number(encoded: Bytes, start: Int, width: Int) -> Int {
+    let value = 0
+    let index = start
+    loop {
+        break if index == start + width
+        value = value * 10 + encoded[index].int - 48
+        index = index + 1
+    }
+    value
+}
+
+/// Parses a signed fixed-width number, including Int.min, without positive overflow.
+func number(encoded: Bytes, start: Int, width: Int) -> Int {
+    let value = 0
+    let index = start + 1
+    loop {
+        break if index == start + width
+        value = value * 10 - (encoded[index].int - 48)
+        index = index + 1
+    }
+    branch { encoded[start].int == 45 -> value _ -> -value }
+}
+
+/// Reads one seven-byte signed header field.
+func field(table: Bytes, index: Int) -> Int { number(table, index * 7, 7) }
+
+/// Returns the number of historical transition records.
+func count(table: Bytes) -> Int { (table.length - 91) / 27 }
+
+/// Reads the exact POSIX second at a transition.
+func transition(table: Bytes, index: Int) -> Int { number(table, 91 + index * 27, 20) }
+
+/// Reads the offset in force following a transition.
+func transition_offset(table: Bytes, index: Int) -> Int { number(table, 111 + index * 27, 7) }
+
+/// Returns the first transition strictly after `ticks`.
+func upper_bound(table: Bytes, ticks: Int) -> Int {
+    let low = 0
+    let high = count(table)
+    loop {
+        break if low >= high
+        let middle = low + (high - low) / 2
+        branch {
+            transition(table, middle) <= ticks -> { low = middle + 1 }
+            _ -> { high = middle }
+        }
+    }
+    low
+}
+
+/// Selects the pre-first offset, historical record, or POSIX future rule.
+func offset_seconds(table: Bytes, ticks: Int) -> Int {
+    let length = count(table)
+    branch {
+        length == 0 -> future_offset(table, ticks)
+        ticks > transition(table, length - 1) -> future_offset(table, ticks)
+        _ -> {
+            let index = upper_bound(table, ticks)
+            branch { index == 0 -> field(table, 0) _ -> transition_offset(table, index - 1) }
+        }
+    }
+}
+
+/// Converts a generator-validated displacement into the public offset type.
+func checked_offset(seconds: Int) -> Offset {
+    branch Offset.from_seconds(seconds) {
+        Result.Ok(value) -> value
+        Result.Error(_) -> { assert(false, "invalid generated IANA offset")
+            Offset.utc() }
+    }
+}
+
+/// Returns a nonnegative remainder for calendar-cycle calculations.
+func modulo(value: Int, divisor: Int) -> Int {
+    let remainder = value - (value / divisor) * divisor
+    branch { remainder < 0 -> remainder + divisor _ -> remainder }
+}
+
+/// Constructs a generator-validated date.
+func date(year: Int, month: Int, day: Int) -> Date {
+    branch Date.from(year, month, day) {
+        Result.Ok(value) -> value
+        Result.Error(_) -> { assert(false, "invalid generated IANA rule date")
+            Date.from_epoch_day(0) }
+    }
+}
+
+/// Converts an M.w.d, Jn, or zero-based day-of-year rule to an epoch day.
+func rule_day(table: Bytes, start: Int, year: Int) -> Int {
+    let kind = field(table, start)
+    let a = field(table, start + 1)
+    branch {
+        kind == 1 -> {
+            let week = field(table, start + 2)
+            let weekday = field(table, start + 3)
+            let first = date(year, a, 1)
+            let day = 1 + modulo(weekday - modulo(first.epoch_day() + 4, 7), 7) + (week - 1) * 7
+            let length = IsoCalendar.new().days_in_month(year, a)
+            let selected = branch { day > length -> day - 7 _ -> day }
+            first.epoch_day() + selected - 1
+        }
+        kind == 2 -> {
+            let extra = branch { a >= 60 && IsoCalendar.new().leap_year?(year) -> 1 _ -> 0 }
+            date(year, 1, 1).epoch_day() + a - 1 + extra
+        }
+        _ -> date(year, 1, 1).epoch_day() + a
+    }
+}
+
+/// Computes a recurring transition in UTC; the rule time uses the preceding wall offset.
+func rule_transition(table: Bytes, start: Int, year: Int, previous: Int) -> Int {
+    rule_day(table, start, year) * 86400 + field(table, start + 4) - previous
+}
+
+/// Uses the 400-year Gregorian cycle to avoid overflow even for distant exact instants.
+func future_offset(table: Bytes, ticks: Int) -> Int {
+    let standard = field(table, 1)
+    return standard if field(table, 3) == 0
+    let daylight = field(table, 2)
+    let normalized = modulo(ticks, 12622780800)
+    let center = DateTime.from_epoch_parts(normalized, 0).date().year()
+    let year = center - 1
+    let latest = -12622780800
+    let selected = standard
+    loop {
+        break if year > center + 1
+        let start = rule_transition(table, 3, year, standard)
+        let end = rule_transition(table, 8, year, daylight)
+        branch {
+            start <= normalized && start > latest -> { latest = start
+                selected = daylight }
+            _ -> ()
+        }
+        branch {
+            end <= normalized && end > latest -> { latest = end
+                selected = standard }
+            _ -> ()
+        }
+        year = year + 1
+    }
+    selected
+}
+
+/// Constructs an exact instant while retaining validated nanoseconds.
+func instant(ticks: Int, nanos: Int) -> Instant {
+    branch Instant.from_parts(ticks, nanos) {
+        Result.Ok(value) -> value
+        Result.Error(_) -> { assert(false, "invalid local nanoseconds")
+            Instant.epoch() }
+    }
+}
+
+/// Returns the distinct offsets that can occur in this zone.
+func offsets(table: Bytes) -> List<Int> {
+    let values = [field(table, 0), field(table, 1), field(table, 2)]
+    let index = 0
+    loop {
+        break if index == count(table)
+        let value = transition_offset(table, index)
+        branch { !values.contains?(value) -> { values.push(value) } _ -> () }
+        index = index + 1
+    }
+    values
+}
+
+/// Tests every distinct offset against the authoritative exact-time lookup.
+func resolve_local(table: Bytes, local: DateTime) -> LocalResolution {
+    let wall = local.epoch_seconds()
+    let nanos = local.nanosecond()
+    let candidates = []
+    let choices = offsets(table)
+    let index = 0
+    loop {
+        break if index == choices.length
+        let value = wall - choices[index]
+        branch {
+            offset_seconds(table, value) == choices[index] && !candidates.contains?(value) -> { candidates.push(value) }
+            _ -> ()
+        }
+        index = index + 1
+    }
+    return LocalResolution.Unique(instant(candidates[0], nanos)) if candidates.length == 1
+    branch {
+        candidates.length == 2 -> {
+            let first = candidates[0]
+            let second = candidates[1]
+            let early = branch { first < second -> first _ -> second }
+            let late = branch { first > second -> first _ -> second }
+            LocalResolution.Ambiguous(AmbiguousLocalTime.from(instant(early, nanos), instant(late, nanos)))
+        }
+        _ -> {
+            assert(candidates.empty?, "more than two IANA local-time mappings")
+            let edge = gap_transition(table, wall)
+            LocalResolution.Skipped(SkippedLocalTime.from(instant(edge - 1, 999999999), instant(edge, 0)))
+        }
+    }
+}
+
+/// Identifies a forward jump containing the given nonexistent local second.
+func gap_transition(table: Bytes, wall: Int) -> Int {
+    let index = upper_bound(table, wall - 86400)
+    loop {
+        break if index == count(table)
+        let edge = transition(table, index)
+        break if edge > wall + 86400
+        let before = branch { index == 0 -> field(table, 0) _ -> transition_offset(table, index - 1) }
+        let after = transition_offset(table, index)
+        return edge if after > before && wall >= edge + before && wall < edge + after
+        index = index + 1
+    }
+    let normalized = modulo(wall, 12622780800)
+    let center = DateTime.from_epoch_parts(normalized, 0).date().year()
+    let year = center - 1
+    let standard = field(table, 1)
+    let daylight = field(table, 2)
+    loop {
+        break if year > center + 1
+        let start = rule_transition(table, 3, year, standard)
+        let end = rule_transition(table, 8, year, daylight)
+        return wall + (start - normalized) if daylight > standard && normalized >= start + standard && normalized < start + daylight
+        return wall + (end - normalized) if standard > daylight && normalized >= end + daylight && normalized < end + standard
+        year = year + 1
+    }
+    assert(false, "unresolved IANA local-time gap")
+    0
+}
