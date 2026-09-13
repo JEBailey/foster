@@ -4,6 +4,12 @@
 //! uses Unicode 17.0.0. Full case mappings return `String` because one scalar can expand;
 //! simple mappings return one `CodePoint`. Casing is locale-independent.
 //!
+//! Think of a scalar as one numbered text ingredient. An accented letter can use
+//! a base letter and a separate accent, so one visible text element may contain
+//! several CodePoint values. Use String operations when you want to keep that
+//! whole element together. A category is a broad label, such as a letter or mark;
+//! classification methods answer narrower questions, such as whether it is uppercase.
+//!
 //! Supports [Copy](core-copy.html#Copy): copying preserves the source and returns an independent scalar value.
 
 import core.option

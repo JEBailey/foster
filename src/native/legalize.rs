@@ -18,7 +18,11 @@ pub(super) fn lower_shared_to_native_ir(
     environment: NativeIrEnvironment<'_>,
 ) -> Result<(ir::Function, FailureCleanup), FosterError> {
     let remote_calls = verified_remote_calls(metadata, source_states, instance, environment)?;
-    let external_values = shared.captures.iter().chain(&shared.parameters);
+    let external_values = shared
+        .captures
+        .iter()
+        .map(|capture| &capture.value)
+        .chain(&shared.parameters);
     let external_types = metadata
         .capture_types
         .iter()
@@ -142,7 +146,11 @@ pub(super) fn lower_shared_to_native_ir(
             arguments: vec![],
         });
         spans.push(block.terminator_span.clone());
-        for (instruction, span) in block.instructions.iter().zip(&block.instruction_spans) {
+        for (instruction, span) in block
+            .instructions
+            .iter()
+            .map(|entry| (&entry.instruction, &entry.span))
+        {
             let lowered = lower_shared_instruction(
                 instruction,
                 metadata,
@@ -348,8 +356,10 @@ pub(super) fn lower_shared_to_native_ir(
                     let edge = ir::Block((shared.blocks.len() + cleanup_edges.len()) as u32);
                     cleanup_edges.push(ir::BlockData {
                         parameters: Vec::new(),
-                        instruction_spans: vec![block.terminator_span.clone(); drops.len()],
-                        instructions: drops,
+                        instructions: drops
+                            .into_iter()
+                            .map(|instruction| instruction.with_span(block.terminator_span.clone()))
+                            .collect(),
                         terminator: ir::Terminator::Jump {
                             target: *target,
                             arguments: arguments.clone(),
@@ -364,15 +374,18 @@ pub(super) fn lower_shared_to_native_ir(
         }
         blocks.push(ir::BlockData {
             parameters: block.parameters.clone(),
-            instructions,
-            instruction_spans: spans,
+            instructions: ir::SpannedInstruction::from_parts(instructions, spans),
             terminator,
             terminator_span: block.terminator_span.clone(),
         });
     }
     blocks.extend(cleanup_edges);
 
-    let mut parameters = shared.captures.clone();
+    let mut parameters = shared
+        .captures
+        .iter()
+        .map(|capture| capture.value)
+        .collect::<Vec<_>>();
     parameters.extend(&shared.parameters);
     // Pruned entry arguments never reach block-local ownership state. The ABI
     // still transfers these references, including an unused method receiver.
@@ -404,12 +417,18 @@ pub(super) fn lower_shared_to_native_ir(
             }));
             prologue_spans.push(Range::default());
         }
-        for (input, input_type) in shared.captures.iter().chain(&shared.parameters).zip(
-            metadata
-                .capture_types
-                .iter()
-                .chain(&metadata.parameter_types),
-        ) {
+        for (input, input_type) in shared
+            .captures
+            .iter()
+            .map(|capture| &capture.value)
+            .chain(&shared.parameters)
+            .zip(
+                metadata
+                    .capture_types
+                    .iter()
+                    .chain(&metadata.parameter_types),
+            )
+        {
             let crate::codegen::types::ExecutableType::Reference(pointee) = input_type else {
                 continue;
             };
@@ -460,8 +479,10 @@ pub(super) fn lower_shared_to_native_ir(
             0,
             ir::BlockData {
                 parameters: Vec::new(),
-                instructions: prologue_instructions,
-                instruction_spans: prologue_spans,
+                instructions: ir::SpannedInstruction::from_parts(
+                    prologue_instructions,
+                    prologue_spans,
+                ),
                 terminator: ir::Terminator::Jump {
                     target: ir::Block(shared.entry.0 + 1),
                     arguments,
@@ -478,7 +499,6 @@ pub(super) fn lower_shared_to_native_ir(
             signature: function_signature.clone(),
             parameters,
             captures: Vec::new(),
-            capture_types: Vec::new(),
             entry_seeds,
             entry,
             entry_arguments,

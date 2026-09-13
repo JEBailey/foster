@@ -316,10 +316,7 @@ impl Checker<'_> {
             .find(|method| method.name == name)
         {
             Some(method) => Some(Ty::Callable {
-                parameters: crate::types::Parameter::from_parts(
-                    method.parameters,
-                    method.parameter_modes,
-                ),
+                parameters: method.parameters,
                 result: Box::new(method.result),
                 erased: false,
                 effects: method.effects,
@@ -417,7 +414,7 @@ impl Checker<'_> {
                     || !parameters
                         .iter()
                         .map(|p| p.mode)
-                        .eq(method.parameter_modes.iter().copied())
+                        .eq(method.parameters.iter().map(|p| p.mode))
                     || !effects_are_subset(&effects, &allowed_effects)
                     || (suspends && !method.suspends)
                 {
@@ -428,7 +425,7 @@ impl Checker<'_> {
                     .iter()
                     .cloned()
                     .zip(parameters)
-                    .all(|(expected, actual)| self.unify(expected, actual.ty, function).is_ok());
+                    .all(|(expected, actual)| self.unify(expected.ty, actual.ty, function).is_ok());
                 let required_result = self.method_result_for_receiver(&method, actual.clone());
                 if parameters_match && self.coerce(required_result, *result, function).is_ok() {
                     matched = Some((self.substitutions.clone(), self.next_variable));
@@ -478,10 +475,7 @@ impl Checker<'_> {
             .find(|method| method.name == name)
         {
             return Ok(Some(Ty::Callable {
-                parameters: crate::types::Parameter::from_parts(
-                    method.parameters,
-                    method.parameter_modes,
-                ),
+                parameters: method.parameters,
                 result: Box::new(method.result),
                 erased: false,
                 effects: method.effects,
@@ -521,10 +515,7 @@ impl Checker<'_> {
                 .into_iter()
                 .filter(|method| method.name == name)
                 .map(|method| Ty::Callable {
-                    parameters: crate::types::Parameter::from_parts(
-                        method.parameters,
-                        method.parameter_modes,
-                    ),
+                    parameters: method.parameters,
                     result: Box::new(method.result),
                     erased: false,
                     effects: method.effects,

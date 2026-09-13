@@ -10,6 +10,7 @@ references describe implemented behavior; the roadmap describes proposed work.
 | Choose library APIs | [Library guide](../library/README.md) | [Library reference](core-library.md); generate the API site with `cargo run --bin foster -- docs library --serve` |
 | Understand ownership and mutation | [Ownership](ownership.md) | [Closures](closures.md), [effects](effect-derivation.md), [remote objects](remote-semantics.md) |
 | Work with specialized library APIs | [Time](time.md), [randomness](random.md), [hash collections](hash-collections.md) | [Host providers](host-providers.md) |
+| Understand text and Unicode data | [Unicode text](unicode.md) | [Unicode table maintenance](../tools/unicode/README.md) |
 | Build or distribute a program | [Native backend](native.md), [packages](package-format.md) | [Compiled libraries](compiled-libraries.md) |
 | Contribute to Foster | [Development policy](development-policy.md), [testing](testing.md) | [Documentation standard](../library/DOCUMENTATION.md), [roadmap](roadmap.md) |
 | Investigate compiler behavior | [Diagnostics](diagnostics.md), [VM](vm.md) | [Incremental checking](incremental-checking.md), [ownership verification](ownership-verification.md), [benchmarking](benchmarking.md) |

@@ -82,6 +82,8 @@ The `Bytecode` and `Native` policies explicitly preserve these backend differenc
 types. Native `Intersection` and `AliasArguments` retain metadata behind opaque representations
 and never use that matching rule. Intersections are canonicalized as sets; alias arguments retain
 their order and duplicates. Both native-only forms are rejected by bytecode validation and encoding.
+Alternative and intersection payloads are distinct private containers with read-only member access.
+Canonical constructors create them; a checked decoder constructor rejects malformed alternatives.
 Native record classification
 preserves private storage and distinguishes concrete implementations from inherited defaults.
 Both policies erase sequence views and modules, and share scalar, container, callable, nominal,
@@ -190,6 +192,12 @@ reconstruct control flow from a register program. Copyable scalars remain SSA al
 ownership-bearing object copies become explicit retain operations, consuming calls transfer their
 SSA value, and COW mutation is explicit before a field or index store. The bytecode backend remains
 an independent de-SSA consumer of the same graph.
+
+SSA instructions carry their source spans, and captures carry their value/type pairs. Temporary
+construction buffers enter through length-checked adapters. `SharedProgram` exposes immutable
+access to its functions, metadata, and derived signatures; sealing validates both the construction
+program and SSA. Backend transforms consume this boundary and validate their resulting IR.
+Dense value tables and CFG relationships remain verifier-checked rather than individually wrapped.
 
 The portable, versioned bytecode remains the VM's execution and distribution format. The native
 IR is a shared internal backend boundary rather than a replacement for bytecode, leaving room for

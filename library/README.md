@@ -103,6 +103,9 @@ func main() -> Int {
 
 ## Text positions and cursors
 
+New to Unicode terminology? [Unicode text in Foster](../docs/unicode.md) explains
+code points, grapheme clusters, bytes, case folding, and the purpose of the data tables.
+
 | API | Position unit | Invalid bounds |
 | --- | --- | --- |
 | `String.length`, `String.slice` | Extended grapheme clusters | Slice bounds are clamped |

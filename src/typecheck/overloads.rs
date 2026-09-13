@@ -181,7 +181,6 @@ impl Checker<'_> {
                     for method in self.contract_method_overloads(caller, member, name)? {
                         if !methods.iter().any(|existing: &EffectiveMethod| {
                             existing.parameters == method.parameters
-                                && existing.parameter_modes == method.parameter_modes
                         }) {
                             methods.push(method);
                         }
@@ -218,7 +217,7 @@ impl Checker<'_> {
             let method = self.instantiate_required_method(method.clone());
             if let Some(conversions) = self.overload_argument_conversions(
                 function,
-                method.parameters.iter().cloned(),
+                method.parameters.iter().map(|p| p.ty.clone()),
                 &argument_types,
             ) {
                 matches.push(Ranked {
@@ -259,8 +258,7 @@ impl Checker<'_> {
         self.substitutions = selected.substitutions;
         self.next_variable = selected.next_variable;
         let method = selected.value;
-        let parameters =
-            crate::types::Parameter::from_parts(method.parameters, method.parameter_modes);
+        let parameters = method.parameters;
         let dispatch = self.method_key(name, &parameters);
         let callable = Ty::Callable {
             parameters,

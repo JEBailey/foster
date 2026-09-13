@@ -1077,10 +1077,7 @@ impl Checker<'_> {
         }
         let method = self.instantiate_required_method(method);
         Ok(Some(Ty::Callable {
-            parameters: crate::types::Parameter::from_parts(
-                method.parameters,
-                method.parameter_modes,
-            ),
+            parameters: method.parameters,
             result: Box::new(method.result),
             erased: false,
             effects: method.effects,

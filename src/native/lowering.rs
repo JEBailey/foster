@@ -22,7 +22,7 @@ pub(super) fn lower_native_ir(
         .blocks
         .iter()
         .flat_map(|block| &block.instructions)
-        .filter_map(|instruction| match instruction {
+        .filter_map(|entry| match &entry.instruction {
             ir::Instruction::Portable(ir::PortableInstruction::MakeWholeReference {
                 object,
                 ..
@@ -163,7 +163,7 @@ pub(super) fn lower_native_ir(
                 subject,
                 pattern,
                 bindings,
-            }) = instruction
+            }) = &instruction.instruction
             {
                 let (matched, lowered_bindings) = lower_native_pattern(
                     builder,

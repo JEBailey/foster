@@ -180,10 +180,8 @@ impl<'a> Reader<'a> {
             },
             16 => {
                 let members = self.vec(|reader| nested(reader))?;
-                if !ExecutableType::canonical_alternatives(&members) {
-                    return Err(BinaryError::new("non-canonical control-flow alternatives"));
-                }
-                ExecutableType::Alternatives(members)
+                ExecutableType::try_alternatives(members)
+                    .map_err(|error| BinaryError::new(error.to_string()))?
             }
             17 => ExecutableType::Generic(self.string()?),
             tag => {

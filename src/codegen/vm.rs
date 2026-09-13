@@ -20,16 +20,43 @@ impl fmt::Display for LowerError {
 
 impl std::error::Error for LowerError {}
 
-/// Typed SSA plus the nominal/runtime metadata shared by executable backends.
+/// Validated SSA plus immutable nominal/runtime metadata shared by executable backends.
+/// Construct through `seal_program`; transforms consume the boundary and must validate their output.
+///
+/// ```compile_fail
+/// use foster::codegen::vm::SharedProgram;
+/// fn invalidate(program: &mut SharedProgram) {
+///     program.functions().clear();
+/// }
+/// ```
 #[derive(Debug)]
 pub struct SharedProgram {
-    pub metadata: vm::Program,
-    pub functions: HashMap<FunctionId, ir::Function>,
-    pub signatures: HashMap<FunctionId, ir::Signature>,
+    metadata: vm::Program,
+    functions: HashMap<FunctionId, ir::Function>,
+    signatures: HashMap<FunctionId, ir::Signature>,
+}
+
+impl SharedProgram {
+    pub fn metadata(&self) -> &vm::Program {
+        &self.metadata
+    }
+    pub fn functions(&self) -> &HashMap<FunctionId, ir::Function> {
+        &self.functions
+    }
+    pub fn signatures(&self) -> &HashMap<FunctionId, ir::Signature> {
+        &self.signatures
+    }
+
+    /// Consuming extraction for backend transformation; the result is no longer a sealed program.
+    pub(crate) fn into_parts(self) -> (vm::Program, HashMap<FunctionId, ir::Function>) {
+        (self.metadata, self.functions)
+    }
 }
 
 /// Retain the compiler's first SSA graph instead of immediately de-SSA lowering it to bytecode.
 pub fn seal_program(metadata: vm::Program) -> Result<SharedProgram, LowerError> {
+    vm::verify(&metadata)
+        .map_err(|error| LowerError(format!("invalid construction metadata: {error}")))?;
     let result_types = metadata
         .functions
         .iter()
@@ -627,8 +654,7 @@ fn seal_function_with_types(
         };
         blocks.push(ir::BlockData {
             parameters: block_parameters[block_index].clone(),
-            instructions,
-            instruction_spans,
+            instructions: ir::SpannedInstruction::from_parts(instructions, instruction_spans),
             terminator,
             terminator_span,
         });
@@ -642,8 +668,14 @@ fn seal_function_with_types(
             result: shared_type(&function.result_type),
         },
         parameters,
-        captures,
-        capture_types: (0..capture_count).map(|register| hints[register]).collect(),
+        captures: captures
+            .into_iter()
+            .enumerate()
+            .map(|(register, value)| ir::Capture {
+                value,
+                ty: hints[register],
+            })
+            .collect(),
         entry_seeds,
         entry: Block(0),
         entry_arguments,
@@ -1205,7 +1237,12 @@ pub fn lower_function(
         .copied()
         .max()
         .map_or(0, |register| register.saturating_add(1));
-    for parameter in function.captures.iter().chain(&function.parameters) {
+    for parameter in function
+        .captures
+        .iter()
+        .map(|capture| &capture.value)
+        .chain(&function.parameters)
+    {
         assign(&mut registers, *parameter, &mut next)?;
     }
     for index in 0..function.value_types.len() {
@@ -1243,7 +1280,11 @@ pub fn lower_function(
 
     for (block_index, block) in function.blocks.iter().enumerate() {
         labels[block_index] = Some(emissions.len());
-        for (instruction, span) in block.instructions.iter().zip(&block.instruction_spans) {
+        for (instruction, span) in block
+            .instructions
+            .iter()
+            .map(|entry| (&entry.instruction, &entry.span))
+        {
             lower_instruction(
                 instruction,
                 &registers,
@@ -1386,9 +1427,9 @@ pub fn lower_function(
             .map_err(|_| LowerError("too many function captures".into()))?,
         capture_types: if metadata.capture_types.is_empty() {
             function
-                .capture_types
+                .captures
                 .iter()
-                .copied()
+                .map(|capture| capture.ty)
                 .map(verification_type)
                 .collect()
         } else {
@@ -1962,6 +2003,84 @@ mod tests {
     }
 
     #[test]
+    fn sealed_program_rejects_invalid_metadata_and_keeps_signatures_consistent() {
+        let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
+        let program = crate::vm::compile(&compilation).unwrap();
+        let sealed = seal_program(program.clone()).unwrap();
+        for (id, function) in sealed.functions() {
+            assert_eq!(sealed.signatures()[id], function.signature);
+        }
+        assert_eq!(sealed.metadata().main, program.main);
+        let mut invalid = program;
+        invalid
+            .functions
+            .get_mut(&invalid.main.unwrap())
+            .unwrap()
+            .instruction_spans
+            .clear();
+        assert!(
+            seal_program(invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("span")
+        );
+    }
+
+    #[test]
+    fn instruction_spans_follow_reordering_through_bytecode_lowering() {
+        let mut instructions = vec![
+            ir::Instruction::Constant {
+                destination: Value(0),
+                value: ir::Constant::Integer(20),
+            }
+            .with_span(10..12),
+            ir::Instruction::Constant {
+                destination: Value(1),
+                value: ir::Constant::Integer(22),
+            }
+            .with_span(20..22),
+        ];
+        instructions.swap(0, 1);
+        let function = ir::Function {
+            name: "reordered".into(),
+            signature: ir::Signature {
+                parameters: vec![],
+                result: Type::Int,
+            },
+            parameters: vec![],
+            captures: vec![],
+            entry_seeds: vec![],
+            entry: Block(0),
+            entry_arguments: vec![],
+            value_types: vec![Type::Int; 2],
+            storage_hints: vec![None; 2],
+            blocks: vec![ir::BlockData {
+                parameters: vec![],
+                instructions,
+                terminator: ir::Terminator::Return(Value(0)),
+                terminator_span: 30..32,
+            }],
+        };
+        let mut constants = vec![];
+        let lowered = lower_function(
+            &function,
+            &HashMap::new(),
+            &mut constants,
+            FunctionMetadata::default(),
+        )
+        .unwrap();
+        for (instruction, span) in lowered.instructions.iter().zip(&lowered.instruction_spans) {
+            if let vm::Instruction::LoadConstant { constant, .. } = instruction {
+                match constants[usize::from(*constant)] {
+                    vm::Constant::Integer(20) => assert_eq!(*span, 10..12),
+                    vm::Constant::Integer(22) => assert_eq!(*span, 20..22),
+                    _ => panic!("unexpected constant"),
+                }
+            }
+        }
+    }
+
+    #[test]
     fn branch_edges_receive_distinct_parallel_copies() {
         let function = ir::Function {
             name: "choose".into(),
@@ -1971,7 +2090,6 @@ mod tests {
             },
             parameters: vec![Value(0), Value(1), Value(2)],
             captures: vec![],
-            capture_types: vec![],
             entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: vec![Value(0), Value(1), Value(2)],
@@ -1988,8 +2106,7 @@ mod tests {
             blocks: vec![
                 ir::BlockData {
                     parameters: vec![Value(3), Value(4), Value(5)],
-                    instructions: vec![],
-                    instruction_spans: vec![],
+                    instructions: ir::SpannedInstruction::from_parts(vec![], vec![]),
                     terminator: ir::Terminator::Branch {
                         condition: Value(3),
                         then_target: Block(1),
@@ -2001,8 +2118,7 @@ mod tests {
                 },
                 ir::BlockData {
                     parameters: vec![Value(6)],
-                    instructions: vec![],
-                    instruction_spans: vec![],
+                    instructions: ir::SpannedInstruction::from_parts(vec![], vec![]),
                     terminator: ir::Terminator::Return(Value(6)),
                     terminator_span: 0..0,
                 },
@@ -2073,7 +2189,6 @@ mod tests {
             },
             parameters: vec![],
             captures: vec![],
-            capture_types: vec![],
             entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: vec![],
@@ -2082,21 +2197,23 @@ mod tests {
             blocks: vec![
                 ir::BlockData {
                     parameters: vec![],
-                    instructions: vec![
-                        ir::Instruction::Constant {
-                            destination: Value(0),
-                            value: ir::Constant::Bool(true),
-                        },
-                        ir::Instruction::Constant {
-                            destination: Value(1),
-                            value: ir::Constant::Integer(41),
-                        },
-                        ir::Instruction::Constant {
-                            destination: Value(2),
-                            value: ir::Constant::Integer(99),
-                        },
-                    ],
-                    instruction_spans: vec![0..0, 0..0, 0..0],
+                    instructions: ir::SpannedInstruction::from_parts(
+                        vec![
+                            ir::Instruction::Constant {
+                                destination: Value(0),
+                                value: ir::Constant::Bool(true),
+                            },
+                            ir::Instruction::Constant {
+                                destination: Value(1),
+                                value: ir::Constant::Integer(41),
+                            },
+                            ir::Instruction::Constant {
+                                destination: Value(2),
+                                value: ir::Constant::Integer(99),
+                            },
+                        ],
+                        vec![0..0, 0..0, 0..0],
+                    ),
                     terminator: ir::Terminator::Branch {
                         condition: Value(0),
                         then_target: Block(1),
@@ -2108,8 +2225,7 @@ mod tests {
                 },
                 ir::BlockData {
                     parameters: vec![Value(3)],
-                    instructions: vec![],
-                    instruction_spans: vec![],
+                    instructions: ir::SpannedInstruction::from_parts(vec![], vec![]),
                     terminator: ir::Terminator::Return(Value(3)),
                     terminator_span: 0..0,
                 },

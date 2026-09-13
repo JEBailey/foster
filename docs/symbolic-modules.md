@@ -36,8 +36,8 @@ from the lookup key. No overload search is repeated at link time.
 Compiler signatures use `types::Parameter { ty, mode }` for each parameter, including nested
 callables. Symbol lowering maps those entries directly to descriptor parameters. HIR uses
 `hir::Parameter { local, ty, type_span }` so annotations and diagnostic locations follow their
-bindings through closure and inherited-default lowering. Inference signatures, executable callable
-types, and native logical signatures also use paired parameters, preserving ownership during
+bindings through closure and inherited-default lowering. Inference signatures, effective method
+requirements, executable callable types, and native logical signatures also use paired parameters, preserving ownership during
 substitution and receiver removal. Serialized callables retain separate type/mode vectors for format
 compatibility; decoding checks their lengths before constructing paired parameters. Top-level
 bytecode function metadata retains its existing vectors and verifier length checks.

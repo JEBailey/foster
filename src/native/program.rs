@@ -74,7 +74,7 @@ pub struct NativeProgram<'a> {
 /// Prepare once, then render or emit any number of objects without repeating specialization.
 pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterError> {
     let shared = vm::compile_shared(compilation)?;
-    let mut program = shared.metadata;
+    let (mut program, shared_functions) = shared.into_parts();
     let mut layouts = crate::codegen::layout::legalize(&mut program)?;
     if let Some(record) = program.string_record {
         layouts.instantiate_type(&ExecutableType::Record {
@@ -88,7 +88,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         .ok_or_else(|| native_error("native compilation requires a `main` function"))?;
     let mut facts = FlowFacts::default();
     let instances =
-        reachable_instances(compilation, &program, &shared.functions, main, &mut facts)?;
+        reachable_instances(compilation, &program, &shared_functions, main, &mut facts)?;
     let instance_ids = instances
         .iter()
         .map(|instance| (instance.key.clone(), instance.ir_function))
@@ -146,7 +146,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         let source_states = facts.get(&prepared.program, instance.key.function)?;
         let environment = prepared.environment();
         let (lowered, failure_cleanup) = lower_shared_to_native_ir(
-            &shared.functions[&instance.key.function],
+            &shared_functions[&instance.key.function],
             source,
             source_states,
             &prepared.function_types[&instance.ir_function],
@@ -159,7 +159,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         for instruction in lowered.blocks.iter().flat_map(|block| &block.instructions) {
             if let ir::Instruction::RuntimeCall {
                 helper, signature, ..
-            } = instruction
+            } = &instruction.instruction
             {
                 abi::verify_call(helper, signature).map_err(native_error)?;
             }

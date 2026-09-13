@@ -14,8 +14,7 @@ pub(super) struct EffectiveMethod {
     pub(super) type_parameters: Vec<String>,
     pub(super) name: String,
     pub(super) public: bool,
-    pub(super) parameters: Vec<Ty>,
-    pub(super) parameter_modes: Vec<crate::ast::ParameterMode>,
+    pub(super) parameters: Vec<crate::types::Parameter<Ty>>,
     pub(super) result: Ty,
     pub(super) returns_self: bool,
     /// Unbound nested receiver result, retained when adapting a contract to another receiver.
@@ -100,7 +99,14 @@ impl Checker<'_> {
                 let required = self
                     .effective_record_methods(owner, &arguments)?
                     .into_iter()
-                    .find(|method| method.name == name && method.parameters == parameters);
+                    .find(|method| {
+                        method.name == name
+                            && method
+                                .parameters
+                                .iter()
+                                .map(|p| &p.ty)
+                                .eq(parameters.iter())
+                    });
                 if let Some(required) = required {
                     self.check_method_implementation(later, owner, &arguments, &required)?;
                     true
@@ -246,12 +252,17 @@ impl Checker<'_> {
         incoming: EffectiveMethod,
     ) -> Result<(), FosterError> {
         let Some(existing) = methods.iter_mut().find(|method| {
-            method.name == incoming.name && method.parameters == incoming.parameters
+            method.name == incoming.name
+                && method
+                    .parameters
+                    .iter()
+                    .map(|p| &p.ty)
+                    .eq(incoming.parameters.iter().map(|p| &p.ty))
         }) else {
             methods.push(incoming);
             return Ok(());
         };
-        if existing.parameter_modes != incoming.parameter_modes
+        if existing.parameters != incoming.parameters
             || existing.result != incoming.result
             || existing.returns_self != incoming.returns_self
             || existing.receiver_result != incoming.receiver_result
@@ -280,7 +291,6 @@ impl Checker<'_> {
             &qualified_name,
             Ty::Variant(owner, arguments.to_vec()),
             &required.parameters,
-            &required.parameter_modes,
         )?
         else {
             return Err(FosterError::runtime(format!(
@@ -334,14 +344,14 @@ impl Checker<'_> {
             .cloned()
             .zip(signature.parameters.iter().skip(1).cloned())
         {
-            self.unify(expected, actual.ty, function)?;
+            self.unify(expected.ty, actual.ty, function)?;
         }
         if !signature
             .parameters
             .iter()
             .skip(1)
             .map(|p| p.mode)
-            .eq(required.parameter_modes.iter().copied())
+            .eq(required.parameters.iter().map(|p| p.mode))
         {
             return Err(self.error(
                 function,
@@ -361,9 +371,9 @@ impl Checker<'_> {
             .parameters
             .iter()
             .skip(1)
-            .zip(&required.parameter_modes)
+            .zip(required.parameters.iter().map(|p| p.mode))
         {
-            if *mode == crate::ast::ParameterMode::Borrow {
+            if mode == crate::ast::ParameterMode::Borrow {
                 allowed_effects.push(crate::ast::Effect {
                     kind: crate::ast::EffectKind::Read,
                     target: crate::ast::GroupPath::root(
@@ -465,7 +475,8 @@ impl Checker<'_> {
         }
         if !arguments.iter().any(contains_variable)
             && !methods.iter().any(|method| {
-                method.parameters.iter().any(contains_variable) || contains_variable(&method.result)
+                method.parameters.iter().any(|p| contains_variable(&p.ty))
+                    || contains_variable(&method.result)
             })
         {
             self.record_methods_cache.insert(key, methods.clone());
@@ -599,7 +610,6 @@ impl Checker<'_> {
                             name: name.into(),
                             public: true,
                             parameters: Vec::new(),
-                            parameter_modes: Vec::new(),
                             result,
                             returns_self: false,
                             receiver_result: None,
@@ -682,24 +692,18 @@ impl Checker<'_> {
                         owner_name, requirement.name, parameter.name
                     ))
                 })?;
-                self.annotation_type(owner_module, annotation, &generics)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let parameter_modes = requirement
-            .parameters
-            .iter()
-            .skip(1)
-            .map(|parameter| {
-                if requirement.effects.iter().any(|effect| {
+                let ty = self.annotation_type(owner_module, annotation, &generics)?;
+                let mode = if requirement.effects.iter().any(|effect| {
                     effect.kind == crate::ast::EffectKind::Consume
                         && effect.target.root == parameter.name
                 }) {
                     crate::ast::ParameterMode::Consume
                 } else {
                     crate::ast::ParameterMode::Borrow
-                }
+                };
+                Ok(crate::types::Parameter { ty, mode })
             })
-            .collect();
+            .collect::<Result<Vec<_>, FosterError>>()?;
         let returns_self = matches!(requirement.return_type.as_ref(),
             Some(crate::ast::TypeExpr::Named(name, arguments)) if name == "self" && arguments.is_empty());
         // Only result annotations bind `self`; it is not a user-declared generic.
@@ -721,7 +725,6 @@ impl Checker<'_> {
             name: requirement.name.clone(),
             public: requirement.public,
             parameters,
-            parameter_modes,
             result,
             returns_self,
             receiver_result,
@@ -737,7 +740,7 @@ impl Checker<'_> {
     ) -> EffectiveMethod {
         let mut generics = HashMap::new();
         for parameter in &method.parameters {
-            preserve_generics(parameter, &mut generics);
+            preserve_generics(&parameter.ty, &mut generics);
         }
         preserve_generics(&method.result, &mut generics);
         if let Some(template) = &method.receiver_result {
@@ -749,7 +752,7 @@ impl Checker<'_> {
         method.parameters = method
             .parameters
             .into_iter()
-            .map(|ty| self.instantiate(ty, &mut generics))
+            .map(|p| p.map(|ty| self.instantiate(ty, &mut generics)))
             .collect();
         method.result = self.instantiate(method.result, &mut generics);
         method.receiver_result = method
@@ -779,7 +782,7 @@ impl Checker<'_> {
             .filter(|_| {
                 resolved_arguments
                     .iter()
-                    .chain(&required.parameters)
+                    .chain(required.parameters.iter().map(|p| &p.ty))
                     .chain(std::iter::once(&required.result))
                     .all(|ty| !contains_variable(ty))
             })
@@ -798,6 +801,7 @@ impl Checker<'_> {
             && required
                 .parameters
                 .iter()
+                .map(|p| &p.ty)
                 .eq(parameters.iter().map(|p| &p.ty))
             && required.result == *result
             && !required.returns_self
@@ -810,7 +814,6 @@ impl Checker<'_> {
             &qualified_name,
             Ty::Record(owner, arguments.to_vec()),
             &required.parameters,
-            &required.parameter_modes,
         )?
         else {
             return Err(self.error(
@@ -881,14 +884,14 @@ impl Checker<'_> {
             .cloned()
             .zip(signature.parameters.iter().skip(1).cloned())
         {
-            self.unify(expected, actual.ty, function)?;
+            self.unify(expected.ty, actual.ty, function)?;
         }
         if !signature
             .parameters
             .iter()
             .skip(1)
             .map(|p| p.mode)
-            .eq(required.parameter_modes.iter().copied())
+            .eq(required.parameters.iter().map(|p| p.mode))
         {
             return Err(self.error(
                 function,
@@ -908,9 +911,9 @@ impl Checker<'_> {
             .parameters
             .iter()
             .skip(1)
-            .zip(&required.parameter_modes)
+            .zip(required.parameters.iter().map(|p| p.mode))
         {
-            if *mode == crate::ast::ParameterMode::Borrow {
+            if mode == crate::ast::ParameterMode::Borrow {
                 allowed_effects.push(crate::ast::Effect {
                     kind: crate::ast::EffectKind::Read,
                     target: crate::ast::GroupPath::root(
@@ -975,12 +978,17 @@ impl Checker<'_> {
         incoming: EffectiveMethod,
     ) -> Result<(), FosterError> {
         let Some(existing) = methods.iter_mut().find(|method| {
-            method.name == incoming.name && method.parameters == incoming.parameters
+            method.name == incoming.name
+                && method
+                    .parameters
+                    .iter()
+                    .map(|p| &p.ty)
+                    .eq(incoming.parameters.iter().map(|p| &p.ty))
         }) else {
             methods.push(incoming);
             return Ok(());
         };
-        let compatible = existing.parameter_modes == incoming.parameter_modes
+        let compatible = existing.parameters == incoming.parameters
             && existing.result == incoming.result
             && existing.returns_self == incoming.returns_self
             && existing.receiver_result == incoming.receiver_result
@@ -1001,8 +1009,7 @@ impl Checker<'_> {
         module: crate::hir::ModuleId,
         qualified_name: &str,
         receiver: Ty,
-        required_parameters: &[Ty],
-        required_modes: &[crate::ast::ParameterMode],
+        required_parameters: &[crate::types::Parameter<Ty>],
     ) -> Result<Option<FunctionId>, FosterError> {
         let initial_substitutions = self.substitutions.clone();
         let initial_next_variable = self.next_variable;
@@ -1027,7 +1034,7 @@ impl Checker<'_> {
                     .iter()
                     .skip(1)
                     .map(|p| p.mode)
-                    .eq(required_modes.iter().copied())
+                    .eq(required_parameters.iter().map(|p| p.mode))
             {
                 continue;
             }
@@ -1043,7 +1050,9 @@ impl Checker<'_> {
                     .iter()
                     .cloned()
                     .zip(signature.parameters.iter().skip(1).cloned())
-                    .all(|(expected, actual)| self.unify(expected, actual.ty, *function).is_ok());
+                    .all(|(expected, actual)| {
+                        self.unify(expected.ty, actual.ty, *function).is_ok()
+                    });
             if compatible_parameters {
                 found.push((*function, self.substitutions.clone(), self.next_variable));
             }

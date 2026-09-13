@@ -80,6 +80,12 @@ pub struct Value(pub u32);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Block(pub u32);
 
+#[derive(Debug, Clone, Copy)]
+pub struct Capture {
+    pub value: Value,
+    pub ty: Type,
+}
+
 #[derive(Debug, Clone)]
 pub struct Function {
     pub name: String,
@@ -87,8 +93,7 @@ pub struct Function {
     /// SSA definitions supplied by the caller before the implicit entry edge.
     pub parameters: Vec<Value>,
     /// Closure environment values supplied before ordinary parameters.
-    pub captures: Vec<Value>,
-    pub capture_types: Vec<Type>,
+    pub captures: Vec<Capture>,
     /// Maybe-uninitialized storage tokens used while sealing conditional pattern bindings.
     pub entry_seeds: Vec<Value>,
     pub entry: Block,
@@ -112,10 +117,58 @@ impl Function {
 #[derive(Debug, Clone)]
 pub struct BlockData {
     pub parameters: Vec<Value>,
-    pub instructions: Vec<Instruction>,
-    pub instruction_spans: Vec<Range<usize>>,
+    pub instructions: Vec<SpannedInstruction>,
     pub terminator: Terminator,
     pub terminator_span: Range<usize>,
+}
+
+/// An instruction and its diagnostic location are inserted, moved, and removed together.
+#[derive(Debug, Clone)]
+pub struct SpannedInstruction {
+    pub instruction: Instruction,
+    pub span: Range<usize>,
+}
+
+impl Instruction {
+    pub fn with_span(self, span: Range<usize>) -> SpannedInstruction {
+        SpannedInstruction {
+            instruction: self,
+            span,
+        }
+    }
+}
+
+impl SpannedInstruction {
+    /// Checked adapter for construction buffers and legacy producers.
+    pub fn try_from_parts(
+        instructions: Vec<Instruction>,
+        spans: Vec<Range<usize>>,
+    ) -> Result<Vec<Self>, VerifyError> {
+        if instructions.len() != spans.len() {
+            return Err(VerifyError::new(
+                "instruction count does not match source span count",
+            ));
+        }
+        Ok(instructions
+            .into_iter()
+            .zip(spans)
+            .map(|(instruction, span)| instruction.with_span(span))
+            .collect())
+    }
+
+    pub(crate) fn from_parts(
+        instructions: Vec<Instruction>,
+        spans: Vec<Range<usize>>,
+    ) -> Vec<Self> {
+        Self::try_from_parts(instructions, spans).expect("instructions and source spans must align")
+    }
+}
+
+impl std::ops::Deref for SpannedInstruction {
+    type Target = Instruction;
+    fn deref(&self) -> &Self::Target {
+        &self.instruction
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -648,13 +701,6 @@ impl<'a> Verifier<'a> {
                 self.function.signature.parameters.len()
             )));
         }
-        if self.function.captures.len() != self.function.capture_types.len() {
-            return Err(VerifyError::new(format!(
-                "function capture count {} does not match capture type count {}",
-                self.function.captures.len(),
-                self.function.capture_types.len()
-            )));
-        }
         if self.function.storage_hints.len() != self.function.value_types.len() {
             return Err(VerifyError::new(
                 "storage hint count does not match typed value count",
@@ -664,7 +710,7 @@ impl<'a> Verifier<'a> {
             .function
             .captures
             .iter()
-            .zip(&self.function.capture_types)
+            .map(|capture| (&capture.value, &capture.ty))
         {
             self.define(*value, Definition::Parameter)?;
             self.require_type(*value, *ty, "function capture")?;
@@ -683,14 +729,6 @@ impl<'a> Verifier<'a> {
         }
         for (block_index, block) in self.function.blocks.iter().enumerate() {
             let block_id = Block(block_index as u32);
-            if block.instructions.len() != block.instruction_spans.len() {
-                return Err(VerifyError::new(format!(
-                    "block b{} has {} instructions but {} source spans",
-                    block_id.0,
-                    block.instructions.len(),
-                    block.instruction_spans.len()
-                )));
-            }
             for parameter in &block.parameters {
                 self.define(*parameter, Definition::BlockParameter(block_id))?;
             }
@@ -1133,12 +1171,7 @@ impl fmt::Display for Function {
             if index != 0 {
                 formatter.write_str(", ")?;
             }
-            write!(
-                formatter,
-                "capture v{}: {}",
-                capture.0,
-                self.value_type(*capture)
-            )?;
+            write!(formatter, "capture v{}: {}", capture.value.0, capture.ty)?;
         }
         for (index, seed) in self.entry_seeds.iter().enumerate() {
             if index != 0 || !self.captures.is_empty() {
@@ -1291,6 +1324,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn instruction_adapter_rejects_missing_and_extra_spans() {
+        let instruction = Instruction::Constant {
+            destination: Value(0),
+            value: Constant::Integer(42),
+        };
+        assert!(SpannedInstruction::try_from_parts(vec![instruction], vec![]).is_err());
+        assert!(SpannedInstruction::try_from_parts(vec![], vec![1..2]).is_err());
+    }
+
+    #[test]
     fn verifier_rejects_mistyped_entry_arguments() {
         let function = Function {
             name: "invalid".to_owned(),
@@ -1300,7 +1343,6 @@ mod tests {
             },
             parameters: vec![Value(0)],
             captures: vec![],
-            capture_types: vec![],
             entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: vec![Value(0)],
@@ -1308,8 +1350,7 @@ mod tests {
             storage_hints: vec![None; 2],
             blocks: vec![BlockData {
                 parameters: vec![Value(1)],
-                instructions: Vec::new(),
-                instruction_spans: Vec::new(),
+                instructions: SpannedInstruction::from_parts(Vec::new(), Vec::new()),
                 terminator: Terminator::Return(Value(1)),
                 terminator_span: 0..0,
             }],
@@ -1328,7 +1369,6 @@ mod tests {
             },
             parameters: Vec::new(),
             captures: vec![],
-            capture_types: vec![],
             entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: Vec::new(),
@@ -1337,18 +1377,19 @@ mod tests {
             blocks: vec![
                 BlockData {
                     parameters: Vec::new(),
-                    instructions: Vec::new(),
-                    instruction_spans: Vec::new(),
+                    instructions: SpannedInstruction::from_parts(Vec::new(), Vec::new()),
                     terminator: Terminator::Return(Value(0)),
                     terminator_span: 0..0,
                 },
                 BlockData {
                     parameters: Vec::new(),
-                    instructions: vec![Instruction::Constant {
-                        destination: Value(0),
-                        value: Constant::Integer(1),
-                    }],
-                    instruction_spans: std::iter::once(0..0).collect(),
+                    instructions: SpannedInstruction::from_parts(
+                        vec![Instruction::Constant {
+                            destination: Value(0),
+                            value: Constant::Integer(1),
+                        }],
+                        std::iter::once(0..0).collect(),
+                    ),
                     terminator: Terminator::Return(Value(0)),
                     terminator_span: 0..0,
                 },

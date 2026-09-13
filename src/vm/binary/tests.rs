@@ -27,7 +27,11 @@ fn alternatives_keep_tag_16_and_reject_noncanonical_encodings() {
         vec![T::Integer, alternatives],
     ] {
         let mut writer = Writer { bytes: Vec::new() };
-        writer.verification_type(&T::Alternatives(members)).unwrap();
+        writer.u8(16);
+        writer.u32(members.len()).unwrap();
+        for member in members {
+            writer.verification_type(&member).unwrap();
+        }
         assert!(
             Reader {
                 bytes: &writer.bytes,

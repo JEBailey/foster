@@ -1,5 +1,28 @@
 # Unicode data
 
+For a plain-language introduction and a runnable example, start with
+[Unicode text in Foster](../../docs/unicode.md). This page explains how maintainers
+rebuild the tables. Applications normally call `String` or `CodePoint` methods;
+they do not need to decode the tables or run the generator.
+
+The Unicode Character Database is a set of facts about text, not a font. Foster
+turns those facts into compact lookup tables: an algorithm supplies a code point
+and looks up its category, case mapping, or role in a grapheme boundary.
+
+| Input file | What it tells Foster |
+| --- | --- |
+| `UnicodeData.txt` | Broad character categories and simple case mappings |
+| `SpecialCasing.txt` | Case mappings that expand to several code points or need context |
+| `CaseFolding.txt` | Mappings for comparisons that ignore case |
+| `PropList.txt`, `DerivedCoreProperties.txt` | Additional properties such as whitespace and alphabetic status |
+| `GraphemeBreakProperty.txt` | Character roles used to find grapheme boundaries |
+| `emoji-data.txt` | Pictographic properties used by emoji joining rules |
+| `GraphemeBreakTest.txt` | Expected boundaries used to check the implementation |
+
+Pinning a version means using a known release of these facts, so results do not
+silently change when the operating system updates. Input hashes are fingerprints
+used to track exactly which files produced the tables.
+
 Foster pins classification, default casing, and extended grapheme segmentation to
 Unicode **17.0.0**. Both the VM
 and native backend execute `library/core/unicode.fos` using the generated Foster

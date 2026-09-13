@@ -7,6 +7,14 @@
 //! cursor for repeated sequential reads and `StringBuilder` for incremental output.
 //! Case conversion uses Unicode 17.0.0 without normalization or locale tailoring.
 //!
+//! A grapheme cluster is a text element that often appears as one character.
+//! A scalar is one numbered ingredient of that element; UTF-8 bytes store those
+//! ingredients. A letter plus a combining accent therefore counts as one cluster
+//! but two scalars. Use length for text elements and byte_length() for storage size.
+//! Normalization would make equivalent spellings use a common representation;
+//! casing does not perform that extra step. Locale tailoring would adapt rules
+//! to a language or region; these methods use Unicode's default rules instead.
+//!
 //! ```foster
 //! import core.string
 //! func main() -> Int {

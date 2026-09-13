@@ -284,10 +284,10 @@ mod mapping_tests {
         };
         let mut alternatives = V::alternatives(vec![record(0), record(1)]);
         mapping.ty(&mut alternatives);
-        assert_eq!(alternatives, V::Alternatives(vec![record(3), record(9)]));
+        assert_eq!(alternatives, V::alternatives(vec![record(3), record(9)]));
         let mut intersection = V::intersection(vec![record(0), record(1)]);
         mapping.ty(&mut intersection);
-        assert_eq!(intersection, V::Intersection(vec![record(3), record(9)]));
+        assert_eq!(intersection, V::intersection(vec![record(3), record(9)]));
         let mut alias = V::AliasArguments {
             alias: id(0),
             arguments: vec![record(0), record(1), record(0)],
@@ -332,16 +332,26 @@ impl Mapping {
                 self.ty(result);
             }
             V::Alternatives(types) => {
-                for t in types.iter_mut() {
-                    self.ty(t);
-                }
-                *ty = V::alternatives(std::mem::take(types));
+                let mapped = types
+                    .iter()
+                    .cloned()
+                    .map(|mut member| {
+                        self.ty(&mut member);
+                        member
+                    })
+                    .collect();
+                *ty = V::alternatives(mapped);
             }
             V::Intersection(types) => {
-                for t in types.iter_mut() {
-                    self.ty(t);
-                }
-                *ty = V::intersection(std::mem::take(types));
+                let mapped = types
+                    .iter()
+                    .cloned()
+                    .map(|mut member| {
+                        self.ty(&mut member);
+                        member
+                    })
+                    .collect();
+                *ty = V::intersection(mapped);
             }
             _ => {}
         }

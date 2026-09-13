@@ -169,7 +169,7 @@ pub(super) fn reachable_instances(
             }
         }
         for instruction in shared.blocks.iter().flat_map(|block| &block.instructions) {
-            let target = match instruction {
+            let target = match &instruction.instruction {
                 ir::Instruction::Call {
                     function,
                     specialization,
@@ -329,9 +329,17 @@ fn collect_nominal_types(
             }
             collect_nominal_types(result, output);
         }
-        ExecutableType::Alternatives(values)
-        | ExecutableType::Intersection(values)
-        | ExecutableType::AliasArguments {
+        ExecutableType::Alternatives(values) => {
+            for value in values {
+                collect_nominal_types(value, output);
+            }
+        }
+        ExecutableType::Intersection(values) => {
+            for value in values {
+                collect_nominal_types(value, output);
+            }
+        }
+        ExecutableType::AliasArguments {
             arguments: values, ..
         } => {
             for value in values {

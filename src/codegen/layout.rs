@@ -190,9 +190,17 @@ impl Registry {
                 self.instantiate_type(result)?;
                 self.instantiate_builtin(ty);
             }
-            ExecutableType::Alternatives(members)
-            | ExecutableType::Intersection(members)
-            | ExecutableType::AliasArguments {
+            ExecutableType::Alternatives(members) => {
+                for member in members {
+                    self.instantiate_type(member)?;
+                }
+            }
+            ExecutableType::Intersection(members) => {
+                for member in members {
+                    self.instantiate_type(member)?;
+                }
+            }
+            ExecutableType::AliasArguments {
                 arguments: members, ..
             } => {
                 for member in members {
@@ -760,9 +768,17 @@ fn visit_runtime_types(ty: &ExecutableType, registry: &mut Registry) {
                 .for_each(|ty| visit_runtime_types(&ty.ty, registry));
             visit_runtime_types(result, registry);
         }
-        ExecutableType::Alternatives(types)
-        | ExecutableType::Intersection(types)
-        | ExecutableType::AliasArguments {
+        ExecutableType::Alternatives(types) => {
+            types
+                .iter()
+                .for_each(|ty| visit_runtime_types(ty, registry));
+        }
+        ExecutableType::Intersection(types) => {
+            types
+                .iter()
+                .for_each(|ty| visit_runtime_types(ty, registry));
+        }
+        ExecutableType::AliasArguments {
             arguments: types, ..
         } => {
             types

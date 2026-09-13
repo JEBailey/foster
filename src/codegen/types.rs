@@ -148,11 +148,11 @@ pub enum ExecutableType {
     /// Possible types of a value at a control-flow join. Every found alternative must satisfy
     /// an expected type; an expected alternatives set accepts any matching member.
     /// Canonical sets are sorted, unique, flattened, and contain at least two members.
-    Alternatives(Vec<ExecutableType>),
+    Alternatives(AlternativeTypes),
     /// Simultaneous structural requirements retained by native conversion. These unordered
     /// members are metadata behind an opaque representation, not possible runtime alternatives.
     /// Bytecode conversion erases this view; it cannot appear in portable bytecode metadata.
-    Intersection(Vec<ExecutableType>),
+    Intersection(IntersectionTypes),
     /// Positional generic arguments retained for an unresolved alias by native conversion.
     /// These are not the alias's target or alternatives. Order and repeated arguments matter.
     /// Bytecode conversion erases this metadata; native layout remains opaque.
@@ -161,6 +161,68 @@ pub enum ExecutableType {
         arguments: Vec<ExecutableType>,
     },
 }
+
+/// Canonical control-flow possibilities. Only checked ExecutableType constructors create these.
+///
+/// ```compile_fail
+/// use foster::codegen::types::{AlternativeTypes, ExecutableType};
+/// let invalid = AlternativeTypes(vec![ExecutableType::Integer]);
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct AlternativeTypes(Vec<ExecutableType>);
+
+/// Canonical simultaneous requirements, distinct from control-flow alternatives.
+///
+/// ```compile_fail
+/// use foster::codegen::types::{IntersectionTypes, ExecutableType};
+/// let unchecked = IntersectionTypes(vec![ExecutableType::Integer]);
+/// ```
+///
+/// ```compile_fail
+/// use foster::codegen::types::ExecutableType;
+/// let ExecutableType::Intersection(mut members) =
+///     ExecutableType::intersection(vec![ExecutableType::Integer]) else { unreachable!() };
+/// members[0] = ExecutableType::Bool;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct IntersectionTypes(Vec<ExecutableType>);
+
+// Read-only views and consuming iteration cannot invalidate either set's canonical ordering.
+macro_rules! type_set_access {
+    ($set:ident) => {
+        impl std::ops::Deref for $set {
+            type Target = [ExecutableType];
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+        impl<'a> IntoIterator for &'a $set {
+            type Item = &'a ExecutableType;
+            type IntoIter = std::slice::Iter<'a, ExecutableType>;
+            fn into_iter(self) -> Self::IntoIter {
+                self.0.iter()
+            }
+        }
+        impl IntoIterator for $set {
+            type Item = ExecutableType;
+            type IntoIter = std::vec::IntoIter<ExecutableType>;
+            fn into_iter(self) -> Self::IntoIter {
+                self.0.into_iter()
+            }
+        }
+    };
+}
+type_set_access!(AlternativeTypes);
+type_set_access!(IntersectionTypes);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidAlternatives;
+impl std::fmt::Display for InvalidAlternatives {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("non-canonical control-flow alternatives")
+    }
+}
+impl std::error::Error for InvalidAlternatives {}
 
 impl ExecutableType {
     pub(crate) fn canonical_alternatives(members: &[Self]) -> bool {
@@ -171,17 +233,21 @@ impl ExecutableType {
                 .all(|member| !matches!(member, Self::Unknown | Self::Alternatives(_)))
     }
 
+    /// Validate wire-order alternatives without repairing malformed serialized metadata.
+    pub fn try_alternatives(members: Vec<Self>) -> Result<Self, InvalidAlternatives> {
+        if !Self::canonical_alternatives(&members) {
+            return Err(InvalidAlternatives);
+        }
+        Ok(Self::Alternatives(AlternativeTypes(members)))
+    }
+
     /// Canonicalize control-flow alternatives, with Unknown as the top type.
     pub fn alternatives(members: Vec<Self>) -> Self {
         let mut flattened = Vec::new();
         for member in members {
             match member {
                 Self::Unknown => return Self::Unknown,
-                Self::Alternatives(nested) => match Self::alternatives(nested) {
-                    Self::Unknown => return Self::Unknown,
-                    Self::Alternatives(nested) => flattened.extend(nested),
-                    other => flattened.push(other),
-                },
+                Self::Alternatives(nested) => flattened.extend(nested),
                 other => flattened.push(other),
             }
         }
@@ -190,7 +256,7 @@ impl ExecutableType {
         match flattened.len() {
             0 => Self::Unknown,
             1 => flattened.pop().unwrap(),
-            _ => Self::Alternatives(flattened),
+            _ => Self::Alternatives(AlternativeTypes(flattened)),
         }
     }
 
@@ -200,9 +266,6 @@ impl ExecutableType {
         for member in members {
             match member {
                 Self::Intersection(nested) => {
-                    let Self::Intersection(nested) = Self::intersection(nested) else {
-                        unreachable!()
-                    };
                     flattened.extend(nested);
                 }
                 other => flattened.push(other),
@@ -210,7 +273,7 @@ impl ExecutableType {
         }
         flattened.sort();
         flattened.dedup();
-        Self::Intersection(flattened)
+        Self::Intersection(IntersectionTypes(flattened))
     }
     /// Collect generic bindings from an operand's retained shape. This does not check
     /// conformance: callers establish compatible shapes separately, and the first binding wins.
@@ -309,9 +372,13 @@ impl ExecutableType {
             }
             Self::Record { arguments, .. }
             | Self::Variant { arguments, .. }
-            | Self::Alternatives(arguments)
-            | Self::Intersection(arguments)
             | Self::AliasArguments { arguments, .. } => {
+                1 + arguments.iter().map(Self::depth).max().unwrap_or(0)
+            }
+            Self::Alternatives(arguments) => {
+                1 + arguments.iter().map(Self::depth).max().unwrap_or(0)
+            }
+            Self::Intersection(arguments) => {
                 1 + arguments.iter().map(Self::depth).max().unwrap_or(0)
             }
             _ => 1,
@@ -330,11 +397,11 @@ impl ExecutableType {
             } => parameters.iter().any(|p| p.ty.contains_generic()) || result.contains_generic(),
             Self::Record { arguments, .. }
             | Self::Variant { arguments, .. }
-            | Self::Alternatives(arguments)
-            | Self::Intersection(arguments)
             | Self::AliasArguments { arguments, .. } => {
                 arguments.iter().any(Self::contains_generic)
             }
+            Self::Alternatives(arguments) => arguments.iter().any(Self::contains_generic),
+            Self::Intersection(arguments) => arguments.iter().any(Self::contains_generic),
             _ => false,
         }
     }
@@ -422,8 +489,14 @@ mod tests {
         let alternatives = T::alternatives(members.clone());
         let intersection = T::intersection(members);
         assert_ne!(alternatives, intersection);
-        assert_eq!(alternatives, T::Alternatives(vec![T::Bool, T::Integer]));
-        assert_eq!(intersection, T::Intersection(vec![T::Bool, T::Integer]));
+        assert_eq!(
+            alternatives,
+            T::Alternatives(AlternativeTypes(vec![T::Bool, T::Integer]))
+        );
+        assert_eq!(
+            intersection,
+            T::Intersection(IntersectionTypes(vec![T::Bool, T::Integer]))
+        );
         assert_eq!(
             T::intersection(vec![T::Integer, intersection.clone()]),
             intersection
@@ -435,11 +508,11 @@ mod tests {
         assert_eq!(T::alternatives(vec![T::Integer, T::Unknown]), T::Unknown);
         assert_eq!(
             T::intersection(vec![T::Unknown]),
-            T::Intersection(vec![T::Unknown])
+            T::Intersection(IntersectionTypes(vec![T::Unknown]))
         );
         assert_eq!(
             T::intersection(vec![T::Integer]),
-            T::Intersection(vec![T::Integer])
+            T::Intersection(IntersectionTypes(vec![T::Integer]))
         );
     }
 
@@ -455,11 +528,11 @@ mod tests {
         let substitutions = HashMap::from([("A".into(), T::Integer), ("Z".into(), T::Bool)]);
         assert_eq!(
             T::alternatives(arguments.clone()).substitute(&substitutions),
-            T::Alternatives(vec![T::Bool, T::Integer])
+            T::Alternatives(AlternativeTypes(vec![T::Bool, T::Integer]))
         );
         assert_eq!(
             T::intersection(arguments.clone()).substitute(&substitutions),
-            T::Intersection(vec![T::Bool, T::Integer])
+            T::Intersection(IntersectionTypes(vec![T::Bool, T::Integer]))
         );
         let metadata = T::AliasArguments { alias, arguments };
         assert!(metadata.contains_generic());

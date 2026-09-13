@@ -3,6 +3,23 @@
 //! This module implements the tables and algorithms used by core.code_point and
 //! core.string. Most applications should use those receiver APIs. Generated
 //! Unicode 17.0.0 data is maintained separately in core.unicode.data.
+//!
+//! Unicode is a shared numbering system for text. A code point is one number in that
+//! system; a Unicode scalar is a code point that is not reserved for UTF-16 surrogates.
+//! A byte is a storage unit: UTF-8 uses one to four bytes for a scalar. A grapheme
+//! cluster groups scalars into a text element, such as a letter and its accent.
+//! Those counts are different: an e followed by a combining acute accent uses two
+//! scalars and three UTF-8 bytes, but String counts it as one grapheme cluster.
+//!
+//! Classification asks questions such as whether a code point is a letter or digit.
+//! Case mapping changes uppercase and lowercase forms. Case folding prepares text
+//! for comparisons that ignore case. Segmentation finds boundaries between clusters.
+//! None of these operations draws text or chooses fonts.
+//!
+//! Use String.length and String.slice for grapheme-based text operations. Use
+//! String.code_points() or StringCursor when you need individual scalars, and
+//! String.byte_length() for UTF-8 storage size. Numeric IDs in this module serve
+//! the library algorithms; CodePoint offers named categories and classification methods.
 
 import core.bytes
 import core.list

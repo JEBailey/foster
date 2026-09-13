@@ -1,6 +1,37 @@
 use foster::vm::Value;
 
 #[test]
+fn composition_rejects_conflicting_modes_for_the_same_parameter_types() {
+    for (declaration, value) in [
+        (
+            "type Combined = & Borrowing & Consuming & {}",
+            "Combined {}",
+        ),
+        (
+            "enum Combined = Empty & Borrowing & Consuming",
+            "Combined.Empty",
+        ),
+    ] {
+        let source = format!(
+            r#"
+type Borrowing = {{ pub func accept(self, value: String) -> Int }}
+type Consuming = {{ pub func accept(self, value: String) -> Int [consume value] }}
+{declaration}
+impl Combined {{ func accept(self, value: String) -> Int {{ 42 }} }}
+func main() -> Int {{ {value}.accept("test") }}
+"#
+        );
+        let error = foster::compile(&source).unwrap_err();
+        assert!(
+            error
+                .message
+                .contains("incompatible definitions of method `accept`"),
+            "{error}"
+        );
+    }
+}
+
+#[test]
 fn impl_only_methods_do_not_become_requirements() {
     let source = r#"
 type Original = {

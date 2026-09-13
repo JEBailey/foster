@@ -239,7 +239,26 @@ func append_hex(output: StringBuilder, value: Int, width: Int) -> () {
     }
 }
 
+/// Explains each generated table before its storage format.
+func table_documentation(name: String) -> String {
+    branch name {
+        "categories" -> "/// Classifies code points into broad groups such as letters, numbers, punctuation, and marks.\n/// The stored numbers identify Foster's GeneralCategory cases. Use CodePoint.category() for named results.\n///\n"
+        "properties" -> "/// Records additional yes/no facts, such as whether a code point is alphabetic or whitespace.\n/// Several facts share one numeric bit mask. Prefer CodePoint classification methods to decoding these bits.\n///\n"
+        "lower" -> "/// Maps code points to lowercase text. A full mapping can produce more than one code point.\n/// String.lower() applies these mappings and the contextual Greek final-sigma rule.\n///\n"
+        "upper" -> "/// Maps code points to uppercase text. For example, the full uppercase mapping of sharp s is SS.\n/// Use String.upper() to convert text; this table is not a list of uppercase characters.\n///\n"
+        "fold" -> "/// Maps case variants to a common form for comparisons that ignore case.\n/// Use String.case_fold(); folding is not display capitalization and does not normalize text.\n///\n"
+        "simple_lower" -> "/// Maps one code point to one lowercase code point, without expanding it into a string.\n/// Use CodePoint.simple_lower(). Omitted entries keep their original value.\n///\n"
+        "simple_upper" -> "/// Maps one code point to one uppercase code point, without expanding it into a string.\n/// Use CodePoint.simple_upper(); full String.upper() can give a different result when expansion is needed.\n///\n"
+        "simple_title" -> "/// Maps one code point to its single-code-point titlecase form.\n/// Use CodePoint.simple_title(). This does not capitalize every word in a sentence.\n///\n"
+        "grapheme_break" -> "/// Groups code points by their role in deciding where a text element ends.\n/// Foster combines these properties with boundary rules so accents and supported emoji sequences stay together.\n///\n"
+        "extended_pictographic" -> "/// Marks code points used by the emoji joining rules, including some reserved positions.\n/// This is an input to grapheme segmentation, not a complete test of whether text is an emoji.\n///\n"
+        "indic_conjunct_break" -> "/// Identifies consonants, linking characters, and extending marks used in Indic conjunct boundary rules.\n/// These rules keep certain connected letter sequences together when Foster splits text into grapheme clusters.\n///\n"
+        _ -> ""
+    }
+}
+
 func append_ranges(output: StringBuilder, name: String, values: List<Int>) -> () {
+    output.append(table_documentation(name))
     output.append("/// Returns " + name + " as start(6), end(6), value(2) hex records.\npub func " + name + "() -> String { \"")
     let start = 0
     let end = 1
@@ -279,6 +298,7 @@ func sort(table: List<Mapping>) -> List<Mapping> [consume table] {
 }
 
 func append_map(output: StringBuilder, name: String, input: List<Mapping>, simple: Bool) -> () {
+    output.append(table_documentation(name))
     let table = sort(input.slice(0, input.length))
     output.append(branch {
         simple -> "/// Returns " + name + " source(6), target(6) hex records.\n"
@@ -370,7 +390,7 @@ func grapheme_values(text: String, kind: Int) -> List<Int> [consume text] {
 
 func tables(db: Database, hashes: String, root: String) -> String {
     let output = StringBuilder.empty()
-    output.append("//! Generated Unicode 17.0.0 lookup tables; regenerate with tools/unicode/src/generate.fos.\n// Unicode 17.0.0; Unicode License V3: tools/unicode/LICENSE.txt.\n// Fixed-width ASCII hexadecimal records allow indexed binary searches in Foster.\n")
+    output.append("//! Data tables that tell Foster about Unicode 17.0.0 text.\n//!\n//! Unicode gives text elements numeric code points. These tables record facts about those\n//! numbers: whether they are letters, how their case changes, and where text can be split.\n//! They are lookup data, not fonts or a collection of text to display.\n//!\n//! Most programs should use core.string and core.code_point. This module returns packed\n//! strings for the core.unicode algorithms; the hexadecimal strings are not user text.\n//! Public visibility lets those modules share the tables, but their numeric IDs and packing\n//! are internal details. A missing case mapping leaves the input unchanged.\n//!\n//! A grapheme cluster is a text element that often looks like one character, such as a\n//! letter plus its accent. It can contain several code points. Foster uses these tables\n//! to keep those elements together when counting or slicing String values.\n//!\n//! Tables are generated from vendored Unicode files. Regenerate with tools/unicode;\n//! edit its generator rather than editing table data. See tools/unicode/README.md for maintenance.\n// Unicode 17.0.0; Unicode License V3: tools/unicode/LICENSE.txt.\n// Fixed-width ASCII hexadecimal records allow indexed binary searches in Foster.\n")
     output.append(hashes)
     append_ranges(output, "categories", db.categories)
     append_ranges(output, "properties", db.properties)
