@@ -17,7 +17,7 @@ impl Checker<'_> {
         let function = &self.hir.functions[function_id];
         let signature = self.functions[&function_id].clone();
         for (local, ty) in function.parameters.iter().zip(&signature.parameters) {
-            let group = reference_group(ty).unwrap_or_else(|| {
+            let group = reference_group(&ty.ty).unwrap_or_else(|| {
                 if function.receiver == Some(local.local) {
                     "self".to_owned()
                 } else {
@@ -25,7 +25,7 @@ impl Checker<'_> {
                 }
             });
             self.local_groups.insert(local.local, group);
-            let local_ty = match ty {
+            let local_ty = match &ty.ty {
                 Ty::Reference(_, value) => (**value).clone(),
                 ty => ty.clone(),
             };
@@ -631,7 +631,6 @@ impl Checker<'_> {
                 let signature = &self.functions[&closure];
                 Ty::Callable {
                     parameters: signature.parameters.clone(),
-                    parameter_modes: signature.parameter_modes.clone(),
                     result: Box::new(signature.result.clone()),
                     erased: false,
                     effects: callable_effects(self.hir, closure),
@@ -701,12 +700,16 @@ impl Checker<'_> {
         for (callee, arguments) in calls {
             let callee = self.infer_expression(closure, callee)?;
             let Ty::Callable {
-                parameter_modes, ..
+                parameters: callable_parameters,
+                ..
             } = self.resolved(callee)
             else {
                 continue;
             };
-            for (argument, mode) in arguments.iter().zip(parameter_modes) {
+            for (argument, mode) in arguments
+                .iter()
+                .zip(callable_parameters.iter().map(|p| p.mode))
+            {
                 let hir::Expr::Name(ResolvedName::Local(local)) = self.hir.expressions[*argument]
                 else {
                     continue;
@@ -724,7 +727,8 @@ impl Checker<'_> {
             self.functions
                 .get_mut(&closure)
                 .expect("partial closure has a signature")
-                .parameter_modes[index] = crate::ast::ParameterMode::Consume;
+                .parameters[index]
+                .mode = crate::ast::ParameterMode::Consume;
         }
         Ok(())
     }
@@ -848,9 +852,8 @@ impl Checker<'_> {
                     parameters: signature
                         .parameters
                         .into_iter()
-                        .map(|ty| self.instantiate(ty, &mut generics))
+                        .map(|parameter| parameter.map(|ty| self.instantiate(ty, &mut generics)))
                         .collect(),
-                    parameter_modes: signature.parameter_modes.clone(),
                     result: Box::new(self.instantiate(signature.result, &mut generics)),
                     erased: false,
                     effects: callable_effects(self.hir, function),
@@ -916,7 +919,6 @@ impl Checker<'_> {
             ),
             Ty::Callable {
                 parameters,
-                parameter_modes,
                 result,
                 erased,
                 effects,
@@ -924,9 +926,8 @@ impl Checker<'_> {
             } => Ty::Callable {
                 parameters: parameters
                     .into_iter()
-                    .map(|ty| self.instantiate(ty, generics))
+                    .map(|parameter| parameter.map(|ty| self.instantiate(ty, generics)))
                     .collect(),
-                parameter_modes,
                 result: Box::new(self.instantiate(*result, generics)),
                 erased,
                 effects,

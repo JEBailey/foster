@@ -15,7 +15,7 @@ pub(super) fn define(
     let bytes = objects
         .layouts
         .logical
-        .builtin(&VerificationType::Bytes)
+        .builtin(&ExecutableType::Bytes)
         .ok_or_else(|| native_error("String requires Bytes layout"))?;
     let (data_offset, length_offset) = native_bytes_layout(bytes, objects)?;
     if field.value.pointee != Some(bytes) {

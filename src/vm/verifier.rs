@@ -6,7 +6,8 @@ use crate::hir::{CaptureMode, FunctionId, VariantId};
 use crate::intrinsics::{IntrinsicArgumentMode, IntrinsicType};
 use crate::types::NominalTypeId;
 
-use super::{BytecodeFunction, Constant, Instruction, Program, Register, VerificationType};
+use super::{BytecodeFunction, Constant, Instruction, Program, Register};
+use crate::codegen::types::ExecutableType;
 
 pub fn verify(program: &Program) -> Result<(), FosterError> {
     verify_program_metadata(program)?;
@@ -81,9 +82,9 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
                     return Err(invalid());
                 }
                 let expected = match case {
-                    "Ok" => Some(VerificationType::Generic(variant.parameters[0].clone())),
-                    "Error" => Some(VerificationType::Generic(variant.parameters[1].clone())),
-                    "Failed" => Some(VerificationType::Record {
+                    "Ok" => Some(ExecutableType::Generic(variant.parameters[0].clone())),
+                    "Error" => Some(ExecutableType::Generic(variant.parameters[1].clone())),
+                    "Failed" => Some(ExecutableType::Record {
                         record: program.string_record.ok_or_else(invalid)?,
                         arguments: vec![],
                     }),
@@ -153,7 +154,7 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
             let result_valid = if *slot == crate::types::COPY_SLOT {
                 target.parameter_types.first() == Some(&target.result_type)
             } else {
-                target.result_type == VerificationType::Unit
+                target.result_type == ExecutableType::Unit
             };
             if target.parameters != 1
                 || target.captures != 0
@@ -184,7 +185,7 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
 
 fn verify_metadata_type(
     program: &Program,
-    ty: &VerificationType,
+    ty: &ExecutableType,
     depth: usize,
 ) -> Result<(), FosterError> {
     if depth >= 64 {
@@ -194,26 +195,17 @@ fn verify_metadata_type(
     }
     let nested = |ty| verify_metadata_type(program, ty, depth + 1);
     match ty {
-        VerificationType::List(value)
-        | VerificationType::Reference(value)
-        | VerificationType::Remote(value)
-        | VerificationType::Future(value) => nested(value),
-        VerificationType::Function {
-            parameters,
-            parameter_modes,
-            result,
-        } => {
-            if parameters.len() != parameter_modes.len() {
-                return Err(FosterError::runtime(
-                    "bytecode aggregate metadata has an invalid callable type",
-                ));
-            }
+        ExecutableType::List(value)
+        | ExecutableType::Reference(value)
+        | ExecutableType::Remote(value)
+        | ExecutableType::Future(value) => nested(value),
+        ExecutableType::Function { parameters, result } => {
             for parameter in parameters {
-                nested(parameter)?;
+                nested(&parameter.ty)?;
             }
             nested(result)
         }
-        VerificationType::Union(members) => {
+        ExecutableType::Union(members) => {
             if members.len() < 2 || members.windows(2).any(|pair| pair[0] >= pair[1]) {
                 return Err(FosterError::runtime(
                     "bytecode aggregate metadata has a non-canonical union type",
@@ -224,7 +216,7 @@ fn verify_metadata_type(
             }
             Ok(())
         }
-        VerificationType::Record { record, arguments } => {
+        ExecutableType::Record { record, arguments } => {
             if !program.records.contains_key(record) {
                 return Err(FosterError::runtime(
                     "bytecode aggregate metadata references a missing record",
@@ -235,7 +227,7 @@ fn verify_metadata_type(
             }
             Ok(())
         }
-        VerificationType::Variant { variant, arguments } => {
+        ExecutableType::Variant { variant, arguments } => {
             if !program
                 .variants
                 .values()
@@ -256,17 +248,8 @@ fn verify_metadata_type(
 
 fn verify_specialization(
     program: &Program,
-    function: &BytecodeFunction,
-    instruction: usize,
-    specialization: &crate::vm::Specialization,
+    specialization: &crate::codegen::types::Specialization,
 ) -> Result<(), FosterError> {
-    if specialization.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
-        return invalid_instruction(
-            function,
-            instruction,
-            "has unsorted or duplicate generic substitutions",
-        );
-    }
     for (_, ty) in specialization {
         verify_metadata_type(program, ty, 0)?;
     }
@@ -324,7 +307,7 @@ fn verify_function_structure(
     if function.returns_reference
         && !matches!(
             function.result_type,
-            VerificationType::Reference(_) | VerificationType::Unknown
+            ExecutableType::Reference(_) | ExecutableType::Unknown
         )
     {
         return Err(FosterError::runtime(format!(
@@ -366,7 +349,7 @@ fn verify_function_structure(
                 arguments,
                 ..
             } => {
-                verify_specialization(program, function, index, specialization)?;
+                verify_specialization(program, specialization)?;
                 let target = target_function(program, function, index, *target)?;
                 if target.intrinsic_stub
                     || target.captures != 0
@@ -385,7 +368,7 @@ fn verify_function_structure(
                 arguments,
                 ..
             } => {
-                verify_specialization(program, function, index, specialization)?;
+                verify_specialization(program, specialization)?;
                 let target = target_function(program, function, index, *target)?;
                 if target.intrinsic_stub
                     || target.captures != 0
@@ -422,7 +405,7 @@ fn verify_function_structure(
                 arguments,
                 ..
             } => {
-                verify_specialization(program, function, index, specialization)?;
+                verify_specialization(program, specialization)?;
                 let target = target_function(program, function, index, *target)?;
                 if target.intrinsic_stub
                     || captures.len() != usize::from(target.captures)
@@ -441,7 +424,7 @@ fn verify_function_structure(
                 captures,
                 ..
             } => {
-                verify_specialization(program, function, index, specialization)?;
+                verify_specialization(program, specialization)?;
                 let target = target_function(program, function, index, *target)?;
                 if target.intrinsic_stub || captures.len() != usize::from(target.captures) {
                     return invalid_instruction(
@@ -533,7 +516,7 @@ fn verify_function_structure(
 fn verify_type(
     program: &Program,
     function: &BytecodeFunction,
-    ty: &VerificationType,
+    ty: &ExecutableType,
     depth: usize,
 ) -> Result<(), FosterError> {
     if depth >= 64 {
@@ -543,27 +526,17 @@ fn verify_type(
         )));
     }
     match ty {
-        VerificationType::List(value)
-        | VerificationType::Reference(value)
-        | VerificationType::Remote(value)
-        | VerificationType::Future(value) => verify_type(program, function, value, depth + 1),
-        VerificationType::Function {
-            parameters,
-            parameter_modes,
-            result,
-        } => {
-            if parameters.len() != parameter_modes.len() {
-                return Err(FosterError::runtime(format!(
-                    "bytecode function `{}` has an invalid callable verification type",
-                    function.name
-                )));
-            }
+        ExecutableType::List(value)
+        | ExecutableType::Reference(value)
+        | ExecutableType::Remote(value)
+        | ExecutableType::Future(value) => verify_type(program, function, value, depth + 1),
+        ExecutableType::Function { parameters, result } => {
             for parameter in parameters {
-                verify_type(program, function, parameter, depth + 1)?;
+                verify_type(program, function, &parameter.ty, depth + 1)?;
             }
             verify_type(program, function, result, depth + 1)
         }
-        VerificationType::Union(members) => {
+        ExecutableType::Union(members) => {
             if members.len() < 2 {
                 return Err(FosterError::runtime(format!(
                     "bytecode function `{}` has a non-canonical union verification type",
@@ -581,7 +554,7 @@ fn verify_type(
             }
             Ok(())
         }
-        VerificationType::Record { record, arguments } => {
+        ExecutableType::Record { record, arguments } => {
             if !program.records.contains_key(record) {
                 return Err(FosterError::runtime(format!(
                     "bytecode function `{}` has a verification type for a missing record",
@@ -593,7 +566,7 @@ fn verify_type(
             }
             Ok(())
         }
-        VerificationType::Variant { variant, arguments } => {
+        ExecutableType::Variant { variant, arguments } => {
             if !program
                 .variants
                 .values()
@@ -615,7 +588,7 @@ fn verify_type(
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct FlowState {
-    registers: Vec<Option<VerificationType>>,
+    registers: Vec<Option<ExecutableType>>,
     pending_pattern: Option<PendingPattern>,
     excluded_variants: HashMap<Register, HashSet<VariantId>>,
 }
@@ -639,7 +612,7 @@ fn verify_function_flow(
 pub(crate) fn type_states(
     program: &Program,
     function: &BytecodeFunction,
-) -> Result<Vec<Option<Vec<Option<VerificationType>>>>, FosterError> {
+) -> Result<Vec<Option<Vec<Option<ExecutableType>>>>, FosterError> {
     analyze_function_flow(program, function).map(|states| {
         states
             .into_iter()
@@ -736,7 +709,7 @@ fn transfer(
         } => {
             let ty = if matches!(
                 state.registers[usize::from(destination.0)],
-                Some(VerificationType::Reference(_))
+                Some(ExecutableType::Reference(_))
             ) {
                 read_type(function, index, &state, *source)?
             } else {
@@ -779,7 +752,7 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::List(Box::new(element)),
+                ExecutableType::List(Box::new(element)),
             )?;
         }
         Instruction::Index {
@@ -792,16 +765,16 @@ fn transfer(
                 function,
                 index,
                 &subscript,
-                &VerificationType::Integer,
+                &ExecutableType::Integer,
                 "index",
             )?;
             let object_type = read_type(function, index, &state, *object)?;
             let result = match object_type {
-                VerificationType::List(element) => *element,
-                VerificationType::Bytes | VerificationType::ByteBuffer => VerificationType::Byte,
-                VerificationType::Unknown => VerificationType::Unknown,
-                VerificationType::Record { .. } if is_foster_byte_buffer(program, &object_type) => {
-                    VerificationType::Byte
+                ExecutableType::List(element) => *element,
+                ExecutableType::Bytes | ExecutableType::ByteBuffer => ExecutableType::Byte,
+                ExecutableType::Unknown => ExecutableType::Unknown,
+                ExecutableType::Record { .. } if is_foster_byte_buffer(program, &object_type) => {
+                    ExecutableType::Byte
                 }
                 found => return type_error(function, index, "indexable value", &found),
             };
@@ -838,7 +811,7 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Variant {
+                ExecutableType::Variant {
                     variant: program.variants[variant].parent,
                     arguments: Vec::new(),
                 },
@@ -852,9 +825,9 @@ fn transfer(
         } => {
             read_type(function, index, &state, *object)?;
             let ty = if *by_reference {
-                VerificationType::Reference(Box::new(VerificationType::Unknown))
+                ExecutableType::Reference(Box::new(ExecutableType::Unknown))
             } else {
-                VerificationType::Unknown
+                ExecutableType::Unknown
             };
             write_type(function, index, &mut state, *destination, ty)?;
         }
@@ -862,11 +835,11 @@ fn transfer(
             let object_type = read_type(function, index, &state, *object)?;
             if !matches!(
                 object_type,
-                VerificationType::Record { .. }
-                    | VerificationType::List(_)
-                    | VerificationType::Bytes
-                    | VerificationType::ByteBuffer
-                    | VerificationType::Unknown
+                ExecutableType::Record { .. }
+                    | ExecutableType::List(_)
+                    | ExecutableType::Bytes
+                    | ExecutableType::ByteBuffer
+                    | ExecutableType::Unknown
             ) {
                 return type_error(function, index, "record", &object_type);
             }
@@ -882,32 +855,32 @@ fn transfer(
                 function,
                 index,
                 &subscript,
-                &VerificationType::Integer,
+                &ExecutableType::Integer,
                 "index",
             )?;
             let source_type = read_type(function, index, &state, *source)?;
             let object_type = read_type(function, index, &state, *object)?;
             match object_type {
-                VerificationType::List(element) => {
+                ExecutableType::List(element) => {
                     require_type(function, index, &source_type, &element, "list element")?
                 }
-                VerificationType::ByteBuffer => require_type(
+                ExecutableType::ByteBuffer => require_type(
                     function,
                     index,
                     &source_type,
-                    &VerificationType::Byte,
+                    &ExecutableType::Byte,
                     "byte-buffer element",
                 )?,
-                VerificationType::Record { .. } if is_foster_byte_buffer(program, &object_type) => {
+                ExecutableType::Record { .. } if is_foster_byte_buffer(program, &object_type) => {
                     require_type(
                         function,
                         index,
                         &source_type,
-                        &VerificationType::Byte,
+                        &ExecutableType::Byte,
                         "byte-buffer element",
                     )?
                 }
-                VerificationType::Unknown => {}
+                ExecutableType::Unknown => {}
                 found => return type_error(function, index, "mutable indexed value", &found),
             }
         }
@@ -922,7 +895,7 @@ fn transfer(
                 function,
                 index,
                 &subscript,
-                &VerificationType::Integer,
+                &ExecutableType::Integer,
                 "index",
             )?;
             let object_type = read_type(function, index, &state, *object)?;
@@ -944,7 +917,7 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Reference(Box::new(pointee_type.clone())),
+                ExecutableType::Reference(Box::new(pointee_type.clone())),
             )?;
         }
         Instruction::MakeWholeReference {
@@ -954,7 +927,7 @@ fn transfer(
         } => {
             let value = read_type(function, index, &state, *object)?;
             let inferred = match value {
-                VerificationType::Reference(pointee) => *pointee,
+                ExecutableType::Reference(pointee) => *pointee,
                 value => value,
             };
             require_type(
@@ -969,7 +942,7 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Reference(Box::new(pointee_type.clone())),
+                ExecutableType::Reference(Box::new(pointee_type.clone())),
             )?;
         }
         Instruction::MakeFieldReference {
@@ -997,7 +970,7 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Reference(Box::new(pointee_type.clone())),
+                ExecutableType::Reference(Box::new(pointee_type.clone())),
             )?;
         }
         Instruction::MoveOut {
@@ -1007,7 +980,7 @@ fn transfer(
         } => {
             let ty = if *by_reference {
                 match bound_type(function, index, &state, *source)? {
-                    VerificationType::Reference(pointee) => *pointee,
+                    ExecutableType::Reference(pointee) => *pointee,
                     _ => {
                         return invalid_instruction(
                             function,
@@ -1029,26 +1002,26 @@ fn transfer(
             let value = read_type(function, index, &state, *value)?;
             let object_type = read_type(function, index, &state, *object)?;
             match object_type {
-                VerificationType::List(element) => {
+                ExecutableType::List(element) => {
                     require_type(function, index, &value, &element, "list element")?
                 }
-                VerificationType::ByteBuffer => require_type(
+                ExecutableType::ByteBuffer => require_type(
                     function,
                     index,
                     &value,
-                    &VerificationType::Byte,
+                    &ExecutableType::Byte,
                     "byte-buffer element",
                 )?,
-                VerificationType::Record { .. } if is_foster_byte_buffer(program, &object_type) => {
+                ExecutableType::Record { .. } if is_foster_byte_buffer(program, &object_type) => {
                     require_type(
                         function,
                         index,
                         &value,
-                        &VerificationType::Byte,
+                        &ExecutableType::Byte,
                         "byte-buffer element",
                     )?
                 }
-                VerificationType::Unknown => {}
+                ExecutableType::Unknown => {}
                 found => return type_error(function, index, "List or ByteBuffer", &found),
             }
             write_type(
@@ -1056,7 +1029,7 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Unit,
+                ExecutableType::Unit,
             )?;
         }
         Instruction::Append {
@@ -1066,11 +1039,11 @@ fn transfer(
         } => {
             let value = read_type(function, index, &state, *value)?;
             let result = match read_type(function, index, &state, *object)? {
-                VerificationType::List(element) => {
+                ExecutableType::List(element) => {
                     require_type(function, index, &value, &element, "list element")?;
-                    VerificationType::List(element)
+                    ExecutableType::List(element)
                 }
-                VerificationType::Unknown => VerificationType::Unknown,
+                ExecutableType::Unknown => ExecutableType::Unknown,
                 found => return type_error(function, index, "List", &found),
             };
             write_type(function, index, &mut state, *destination, result)?;
@@ -1090,7 +1063,7 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Bool,
+                ExecutableType::Bool,
             )?;
         }
         Instruction::Builtin {
@@ -1133,7 +1106,7 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Remote(Box::new(value)),
+                ExecutableType::Remote(Box::new(value)),
             )?;
         }
         Instruction::SpawnRemoteBorrow {
@@ -1146,7 +1119,7 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Remote(Box::new(value)),
+                ExecutableType::Remote(Box::new(value)),
             )?;
         }
         Instruction::RemoteCall {
@@ -1157,8 +1130,8 @@ fn transfer(
         } => {
             let target = &program.functions[target];
             let receiver = match read_type(function, index, &state, *remote)? {
-                VerificationType::Remote(value) => *value,
-                VerificationType::Unknown => VerificationType::Unknown,
+                ExecutableType::Remote(value) => *value,
+                ExecutableType::Unknown => ExecutableType::Unknown,
                 found => return type_error(function, index, "Remote", &found),
             };
             let mut substitutions = std::collections::BTreeMap::new();
@@ -1169,7 +1142,7 @@ fn transfer(
                     &mut substitutions,
                 );
             }
-            let specialization = substitutions.into_iter().collect();
+            let specialization = substitutions.into();
             let parameter_types = target
                 .parameter_types
                 .iter()
@@ -1195,7 +1168,7 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Future(Box::new(
+                ExecutableType::Future(Box::new(
                     program.remote_outcome_type(target.result_type.specialize(&specialization)),
                 )),
             )?;
@@ -1205,8 +1178,8 @@ fn transfer(
             future,
         } => {
             let result = match read_type(function, index, &state, *future)? {
-                VerificationType::Future(value) => *value,
-                VerificationType::Unknown => VerificationType::Unknown,
+                ExecutableType::Future(value) => *value,
+                ExecutableType::Unknown => ExecutableType::Unknown,
                 found => return type_error(function, index, "Future", &found),
             };
             write_type(function, index, &mut state, *destination, result)?;
@@ -1234,7 +1207,7 @@ fn transfer(
                     })
             });
             if let crate::hir::Pattern::Variant { variant, .. } = pattern.unspanned()
-                && let VerificationType::Variant {
+                && let ExecutableType::Variant {
                     variant: parent, ..
                 } = subject_type
                 && program.variants[variant].parent != parent
@@ -1250,7 +1223,7 @@ fn transfer(
                 index,
                 &mut state,
                 *destination,
-                VerificationType::Bool,
+                ExecutableType::Bool,
             )?;
             state.pending_pattern = Some(PendingPattern {
                 condition: *destination,
@@ -1262,13 +1235,7 @@ fn transfer(
         Instruction::Jump { target } => return Ok(vec![(*target, state)]),
         Instruction::JumpIfFalse { condition, target } => {
             let found = read_type(function, index, &state, *condition)?;
-            require_type(
-                function,
-                index,
-                &found,
-                &VerificationType::Bool,
-                "condition",
-            )?;
+            require_type(function, index, &found, &ExecutableType::Bool, "condition")?;
             let mut truthy = state.clone();
             state.pending_pattern = None;
             truthy.pending_pattern = None;
@@ -1280,7 +1247,7 @@ fn transfer(
                         index,
                         &mut truthy,
                         *binding,
-                        VerificationType::Unknown,
+                        ExecutableType::Unknown,
                     )?;
                 }
                 if let Some((subject, variant)) = pattern.covered_variant {
@@ -1299,18 +1266,12 @@ fn transfer(
         }
         Instruction::Assert { condition, message } => {
             let found = read_type(function, index, &state, *condition)?;
-            require_type(
-                function,
-                index,
-                &found,
-                &VerificationType::Bool,
-                "condition",
-            )?;
+            require_type(function, index, &found, &ExecutableType::Bool, "condition")?;
             if let Some(message) = message {
                 let expected = program
                     .string_record
                     .map(nominal_record)
-                    .unwrap_or(VerificationType::Unknown);
+                    .unwrap_or(ExecutableType::Unknown);
                 let found = read_type(function, index, &state, *message)?;
                 require_type(function, index, &found, &expected, "assertion message")?;
             }
@@ -1416,7 +1377,7 @@ fn transfer(
                     );
                 }
                 let result = if *slot == crate::types::CAN_COPY_SLOT {
-                    VerificationType::Bool
+                    ExecutableType::Bool
                 } else {
                     receiver_type
                 };
@@ -1424,8 +1385,8 @@ fn transfer(
                 return Ok(vec![(index + 1, state)]);
             }
             let nominal = match &receiver_type {
-                VerificationType::Record { record, .. } => Some(NominalTypeId::Record(*record)),
-                VerificationType::Variant { variant, .. } => Some(NominalTypeId::Variant(*variant)),
+                ExecutableType::Record { record, .. } => Some(NominalTypeId::Record(*record)),
+                ExecutableType::Variant { variant, .. } => Some(NominalTypeId::Variant(*variant)),
                 _ => None,
             };
             if let Some(target) = nominal
@@ -1442,9 +1403,7 @@ fn transfer(
                         &mut substitutions,
                     );
                 }
-                let concrete = target
-                    .result_type
-                    .specialize(&substitutions.into_iter().collect());
+                let concrete = target.result_type.specialize(&substitutions.into());
                 require_type(function, index, &concrete, result_type, "contract result")?;
                 verify_arguments(
                     function,
@@ -1517,13 +1476,8 @@ fn transfer(
             arguments,
         } => {
             let callee = read_type(function, index, &state, *callee)?;
-            let VerificationType::Function {
-                parameters,
-                parameter_modes,
-                result,
-            } = callee
-            else {
-                if callee == VerificationType::Unknown {
+            let ExecutableType::Function { parameters, result } = callee else {
+                if callee == ExecutableType::Unknown {
                     for argument in arguments {
                         read_type(function, index, &state, *argument)?;
                     }
@@ -1532,7 +1486,7 @@ fn transfer(
                         index,
                         &mut state,
                         *destination,
-                        VerificationType::Unknown,
+                        ExecutableType::Unknown,
                     )?;
                     return Ok(vec![(next, state)]);
                 }
@@ -1549,12 +1503,12 @@ fn transfer(
                 function,
                 index,
                 &mut state,
-                parameter_modes
+                parameters
                     .iter()
-                    .copied()
+                    .map(|p| p.mode)
                     .zip(arguments.iter().copied()),
-                parameter_modes.iter().copied(),
-                parameters.iter(),
+                parameters.iter().map(|p| p.mode),
+                parameters.iter().map(|p| &p.ty),
             )?;
             write_type(function, index, &mut state, *destination, *result)?;
         }
@@ -1618,12 +1572,12 @@ fn transfer(
 
 fn verification_field_type(
     program: &Program,
-    receiver: &VerificationType,
+    receiver: &ExecutableType,
     field: &str,
-) -> Option<VerificationType> {
+) -> Option<ExecutableType> {
     match receiver {
-        VerificationType::Reference(pointee) => verification_field_type(program, pointee, field),
-        VerificationType::Record { record, arguments } => {
+        ExecutableType::Reference(pointee) => verification_field_type(program, pointee, field),
+        ExecutableType::Record { record, arguments } => {
             let metadata = program.records.get(record)?;
             let index = metadata
                 .layout
@@ -1638,14 +1592,14 @@ fn verification_field_type(
                 .collect::<HashMap<_, _>>();
             Some(metadata.field_types.get(index)?.substitute(&substitutions))
         }
-        VerificationType::List(element) => match field {
-            "empty?" => Some(VerificationType::Bool),
-            "length" => Some(VerificationType::Integer),
+        ExecutableType::List(element) => match field {
+            "empty?" => Some(ExecutableType::Bool),
+            "length" => Some(ExecutableType::Integer),
             "head" => Some((**element).clone()),
             "rest" => Some(receiver.clone()),
             _ => None,
         },
-        VerificationType::Unknown => Some(VerificationType::Unknown),
+        ExecutableType::Unknown => Some(ExecutableType::Unknown),
         _ => None,
     }
 }
@@ -1656,7 +1610,7 @@ fn verify_arguments<'a>(
     state: &mut FlowState,
     actual: impl Iterator<Item = (ParameterMode, Register)>,
     expected_modes: impl Iterator<Item = ParameterMode>,
-    expected_types: impl Iterator<Item = &'a VerificationType>,
+    expected_types: impl Iterator<Item = &'a ExecutableType>,
 ) -> Result<(), FosterError> {
     let actual = actual.collect::<Vec<_>>();
     let modes = expected_modes.collect::<Vec<_>>();
@@ -1679,11 +1633,11 @@ fn verify_arguments<'a>(
             // A borrowed reference parameter binds the wrapper itself. Other borrowed
             // parameters observe the VM's ordinary read-through-reference semantics.
             ParameterMode::Borrow if compatible(&bound, expected_type) => bound,
-            ParameterMode::Borrow if matches!(expected_type, VerificationType::Reference(value) if compatible(&bound, value)) =>
+            ParameterMode::Borrow if matches!(expected_type, ExecutableType::Reference(value) if compatible(&bound, value)) =>
             {
                 // Whole-place reference construction may be optimized into passing the
                 // underlying register; call-frame promotion recreates the same place binding.
-                VerificationType::Reference(Box::new(bound))
+                ExecutableType::Reference(Box::new(bound))
             }
             ParameterMode::Borrow => readable_type(function, index, bound)?,
             ParameterMode::Consume => bound,
@@ -1703,7 +1657,7 @@ fn verify_captures(
     index: usize,
     state: &mut FlowState,
     captures: &[(CaptureMode, Register)],
-    expected: &[VerificationType],
+    expected: &[ExecutableType],
 ) -> Result<(), FosterError> {
     for ((mode, register), expected) in captures.iter().zip(expected) {
         let found = match mode {
@@ -1712,8 +1666,8 @@ fn verify_captures(
                 read_type(function, index, state, *register)?
             }
             CaptureMode::Ref => match bound_type(function, index, state, *register)? {
-                reference @ VerificationType::Reference(_) => reference,
-                value => VerificationType::Reference(Box::new(value)),
+                reference @ ExecutableType::Reference(_) => reference,
+                value => ExecutableType::Reference(Box::new(value)),
             },
         };
         require_type(function, index, &found, expected, "closure capture")?;
@@ -1731,7 +1685,7 @@ fn bound_type(
     index: usize,
     state: &FlowState,
     register: Register,
-) -> Result<VerificationType, FosterError> {
+) -> Result<ExecutableType, FosterError> {
     state.registers[usize::from(register.0)]
         .clone()
         .ok_or_else(|| {
@@ -1747,7 +1701,7 @@ fn read_type(
     index: usize,
     state: &FlowState,
     register: Register,
-) -> Result<VerificationType, FosterError> {
+) -> Result<ExecutableType, FosterError> {
     readable_type(
         function,
         index,
@@ -1758,14 +1712,14 @@ fn read_type(
 fn readable_type(
     function: &BytecodeFunction,
     index: usize,
-    ty: VerificationType,
-) -> Result<VerificationType, FosterError> {
+    ty: ExecutableType,
+) -> Result<ExecutableType, FosterError> {
     match ty {
-        VerificationType::Reference(value) => Ok(*value),
-        VerificationType::Union(members) => {
+        ExecutableType::Reference(value) => Ok(*value),
+        ExecutableType::Union(members) => {
             let mut members = members.into_iter();
             let Some(first) = members.next() else {
-                return Ok(VerificationType::Unknown);
+                return Ok(ExecutableType::Unknown);
             };
             let mut result = readable_type(function, index, first)?;
             for member in members {
@@ -1787,7 +1741,7 @@ fn take_type(
     index: usize,
     state: &mut FlowState,
     register: Register,
-) -> Result<VerificationType, FosterError> {
+) -> Result<ExecutableType, FosterError> {
     state.excluded_variants.remove(&register);
     state.registers[usize::from(register.0)]
         .take()
@@ -1804,11 +1758,11 @@ fn write_type(
     index: usize,
     state: &mut FlowState,
     register: Register,
-    value: VerificationType,
+    value: ExecutableType,
 ) -> Result<(), FosterError> {
     state.excluded_variants.remove(&register);
     let slot = &mut state.registers[usize::from(register.0)];
-    if let Some(VerificationType::Reference(target)) = slot {
+    if let Some(ExecutableType::Reference(target)) = slot {
         require_type(function, index, &value, target, "reference assignment")?;
     } else {
         *slot = Some(value);
@@ -1875,32 +1829,32 @@ fn merge_state(
 fn merge_types(
     _function: &BytecodeFunction,
     _index: usize,
-    left: &VerificationType,
-    right: &VerificationType,
-) -> Result<VerificationType, FosterError> {
+    left: &ExecutableType,
+    right: &ExecutableType,
+) -> Result<ExecutableType, FosterError> {
     if left == right {
         return Ok(left.clone());
     }
-    if matches!(left, VerificationType::Unknown) || matches!(right, VerificationType::Unknown) {
-        return Ok(VerificationType::Unknown);
+    if matches!(left, ExecutableType::Unknown) || matches!(right, ExecutableType::Unknown) {
+        return Ok(ExecutableType::Unknown);
     }
     match (left, right) {
-        (VerificationType::List(left), VerificationType::List(right)) => Ok(
-            VerificationType::List(Box::new(merge_types(_function, _index, left, right)?)),
+        (ExecutableType::List(left), ExecutableType::List(right)) => Ok(ExecutableType::List(
+            Box::new(merge_types(_function, _index, left, right)?),
+        )),
+        (ExecutableType::Reference(left), ExecutableType::Reference(right)) => Ok(
+            ExecutableType::Reference(Box::new(merge_types(_function, _index, left, right)?)),
         ),
-        (VerificationType::Reference(left), VerificationType::Reference(right)) => Ok(
-            VerificationType::Reference(Box::new(merge_types(_function, _index, left, right)?)),
+        (ExecutableType::Remote(left), ExecutableType::Remote(right)) => Ok(
+            ExecutableType::Remote(Box::new(merge_types(_function, _index, left, right)?)),
         ),
-        (VerificationType::Remote(left), VerificationType::Remote(right)) => Ok(
-            VerificationType::Remote(Box::new(merge_types(_function, _index, left, right)?)),
-        ),
-        (VerificationType::Future(left), VerificationType::Future(right)) => Ok(
-            VerificationType::Future(Box::new(merge_types(_function, _index, left, right)?)),
+        (ExecutableType::Future(left), ExecutableType::Future(right)) => Ok(
+            ExecutableType::Future(Box::new(merge_types(_function, _index, left, right)?)),
         ),
         _ => {
             let mut members = Vec::new();
             for ty in [left, right] {
-                if let VerificationType::Union(nested) = ty {
+                if let ExecutableType::Union(nested) = ty {
                     members.extend(nested.iter().cloned());
                 } else {
                     members.push(ty.clone());
@@ -1908,7 +1862,7 @@ fn merge_types(
             }
             members.sort();
             members.dedup();
-            Ok(VerificationType::Union(members))
+            Ok(ExecutableType::Union(members))
         }
     }
 }
@@ -1916,8 +1870,8 @@ fn merge_types(
 fn require_type(
     function: &BytecodeFunction,
     index: usize,
-    found: &VerificationType,
-    expected: &VerificationType,
+    found: &ExecutableType,
+    expected: &ExecutableType,
     role: &str,
 ) -> Result<(), FosterError> {
     if compatible(found, expected) {
@@ -1930,57 +1884,51 @@ fn require_type(
     }
 }
 
-fn compatible(found: &VerificationType, expected: &VerificationType) -> bool {
+fn compatible(found: &ExecutableType, expected: &ExecutableType) -> bool {
     if found == expected
-        || matches!(
-            found,
-            VerificationType::Unknown | VerificationType::Generic(_)
-        )
+        || matches!(found, ExecutableType::Unknown | ExecutableType::Generic(_))
         || matches!(
             expected,
-            VerificationType::Unknown | VerificationType::Generic(_)
+            ExecutableType::Unknown | ExecutableType::Generic(_)
         )
     {
         return true;
     }
     match (found, expected) {
-        (VerificationType::Union(found), expected) => {
+        (ExecutableType::Union(found), expected) => {
             found.iter().all(|found| compatible(found, expected))
         }
-        (found, VerificationType::Union(expected)) => {
+        (found, ExecutableType::Union(expected)) => {
             expected.iter().any(|expected| compatible(found, expected))
         }
-        (VerificationType::CodePoint | VerificationType::Byte, VerificationType::Integer) => true,
+        (ExecutableType::CodePoint | ExecutableType::Byte, ExecutableType::Integer) => true,
         // Structural record and variant conformance is resolved before bytecode lowering. The
         // verification vocabulary retains runtime representation, not the source contract proof.
-        (VerificationType::Record { .. }, VerificationType::Record { .. })
-        | (VerificationType::Variant { .. }, VerificationType::Variant { .. }) => true,
-        (VerificationType::List(found), VerificationType::List(expected))
-        | (VerificationType::Reference(found), VerificationType::Reference(expected))
-        | (VerificationType::Remote(found), VerificationType::Remote(expected))
-        | (VerificationType::Future(found), VerificationType::Future(expected)) => {
+        (ExecutableType::Record { .. }, ExecutableType::Record { .. })
+        | (ExecutableType::Variant { .. }, ExecutableType::Variant { .. }) => true,
+        (ExecutableType::List(found), ExecutableType::List(expected))
+        | (ExecutableType::Reference(found), ExecutableType::Reference(expected))
+        | (ExecutableType::Remote(found), ExecutableType::Remote(expected))
+        | (ExecutableType::Future(found), ExecutableType::Future(expected)) => {
             compatible(found, expected)
         }
         (
-            VerificationType::Function {
+            ExecutableType::Function {
                 parameters: found_parameters,
-                parameter_modes: found_modes,
                 result: found_result,
             },
-            VerificationType::Function {
+            ExecutableType::Function {
                 parameters: expected_parameters,
-                parameter_modes: expected_modes,
                 result: expected_result,
             },
         ) => {
             // Callable representation erasure can adapt source ownership modes while the
             // closure still carries its concrete callee modes for execution.
-            found_modes.len() == expected_modes.len()
-                && found_parameters.len() == expected_parameters.len()
+            found_parameters.len() == expected_parameters.len()
                 && found_parameters
                     .iter()
                     .zip(expected_parameters)
-                    .all(|(found, expected)| compatible(found, expected))
+                    .all(|(found, expected)| compatible(&found.ty, &expected.ty))
                 && compatible(found_result, expected_result)
         }
         _ => false,
@@ -1991,17 +1939,17 @@ fn unary_type(
     function: &BytecodeFunction,
     index: usize,
     operator: UnaryOp,
-    operand: VerificationType,
-) -> Result<VerificationType, FosterError> {
+    operand: ExecutableType,
+) -> Result<ExecutableType, FosterError> {
     Ok(match (operator, operand) {
-        (UnaryOp::Negate, VerificationType::Float) => VerificationType::Float,
+        (UnaryOp::Negate, ExecutableType::Float) => ExecutableType::Float,
         (
             UnaryOp::Negate,
-            VerificationType::Integer | VerificationType::CodePoint | VerificationType::Byte,
-        ) => VerificationType::Integer,
-        (UnaryOp::Not, VerificationType::Bool) => VerificationType::Bool,
-        (UnaryOp::BitNot, VerificationType::Byte) => VerificationType::Byte,
-        (_, VerificationType::Unknown) => VerificationType::Unknown,
+            ExecutableType::Integer | ExecutableType::CodePoint | ExecutableType::Byte,
+        ) => ExecutableType::Integer,
+        (UnaryOp::Not, ExecutableType::Bool) => ExecutableType::Bool,
+        (UnaryOp::BitNot, ExecutableType::Byte) => ExecutableType::Byte,
+        (_, ExecutableType::Unknown) => ExecutableType::Unknown,
         (_, found) => return type_error(function, index, "valid unary operand", &found),
     })
 }
@@ -2010,48 +1958,48 @@ fn binary_type(
     function: &BytecodeFunction,
     index: usize,
     operator: BinaryOp,
-    left: VerificationType,
-    right: VerificationType,
-) -> Result<VerificationType, FosterError> {
+    left: ExecutableType,
+    right: ExecutableType,
+) -> Result<ExecutableType, FosterError> {
     use BinaryOp::*;
     if matches!(operator, Equal | NotEqual) {
         if !(is_integer_like(&left) && is_integer_like(&right)) {
             require_type(function, index, &left, &right, "binary operand")?;
         }
-        return Ok(VerificationType::Bool);
+        return Ok(ExecutableType::Bool);
     }
-    if left == VerificationType::Unknown || right == VerificationType::Unknown {
-        return Ok(VerificationType::Unknown);
+    if left == ExecutableType::Unknown || right == ExecutableType::Unknown {
+        return Ok(ExecutableType::Unknown);
     }
     if matches!(operator, BitAnd | BitOr | BitXor)
-        && left == VerificationType::Byte
-        && right == VerificationType::Byte
+        && left == ExecutableType::Byte
+        && right == ExecutableType::Byte
     {
-        return Ok(VerificationType::Byte);
+        return Ok(ExecutableType::Byte);
     }
     if matches!(operator, ShiftLeft | ShiftRight)
-        && left == VerificationType::Byte
-        && right == VerificationType::Integer
+        && left == ExecutableType::Byte
+        && right == ExecutableType::Integer
     {
-        return Ok(VerificationType::Byte);
+        return Ok(ExecutableType::Byte);
     }
     if is_integer_like(&left) && is_integer_like(&right) {
         return Ok(
             if matches!(operator, Less | LessEqual | Greater | GreaterEqual) {
-                VerificationType::Bool
+                ExecutableType::Bool
             } else if matches!(operator, Add | Subtract | Multiply | Divide) {
-                VerificationType::Integer
+                ExecutableType::Integer
             } else {
                 return type_error(function, index, "valid integer operation", &left);
             },
         );
     }
-    if left == VerificationType::Float && right == VerificationType::Float {
+    if left == ExecutableType::Float && right == ExecutableType::Float {
         return Ok(
             if matches!(operator, Less | LessEqual | Greater | GreaterEqual) {
-                VerificationType::Bool
+                ExecutableType::Bool
             } else if matches!(operator, Add | Subtract | Multiply | Divide) {
-                VerificationType::Float
+                ExecutableType::Float
             } else {
                 return type_error(function, index, "valid float operation", &left);
             },
@@ -2066,87 +2014,87 @@ fn binary_type(
     )))
 }
 
-fn is_integer_like(ty: &VerificationType) -> bool {
+fn is_integer_like(ty: &ExecutableType) -> bool {
     matches!(
         ty,
-        VerificationType::Integer | VerificationType::CodePoint | VerificationType::Byte
+        ExecutableType::Integer | ExecutableType::CodePoint | ExecutableType::Byte
     )
 }
 
-fn nominal_record(record: crate::hir::RecordId) -> VerificationType {
-    VerificationType::Record {
+fn nominal_record(record: crate::hir::RecordId) -> ExecutableType {
+    ExecutableType::Record {
         record,
         arguments: Vec::new(),
     }
 }
 
-fn constant_type(program: &Program, constant: &Constant) -> VerificationType {
+fn constant_type(program: &Program, constant: &Constant) -> ExecutableType {
     match constant {
-        Constant::Unit => VerificationType::Unit,
-        Constant::Bool(_) => VerificationType::Bool,
-        Constant::Integer(_) => VerificationType::Integer,
-        Constant::Float(_) => VerificationType::Float,
+        Constant::Unit => ExecutableType::Unit,
+        Constant::Bool(_) => ExecutableType::Bool,
+        Constant::Integer(_) => ExecutableType::Integer,
+        Constant::Float(_) => ExecutableType::Float,
         Constant::String(_) => program
             .string_record
             .map(nominal_record)
-            .unwrap_or(VerificationType::Unknown),
-        Constant::CodePoint(_) => VerificationType::CodePoint,
+            .unwrap_or(ExecutableType::Unknown),
+        Constant::CodePoint(_) => ExecutableType::CodePoint,
         Constant::Symbol(_) => program
             .symbol_record
             .map(nominal_record)
-            .unwrap_or(VerificationType::Unknown),
+            .unwrap_or(ExecutableType::Unknown),
     }
 }
 
-fn record_type(program: &Program, record: crate::hir::RecordId) -> VerificationType {
+fn record_type(program: &Program, record: crate::hir::RecordId) -> ExecutableType {
     match Some(record) {
-        id if id == program.list_record => {
-            VerificationType::List(Box::new(VerificationType::Unknown))
-        }
-        id if id == program.bytes_record => VerificationType::Bytes,
+        id if id == program.list_record => ExecutableType::List(Box::new(ExecutableType::Unknown)),
+        id if id == program.bytes_record => ExecutableType::Bytes,
         _ => nominal_record(record),
     }
 }
 
-fn is_foster_byte_buffer(program: &Program, ty: &VerificationType) -> bool {
-    let VerificationType::Record { record, .. } = ty else {
+fn is_foster_byte_buffer(program: &Program, ty: &ExecutableType) -> bool {
+    let ExecutableType::Record { record, .. } = ty else {
         return false;
     };
     Some(*record) == program.byte_buffer_record
 }
 
-fn indexed_element_type(program: &Program, ty: &VerificationType) -> Option<VerificationType> {
+fn indexed_element_type(program: &Program, ty: &ExecutableType) -> Option<ExecutableType> {
     match ty {
-        VerificationType::Reference(pointee) => indexed_element_type(program, pointee),
-        _ if is_foster_byte_buffer(program, ty) => Some(VerificationType::Byte),
+        ExecutableType::Reference(pointee) => indexed_element_type(program, pointee),
+        _ if is_foster_byte_buffer(program, ty) => Some(ExecutableType::Byte),
         _ => ty.indexed_element(),
     }
 }
 
-fn callable_type(function: &BytecodeFunction) -> VerificationType {
-    VerificationType::Function {
-        parameters: function.parameter_types.clone(),
-        parameter_modes: function.parameter_modes.clone(),
+fn callable_type(function: &BytecodeFunction) -> ExecutableType {
+    ExecutableType::Function {
+        parameters: crate::types::Parameter::from_parts(
+            function.parameter_types.clone(),
+            function.parameter_modes.clone(),
+        ),
         result: Box::new(function.result_type.clone()),
     }
 }
 
-fn intrinsic_verification_type(program: &Program, ty: IntrinsicType) -> VerificationType {
+fn intrinsic_verification_type(program: &Program, ty: IntrinsicType) -> ExecutableType {
     match ty {
-        IntrinsicType::Any => VerificationType::Unknown,
-        IntrinsicType::Unit => VerificationType::Unit,
-        IntrinsicType::Bool => VerificationType::Bool,
-        IntrinsicType::Integer => VerificationType::Integer,
-        IntrinsicType::Float => VerificationType::Float,
-        IntrinsicType::CodePoint => VerificationType::CodePoint,
-        IntrinsicType::Byte => VerificationType::Byte,
-        IntrinsicType::Bytes => VerificationType::Bytes,
-        IntrinsicType::ByteBuffer => VerificationType::ByteBuffer,
+        IntrinsicType::Any => ExecutableType::Unknown,
+        IntrinsicType::Unit => ExecutableType::Unit,
+        IntrinsicType::Bool => ExecutableType::Bool,
+        IntrinsicType::Integer => ExecutableType::Integer,
+        IntrinsicType::Float => ExecutableType::Float,
+        IntrinsicType::CodePoint => ExecutableType::CodePoint,
+        IntrinsicType::Byte => ExecutableType::Byte,
+        IntrinsicType::Bytes => ExecutableType::Bytes,
+        IntrinsicType::ByteBuffer => ExecutableType::ByteBuffer,
         IntrinsicType::String => program
             .string_record
             .map(nominal_record)
-            .unwrap_or(VerificationType::Unknown),
-        IntrinsicType::ListByte => VerificationType::List(Box::new(VerificationType::Byte)),
+            .unwrap_or(ExecutableType::Unknown),
+        IntrinsicType::ListByte => ExecutableType::List(Box::new(ExecutableType::Byte)),
     }
 }
 
@@ -2203,7 +2151,7 @@ fn type_error<T>(
     function: &BytecodeFunction,
     index: usize,
     expected: &str,
-    found: &VerificationType,
+    found: &ExecutableType,
 ) -> Result<T, FosterError> {
     invalid_instruction(
         function,

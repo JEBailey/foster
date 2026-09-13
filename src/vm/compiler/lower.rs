@@ -51,7 +51,7 @@ impl FunctionCompiler<'_> {
                 .types
                 .expression_type(place)
                 .map(|ty| verification_type(self.hir, self.types, ty, 0))
-                .unwrap_or(VerificationType::Unknown);
+                .unwrap_or(ExecutableType::Unknown);
             let destination = self.allocate();
             self.emit(
                 Instruction::MakeWholeReference {
@@ -68,10 +68,10 @@ impl FunctionCompiler<'_> {
             .types
             .local_type(place.root)
             .map(|ty| verification_type(self.hir, self.types, ty, 0))
-            .unwrap_or(VerificationType::Unknown);
+            .unwrap_or(ExecutableType::Unknown);
         if place.projections.is_empty() {
             let pointee_type = match object_type {
-                VerificationType::Reference(pointee) => *pointee,
+                ExecutableType::Reference(pointee) => *pointee,
                 value => value,
             };
             let destination = self.allocate();
@@ -88,8 +88,8 @@ impl FunctionCompiler<'_> {
         for projection in place.projections {
             if matches!(&projection, hir::Projection::Dereference) {
                 object_type = match object_type {
-                    VerificationType::Reference(pointee) => *pointee,
-                    _ => VerificationType::Unknown,
+                    ExecutableType::Reference(pointee) => *pointee,
+                    _ => ExecutableType::Unknown,
                 };
                 continue;
             }
@@ -102,7 +102,7 @@ impl FunctionCompiler<'_> {
                         &object_type,
                         &field,
                     )
-                    .unwrap_or(VerificationType::Unknown);
+                    .unwrap_or(ExecutableType::Unknown);
                     Instruction::MakeFieldReference {
                         destination,
                         pointee_type: object_type.clone(),
@@ -115,7 +115,7 @@ impl FunctionCompiler<'_> {
                 } => {
                     object_type = object_type
                         .indexed_element()
-                        .unwrap_or(VerificationType::Unknown);
+                        .unwrap_or(ExecutableType::Unknown);
                     Instruction::MakeReference {
                         destination,
                         pointee_type: object_type.clone(),
@@ -193,10 +193,10 @@ impl FunctionCompiler<'_> {
                     .expression_type(id)
                     .map(|ty| verification_type(self.hir, self.types, ty, 0))
                     .and_then(|ty| match ty {
-                        VerificationType::List(element) => Some(*element),
+                        ExecutableType::List(element) => Some(*element),
                         _ => None,
                     })
-                    .unwrap_or(VerificationType::Unknown);
+                    .unwrap_or(ExecutableType::Unknown);
                 self.emit(
                     Instruction::MakeList {
                         destination,
@@ -978,7 +978,7 @@ impl FunctionCompiler<'_> {
                 self.emit(
                     Instruction::MakeList {
                         destination,
-                        element_type: VerificationType::Unknown,
+                        element_type: ExecutableType::Unknown,
                         elements,
                     },
                     span,
@@ -1002,9 +1002,9 @@ impl FunctionCompiler<'_> {
         function: FunctionId,
         arguments: &[ExprId],
         result: ExprId,
-    ) -> crate::vm::Specialization {
+    ) -> crate::codegen::types::Specialization {
         let Some(signature) = self.types.function_type(function) else {
-            return Vec::new();
+            return Default::default();
         };
         let mut substitutions = std::collections::BTreeMap::new();
         for (schema, argument) in signature.parameters.iter().zip(arguments) {
@@ -1065,15 +1065,16 @@ impl FunctionCompiler<'_> {
             .into_iter()
             .map(|name| {
                 let ty = substitutions.get(&name).map_or_else(
-                    || VerificationType::Generic(name.clone()),
+                    || ExecutableType::Generic(name.clone()),
                     |ty| verification_type(self.hir, self.types, *ty, 0),
                 );
                 (name, ty)
             })
-            .collect()
+            .collect::<BTreeMap<_, _>>()
+            .into()
     }
 
-    fn nominal_type_arguments(&self, expression: ExprId) -> Vec<VerificationType> {
+    fn nominal_type_arguments(&self, expression: ExprId) -> Vec<ExecutableType> {
         let Some(ty) = self.types.expression_type(expression) else {
             return Vec::new();
         };

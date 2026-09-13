@@ -13,6 +13,41 @@ fn inference_adapter_rejects_missing_and_extra_modes() {
 }
 
 #[test]
+fn generic_method_partial_application_preserves_consuming_parameter() {
+    let source = r#"
+type Receiver = {}
+impl Receiver {
+    func choose<T>(self, label: String, value: T) -> T [consume label, consume value] { value }
+}
+func main() -> Int {
+    let choose = Receiver {}.choose(_, 42)
+    let label = "owned"
+    choose(move label)
+}
+"#;
+    let compilation = crate::compile(source).unwrap();
+    let (partial, _) = compilation
+        .hir
+        .functions
+        .iter()
+        .find(|(_, f)| f.name.ends_with("$partial"))
+        .unwrap();
+    let signature = compilation.types.function_type(partial).unwrap();
+    assert_eq!(signature.parameters.len(), 1);
+    assert_eq!(signature.parameters[0].mode, ast::ParameterMode::Consume);
+    assert_eq!(
+        compilation.types.display(signature.parameters[0].ty),
+        "String"
+    );
+    assert_eq!(
+        crate::vm::run(&compilation).unwrap(),
+        crate::vm::Value::Integer(42)
+    );
+    let error = crate::compile(&source.replace("choose(move label)", "choose(label)")).unwrap_err();
+    assert!(error.to_string().contains("move"), "{error}");
+}
+
+#[test]
 fn nested_callable_parameters_retain_type_and_ownership_in_order() {
     let compilation = crate::compile(r#"
 func sink(label: String, number: Int) -> Int [consume label] { number }

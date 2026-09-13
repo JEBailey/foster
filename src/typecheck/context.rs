@@ -20,8 +20,7 @@ pub(super) enum Ty {
     Future(Box<Ty>),
     Function(Vec<Ty>, Box<Ty>),
     Callable {
-        parameters: Vec<Ty>,
-        parameter_modes: Vec<crate::ast::ParameterMode>,
+        parameters: Vec<crate::types::Parameter<Ty>>,
         result: Box<Ty>,
         erased: bool,
         effects: Vec<crate::ast::Effect>,
@@ -36,8 +35,7 @@ pub(super) enum Ty {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Signature {
-    pub(super) parameters: Vec<Ty>,
-    pub(super) parameter_modes: Vec<crate::ast::ParameterMode>,
+    pub(super) parameters: Vec<crate::types::Parameter<Ty>>,
     pub(super) result: Ty,
 }
 
@@ -78,4 +76,16 @@ pub(super) struct Checker<'a> {
     pub(super) effect_seeds: HashMap<FunctionId, effect_worklist::EffectSummary>,
     pub(super) effect_dependencies: HashMap<FunctionId, HashSet<FunctionId>>,
     pub(super) resolving_aliases: Vec<hir::VariantTypeId>,
+}
+
+impl Ty {
+    /// Parameter types, including unconstrained callable placeholders that have no modes yet.
+    pub(super) fn parameter_types(&self) -> impl Iterator<Item = &Ty> {
+        let (plain, paired): (&[Ty], &[crate::types::Parameter<Ty>]) = match self {
+            Self::Function(parameters, _) => (parameters, &[]),
+            Self::Callable { parameters, .. } => (&[], parameters),
+            _ => (&[], &[]),
+        };
+        plain.iter().chain(paired.iter().map(|p| &p.ty))
+    }
 }

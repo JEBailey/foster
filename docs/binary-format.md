@@ -7,6 +7,10 @@ VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, d
 verification. It contains everything needed to verify and execute a compiled codebase. It does not
 preserve typed HIR, shared SSA, documentation, source, or diagnostics.
 
+Type metadata uses the backend-neutral `foster::codegen::types::ExecutableType` and
+`Specialization` definitions. Their binary tags and validation belong to the VM format;
+the Rust module location does not affect the encoding.
+
 ## Conventions
 
 - Integers are unsigned little-endian unless stated otherwise. Fixed widths are `u8`/`u16`/`u32`/`u64`.
@@ -40,9 +44,9 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | byte buffer record | optional `RecordId` | canonical core ByteBuffer identity |
 | remote result | optional `VariantTypeId` | nominal `core.result.Result` for remote outcomes |
 | remote error | optional `VariantTypeId` | nominal `core.remote_error.RemoteError` for remote failures |
-| records | `vector<(RecordId, string, vector<string> parameters, vector<(string, VerificationType)>)>` | runtime name, generic parameters, and typed indexed field layout |
+| records | `vector<(RecordId, string, vector<string> parameters, vector<(string, ExecutableType)>)>` | runtime name, generic parameters, and typed indexed field layout |
 | dispatch | `vector<(NominalTypeId, u32 slot, FunctionId)>` | record and enum dispatch |
-| enum cases | `vector<(VariantId, VariantTypeId, string, vector<string> parameters, string, vector<VerificationType>)>` | parent enum, generic parameters, case label, and declared payload layout |
+| enum cases | `vector<(VariantId, VariantTypeId, string, vector<string> parameters, string, vector<ExecutableType>)>` | parent enum, generic parameters, case label, and declared payload layout |
 | symbolic modules | `string` | compact UTF-8 JSON descriptor table, version 1 |
 
 The symbolic module table groups package-qualified type/function identities, semantic descriptors,
@@ -71,9 +75,9 @@ Only ownership cleanup may invoke Drop. Version 23 also records whether automati
 inserted, and distinguishes moving a register from taking the pointee of a generated reference.
 
 A function is `string name`, `bool intrinsic_stub`, `u16 parameter_count`,
-`vector<VerificationType> parameter_types`, `vector<ParameterMode> parameter_modes`,
+`vector<ExecutableType> parameter_types`, `vector<ParameterMode> parameter_modes`,
 `vector<bool> mutable_parameters`, `bool returns_reference`, `u16 capture_count`,
-`vector<VerificationType> capture_types`, `VerificationType result_type`, `u16 register_count`,
+`vector<ExecutableType> capture_types`, `ExecutableType result_type`, `u16 register_count`,
 `vector<Instruction>`, then `vector<Span>`. A span is `u32 start, u32 end` in source byte offsets.
 Instruction and span counts must match. An intrinsic stub describes a source-level intrinsic whose
 executable calls have already lowered to `Builtin`; it is retained for identity but is not an
@@ -105,15 +109,20 @@ construction. This preserves empty generic-list and projected-reference layouts 
 SSA, bytecode, and native boundaries.
 
 Verification type tags are `0 Unknown`, `1 Unit`, `2 Bool`, `3 Integer`, `4 Float`, `5 CodePoint`,
-`6 Byte`, `7 Bytes`, `8 ByteBuffer`, `9 List(VerificationType)`,
-`10 Reference(VerificationType)`, `11 Remote(VerificationType)`, `12 Future(VerificationType)`,
-`13 Function(vector<VerificationType>, vector<ParameterMode>, VerificationType)`,
-`14 Record(RecordId, vector<VerificationType> arguments)`,
-`15 Variant(VariantTypeId, vector<VerificationType> arguments)`,
-`16 Union(vector<VerificationType>)`, and `17 Generic(string identity)`. Union members are sorted,
+`6 Byte`, `7 Bytes`, `8 ByteBuffer`, `9 List(ExecutableType)`,
+`10 Reference(ExecutableType)`, `11 Remote(ExecutableType)`, `12 Future(ExecutableType)`,
+`13 Function(vector<ExecutableType>, vector<ParameterMode>, ExecutableType)`,
+`14 Record(RecordId, vector<ExecutableType> arguments)`,
+`15 Variant(VariantTypeId, vector<ExecutableType> arguments)`,
+`16 Union(vector<ExecutableType>)`, and `17 Generic(string identity)`. Union members are sorted,
 unique, and contain at least two types. Readers reject verification types nested more than 64
 levels deep. Generic identities are retained so target-specific layout selection can materialize a
 concrete nominal layout for each reachable native specialization.
+
+Callable parameter type and mode vectors must have equal lengths. Decoding checks this before
+constructing the paired in-memory parameters, including for nested callables. Specialization names
+must be strictly ascending and unique; decoding rejects invalid order rather than sorting it.
+These construction checks do not change the wire format or version.
 
 ## Instructions
 
@@ -126,14 +135,14 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 2 | Move | `R destination, R source` |
 | 3 | Unary | `R destination, UnaryOp, R operand` |
 | 4 | Binary | `R destination, BinaryOp, R left, R right` |
-| 5 | MakeList | `R destination, VerificationType element, regs` |
+| 5 | MakeList | `R destination, ExecutableType element, regs` |
 | 6 | Index | `R destination, R object, R index` |
-| 7 | MakeRecord | `R destination, RecordId, vector<VerificationType> arguments, vector<(string, R)>` |
-| 8 | MakeVariant | `R destination, VariantId, vector<VerificationType> arguments, regs` |
+| 7 | MakeRecord | `R destination, RecordId, vector<ExecutableType> arguments, vector<(string, R)>` |
+| 8 | MakeVariant | `R destination, VariantId, vector<ExecutableType> arguments, regs` |
 | 9 | LoadField | `R destination, R object, string, bool by_reference` |
 | 10 | StoreField | `R object, string, R source` |
 | 11 | StoreIndex | `R object, R index, R source` |
-| 12 | MakeReference | `R destination, VerificationType pointee, R object, R index` |
+| 12 | MakeReference | `R destination, ExecutableType pointee, R object, R index` |
 | 13 | MoveOut | `bool by_reference, R destination, R source` |
 | 14 | Push | `R destination, R object, R value` |
 | 15 | Append | `R destination, R object, R value` |
@@ -146,16 +155,16 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 | 22 | MatchPattern | `R destination, R subject, Pattern, regs bindings` |
 | 23 | Jump | `u32 target` |
 | 24 | JumpIfFalse | `R condition, u32 target` |
-| 25 | Call | `R destination, F, vector<(string, VerificationType)> substitutions, regs` |
-| 26 | CallMethod | `R destination, R receiver, F, vector<(string, VerificationType)> substitutions, regs` |
-| 27 | CallContractMethod | `R destination, R receiver, u32 slot, string name, regs, VerificationType result` |
-| 28 | MakeClosure | `R destination, F, vector<(string, VerificationType)> substitutions, vector<(CaptureMode, R)>` |
+| 25 | Call | `R destination, F, vector<(string, ExecutableType)> substitutions, regs` |
+| 26 | CallMethod | `R destination, R receiver, F, vector<(string, ExecutableType)> substitutions, regs` |
+| 27 | CallContractMethod | `R destination, R receiver, u32 slot, string name, regs, ExecutableType result` |
+| 28 | MakeClosure | `R destination, F, vector<(string, ExecutableType)> substitutions, vector<(CaptureMode, R)>` |
 | 29 | CallValue | `R destination, R callee, regs` |
-| 30 | CallClosure | `R destination, F, vector<(string, VerificationType)> substitutions, vector<(CaptureMode, R)>, regs` |
+| 30 | CallClosure | `R destination, F, vector<(string, ExecutableType)> substitutions, vector<(CaptureMode, R)>, regs` |
 | 31 | Return | `R source` |
-| 32 | MakeFieldReference | `R destination, VerificationType pointee, R object, string field` |
+| 32 | MakeFieldReference | `R destination, ExecutableType pointee, R object, string field` |
 | 33 | Assert | `R condition, optional<R> message` |
-| 34 | MakeWholeReference | `R destination, VerificationType pointee, R object` |
+| 34 | MakeWholeReference | `R destination, ExecutableType pointee, R object` |
 
 ## Compatibility and canonical form
 

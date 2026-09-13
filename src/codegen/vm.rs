@@ -5,8 +5,9 @@ use std::fmt;
 use std::ops::Range;
 
 use crate::codegen::ir::{self, Block, Type, Value};
+use crate::codegen::types::ExecutableType;
 use crate::hir::FunctionId;
-use crate::vm::{self, Register, VerificationType};
+use crate::vm::{self, Register};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LowerError(String);
@@ -118,9 +119,9 @@ pub struct FunctionMetadata {
     pub parameter_modes: Vec<crate::ast::ParameterMode>,
     pub mutable_parameters: Vec<bool>,
     pub returns_reference: bool,
-    pub parameter_types: Vec<VerificationType>,
-    pub capture_types: Vec<VerificationType>,
-    pub result_type: Option<VerificationType>,
+    pub parameter_types: Vec<ExecutableType>,
+    pub capture_types: Vec<ExecutableType>,
+    pub result_type: Option<ExecutableType>,
 }
 
 impl FunctionMetadata {
@@ -716,14 +717,14 @@ fn block_leaders(function: &vm::BytecodeFunction) -> Result<Vec<usize>, LowerErr
         .collect())
 }
 
-fn shared_type(ty: &VerificationType) -> Type {
+fn shared_type(ty: &ExecutableType) -> Type {
     match ty {
-        VerificationType::Unit => Type::Unit,
-        VerificationType::Bool => Type::Bool,
-        VerificationType::Integer => Type::Int,
-        VerificationType::Float => Type::Float,
-        VerificationType::CodePoint => Type::CodePoint,
-        VerificationType::Byte => Type::Byte,
+        ExecutableType::Unit => Type::Unit,
+        ExecutableType::Bool => Type::Bool,
+        ExecutableType::Integer => Type::Int,
+        ExecutableType::Float => Type::Float,
+        ExecutableType::CodePoint => Type::CodePoint,
+        ExecutableType::Byte => Type::Byte,
         _ => Type::Opaque,
     }
 }
@@ -1913,15 +1914,15 @@ fn lower_portable(
     }
 }
 
-fn verification_type(ty: Type) -> VerificationType {
+fn verification_type(ty: Type) -> ExecutableType {
     match ty {
-        Type::Unit => VerificationType::Unit,
-        Type::Bool => VerificationType::Bool,
-        Type::Int => VerificationType::Integer,
-        Type::Float => VerificationType::Float,
-        Type::CodePoint => VerificationType::CodePoint,
-        Type::Byte => VerificationType::Byte,
-        Type::Opaque | Type::String | Type::Object(_) => VerificationType::Unknown,
+        Type::Unit => ExecutableType::Unit,
+        Type::Bool => ExecutableType::Bool,
+        Type::Int => ExecutableType::Integer,
+        Type::Float => ExecutableType::Float,
+        Type::CodePoint => ExecutableType::CodePoint,
+        Type::Byte => ExecutableType::Byte,
+        Type::Opaque | Type::String | Type::Object(_) => ExecutableType::Unknown,
     }
 }
 
@@ -1948,7 +1949,7 @@ mod tests {
                 returns_reference: false,
                 captures: 0,
                 capture_types: vec![],
-                result_type: VerificationType::Unit,
+                result_type: ExecutableType::Unit,
                 registers: 0,
                 instructions: vec![vm::Instruction::Jump { target: 1 }],
                 instruction_spans: vec![span],

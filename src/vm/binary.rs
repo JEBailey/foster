@@ -8,9 +8,10 @@ use la_arena::{Idx, RawIdx};
 
 use super::{
     BytecodeFunction, Constant, Instruction, Program, Register, RuntimeRecord, RuntimeVariant,
-    Specialization, VerificationType, verify,
+    verify,
 };
 use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
+use crate::codegen::types::{ExecutableType, Specialization};
 use crate::hir::{CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
 use crate::intrinsics::Builtin;
 use crate::types::{DispatchSlot, NominalTypeId};

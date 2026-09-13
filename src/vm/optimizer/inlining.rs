@@ -2,8 +2,9 @@ use std::collections::HashMap;
 
 use crate::hir::FunctionId;
 
-use super::super::{BytecodeFunction, Instruction, Program, Register, VerificationType};
+use super::super::{BytecodeFunction, Instruction, Program, Register};
 use super::registers::rewrite_registers;
+use crate::codegen::types::ExecutableType;
 
 const INLINE_INSTRUCTION_LIMIT: usize = 16;
 const CALLER_INSTRUCTION_BUDGET: usize = 128;
@@ -30,15 +31,15 @@ pub(super) fn inline_small_functions(program: &mut Program) {
     }
 }
 
-fn scalar(ty: &VerificationType) -> bool {
+fn scalar(ty: &ExecutableType) -> bool {
     matches!(
         ty,
-        VerificationType::Unit
-            | VerificationType::Bool
-            | VerificationType::Integer
-            | VerificationType::Float
-            | VerificationType::CodePoint
-            | VerificationType::Byte
+        ExecutableType::Unit
+            | ExecutableType::Bool
+            | ExecutableType::Integer
+            | ExecutableType::Float
+            | ExecutableType::CodePoint
+            | ExecutableType::Byte
     )
 }
 

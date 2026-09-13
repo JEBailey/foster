@@ -330,10 +330,10 @@ pub(super) fn define_layout_destructors(
                     PhysicalKind::Handle { handle_offset, .. } => {
                         let helper = match &layouts.logical.get(layout.id).kind {
                             LayoutKind::Builtin {
-                                ty: VerificationType::Remote(_),
+                                ty: ExecutableType::Remote(_),
                             } => abi::REMOTE_RELEASE,
                             LayoutKind::Builtin {
-                                ty: VerificationType::Future(_),
+                                ty: ExecutableType::Future(_),
                             } => abi::FUTURE_RELEASE,
                             _ => {
                                 return Err(native_error(

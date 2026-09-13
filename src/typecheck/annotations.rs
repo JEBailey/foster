@@ -167,11 +167,14 @@ impl Checker<'_> {
                 effects,
                 suspends,
             } => Ok(Ty::Callable {
-                parameters: parameters
-                    .iter()
-                    .map(|parameter| self.annotation_type(module, parameter, generics))
-                    .collect::<Result<_, _>>()?,
-                parameter_modes: parameter_modes.clone(),
+                parameters: crate::types::Parameter::try_from_parts(
+                    parameters
+                        .iter()
+                        .map(|parameter| self.annotation_type(module, parameter, generics))
+                        .collect::<Result<_, _>>()?,
+                    parameter_modes.clone(),
+                )
+                .map_err(|error| FosterError::runtime(error.to_string()))?,
                 result: Box::new(self.annotation_type(module, result, generics)?),
                 // A source-level callable type is a contract. The compiler chooses
                 // an erased representation when a concrete callable flows into it.
@@ -274,7 +277,7 @@ impl Checker<'_> {
                 parameters, result, ..
             } => parameters
                 .iter()
-                .find_map(|ty| self.private_type_in(ty))
+                .find_map(|ty| self.private_type_in(&ty.ty))
                 .or_else(|| self.private_type_in(result)),
             _ => None,
         }

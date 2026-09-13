@@ -2,16 +2,17 @@
 use super::{
     BTreeSet, BinaryOp, BytecodeFunction, Constant, FailureCleanup, FosterError, HashMap, HashSet,
     LayoutKind, LayoutRegistry, NativeIrEnvironment, NativeType, ParameterMode, PhysicalKind,
-    Range, SpecializationKey, VerificationType, VerifiedRemoteCall, abi, contract_candidates,
+    Range, SpecializationKey, VerifiedRemoteCall, abi, contract_candidates,
     dereference_native_type, infer_register_types, ir, native_error, native_field_helper,
     native_intrinsic_result_type, native_verification_type, reference_load_helper,
     reference_store_helper, resolve_specialization, runtime_signature, verified_remote_calls,
 };
+use crate::codegen::types::ExecutableType;
 
 pub(super) fn lower_shared_to_native_ir(
     shared: &ir::Function,
     metadata: &BytecodeFunction,
-    source_states: &[Option<Vec<Option<VerificationType>>>],
+    source_states: &[Option<Vec<Option<ExecutableType>>>],
     function_signature: &ir::Signature,
     instance: &SpecializationKey,
     environment: NativeIrEnvironment<'_>,
@@ -25,7 +26,7 @@ pub(super) fn lower_shared_to_native_ir(
     let reference_homes = external_values
         .zip(external_types)
         .filter_map(|(value, ty)| {
-            matches!(ty, crate::vm::VerificationType::Reference(_))
+            matches!(ty, crate::codegen::types::ExecutableType::Reference(_))
                 .then(|| shared.storage_hints[value.0 as usize].map(|home| (home, *value)))
                 .flatten()
         })
@@ -55,7 +56,7 @@ pub(super) fn lower_shared_to_native_ir(
         })
         .collect::<Vec<_>>();
     for (home, value) in &reference_homes {
-        let Some(crate::vm::VerificationType::Reference(pointee)) = metadata
+        let Some(crate::codegen::types::ExecutableType::Reference(pointee)) = metadata
             .capture_types
             .iter()
             .chain(&metadata.parameter_types)
@@ -409,7 +410,7 @@ pub(super) fn lower_shared_to_native_ir(
                 .iter()
                 .chain(&metadata.parameter_types),
         ) {
-            let crate::vm::VerificationType::Reference(pointee) = input_type else {
+            let crate::codegen::types::ExecutableType::Reference(pointee) = input_type else {
                 continue;
             };
             // Pruned reference inputs were released above and have no pointee users.
@@ -1091,7 +1092,7 @@ fn lower_shared_instruction(
                     ir::Instruction::Call {
                         destination: *destination,
                         function: target,
-                        specialization: Vec::new(),
+                        specialization: Default::default(),
                         arguments,
                     },
                     consumed,
@@ -1133,7 +1134,7 @@ fn lower_shared_instruction(
                 ir::Instruction::Call {
                     destination: *destination,
                     function: target,
-                    specialization: Vec::new(),
+                    specialization: Default::default(),
                     arguments,
                 },
                 consumed,
@@ -1178,7 +1179,7 @@ fn lower_shared_instruction(
                 ir::Instruction::Call {
                     destination: *destination,
                     function: target,
-                    specialization: Vec::new(),
+                    specialization: Default::default(),
                     arguments: lowered,
                 },
                 consumed,
@@ -1226,7 +1227,7 @@ fn lower_shared_instruction(
                 ir::Instruction::Portable(ir::PortableInstruction::MakeClosure {
                     destination: concrete,
                     function: target,
-                    specialization: Vec::new(),
+                    specialization: Default::default(),
                     captures: captures
                         .into_iter()
                         .map(|value| (crate::hir::CaptureMode::Move, value))
@@ -1274,27 +1275,22 @@ fn lower_shared_instruction(
                     (
                         environment.program.functions[target]
                             .parameter_modes
-                            .as_slice(),
+                            .clone(),
                         environment.function_types[&target_instance].parameters[captures.len()..]
                             .to_vec(),
                     )
                 }
                 LayoutKind::Builtin {
-                    ty:
-                        crate::vm::VerificationType::Function {
-                            parameters,
-                            parameter_modes,
-                            ..
-                        },
+                    ty: crate::codegen::types::ExecutableType::Function { parameters, .. },
                 } => (
-                    parameter_modes.as_slice(),
+                    parameters.iter().map(|p| p.mode).collect::<Vec<_>>(),
                     parameters
                         .iter()
                         .map(|parameter| {
                             native_verification_type(
                                 environment.program,
                                 environment.layouts,
-                                parameter,
+                                &parameter.ty,
                                 None,
                             )
                         })
@@ -1309,7 +1305,7 @@ fn lower_shared_instruction(
             };
             let (arguments, consumed) = shared_call_arguments(
                 arguments,
-                modes,
+                &modes,
                 &expected,
                 environment,
                 value_types,
@@ -1412,7 +1408,7 @@ fn lower_shared_instruction(
             if ty(*object) == NativeType::String && matches!(field.as_str(), "bytes" | "value") {
                 let bytes = environment
                     .layouts
-                    .builtin(&crate::vm::VerificationType::Bytes)
+                    .builtin(&crate::codegen::types::ExecutableType::Bytes)
                     .ok_or_else(|| native_error("String byte storage has no native layout"))?;
                 value_types[destination.0 as usize] = NativeType::Object(bytes);
                 return Ok(one(ir::Instruction::StringToBytes {
@@ -1743,7 +1739,7 @@ pub(super) fn callable_conversion(
         && matches!(
             layouts.get(expected).kind,
             LayoutKind::Builtin {
-                ty: crate::vm::VerificationType::Function { .. }
+                ty: crate::codegen::types::ExecutableType::Function { .. }
             }
         )
 }
@@ -1861,7 +1857,7 @@ fn shared_capture_arguments(
                 instructions.push((
                     ir::Instruction::Portable(ir::PortableInstruction::MakeWholeReference {
                         destination: reference,
-                        pointee_type: crate::vm::VerificationType::Unknown,
+                        pointee_type: crate::codegen::types::ExecutableType::Unknown,
                         object: *value,
                     }),
                     Vec::new(),

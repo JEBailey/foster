@@ -1,4 +1,4 @@
-//! Semantic types to executable verification/layout types.
+//! Semantic types to shared executable schemas for verification and layout selection.
 //!
 //! The recursive walk is shared; bytecode and native lowering deliberately differ in how
 //! much structural identity they retain. These policies preserve existing backend behavior.
@@ -8,7 +8,8 @@ use std::convert::Infallible;
 use crate::ast::VariantKind;
 use crate::hir::{PackageHir, RecordId};
 use crate::types::{COPY_SLOT, DEINIT_SLOT, NominalTypeId, Type, TypeId, TypeInformation};
-use crate::vm::{Specialization, VerificationType as V};
+
+use crate::codegen::types::{ExecutableType as V, Specialization};
 
 pub(crate) const MAX_TYPE_DEPTH: usize = 64;
 
@@ -143,9 +144,8 @@ pub(crate) fn convert<P: Policy>(
             parameters: function
                 .parameters
                 .iter()
-                .map(|p| nested(p.ty))
+                .map(|p| nested(p.ty).map(|ty| crate::types::Parameter { ty, mode: p.mode }))
                 .collect::<Result<_, _>>()?,
-            parameter_modes: function.parameters.iter().map(|p| p.mode).collect(),
             result: Box::new(nested(function.result)?),
         },
         Type::Intersection(members) => view(members)?,

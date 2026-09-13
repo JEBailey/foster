@@ -8,8 +8,8 @@ use crate::types::TypeInformation;
 
 use super::{
     BytecodeFunction, Constant, Instruction, Program, Register, RuntimeRecord, RuntimeVariant,
-    VerificationType,
 };
+use crate::codegen::types::ExecutableType;
 
 mod lower;
 
@@ -184,7 +184,7 @@ fn compile_construction(compilation: &Compilation) -> Result<Program, FosterErro
                         .map(|field| field.name.clone())
                         .collect::<Vec<_>>();
                     names.sort();
-                    let field_types = vec![VerificationType::Unknown; names.len()];
+                    let field_types = vec![ExecutableType::Unknown; names.len()];
                     (names, field_types)
                 },
                 |fields| {
@@ -388,11 +388,11 @@ impl Compiler<'_> {
                     .types
                     .local_type(capture.local)
                     .map(|ty| verification_type(self.hir, self.types, ty, 0))
-                    .unwrap_or(VerificationType::Unknown);
+                    .unwrap_or(ExecutableType::Unknown);
                 if capture.mode == crate::hir::CaptureMode::Ref
-                    && !matches!(ty, VerificationType::Reference(_))
+                    && !matches!(ty, ExecutableType::Reference(_))
                 {
-                    VerificationType::Reference(Box::new(ty))
+                    ExecutableType::Reference(Box::new(ty))
                 } else {
                     ty
                 }
@@ -468,7 +468,7 @@ impl Compiler<'_> {
                             .map(|ty| verification_type(self.hir, self.types, ty.ty, 0))
                             .collect()
                     })
-                    .unwrap_or_else(|| vec![VerificationType::Unknown; function.parameters.len()]),
+                    .unwrap_or_else(|| vec![ExecutableType::Unknown; function.parameters.len()]),
                 parameter_modes: self
                     .types
                     .function_type(function_id)
@@ -515,7 +515,7 @@ impl Compiler<'_> {
                     .types
                     .function_type(function_id)
                     .map(|signature| verification_type(self.hir, self.types, signature.result, 0))
-                    .unwrap_or(VerificationType::Unknown),
+                    .unwrap_or(ExecutableType::Unknown),
                 registers: lower.next_register,
                 instructions: lower.instructions,
                 instruction_spans: lower.spans,
@@ -530,12 +530,12 @@ fn verification_type(
     information: &TypeInformation,
     ty: crate::types::TypeId,
     depth: usize,
-) -> VerificationType {
+) -> ExecutableType {
     crate::codegen::type_conversion::convert::<crate::codegen::type_conversion::Bytecode>(
         hir,
         information,
         ty,
-        &Vec::new(),
+        &Default::default(),
         depth,
     )
     .unwrap_or_else(|never| match never {})
@@ -544,14 +544,14 @@ fn verification_type(
 fn projected_field_verification_type(
     hir: &hir::PackageHir,
     information: &TypeInformation,
-    receiver: &VerificationType,
+    receiver: &ExecutableType,
     field: &str,
-) -> Option<VerificationType> {
+) -> Option<ExecutableType> {
     match receiver {
-        VerificationType::Reference(pointee) => {
+        ExecutableType::Reference(pointee) => {
             projected_field_verification_type(hir, information, pointee, field)
         }
-        VerificationType::Record { record, arguments } => {
+        ExecutableType::Record { record, arguments } => {
             let (_, field_type) = information
                 .record_field_types
                 .get(record)?
@@ -565,14 +565,14 @@ fn projected_field_verification_type(
                 .collect::<HashMap<_, _>>();
             Some(verification_type(hir, information, *field_type, 0).substitute(&substitutions))
         }
-        VerificationType::List(element) => match field {
-            "empty?" => Some(VerificationType::Bool),
-            "length" => Some(VerificationType::Integer),
+        ExecutableType::List(element) => match field {
+            "empty?" => Some(ExecutableType::Bool),
+            "length" => Some(ExecutableType::Integer),
             "head" => Some((**element).clone()),
             "rest" => Some(receiver.clone()),
             _ => None,
         },
-        VerificationType::Unknown | VerificationType::Generic(_) => Some(VerificationType::Unknown),
+        ExecutableType::Unknown | ExecutableType::Generic(_) => Some(ExecutableType::Unknown),
         _ => None,
     }
 }
@@ -702,9 +702,9 @@ impl FunctionCompiler<'_> {
                     name: name.into(),
                     arguments: Vec::new(),
                     result_type: if slot == crate::types::CAN_COPY_SLOT {
-                        VerificationType::Bool
+                        ExecutableType::Bool
                     } else {
-                        VerificationType::Unknown
+                        ExecutableType::Unknown
                     },
                 },
                 span,

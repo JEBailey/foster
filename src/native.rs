@@ -28,13 +28,12 @@ use crate::codegen::layout::physical::{
     TargetLayout, ValueLayout, ValueSemantic,
 };
 use crate::codegen::layout::{LayoutId, LayoutKind, Registry as LayoutRegistry};
+use crate::codegen::types::ExecutableType;
 use crate::compiler::Compilation;
 use crate::error::FosterError;
 use crate::hir::{FunctionId, Pattern};
 use crate::types::{Type, TypeId};
-use crate::vm::{
-    self, BytecodeFunction, Constant, Instruction, Program, Register, VerificationType,
-};
+use crate::vm::{self, BytecodeFunction, Constant, Instruction, Program, Register};
 
 pub mod abi;
 mod buffers;
@@ -86,12 +85,12 @@ use remote::{
 mod representation;
 use representation::{
     concrete_native_type, instruction_layout_type, native_builtin_result_types, native_type,
-    record_uses_dynamic_dispatch, specialized_verification_type,
+    record_uses_dynamic_dispatch, specialized_executable_type,
 };
 mod specialization;
 use specialization::{
     FlowFacts, VerifiedRemoteCall, collect_function_types, contract_argument_matches,
-    contract_candidates, reachable_instances, resolve_specialization, verification_type_for_native,
+    contract_candidates, executable_type_for_native, reachable_instances, resolve_specialization,
     verified_remote_calls,
 };
 mod thunks;
@@ -153,7 +152,8 @@ struct NativeIrEnvironment<'a> {
     layouts: &'a LayoutRegistry,
     physical_layouts: &'a PhysicalRegistry,
     instances: &'a HashMap<SpecializationKey, FunctionId>,
-    builtin_result_types: &'a HashMap<crate::intrinsics::Builtin, crate::vm::VerificationType>,
+    builtin_result_types:
+        &'a HashMap<crate::intrinsics::Builtin, crate::codegen::types::ExecutableType>,
 }
 
 /// Shared immutable state for lowering one module's functions to Cranelift.
@@ -184,7 +184,7 @@ struct NativeLowering<'a, 'backend> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct SpecializationKey {
     function: FunctionId,
-    substitutions: crate::vm::Specialization,
+    substitutions: crate::codegen::types::Specialization,
 }
 
 #[derive(Debug, Clone)]

@@ -32,10 +32,11 @@ impl fmt::Display for Representation {
     }
 }
 
-/// A Foster scalar type retained until target-specific representation lowering.
+/// A legalized SSA value type used for backend representation selection.
+/// Richer logical shapes and generic arguments live in `super::types::ExecutableType`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Type {
-    /// A fully verified VM value whose scalar representation is not yet known to native codegen.
+    /// A runtime-backed value with no statically known concrete aggregate layout.
     Opaque,
     Unit,
     Bool,
@@ -141,7 +142,7 @@ pub enum Instruction {
     Call {
         destination: Value,
         function: FunctionId,
-        specialization: crate::vm::Specialization,
+        specialization: crate::codegen::types::Specialization,
         arguments: Vec<Value>,
     },
     RuntimeCall {
@@ -214,7 +215,7 @@ pub enum PortableInstruction {
     },
     MakeList {
         destination: Value,
-        element_type: crate::vm::VerificationType,
+        element_type: crate::codegen::types::ExecutableType,
         elements: Vec<Value>,
     },
     Index {
@@ -225,13 +226,13 @@ pub enum PortableInstruction {
     MakeRecord {
         destination: Value,
         record: RecordId,
-        type_arguments: Vec<crate::vm::VerificationType>,
+        type_arguments: Vec<crate::codegen::types::ExecutableType>,
         fields: Vec<(String, Value)>,
     },
     MakeVariant {
         destination: Value,
         variant: VariantId,
-        type_arguments: Vec<crate::vm::VerificationType>,
+        type_arguments: Vec<crate::codegen::types::ExecutableType>,
         payload: Vec<Value>,
     },
     LoadField {
@@ -252,18 +253,18 @@ pub enum PortableInstruction {
     },
     MakeReference {
         destination: Value,
-        pointee_type: crate::vm::VerificationType,
+        pointee_type: crate::codegen::types::ExecutableType,
         object: Value,
         index: Value,
     },
     MakeWholeReference {
         destination: Value,
-        pointee_type: crate::vm::VerificationType,
+        pointee_type: crate::codegen::types::ExecutableType,
         object: Value,
     },
     MakeFieldReference {
         destination: Value,
-        pointee_type: crate::vm::VerificationType,
+        pointee_type: crate::codegen::types::ExecutableType,
         object: Value,
         field: String,
     },
@@ -323,14 +324,14 @@ pub enum PortableInstruction {
     Call {
         destination: Value,
         function: FunctionId,
-        specialization: crate::vm::Specialization,
+        specialization: crate::codegen::types::Specialization,
         arguments: Vec<Value>,
     },
     CallMethod {
         destination: Value,
         receiver: Value,
         function: FunctionId,
-        specialization: crate::vm::Specialization,
+        specialization: crate::codegen::types::Specialization,
         arguments: Vec<Value>,
     },
     CallContractMethod {
@@ -339,12 +340,12 @@ pub enum PortableInstruction {
         slot: DispatchSlot,
         name: String,
         arguments: Vec<Value>,
-        result_type: crate::vm::VerificationType,
+        result_type: crate::codegen::types::ExecutableType,
     },
     MakeClosure {
         destination: Value,
         function: FunctionId,
-        specialization: crate::vm::Specialization,
+        specialization: crate::codegen::types::Specialization,
         captures: Vec<(CaptureMode, Value)>,
     },
     CallValue {
@@ -355,7 +356,7 @@ pub enum PortableInstruction {
     CallClosure {
         destination: Value,
         function: FunctionId,
-        specialization: crate::vm::Specialization,
+        specialization: crate::codegen::types::Specialization,
         captures: Vec<(CaptureMode, Value)>,
         arguments: Vec<Value>,
     },

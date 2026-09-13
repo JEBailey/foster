@@ -133,54 +133,50 @@ impl Writer {
         }
         Ok(())
     }
-    pub(super) fn verification_type(&mut self, ty: &VerificationType) -> Result<(), BinaryError> {
+    pub(super) fn verification_type(&mut self, ty: &ExecutableType) -> Result<(), BinaryError> {
         match ty {
-            VerificationType::Unknown => self.u8(0),
-            VerificationType::Generic(name) => {
+            ExecutableType::Unknown => self.u8(0),
+            ExecutableType::Generic(name) => {
                 self.u8(17);
                 self.string(name)?;
             }
-            VerificationType::Unit => self.u8(1),
-            VerificationType::Bool => self.u8(2),
-            VerificationType::Integer => self.u8(3),
-            VerificationType::Float => self.u8(4),
-            VerificationType::CodePoint => self.u8(5),
-            VerificationType::Byte => self.u8(6),
-            VerificationType::Bytes => self.u8(7),
-            VerificationType::ByteBuffer => self.u8(8),
-            VerificationType::List(element) => {
+            ExecutableType::Unit => self.u8(1),
+            ExecutableType::Bool => self.u8(2),
+            ExecutableType::Integer => self.u8(3),
+            ExecutableType::Float => self.u8(4),
+            ExecutableType::CodePoint => self.u8(5),
+            ExecutableType::Byte => self.u8(6),
+            ExecutableType::Bytes => self.u8(7),
+            ExecutableType::ByteBuffer => self.u8(8),
+            ExecutableType::List(element) => {
                 self.u8(9);
                 self.verification_type(element)?;
             }
-            VerificationType::Reference(value) => {
+            ExecutableType::Reference(value) => {
                 self.u8(10);
                 self.verification_type(value)?;
             }
-            VerificationType::Remote(value) => {
+            ExecutableType::Remote(value) => {
                 self.u8(11);
                 self.verification_type(value)?;
             }
-            VerificationType::Future(value) => {
+            ExecutableType::Future(value) => {
                 self.u8(12);
                 self.verification_type(value)?;
             }
-            VerificationType::Function {
-                parameters,
-                parameter_modes,
-                result,
-            } => {
+            ExecutableType::Function { parameters, result } => {
                 self.u8(13);
                 self.u32(parameters.len())?;
                 for parameter in parameters {
-                    self.verification_type(parameter)?;
+                    self.verification_type(&parameter.ty)?;
                 }
-                self.u32(parameter_modes.len())?;
-                for mode in parameter_modes {
-                    self.parameter_mode(*mode);
+                self.u32(parameters.len())?;
+                for parameter in parameters {
+                    self.parameter_mode(parameter.mode);
                 }
                 self.verification_type(result)?;
             }
-            VerificationType::Record { record, arguments } => {
+            ExecutableType::Record { record, arguments } => {
                 self.u8(14);
                 self.id(*record);
                 self.u32(arguments.len())?;
@@ -188,7 +184,7 @@ impl Writer {
                     self.verification_type(argument)?;
                 }
             }
-            VerificationType::Variant { variant, arguments } => {
+            ExecutableType::Variant { variant, arguments } => {
                 self.u8(15);
                 self.id(*variant);
                 self.u32(arguments.len())?;
@@ -196,7 +192,7 @@ impl Writer {
                     self.verification_type(argument)?;
                 }
             }
-            VerificationType::Union(members) => {
+            ExecutableType::Union(members) => {
                 self.u8(16);
                 self.u32(members.len())?;
                 for member in members {

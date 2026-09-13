@@ -316,8 +316,10 @@ impl Checker<'_> {
             .find(|method| method.name == name)
         {
             Some(method) => Some(Ty::Callable {
-                parameters: method.parameters,
-                parameter_modes: method.parameter_modes,
+                parameters: crate::types::Parameter::from_parts(
+                    method.parameters,
+                    method.parameter_modes,
+                ),
                 result: Box::new(method.result),
                 erased: false,
                 effects: method.effects,
@@ -403,7 +405,6 @@ impl Checker<'_> {
                 self.next_variable = initial_next_variable;
                 let Ty::Callable {
                     parameters,
-                    parameter_modes,
                     result,
                     effects,
                     suspends,
@@ -413,7 +414,10 @@ impl Checker<'_> {
                     unreachable!("structural method lookup returns a callable")
                 };
                 if parameters.len() != method.parameters.len()
-                    || parameter_modes != method.parameter_modes
+                    || !parameters
+                        .iter()
+                        .map(|p| p.mode)
+                        .eq(method.parameter_modes.iter().copied())
                     || !effects_are_subset(&effects, &allowed_effects)
                     || (suspends && !method.suspends)
                 {
@@ -424,7 +428,7 @@ impl Checker<'_> {
                     .iter()
                     .cloned()
                     .zip(parameters)
-                    .all(|(expected, actual)| self.unify(expected, actual, function).is_ok());
+                    .all(|(expected, actual)| self.unify(expected, actual.ty, function).is_ok());
                 let required_result = self.method_result_for_receiver(&method, actual.clone());
                 if parameters_match && self.coerce(required_result, *result, function).is_ok() {
                     matched = Some((self.substitutions.clone(), self.next_variable));
@@ -474,8 +478,10 @@ impl Checker<'_> {
             .find(|method| method.name == name)
         {
             return Ok(Some(Ty::Callable {
-                parameters: method.parameters,
-                parameter_modes: method.parameter_modes,
+                parameters: crate::types::Parameter::from_parts(
+                    method.parameters,
+                    method.parameter_modes,
+                ),
                 result: Box::new(method.result),
                 erased: false,
                 effects: method.effects,
@@ -490,7 +496,6 @@ impl Checker<'_> {
         if let Some(field) = self.structural_field_type(function, &actual, name)? {
             return Ok(Some(Ty::Callable {
                 parameters: Vec::new(),
-                parameter_modes: Vec::new(),
                 result: Box::new(field),
                 erased: false,
                 effects: vec![crate::ast::Effect {
@@ -516,8 +521,10 @@ impl Checker<'_> {
                 .into_iter()
                 .filter(|method| method.name == name)
                 .map(|method| Ty::Callable {
-                    parameters: method.parameters,
-                    parameter_modes: method.parameter_modes,
+                    parameters: crate::types::Parameter::from_parts(
+                        method.parameters,
+                        method.parameter_modes,
+                    ),
                     result: Box::new(method.result),
                     erased: false,
                     effects: method.effects,
@@ -559,7 +566,6 @@ impl Checker<'_> {
         };
         Some(Ty::Callable {
             parameters: Vec::new(),
-            parameter_modes: Vec::new(),
             result: Box::new(result),
             erased: false,
             effects: Vec::new(),

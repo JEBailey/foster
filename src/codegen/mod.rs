@@ -3,4 +3,5 @@
 pub mod ir;
 pub mod layout;
 pub(crate) mod type_conversion;
+pub mod types;
 pub mod vm;

@@ -45,28 +45,51 @@ pub enum Type {
     Module(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-/// A checked callable requirement: type and ownership mode always travel together.
-pub struct Parameter {
-    pub ty: TypeId,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// A callable parameter whose type and ownership mode travel together through compiler phases.
+/// Pairing enforces structural consistency; it does not itself establish type conformance.
+pub struct Parameter<T = TypeId> {
+    pub ty: T,
     pub mode: ast::ParameterMode,
 }
 
-impl Parameter {
-    /// Bridge inference's separate vectors without silently truncating compiler mistakes.
-    pub(crate) fn from_parts(types: Vec<TypeId>, modes: Vec<ast::ParameterMode>) -> Vec<Self> {
-        assert_eq!(
-            types.len(),
-            modes.len(),
-            "parameter types and modes must align"
-        );
-        types
+impl<T> Parameter<T> {
+    /// Validate a boundary that carries types and ownership modes separately.
+    pub fn try_from_parts(
+        types: Vec<T>,
+        modes: Vec<ast::ParameterMode>,
+    ) -> Result<Vec<Self>, ParameterCountMismatch> {
+        if types.len() != modes.len() {
+            return Err(ParameterCountMismatch);
+        }
+        Ok(types
             .into_iter()
             .zip(modes)
             .map(|(ty, mode)| Self { ty, mode })
-            .collect()
+            .collect())
+    }
+
+    pub(crate) fn from_parts(types: Vec<T>, modes: Vec<ast::ParameterMode>) -> Vec<Self> {
+        Self::try_from_parts(types, modes).expect("parameter types and modes must align")
+    }
+
+    pub fn map<U>(self, map: impl FnOnce(T) -> U) -> Parameter<U> {
+        Parameter {
+            ty: map(self.ty),
+            mode: self.mode,
+        }
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParameterCountMismatch;
+
+impl std::fmt::Display for ParameterCountMismatch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("parameter types and modes must align")
+    }
+}
+impl std::error::Error for ParameterCountMismatch {}
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FunctionType {

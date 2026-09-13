@@ -22,7 +22,7 @@ pub(super) fn lower_native_field(
     if matches!(
         objects.layouts.logical.get(layout).kind,
         LayoutKind::Builtin {
-            ty: crate::vm::VerificationType::Bytes
+            ty: crate::codegen::types::ExecutableType::Bytes
         }
     ) {
         let (data_offset, length_offset) = native_bytes_layout(layout, objects)?;
@@ -63,7 +63,7 @@ pub(super) fn lower_native_field(
     if matches!(
         objects.layouts.logical.get(layout).kind,
         LayoutKind::Builtin {
-            ty: crate::vm::VerificationType::ByteBuffer
+            ty: crate::codegen::types::ExecutableType::ByteBuffer
         }
     ) {
         let (_, length_offset, capacity_offset, _) = native_buffer_layout(layout, objects)?;
@@ -95,7 +95,7 @@ pub(super) fn lower_native_field(
     if matches!(
         objects.layouts.logical.get(layout).kind,
         LayoutKind::Builtin {
-            ty: crate::vm::VerificationType::List(_)
+            ty: crate::codegen::types::ExecutableType::List(_)
         }
     ) {
         let (data_offset, length_offset, _, element) = native_buffer_layout(layout, objects)?;

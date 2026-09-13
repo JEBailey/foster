@@ -6,7 +6,7 @@
 use std::fmt;
 
 use super::{LayoutId, LayoutKind, LegalType, Ownership, Registry, Slot};
-use crate::vm::VerificationType;
+use crate::codegen::types::ExecutableType;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TargetLayout {
@@ -831,12 +831,12 @@ fn builtin_layout(
     id: LayoutId,
     target: TargetLayout,
     header: ObjectHeader,
-    ty: &VerificationType,
+    ty: &ExecutableType,
 ) -> Result<PhysicalLayout, LayoutError> {
     let pointer = pointer_value(target, None, ValueSemantic::Object);
     let word = pointer;
     match ty {
-        VerificationType::Bytes => {
+        ExecutableType::Bytes => {
             let data_offset = align_up(header.size, pointer.align)?;
             let length_offset = checked_add(data_offset, pointer.size)?;
             let end = checked_add(length_offset, word.size)?;
@@ -852,14 +852,14 @@ fn builtin_layout(
                 DropPlan::Runtime,
             )
         }
-        VerificationType::ByteBuffer | VerificationType::List(_) => {
+        ExecutableType::ByteBuffer | ExecutableType::List(_) => {
             let data_offset = align_up(header.size, pointer.align)?;
             let length_offset = checked_add(data_offset, pointer.size)?;
             let capacity_offset = checked_add(length_offset, word.size)?;
             let end = checked_add(capacity_offset, word.size)?;
             let element_ty = match ty {
-                VerificationType::ByteBuffer => &VerificationType::Byte,
-                VerificationType::List(element) => element,
+                ExecutableType::ByteBuffer => &ExecutableType::Byte,
+                ExecutableType::List(element) => element,
                 _ => unreachable!(),
             };
             let element = value_layout(registry, target, element_ty);
@@ -873,15 +873,15 @@ fn builtin_layout(
                     length_offset,
                     capacity_offset,
                     element,
-                    mutable: matches!(ty, VerificationType::ByteBuffer),
+                    mutable: matches!(ty, ExecutableType::ByteBuffer),
                 },
                 DropPlan::Buffer {
                     element,
-                    mutable: matches!(ty, VerificationType::ByteBuffer),
+                    mutable: matches!(ty, ExecutableType::ByteBuffer),
                 },
             )
         }
-        VerificationType::Remote(_) | VerificationType::Future(_) => {
+        ExecutableType::Remote(_) | ExecutableType::Future(_) => {
             let handle_offset = align_up(header.size, pointer.align)?;
             let value_descriptor_offset = checked_add(handle_offset, pointer.size)?;
             let end = checked_add(value_descriptor_offset, pointer.size)?;
@@ -897,7 +897,7 @@ fn builtin_layout(
                 DropPlan::Runtime,
             )
         }
-        VerificationType::Function { .. } => {
+        ExecutableType::Function { .. } => {
             let code_offset = align_up(header.size, pointer.align)?;
             let environment_offset = checked_add(code_offset, pointer.size)?;
             let release_offset = checked_add(environment_offset, pointer.size)?;
@@ -999,7 +999,7 @@ fn place_fields(
     Ok((fields, offset, aggregate_align))
 }
 
-fn value_layout(registry: &Registry, target: TargetLayout, ty: &VerificationType) -> ValueLayout {
+fn value_layout(registry: &Registry, target: TargetLayout, ty: &ExecutableType) -> ValueLayout {
     match registry.legal_type(ty) {
         LegalType::I8 => ValueLayout {
             size: 1,
@@ -1051,15 +1051,15 @@ fn pointer_value(
     }
 }
 
-fn value_semantic(registry: &Registry, ty: &VerificationType) -> ValueSemantic {
+fn value_semantic(registry: &Registry, ty: &ExecutableType) -> ValueSemantic {
     match ty {
-        VerificationType::Unit => ValueSemantic::Unit,
-        VerificationType::Bool => ValueSemantic::Bool,
-        VerificationType::Integer => ValueSemantic::Integer,
-        VerificationType::Float => ValueSemantic::Float,
-        VerificationType::CodePoint => ValueSemantic::CodePoint,
-        VerificationType::Byte => ValueSemantic::Byte,
-        VerificationType::Record { .. } => match registry.legal_type(ty) {
+        ExecutableType::Unit => ValueSemantic::Unit,
+        ExecutableType::Bool => ValueSemantic::Bool,
+        ExecutableType::Integer => ValueSemantic::Integer,
+        ExecutableType::Float => ValueSemantic::Float,
+        ExecutableType::CodePoint => ValueSemantic::CodePoint,
+        ExecutableType::Byte => ValueSemantic::Byte,
+        ExecutableType::Record { .. } => match registry.legal_type(ty) {
             LegalType::Pointer {
                 layout: Some(layout),
                 ..
@@ -1074,17 +1074,17 @@ fn value_semantic(registry: &Registry, ty: &VerificationType) -> ValueSemantic {
             },
             _ => ValueSemantic::Object,
         },
-        VerificationType::Reference(_) => ValueSemantic::Reference,
-        VerificationType::Unknown | VerificationType::Union(_) | VerificationType::Generic(_) => {
+        ExecutableType::Reference(_) => ValueSemantic::Reference,
+        ExecutableType::Unknown | ExecutableType::Union(_) | ExecutableType::Generic(_) => {
             ValueSemantic::Opaque
         }
-        VerificationType::Bytes
-        | VerificationType::ByteBuffer
-        | VerificationType::List(_)
-        | VerificationType::Remote(_)
-        | VerificationType::Future(_)
-        | VerificationType::Function { .. }
-        | VerificationType::Variant { .. } => ValueSemantic::Object,
+        ExecutableType::Bytes
+        | ExecutableType::ByteBuffer
+        | ExecutableType::List(_)
+        | ExecutableType::Remote(_)
+        | ExecutableType::Future(_)
+        | ExecutableType::Function { .. }
+        | ExecutableType::Variant { .. } => ValueSemantic::Object,
     }
 }
 
@@ -1342,19 +1342,19 @@ mod tests {
                     Slot {
                         index: 0,
                         name: "flag".into(),
-                        ty: VerificationType::Bool,
+                        ty: ExecutableType::Bool,
                         ownership: Ownership::Owned,
                     },
                     Slot {
                         index: 1,
                         name: "count".into(),
-                        ty: VerificationType::Integer,
+                        ty: ExecutableType::Integer,
                         ownership: Ownership::Owned,
                     },
                     Slot {
                         index: 2,
                         name: "erased".into(),
-                        ty: VerificationType::Unknown,
+                        ty: ExecutableType::Unknown,
                         ownership: Ownership::Shared,
                     },
                 ],
@@ -1379,7 +1379,7 @@ mod tests {
         let registry = registry(vec![
             LayoutKind::Opaque,
             LayoutKind::Pointer {
-                pointee: VerificationType::Integer,
+                pointee: ExecutableType::Integer,
                 ownership: Ownership::Borrowed,
             },
         ]);
@@ -1407,13 +1407,13 @@ mod tests {
                     Slot {
                         index: 0,
                         name: "flag".into(),
-                        ty: VerificationType::Bool,
+                        ty: ExecutableType::Bool,
                         ownership: Ownership::Owned,
                     },
                     Slot {
                         index: 1,
                         name: "wide".into(),
-                        ty: VerificationType::Integer,
+                        ty: ExecutableType::Integer,
                         ownership: Ownership::Owned,
                     },
                 ],
@@ -1448,7 +1448,7 @@ mod tests {
                         variant: id::<Variant>(1),
                         tag: 1,
                         name: "Some".into(),
-                        payload: vec![VerificationType::Integer],
+                        payload: vec![ExecutableType::Integer],
                     },
                 ],
             },
@@ -1480,7 +1480,7 @@ mod tests {
                 fields: vec![Slot {
                     index: 0,
                     name: "value".into(),
-                    ty: VerificationType::Integer,
+                    ty: ExecutableType::Integer,
                     ownership: Ownership::Owned,
                 }],
             },

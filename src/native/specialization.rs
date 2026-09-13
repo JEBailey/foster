@@ -2,12 +2,13 @@
 use super::{
     BTreeSet, BytecodeFunction, Compilation, ContractCandidate, FosterError, FunctionId, HashMap,
     Instruction, LayoutKind, LayoutRegistry, NativeInstance, NativeIrEnvironment, NativeType,
-    Program, RawIdx, Register, SpecializationKey, Type, VerificationType, concrete_native_type,
+    Program, RawIdx, Register, SpecializationKey, Type, concrete_native_type,
     instruction_layout_type, ir, native_error, native_type, record_uses_dynamic_dispatch,
-    specialized_verification_type, vm,
+    specialized_executable_type, vm,
 };
+use crate::codegen::types::ExecutableType;
 
-type RegisterTypes = Vec<Option<VerificationType>>;
+type RegisterTypes = Vec<Option<ExecutableType>>;
 type FunctionFlow = Vec<Option<RegisterTypes>>;
 
 /// Verified flow facts for the immutable construction program, shared by all specializations.
@@ -41,7 +42,7 @@ pub(super) fn reachable_instances(
     let mut contract_calls = BTreeSet::from([(crate::types::DEINIT_SLOT, Vec::new())]);
     let mut pending = vec![SpecializationKey {
         function: main,
-        substitutions: Vec::new(),
+        substitutions: Default::default(),
     }];
     while let Some(instance) = pending.pop() {
         if instance.substitutions.iter().any(|(_, ty)| ty.depth() > 64) {
@@ -134,7 +135,7 @@ pub(super) fn reachable_instances(
                                 remote.0, body.name
                             ))
                         })?;
-                    let VerificationType::Remote(receiver) = receiver else {
+                    let ExecutableType::Remote(receiver) = receiver else {
                         return Err(native_error(format!(
                             "remote receiver in `{}` does not have a Remote type",
                             body.name
@@ -224,7 +225,9 @@ pub(super) fn reachable_instances(
                 let parameter_types = hir_signature
                     .parameters
                     .iter()
-                    .map(|ty| specialized_verification_type(compilation, ty.ty, &Vec::new(), 0))
+                    .map(|ty| {
+                        specialized_executable_type(compilation, ty.ty, &Default::default(), 0)
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 if let Some(receiver) = parameter_types.first() {
                     receiver.infer_specialization(ty, &mut substitutions);
@@ -232,7 +235,7 @@ pub(super) fn reachable_instances(
                 for (parameter, argument) in parameter_types.iter().skip(1).zip(argument_types) {
                     parameter.infer_specialization(argument, &mut substitutions);
                 }
-                let substitutions = substitutions.into_iter().collect::<Vec<_>>();
+                let substitutions = substitutions.into();
                 pending.push(SpecializationKey {
                     function: target,
                     substitutions,
@@ -264,22 +267,22 @@ pub(super) fn reachable_instances(
 }
 
 fn nominal_id(
-    ty: &crate::vm::VerificationType,
+    ty: &crate::codegen::types::ExecutableType,
     compilation: &Compilation,
 ) -> Option<crate::types::NominalTypeId> {
     match ty {
-        crate::vm::VerificationType::Record { record, .. } => {
+        crate::codegen::types::ExecutableType::Record { record, .. } => {
             Some(crate::types::NominalTypeId::Record(*record))
         }
-        crate::vm::VerificationType::Variant { variant, .. } => {
+        crate::codegen::types::ExecutableType::Variant { variant, .. } => {
             Some(crate::types::NominalTypeId::Variant(*variant))
         }
-        crate::vm::VerificationType::List(_)
-        | crate::vm::VerificationType::Bytes
-        | crate::vm::VerificationType::ByteBuffer => {
+        crate::codegen::types::ExecutableType::List(_)
+        | crate::codegen::types::ExecutableType::Bytes
+        | crate::codegen::types::ExecutableType::ByteBuffer => {
             let (module, name) = match ty {
-                crate::vm::VerificationType::List(_) => ("core.list", "List"),
-                crate::vm::VerificationType::Bytes => ("core.bytes", "Bytes"),
+                crate::codegen::types::ExecutableType::List(_) => ("core.list", "List"),
+                crate::codegen::types::ExecutableType::Bytes => ("core.bytes", "Bytes"),
                 _ => ("core.bytes.buffer", "ByteBuffer"),
             };
             let module = compilation.hir.module_named(module)?;
@@ -293,13 +296,12 @@ fn nominal_id(
 }
 
 fn collect_nominal_types(
-    ty: &crate::vm::VerificationType,
-    output: &mut BTreeSet<crate::vm::VerificationType>,
+    ty: &crate::codegen::types::ExecutableType,
+    output: &mut BTreeSet<crate::codegen::types::ExecutableType>,
 ) {
-    use crate::vm::VerificationType;
+    use crate::codegen::types::ExecutableType;
     match ty {
-        VerificationType::Record { arguments, .. }
-        | VerificationType::Variant { arguments, .. } => {
+        ExecutableType::Record { arguments, .. } | ExecutableType::Variant { arguments, .. } => {
             if !ty.contains_generic() {
                 output.insert(ty.clone());
             }
@@ -307,48 +309,48 @@ fn collect_nominal_types(
                 collect_nominal_types(argument, output);
             }
         }
-        VerificationType::List(value) => {
+        ExecutableType::List(value) => {
             if !ty.contains_generic() {
                 output.insert(ty.clone());
             }
             collect_nominal_types(value, output);
         }
-        VerificationType::Bytes | VerificationType::ByteBuffer => {
+        ExecutableType::Bytes | ExecutableType::ByteBuffer => {
             output.insert(ty.clone());
         }
-        VerificationType::Reference(value)
-        | VerificationType::Remote(value)
-        | VerificationType::Future(value) => collect_nominal_types(value, output),
-        VerificationType::Function {
+        ExecutableType::Reference(value)
+        | ExecutableType::Remote(value)
+        | ExecutableType::Future(value) => collect_nominal_types(value, output),
+        ExecutableType::Function {
             parameters, result, ..
         } => {
             for parameter in parameters {
-                collect_nominal_types(parameter, output);
+                collect_nominal_types(&parameter.ty, output);
             }
             collect_nominal_types(result, output);
         }
-        VerificationType::Union(values) => {
+        ExecutableType::Union(values) => {
             for value in values {
                 collect_nominal_types(value, output);
             }
         }
-        VerificationType::Unknown
-        | VerificationType::Generic(_)
-        | VerificationType::Unit
-        | VerificationType::Bool
-        | VerificationType::Integer
-        | VerificationType::Float
-        | VerificationType::CodePoint
-        | VerificationType::Byte => {}
+        ExecutableType::Unknown
+        | ExecutableType::Generic(_)
+        | ExecutableType::Unit
+        | ExecutableType::Bool
+        | ExecutableType::Integer
+        | ExecutableType::Float
+        | ExecutableType::CodePoint
+        | ExecutableType::Byte => {}
     }
 }
 
 fn remote_specialization(
     compilation: &Compilation,
     function: FunctionId,
-    receiver: &VerificationType,
-    arguments: &[VerificationType],
-) -> Result<crate::vm::Specialization, FosterError> {
+    receiver: &ExecutableType,
+    arguments: &[ExecutableType],
+) -> Result<crate::codegen::types::Specialization, FosterError> {
     let declaration = &compilation.hir.functions[function];
     let signature = compilation.types.function_type(function).ok_or_else(|| {
         native_error(format!(
@@ -365,7 +367,7 @@ fn remote_specialization(
     let schemas = signature
         .parameters
         .iter()
-        .map(|ty| specialized_verification_type(compilation, ty.ty, &Vec::new(), 0))
+        .map(|ty| specialized_executable_type(compilation, ty.ty, &Default::default(), 0))
         .collect::<Result<Vec<_>, _>>()?;
     let mut substitutions = std::collections::BTreeMap::new();
     schemas[0].infer_specialization(receiver, &mut substitutions);
@@ -380,33 +382,31 @@ fn remote_specialization(
             )));
         }
     }
-    Ok(substitutions.into_iter().collect())
+    Ok(substitutions.into())
 }
 
-pub(super) fn verification_type_for_native(
+pub(super) fn executable_type_for_native(
     ty: NativeType,
     program: &Program,
     layouts: &LayoutRegistry,
-) -> VerificationType {
+) -> ExecutableType {
     match ty {
-        NativeType::Unit => VerificationType::Unit,
-        NativeType::Bool => VerificationType::Bool,
-        NativeType::Int => VerificationType::Integer,
-        NativeType::Float => VerificationType::Float,
-        NativeType::CodePoint => VerificationType::CodePoint,
-        NativeType::Byte => VerificationType::Byte,
+        NativeType::Unit => ExecutableType::Unit,
+        NativeType::Bool => ExecutableType::Bool,
+        NativeType::Int => ExecutableType::Integer,
+        NativeType::Float => ExecutableType::Float,
+        NativeType::CodePoint => ExecutableType::CodePoint,
+        NativeType::Byte => ExecutableType::Byte,
         NativeType::String => program
             .string_record
-            .map_or(VerificationType::Unknown, |record| {
-                VerificationType::Record {
-                    record,
-                    arguments: Vec::new(),
-                }
+            .map_or(ExecutableType::Unknown, |record| ExecutableType::Record {
+                record,
+                arguments: Vec::new(),
             }),
         NativeType::Object(layout) => match &layouts.get(layout).kind {
             LayoutKind::Record {
                 record, arguments, ..
-            } => VerificationType::Record {
+            } => ExecutableType::Record {
                 record: *record,
                 arguments: arguments.clone(),
             },
@@ -414,28 +414,28 @@ pub(super) fn verification_type_for_native(
                 variant_type,
                 arguments,
                 ..
-            } => VerificationType::Variant {
+            } => ExecutableType::Variant {
                 variant: *variant_type,
                 arguments: arguments.clone(),
             },
             LayoutKind::Pointer { pointee, .. } => {
-                VerificationType::Reference(Box::new(pointee.clone()))
+                ExecutableType::Reference(Box::new(pointee.clone()))
             }
             LayoutKind::Builtin { ty } => ty.clone(),
-            LayoutKind::Opaque | LayoutKind::Closure { .. } => VerificationType::Unknown,
+            LayoutKind::Opaque | LayoutKind::Closure { .. } => ExecutableType::Unknown,
         },
-        NativeType::Opaque => VerificationType::Unknown,
+        NativeType::Opaque => ExecutableType::Unknown,
     }
 }
 
 pub(super) struct VerifiedRemoteCall {
     pub(super) target: FunctionId,
-    pub(super) result: VerificationType,
+    pub(super) result: ExecutableType,
 }
 
 pub(super) fn verified_remote_calls(
     function: &BytecodeFunction,
-    states: &[Option<Vec<Option<VerificationType>>>],
+    states: &[Option<Vec<Option<ExecutableType>>>],
     instance: &SpecializationKey,
     environment: NativeIrEnvironment<'_>,
 ) -> Result<HashMap<u16, VerifiedRemoteCall>, FosterError> {
@@ -459,7 +459,7 @@ pub(super) fn verified_remote_calls(
                 .map(|ty| ty.specialize(&instance.substitutions))
                 .ok_or_else(|| native_error("remote call operand has no verified type"))
         };
-        let VerificationType::Remote(receiver) = logical_type(*remote)? else {
+        let ExecutableType::Remote(receiver) = logical_type(*remote)? else {
             return Err(native_error(
                 "remote call receiver has no verified Remote type",
             ));
@@ -520,7 +520,7 @@ pub(super) fn contract_candidates(
         let concrete = match &layout.kind {
             LayoutKind::Record {
                 record, arguments, ..
-            } => crate::vm::VerificationType::Record {
+            } => crate::codegen::types::ExecutableType::Record {
                 record: *record,
                 arguments: arguments.clone(),
             },
@@ -528,7 +528,7 @@ pub(super) fn contract_candidates(
                 variant_type,
                 arguments,
                 ..
-            } => crate::vm::VerificationType::Variant {
+            } => crate::codegen::types::ExecutableType::Variant {
                 variant: *variant_type,
                 arguments: arguments.clone(),
             },
@@ -599,43 +599,42 @@ pub(super) fn contract_argument_matches(
         return false;
     };
     let LayoutKind::Builtin {
-        ty:
-            VerificationType::Function {
-                parameters,
-                parameter_modes,
-                result,
-            },
+        ty: ExecutableType::Function { parameters, result },
     } = &environment.layouts.get(expected).kind
     else {
         return false;
     };
     let signature = &environment.program.functions[function];
     let substitutions = specialization.iter().cloned().collect::<HashMap<_, _>>();
-    signature.parameter_modes == *parameter_modes
+    signature
+        .parameter_modes
+        .iter()
+        .copied()
+        .eq(parameters.iter().map(|p| p.mode))
         && signature
             .parameter_types
             .iter()
             .map(|ty| ty.substitute(&substitutions))
             .collect::<Vec<_>>()
-            == *parameters
+            == parameters.iter().map(|p| p.ty.clone()).collect::<Vec<_>>()
         && signature.result_type.substitute(&substitutions) == **result
 }
 
 pub(super) fn resolve_specialization(
-    specialization: &crate::vm::Specialization,
-    outer: &crate::vm::Specialization,
-) -> crate::vm::Specialization {
-    specialization
-        .iter()
-        .map(|(name, ty)| (name.clone(), ty.specialize(outer)))
-        .collect()
+    specialization: &crate::codegen::types::Specialization,
+    outer: &crate::codegen::types::Specialization,
+) -> crate::codegen::types::Specialization {
+    specialization.map_values(|ty| ty.specialize(outer))
 }
 
 pub(super) fn collect_function_types(
     compilation: &Compilation,
     program: &Program,
     instances: &[NativeInstance],
-    builtin_result_types: &HashMap<crate::intrinsics::Builtin, crate::vm::VerificationType>,
+    builtin_result_types: &HashMap<
+        crate::intrinsics::Builtin,
+        crate::codegen::types::ExecutableType,
+    >,
     layouts: &mut LayoutRegistry,
     facts: &mut FlowFacts,
 ) -> Result<HashMap<FunctionId, ir::Signature>, FosterError> {
@@ -693,14 +692,14 @@ pub(super) fn collect_function_types(
                                     })
                                 })
                         {
-                            let concrete = specialized_verification_type(
+                            let concrete = specialized_executable_type(
                                 compilation,
                                 ty.ty,
                                 &instance.key.substitutions,
                                 0,
                             )?;
                             layouts.instantiate_type(&concrete)?;
-                            if let VerificationType::Record { record, arguments } = concrete {
+                            if let ExecutableType::Record { record, arguments } = concrete {
                                 return layouts
                                     .record_instance(record, &arguments)
                                     .map(NativeType::Object)

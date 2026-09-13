@@ -1,6 +1,7 @@
 use super::*;
+use crate::codegen::types::ExecutableType as V;
 use crate::types::{DispatchSlot, NominalTypeId};
-use vm::{Instruction as I, VerificationType as V};
+use vm::Instruction as I;
 
 fn id<T>(raw: u32) -> la_arena::Idx<T> {
     la_arena::Idx::from_raw(la_arena::RawIdx::from_u32(raw))
@@ -281,7 +282,7 @@ impl Mapping {
                 parameters, result, ..
             } => {
                 for t in parameters {
-                    self.ty(t);
+                    self.ty(&mut t.ty);
                 }
                 self.ty(result);
             }
@@ -355,10 +356,10 @@ impl Mapping {
             } => {
                 let names = &self.generic_names[&raw(*function)];
                 *function = id(self.functions[&raw(*function)]);
-                for (name, t) in specialization {
-                    if let Some(target) = names.get(name) {
-                        *name = target.clone();
-                    }
+                specialization
+                    .rename(|name| names.get(name).cloned().unwrap_or_else(|| name.to_owned()))
+                    .map_err(|cause| error(cause.to_string()))?;
+                for t in specialization.values_mut() {
                     self.ty(t);
                 }
             }

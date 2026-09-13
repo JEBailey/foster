@@ -1553,7 +1553,7 @@ fn verifier_rejects_inconsistent_specialized_call_results() {
             .functions
             .get_mut(&program.main.unwrap())
             .unwrap()
-            .result_type = vm::VerificationType::Integer;
+            .result_type = foster::codegen::types::ExecutableType::Integer;
         assert!(
             vm::verify(&program).is_err(),
             "{:#?}",

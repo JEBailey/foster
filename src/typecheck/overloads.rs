@@ -44,25 +44,26 @@ impl Checker<'_> {
     pub(super) fn method_key(
         &self,
         name: &str,
-        parameters: &[Ty],
-        modes: &[crate::ast::ParameterMode],
+        parameters: &[crate::types::Parameter<Ty>],
     ) -> MethodKey {
         let mut generics = HashMap::new();
         let mut variables = HashMap::new();
         let mut next_generic = 0;
         MethodKey {
             name: name.to_owned(),
-            parameters: modes
+            parameters: parameters
                 .iter()
-                .copied()
-                .zip(parameters.iter().map(|parameter| {
-                    Self::dispatch_type_key(
-                        parameter,
-                        &mut generics,
-                        &mut variables,
-                        &mut next_generic,
+                .map(|parameter| {
+                    (
+                        parameter.mode,
+                        Self::dispatch_type_key(
+                            &parameter.ty,
+                            &mut generics,
+                            &mut variables,
+                            &mut next_generic,
+                        ),
                     )
-                }))
+                })
                 .collect(),
         }
         .canonical()
@@ -114,16 +115,9 @@ impl Checker<'_> {
                 Box::new(nested(result)),
             ),
             Ty::Callable {
-                parameters,
-                parameter_modes,
-                result,
-                ..
+                parameters, result, ..
             } => DispatchTypeKey::Function(
-                parameter_modes
-                    .iter()
-                    .copied()
-                    .zip(parameters.iter().map(&mut nested))
-                    .collect(),
+                parameters.iter().map(|p| (p.mode, nested(&p.ty))).collect(),
                 Box::new(nested(result)),
             ),
             Ty::Record(record, arguments) => {
@@ -142,11 +136,14 @@ impl Checker<'_> {
     fn overload_argument_conversions(
         &mut self,
         caller: FunctionId,
-        expected: &[Ty],
+        expected: impl ExactSizeIterator<Item = Ty>,
         actual: &[Ty],
     ) -> Option<usize> {
+        if expected.len() != actual.len() {
+            return None;
+        }
         let mut conversions = 0;
-        for (expected, actual) in expected.iter().cloned().zip(actual.iter().cloned()) {
+        for (expected, actual) in expected.zip(actual.iter().cloned()) {
             let expected_resolved = self.resolved(expected.clone());
             let actual_resolved = self.resolved(actual.clone());
             if expected_resolved != actual_resolved {
@@ -219,9 +216,11 @@ impl Checker<'_> {
             self.substitutions = initial_substitutions.clone();
             self.next_variable = initial_next_variable;
             let method = self.instantiate_required_method(method.clone());
-            if let Some(conversions) =
-                self.overload_argument_conversions(function, &method.parameters, &argument_types)
-            {
+            if let Some(conversions) = self.overload_argument_conversions(
+                function,
+                method.parameters.iter().cloned(),
+                &argument_types,
+            ) {
                 matches.push(Ranked {
                     conversions,
                     value: method.clone(),
@@ -260,16 +259,17 @@ impl Checker<'_> {
         self.substitutions = selected.substitutions;
         self.next_variable = selected.next_variable;
         let method = selected.value;
+        let parameters =
+            crate::types::Parameter::from_parts(method.parameters, method.parameter_modes);
+        let dispatch = self.method_key(name, &parameters);
         let callable = Ty::Callable {
-            parameters: method.parameters.clone(),
-            parameter_modes: method.parameter_modes.clone(),
+            parameters,
             result: Box::new(method.result.clone()),
             erased: false,
             effects: method.effects,
             suspends: method.suspends,
         };
         self.expressions.insert(callee, callable.clone());
-        let dispatch = self.method_key(name, &method.parameters, &method.parameter_modes);
         let slot = self.dispatch_slot(dispatch);
         let requirement = method.requirement;
         self.resolved_calls.insert(
@@ -418,7 +418,6 @@ impl Checker<'_> {
             let callable = self.type_of_name(ResolvedName::Function(candidate))?;
             let Ty::Callable {
                 mut parameters,
-                mut parameter_modes,
                 result,
                 erased,
                 effects,
@@ -428,23 +427,23 @@ impl Checker<'_> {
                 unreachable!("declared methods have callable types")
             };
             let expected_receiver = parameters.remove(0);
-            parameter_modes.remove(0);
             if self
-                .coerce(expected_receiver, receiver.clone(), function)
+                .coerce(expected_receiver.ty, receiver.clone(), function)
                 .is_err()
             {
                 continue;
             }
-            if let Some(conversions) =
-                self.overload_argument_conversions(function, &parameters, &argument_types)
-            {
+            if let Some(conversions) = self.overload_argument_conversions(
+                function,
+                parameters.iter().map(|p| p.ty.clone()),
+                &argument_types,
+            ) {
                 matches.push(Ranked {
                     conversions,
                     value: (
                         candidate,
                         Ty::Callable {
                             parameters,
-                            parameter_modes,
                             result,
                             erased,
                             effects,
@@ -541,7 +540,6 @@ impl Checker<'_> {
         }
         let Ty::Callable {
             parameters,
-            parameter_modes,
             result,
             erased,
             ..
@@ -549,9 +547,14 @@ impl Checker<'_> {
         else {
             unreachable!("declared methods have callable types")
         };
-        for (parameter, mode) in definition.parameters.iter().skip(1).zip(&parameter_modes) {
+        for (parameter, mode) in definition
+            .parameters
+            .iter()
+            .skip(1)
+            .zip(parameters.iter().map(|p| p.mode))
+        {
             let parameter_name = &self.hir.locals[parameter.local].name;
-            if *mode == crate::ast::ParameterMode::Borrow
+            if mode == crate::ast::ParameterMode::Borrow
                 && definition.effects.iter().any(|effect| {
                     effect.target.root == *parameter_name
                         && effect.kind != crate::ast::EffectKind::Read
@@ -576,7 +579,6 @@ impl Checker<'_> {
         }
         Ok(Ty::Callable {
             parameters,
-            parameter_modes,
             result: Box::new(self.remote_future_type(caller, *result)?),
             erased,
             effects: Vec::new(),
@@ -638,9 +640,11 @@ impl Checker<'_> {
             let Ty::Callable { parameters, .. } = self.resolved(callable.clone()) else {
                 unreachable!("declared functions have callable types")
             };
-            if let Some(conversions) =
-                self.overload_argument_conversions(function, &parameters, &argument_types)
-            {
+            if let Some(conversions) = self.overload_argument_conversions(
+                function,
+                parameters.iter().map(|p| p.ty.clone()),
+                &argument_types,
+            ) {
                 matches.push(Ranked {
                     conversions,
                     value: (candidate, callable),

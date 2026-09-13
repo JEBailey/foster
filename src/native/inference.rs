@@ -2,10 +2,10 @@
 use super::{
     BinaryOp, BytecodeFunction, Constant, FosterError, HashMap, Instruction, LayoutId, LayoutKind,
     LayoutRegistry, NativeIrEnvironment, NativeType, Pattern, PhysicalKind, PhysicalRegistry,
-    Program, Register, SpecializationKey, UnaryOp, VerificationType, VerifiedRemoteCall,
+    Program, Register, SpecializationKey, UnaryOp, VerifiedRemoteCall, executable_type_for_native,
     native_error, native_type_from_value_layout, resolve_specialization,
-    verification_type_for_native,
 };
+use crate::codegen::types::ExecutableType;
 
 pub(super) fn infer_register_types(
     function: &BytecodeFunction,
@@ -156,7 +156,7 @@ pub(super) fn infer_register_types(
                         environment.function_types[&target].result
                     }
                     LayoutKind::Builtin {
-                        ty: crate::vm::VerificationType::Function { result, .. },
+                        ty: crate::codegen::types::ExecutableType::Function { result, .. },
                     } => native_verification_type(
                         environment.program,
                         environment.layouts,
@@ -222,7 +222,7 @@ pub(super) fn infer_register_types(
                 element_type,
                 ..
             } => {
-                let concrete = crate::vm::VerificationType::List(Box::new(
+                let concrete = crate::codegen::types::ExecutableType::List(Box::new(
                     element_type.specialize(&instance.substitutions),
                 ));
                 let layout = environment.layouts.builtin(&concrete).ok_or_else(|| {
@@ -293,7 +293,7 @@ pub(super) fn infer_register_types(
                             PhysicalKind::Buffer { element, .. } => {
                                 match &environment.layouts.get(layout).kind {
                                     LayoutKind::Builtin {
-                                        ty: VerificationType::List(item),
+                                        ty: ExecutableType::List(item),
                                     } => native_verification_type(
                                         environment.program,
                                         environment.layouts,
@@ -382,7 +382,7 @@ pub(super) fn infer_register_types(
                 source: value,
             } => {
                 let value = register_type(&result, *value, function)?;
-                let remote = VerificationType::Remote(Box::new(verification_type_for_native(
+                let remote = ExecutableType::Remote(Box::new(executable_type_for_native(
                     value,
                     environment.program,
                     environment.layouts,
@@ -399,7 +399,7 @@ pub(super) fn infer_register_types(
                 let call = remote_calls
                     .get(&destination.0)
                     .ok_or_else(|| native_error("remote call has no verified specialization"))?;
-                let future = VerificationType::Future(Box::new(
+                let future = ExecutableType::Future(Box::new(
                     environment.program.remote_outcome_type(call.result.clone()),
                 ));
                 let layout = environment.layouts.builtin(&future).ok_or_else(|| {
@@ -421,7 +421,7 @@ pub(super) fn infer_register_types(
                     )));
                 };
                 let LayoutKind::Builtin {
-                    ty: VerificationType::Future(value),
+                    ty: ExecutableType::Future(value),
                 } = &environment.layouts.get(layout).kind
                 else {
                     return Err(native_error(format!(
@@ -566,9 +566,11 @@ pub(super) fn infer_register_types(
             } = &environment.layouts.get(layout).kind
         {
             let function = &environment.program.functions[function];
-            let callable = VerificationType::Function {
-                parameters: function.parameter_types.clone(),
-                parameter_modes: function.parameter_modes.clone(),
+            let callable = ExecutableType::Function {
+                parameters: crate::types::Parameter::from_parts(
+                    function.parameter_types.clone(),
+                    function.parameter_modes.clone(),
+                ),
                 result: Box::new(function.result_type.clone()),
             }
             .specialize(specialization);
@@ -686,7 +688,7 @@ pub(super) fn field_type(
         (NativeType::String, "rest") => Ok(NativeType::String),
         (NativeType::String, "whitespace?") => Ok(NativeType::Bool),
         (NativeType::String, "bytes" | "value") => layouts
-            .builtin(&crate::vm::VerificationType::Bytes)
+            .builtin(&crate::codegen::types::ExecutableType::Bytes)
             .map(NativeType::Object)
             .ok_or_else(|| native_error("String byte storage has no native layout")),
         (NativeType::Byte, "int") => Ok(NativeType::Int),
@@ -709,7 +711,7 @@ pub(super) fn field_type(
                 native_verification_type(program, layouts, &slot.ty, physical.value.pointee)
             }
             LayoutKind::Builtin {
-                ty: crate::vm::VerificationType::List(element),
+                ty: crate::codegen::types::ExecutableType::List(element),
             } => match field {
                 "empty?" => Ok(NativeType::Bool),
                 "length" => Ok(NativeType::Int),
@@ -726,7 +728,7 @@ pub(super) fn field_type(
                 _ => Err(native_error(format!("native list has no field `{field}`"))),
             },
             LayoutKind::Builtin {
-                ty: crate::vm::VerificationType::Bytes,
+                ty: crate::codegen::types::ExecutableType::Bytes,
             } => match field {
                 "empty?" => Ok(NativeType::Bool),
                 "length" => Ok(NativeType::Int),
@@ -735,7 +737,7 @@ pub(super) fn field_type(
                 _ => Err(native_error(format!("native Bytes has no field `{field}`"))),
             },
             LayoutKind::Builtin {
-                ty: crate::vm::VerificationType::ByteBuffer,
+                ty: crate::codegen::types::ExecutableType::ByteBuffer,
             } => match field {
                 "empty?" => Ok(NativeType::Bool),
                 "length" | "capacity" => Ok(NativeType::Int),
@@ -764,52 +766,52 @@ pub(super) fn field_type(
 pub(super) fn native_verification_type(
     program: &Program,
     layouts: &LayoutRegistry,
-    ty: &crate::vm::VerificationType,
+    ty: &crate::codegen::types::ExecutableType,
     physical_pointee: Option<LayoutId>,
 ) -> Result<NativeType, FosterError> {
-    use crate::vm::VerificationType;
+    use crate::codegen::types::ExecutableType;
     match ty {
-        VerificationType::Unit => Ok(NativeType::Unit),
-        VerificationType::Bool => Ok(NativeType::Bool),
-        VerificationType::Integer => Ok(NativeType::Int),
-        VerificationType::Float => Ok(NativeType::Float),
-        VerificationType::CodePoint => Ok(NativeType::CodePoint),
-        VerificationType::Byte => Ok(NativeType::Byte),
-        VerificationType::Record { record, .. } if Some(*record) == program.string_record => {
+        ExecutableType::Unit => Ok(NativeType::Unit),
+        ExecutableType::Bool => Ok(NativeType::Bool),
+        ExecutableType::Integer => Ok(NativeType::Int),
+        ExecutableType::Float => Ok(NativeType::Float),
+        ExecutableType::CodePoint => Ok(NativeType::CodePoint),
+        ExecutableType::Byte => Ok(NativeType::Byte),
+        ExecutableType::Record { record, .. } if Some(*record) == program.string_record => {
             Ok(NativeType::String)
         }
-        VerificationType::Record { record, .. } if Some(*record) == program.symbol_record => {
+        ExecutableType::Record { record, .. } if Some(*record) == program.symbol_record => {
             Ok(NativeType::String)
         }
-        VerificationType::Record { record, arguments } => layouts
+        ExecutableType::Record { record, arguments } => layouts
             .record_instance(*record, arguments)
             .or(physical_pointee)
             .map(NativeType::Object)
             .ok_or_else(|| native_error("record field has no native layout")),
-        VerificationType::Variant { variant, arguments } => layouts
+        ExecutableType::Variant { variant, arguments } => layouts
             .variant_instance(*variant, arguments)
             .or(physical_pointee)
             .map(NativeType::Object)
             .ok_or_else(|| native_error("variant field has no native layout")),
-        VerificationType::List(_)
-        | VerificationType::Bytes
-        | VerificationType::ByteBuffer
-        | VerificationType::Remote(_)
-        | VerificationType::Future(_)
-        | VerificationType::Function { .. } => layouts
+        ExecutableType::List(_)
+        | ExecutableType::Bytes
+        | ExecutableType::ByteBuffer
+        | ExecutableType::Remote(_)
+        | ExecutableType::Future(_)
+        | ExecutableType::Function { .. } => layouts
             .builtin(ty)
             .or(physical_pointee)
             .map(NativeType::Object)
             .ok_or_else(|| native_error("builtin value has no native layout")),
-        VerificationType::Reference(pointee) => layouts
+        ExecutableType::Reference(pointee) => layouts
             .pointer(pointee, crate::codegen::layout::Ownership::Borrowed)
             .or(physical_pointee)
             .map(NativeType::Object)
             .ok_or_else(|| native_error("reference has no native layout")),
-        VerificationType::Unknown | VerificationType::Union(_) => {
+        ExecutableType::Unknown | ExecutableType::Union(_) => {
             Ok(NativeType::Object(layouts.opaque()))
         }
-        VerificationType::Generic(name) => Err(native_error(format!(
+        ExecutableType::Generic(name) => Err(native_error(format!(
             "unresolved generic `{name}` has no native representation"
         ))),
     }
@@ -819,8 +821,8 @@ fn native_intrinsic_type(
     ty: crate::intrinsics::IntrinsicType,
     layouts: &LayoutRegistry,
 ) -> Result<NativeType, FosterError> {
+    use crate::codegen::types::ExecutableType;
     use crate::intrinsics::IntrinsicType;
-    use crate::vm::VerificationType;
     match ty {
         IntrinsicType::Unit => Ok(NativeType::Unit),
         IntrinsicType::Bool => Ok(NativeType::Bool),
@@ -830,15 +832,15 @@ fn native_intrinsic_type(
         IntrinsicType::Byte => Ok(NativeType::Byte),
         IntrinsicType::String => Ok(NativeType::String),
         IntrinsicType::Bytes => layouts
-            .builtin(&VerificationType::Bytes)
+            .builtin(&ExecutableType::Bytes)
             .map(NativeType::Object)
             .ok_or_else(|| native_error("Bytes intrinsic type has no native layout")),
         IntrinsicType::ByteBuffer => layouts
-            .builtin(&VerificationType::ByteBuffer)
+            .builtin(&ExecutableType::ByteBuffer)
             .map(NativeType::Object)
             .ok_or_else(|| native_error("ByteBuffer intrinsic type has no native layout")),
         IntrinsicType::ListByte => layouts
-            .builtin(&VerificationType::List(Box::new(VerificationType::Byte)))
+            .builtin(&ExecutableType::List(Box::new(ExecutableType::Byte)))
             .map(NativeType::Object)
             .ok_or_else(|| native_error("List<Byte> intrinsic type has no native layout")),
         IntrinsicType::Any => Err(native_error(

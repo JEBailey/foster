@@ -256,12 +256,14 @@ pub fn link(program: &mut Program) -> Result<(), FosterError> {
                     | Instruction::CallMethod { specialization, .. }
                     | Instruction::MakeClosure { specialization, .. }
                     | Instruction::CallClosure { specialization, .. } => {
-                        for (name, _) in specialization.iter_mut() {
-                            if let Some(new) = renames.get(name) {
-                                name.clone_from(new);
-                            }
-                        }
-                        specialization.sort_by(|a, b| a.0.cmp(&b.0));
+                        specialization
+                            .rename(|name| {
+                                renames
+                                    .get(name)
+                                    .cloned()
+                                    .unwrap_or_else(|| name.to_owned())
+                            })
+                            .map_err(|cause| error(cause.to_string()))?;
                     }
                     _ => {}
                 }
@@ -284,12 +286,12 @@ pub fn link(program: &mut Program) -> Result<(), FosterError> {
 
 fn wire_matches(
     ty: &SymbolType,
-    wire: &crate::vm::VerificationType,
+    wire: &crate::codegen::types::ExecutableType,
     types: &BTreeMap<&Name, &TypeBinding>,
     program: &Program,
     generics: &mut BTreeMap<u32, String>,
 ) -> bool {
-    use crate::vm::VerificationType as V;
+    use crate::codegen::types::ExecutableType as V;
     if *wire == V::Unknown {
         return true;
     } // Structural conformance remains a front-end proof.
@@ -360,25 +362,18 @@ fn wire_matches(
                     .zip(actual_args)
                     .all(|(a, b)| wire_matches(a, b, types, program, generics))
         }
-        (
-            SymbolType::Function(signature),
-            V::Function {
-                parameters,
-                parameter_modes,
-                result,
-            },
-        ) => {
+        (SymbolType::Function(signature), V::Function { parameters, result }) => {
             signature.parameters.len() == parameters.len()
                 && signature
                     .parameters
                     .iter()
                     .map(|p| p.mode)
-                    .eq(parameter_modes.iter().copied().map(Mode::from))
+                    .eq(parameters.iter().map(|p| Mode::from(p.mode)))
                 && signature
                     .parameters
                     .iter()
                     .zip(parameters)
-                    .all(|(a, b)| wire_matches(&a.ty, b, types, program, generics))
+                    .all(|(a, b)| wire_matches(&a.ty, &b.ty, types, program, generics))
                 && wire_matches(&signature.result, result, types, program, generics)
         }
         _ => false,

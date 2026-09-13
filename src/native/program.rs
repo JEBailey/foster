@@ -4,10 +4,9 @@ use super::*;
 /// Logical types and parameter ownership retained after scalar/pointer legalization.
 #[derive(Debug, Clone)]
 pub struct LogicalSignature {
-    pub captures: Vec<VerificationType>,
-    pub parameters: Vec<VerificationType>,
-    pub parameter_modes: Vec<ParameterMode>,
-    pub result: VerificationType,
+    pub captures: Vec<ExecutableType>,
+    pub parameters: Vec<crate::types::Parameter<ExecutableType>>,
+    pub result: ExecutableType,
 }
 
 /// One verified specialization. Only preparation can construct or modify it.
@@ -20,7 +19,7 @@ pub struct NativeFunction {
     logical_signature: LogicalSignature,
     management: Vec<MemoryManagement>,
     // Compact logical evidence keyed by construction storage home, retaining CFG alternatives.
-    logical_register_types: Vec<Vec<VerificationType>>,
+    logical_register_types: Vec<Vec<ExecutableType>>,
 }
 
 impl NativeFunction {
@@ -30,7 +29,7 @@ impl NativeFunction {
     pub fn source_function(&self) -> FunctionId {
         self.instance.key.function
     }
-    pub fn specialization(&self) -> &vm::Specialization {
+    pub fn specialization(&self) -> &crate::codegen::types::Specialization {
         &self.instance.key.substitutions
     }
     pub fn logical_signature(&self) -> &LogicalSignature {
@@ -41,12 +40,12 @@ impl NativeFunction {
         &self.management
     }
     /// Verified logical alternatives for each construction register (before ABI lowering).
-    pub fn logical_register_types(&self) -> &[Vec<VerificationType>] {
+    pub fn logical_register_types(&self) -> &[Vec<ExecutableType>] {
         &self.logical_register_types
     }
     /// Source-level logical alternatives for an SSA value, when it has a source storage home.
     /// ABI-only temporaries have no separate Foster identity and return an empty slice.
-    pub fn logical_types(&self, value: ir::Value) -> &[VerificationType] {
+    pub fn logical_types(&self, value: ir::Value) -> &[ExecutableType] {
         self.ir.storage_hints[value.0 as usize]
             .map_or(&[], |home| &self.logical_register_types[usize::from(home)])
     }
@@ -65,7 +64,7 @@ pub struct NativeProgram<'a> {
     pub(super) instances: Vec<NativeInstance>,
     pub(super) instance_ids: HashMap<SpecializationKey, FunctionId>,
     pub(super) function_types: HashMap<FunctionId, ir::Signature>,
-    pub(super) builtin_result_types: HashMap<crate::intrinsics::Builtin, VerificationType>,
+    pub(super) builtin_result_types: HashMap<crate::intrinsics::Builtin, ExecutableType>,
     pub(super) runtime_strings: Vec<String>,
     pub(super) runtime_string_indices: HashMap<u16, u64>,
     pub(super) runtime_literal_indices: HashMap<String, u64>,
@@ -78,11 +77,11 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
     let mut program = shared.metadata;
     let mut layouts = crate::codegen::layout::legalize(&mut program)?;
     if let Some(record) = program.string_record {
-        layouts.instantiate_type(&VerificationType::Record {
+        layouts.instantiate_type(&ExecutableType::Record {
             record,
             arguments: Vec::new(),
         })?;
-        layouts.instantiate_type(&VerificationType::Bytes)?;
+        layouts.instantiate_type(&ExecutableType::Bytes)?;
     }
     let main = program
         .main
@@ -118,7 +117,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         })
         .collect::<BTreeSet<_>>();
     for ty in field_types {
-        layouts.instantiate_type(&VerificationType::Reference(Box::new(ty)))?;
+        layouts.instantiate_type(&ExecutableType::Reference(Box::new(ty)))?;
     }
     let physical_layouts =
         PhysicalRegistry::build(&layouts, TargetLayout::host()).map_err(|error| {
@@ -204,7 +203,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
                     .or_insert(lowered.value_types[value]);
             }
         }
-        let specialize = |ty: &VerificationType| ty.specialize(&instance.key.substitutions);
+        let specialize = |ty: &ExecutableType| ty.specialize(&instance.key.substitutions);
         let mut logical_register_types = vec![BTreeSet::new(); usize::from(source.registers)];
         for registers in source_states.iter().flatten() {
             for (types, ty) in logical_register_types.iter_mut().zip(registers) {
@@ -226,8 +225,10 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
             management,
             logical_signature: LogicalSignature {
                 captures: source.capture_types.iter().map(specialize).collect(),
-                parameters: source.parameter_types.iter().map(specialize).collect(),
-                parameter_modes: source.parameter_modes.clone(),
+                parameters: crate::types::Parameter::from_parts(
+                    source.parameter_types.iter().map(specialize).collect(),
+                    source.parameter_modes.clone(),
+                ),
                 result: specialize(&source.result_type),
             },
             logical_register_types,
@@ -343,11 +344,11 @@ func main() -> Int {
         )
         .unwrap();
         let prepared = prepare(&compilation).unwrap();
-        let string = VerificationType::Record {
+        let string = ExecutableType::Record {
             record: prepared.program.string_record.unwrap(),
             arguments: Vec::new(),
         };
-        let symbol = VerificationType::Record {
+        let symbol = ExecutableType::Record {
             record: prepared.program.symbol_record.unwrap(),
             arguments: Vec::new(),
         };
@@ -384,8 +385,13 @@ func main() -> Int {
         for function in prepared.functions() {
             assert_eq!(function.management().len(), function.ir.value_types.len());
             assert_eq!(
-                function.logical_signature().parameter_modes.len(),
-                function.logical_signature().parameters.len()
+                prepared.program.functions[&function.source_function()].parameter_modes,
+                function
+                    .logical_signature()
+                    .parameters
+                    .iter()
+                    .map(|p| p.mode)
+                    .collect::<Vec<_>>()
             );
         }
     }

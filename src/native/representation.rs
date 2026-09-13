@@ -6,7 +6,8 @@ use super::{
 
 pub(super) fn native_builtin_result_types(
     compilation: &Compilation,
-) -> Result<HashMap<crate::intrinsics::Builtin, crate::vm::VerificationType>, FosterError> {
+) -> Result<HashMap<crate::intrinsics::Builtin, crate::codegen::types::ExecutableType>, FosterError>
+{
     let mut result = HashMap::new();
     for (function, declaration) in compilation.hir.functions.iter() {
         let Some(builtin) = declaration
@@ -25,7 +26,8 @@ pub(super) fn native_builtin_result_types(
                 "native host intrinsic `{builtin:?}` is missing type information"
             ))
         })?;
-        let ty = specialized_verification_type(compilation, signature.result, &Vec::new(), 0)?;
+        let ty =
+            specialized_executable_type(compilation, signature.result, &Default::default(), 0)?;
         result.insert(builtin, ty);
     }
     Ok(result)
@@ -34,9 +36,9 @@ pub(super) fn native_builtin_result_types(
 pub(super) fn instruction_layout_type(
     program: &Program,
     instruction: &Instruction,
-    specialization: &crate::vm::Specialization,
-) -> Option<crate::vm::VerificationType> {
-    use crate::vm::VerificationType;
+    specialization: &crate::codegen::types::Specialization,
+) -> Option<crate::codegen::types::ExecutableType> {
+    use crate::codegen::types::ExecutableType;
     match instruction {
         Instruction::CallContractMethod { result_type, .. } => {
             Some(result_type.specialize(specialization))
@@ -46,7 +48,7 @@ pub(super) fn instruction_layout_type(
             record,
             type_arguments,
             ..
-        } => Some(VerificationType::Record {
+        } => Some(ExecutableType::Record {
             record: *record,
             arguments: type_arguments
                 .iter()
@@ -57,21 +59,21 @@ pub(super) fn instruction_layout_type(
             variant,
             type_arguments,
             ..
-        } => Some(VerificationType::Variant {
+        } => Some(ExecutableType::Variant {
             variant: program.variants[variant].parent,
             arguments: type_arguments
                 .iter()
                 .map(|ty| ty.specialize(specialization))
                 .collect(),
         }),
-        Instruction::MakeList { element_type, .. } => Some(VerificationType::List(Box::new(
+        Instruction::MakeList { element_type, .. } => Some(ExecutableType::List(Box::new(
             element_type.specialize(specialization),
         ))),
         Instruction::MakeReference { pointee_type, .. }
         | Instruction::MakeWholeReference { pointee_type, .. }
-        | Instruction::MakeFieldReference { pointee_type, .. } => Some(
-            VerificationType::Reference(Box::new(pointee_type.specialize(specialization))),
-        ),
+        | Instruction::MakeFieldReference { pointee_type, .. } => Some(ExecutableType::Reference(
+            Box::new(pointee_type.specialize(specialization)),
+        )),
         _ => None,
     }
 }
@@ -80,7 +82,7 @@ pub(super) fn native_type(
     compilation: &Compilation,
     layouts: &mut LayoutRegistry,
     ty: TypeId,
-    substitutions: &crate::vm::Specialization,
+    substitutions: &crate::codegen::types::Specialization,
     function: &str,
 ) -> Result<NativeType, FosterError> {
     if let Type::Generic(name) = &compilation.types.types[ty] {
@@ -113,7 +115,7 @@ pub(super) fn native_type(
             Ok(NativeType::Object(layouts.opaque()))
         }
         Type::Record { record, .. } if Some(record) == compilation.types.core.bytes => {
-            let concrete = crate::vm::VerificationType::Bytes;
+            let concrete = crate::codegen::types::ExecutableType::Bytes;
             layouts.instantiate_type(&concrete)?;
             layouts
                 .builtin(&concrete)
@@ -124,9 +126,8 @@ pub(super) fn native_type(
             record,
             ref arguments,
         } if Some(record) == compilation.types.core.list && arguments.len() == 1 => {
-            let element =
-                specialized_verification_type(compilation, arguments[0], substitutions, 1)?;
-            let concrete = crate::vm::VerificationType::List(Box::new(element));
+            let element = specialized_executable_type(compilation, arguments[0], substitutions, 1)?;
+            let concrete = crate::codegen::types::ExecutableType::List(Box::new(element));
             layouts.instantiate_type(&concrete)?;
             layouts
                 .builtin(&concrete)
@@ -139,9 +140,9 @@ pub(super) fn native_type(
         } => {
             let arguments = arguments
                 .iter()
-                .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 1))
+                .map(|ty| specialized_executable_type(compilation, *ty, substitutions, 1))
                 .collect::<Result<Vec<_>, _>>()?;
-            let concrete = crate::vm::VerificationType::Record {
+            let concrete = crate::codegen::types::ExecutableType::Record {
                 record,
                 arguments: arguments.clone(),
             };
@@ -157,9 +158,9 @@ pub(super) fn native_type(
         } if compilation.hir.variant_types[variant].kind == crate::ast::VariantKind::Alias => {
             let members = arguments
                 .iter()
-                .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 1))
+                .map(|ty| specialized_executable_type(compilation, *ty, substitutions, 1))
                 .collect::<Result<Vec<_>, _>>()?;
-            layouts.instantiate_type(&crate::vm::VerificationType::Union(members))?;
+            layouts.instantiate_type(&crate::codegen::types::ExecutableType::Union(members))?;
             Ok(NativeType::Object(layouts.opaque()))
         }
         Type::Variant {
@@ -168,9 +169,9 @@ pub(super) fn native_type(
         } => {
             let arguments = arguments
                 .iter()
-                .map(|ty| specialized_verification_type(compilation, *ty, substitutions, 1))
+                .map(|ty| specialized_executable_type(compilation, *ty, substitutions, 1))
                 .collect::<Result<Vec<_>, _>>()?;
-            let concrete = crate::vm::VerificationType::Variant {
+            let concrete = crate::codegen::types::ExecutableType::Variant {
                 variant,
                 arguments: arguments.clone(),
             };
@@ -189,7 +190,7 @@ pub(super) fn native_type(
         | Type::Future(_)
         | Type::Function(_)
         | Type::Intersection(_) => {
-            let concrete = specialized_verification_type(compilation, ty, substitutions, 0)?;
+            let concrete = specialized_executable_type(compilation, ty, substitutions, 0)?;
             concrete_native_type(compilation, layouts, &concrete, function)
         }
         ref unsupported => Err(native_error(format!(
@@ -200,12 +201,12 @@ pub(super) fn native_type(
     }
 }
 
-pub(super) fn specialized_verification_type(
+pub(super) fn specialized_executable_type(
     compilation: &Compilation,
     ty: TypeId,
-    substitutions: &crate::vm::Specialization,
+    substitutions: &crate::codegen::types::Specialization,
     depth: usize,
-) -> Result<crate::vm::VerificationType, FosterError> {
+) -> Result<crate::codegen::types::ExecutableType, FosterError> {
     use crate::codegen::type_conversion::{MAX_TYPE_DEPTH, Native, convert};
     convert::<Native>(
         &compilation.hir,
@@ -224,56 +225,50 @@ pub(super) fn specialized_verification_type(
 pub(super) fn concrete_native_type(
     compilation: &Compilation,
     layouts: &mut LayoutRegistry,
-    ty: &crate::vm::VerificationType,
+    ty: &crate::codegen::types::ExecutableType,
     function: &str,
 ) -> Result<NativeType, FosterError> {
-    use crate::vm::VerificationType;
+    use crate::codegen::types::ExecutableType;
     match ty {
-        VerificationType::Unit => Ok(NativeType::Unit),
-        VerificationType::Bool => Ok(NativeType::Bool),
-        VerificationType::Integer => Ok(NativeType::Int),
-        VerificationType::Float => Ok(NativeType::Float),
-        VerificationType::CodePoint => Ok(NativeType::CodePoint),
-        VerificationType::Byte => Ok(NativeType::Byte),
-        VerificationType::Record { record, .. }
-            if Some(*record) == compilation.types.core.string =>
-        {
+        ExecutableType::Unit => Ok(NativeType::Unit),
+        ExecutableType::Bool => Ok(NativeType::Bool),
+        ExecutableType::Integer => Ok(NativeType::Int),
+        ExecutableType::Float => Ok(NativeType::Float),
+        ExecutableType::CodePoint => Ok(NativeType::CodePoint),
+        ExecutableType::Byte => Ok(NativeType::Byte),
+        ExecutableType::Record { record, .. } if Some(*record) == compilation.types.core.string => {
             Ok(NativeType::String)
         }
-        VerificationType::Record { record, .. }
+        ExecutableType::Record { record, .. }
             if record_uses_dynamic_dispatch(compilation, *record) =>
         {
             Ok(NativeType::Object(layouts.opaque()))
         }
-        VerificationType::Record { record, .. }
-            if Some(*record) == compilation.types.core.symbol =>
-        {
+        ExecutableType::Record { record, .. } if Some(*record) == compilation.types.core.symbol => {
             Ok(NativeType::String)
         }
-        VerificationType::Record { record, .. }
-            if Some(*record) == compilation.types.core.bytes =>
-        {
-            layouts.instantiate_type(&VerificationType::Bytes)?;
+        ExecutableType::Record { record, .. } if Some(*record) == compilation.types.core.bytes => {
+            layouts.instantiate_type(&ExecutableType::Bytes)?;
             layouts
-                .builtin(&VerificationType::Bytes)
+                .builtin(&ExecutableType::Bytes)
                 .map(NativeType::Object)
                 .ok_or_else(|| native_error(format!("Bytes type in `{function}` has no layout")))
         }
-        VerificationType::Record { record, arguments } => {
+        ExecutableType::Record { record, arguments } => {
             layouts.instantiate_type(ty)?;
             layouts
                 .record_instance(*record, arguments)
                 .map(NativeType::Object)
                 .ok_or_else(|| native_error(format!("record type in `{function}` has no layout")))
         }
-        VerificationType::Variant { variant, arguments } => {
+        ExecutableType::Variant { variant, arguments } => {
             layouts.instantiate_type(ty)?;
             layouts
                 .variant_instance(*variant, arguments)
                 .map(NativeType::Object)
                 .ok_or_else(|| native_error(format!("variant type in `{function}` has no layout")))
         }
-        VerificationType::Reference(pointee) => {
+        ExecutableType::Reference(pointee) => {
             layouts.instantiate_type(ty)?;
             layouts
                 .pointer(pointee, crate::codegen::layout::Ownership::Borrowed)
@@ -282,19 +277,19 @@ pub(super) fn concrete_native_type(
                     native_error(format!("reference type in `{function}` has no layout"))
                 })
         }
-        VerificationType::Bytes
-        | VerificationType::ByteBuffer
-        | VerificationType::List(_)
-        | VerificationType::Remote(_)
-        | VerificationType::Future(_)
-        | VerificationType::Function { .. } => {
+        ExecutableType::Bytes
+        | ExecutableType::ByteBuffer
+        | ExecutableType::List(_)
+        | ExecutableType::Remote(_)
+        | ExecutableType::Future(_)
+        | ExecutableType::Function { .. } => {
             layouts.instantiate_type(ty)?;
             layouts
                 .builtin(ty)
                 .map(NativeType::Object)
                 .ok_or_else(|| native_error(format!("runtime type in `{function}` has no layout")))
         }
-        VerificationType::Unknown | VerificationType::Union(_) => {
+        ExecutableType::Unknown | ExecutableType::Union(_) => {
             Ok(NativeType::Object(layouts.opaque()))
         }
         unsupported => Err(native_error(format!(

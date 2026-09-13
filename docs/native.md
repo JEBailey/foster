@@ -52,8 +52,21 @@ foster build benchmarks/fibonacci.fos --native --emit native-ir
 
 ## Shared executable type conversion
 
+`codegen::types::{ExecutableType, Specialization}` defines the logical schemas shared by
+specialization, SSA metadata, layout selection, and bytecode verification. Semantic `types::Type`
+describes source requirements; `ExecutableType` retains executable shape and ownership modes;
+legalized SSA types and physical layouts select representation, sizes, alignment, and offsets.
+The shared definitions and substitution helpers have no VM dependency. Layout construction
+still consumes VM program metadata through its existing adapter.
+
+`Unknown` means unavailable or erased shape: it is the verifier's top type and selects an opaque
+native representation, without proving source conformance. `Generic` names can remain during
+intermediate specialization but must be resolved or explicitly handled for materialized layouts.
+Specializations contain sorted, unique names; their values can still contain generic leaves.
+Nominal IDs belong to the current compilation or relocated program rather than a global namespace.
+
 `src/codegen/type_conversion.rs` owns the recursive conversion from semantic types to
-`VerificationType`, which both bytecode verification and native layout selection consume.
+`ExecutableType`, which both bytecode verification and native layout selection consume.
 The `Bytecode` and `Native` policies explicitly preserve these backend differences:
 
 | Decision | Bytecode | Native |
@@ -233,6 +246,11 @@ record/enum/closure and runtime-backed generic layouts before target-specific ph
 calculation. Generic lists, callable signatures, remote/future handles, and places are cached by
 their concrete verifier type. Explicit opaque slots remain only for values whose representation is
 genuinely dynamic.
+
+`codegen::types::Specialization` enforces sorted, unique substitution names at construction.
+Compiler entry lists are canonicalized, serialized lists are checked without repair, and renaming
+restores order while rejecting collisions atomically. Executable callable types and native logical
+signatures use `types::Parameter<ExecutableType>` so ownership stays attached during specialization.
 
 Function signatures preserve named generics for bytecode verification. Direct and method calls
 substitute their concrete arguments before checking operands and results; remote calls infer

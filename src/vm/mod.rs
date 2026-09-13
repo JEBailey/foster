@@ -23,7 +23,7 @@ pub(crate) use compiler::{compile_library, compile_shared};
 pub use host::HostContext;
 pub use ir::{
     BytecodeFunction, Constant, Instruction, Program, ProgramMetrics, Register, RuntimeRecord,
-    RuntimeVariant, Specialization, VerificationType,
+    RuntimeVariant,
 };
 pub use machine::{Machine, release_value};
 pub use optimizer::optimize;
@@ -60,6 +60,7 @@ pub fn run_with_arguments(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codegen::types::ExecutableType;
     use crate::vm::Value;
 
     #[test]
@@ -151,7 +152,7 @@ func main() -> Int {
             {
                 *instruction = Instruction::MakeReference {
                     destination: *destination,
-                    pointee_type: VerificationType::Integer,
+                    pointee_type: ExecutableType::Integer,
                     object: *object,
                     index: *index,
                 };
@@ -198,7 +199,7 @@ func main() -> Int {
             {
                 *instruction = Instruction::MakeReference {
                     destination: *destination,
-                    pointee_type: VerificationType::Integer,
+                    pointee_type: ExecutableType::Integer,
                     object: *object,
                     index: *index,
                 };

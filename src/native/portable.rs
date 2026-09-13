@@ -610,7 +610,7 @@ pub(super) fn lower_portable_native(
             };
             if let LayoutKind::Builtin {
                 ty:
-                    crate::vm::VerificationType::Function {
+                    crate::codegen::types::ExecutableType::Function {
                         parameters, result, ..
                     },
             } = &objects.layouts.logical.get(layout).kind
@@ -646,7 +646,7 @@ pub(super) fn lower_portable_native(
                             native_verification_type(
                                 objects.layouts.program,
                                 objects.layouts.logical,
-                                parameter,
+                                &parameter.ty,
                                 None,
                             )
                         })

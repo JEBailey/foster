@@ -97,7 +97,9 @@ impl<'a> Reader<'a> {
         self.vec(|r| r.reg())
     }
     pub(super) fn specialization(&mut self) -> Result<Specialization, BinaryError> {
-        self.vec(|reader| Ok((reader.string()?, reader.verification_type(0)?)))
+        let entries = self.vec(|reader| Ok((reader.string()?, reader.verification_type(0)?)))?;
+        Specialization::try_from_sorted(entries)
+            .map_err(|error| BinaryError::new(error.to_string()))
     }
     pub(super) fn constant(&mut self) -> Result<Constant, BinaryError> {
         Ok(match self.u8()? {
@@ -137,7 +139,7 @@ impl<'a> Reader<'a> {
     pub(super) fn verification_type(
         &mut self,
         depth: usize,
-    ) -> Result<VerificationType, BinaryError> {
+    ) -> Result<ExecutableType, BinaryError> {
         if depth >= 64 {
             return Err(BinaryError::new(
                 "verification type nesting exceeds 64 levels",
@@ -145,34 +147,39 @@ impl<'a> Reader<'a> {
         }
         let nested = |reader: &mut Self| reader.verification_type(depth + 1);
         Ok(match self.u8()? {
-            0 => VerificationType::Unknown,
-            1 => VerificationType::Unit,
-            2 => VerificationType::Bool,
-            3 => VerificationType::Integer,
-            4 => VerificationType::Float,
-            5 => VerificationType::CodePoint,
-            6 => VerificationType::Byte,
-            7 => VerificationType::Bytes,
-            8 => VerificationType::ByteBuffer,
-            9 => VerificationType::List(Box::new(nested(self)?)),
-            10 => VerificationType::Reference(Box::new(nested(self)?)),
-            11 => VerificationType::Remote(Box::new(nested(self)?)),
-            12 => VerificationType::Future(Box::new(nested(self)?)),
-            13 => VerificationType::Function {
-                parameters: self.vec(|reader| nested(reader))?,
-                parameter_modes: self.vec(|reader| reader.parameter_mode())?,
-                result: Box::new(nested(self)?),
-            },
-            14 => VerificationType::Record {
+            0 => ExecutableType::Unknown,
+            1 => ExecutableType::Unit,
+            2 => ExecutableType::Bool,
+            3 => ExecutableType::Integer,
+            4 => ExecutableType::Float,
+            5 => ExecutableType::CodePoint,
+            6 => ExecutableType::Byte,
+            7 => ExecutableType::Bytes,
+            8 => ExecutableType::ByteBuffer,
+            9 => ExecutableType::List(Box::new(nested(self)?)),
+            10 => ExecutableType::Reference(Box::new(nested(self)?)),
+            11 => ExecutableType::Remote(Box::new(nested(self)?)),
+            12 => ExecutableType::Future(Box::new(nested(self)?)),
+            13 => {
+                let types = self.vec(|reader| nested(reader))?;
+                let modes = self.vec(|reader| reader.parameter_mode())?;
+                let parameters = crate::types::Parameter::try_from_parts(types, modes)
+                    .map_err(|error| BinaryError::new(error.to_string()))?;
+                ExecutableType::Function {
+                    parameters,
+                    result: Box::new(nested(self)?),
+                }
+            }
+            14 => ExecutableType::Record {
                 record: self.id::<Record>()?,
                 arguments: self.vec(|reader| nested(reader))?,
             },
-            15 => VerificationType::Variant {
+            15 => ExecutableType::Variant {
                 variant: self.id::<VariantType>()?,
                 arguments: self.vec(|reader| nested(reader))?,
             },
-            16 => VerificationType::Union(self.vec(|reader| nested(reader))?),
-            17 => VerificationType::Generic(self.string()?),
+            16 => ExecutableType::Union(self.vec(|reader| nested(reader))?),
+            17 => ExecutableType::Generic(self.string()?),
             tag => {
                 return Err(BinaryError::new(format!(
                     "unknown verification type tag {tag}"

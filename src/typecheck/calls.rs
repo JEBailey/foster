@@ -158,11 +158,7 @@ impl Checker<'_> {
                 } else {
                     let requirement = self.contract_method_requirement(object_type.clone(), &name);
                     let dispatch = match &method {
-                        Ty::Callable {
-                            parameters,
-                            parameter_modes,
-                            ..
-                        } => self.method_key(&name, parameters, parameter_modes),
+                        Ty::Callable { parameters, .. } => self.method_key(&name, parameters),
                         _ => unreachable!("contract methods are callable"),
                     };
                     let slot = self.dispatch_slot(dispatch);
@@ -210,11 +206,7 @@ impl Checker<'_> {
         self.dispatch_composed_default(callee, &callee_type);
         if !self.resolved_calls.contains_key(&callee)
             && let hir::Expr::Member { object, name } = self.hir.expressions[callee].clone()
-            && let Ty::Callable {
-                parameters,
-                parameter_modes,
-                ..
-            } = self.resolved(callee_type.clone())
+            && let Ty::Callable { parameters, .. } = self.resolved(callee_type.clone())
         {
             let object_type = self.infer_expression(function, object)?;
             let value_member = matches!(
@@ -225,7 +217,7 @@ impl Checker<'_> {
                 )
             );
             if !value_member {
-                let dispatch = self.method_key(&name, &parameters, &parameter_modes);
+                let dispatch = self.method_key(&name, &parameters);
                 let slot = self.dispatch_slot(dispatch);
                 let requirement = self.contract_method_requirement(object_type, &name);
                 self.resolved_calls.insert(
@@ -239,10 +231,9 @@ impl Checker<'_> {
             }
         }
         let expected_arguments = match self.resolved(callee_type.clone()) {
-            Ty::Function(parameters, _) | Ty::Callable { parameters, .. }
-                if parameters.len() == arguments.len() =>
-            {
-                Some(parameters)
+            Ty::Function(parameters, _) if parameters.len() == arguments.len() => Some(parameters),
+            Ty::Callable { parameters, .. } if parameters.len() == arguments.len() => {
+                Some(parameters.into_iter().map(|p| p.ty).collect())
             }
             _ => None,
         };
@@ -276,10 +267,8 @@ impl Checker<'_> {
             .collect::<Result<Vec<_>, _>>()?;
         // Preserve the relation between callable parameter/result groups before
         // multiple caller places collapse to the same frame group.
-        if let Ty::Callable { parameters, .. } | Ty::Function(parameters, _) = &callee_type {
-            for (expected, actual) in parameters.iter().zip(&argument_types) {
-                self.check_callable_result_origins(expected, actual, function)?;
-            }
+        for (expected, actual) in callee_type.parameter_types().zip(&argument_types) {
+            self.check_callable_result_origins(expected, actual, function)?;
         }
         let callee_type = instantiate_call_groups(callee_type, &argument_types);
         self.check_argument_modes(function, &callee_type, arguments, &argument_types)?;
@@ -325,10 +314,10 @@ impl Checker<'_> {
         result: Ty,
     ) -> Result<(), FosterError> {
         let (parameters, expected_result) = match self.resolved(callee.clone()) {
-            Ty::Function(parameters, result)
-            | Ty::Callable {
+            Ty::Function(parameters, result) => (parameters, result),
+            Ty::Callable {
                 parameters, result, ..
-            } => (parameters, result),
+            } => (parameters.into_iter().map(|p| p.ty).collect(), result),
             _ => {
                 return self
                     .unify(
@@ -516,16 +505,13 @@ impl Checker<'_> {
         arguments: &[ExprId],
         argument_types: &[Ty],
     ) -> Result<(), FosterError> {
-        let Ty::Callable {
-            parameter_modes, ..
-        } = self.resolved(callee.clone())
-        else {
+        let Ty::Callable { parameters, .. } = self.resolved(callee.clone()) else {
             return Ok(());
         };
         for (index, ((argument, argument_type), mode)) in arguments
             .iter()
             .zip(argument_types)
-            .zip(parameter_modes)
+            .zip(parameters.iter().map(|p| p.mode))
             .enumerate()
         {
             let generated_partial_parameter = matches!(
@@ -805,7 +791,6 @@ impl Checker<'_> {
     ) -> Result<Ty, FosterError> {
         Ok(Ty::Callable {
             parameters: Vec::new(),
-            parameter_modes: Vec::new(),
             result: Box::new(self.collection_iterator(element, function)?),
             erased: false,
             effects: vec![crate::ast::Effect {
@@ -819,7 +804,6 @@ impl Checker<'_> {
     fn sequence_accessor_method(&self, result: Ty) -> Ty {
         Ty::Callable {
             parameters: Vec::new(),
-            parameter_modes: Vec::new(),
             result: Box::new(result),
             erased: false,
             effects: vec![crate::ast::Effect {
@@ -865,20 +849,17 @@ impl Checker<'_> {
         let mut parameters = signature
             .parameters
             .into_iter()
-            .map(|ty| self.instantiate(ty, &mut generics))
+            .map(|parameter| parameter.map(|ty| self.instantiate(ty, &mut generics)))
             .collect::<Vec<_>>();
-        let mut parameter_modes = signature.parameter_modes;
         let expected_receiver = parameters
             .first()
             .cloned()
             .ok_or_else(|| self.error(caller, format!("function `{name}` is not a method")))?;
-        self.unify(expected_receiver, receiver, caller)?;
+        self.unify(expected_receiver.ty, receiver, caller)?;
         parameters.remove(0);
-        parameter_modes.remove(0);
         let result = self.instantiate(signature.result, &mut generics);
         Ok(Ty::Callable {
             parameters,
-            parameter_modes,
             result: Box::new(result),
             erased: false,
             effects: callable_effects(self.hir, function),
@@ -901,15 +882,10 @@ impl Checker<'_> {
             return;
         };
         let name = name.clone();
-        let Ty::Callable {
-            parameters,
-            parameter_modes,
-            ..
-        } = self.resolved(callable.clone())
-        else {
+        let Ty::Callable { parameters, .. } = self.resolved(callable.clone()) else {
             return;
         };
-        let key = self.method_key(&name, &parameters, &parameter_modes);
+        let key = self.method_key(&name, &parameters);
         let slot = self.dispatch_slot(key);
         self.resolved_calls.insert(
             callee,
@@ -983,22 +959,19 @@ impl Checker<'_> {
         let mut parameters = signature
             .parameters
             .into_iter()
-            .map(|ty| self.instantiate(ty, &mut generics))
+            .map(|parameter| parameter.map(|ty| self.instantiate(ty, &mut generics)))
             .collect::<Vec<_>>();
-        let mut parameter_modes = signature.parameter_modes;
         let expected_receiver = parameters
             .first()
             .cloned()
             .ok_or_else(|| self.error(caller, format!("function `{name}` is not a method")))?;
-        self.unify(expected_receiver, receiver, caller)?;
+        self.unify(expected_receiver.ty, receiver, caller)?;
         parameters.remove(0);
-        parameter_modes.remove(0);
         let result = self.instantiate(signature.result, &mut generics);
         Ok(Some((
             method_function,
             Ty::Callable {
                 parameters,
-                parameter_modes,
                 result: Box::new(result),
                 erased: false,
                 effects: callable_effects(self.hir, method_function),
@@ -1062,7 +1035,7 @@ impl Checker<'_> {
                     && self.functions.get(&function).is_some_and(|signature| {
                         signature.parameters.first().is_some_and(|expected| {
                             receiver_heads_match(
-                                &self.resolved(expected.clone()),
+                                &self.resolved(expected.ty.clone()),
                                 &resolved_receiver,
                             )
                         })
@@ -1104,8 +1077,10 @@ impl Checker<'_> {
         }
         let method = self.instantiate_required_method(method);
         Ok(Some(Ty::Callable {
-            parameters: method.parameters,
-            parameter_modes: method.parameter_modes,
+            parameters: crate::types::Parameter::from_parts(
+                method.parameters,
+                method.parameter_modes,
+            ),
             result: Box::new(method.result),
             erased: false,
             effects: method.effects,
@@ -1158,19 +1133,22 @@ impl Checker<'_> {
             ));
         }
         let signature = self.functions[&method].clone();
-        let mut parameter_modes = signature.parameter_modes.clone();
         let mut generics = HashMap::new();
         let mut parameters = signature
             .parameters
             .into_iter()
-            .map(|ty| self.instantiate(ty, &mut generics))
+            .map(|parameter| parameter.map(|ty| self.instantiate(ty, &mut generics)))
             .collect::<Vec<_>>();
         let receiver = parameters.remove(0);
-        parameter_modes.remove(0);
         if remote {
-            for (parameter, mode) in definition.parameters.iter().skip(1).zip(&parameter_modes) {
+            for (parameter, mode) in definition
+                .parameters
+                .iter()
+                .skip(1)
+                .zip(parameters.iter().map(|p| p.mode))
+            {
                 let name = &self.hir.locals[parameter.local].name;
-                if *mode == crate::ast::ParameterMode::Borrow
+                if mode == crate::ast::ParameterMode::Borrow
                     && definition.effects.iter().any(|effect| {
                         effect.target.root == *name && effect.kind != crate::ast::EffectKind::Read
                     })
@@ -1182,7 +1160,7 @@ impl Checker<'_> {
                 }
             }
         }
-        self.unify(receiver, Ty::Record(record, arguments), caller)?;
+        self.unify(receiver.ty, Ty::Record(record, arguments), caller)?;
         let result = self.instantiate(signature.result, &mut generics);
         if remote && !remote_transferable(&self.resolved(result.clone())) {
             return Err(self.error(
@@ -1200,7 +1178,6 @@ impl Checker<'_> {
         };
         Ok(Ty::Callable {
             parameters,
-            parameter_modes,
             result: Box::new(result),
             erased: false,
             effects: if remote {
@@ -1237,20 +1214,17 @@ impl Checker<'_> {
             return Err(self.error(caller, format!("method `{name}` is private")));
         }
         let signature = self.functions[&method].clone();
-        let mut parameter_modes = signature.parameter_modes.clone();
         let mut generics = HashMap::new();
         let mut parameters = signature
             .parameters
             .into_iter()
-            .map(|ty| self.instantiate(ty, &mut generics))
+            .map(|parameter| parameter.map(|ty| self.instantiate(ty, &mut generics)))
             .collect::<Vec<_>>();
         let receiver = parameters.remove(0);
-        parameter_modes.remove(0);
-        self.unify(receiver, Ty::Variant(variant, arguments), caller)?;
+        self.unify(receiver.ty, Ty::Variant(variant, arguments), caller)?;
         let result = self.instantiate(signature.result, &mut generics);
         Ok(Ty::Callable {
             parameters,
-            parameter_modes,
             result: Box::new(result),
             erased: false,
             effects: callable_effects(self.hir, method),
@@ -1338,7 +1312,6 @@ fn receiver_heads_match(expected: &Ty, actual: &Ty) -> bool {
 pub(super) fn instantiate_call_groups(callee: Ty, arguments: &[Ty]) -> Ty {
     let Ty::Callable {
         parameters,
-        parameter_modes,
         result,
         erased,
         effects,
@@ -1350,7 +1323,7 @@ pub(super) fn instantiate_call_groups(callee: Ty, arguments: &[Ty]) -> Ty {
     let substitutions = parameters
         .iter()
         .zip(arguments)
-        .filter_map(|(parameter, argument)| match (parameter, argument) {
+        .filter_map(|(parameter, argument)| match (&parameter.ty, argument) {
             (Ty::Reference(formal, _), Ty::Reference(actual, _)) => {
                 Some((formal.clone(), actual.clone()))
             }
@@ -1360,9 +1333,8 @@ pub(super) fn instantiate_call_groups(callee: Ty, arguments: &[Ty]) -> Ty {
     Ty::Callable {
         parameters: parameters
             .into_iter()
-            .map(|parameter| substitute_groups(parameter, &substitutions))
+            .map(|parameter| parameter.map(|ty| substitute_groups(ty, &substitutions)))
             .collect(),
-        parameter_modes,
         result: Box::new(substitute_groups(*result, &substitutions)),
         erased,
         effects,
@@ -1389,7 +1361,6 @@ fn substitute_groups(ty: Ty, substitutions: &HashMap<String, String>) -> Ty {
         ),
         Ty::Callable {
             parameters,
-            parameter_modes,
             result,
             erased,
             effects,
@@ -1397,9 +1368,8 @@ fn substitute_groups(ty: Ty, substitutions: &HashMap<String, String>) -> Ty {
         } => Ty::Callable {
             parameters: parameters
                 .into_iter()
-                .map(|parameter| substitute_groups(parameter, substitutions))
+                .map(|parameter| parameter.map(|ty| substitute_groups(ty, substitutions)))
                 .collect(),
-            parameter_modes,
             result: Box::new(substitute_groups(*result, substitutions)),
             erased,
             effects,

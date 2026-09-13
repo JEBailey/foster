@@ -6,9 +6,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use crate::codegen::types::ExecutableType;
 use crate::error::FosterError;
 use crate::hir::{FunctionId, RecordId, VariantId, VariantTypeId};
-use crate::vm::{Instruction, Program, VerificationType};
+use crate::vm::{Instruction, Program};
 
 pub mod physical;
 
@@ -26,7 +27,7 @@ pub enum Ownership {
 pub struct Slot {
     pub index: u32,
     pub name: String,
-    pub ty: VerificationType,
+    pub ty: ExecutableType,
     pub ownership: Ownership,
 }
 
@@ -35,7 +36,7 @@ pub struct Alternative {
     pub variant: VariantId,
     pub tag: u32,
     pub name: String,
-    pub payload: Vec<VerificationType>,
+    pub payload: Vec<ExecutableType>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -43,27 +44,27 @@ pub enum LayoutKind {
     Record {
         record: RecordId,
         name: String,
-        arguments: Vec<VerificationType>,
+        arguments: Vec<ExecutableType>,
         fields: Vec<Slot>,
     },
     Variant {
         variant_type: VariantTypeId,
         name: String,
-        arguments: Vec<VerificationType>,
+        arguments: Vec<ExecutableType>,
         alternatives: Vec<Alternative>,
     },
     Closure {
         function: FunctionId,
-        specialization: crate::vm::Specialization,
+        specialization: crate::codegen::types::Specialization,
         captures: Vec<Slot>,
     },
     /// A place handle is two scalar components: an owning slot pointer and a projection path.
     Pointer {
-        pointee: VerificationType,
+        pointee: ExecutableType,
         ownership: Ownership,
     },
     /// A runtime-backed structural value such as a list, byte buffer, future, or callable.
-    Builtin { ty: VerificationType },
+    Builtin { ty: ExecutableType },
     /// Box used when an explicitly dynamic value erases its concrete representation.
     Opaque,
 }
@@ -104,12 +105,12 @@ pub struct Registry {
     variants: HashMap<VariantTypeId, LayoutId>,
     record_parameters: HashMap<RecordId, Vec<String>>,
     variant_parameters: HashMap<VariantTypeId, Vec<String>>,
-    record_instances: BTreeMap<(RecordId, Vec<VerificationType>), LayoutId>,
-    variant_instances: BTreeMap<(VariantTypeId, Vec<VerificationType>), LayoutId>,
+    record_instances: BTreeMap<(RecordId, Vec<ExecutableType>), LayoutId>,
+    variant_instances: BTreeMap<(VariantTypeId, Vec<ExecutableType>), LayoutId>,
     closures: HashMap<FunctionId, LayoutId>,
-    closure_instances: BTreeMap<(FunctionId, crate::vm::Specialization), LayoutId>,
-    pointers: BTreeMap<(VerificationType, Ownership), LayoutId>,
-    builtins: BTreeMap<VerificationType, LayoutId>,
+    closure_instances: BTreeMap<(FunctionId, crate::codegen::types::Specialization), LayoutId>,
+    pointers: BTreeMap<(ExecutableType, Ownership), LayoutId>,
+    builtins: BTreeMap<ExecutableType, LayoutId>,
     opaque: Option<LayoutId>,
 }
 
@@ -126,11 +127,7 @@ impl Registry {
         self.records.get(&id).copied()
     }
 
-    pub fn record_instance(
-        &self,
-        id: RecordId,
-        arguments: &[VerificationType],
-    ) -> Option<LayoutId> {
+    pub fn record_instance(&self, id: RecordId, arguments: &[ExecutableType]) -> Option<LayoutId> {
         self.record_instances
             .get(&(id, arguments.to_vec()))
             .copied()
@@ -144,7 +141,7 @@ impl Registry {
     pub fn variant_instance(
         &self,
         id: VariantTypeId,
-        arguments: &[VerificationType],
+        arguments: &[ExecutableType],
     ) -> Option<LayoutId> {
         self.variant_instances
             .get(&(id, arguments.to_vec()))
@@ -153,21 +150,21 @@ impl Registry {
     }
 
     /// Materialize concrete nominal layouts reachable by one native specialization.
-    pub fn instantiate_type(&mut self, ty: &VerificationType) -> Result<(), FosterError> {
+    pub fn instantiate_type(&mut self, ty: &ExecutableType) -> Result<(), FosterError> {
         match ty {
-            VerificationType::Record { record, arguments } => {
+            ExecutableType::Record { record, arguments } => {
                 for argument in arguments {
                     self.instantiate_type(argument)?;
                 }
                 self.instantiate_record(*record, arguments)?;
             }
-            VerificationType::Variant { variant, arguments } => {
+            ExecutableType::Variant { variant, arguments } => {
                 for argument in arguments {
                     self.instantiate_type(argument)?;
                 }
                 self.instantiate_variant(*variant, arguments)?;
             }
-            VerificationType::Reference(value) => {
+            ExecutableType::Reference(value) => {
                 self.instantiate_type(value)?;
                 let key = ((**value).clone(), Ownership::Borrowed);
                 if !self.pointers.contains_key(&key) {
@@ -178,27 +175,27 @@ impl Registry {
                     self.pointers.insert(key, layout);
                 }
             }
-            VerificationType::List(value)
-            | VerificationType::Remote(value)
-            | VerificationType::Future(value) => {
+            ExecutableType::List(value)
+            | ExecutableType::Remote(value)
+            | ExecutableType::Future(value) => {
                 self.instantiate_type(value)?;
                 self.instantiate_builtin(ty);
             }
-            VerificationType::Function {
+            ExecutableType::Function {
                 parameters, result, ..
             } => {
                 for parameter in parameters {
-                    self.instantiate_type(parameter)?;
+                    self.instantiate_type(&parameter.ty)?;
                 }
                 self.instantiate_type(result)?;
                 self.instantiate_builtin(ty);
             }
-            VerificationType::Union(members) => {
+            ExecutableType::Union(members) => {
                 for member in members {
                     self.instantiate_type(member)?;
                 }
             }
-            VerificationType::Bytes | VerificationType::ByteBuffer => {
+            ExecutableType::Bytes | ExecutableType::ByteBuffer => {
                 self.instantiate_builtin(ty);
             }
             _ => {}
@@ -206,7 +203,7 @@ impl Registry {
         Ok(())
     }
 
-    fn instantiate_builtin(&mut self, ty: &VerificationType) -> LayoutId {
+    fn instantiate_builtin(&mut self, ty: &ExecutableType) -> LayoutId {
         if let Some(layout) = self.builtin(ty) {
             return layout;
         }
@@ -218,7 +215,7 @@ impl Registry {
     fn instantiate_record(
         &mut self,
         record: RecordId,
-        arguments: &[VerificationType],
+        arguments: &[ExecutableType],
     ) -> Result<LayoutId, FosterError> {
         let key = (record, arguments.to_vec());
         if let Some(layout) = self.record_instances.get(&key) {
@@ -276,7 +273,7 @@ impl Registry {
     fn instantiate_variant(
         &mut self,
         variant_type: VariantTypeId,
-        arguments: &[VerificationType],
+        arguments: &[ExecutableType],
     ) -> Result<LayoutId, FosterError> {
         let key = (variant_type, arguments.to_vec());
         if let Some(layout) = self.variant_instances.get(&key) {
@@ -347,7 +344,7 @@ impl Registry {
     pub fn closure_instance(
         &self,
         id: FunctionId,
-        specialization: &crate::vm::Specialization,
+        specialization: &crate::codegen::types::Specialization,
     ) -> Option<LayoutId> {
         self.closure_instances
             .get(&(id, specialization.clone()))
@@ -364,7 +361,7 @@ impl Registry {
     pub fn instantiate_closure(
         &mut self,
         function: FunctionId,
-        specialization: &crate::vm::Specialization,
+        specialization: &crate::codegen::types::Specialization,
     ) -> Result<LayoutId, FosterError> {
         let key = (function, specialization.clone());
         if let Some(layout) = self.closure_instances.get(&key) {
@@ -405,11 +402,11 @@ impl Registry {
         Ok(layout)
     }
 
-    pub fn pointer(&self, pointee: &VerificationType, ownership: Ownership) -> Option<LayoutId> {
+    pub fn pointer(&self, pointee: &ExecutableType, ownership: Ownership) -> Option<LayoutId> {
         self.pointers.get(&(pointee.clone(), ownership)).copied()
     }
 
-    pub fn builtin(&self, ty: &VerificationType) -> Option<LayoutId> {
+    pub fn builtin(&self, ty: &ExecutableType) -> Option<LayoutId> {
         self.builtins.get(ty).copied()
     }
 
@@ -418,44 +415,42 @@ impl Registry {
     }
 
     /// Reduce a verifier type to the scalar-or-pointer contract shared by the VM and Cranelift.
-    pub fn legal_type(&self, ty: &VerificationType) -> LegalType {
+    pub fn legal_type(&self, ty: &ExecutableType) -> LegalType {
         match ty {
-            VerificationType::Unit | VerificationType::Bool | VerificationType::Byte => {
-                LegalType::I8
-            }
-            VerificationType::CodePoint => LegalType::I32,
-            VerificationType::Integer => LegalType::I64,
-            VerificationType::Float => LegalType::F64,
-            VerificationType::Record { record, .. } => LegalType::Pointer {
+            ExecutableType::Unit | ExecutableType::Bool | ExecutableType::Byte => LegalType::I8,
+            ExecutableType::CodePoint => LegalType::I32,
+            ExecutableType::Integer => LegalType::I64,
+            ExecutableType::Float => LegalType::F64,
+            ExecutableType::Record { record, .. } => LegalType::Pointer {
                 layout: match ty {
-                    VerificationType::Record { arguments, .. } => {
+                    ExecutableType::Record { arguments, .. } => {
                         self.record_instance(*record, arguments)
                     }
                     _ => unreachable!(),
                 },
                 ownership: Ownership::Owned,
             },
-            VerificationType::Variant { variant, .. } => LegalType::Pointer {
+            ExecutableType::Variant { variant, .. } => LegalType::Pointer {
                 layout: match ty {
-                    VerificationType::Variant { arguments, .. } => {
+                    ExecutableType::Variant { arguments, .. } => {
                         self.variant_instance(*variant, arguments)
                     }
                     _ => unreachable!(),
                 },
                 ownership: Ownership::Owned,
             },
-            VerificationType::Reference(pointee) => LegalType::Pointer {
+            ExecutableType::Reference(pointee) => LegalType::Pointer {
                 layout: self.pointer(pointee, Ownership::Borrowed),
                 ownership: Ownership::Borrowed,
             },
-            VerificationType::Unknown | VerificationType::Union(_) => LegalType::Opaque,
-            VerificationType::Generic(_) => LegalType::UnresolvedGeneric,
-            VerificationType::Bytes
-            | VerificationType::ByteBuffer
-            | VerificationType::List(_)
-            | VerificationType::Remote(_)
-            | VerificationType::Future(_)
-            | VerificationType::Function { .. } => LegalType::Pointer {
+            ExecutableType::Unknown | ExecutableType::Union(_) => LegalType::Opaque,
+            ExecutableType::Generic(_) => LegalType::UnresolvedGeneric,
+            ExecutableType::Bytes
+            | ExecutableType::ByteBuffer
+            | ExecutableType::List(_)
+            | ExecutableType::Remote(_)
+            | ExecutableType::Future(_)
+            | ExecutableType::Function { .. } => LegalType::Pointer {
                 layout: self.builtin(ty),
                 ownership: Ownership::Owned,
             },
@@ -496,7 +491,7 @@ fn layout_kind_has_generic(kind: &LayoutKind) -> bool {
         LayoutKind::Variant { alternatives, .. } => alternatives
             .iter()
             .flat_map(|alternative| &alternative.payload)
-            .any(VerificationType::contains_generic),
+            .any(ExecutableType::contains_generic),
         LayoutKind::Closure { captures, .. } => {
             captures.iter().any(|capture| capture.ty.contains_generic())
         }
@@ -657,7 +652,7 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
                         .and_then(|modes| modes.get(index))
                         .map_or_else(
                             || {
-                                if matches!(ty, VerificationType::Reference(_)) {
+                                if matches!(ty, ExecutableType::Reference(_)) {
                                     Ownership::Borrowed
                                 } else {
                                     Ownership::Owned
@@ -674,7 +669,7 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
                 .collect();
         let kind = LayoutKind::Closure {
             function: *function,
-            specialization: Vec::new(),
+            specialization: Default::default(),
             captures,
         };
         let layout = if layout_kind_has_generic(&kind) {
@@ -685,7 +680,7 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
         registry.closures.insert(*function, layout);
         registry
             .closure_instances
-            .insert((*function, Vec::new()), layout);
+            .insert((*function, Default::default()), layout);
     }
 
     collect_runtime_layouts(program, &mut registry);
@@ -702,12 +697,12 @@ fn collect_runtime_layouts(program: &Program, registry: &mut Registry) {
         for instruction in &function.instructions {
             match instruction {
                 Instruction::MakeList { element_type, .. } => {
-                    types.insert(VerificationType::List(Box::new(element_type.clone())));
+                    types.insert(ExecutableType::List(Box::new(element_type.clone())));
                 }
                 Instruction::MakeReference { pointee_type, .. }
                 | Instruction::MakeWholeReference { pointee_type, .. }
                 | Instruction::MakeFieldReference { pointee_type, .. } => {
-                    types.insert(VerificationType::Reference(Box::new(pointee_type.clone())));
+                    types.insert(ExecutableType::Reference(Box::new(pointee_type.clone())));
                 }
                 _ => {}
             }
@@ -724,9 +719,9 @@ fn collect_runtime_layouts(program: &Program, registry: &mut Registry) {
     }
 }
 
-fn visit_runtime_types(ty: &VerificationType, registry: &mut Registry) {
+fn visit_runtime_types(ty: &ExecutableType, registry: &mut Registry) {
     match ty {
-        VerificationType::Reference(pointee) => {
+        ExecutableType::Reference(pointee) => {
             let key = ((**pointee).clone(), Ownership::Borrowed);
             if !registry.pointers.contains_key(&key) {
                 let id = registry.push_runtime_kind(LayoutKind::Pointer {
@@ -737,16 +732,16 @@ fn visit_runtime_types(ty: &VerificationType, registry: &mut Registry) {
             }
             visit_runtime_types(pointee, registry);
         }
-        VerificationType::List(element)
-        | VerificationType::Remote(element)
-        | VerificationType::Future(element) => {
+        ExecutableType::List(element)
+        | ExecutableType::Remote(element)
+        | ExecutableType::Future(element) => {
             if !registry.builtins.contains_key(ty) {
                 let id = registry.push_runtime_kind(LayoutKind::Builtin { ty: ty.clone() });
                 registry.builtins.insert(ty.clone(), id);
             }
             visit_runtime_types(element, registry);
         }
-        VerificationType::Function {
+        ExecutableType::Function {
             parameters, result, ..
         } => {
             if !registry.builtins.contains_key(ty) {
@@ -755,21 +750,20 @@ fn visit_runtime_types(ty: &VerificationType, registry: &mut Registry) {
             }
             parameters
                 .iter()
-                .for_each(|ty| visit_runtime_types(ty, registry));
+                .for_each(|ty| visit_runtime_types(&ty.ty, registry));
             visit_runtime_types(result, registry);
         }
-        VerificationType::Union(types) => {
+        ExecutableType::Union(types) => {
             types
                 .iter()
                 .for_each(|ty| visit_runtime_types(ty, registry));
         }
-        VerificationType::Record { arguments, .. }
-        | VerificationType::Variant { arguments, .. } => {
+        ExecutableType::Record { arguments, .. } | ExecutableType::Variant { arguments, .. } => {
             arguments
                 .iter()
                 .for_each(|ty| visit_runtime_types(ty, registry));
         }
-        VerificationType::Bytes | VerificationType::ByteBuffer
+        ExecutableType::Bytes | ExecutableType::ByteBuffer
             if !registry.builtins.contains_key(ty) =>
         {
             let id = registry.push_runtime_kind(LayoutKind::Builtin { ty: ty.clone() });
@@ -887,7 +881,7 @@ mod tests {
                 name: "Pair".into(),
                 parameters: Vec::new(),
                 layout: Arc::new(crate::vm::RecordLayout::new(vec!["a".into(), "b".into()])),
-                field_types: vec![VerificationType::Integer, VerificationType::Bool],
+                field_types: vec![ExecutableType::Integer, ExecutableType::Bool],
             },
         );
         program.functions.insert(
@@ -902,7 +896,7 @@ mod tests {
                 returns_reference: false,
                 captures: 0,
                 capture_types: vec![],
-                result_type: VerificationType::Record {
+                result_type: ExecutableType::Record {
                     record,
                     arguments: Vec::new(),
                 },
@@ -919,7 +913,7 @@ mod tests {
         let registry = legalize(&mut program).unwrap();
         let layout = registry.record(record).unwrap();
         assert_eq!(
-            registry.legal_type(&VerificationType::Record {
+            registry.legal_type(&ExecutableType::Record {
                 record,
                 arguments: Vec::new(),
             }),
@@ -929,7 +923,7 @@ mod tests {
             }
         );
         assert_eq!(
-            registry.legal_type(&VerificationType::Unknown),
+            registry.legal_type(&ExecutableType::Unknown),
             LegalType::Opaque
         );
         let Instruction::MakeRecord { fields, .. } = &program.functions[&function].instructions[0]
@@ -948,7 +942,7 @@ mod tests {
             name: name.into(),
             parameters: Vec::new(),
             layout: Arc::new(crate::vm::RecordLayout::new(vec!["value".into()])),
-            field_types: vec![VerificationType::Integer],
+            field_types: vec![ExecutableType::Integer],
         };
         let mut left = Program::default();
         left.records.insert(second, runtime("Second"));
@@ -983,17 +977,17 @@ func main() -> Int { Boxed { value: 42 }.value }
         let schema = registry.record(record).unwrap();
         assert!(!registry.get(schema).materialized);
         assert_eq!(
-            registry.legal_type(&VerificationType::Generic("T".into())),
+            registry.legal_type(&ExecutableType::Generic("T".into())),
             LegalType::UnresolvedGeneric
         );
 
-        let concrete = VerificationType::Record {
+        let concrete = ExecutableType::Record {
             record,
-            arguments: vec![VerificationType::Integer],
+            arguments: vec![ExecutableType::Integer],
         };
         registry.instantiate_type(&concrete).unwrap();
         let instance = registry
-            .record_instance(record, &[VerificationType::Integer])
+            .record_instance(record, &[ExecutableType::Integer])
             .unwrap();
         assert_ne!(schema, instance);
         assert!(registry.get(instance).materialized);
@@ -1008,29 +1002,31 @@ func main() -> Int { Boxed { value: 42 }.value }
         let mut registry = Registry::default();
         registry.opaque = Some(registry.push(LayoutKind::Opaque));
         let types = [
-            VerificationType::Bytes,
-            VerificationType::ByteBuffer,
-            VerificationType::List(Box::new(VerificationType::Integer)),
-            VerificationType::Remote(Box::new(VerificationType::Integer)),
-            VerificationType::Future(Box::new(VerificationType::Integer)),
-            VerificationType::Function {
-                parameters: vec![VerificationType::Integer],
-                parameter_modes: vec![crate::ast::ParameterMode::Borrow],
-                result: Box::new(VerificationType::Bool),
+            ExecutableType::Bytes,
+            ExecutableType::ByteBuffer,
+            ExecutableType::List(Box::new(ExecutableType::Integer)),
+            ExecutableType::Remote(Box::new(ExecutableType::Integer)),
+            ExecutableType::Future(Box::new(ExecutableType::Integer)),
+            ExecutableType::Function {
+                parameters: crate::types::Parameter::from_parts(
+                    vec![ExecutableType::Integer],
+                    vec![crate::ast::ParameterMode::Borrow],
+                ),
+                result: Box::new(ExecutableType::Bool),
             },
         ];
         for ty in &types {
             registry.instantiate_type(ty).unwrap();
             assert!(registry.get(registry.builtin(ty).unwrap()).materialized);
         }
-        let reference = VerificationType::Reference(Box::new(VerificationType::Integer));
+        let reference = ExecutableType::Reference(Box::new(ExecutableType::Integer));
         registry.instantiate_type(&reference).unwrap();
         let place = registry
-            .pointer(&VerificationType::Integer, Ownership::Borrowed)
+            .pointer(&ExecutableType::Integer, Ownership::Borrowed)
             .unwrap();
         assert!(registry.get(place).materialized);
 
-        let schema = VerificationType::List(Box::new(VerificationType::Generic("T".into())));
+        let schema = ExecutableType::List(Box::new(ExecutableType::Generic("T".into())));
         registry.instantiate_type(&schema).unwrap();
         assert!(
             !registry
@@ -1042,13 +1038,13 @@ func main() -> Int { Boxed { value: 42 }.value }
             physical::PhysicalRegistry::build(&registry, physical::TargetLayout::host()).unwrap();
         assert!(matches!(
             physical
-                .get(registry.builtin(&VerificationType::Bytes).unwrap())
+                .get(registry.builtin(&ExecutableType::Bytes).unwrap())
                 .kind,
             physical::PhysicalKind::Bytes { .. }
         ));
         assert!(matches!(
             physical
-                .get(registry.builtin(&VerificationType::ByteBuffer).unwrap())
+                .get(registry.builtin(&ExecutableType::ByteBuffer).unwrap())
                 .kind,
             physical::PhysicalKind::Buffer { .. }
         ));

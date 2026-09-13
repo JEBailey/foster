@@ -238,7 +238,7 @@ fn emit_drops(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::vm::VerificationType;
+    use crate::codegen::types::ExecutableType;
 
     #[test]
     fn drops_a_condition_on_both_branch_edges() {
@@ -246,13 +246,13 @@ mod tests {
             name: "branch".to_owned(),
             intrinsic_stub: false,
             parameters: 1,
-            parameter_types: vec![VerificationType::Bool],
+            parameter_types: vec![ExecutableType::Bool],
             parameter_modes: vec![crate::ast::ParameterMode::Borrow],
             mutable_parameters: vec![false],
             returns_reference: false,
             captures: 0,
             capture_types: Vec::new(),
-            result_type: VerificationType::Unknown,
+            result_type: ExecutableType::Unknown,
             registers: 2,
             instructions: vec![
                 Instruction::JumpIfFalse {
@@ -295,13 +295,13 @@ mod tests {
             name: "field receiver".to_owned(),
             intrinsic_stub: false,
             parameters: 1,
-            parameter_types: vec![VerificationType::Unknown],
+            parameter_types: vec![ExecutableType::Unknown],
             parameter_modes: vec![crate::ast::ParameterMode::Borrow],
             mutable_parameters: vec![false],
             returns_reference: false,
             captures: 0,
             capture_types: Vec::new(),
-            result_type: VerificationType::Unknown,
+            result_type: ExecutableType::Unknown,
             registers: 2,
             instructions: vec![
                 Instruction::LoadField {

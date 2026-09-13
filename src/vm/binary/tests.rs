@@ -3,6 +3,103 @@ use super::*;
 use crate::vm::{CompileOptions, Machine, compile, compile_with_options};
 
 #[test]
+fn decoder_rejects_noncanonical_specialization_names() {
+    for names in [["Z", "A"], ["T", "T"]] {
+        let mut writer = Writer { bytes: Vec::new() };
+        writer.u32(names.len()).unwrap();
+        for name in names {
+            writer.string(name).unwrap();
+            writer.verification_type(&ExecutableType::Integer).unwrap();
+        }
+        let error = Reader {
+            bytes: &writer.bytes,
+            offset: 0,
+        }
+        .specialization()
+        .unwrap_err();
+        assert!(error.to_string().contains("unsorted or duplicate"));
+    }
+}
+
+#[test]
+fn decoder_rejects_missing_and_extra_callable_modes_even_when_nested() {
+    for modes in [0, 2] {
+        for nested in [false, true] {
+            let mut writer = Writer { bytes: Vec::new() };
+            if nested {
+                writer.u8(13);
+                writer.u32(1).unwrap();
+            }
+            writer.u8(13);
+            writer.u32(1).unwrap();
+            writer.verification_type(&ExecutableType::Integer).unwrap();
+            writer.u32(modes).unwrap();
+            for _ in 0..modes {
+                writer.parameter_mode(ParameterMode::Consume);
+            }
+            writer.verification_type(&ExecutableType::Unit).unwrap();
+            if nested {
+                writer.u32(1).unwrap();
+                writer.parameter_mode(ParameterMode::Borrow);
+                writer.verification_type(&ExecutableType::Unit).unwrap();
+            }
+            let error = Reader {
+                bytes: &writer.bytes,
+                offset: 0,
+            }
+            .verification_type(0)
+            .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("parameter types and modes must align"),
+                "{error}"
+            );
+        }
+    }
+}
+
+#[test]
+fn callable_encoding_preserves_the_existing_two_vector_format() {
+    let callable = ExecutableType::Function {
+        parameters: vec![
+            crate::types::Parameter {
+                ty: ExecutableType::Integer,
+                mode: ParameterMode::Consume,
+            },
+            crate::types::Parameter {
+                ty: ExecutableType::Bool,
+                mode: ParameterMode::Borrow,
+            },
+        ],
+        result: Box::new(ExecutableType::Unit),
+    };
+    let mut expected = Writer { bytes: Vec::new() };
+    expected.u8(13);
+    expected.u32(2).unwrap();
+    expected
+        .verification_type(&ExecutableType::Integer)
+        .unwrap();
+    expected.verification_type(&ExecutableType::Bool).unwrap();
+    expected.u32(2).unwrap();
+    expected.parameter_mode(ParameterMode::Consume);
+    expected.parameter_mode(ParameterMode::Borrow);
+    expected.verification_type(&ExecutableType::Unit).unwrap();
+    let mut actual = Writer { bytes: Vec::new() };
+    actual.verification_type(&callable).unwrap();
+    assert_eq!(actual.bytes, expected.bytes);
+    assert_eq!(
+        Reader {
+            bytes: &actual.bytes,
+            offset: 0
+        }
+        .verification_type(0)
+        .unwrap(),
+        callable
+    );
+}
+
+#[test]
 fn round_trips_and_executes_generic_contract_result_types() {
     let compilation = crate::compile(
         "func first<T>(values: Sequence<T>) -> T { values.head() }\nfunc main() -> Int { first([42]) }",
@@ -40,7 +137,7 @@ fn rejects_contract_result_metadata_that_disagrees_with_its_use() {
             _ => None,
         })
         .unwrap();
-    *result = VerificationType::Bool;
+    *result = ExecutableType::Bool;
     let error = verify(&program).unwrap_err();
     assert!(
         error
@@ -67,7 +164,7 @@ fn decoder_rejects_a_forged_specialized_method_return_type() {
         .filter_map(|(index, window)| (window == original.bytes).then_some(index))
         .collect::<Vec<_>>();
     assert_eq!(offsets.len(), 1);
-    main.result_type = VerificationType::Integer;
+    main.result_type = ExecutableType::Integer;
     let mut forged = Writer { bytes: Vec::new() };
     forged.function(&main).unwrap();
     bytes.splice(offsets[0]..offsets[0] + original.bytes.len(), forged.bytes);
@@ -140,7 +237,7 @@ func main() -> Int { make(42).value }
         .unwrap();
     assert_eq!(
         record.field_types,
-        vec![VerificationType::Generic("T".into())]
+        vec![ExecutableType::Generic("T".into())]
     );
     assert_eq!(record.parameters, vec!["T"]);
     let some = program
@@ -148,7 +245,7 @@ func main() -> Int { make(42).value }
         .values()
         .find(|variant| variant.alternative.as_ref() == "Some")
         .unwrap();
-    assert_eq!(some.payload, vec![VerificationType::Generic("T".into())]);
+    assert_eq!(some.payload, vec![ExecutableType::Generic("T".into())]);
     assert_eq!(some.parameters, vec!["T"]);
     let make = program
         .functions
@@ -165,7 +262,7 @@ func main() -> Int { make(42).value }
                     ..
                 } if *function == make
                     && specialization
-                        == &vec![("T".into(), VerificationType::Integer)]
+                        == &Specialization::try_new(vec![("T".into(), ExecutableType::Integer)]).unwrap()
             )
         })
     }));
@@ -177,7 +274,7 @@ func main() -> Int { make(42).value }
                 matches!(
                     instruction,
                     Instruction::MakeRecord { type_arguments, .. }
-                        if type_arguments == &vec![VerificationType::Generic("T".into())]
+                        if type_arguments == &vec![ExecutableType::Generic("T".into())]
                 )
             })
     );

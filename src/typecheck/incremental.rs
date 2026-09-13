@@ -433,17 +433,13 @@ impl Checker<'_> {
             .parameters
             .iter()
             .cloned()
-            .map(|ty| self.resolved(ty))
+            .map(|ty| ty.map(|ty| self.resolved(ty)))
             .collect::<Vec<_>>();
         let result = self.resolved(signature.result.clone());
-        if parameters.iter().any(contains_variable) || contains_variable(&result) {
+        if parameters.iter().any(|p| contains_variable(&p.ty)) || contains_variable(&result) {
             return None;
         }
-        Some(Signature {
-            parameters,
-            result,
-            parameter_modes: signature.parameter_modes.clone(),
-        })
+        Some(Signature { parameters, result })
     }
 
     fn body_contract(&self, function: FunctionId) -> Option<Contract> {

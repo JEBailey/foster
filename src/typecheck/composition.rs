@@ -66,50 +66,50 @@ impl Checker<'_> {
                 .parameters
                 .iter()
                 .cloned()
-                .map(|ty| canonical(self, earlier, ty))
+                .map(|ty| ty.map(|ty| canonical(self, earlier, ty)))
                 .collect::<Vec<_>>();
             let right_parameters = right
                 .parameters
                 .iter()
                 .cloned()
-                .map(|ty| canonical(self, later, ty))
+                .map(|ty| ty.map(|ty| canonical(self, later, ty)))
                 .collect::<Vec<_>>();
             let compatible = left_parameters == right_parameters
-                && left.parameter_modes == right.parameter_modes
                 && canonical(self, earlier, left.result) == canonical(self, later, right.result);
             // A declared requirement is the public bound; a default body may use
             // fewer effects without narrowing that requirement for later defaults.
-            let contract_checked =
-                if let Ty::Record(owner, arguments) = self.resolved(right.parameters[0].clone()) {
-                    let name = self.hir.functions[later]
-                        .name
-                        .rsplit('.')
-                        .next()
-                        .unwrap()
-                        .split('$')
-                        .next()
-                        .unwrap()
-                        .to_owned();
-                    let parameters = right
-                        .parameters
-                        .iter()
-                        .skip(1)
-                        .cloned()
-                        .map(|ty| self.resolved(ty))
-                        .collect::<Vec<_>>();
-                    let required = self
-                        .effective_record_methods(owner, &arguments)?
-                        .into_iter()
-                        .find(|method| method.name == name && method.parameters == parameters);
-                    if let Some(required) = required {
-                        self.check_method_implementation(later, owner, &arguments, &required)?;
-                        true
-                    } else {
-                        false
-                    }
+            let contract_checked = if let Ty::Record(owner, arguments) =
+                self.resolved(right.parameters[0].ty.clone())
+            {
+                let name = self.hir.functions[later]
+                    .name
+                    .rsplit('.')
+                    .next()
+                    .unwrap()
+                    .split('$')
+                    .next()
+                    .unwrap()
+                    .to_owned();
+                let parameters = right
+                    .parameters
+                    .iter()
+                    .skip(1)
+                    .cloned()
+                    .map(|ty| self.resolved(ty.ty))
+                    .collect::<Vec<_>>();
+                let required = self
+                    .effective_record_methods(owner, &arguments)?
+                    .into_iter()
+                    .find(|method| method.name == name && method.parameters == parameters);
+                if let Some(required) = required {
+                    self.check_method_implementation(later, owner, &arguments, &required)?;
+                    true
                 } else {
                     false
-                };
+                }
+            } else {
+                false
+            };
             let normalize_effects =
                 |function: FunctionId| {
                     let definition = &self.hir.functions[function];
@@ -313,9 +313,8 @@ impl Checker<'_> {
             parameters: raw_signature
                 .parameters
                 .into_iter()
-                .map(|ty| self.instantiate(ty, &mut generics))
+                .map(|parameter| parameter.map(|ty| self.instantiate(ty, &mut generics)))
                 .collect(),
-            parameter_modes: raw_signature.parameter_modes,
             result: self.instantiate(raw_signature.result, &mut generics),
         };
         if signature.parameters.len() != required.parameters.len() + 1 {
@@ -326,7 +325,7 @@ impl Checker<'_> {
         }
         self.unify(
             Ty::Variant(owner, arguments.to_vec()),
-            signature.parameters[0].clone(),
+            signature.parameters[0].ty.clone(),
             function,
         )?;
         for (expected, actual) in required
@@ -335,9 +334,15 @@ impl Checker<'_> {
             .cloned()
             .zip(signature.parameters.iter().skip(1).cloned())
         {
-            self.unify(expected, actual, function)?;
+            self.unify(expected, actual.ty, function)?;
         }
-        if signature.parameter_modes[1..] != required.parameter_modes {
+        if !signature
+            .parameters
+            .iter()
+            .skip(1)
+            .map(|p| p.mode)
+            .eq(required.parameter_modes.iter().copied())
+        {
             return Err(self.error(
                 function,
                 format!(
@@ -790,7 +795,10 @@ impl Checker<'_> {
             parameters, result, ..
         }) =
             self.builtin_collection_method(&Ty::Record(owner, arguments.to_vec()), &required.name)
-            && required.parameters == parameters
+            && required
+                .parameters
+                .iter()
+                .eq(parameters.iter().map(|p| &p.ty))
             && required.result == *result
             && !required.returns_self
         {
@@ -839,6 +847,7 @@ impl Checker<'_> {
             raw_signature
                 .parameters
                 .iter()
+                .map(|p| &p.ty)
                 .chain(std::iter::once(&raw_signature.result))
                 .all(|ty| !contains_variable(ty))
         });
@@ -847,9 +856,8 @@ impl Checker<'_> {
             parameters: raw_signature
                 .parameters
                 .into_iter()
-                .map(|ty| self.instantiate(ty, &mut generics))
+                .map(|parameter| parameter.map(|ty| self.instantiate(ty, &mut generics)))
                 .collect(),
-            parameter_modes: raw_signature.parameter_modes,
             result: self.instantiate(raw_signature.result, &mut generics),
         };
         if signature.parameters.len() != required.parameters.len() + 1 {
@@ -864,7 +872,7 @@ impl Checker<'_> {
         }
         self.unify(
             Ty::Record(owner, arguments.to_vec()),
-            signature.parameters[0].clone(),
+            signature.parameters[0].ty.clone(),
             function,
         )?;
         for (expected, actual) in required
@@ -873,9 +881,15 @@ impl Checker<'_> {
             .cloned()
             .zip(signature.parameters.iter().skip(1).cloned())
         {
-            self.unify(expected, actual, function)?;
+            self.unify(expected, actual.ty, function)?;
         }
-        if signature.parameter_modes[1..] != required.parameter_modes {
+        if !signature
+            .parameters
+            .iter()
+            .skip(1)
+            .map(|p| p.mode)
+            .eq(required.parameter_modes.iter().copied())
+        {
             return Err(self.error(
                 function,
                 format!(
@@ -1002,26 +1016,34 @@ impl Checker<'_> {
                 parameters: raw_signature
                     .parameters
                     .into_iter()
-                    .map(|ty| self.instantiate(ty, &mut generics))
+                    .map(|parameter| parameter.map(|ty| self.instantiate(ty, &mut generics)))
                     .collect(),
-                parameter_modes: raw_signature.parameter_modes,
                 result: self.instantiate(raw_signature.result, &mut generics),
             };
             if self.hir.functions[*function].receiver.is_none()
                 || signature.parameters.len() != required_parameters.len() + 1
-                || signature.parameter_modes[1..] != *required_modes
+                || !signature
+                    .parameters
+                    .iter()
+                    .skip(1)
+                    .map(|p| p.mode)
+                    .eq(required_modes.iter().copied())
             {
                 continue;
             }
             let compatible_receiver = self
-                .unify(receiver.clone(), signature.parameters[0].clone(), *function)
+                .unify(
+                    receiver.clone(),
+                    signature.parameters[0].ty.clone(),
+                    *function,
+                )
                 .is_ok();
             let compatible_parameters = compatible_receiver
                 && required_parameters
                     .iter()
                     .cloned()
                     .zip(signature.parameters.iter().skip(1).cloned())
-                    .all(|(expected, actual)| self.unify(expected, actual, *function).is_ok());
+                    .all(|(expected, actual)| self.unify(expected, actual.ty, *function).is_ok());
             if compatible_parameters {
                 found.push((*function, self.substitutions.clone(), self.next_variable));
             }
@@ -1104,12 +1126,17 @@ fn preserve_generics(ty: &Ty, generics: &mut HashMap<String, Ty>) {
         | Ty::Remote(inner)
         | Ty::Future(inner)
         | Ty::Reference(_, inner) => preserve_generics(inner, generics),
-        Ty::Function(parameters, result)
-        | Ty::Callable {
+        Ty::Function(parameters, result) => {
+            for parameter in parameters {
+                preserve_generics(parameter, generics);
+            }
+            preserve_generics(result, generics);
+        }
+        Ty::Callable {
             parameters, result, ..
         } => {
             for parameter in parameters {
-                preserve_generics(parameter, generics);
+                preserve_generics(&parameter.ty, generics);
             }
             preserve_generics(result, generics);
         }

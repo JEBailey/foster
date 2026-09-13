@@ -83,10 +83,7 @@ pub(super) fn lower(
                 }
                 LayoutKind::Record { .. }
                 | LayoutKind::Builtin {
-                    ty:
-                        VerificationType::List(_)
-                        | VerificationType::Bytes
-                        | VerificationType::ByteBuffer,
+                    ty: ExecutableType::List(_) | ExecutableType::Bytes | ExecutableType::ByteBuffer,
                 } => NativeType::Object(layout.id),
                 _ => continue,
             };

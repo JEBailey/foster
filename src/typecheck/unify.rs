@@ -13,19 +13,13 @@ impl Checker<'_> {
         actual: &Ty,
         function: FunctionId,
     ) -> Result<(), FosterError> {
-        fn parts(ty: &Ty) -> Option<(&[Ty], &Ty)> {
+        fn result(ty: &Ty) -> Option<&Ty> {
             match ty {
-                Ty::Callable {
-                    parameters, result, ..
-                }
-                | Ty::Function(parameters, result) => Some((parameters, result)),
+                Ty::Callable { result, .. } | Ty::Function(_, result) => Some(result),
                 _ => None,
             }
         }
-        let (
-            Some((expected_parameters, expected_result)),
-            Some((actual_parameters, actual_result)),
-        ) = (parts(expected), parts(actual))
+        let (Some(expected_result), Some(actual_result)) = (result(expected), result(actual))
         else {
             return Ok(());
         };
@@ -34,14 +28,14 @@ impl Checker<'_> {
             && expected_group != "_"
             && expected_group != FRAME_GROUP
         {
-            for (index, parameter) in actual_parameters.iter().enumerate() {
+            for (parameter, allowed) in actual.parameter_types().zip(expected.parameter_types()) {
                 if let Ty::Reference(group, _) = parameter
                     && (group == actual_group
                         || group == "_"
                         || actual_group == "_"
                         || group == FRAME_GROUP
                         || actual_group == FRAME_GROUP)
-                    && let Some(Ty::Reference(allowed, _)) = expected_parameters.get(index)
+                    && let Ty::Reference(allowed, _) = allowed
                     && allowed != "_"
                     && allowed != FRAME_GROUP
                     && allowed != expected_group
@@ -50,7 +44,7 @@ impl Checker<'_> {
                 }
             }
         }
-        for (expected, actual) in expected_parameters.iter().zip(actual_parameters) {
+        for (expected, actual) in expected.parameter_types().zip(actual.parameter_types()) {
             // Parameter callable contracts are contravariant.
             self.check_callable_result_origins(actual, expected, function)?;
         }
@@ -127,7 +121,6 @@ impl Checker<'_> {
             (
                 Ty::Callable {
                     parameters: a_params,
-                    parameter_modes: a_modes,
                     result: a_result,
                     erased: a_erased,
                     effects: a_effects,
@@ -135,7 +128,6 @@ impl Checker<'_> {
                 },
                 Ty::Callable {
                     parameters: b_params,
-                    parameter_modes: b_modes,
                     result: b_result,
                     erased: b_erased,
                     effects: b_effects,
@@ -145,15 +137,19 @@ impl Checker<'_> {
                 if a_params.len() != b_params.len() {
                     return Err(self.error(function, "function arity mismatch"));
                 }
-                let modes_compatible = a_modes.iter().zip(&b_modes).all(|(expected, actual)| {
-                    !matches!(
-                        (expected, actual),
-                        (
-                            crate::ast::ParameterMode::Borrow,
-                            crate::ast::ParameterMode::Consume
+                let modes_compatible = a_params
+                    .iter()
+                    .map(|p| p.mode)
+                    .zip(b_params.iter().map(|p| p.mode))
+                    .all(|(expected, actual)| {
+                        !matches!(
+                            (expected, actual),
+                            (
+                                crate::ast::ParameterMode::Borrow,
+                                crate::ast::ParameterMode::Consume
+                            )
                         )
-                    )
-                });
+                    });
                 if !modes_compatible
                     || !effects_are_subset(&b_effects, &a_effects)
                     || (!a_erased && b_erased)
@@ -165,7 +161,7 @@ impl Checker<'_> {
                     ));
                 }
                 for (a, b) in a_params.into_iter().zip(b_params) {
-                    self.unify(a, b, function)?;
+                    self.unify(a.ty, b.ty, function)?;
                 }
                 self.unify(*a_result, *b_result, function)
             }
@@ -181,7 +177,7 @@ impl Checker<'_> {
                     return Err(self.error(function, "function arity mismatch"));
                 }
                 for (a, b) in a_params.into_iter().zip(b_params) {
-                    self.coerce(a, b, function)?;
+                    self.coerce(a.ty, b, function)?;
                 }
                 self.unify(*a_result, *b_result, function)
             }
@@ -197,7 +193,7 @@ impl Checker<'_> {
                     return Err(self.error(function, "function arity mismatch"));
                 }
                 for (a, b) in a_params.into_iter().zip(b_params) {
-                    self.unify(a, b, function)?;
+                    self.unify(a, b.ty, function)?;
                 }
                 self.unify(*a_result, *b_result, function)
             }
@@ -278,7 +274,6 @@ impl Checker<'_> {
                 }
                 Ty::Callable {
                     parameters,
-                    parameter_modes,
                     result,
                     erased,
                     effects,
@@ -287,9 +282,8 @@ impl Checker<'_> {
                     return Ty::Callable {
                         parameters: parameters
                             .into_iter()
-                            .map(|parameter| self.resolved(parameter))
+                            .map(|parameter| parameter.map(|ty| self.resolved(ty)))
                             .collect(),
-                        parameter_modes,
                         result: Box::new(self.resolved(*result)),
                         erased,
                         effects,
@@ -338,7 +332,7 @@ impl Checker<'_> {
             Ty::Callable {
                 parameters, result, ..
             } => {
-                parameters.iter().any(|ty| self.occurs(variable, ty))
+                parameters.iter().any(|ty| self.occurs(variable, &ty.ty))
                     || self.occurs(variable, &result)
             }
             Ty::Reference(_, value) => self.occurs(variable, &value),

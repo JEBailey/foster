@@ -154,8 +154,11 @@ impl Checker<'_> {
                 .parameters
                 .iter()
                 .map(|ty| {
-                    self.require_concrete(ty.clone(), &format!("parameter of `{name}`"))
-                        .map(|ty| intern_type(&mut information, &mut interner, ty))
+                    self.require_concrete(ty.ty.clone(), &format!("parameter of `{name}`"))
+                        .map(|concrete| crate::types::Parameter {
+                            ty: intern_type(&mut information, &mut interner, concrete),
+                            mode: ty.mode,
+                        })
                 })
                 .collect::<Result<Vec<_>, _>>()?;
             let result =
@@ -164,10 +167,7 @@ impl Checker<'_> {
             information.functions.insert(
                 *function,
                 FunctionType {
-                    parameters: crate::types::Parameter::from_parts(
-                        parameters,
-                        signature.parameter_modes.clone(),
-                    ),
+                    parameters,
                     result,
                     erased: false,
                     effects: callable_effects(self.hir, *function),
@@ -300,7 +300,6 @@ impl Checker<'_> {
             ),
             Ty::Callable {
                 parameters,
-                parameter_modes,
                 result,
                 effects,
                 suspends,
@@ -322,11 +321,10 @@ impl Checker<'_> {
                     "func({}) -> {}{effects}",
                     parameters
                         .iter()
-                        .zip(&parameter_modes)
-                        .map(|(parameter, mode)| match mode {
-                            crate::ast::ParameterMode::Borrow => self.describe(parameter),
+                        .map(|parameter| match parameter.mode {
+                            crate::ast::ParameterMode::Borrow => self.describe(&parameter.ty),
                             crate::ast::ParameterMode::Consume => {
-                                format!("consume {}", self.describe(parameter))
+                                format!("consume {}", self.describe(&parameter.ty))
                             }
                         })
                         .collect::<Vec<_>>()
@@ -524,7 +522,6 @@ fn intern_type(
         }
         Ty::Callable {
             parameters,
-            parameter_modes,
             result,
             erased,
             effects,
@@ -532,11 +529,11 @@ fn intern_type(
         } => {
             let parameters = parameters
                 .into_iter()
-                .map(|parameter| intern_type(information, interner, parameter))
+                .map(|parameter| parameter.map(|ty| intern_type(information, interner, ty)))
                 .collect();
             let result = intern_type(information, interner, *result);
             Type::Function(FunctionType {
-                parameters: crate::types::Parameter::from_parts(parameters, parameter_modes),
+                parameters,
                 result,
                 erased,
                 effects,

@@ -645,8 +645,10 @@ impl<'a> Checker<'a> {
             self.functions.insert(
                 function_id,
                 Signature {
-                    parameters,
-                    parameter_modes: function_parameter_modes(self.hir, function_id),
+                    parameters: crate::types::Parameter::from_parts(
+                        parameters,
+                        function_parameter_modes(self.hir, function_id),
+                    ),
                     result,
                 },
             );

@@ -32,12 +32,24 @@ fn record(compilation: &mut Compilation, name: &str, arguments: Vec<TypeId>) -> 
 }
 
 fn bytecode(compilation: &Compilation, ty: TypeId, depth: usize) -> V {
-    convert::<Bytecode>(&compilation.hir, &compilation.types, ty, &Vec::new(), depth)
-        .unwrap_or_else(|never| match never {})
+    convert::<Bytecode>(
+        &compilation.hir,
+        &compilation.types,
+        ty,
+        &Default::default(),
+        depth,
+    )
+    .unwrap_or_else(|never| match never {})
 }
 
 fn native(compilation: &Compilation, ty: TypeId, depth: usize) -> Result<V, NestingLimit> {
-    convert::<Native>(&compilation.hir, &compilation.types, ty, &Vec::new(), depth)
+    convert::<Native>(
+        &compilation.hir,
+        &compilation.types,
+        ty,
+        &Default::default(),
+        depth,
+    )
 }
 
 #[test]
@@ -87,13 +99,15 @@ fn scalar_and_nested_callable_conversions_agree() {
     }));
     let pointee = V::Reference(Box::new(V::List(Box::new(V::Generic("T".into())))));
     let expected = V::Function {
-        parameters: vec![V::Future(Box::new(pointee.clone())), V::Generic("T".into())],
-        parameter_modes: vec![ParameterMode::Borrow, ParameterMode::Consume],
+        parameters: crate::types::Parameter::from_parts(
+            vec![V::Future(Box::new(pointee.clone())), V::Generic("T".into())],
+            vec![ParameterMode::Borrow, ParameterMode::Consume],
+        ),
         result: Box::new(pointee),
     };
     assert_eq!(bytecode(&compilation, function, 0), expected);
     assert_eq!(native(&compilation, function, 0), Ok(expected.clone()));
-    let substitutions = vec![("T".into(), V::Integer)];
+    let substitutions = Specialization::try_new(vec![("T".into(), V::Integer)]).unwrap();
     assert_eq!(
         convert::<Native>(
             &compilation.hir,

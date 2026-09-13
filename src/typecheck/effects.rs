@@ -79,7 +79,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             let reference_parameter_group = checker.functions[&function]
                 .parameters
                 .get(index)
-                .and_then(reference_group)
+                .and_then(|p| reference_group(&p.ty))
                 .map(crate::ast::GroupPath::root);
             let declared_parameter_group = definition
                 .effects
@@ -484,7 +484,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                         parameters
                             .iter()
                             .position(|parameter| {
-                                reference_group(parameter).as_deref()
+                                reference_group(&parameter.ty).as_deref()
                                     == Some(effect.target.root.as_str())
                             })
                             .and_then(|index| arguments.get(index))
@@ -531,7 +531,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                         let group = parameters
                             .iter()
                             .position(|parameter| {
-                                reference_group(parameter).as_deref()
+                                reference_group(&parameter.ty).as_deref()
                                     == Some(effect.target.root.as_str())
                             })
                             .and_then(|index| arguments.get(index))
@@ -570,7 +570,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                                 || self.checker.functions[&target]
                                     .parameters
                                     .get(*index)
-                                    .and_then(reference_group)
+                                    .and_then(|p| reference_group(&p.ty))
                                     .as_deref()
                                     == Some(effect.target.root.as_str())
                         })

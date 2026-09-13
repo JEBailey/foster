@@ -1062,13 +1062,13 @@ impl Machine {
                                 }
                                 let matches =
                                     match self.program.functions[target].parameter_types.first() {
-                                        Some(crate::vm::VerificationType::List(_)) => {
+                                        Some(crate::codegen::types::ExecutableType::List(_)) => {
                                             value.list_value().is_some()
                                         }
-                                        Some(crate::vm::VerificationType::Bytes) => {
+                                        Some(crate::codegen::types::ExecutableType::Bytes) => {
                                             value.bytes_value().is_some()
                                         }
-                                        Some(crate::vm::VerificationType::ByteBuffer) => {
+                                        Some(crate::codegen::types::ExecutableType::ByteBuffer) => {
                                             value.byte_buffer_value().is_some()
                                                 || value.byte_buffer_list_value().is_some()
                                         }

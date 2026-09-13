@@ -13,7 +13,7 @@ pub(super) fn contains_variable(ty: &Ty) -> bool {
         }
         Ty::Callable {
             parameters, result, ..
-        } => parameters.iter().any(contains_variable) || contains_variable(result),
+        } => parameters.iter().any(|p| contains_variable(&p.ty)) || contains_variable(result),
         Ty::Reference(_, value) => contains_variable(value),
         Ty::Record(_, arguments) => arguments.iter().any(contains_variable),
         Ty::Intersection(members) => members.iter().any(contains_variable),

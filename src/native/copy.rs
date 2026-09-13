@@ -18,7 +18,7 @@ pub(super) fn lower(
             | NativeType::CodePoint
             | NativeType::Byte
             | NativeType::String
-    ) || matches!(ty, NativeType::Object(layout) if matches!(backend.ir.layouts.get(layout).kind, LayoutKind::Builtin { ty: VerificationType::Bytes }));
+    ) || matches!(ty, NativeType::Object(layout) if matches!(backend.ir.layouts.get(layout).kind, LayoutKind::Builtin { ty: ExecutableType::Bytes }));
     if trivial {
         if query {
             return Ok(builder.ins().iconst(types::I8, 1));
@@ -102,7 +102,7 @@ pub(super) fn lower(
                 && matches!(
                     layout.kind,
                     LayoutKind::Builtin {
-                        ty: VerificationType::Bytes
+                        ty: ExecutableType::Bytes
                     }
                 )
         }) {

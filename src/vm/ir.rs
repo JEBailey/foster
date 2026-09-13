@@ -3,267 +3,13 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use crate::ast::{BinaryOp, UnaryOp};
+use crate::codegen::types::{ExecutableType, Specialization};
 use crate::hir::{FunctionId, RecordId, VariantId, VariantTypeId};
 use crate::intrinsics::Builtin;
 use crate::types::{DispatchSlot, NominalTypeId};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Register(pub u16);
-
-/// Concrete generic substitutions attached to a statically resolved call.
-///
-/// Names are sorted so the same instantiation has one stable bytecode and native-code identity.
-pub type Specialization = Vec<(String, VerificationType)>;
-
-/// Executable type information shared by bytecode verification and backend layout selection.
-///
-/// Groups and effects have already served their purpose by this stage. Generic identities and
-/// nominal arguments are retained for physical layout selection. `Unknown` is used for erased
-/// structural types and acts as the verifier's top type:
-/// availability and ownership are still checked, while representation-specific checks are deferred
-/// to the already type-checked compiler boundary.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum VerificationType {
-    Unknown,
-    Generic(String),
-    Unit,
-    Bool,
-    Integer,
-    Float,
-    CodePoint,
-    Byte,
-    Bytes,
-    ByteBuffer,
-    List(Box<VerificationType>),
-    Reference(Box<VerificationType>),
-    Remote(Box<VerificationType>),
-    Future(Box<VerificationType>),
-    Function {
-        parameters: Vec<VerificationType>,
-        parameter_modes: Vec<crate::ast::ParameterMode>,
-        result: Box<VerificationType>,
-    },
-    Record {
-        record: RecordId,
-        arguments: Vec<VerificationType>,
-    },
-    Variant {
-        variant: VariantTypeId,
-        arguments: Vec<VerificationType>,
-    },
-    /// A control-flow join whose alternatives retain different runtime representations.
-    Union(Vec<VerificationType>),
-}
-
-impl VerificationType {
-    /// Infer named generic arguments from a concrete operand without discarding logical types.
-    pub(crate) fn infer_specialization(
-        &self,
-        actual: &Self,
-        substitutions: &mut std::collections::BTreeMap<String, Self>,
-    ) {
-        match (self, actual) {
-            (Self::Generic(name), actual) => {
-                substitutions
-                    .entry(name.clone())
-                    .or_insert_with(|| actual.clone());
-            }
-            (Self::List(schema), Self::List(actual))
-            | (Self::Reference(schema), Self::Reference(actual))
-            | (Self::Remote(schema), Self::Remote(actual))
-            | (Self::Future(schema), Self::Future(actual)) => {
-                schema.infer_specialization(actual, substitutions)
-            }
-            (
-                Self::Record {
-                    record: left,
-                    arguments: schema,
-                },
-                Self::Record {
-                    record: right,
-                    arguments: actual,
-                },
-            ) if left == right => {
-                for (schema, actual) in schema.iter().zip(actual) {
-                    schema.infer_specialization(actual, substitutions);
-                }
-            }
-            (
-                Self::Variant {
-                    variant: left,
-                    arguments: schema,
-                },
-                Self::Variant {
-                    variant: right,
-                    arguments: actual,
-                },
-            ) if left == right => {
-                for (schema, actual) in schema.iter().zip(actual) {
-                    schema.infer_specialization(actual, substitutions);
-                }
-            }
-            (
-                Self::Function {
-                    parameters: schema,
-                    result: schema_result,
-                    ..
-                },
-                Self::Function {
-                    parameters: actual,
-                    result: actual_result,
-                    ..
-                },
-            ) => {
-                for (schema, actual) in schema.iter().zip(actual) {
-                    schema.infer_specialization(actual, substitutions);
-                }
-                schema_result.infer_specialization(actual_result, substitutions);
-            }
-            _ => {}
-        }
-    }
-
-    pub(crate) fn indexed_element(&self) -> Option<Self> {
-        match self {
-            Self::Reference(pointee) => pointee.indexed_element(),
-            Self::List(element) => Some((**element).clone()),
-            Self::ByteBuffer => Some(Self::Byte),
-            Self::Unknown | Self::Generic(_) => Some(Self::Unknown),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn depth(&self) -> usize {
-        match self {
-            Self::List(value)
-            | Self::Reference(value)
-            | Self::Remote(value)
-            | Self::Future(value) => 1 + value.depth(),
-            Self::Function {
-                parameters, result, ..
-            } => {
-                1 + parameters
-                    .iter()
-                    .chain(std::iter::once(result.as_ref()))
-                    .map(Self::depth)
-                    .max()
-                    .unwrap_or(0)
-            }
-            Self::Record { arguments, .. }
-            | Self::Variant { arguments, .. }
-            | Self::Union(arguments) => 1 + arguments.iter().map(Self::depth).max().unwrap_or(0),
-            _ => 1,
-        }
-    }
-
-    pub(crate) fn contains_generic(&self) -> bool {
-        match self {
-            Self::Generic(_) => true,
-            Self::List(value)
-            | Self::Reference(value)
-            | Self::Remote(value)
-            | Self::Future(value) => value.contains_generic(),
-            Self::Function {
-                parameters, result, ..
-            } => parameters.iter().any(Self::contains_generic) || result.contains_generic(),
-            Self::Record { arguments, .. }
-            | Self::Variant { arguments, .. }
-            | Self::Union(arguments) => arguments.iter().any(Self::contains_generic),
-            _ => false,
-        }
-    }
-
-    /// Replace generic leaves using a named substitution map.
-    pub(crate) fn substitute(&self, substitutions: &HashMap<String, VerificationType>) -> Self {
-        self.substitute_with(&|name| substitutions.get(name).cloned())
-    }
-
-    /// Replace generic leaves using the stable, sorted specialization carried by bytecode calls.
-    pub(crate) fn specialize(&self, substitutions: &Specialization) -> Self {
-        self.substitute_with(&|name| {
-            substitutions
-                .binary_search_by(|(candidate, _)| candidate.as_str().cmp(name))
-                .ok()
-                .map(|index| substitutions[index].1.clone())
-        })
-    }
-
-    fn substitute_with(&self, lookup: &impl Fn(&str) -> Option<Self>) -> Self {
-        match self {
-            Self::Generic(name) => lookup(name).unwrap_or_else(|| self.clone()),
-            Self::List(value) => Self::List(Box::new(value.substitute_with(lookup))),
-            Self::Reference(value) => Self::Reference(Box::new(value.substitute_with(lookup))),
-            Self::Remote(value) => Self::Remote(Box::new(value.substitute_with(lookup))),
-            Self::Future(value) => Self::Future(Box::new(value.substitute_with(lookup))),
-            Self::Function {
-                parameters,
-                parameter_modes,
-                result,
-            } => Self::Function {
-                parameters: parameters
-                    .iter()
-                    .map(|ty| ty.substitute_with(lookup))
-                    .collect(),
-                parameter_modes: parameter_modes.clone(),
-                result: Box::new(result.substitute_with(lookup)),
-            },
-            Self::Record { record, arguments } => Self::Record {
-                record: *record,
-                arguments: arguments
-                    .iter()
-                    .map(|ty| ty.substitute_with(lookup))
-                    .collect(),
-            },
-            Self::Variant { variant, arguments } => Self::Variant {
-                variant: *variant,
-                arguments: arguments
-                    .iter()
-                    .map(|ty| ty.substitute_with(lookup))
-                    .collect(),
-            },
-            Self::Union(members) => Self::Union(
-                members
-                    .iter()
-                    .map(|ty| ty.substitute_with(lookup))
-                    .collect(),
-            ),
-            _ => self.clone(),
-        }
-    }
-}
-
-#[cfg(test)]
-mod verification_type_tests {
-    use super::*;
-
-    #[test]
-    fn substitutions_walk_nested_types_consistently() {
-        let generic = VerificationType::Function {
-            parameters: vec![VerificationType::List(Box::new(VerificationType::Generic(
-                "T".into(),
-            )))],
-            parameter_modes: vec![crate::ast::ParameterMode::Borrow],
-            result: Box::new(VerificationType::Reference(Box::new(
-                VerificationType::Generic("T".into()),
-            ))),
-        };
-        let expected = VerificationType::Function {
-            parameters: vec![VerificationType::List(Box::new(VerificationType::Integer))],
-            parameter_modes: vec![crate::ast::ParameterMode::Borrow],
-            result: Box::new(VerificationType::Reference(Box::new(
-                VerificationType::Integer,
-            ))),
-        };
-        let map = HashMap::from([("T".into(), VerificationType::Integer)]);
-        let specialization = vec![("T".into(), VerificationType::Integer)];
-
-        assert_eq!(generic.substitute(&map), expected);
-        assert_eq!(generic.specialize(&specialization), expected);
-        assert_eq!(generic.depth(), 3);
-        assert!(generic.contains_generic());
-        assert!(!expected.contains_generic());
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Constant {
@@ -306,7 +52,7 @@ pub enum Instruction {
     },
     MakeList {
         destination: Register,
-        element_type: VerificationType,
+        element_type: ExecutableType,
         elements: Vec<Register>,
     },
     Index {
@@ -317,13 +63,13 @@ pub enum Instruction {
     MakeRecord {
         destination: Register,
         record: RecordId,
-        type_arguments: Vec<VerificationType>,
+        type_arguments: Vec<ExecutableType>,
         fields: Vec<(String, Register)>,
     },
     MakeVariant {
         destination: Register,
         variant: VariantId,
-        type_arguments: Vec<VerificationType>,
+        type_arguments: Vec<ExecutableType>,
         payload: Vec<Register>,
     },
     LoadField {
@@ -344,18 +90,18 @@ pub enum Instruction {
     },
     MakeReference {
         destination: Register,
-        pointee_type: VerificationType,
+        pointee_type: ExecutableType,
         object: Register,
         index: Register,
     },
     MakeWholeReference {
         destination: Register,
-        pointee_type: VerificationType,
+        pointee_type: ExecutableType,
         object: Register,
     },
     MakeFieldReference {
         destination: Register,
-        pointee_type: VerificationType,
+        pointee_type: ExecutableType,
         object: Register,
         field: String,
     },
@@ -438,7 +184,7 @@ pub enum Instruction {
         slot: DispatchSlot,
         name: String,
         arguments: Vec<Register>,
-        result_type: VerificationType,
+        result_type: ExecutableType,
     },
     MakeClosure {
         destination: Register,
@@ -718,14 +464,14 @@ pub struct BytecodeFunction {
     /// A source intrinsic declaration whose executable call sites lower to `Builtin`.
     pub intrinsic_stub: bool,
     pub parameters: u16,
-    pub parameter_types: Vec<VerificationType>,
+    pub parameter_types: Vec<ExecutableType>,
     pub parameter_modes: Vec<crate::ast::ParameterMode>,
     pub mutable_parameters: Vec<bool>,
     /// Whether `Return` transfers a live place handle instead of reading its current value.
     pub returns_reference: bool,
     pub captures: u16,
-    pub capture_types: Vec<VerificationType>,
-    pub result_type: VerificationType,
+    pub capture_types: Vec<ExecutableType>,
+    pub result_type: ExecutableType,
     pub registers: u16,
     pub instructions: Vec<Instruction>,
     pub instruction_spans: Vec<Range<usize>>,
@@ -759,7 +505,7 @@ pub struct RuntimeRecord {
     pub parameters: Vec<String>,
     pub layout: Arc<super::value::RecordLayout>,
     /// Declared field types in the same canonical order as `layout`.
-    pub field_types: Vec<VerificationType>,
+    pub field_types: Vec<ExecutableType>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -770,7 +516,7 @@ pub struct RuntimeVariant {
     pub parameters: Vec<String>,
     pub alternative: Arc<str>,
     /// Enum cases currently have zero or one declared payload value.
-    pub payload: Vec<VerificationType>,
+    pub payload: Vec<ExecutableType>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -782,12 +528,12 @@ pub struct ProgramMetrics {
 }
 
 impl Program {
-    pub(crate) fn remote_outcome_type(&self, result: VerificationType) -> VerificationType {
-        VerificationType::Variant {
+    pub(crate) fn remote_outcome_type(&self, result: ExecutableType) -> ExecutableType {
+        ExecutableType::Variant {
             variant: self.remote_result.expect("verified remote Result metadata"),
             arguments: vec![
                 result,
-                VerificationType::Variant {
+                ExecutableType::Variant {
                     variant: self.remote_error.expect("verified RemoteError metadata"),
                     arguments: vec![],
                 },
