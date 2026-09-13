@@ -219,7 +219,7 @@ fn decoder_rejects_a_forged_specialized_method_return_type() {
     ).unwrap();
     let program = compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
     let mut bytes = encode_program(&program).unwrap();
-    let mut main = program.functions[&program.main.unwrap()].clone();
+    let mut main = program.functions[&program.metadata.main.unwrap()].clone();
     let mut original = Writer { bytes: Vec::new() };
     original.function(&main).unwrap();
     let offsets = bytes
@@ -295,6 +295,7 @@ func main() -> Int { make(42).value }
     let compilation = crate::compile(source).unwrap();
     let program = compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
     let record = program
+        .metadata
         .records
         .values()
         .find(|record| record.name == "Box")
@@ -305,6 +306,7 @@ func main() -> Int { make(42).value }
     );
     assert_eq!(record.parameters, vec!["T"]);
     let some = program
+        .metadata
         .variants
         .values()
         .find(|variant| variant.alternative.as_ref() == "Some")
@@ -492,10 +494,10 @@ func main() -> Bool {
         crate::vm::Value::Bool(true)
     );
     let mut malformed = program.clone();
-    malformed.remote_error = None;
+    malformed.metadata.remote_error = None;
     assert!(crate::vm::verify(&malformed).is_err());
     let mut malformed = program;
-    malformed.remote_error = malformed.remote_result;
+    malformed.metadata.remote_error = malformed.metadata.remote_result;
     assert!(crate::vm::verify(&malformed).is_err());
 }
 
@@ -509,8 +511,8 @@ fn round_trip_preserves_core_identities_with_same_named_user_records() {
         let program = compile_with_options(&compilation, CompileOptions { optimize }).unwrap();
         let decoded = decode_program(&encode_program(&program).unwrap()).unwrap();
         assert_eq!(program, decoded);
-        assert_eq!(decoded.bytes_record, compilation.types.core.bytes);
-        assert_eq!(decoded.list_record, compilation.types.core.list);
+        assert_eq!(decoded.metadata.bytes_record, compilation.types.core.bytes);
+        assert_eq!(decoded.metadata.list_record, compilation.types.core.list);
         assert_eq!(
             Machine::new(&decoded).run_main().unwrap(),
             crate::vm::Value::Integer(42)

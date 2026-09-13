@@ -34,7 +34,7 @@ pub(super) fn matches(
                 payload,
             },
         ) => {
-            let expected = &program.variants[variant];
+            let expected = &program.metadata.variants[variant];
             if type_name != &expected.type_name
                 || alternative != &expected.alternative
                 || fields.len() != payload.len()

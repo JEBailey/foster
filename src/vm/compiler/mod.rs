@@ -170,7 +170,7 @@ fn compile_construction(compilation: &Compilation) -> Result<Program, FosterErro
     for (function, _) in compilation.hir.functions.iter() {
         compiler.compile_function(function)?;
     }
-    compiler.program.records = compilation
+    compiler.program.metadata.records = compilation
         .hir
         .records
         .iter()
@@ -204,23 +204,23 @@ fn compile_construction(compilation: &Compilation) -> Result<Program, FosterErro
                 RuntimeRecord {
                     name: value.name.clone(),
                     parameters: value.parameters.clone(),
-                    layout: std::sync::Arc::new(super::value::RecordLayout::new(names)),
+                    layout: std::sync::Arc::new(crate::codegen::metadata::RecordLayout::new(names)),
                     field_types,
                 },
             )
         })
         .collect();
-    compiler.program.string_record = compilation.types.core.string;
-    compiler.program.symbol_record = compilation.types.core.symbol;
-    compiler.program.list_record = compilation.types.core.list;
-    compiler.program.bytes_record = compilation.types.core.bytes;
-    compiler.program.byte_buffer_record = compilation.types.core.byte_buffer;
-    compiler.program.dispatch = compilation.types.dispatch.clone();
-    compiler.program.remote_result = compilation
+    compiler.program.metadata.string_record = compilation.types.core.string;
+    compiler.program.metadata.symbol_record = compilation.types.core.symbol;
+    compiler.program.metadata.list_record = compilation.types.core.list;
+    compiler.program.metadata.bytes_record = compilation.types.core.bytes;
+    compiler.program.metadata.byte_buffer_record = compilation.types.core.byte_buffer;
+    compiler.program.metadata.dispatch = compilation.types.dispatch.clone();
+    compiler.program.metadata.remote_result = compilation
         .hir
         .module_named("core.result")
         .and_then(|module| compilation.hir.variant_type_named(module, "Result"));
-    compiler.program.remote_error = compilation
+    compiler.program.metadata.remote_error = compilation
         .hir
         .module_named("core.remote_error")
         .and_then(|module| compilation.hir.variant_type_named(module, "RemoteError"));
@@ -230,7 +230,7 @@ fn compile_construction(compilation: &Compilation) -> Result<Program, FosterErro
         .iter()
         .map(|(id, value)| (id, std::sync::Arc::<str>::from(value.name.as_str())))
         .collect::<HashMap<_, _>>();
-    compiler.program.variants = compilation
+    compiler.program.metadata.variants = compilation
         .hir
         .variants
         .iter()
@@ -259,12 +259,13 @@ fn compile_construction(compilation: &Compilation) -> Result<Program, FosterErro
             )
         })
         .collect();
-    compiler.program.main = compilation
+    compiler.program.metadata.main = compilation
         .hir
         .module_named("main")
         .and_then(|module| compilation.hir.function_named(module, "main"));
-    compiler.program.main_arguments = compiler
+    compiler.program.metadata.main_arguments = compiler
         .program
+        .metadata
         .main
         .map(|main| crate::entry::accepts_arguments(&compilation.hir, &compilation.types, main))
         .transpose()?
@@ -279,9 +280,9 @@ pub(crate) fn compile_library(compilation: &Compilation) -> Result<Program, Fost
     crate::codegen::layout::legalize(&mut program)?;
     crate::codegen::vm::lower_program_through_shared_ir(&mut program)
         .map_err(|e| FosterError::runtime(e.to_string()))?;
-    program.main = None;
-    program.main_arguments = false;
-    program.symbols = crate::symbols::Table::from_compilation(compilation, &program)?;
+    program.metadata.main = None;
+    program.metadata.main_arguments = false;
+    program.metadata.symbols = crate::symbols::Table::from_compilation(compilation, &program)?;
     super::verifier::verify(&program)?;
     Ok(program)
 }
@@ -300,7 +301,7 @@ pub fn compile_with_options(
         super::optimizer::optimize(&mut program);
     }
     super::optimizer::insert_drops(&mut program);
-    program.symbols = crate::symbols::Table::from_compilation(compilation, &program)?;
+    program.metadata.symbols = crate::symbols::Table::from_compilation(compilation, &program)?;
     crate::symbols::link(&mut program)?;
     Ok(program)
 }
@@ -314,7 +315,7 @@ pub(crate) fn compile_shared(
     // Drop insertion is still expressed over construction registers. Sealing then turns those
     // ownership operations into SSA instructions; native codegen never reconstructs bytecode.
     super::optimizer::insert_drops(&mut program);
-    program.symbols = crate::symbols::Table::from_compilation(compilation, &program)?;
+    program.metadata.symbols = crate::symbols::Table::from_compilation(compilation, &program)?;
     crate::symbols::link(&mut program)?;
     crate::codegen::vm::seal_program(program)
         .map_err(|error| FosterError::runtime(format!("shared native lowering failed: {error}")))
@@ -356,7 +357,7 @@ impl Compiler<'_> {
             hir: self.hir,
             types: self.types,
             closure_captures: &self.closure_captures,
-            constants: &mut self.program.constants,
+            constants: &mut self.program.metadata.constants,
             function: function_id,
             locals: HashMap::new(),
             instructions: Vec::new(),

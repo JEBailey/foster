@@ -1,3 +1,4 @@
+use crate::codegen::metadata::RecordLayout;
 use std::cell::{Cell, RefCell};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -161,30 +162,9 @@ impl Drop for OwnedFields {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct RecordLayout {
-    names: Vec<String>,
-    indices: BTreeMap<String, usize>,
-}
-
-impl RecordLayout {
-    pub(crate) fn new(names: Vec<String>) -> Self {
-        let indices = names
-            .iter()
-            .enumerate()
-            .map(|(index, name)| (name.clone(), index))
-            .collect();
-        Self { names, indices }
-    }
-
-    pub(crate) fn names(&self) -> &[String] {
-        &self.names
-    }
-}
-
 impl RecordFields {
     pub(crate) fn new(layout: Arc<RecordLayout>, values: Vec<Value>) -> Result<Self, RuntimeError> {
-        if layout.names.len() != values.len() {
+        if layout.names().len() != values.len() {
             return Err(RuntimeError::runtime(
                 "record layout does not match its values",
             ));
@@ -229,14 +209,14 @@ impl RecordFields {
     }
 
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&String, &Value)> {
-        self.layout.names.iter().zip(self.values.iter())
+        self.layout.names().iter().zip(self.values.iter())
     }
 
     pub(crate) fn into_pairs(self) -> impl Iterator<Item = (String, Value)> {
         let values = Rc::try_unwrap(self.values)
             .unwrap_or_else(|values| (*values).clone())
             .into_values();
-        self.layout.names.clone().into_iter().zip(values)
+        self.layout.names().to_vec().into_iter().zip(values)
     }
 
     #[cfg(test)]
@@ -250,7 +230,7 @@ impl RecordFields {
     }
 
     fn index(&self, name: &str) -> Option<usize> {
-        self.layout.indices.get(name).copied()
+        self.layout.index(name)
     }
 }
 
@@ -268,7 +248,7 @@ impl<'a> IntoIterator for &'a RecordFields {
     type IntoIter = std::iter::Zip<std::slice::Iter<'a, String>, std::slice::Iter<'a, Value>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.layout.names.iter().zip(self.values.iter())
+        self.layout.names().iter().zip(self.values.iter())
     }
 }
 

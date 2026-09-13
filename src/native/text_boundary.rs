@@ -82,7 +82,7 @@ pub(super) fn define(
             .define_function(id, &mut context)
             .map_err(|error| native_error(format!("cannot define {name}: {error}")))?;
     }
-    if backend.ir.program.main_arguments {
+    if backend.ir.program.metadata.main_arguments {
         define_arguments(module, backend)?;
     }
     Ok(())
@@ -94,10 +94,10 @@ fn define_arguments(
     backend: &NativeBackend<'_>,
 ) -> Result<(), FosterError> {
     let objects = backend.objects;
-    let main = backend.ir.program.main.expect("native entry");
+    let main = backend.ir.program.metadata.main.expect("native entry");
     let ty = &backend.ir.program.functions[&main].parameter_types[0];
     let NativeType::Object(layout) =
-        native_verification_type(backend.ir.program, backend.ir.layouts, ty, None)?
+        native_verification_type(&backend.ir.program.metadata, backend.ir.layouts, ty, None)?
     else {
         return Err(native_error("Arguments must have a record layout"));
     };

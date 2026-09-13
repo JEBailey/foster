@@ -11,6 +11,7 @@ fn compile(source: &str) -> Program {
 
 fn definition<'a>(program: &'a Program, name: &str) -> &'a Definition {
     program
+        .metadata
         .symbols
         .modules
         .iter()
@@ -94,6 +95,7 @@ fn effects_and_return_types_are_checked_after_identity_lookup() {
     });
     assert_eq!(
         program
+            .metadata
             .symbols
             .resolve(&definition.symbol, &required)
             .unwrap(),
@@ -106,6 +108,7 @@ fn effects_and_return_types_are_checked_after_identity_lookup() {
     wrong_result.result = SymbolType::Primitive("bool".into());
     assert!(
         program
+            .metadata
             .symbols
             .resolve(&definition.symbol, &wrong_result)
             .is_err()
@@ -114,6 +117,7 @@ fn effects_and_return_types_are_checked_after_identity_lookup() {
     wrong_mode.parameters[0].mode = Mode::Consume;
     assert!(
         program
+            .metadata
             .symbols
             .resolve(&definition.symbol, &wrong_mode)
             .is_err()
@@ -124,6 +128,7 @@ fn effects_and_return_types_are_checked_after_identity_lookup() {
 fn module_imports_round_trip_and_link_to_new_implementation_ids() {
     let mut program = modules();
     let module = program
+        .metadata
         .symbols
         .modules
         .iter()
@@ -135,6 +140,7 @@ fn module_imports_round_trip_and_link_to_new_implementation_ids() {
     let body = program.functions.remove(&old).unwrap();
     program.functions.insert(new, body);
     program
+        .metadata
         .symbols
         .modules
         .iter_mut()
@@ -160,6 +166,7 @@ fn linking_translates_generic_specialization_keys_after_renaming() {
     let mut program = modules_with_sources(main, "pub func echo<T>(value: T) -> T { value }");
     let updated = modules_with_sources(main, "pub func echo<U>(value: U) -> U { value }");
     let replacement = updated
+        .metadata
         .symbols
         .modules
         .iter()
@@ -168,6 +175,7 @@ fn linking_translates_generic_specialization_keys_after_renaming() {
         .definitions[0]
         .clone();
     let definition = &mut program
+        .metadata
         .symbols
         .modules
         .iter_mut()
@@ -181,7 +189,7 @@ fn linking_translates_generic_specialization_keys_after_renaming() {
         .insert(function_id(definition.function), body);
     definition.generic_names = replacement.generic_names;
     link(&mut program).unwrap();
-    let call = program.functions[&program.main.unwrap()]
+    let call = program.functions[&program.metadata.main.unwrap()]
         .instructions
         .iter()
         .find_map(|instruction| {
@@ -205,11 +213,13 @@ fn bad_imports_fail_transactionally_and_private_symbols_are_not_exported() {
     let main = definition(&program, "main");
     assert!(
         program
+            .metadata
             .symbols
             .resolve(&main.symbol, &main.descriptor)
             .is_err()
     );
     program
+        .metadata
         .symbols
         .modules
         .iter_mut()
@@ -219,6 +229,7 @@ fn bad_imports_fail_transactionally_and_private_symbols_are_not_exported() {
         .required
         .suspends = false;
     let exporter = program
+        .metadata
         .symbols
         .modules
         .iter_mut()
@@ -239,11 +250,14 @@ fn bad_imports_fail_transactionally_and_private_symbols_are_not_exported() {
 fn duplicate_definitions_missing_imports_and_unknown_versions_are_rejected() {
     let base = modules();
     let mut program = base.clone();
-    let duplicate = program.symbols.modules[0].definitions[0].clone();
-    program.symbols.modules[0].definitions.push(duplicate);
+    let duplicate = program.metadata.symbols.modules[0].definitions[0].clone();
+    program.metadata.symbols.modules[0]
+        .definitions
+        .push(duplicate);
     assert!(vm::verify(&program).is_err());
     let mut program = base.clone();
     program
+        .metadata
         .symbols
         .modules
         .iter_mut()
@@ -253,7 +267,7 @@ fn duplicate_definitions_missing_imports_and_unknown_versions_are_rejected() {
         .clear();
     assert!(vm::verify(&program).is_err());
     let mut program = base;
-    program.symbols.version += 1;
+    program.metadata.symbols.version += 1;
     assert!(vm::encode_program(&program).is_err());
 }
 
@@ -261,6 +275,7 @@ fn duplicate_definitions_missing_imports_and_unknown_versions_are_rejected() {
 fn forged_descriptor_types_are_rejected_even_when_the_symbol_key_agrees() {
     let mut program = compile("pub func identity(value: Int) -> Int { value }");
     let module = program
+        .metadata
         .symbols
         .modules
         .iter_mut()
@@ -284,8 +299,8 @@ fn forged_descriptor_types_are_rejected_even_when_the_symbol_key_agrees() {
 fn symbol_container_order_does_not_change_the_binary() {
     let mut program = modules();
     let bytes = vm::encode_program(&program).unwrap();
-    program.symbols.modules.reverse();
-    for module in &mut program.symbols.modules {
+    program.metadata.symbols.modules.reverse();
+    for module in &mut program.metadata.symbols.modules {
         module.definitions.reverse();
         module.types.reverse();
         module.imports.reverse();
@@ -303,6 +318,7 @@ fn overloads_and_multiple_closures_have_distinct_symbols() {
         Value::Integer(42)
     );
     let overloads = program
+        .metadata
         .symbols
         .modules
         .iter()

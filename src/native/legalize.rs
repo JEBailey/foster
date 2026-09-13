@@ -69,8 +69,12 @@ pub(super) fn lower_shared_to_native_ir(
             continue;
         };
         let pointee = pointee.specialize(&instance.substitutions);
-        let pointee_type =
-            native_verification_type(environment.program, environment.layouts, &pointee, None)?;
+        let pointee_type = native_verification_type(
+            &environment.program.metadata,
+            environment.layouts,
+            &pointee,
+            None,
+        )?;
         // The ABI input is a typed address, while every SSA value carrying
         // that storage home after the prologue is the loaded pointee value.
         for (index, storage_home) in shared.storage_hints.iter().enumerate() {
@@ -449,7 +453,7 @@ pub(super) fn lower_shared_to_native_ir(
             );
             value_types[input.0 as usize] = reference_type;
             let loaded_type = native_verification_type(
-                environment.program,
+                &environment.program.metadata,
                 environment.layouts,
                 &concrete_pointee,
                 None,
@@ -873,7 +877,7 @@ fn lower_shared_instruction(
             destination,
             constant,
         } => {
-            let value = match environment.program.constants[usize::from(*constant)] {
+            let value = match environment.program.metadata.constants[usize::from(*constant)] {
                 Constant::Unit => ir::Constant::Unit,
                 Constant::Bool(value) => ir::Constant::Bool(value),
                 Constant::Integer(value) => ir::Constant::Integer(value),
@@ -1000,7 +1004,7 @@ fn lower_shared_instruction(
                         &environment.layouts.get(layout).kind
                 {
                     let loaded_type = native_verification_type(
-                        environment.program,
+                        &environment.program.metadata,
                         environment.layouts,
                         pointee,
                         None,
@@ -1308,7 +1312,7 @@ fn lower_shared_instruction(
                         .iter()
                         .map(|parameter| {
                             native_verification_type(
-                                environment.program,
+                                &environment.program.metadata,
                                 environment.layouts,
                                 &parameter.ty,
                                 None,

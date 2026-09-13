@@ -38,7 +38,7 @@ pub(super) fn runtime_strings(
     let mut values = Vec::new();
     let mut indices = HashMap::new();
     let mut literals = HashMap::new();
-    for (index, constant) in program.constants.iter().enumerate() {
+    for (index, constant) in program.metadata.constants.iter().enumerate() {
         if let Constant::String(value) | Constant::Symbol(value) = constant {
             indices.insert(index as u16, values.len() as u64);
             literals.entry(value.clone()).or_insert(values.len() as u64);

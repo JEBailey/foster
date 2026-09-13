@@ -101,22 +101,24 @@ impl Library {
             return Err(error("invalid package identity or finalized library code"));
         }
         vm::verify(&self.code)?;
-        self.code.symbols.validate(&self.code)?;
+        self.code.metadata.symbols.validate(&self.code)?;
         let definitions = self
             .code
+            .metadata
             .symbols
             .modules
             .iter()
             .flat_map(|m| &m.definitions)
             .map(|d| (d.function, d))
             .collect::<BTreeMap<_, _>>();
-        if definitions.len() != self.code.functions.len() || self.code.main.is_some() {
+        if definitions.len() != self.code.functions.len() || self.code.metadata.main.is_some() {
             return Err(error(
                 "incomplete function bindings or executable entry point",
             ));
         }
         let mut names = self
             .code
+            .metadata
             .symbols
             .modules
             .iter()
@@ -127,6 +129,7 @@ impl Library {
         }
         let type_ids = self
             .code
+            .metadata
             .symbols
             .modules
             .iter()
@@ -135,11 +138,13 @@ impl Library {
             .collect::<BTreeSet<_>>();
         if self
             .code
+            .metadata
             .records
             .keys()
             .any(|id| !type_ids.contains(&(false, id.into_raw().into_u32())))
             || self
                 .code
+                .metadata
                 .variants
                 .values()
                 .any(|v| !type_ids.contains(&(true, v.parent.into_raw().into_u32())))
@@ -157,6 +162,7 @@ impl Library {
         }
         let missing_dispatch = self
             .code
+            .metadata
             .dispatch
             .keys()
             .any(|(_, slot)| !slots.contains(&slot.0));

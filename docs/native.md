@@ -199,6 +199,15 @@ access to its functions, metadata, and derived signatures; sealing validates bot
 program and SSA. Backend transforms consume this boundary and validate their resulting IR.
 Dense value tables and CFG relationships remain verifier-checked rather than individually wrapped.
 
+`codegen::metadata::ProgramMetadata` owns constants, symbolic identities, nominal record/variant
+schemas, dispatch targets, core-type identities, and entry-point conventions. Logical record field
+lookup also lives there; it has no VM values or physical offsets. `vm::Program` composes this data
+with bytecode functions and the drop-insertion flag. The binary field order and format are unchanged.
+`SharedProgram::metadata()` and `NativeProgram::metadata()` expose only the neutral data.
+Nominal layout construction and native representation/ownership helpers accept neutral metadata.
+Shared sealing retains construction bodies separately, and native verification and specialization
+still use them for register-flow evidence; extracting metadata does not remove that dependency.
+
 The portable, versioned bytecode remains the VM's execution and distribution format. The native
 IR is a shared internal backend boundary rather than a replacement for bytecode, leaving room for
 the VM and other native code generators without exposing Cranelift types to the frontend. Its

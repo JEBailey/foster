@@ -217,13 +217,13 @@ pub(super) fn lower_native_await(
         return Err(native_error("remote outcome must be a variant"));
     };
     let success_type = native_verification_type(
-        context.backend.ir.program,
+        &context.backend.ir.program.metadata,
         context.backend.ir.layouts,
         &arguments[0],
         None,
     )?;
     let NativeType::Object(error_layout) = native_verification_type(
-        context.backend.ir.program,
+        &context.backend.ir.program.metadata,
         context.backend.ir.layouts,
         &arguments[1],
         None,
@@ -300,7 +300,7 @@ fn native_outcome_variant(
     let tag = alternatives
         .iter()
         .find(|alternative| {
-            backend.ir.program.variants[&alternative.variant]
+            backend.ir.program.metadata.variants[&alternative.variant]
                 .alternative
                 .as_ref()
                 == name

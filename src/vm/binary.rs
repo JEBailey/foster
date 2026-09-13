@@ -49,8 +49,8 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
     w.bytes.extend_from_slice(MAGIC);
     w.u16(FORMAT_VERSION);
     w.u16(0); // flags
-    w.u32(program.constants.len())?;
-    for value in &program.constants {
+    w.u32(program.metadata.constants.len())?;
+    for value in &program.metadata.constants {
         w.constant(value)?;
     }
 
@@ -62,17 +62,17 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
         w.function(function)?;
     }
     w.u8(u8::from(program.drops_inserted));
-    w.option_id(program.main);
-    w.u8(u8::from(program.main_arguments));
-    w.option_id(program.string_record);
-    w.option_id(program.symbol_record);
-    w.option_id(program.list_record);
-    w.option_id(program.bytes_record);
-    w.option_id(program.byte_buffer_record);
-    w.option_id(program.remote_result);
-    w.option_id(program.remote_error);
+    w.option_id(program.metadata.main);
+    w.u8(u8::from(program.metadata.main_arguments));
+    w.option_id(program.metadata.string_record);
+    w.option_id(program.metadata.symbol_record);
+    w.option_id(program.metadata.list_record);
+    w.option_id(program.metadata.bytes_record);
+    w.option_id(program.metadata.byte_buffer_record);
+    w.option_id(program.metadata.remote_result);
+    w.option_id(program.metadata.remote_error);
 
-    let mut records: Vec<_> = program.records.iter().collect();
+    let mut records: Vec<_> = program.metadata.records.iter().collect();
     records.sort_by_key(|(id, _)| raw(**id));
     w.u32(records.len())?;
     for (id, record) in records {
@@ -89,7 +89,7 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
         }
     }
 
-    let mut dispatch: Vec<_> = program.dispatch.iter().collect();
+    let mut dispatch: Vec<_> = program.metadata.dispatch.iter().collect();
     dispatch.sort_by_key(|((nominal, slot), _)| (*nominal, *slot));
     w.u32(dispatch.len())?;
     for ((nominal, slot), function) in dispatch {
@@ -98,7 +98,7 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
         w.id(*function);
     }
 
-    let mut variants: Vec<_> = program.variants.iter().collect();
+    let mut variants: Vec<_> = program.metadata.variants.iter().collect();
     variants.sort_by_key(|(id, _)| raw(**id));
     w.u32(variants.len())?;
     for (id, variant) in variants {
@@ -116,7 +116,7 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
         }
     }
     w.string(
-        &serde_json::to_string(&program.symbols.canonical())
+        &serde_json::to_string(&program.metadata.symbols.canonical())
             .map_err(|e| BinaryError::new(e.to_string()))?,
     )?;
     Ok(w.bytes)
@@ -163,7 +163,7 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
             RuntimeRecord {
                 name,
                 parameters,
-                layout: std::sync::Arc::new(super::value::RecordLayout::new(names)),
+                layout: std::sync::Arc::new(crate::codegen::metadata::RecordLayout::new(names)),
                 field_types,
             },
         ))
@@ -194,22 +194,24 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         ));
     }
     let mut program = Program {
-        symbols,
         drops_inserted,
-        constants,
         functions,
-        main,
-        main_arguments,
-        string_record,
-        symbol_record,
-        list_record,
-        bytes_record,
-        byte_buffer_record,
-        remote_result,
-        remote_error,
-        records,
-        dispatch,
-        variants,
+        metadata: crate::codegen::metadata::ProgramMetadata {
+            symbols,
+            constants,
+            main,
+            main_arguments,
+            string_record,
+            symbol_record,
+            list_record,
+            bytes_record,
+            byte_buffer_record,
+            remote_result,
+            remote_error,
+            records,
+            dispatch,
+            variants,
+        },
     };
     crate::symbols::link(&mut program)
         .map_err(|error| BinaryError::new(format!("invalid Foster bytecode: {error}")))?;

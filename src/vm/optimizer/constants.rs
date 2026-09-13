@@ -9,7 +9,7 @@ use super::analysis::definitions;
 type Constants = HashMap<Register, Constant>;
 
 pub(super) fn fold(program: &mut Program) {
-    let (constants, functions) = (&mut program.constants, &mut program.functions);
+    let (constants, functions) = (&mut program.metadata.constants, &mut program.functions);
     let mut interner = None;
     for function in functions.values_mut() {
         // Converge before rewriting: back edges can invalidate initial facts.
@@ -223,7 +223,7 @@ fn transfer(instruction: &Instruction, mut known: Constants, constants: &[Consta
 }
 
 pub(super) fn deduplicate(program: &mut Program) {
-    let old = std::mem::take(&mut program.constants);
+    let old = std::mem::take(&mut program.metadata.constants);
     let mut unique = Vec::new();
     let mut interner = ConstantInterner::new(&[]);
     // Most instructions reuse an existing constant index. Remap each old index
@@ -241,7 +241,7 @@ pub(super) fn deduplicate(program: &mut Program) {
             }
         }
     }
-    program.constants = unique;
+    program.metadata.constants = unique;
 }
 
 fn value_constant(value: Value) -> Option<Constant> {
@@ -495,7 +495,7 @@ mod tests {
             .find(|f| f.name == "main")
             .unwrap();
         function.instructions = indices.iter().map(|&index| load(0, index)).collect();
-        program.constants = old.clone();
+        program.metadata.constants = old.clone();
         deduplicate(&mut program);
         let function = program
             .functions
@@ -508,10 +508,10 @@ mod tests {
             };
             assert!(same_constant(
                 &old[usize::from(old_index)],
-                &program.constants[usize::from(*constant)]
+                &program.metadata.constants[usize::from(*constant)]
             ));
         }
-        assert_eq!(program.constants.len(), 3);
+        assert_eq!(program.metadata.constants.len(), 3);
     }
     fn reference_constants(
         instructions: &[Instruction],

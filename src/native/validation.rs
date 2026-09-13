@@ -11,9 +11,10 @@ pub(super) fn validate_program(
     function_types: &HashMap<FunctionId, ir::Signature>,
     layouts: &LayoutRegistry,
 ) -> Result<(), FosterError> {
-    let main = program.main.expect("validated above");
+    let main = program.metadata.main.expect("validated above");
     let main_function = &program.functions[&main];
-    if main_function.parameters != u16::from(program.main_arguments) || main_function.captures != 0
+    if main_function.parameters != u16::from(program.metadata.main_arguments)
+        || main_function.captures != 0
     {
         return Err(native_error(
             "native `main` must take no parameters or one `std.process.Arguments` parameter",
@@ -75,6 +76,7 @@ pub(super) fn validate_program(
                         .map(|layout| format!(" (legalized as boxed layout l{})", layout.0))
                         .unwrap_or_default(),
                     Instruction::MakeVariant { variant, .. } => program
+                        .metadata
                         .variants
                         .get(variant)
                         .and_then(|variant| layouts.variant(variant.parent))

@@ -5,6 +5,7 @@ pub(super) fn build(
     code: &vm::Program,
 ) -> Result<Interface, FosterError> {
     let definitions = code
+        .metadata
         .symbols
         .modules
         .iter()

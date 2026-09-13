@@ -17,23 +17,23 @@ pub fn verify(program: &Program) -> Result<(), FosterError> {
     for (id, function) in &program.functions {
         verify_function_flow(program, *id, function)?;
     }
-    program.symbols.validate(program)?;
+    program.metadata.symbols.validate(program)?;
     Ok(())
 }
 
 fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
-    if let Some(main) = program.main {
+    if let Some(main) = program.metadata.main {
         let main = program
             .functions
             .get(&main)
             .ok_or_else(|| FosterError::runtime("bytecode references a missing `main` function"))?;
-        let expected = u16::from(program.main_arguments);
+        let expected = u16::from(program.metadata.main_arguments);
         if main.parameters != expected || main.captures != 0 {
             return Err(FosterError::runtime(format!(
                 "bytecode `main` must have {expected} parameter(s) and no captures"
             )));
         }
-    } else if program.main_arguments {
+    } else if program.metadata.main_arguments {
         return Err(FosterError::runtime(
             "bytecode without `main` cannot accept command arguments",
         ));
@@ -46,10 +46,13 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
             )
         })
     });
-    if remote_used || program.remote_result.is_some() || program.remote_error.is_some() {
+    if remote_used
+        || program.metadata.remote_result.is_some()
+        || program.metadata.remote_error.is_some()
+    {
         let invalid = || FosterError::runtime("bytecode has invalid remote outcome metadata");
-        let result = program.remote_result.ok_or_else(invalid)?;
-        let error = program.remote_error.ok_or_else(invalid)?;
+        let result = program.metadata.remote_result.ok_or_else(invalid)?;
+        let error = program.metadata.remote_error.ok_or_else(invalid)?;
         if result == error {
             return Err(invalid());
         }
@@ -63,6 +66,7 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
             ),
         ] {
             let variants = program
+                .metadata
                 .variants
                 .values()
                 .filter(|variant| variant.parent == parent)
@@ -85,7 +89,7 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
                     "Ok" => Some(ExecutableType::Generic(variant.parameters[0].clone())),
                     "Error" => Some(ExecutableType::Generic(variant.parameters[1].clone())),
                     "Failed" => Some(ExecutableType::Record {
-                        record: program.string_record.ok_or_else(invalid)?,
+                        record: program.metadata.string_record.ok_or_else(invalid)?,
                         arguments: vec![],
                     }),
                     _ => None,
@@ -97,22 +101,22 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
         }
     }
     for record in [
-        program.string_record,
-        program.symbol_record,
-        program.list_record,
-        program.bytes_record,
-        program.byte_buffer_record,
+        program.metadata.string_record,
+        program.metadata.symbol_record,
+        program.metadata.list_record,
+        program.metadata.bytes_record,
+        program.metadata.byte_buffer_record,
     ]
     .into_iter()
     .flatten()
     {
-        if !program.records.contains_key(&record) {
+        if !program.metadata.records.contains_key(&record) {
             return Err(FosterError::runtime(
                 "bytecode wrapper metadata references a missing record",
             ));
         }
     }
-    for record in program.records.values() {
+    for record in program.metadata.records.values() {
         if record.layout.names().len() != record.field_types.len() {
             return Err(FosterError::runtime(format!(
                 "bytecode record `{}` has inconsistent typed field metadata",
@@ -123,7 +127,7 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
             verify_metadata_type(program, ty, 0)?;
         }
     }
-    for variant in program.variants.values() {
+    for variant in program.metadata.variants.values() {
         if variant.payload.len() > 1 {
             return Err(FosterError::runtime(format!(
                 "bytecode enum case `{}.{}` has more than one payload value",
@@ -134,7 +138,7 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
             verify_metadata_type(program, ty, 0)?;
         }
     }
-    for ((nominal, slot), target) in &program.dispatch {
+    for ((nominal, slot), target) in &program.metadata.dispatch {
         let Some(target) = program.functions.get(target) else {
             return Err(FosterError::runtime(
                 "bytecode dispatch table references a missing function",
@@ -168,8 +172,9 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
             }
         }
         let nominal_exists = match nominal {
-            NominalTypeId::Record(record) => program.records.contains_key(record),
+            NominalTypeId::Record(record) => program.metadata.records.contains_key(record),
             NominalTypeId::Variant(variant) => program
+                .metadata
                 .variants
                 .values()
                 .any(|value| value.parent == *variant),
@@ -220,7 +225,7 @@ fn verify_metadata_type(
             Ok(())
         }
         ExecutableType::Record { record, arguments } => {
-            if !program.records.contains_key(record) {
+            if !program.metadata.records.contains_key(record) {
                 return Err(FosterError::runtime(
                     "bytecode aggregate metadata references a missing record",
                 ));
@@ -232,6 +237,7 @@ fn verify_metadata_type(
         }
         ExecutableType::Variant { variant, arguments } => {
             if !program
+                .metadata
                 .variants
                 .values()
                 .any(|metadata| metadata.parent == *variant)
@@ -338,7 +344,7 @@ fn verify_function_structure(
         }
         match instruction {
             Instruction::LoadConstant { constant, .. }
-                if usize::from(*constant) >= program.constants.len() =>
+                if usize::from(*constant) >= program.metadata.constants.len() =>
             {
                 return invalid_instruction(
                     function,
@@ -452,7 +458,7 @@ fn verify_function_structure(
                 fields,
                 ..
             } => {
-                let Some(metadata) = program.records.get(record) else {
+                let Some(metadata) = program.metadata.records.get(record) else {
                     return invalid_instruction(function, index, "references a missing record");
                 };
                 if type_arguments.len() != metadata.parameters.len() {
@@ -481,7 +487,7 @@ fn verify_function_structure(
                 type_arguments,
                 payload,
                 ..
-            } => match program.variants.get(variant) {
+            } => match program.metadata.variants.get(variant) {
                 None => {
                     return invalid_instruction(function, index, "references a missing variant");
                 }
@@ -555,7 +561,7 @@ fn verify_type(
             Ok(())
         }
         ExecutableType::Record { record, arguments } => {
-            if !program.records.contains_key(record) {
+            if !program.metadata.records.contains_key(record) {
                 return Err(FosterError::runtime(format!(
                     "bytecode function `{}` has a verification type for a missing record",
                     function.name
@@ -568,6 +574,7 @@ fn verify_type(
         }
         ExecutableType::Variant { variant, arguments } => {
             if !program
+                .metadata
                 .variants
                 .values()
                 .any(|value| value.parent == *variant)
@@ -701,7 +708,7 @@ fn transfer(
             index,
             &mut state,
             *destination,
-            constant_type(program, &program.constants[usize::from(*constant)]),
+            constant_type(program, &program.metadata.constants[usize::from(*constant)]),
         )?,
         Instruction::Move {
             destination,
@@ -812,7 +819,7 @@ fn transfer(
                 &mut state,
                 *destination,
                 ExecutableType::Variant {
-                    variant: program.variants[variant].parent,
+                    variant: program.metadata.variants[variant].parent,
                     arguments: Vec::new(),
                 },
             )?;
@@ -1169,7 +1176,9 @@ fn transfer(
                 &mut state,
                 *destination,
                 ExecutableType::Future(Box::new(
-                    program.remote_outcome_type(target.result_type.specialize(&specialization)),
+                    program
+                        .metadata
+                        .remote_outcome_type(target.result_type.specialize(&specialization)),
                 )),
             )?;
         }
@@ -1193,8 +1202,9 @@ fn transfer(
             let subject_type = read_type(function, index, &state, *subject)?;
             let covered_variant = fully_covered_variant(pattern).map(|variant| (*subject, variant));
             let exhaustive = covered_variant.is_some_and(|(_, variant)| {
-                let parent = program.variants[&variant].parent;
+                let parent = program.metadata.variants[&variant].parent;
                 program
+                    .metadata
                     .variants
                     .iter()
                     .filter(|(_, metadata)| metadata.parent == parent)
@@ -1210,7 +1220,7 @@ fn transfer(
                 && let ExecutableType::Variant {
                     variant: parent, ..
                 } = subject_type
-                && program.variants[variant].parent != parent
+                && program.metadata.variants[variant].parent != parent
             {
                 return invalid_instruction(
                     function,
@@ -1269,6 +1279,7 @@ fn transfer(
             require_type(function, index, &found, &ExecutableType::Bool, "condition")?;
             if let Some(message) = message {
                 let expected = program
+                    .metadata
                     .string_record
                     .map(nominal_record)
                     .unwrap_or(ExecutableType::Unknown);
@@ -1390,7 +1401,7 @@ fn transfer(
                 _ => None,
             };
             if let Some(target) = nominal
-                .and_then(|nominal| program.dispatch.get(&(nominal, *slot)))
+                .and_then(|nominal| program.metadata.dispatch.get(&(nominal, *slot)))
                 .and_then(|target| program.functions.get(target))
             {
                 let mut substitutions = std::collections::BTreeMap::new();
@@ -1578,7 +1589,7 @@ fn verification_field_type(
     match receiver {
         ExecutableType::Reference(pointee) => verification_field_type(program, pointee, field),
         ExecutableType::Record { record, arguments } => {
-            let metadata = program.records.get(record)?;
+            let metadata = program.metadata.records.get(record)?;
             let index = metadata
                 .layout
                 .names()
@@ -2026,11 +2037,13 @@ fn constant_type(program: &Program, constant: &Constant) -> ExecutableType {
         Constant::Integer(_) => ExecutableType::Integer,
         Constant::Float(_) => ExecutableType::Float,
         Constant::String(_) => program
+            .metadata
             .string_record
             .map(nominal_record)
             .unwrap_or(ExecutableType::Unknown),
         Constant::CodePoint(_) => ExecutableType::CodePoint,
         Constant::Symbol(_) => program
+            .metadata
             .symbol_record
             .map(nominal_record)
             .unwrap_or(ExecutableType::Unknown),
@@ -2039,8 +2052,10 @@ fn constant_type(program: &Program, constant: &Constant) -> ExecutableType {
 
 fn record_type(program: &Program, record: crate::hir::RecordId) -> ExecutableType {
     match Some(record) {
-        id if id == program.list_record => ExecutableType::List(Box::new(ExecutableType::Unknown)),
-        id if id == program.bytes_record => ExecutableType::Bytes,
+        id if id == program.metadata.list_record => {
+            ExecutableType::List(Box::new(ExecutableType::Unknown))
+        }
+        id if id == program.metadata.bytes_record => ExecutableType::Bytes,
         _ => nominal_record(record),
     }
 }
@@ -2049,7 +2064,7 @@ fn is_foster_byte_buffer(program: &Program, ty: &ExecutableType) -> bool {
     let ExecutableType::Record { record, .. } = ty else {
         return false;
     };
-    Some(*record) == program.byte_buffer_record
+    Some(*record) == program.metadata.byte_buffer_record
 }
 
 fn indexed_element_type(program: &Program, ty: &ExecutableType) -> Option<ExecutableType> {
@@ -2082,6 +2097,7 @@ fn intrinsic_verification_type(program: &Program, ty: IntrinsicType) -> Executab
         IntrinsicType::Bytes => ExecutableType::Bytes,
         IntrinsicType::ByteBuffer => ExecutableType::ByteBuffer,
         IntrinsicType::String => program
+            .metadata
             .string_record
             .map(nominal_record)
             .unwrap_or(ExecutableType::Unknown),
@@ -2177,7 +2193,7 @@ mod type_semantics_tests {
         use ExecutableType as T;
         let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
         let program = crate::vm::compile(&compilation).unwrap();
-        let function = &program.functions[&program.main.unwrap()];
+        let function = &program.functions[&program.metadata.main.unwrap()];
         for view in [
             T::intersection(vec![T::Integer]),
             T::AliasArguments {

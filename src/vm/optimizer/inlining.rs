@@ -291,7 +291,7 @@ mod tests {
             42,
         );
         assert!(
-            !program.functions[&program.main.unwrap()]
+            !program.functions[&program.metadata.main.unwrap()]
                 .instructions
                 .iter()
                 .any(|i| matches!(i, Instruction::Call { .. }))
@@ -377,6 +377,7 @@ mod tests {
         assert_eq!(caller, before);
         assert!(
             program
+                .metadata
                 .constants
                 .iter()
                 .any(|c| matches!(c, Constant::Integer(41)))

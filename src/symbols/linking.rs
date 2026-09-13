@@ -65,6 +65,7 @@ impl Table {
                 }
                 if !ty.variant
                     && !program
+                        .metadata
                         .records
                         .contains_key(&la_arena::Idx::from_raw(la_arena::RawIdx::from_u32(ty.id)))
                 {
@@ -187,18 +188,19 @@ impl Table {
 /// allocated type arenas or load native libraries.
 pub fn link(program: &mut Program) -> Result<(), FosterError> {
     // The normal compiler path has already assigned the final IDs. Avoid copying its code.
-    if program.symbols.validate(program).is_ok() {
+    if program.metadata.symbols.validate(program).is_ok() {
         return crate::vm::verify(program);
     }
     let mut linked = program.clone();
     let definitions = linked
+        .metadata
         .symbols
         .modules
         .iter()
         .flat_map(|m| &m.definitions)
         .map(|d| (d.symbol.clone(), d.clone()))
         .collect::<BTreeMap<_, _>>();
-    for module in &mut linked.symbols.modules {
+    for module in &mut linked.metadata.symbols.modules {
         let mut relocations = BTreeMap::new();
         for import in &mut module.imports {
             let implementation = definitions
@@ -340,6 +342,7 @@ fn wire_matches(
                 V::List(element) => {
                     return !binding.variant
                         && program
+                            .metadata
                             .list_record
                             .is_some_and(|id| id.into_raw().into_u32() == binding.id)
                         && args.len() == 1
@@ -348,6 +351,7 @@ fn wire_matches(
                 V::Bytes => {
                     return !binding.variant
                         && program
+                            .metadata
                             .bytes_record
                             .is_some_and(|id| id.into_raw().into_u32() == binding.id)
                         && args.is_empty();

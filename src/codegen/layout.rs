@@ -516,19 +516,19 @@ fn layout_kind_has_generic(kind: &LayoutKind) -> bool {
     }
 }
 
-/// Canonicalize aggregate operands and construct the complete logical layout table.
-///
-/// This is deliberately run before optimization.  Consequently field order and variant tags are
-/// stable even when an optimizer later removes a construction site.
-pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
+/// Construct deterministic nominal layouts from neutral metadata alone.
+/// Logical field order and variant tags do not depend on executable bodies.
+pub fn nominal_layouts(
+    metadata: &crate::codegen::metadata::ProgramMetadata,
+) -> Result<Registry, FosterError> {
     let mut registry = Registry {
-        string_record: program.string_record,
-        symbol_record: program.symbol_record,
+        string_record: metadata.string_record,
+        symbol_record: metadata.symbol_record,
         ..Registry::default()
     };
     registry.opaque = Some(registry.push(LayoutKind::Opaque));
 
-    let mut records = program.records.iter().collect::<Vec<_>>();
+    let mut records = metadata.records.iter().collect::<Vec<_>>();
     records.sort_unstable_by_key(|(id, _)| id.into_raw().into_u32());
     for (record, runtime) in records {
         registry
@@ -568,7 +568,7 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
     }
 
     let mut by_parent = BTreeMap::<u32, (VariantTypeId, Vec<(VariantId, String)>)>::new();
-    for (variant, runtime) in &program.variants {
+    for (variant, runtime) in &metadata.variants {
         by_parent
             .entry(runtime.parent.into_raw().into_u32())
             .or_insert_with(|| (runtime.parent, Vec::new()))
@@ -579,12 +579,12 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
         if let Some((variant, _)) = entries.first() {
             registry
                 .variant_parameters
-                .insert(variant_type, program.variants[variant].parameters.clone());
+                .insert(variant_type, metadata.variants[variant].parameters.clone());
         }
         entries.sort_unstable_by_key(|(id, _)| id.into_raw().into_u32());
         let name = entries
             .first()
-            .map(|(variant, _)| program.variants[variant].type_name.to_string())
+            .map(|(variant, _)| metadata.variants[variant].type_name.to_string())
             .unwrap_or_default();
         let alternatives = entries
             .into_iter()
@@ -593,7 +593,7 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
                 variant,
                 tag: tag as u32,
                 name,
-                payload: program.variants[&variant].payload.clone(),
+                payload: metadata.variants[&variant].payload.clone(),
             })
             .collect();
         let kind = LayoutKind::Variant {
@@ -610,6 +610,12 @@ pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
         registry.variants.insert(variant_type, layout);
     }
 
+    Ok(registry)
+}
+
+/// Canonicalize bytecode aggregate operands and add closure/runtime layouts.
+pub fn legalize(program: &mut Program) -> Result<Registry, FosterError> {
+    let mut registry = nominal_layouts(&program.metadata)?;
     let closure_targets = program
         .functions
         .values()
@@ -723,10 +729,10 @@ fn collect_runtime_layouts(program: &Program, registry: &mut Registry) {
             }
         }
     }
-    for record in program.records.values() {
+    for record in program.metadata.records.values() {
         types.extend(record.field_types.iter().cloned());
     }
-    for variant in program.variants.values() {
+    for variant in program.metadata.variants.values() {
         types.extend(variant.payload.iter().cloned());
     }
     for ty in types {
@@ -841,7 +847,7 @@ fn canonicalize_and_verify(program: &mut Program, registry: &Registry) -> Result
                 Instruction::MakeVariant {
                     variant, payload, ..
                 } => {
-                    let Some(runtime) = program.variants.get(variant) else {
+                    let Some(runtime) = program.metadata.variants.get(variant) else {
                         return Err(FosterError::runtime("variant construction has no layout"));
                     };
                     let layout = registry.variant(runtime.parent).expect("registered above");
@@ -892,8 +898,9 @@ fn canonicalize_and_verify(program: &mut Program, registry: &Registry) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codegen::metadata::{ProgramMetadata, RecordLayout, RuntimeRecord};
     use crate::hir::{Function, FunctionId, Record, RecordId};
-    use crate::vm::{BytecodeFunction, Register, RuntimeRecord};
+    use crate::vm::{BytecodeFunction, Register};
     use la_arena::{Idx, RawIdx};
     use std::sync::Arc;
 
@@ -902,12 +909,12 @@ mod tests {
         let record: RecordId = Idx::<Record>::from_raw(RawIdx::from_u32(0));
         let function: FunctionId = Idx::<Function>::from_raw(RawIdx::from_u32(0));
         let mut program = Program::default();
-        program.records.insert(
+        program.metadata.records.insert(
             record,
             RuntimeRecord {
                 name: "Pair".into(),
                 parameters: Vec::new(),
-                layout: Arc::new(crate::vm::RecordLayout::new(vec!["a".into(), "b".into()])),
+                layout: Arc::new(RecordLayout::new(vec!["a".into(), "b".into()])),
                 field_types: vec![ExecutableType::Integer, ExecutableType::Bool],
             },
         );
@@ -968,17 +975,20 @@ mod tests {
         let runtime = |name: &str| RuntimeRecord {
             name: name.into(),
             parameters: Vec::new(),
-            layout: Arc::new(crate::vm::RecordLayout::new(vec!["value".into()])),
+            layout: Arc::new(RecordLayout::new(vec!["value".into()])),
             field_types: vec![ExecutableType::Integer],
         };
-        let mut left = Program::default();
+        let mut left = ProgramMetadata::default();
         left.records.insert(second, runtime("Second"));
         left.records.insert(first, runtime("First"));
-        let mut right = Program::default();
+        let mut right = ProgramMetadata::default();
         right.records.insert(first, runtime("First"));
         right.records.insert(second, runtime("Second"));
 
-        assert_eq!(legalize(&mut left).unwrap(), legalize(&mut right).unwrap());
+        assert_eq!(
+            nominal_layouts(&left).unwrap(),
+            nominal_layouts(&right).unwrap()
+        );
     }
 
     #[test]
@@ -997,6 +1007,7 @@ func main() -> Int { Boxed { value: 42 }.value }
         .unwrap();
         let mut registry = legalize(&mut program).unwrap();
         let record = program
+            .metadata
             .records
             .iter()
             .find_map(|(id, record)| (record.name == "Boxed").then_some(*id))

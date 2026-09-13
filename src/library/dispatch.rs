@@ -68,6 +68,7 @@ pub(super) fn slots(
         })
     }
     let names = program
+        .metadata
         .symbols
         .modules
         .iter()

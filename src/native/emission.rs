@@ -74,7 +74,7 @@ pub(super) fn emit_object(
     }
 
     let native_layouts = NativeLayouts {
-        program,
+        metadata: &program.metadata,
         logical: layouts,
         physical: physical_layouts,
     };
@@ -133,7 +133,7 @@ pub(super) fn emit_object(
     Ok(ObjectArtifact {
         bytes,
         result: main_result,
-        accepts_arguments: program.main_arguments,
+        accepts_arguments: program.metadata.main_arguments,
         runtime_strings: prepared.runtime_strings.clone(),
         releases_result: exported_result_layout.is_some(),
     })

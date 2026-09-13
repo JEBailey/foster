@@ -35,8 +35,9 @@ pub(crate) fn link(
     if compilation.package.libraries.is_empty() {
         return Ok(());
     }
-    program.symbols = symbols::Table::from_compilation(compilation, program)?;
+    program.metadata.symbols = symbols::Table::from_compilation(compilation, program)?;
     let functions = program
+        .metadata
         .symbols
         .modules
         .iter()
@@ -44,6 +45,7 @@ pub(crate) fn link(
         .map(|d| (d.symbol.clone(), d.clone()))
         .collect::<BTreeMap<_, _>>();
     let types = program
+        .metadata
         .symbols
         .modules
         .iter()
@@ -64,7 +66,7 @@ pub(crate) fn link(
             constants: Vec::new(),
             generic_names: BTreeMap::new(),
         };
-        for module in &library.code.symbols.modules {
+        for module in &library.code.metadata.symbols.modules {
             for definition in &module.definitions {
                 let target = functions.get(&definition.symbol).ok_or_else(|| {
                     error(format!(
@@ -105,9 +107,10 @@ pub(crate) fn link(
                 }
             }
         }
-        for (case, definition) in &library.code.variants {
+        for (case, definition) in &library.code.metadata.variants {
             let parent = mapping.variants[&raw(definition.parent)];
             let target = program
+                .metadata
                 .variants
                 .iter()
                 .find(|(_, v)| raw(v.parent) == parent && v.alternative == definition.alternative)
@@ -127,35 +130,46 @@ pub(crate) fn link(
         for reserved in [u32::MAX, u32::MAX - 1, u32::MAX - 2] {
             mapping.slots.insert(reserved, reserved);
         }
-        for constant in &library.code.constants {
+        for constant in &library.code.metadata.constants {
             let index = program
+                .metadata
                 .constants
                 .iter()
                 .position(|c| c == constant)
                 .unwrap_or_else(|| {
-                    program.constants.push(constant.clone());
-                    program.constants.len() - 1
+                    program.metadata.constants.push(constant.clone());
+                    program.metadata.constants.len() - 1
                 });
             mapping.constants.push(
                 u16::try_from(index).map_err(|_| error("linked constant pool exceeds limit"))?,
             );
         }
-        for (source, record) in &library.code.records {
+        for (source, record) in &library.code.metadata.records {
             let mut remapped = record.clone();
             for ty in &mut remapped.field_types {
                 mapping.ty(ty);
             }
-            if program.records.get(&id(mapping.records[&raw(*source)])) != Some(&remapped) {
+            if program
+                .metadata
+                .records
+                .get(&id(mapping.records[&raw(*source)]))
+                != Some(&remapped)
+            {
                 return Err(error(format!("incompatible layout for {}", record.name)));
             }
         }
-        for (source, variant) in &library.code.variants {
+        for (source, variant) in &library.code.metadata.variants {
             let mut remapped = variant.clone();
             remapped.parent = id(mapping.variants[&raw(variant.parent)]);
             for ty in &mut remapped.payload {
                 mapping.ty(ty);
             }
-            if program.variants.get(&id(mapping.cases[&raw(*source)])) != Some(&remapped) {
+            if program
+                .metadata
+                .variants
+                .get(&id(mapping.cases[&raw(*source)]))
+                != Some(&remapped)
+            {
                 return Err(error(format!(
                     "incompatible layout for {}",
                     variant.type_name
@@ -188,12 +202,12 @@ pub(crate) fn link(
             }
             program.functions.insert(target, function);
         }
-        for ((nominal, slot), function) in &library.code.dispatch {
+        for ((nominal, slot), function) in &library.code.metadata.dispatch {
             let nominal = match nominal {
                 NominalTypeId::Record(r) => NominalTypeId::Record(id(mapping.records[&raw(*r)])),
                 NominalTypeId::Variant(v) => NominalTypeId::Variant(id(mapping.variants[&raw(*v)])),
             };
-            program.dispatch.insert(
+            program.metadata.dispatch.insert(
                 (nominal, DispatchSlot(mapping.slots[&slot.0])),
                 id(mapping.functions[&raw(*function)]),
             );
@@ -202,6 +216,7 @@ pub(crate) fn link(
     // Imported structural calls can encounter client-defined types. Populate their matching
     // implementations using the same canonical parameter/name key as the imported slot.
     let nominal_types = program
+        .metadata
         .symbols
         .modules
         .iter()
@@ -209,6 +224,7 @@ pub(crate) fn link(
         .map(|t| (&t.name, t))
         .collect::<BTreeMap<_, _>>();
     let mut candidates = program
+        .metadata
         .symbols
         .modules
         .iter()
@@ -243,13 +259,14 @@ pub(crate) fn link(
         for (required, slot) in &slot_keys {
             if super::dispatch::matches(&key, required) {
                 program
+                    .metadata
                     .dispatch
                     .entry((nominal, DispatchSlot(*slot)))
                     .or_insert(id(definition.function));
             }
         }
     }
-    program.symbols = symbols::Table::from_compilation(compilation, program)?;
+    program.metadata.symbols = symbols::Table::from_compilation(compilation, program)?;
     Ok(())
 }
 

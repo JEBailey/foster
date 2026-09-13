@@ -2,7 +2,7 @@
 use super::{
     BinaryOp, BytecodeFunction, Constant, FosterError, HashMap, Instruction, LayoutId, LayoutKind,
     LayoutRegistry, NativeIrEnvironment, NativeType, Pattern, PhysicalKind, PhysicalRegistry,
-    Program, Register, SpecializationKey, UnaryOp, VerifiedRemoteCall, executable_type_for_native,
+    Register, SpecializationKey, UnaryOp, VerifiedRemoteCall, executable_type_for_native,
     native_error, native_type_from_value_layout, resolve_specialization,
 };
 use crate::codegen::types::ExecutableType;
@@ -30,7 +30,7 @@ pub(super) fn infer_register_types(
                 constant,
             } => {
                 result[usize::from(destination.0)] = Some(
-                    match environment.program.constants[usize::from(*constant)] {
+                    match environment.program.metadata.constants[usize::from(*constant)] {
                         Constant::Unit => NativeType::Unit,
                         Constant::Bool(_) => NativeType::Bool,
                         Constant::Integer(_) => NativeType::Int,
@@ -158,7 +158,7 @@ pub(super) fn infer_register_types(
                     LayoutKind::Builtin {
                         ty: crate::codegen::types::ExecutableType::Function { result, .. },
                     } => native_verification_type(
-                        environment.program,
+                        &environment.program.metadata,
                         environment.layouts,
                         result,
                         None,
@@ -200,7 +200,7 @@ pub(super) fn infer_register_types(
                 type_arguments,
                 ..
             } => {
-                let parent = environment.program.variants[variant].parent;
+                let parent = environment.program.metadata.variants[variant].parent;
                 let arguments = type_arguments
                     .iter()
                     .map(|ty| ty.specialize(&instance.substitutions))
@@ -266,7 +266,7 @@ pub(super) fn infer_register_types(
                 }
                 result[usize::from(destination.0)] = Some(
                     field_type(
-                        environment.program,
+                        &environment.program.metadata,
                         environment.layouts,
                         environment.physical_layouts,
                         object,
@@ -295,7 +295,7 @@ pub(super) fn infer_register_types(
                                     LayoutKind::Builtin {
                                         ty: ExecutableType::List(item),
                                     } => native_verification_type(
-                                        environment.program,
+                                        &environment.program.metadata,
                                         environment.layouts,
                                         item,
                                         element.pointee,
@@ -400,7 +400,10 @@ pub(super) fn infer_register_types(
                     .get(&destination.0)
                     .ok_or_else(|| native_error("remote call has no verified specialization"))?;
                 let future = ExecutableType::Future(Box::new(
-                    environment.program.remote_outcome_type(call.result.clone()),
+                    environment
+                        .program
+                        .metadata
+                        .remote_outcome_type(call.result.clone()),
                 ));
                 let layout = environment.layouts.builtin(&future).ok_or_else(|| {
                     native_error(format!(
@@ -430,7 +433,7 @@ pub(super) fn infer_register_types(
                     )));
                 };
                 result[usize::from(destination.0)] = Some(native_verification_type(
-                    environment.program,
+                    &environment.program.metadata,
                     environment.layouts,
                     value,
                     None,
@@ -455,7 +458,7 @@ pub(super) fn infer_register_types(
                 }
                 let concrete = result_type.specialize(&instance.substitutions);
                 result[usize::from(destination.0)] = Some(native_verification_type(
-                    environment.program,
+                    &environment.program.metadata,
                     environment.layouts,
                     &concrete,
                     None,
@@ -471,7 +474,7 @@ pub(super) fn infer_register_types(
                 let subject = register_type(&result, *subject, function)?;
                 let mut types = Vec::new();
                 native_pattern_binding_types(
-                    environment.program,
+                    &environment.program.metadata,
                     environment.layouts,
                     environment.physical_layouts,
                     pattern,
@@ -575,7 +578,7 @@ pub(super) fn infer_register_types(
             }
             .specialize(specialization);
             *ty = native_verification_type(
-                environment.program,
+                &environment.program.metadata,
                 environment.layouts,
                 &callable,
                 None,
@@ -586,7 +589,7 @@ pub(super) fn infer_register_types(
 }
 
 fn native_pattern_binding_types(
-    program: &Program,
+    program: &crate::codegen::metadata::ProgramMetadata,
     layouts: &LayoutRegistry,
     physical_layouts: &PhysicalRegistry,
     pattern: &Pattern,
@@ -671,11 +674,16 @@ pub(super) fn dereference_native_type(
     let LayoutKind::Pointer { pointee, .. } = &environment.layouts.get(layout).kind else {
         return Ok(ty);
     };
-    native_verification_type(environment.program, environment.layouts, pointee, None)
+    native_verification_type(
+        &environment.program.metadata,
+        environment.layouts,
+        pointee,
+        None,
+    )
 }
 
 pub(super) fn field_type(
-    program: &Program,
+    program: &crate::codegen::metadata::ProgramMetadata,
     layouts: &LayoutRegistry,
     physical_layouts: &PhysicalRegistry,
     receiver: NativeType,
@@ -764,7 +772,7 @@ pub(super) fn field_type(
 }
 
 pub(super) fn native_verification_type(
-    program: &Program,
+    program: &crate::codegen::metadata::ProgramMetadata,
     layouts: &LayoutRegistry,
     ty: &crate::codegen::types::ExecutableType,
     physical_pointee: Option<LayoutId>,
@@ -865,5 +873,5 @@ pub(super) fn native_intrinsic_result_type(
                 "native intrinsic `{builtin:?}` has no concrete result type"
             ))
         })?;
-    native_verification_type(environment.program, environment.layouts, ty, None)
+    native_verification_type(&environment.program.metadata, environment.layouts, ty, None)
 }

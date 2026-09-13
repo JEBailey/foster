@@ -5,6 +5,7 @@ use std::fmt;
 use std::ops::Range;
 
 use crate::codegen::ir::{self, Block, Type, Value};
+use crate::codegen::metadata::{Constant, ProgramMetadata};
 use crate::codegen::types::ExecutableType;
 use crate::hir::FunctionId;
 use crate::vm::{self, Register};
@@ -31,13 +32,15 @@ impl std::error::Error for LowerError {}
 /// ```
 #[derive(Debug)]
 pub struct SharedProgram {
-    metadata: vm::Program,
+    metadata: ProgramMetadata,
+    construction_functions: HashMap<FunctionId, vm::BytecodeFunction>,
+    drops_inserted: bool,
     functions: HashMap<FunctionId, ir::Function>,
     signatures: HashMap<FunctionId, ir::Signature>,
 }
 
 impl SharedProgram {
-    pub fn metadata(&self) -> &vm::Program {
+    pub fn metadata(&self) -> &ProgramMetadata {
         &self.metadata
     }
     pub fn functions(&self) -> &HashMap<FunctionId, ir::Function> {
@@ -49,27 +52,34 @@ impl SharedProgram {
 
     /// Consuming extraction for backend transformation; the result is no longer a sealed program.
     pub(crate) fn into_parts(self) -> (vm::Program, HashMap<FunctionId, ir::Function>) {
-        (self.metadata, self.functions)
+        (
+            vm::Program {
+                metadata: self.metadata,
+                functions: self.construction_functions,
+                drops_inserted: self.drops_inserted,
+            },
+            self.functions,
+        )
     }
 }
 
 /// Retain the compiler's first SSA graph instead of immediately de-SSA lowering it to bytecode.
-pub fn seal_program(metadata: vm::Program) -> Result<SharedProgram, LowerError> {
-    vm::verify(&metadata)
+pub fn seal_program(construction: vm::Program) -> Result<SharedProgram, LowerError> {
+    vm::verify(&construction)
         .map_err(|error| LowerError(format!("invalid construction metadata: {error}")))?;
-    let result_types = metadata
+    let result_types = construction
         .functions
         .iter()
         .map(|(id, function)| (*id, shared_type(&function.result_type)))
         .collect::<HashMap<_, _>>();
-    let mut functions = HashMap::with_capacity(metadata.functions.len());
-    for (id, function) in &metadata.functions {
+    let mut functions = HashMap::with_capacity(construction.functions.len());
+    for (id, function) in &construction.functions {
         if function.intrinsic_stub {
             continue;
         }
         functions.insert(
             *id,
-            seal_function_with_types(&metadata.constants, &result_types, function)?,
+            seal_function_with_types(&construction.metadata.constants, &result_types, function)?,
         );
     }
     let signatures = functions
@@ -82,7 +92,9 @@ pub fn seal_program(metadata: vm::Program) -> Result<SharedProgram, LowerError> 
             .map_err(|error| LowerError(format!("invalid shared IR: {error}")))?;
     }
     Ok(SharedProgram {
-        metadata,
+        metadata: construction.metadata,
+        construction_functions: construction.functions,
+        drops_inserted: construction.drops_inserted,
         functions,
         signatures,
     })
@@ -102,7 +114,7 @@ pub fn lower_program_through_shared_ir(program: &mut vm::Program) -> Result<(), 
         if function.intrinsic_stub {
             continue;
         }
-        match seal_function_with_types(&program.constants, &result_types, function) {
+        match seal_function_with_types(&program.metadata.constants, &result_types, function) {
             Ok(function) => {
                 sealed.insert(*id, function);
             }
@@ -120,7 +132,12 @@ pub fn lower_program_through_shared_ir(program: &mut vm::Program) -> Result<(), 
     for (id, function) in sealed {
         let original = &originals[&id];
         let metadata = FunctionMetadata::from_bytecode(original);
-        match lower_function(&function, &signatures, &mut program.constants, metadata) {
+        match lower_function(
+            &function,
+            &signatures,
+            &mut program.metadata.constants,
+            metadata,
+        ) {
             Ok(function) => {
                 lowered.insert(id, function);
             }
@@ -176,11 +193,11 @@ pub fn seal_function(
         .iter()
         .map(|(id, function)| (*id, shared_type(&function.result_type)))
         .collect::<HashMap<_, _>>();
-    seal_function_with_types(&program.constants, &result_types, function)
+    seal_function_with_types(&program.metadata.constants, &result_types, function)
 }
 
 fn seal_function_with_types(
-    constants: &[vm::Constant],
+    constants: &[Constant],
     result_types: &HashMap<FunctionId, Type>,
     function: &vm::BytecodeFunction,
 ) -> Result<ir::Function, LowerError> {
@@ -762,7 +779,7 @@ fn shared_type(ty: &ExecutableType) -> Type {
 }
 
 fn register_type_hints(
-    constants: &[vm::Constant],
+    constants: &[Constant],
     result_types: &HashMap<FunctionId, Type>,
     function: &vm::BytecodeFunction,
 ) -> Vec<Type> {
@@ -783,13 +800,13 @@ fn register_type_hints(
             } => (
                 Some(*destination),
                 match &constants[usize::from(*constant)] {
-                    vm::Constant::Unit => Type::Unit,
-                    vm::Constant::Bool(_) => Type::Bool,
-                    vm::Constant::Integer(_) => Type::Int,
-                    vm::Constant::Float(_) => Type::Float,
-                    vm::Constant::CodePoint(_) => Type::CodePoint,
-                    vm::Constant::String(_) => Type::String,
-                    vm::Constant::Symbol(_) => Type::Opaque,
+                    Constant::Unit => Type::Unit,
+                    Constant::Bool(_) => Type::Bool,
+                    Constant::Integer(_) => Type::Int,
+                    Constant::Float(_) => Type::Float,
+                    Constant::CodePoint(_) => Type::CodePoint,
+                    Constant::String(_) => Type::String,
+                    Constant::Symbol(_) => Type::Opaque,
                 },
             ),
             vm::Instruction::Unary {
@@ -1218,7 +1235,7 @@ enum Emission {
 pub fn lower_function(
     function: &ir::Function,
     signatures: &HashMap<FunctionId, ir::Signature>,
-    constants: &mut Vec<vm::Constant>,
+    constants: &mut Vec<Constant>,
     metadata: FunctionMetadata,
 ) -> Result<vm::BytecodeFunction, LowerError> {
     function
@@ -1534,18 +1551,18 @@ fn emit_copies(
 fn lower_instruction(
     instruction: &ir::Instruction,
     registers: &[Option<Register>],
-    constants: &mut Vec<vm::Constant>,
+    constants: &mut Vec<Constant>,
     emissions: &mut Vec<Emission>,
     span: Range<usize>,
 ) -> Result<(), LowerError> {
     let instruction = match instruction {
         ir::Instruction::Constant { destination, value } => {
             let value = match value {
-                ir::Constant::Unit => vm::Constant::Unit,
-                ir::Constant::Bool(value) => vm::Constant::Bool(*value),
-                ir::Constant::Integer(value) => vm::Constant::Integer(*value),
-                ir::Constant::Float(value) => vm::Constant::Float(*value),
-                ir::Constant::CodePoint(value) => vm::Constant::CodePoint(*value),
+                ir::Constant::Unit => Constant::Unit,
+                ir::Constant::Bool(value) => Constant::Bool(*value),
+                ir::Constant::Integer(value) => Constant::Integer(*value),
+                ir::Constant::Float(value) => Constant::Float(*value),
+                ir::Constant::CodePoint(value) => Constant::CodePoint(*value),
                 ir::Constant::RuntimeString(_) => {
                     return Err(LowerError(
                         "runtime-string addresses must be legalized before VM lowering".into(),
@@ -2010,11 +2027,13 @@ mod tests {
         for (id, function) in sealed.functions() {
             assert_eq!(sealed.signatures()[id], function.signature);
         }
-        assert_eq!(sealed.metadata().main, program.main);
+        assert_eq!(sealed.metadata(), &program.metadata);
+        let (restored, _) = sealed.into_parts();
+        assert_eq!(restored, program);
         let mut invalid = program;
         invalid
             .functions
-            .get_mut(&invalid.main.unwrap())
+            .get_mut(&invalid.metadata.main.unwrap())
             .unwrap()
             .instruction_spans
             .clear();
@@ -2072,8 +2091,8 @@ mod tests {
         for (instruction, span) in lowered.instructions.iter().zip(&lowered.instruction_spans) {
             if let vm::Instruction::LoadConstant { constant, .. } = instruction {
                 match constants[usize::from(*constant)] {
-                    vm::Constant::Integer(20) => assert_eq!(*span, 10..12),
-                    vm::Constant::Integer(22) => assert_eq!(*span, 20..22),
+                    Constant::Integer(20) => assert_eq!(*span, 10..12),
+                    Constant::Integer(22) => assert_eq!(*span, 20..22),
                     _ => panic!("unexpected constant"),
                 }
             }
@@ -2241,8 +2260,11 @@ mod tests {
         .unwrap();
         let main: FunctionId = Idx::from_raw(RawIdx::from_u32(0));
         let mut program = Program {
-            constants,
-            main: Some(main),
+            metadata: ProgramMetadata {
+                constants,
+                main: Some(main),
+                ..Default::default()
+            },
             ..Program::default()
         };
         program.functions.insert(main, lowered);

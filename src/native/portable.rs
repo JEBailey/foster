@@ -644,7 +644,7 @@ pub(super) fn lower_portable_native(
                         .iter()
                         .map(|parameter| {
                             native_verification_type(
-                                objects.layouts.program,
+                                objects.layouts.metadata,
                                 objects.layouts.logical,
                                 &parameter.ty,
                                 None,
@@ -653,7 +653,7 @@ pub(super) fn lower_portable_native(
                         .collect::<Result<Vec<_>, _>>()?,
                 );
                 let result = native_verification_type(
-                    objects.layouts.program,
+                    objects.layouts.metadata,
                     objects.layouts.logical,
                     result,
                     None,

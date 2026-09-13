@@ -76,7 +76,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
     let shared = vm::compile_shared(compilation)?;
     let (mut program, shared_functions) = shared.into_parts();
     let mut layouts = crate::codegen::layout::legalize(&mut program)?;
-    if let Some(record) = program.string_record {
+    if let Some(record) = program.metadata.string_record {
         layouts.instantiate_type(&ExecutableType::Record {
             record,
             arguments: Vec::new(),
@@ -84,6 +84,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         layouts.instantiate_type(&ExecutableType::Bytes)?;
     }
     let main = program
+        .metadata
         .main
         .ok_or_else(|| native_error("native compilation requires a `main` function"))?;
     let mut facts = FlowFacts::default();
@@ -165,7 +166,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
             }
         }
         let layouts = NativeLayouts {
-            program: &prepared.program,
+            metadata: &prepared.program.metadata,
             logical: &prepared.layouts,
             physical: &prepared.physical_layouts,
         };
@@ -238,6 +239,11 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
 }
 
 impl NativeProgram<'_> {
+    /// Shared logical metadata, independent of bytecode construction and native machine code.
+    pub fn metadata(&self) -> &crate::codegen::metadata::ProgramMetadata {
+        &self.program.metadata
+    }
+
     pub fn functions(&self) -> &[NativeFunction] {
         &self.functions
     }
@@ -345,11 +351,11 @@ func main() -> Int {
         .unwrap();
         let prepared = prepare(&compilation).unwrap();
         let string = ExecutableType::Record {
-            record: prepared.program.string_record.unwrap(),
+            record: prepared.program.metadata.string_record.unwrap(),
             arguments: Vec::new(),
         };
         let symbol = ExecutableType::Record {
-            record: prepared.program.symbol_record.unwrap(),
+            record: prepared.program.metadata.symbol_record.unwrap(),
             arguments: Vec::new(),
         };
         for expected in [&string, &symbol] {

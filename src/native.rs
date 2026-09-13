@@ -28,12 +28,13 @@ use crate::codegen::layout::physical::{
     TargetLayout, ValueLayout, ValueSemantic,
 };
 use crate::codegen::layout::{LayoutId, LayoutKind, Registry as LayoutRegistry};
+use crate::codegen::metadata::Constant;
 use crate::codegen::types::ExecutableType;
 use crate::compiler::Compilation;
 use crate::error::FosterError;
 use crate::hir::{FunctionId, Pattern};
 use crate::types::{Type, TypeId};
-use crate::vm::{self, BytecodeFunction, Constant, Instruction, Program, Register};
+use crate::vm::{self, BytecodeFunction, Instruction, Program, Register};
 
 pub mod abi;
 mod buffers;

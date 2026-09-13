@@ -464,7 +464,10 @@ fn build(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
                 optimize: !arguments.get_flag("no-optimize"),
             },
         )?;
-        println!("{}", serde_json::to_string_pretty(&program.symbols)?);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&program.metadata.symbols)?
+        );
         return Ok(());
     }
     if arguments

@@ -235,7 +235,7 @@ impl Cleanup {
             }
         } else {
             let record = self.record.expect("record cleanup identity");
-            let metadata = &self.program.records[&record];
+            let metadata = &self.program.metadata.records[&record];
             Value::Record {
                 record: Some(record),
                 name: metadata.name.clone(),
@@ -272,6 +272,7 @@ impl Machine {
     ) -> Result<Value, RuntimeError> {
         let metadata = self
             .program
+            .metadata
             .variants
             .values()
             .find(|variant| {
@@ -329,12 +330,14 @@ impl Machine {
     ) -> Result<Value, RuntimeError> {
         let main = self
             .program
+            .metadata
             .main
             .ok_or_else(|| RuntimeError::runtime("bytecode has no `main` function"))?;
         let arguments = self
             .program
+            .metadata
             .main_arguments
-            .then(|| Value::command_arguments(self.program.string_record, arguments))
+            .then(|| Value::command_arguments(self.program.metadata.string_record, arguments))
             .into_iter()
             .collect();
         self.execute(main, Vec::new(), arguments, None)
@@ -435,9 +438,9 @@ impl Machine {
                     frame,
                     destination,
                     constant_value(
-                        &self.program.constants[constant as usize],
-                        self.program.string_record,
-                        self.program.symbol_record,
+                        &self.program.metadata.constants[constant as usize],
+                        self.program.metadata.string_record,
+                        self.program.metadata.symbol_record,
                     ),
                 )?,
                 &Instruction::Move {
@@ -542,10 +545,11 @@ impl Machine {
                         .iter()
                         .map(|(_, register)| read(frame, *register))
                         .collect::<Result<Vec<_>, RuntimeError>>()?;
-                    let metadata = &self.program.records[record];
+                    let metadata = &self.program.metadata.records[record];
                     let fields = RecordFields::new(metadata.layout.clone(), values)?;
                     if let Some(function) = self
                         .program
+                        .metadata
                         .dispatch
                         .get(&(
                             crate::types::NominalTypeId::Record(*record),
@@ -578,7 +582,7 @@ impl Machine {
                     payload,
                     ..
                 } => {
-                    let metadata = &self.program.variants[variant];
+                    let metadata = &self.program.metadata.variants[variant];
                     let payload: Vec<_> = payload
                         .iter()
                         .copied()
@@ -587,6 +591,7 @@ impl Machine {
                     let payload = super::value::VariantPayload::from(payload);
                     if let Some(function) = self
                         .program
+                        .metadata
                         .dispatch
                         .get(&(
                             crate::types::NominalTypeId::Variant(metadata.parent),
@@ -631,7 +636,7 @@ impl Machine {
                         let reference = PlaceHandle::field(place(frame, *object), field.clone())?;
                         write(frame, *destination, Value::Reference(reference))?;
                     } else {
-                        let value = member(value, field, self.program.string_record)?;
+                        let value = member(value, field, self.program.metadata.string_record)?;
                         write(frame, *destination, value)?;
                     }
                 }
@@ -825,7 +830,7 @@ impl Machine {
                                 .copied()
                                 .map(|argument| read(frame, argument))
                                 .collect::<Result<Vec<_>, _>>()?;
-                            handler(&arguments, self.program.string_record)?
+                            handler(&arguments, self.program.metadata.string_record)?
                         }
                         Some(BuiltinHandler::ConsumeFirst(handler)) => {
                             let Some((receiver, arguments)) = arguments.split_first() else {
@@ -840,7 +845,7 @@ impl Machine {
                                 .collect::<Result<Vec<_>, _>>()?;
                             let receiver =
                                 frame.registers[receiver.0 as usize].replace(Value::Unit);
-                            handler(receiver, &arguments, self.program.string_record)?
+                            handler(receiver, &arguments, self.program.metadata.string_record)?
                         }
                         None => {
                             let arguments = arguments
@@ -852,7 +857,7 @@ impl Machine {
                                 self.host.as_ref(),
                                 *builtin,
                                 &arguments,
-                                self.program.string_record,
+                                self.program.metadata.string_record,
                             )?
                         }
                     };
@@ -991,6 +996,7 @@ impl Machine {
                         let implementation = nominal
                             .and_then(|nominal| {
                                 self.program
+                                    .metadata
                                     .dispatch
                                     .get(&(nominal, crate::types::COPY_SLOT))
                             })
@@ -1041,6 +1047,7 @@ impl Machine {
                             ..
                         } => self
                             .program
+                            .metadata
                             .dispatch
                             .get(&(crate::types::NominalTypeId::Record(*record), *slot))
                             .copied(),
@@ -1049,13 +1056,14 @@ impl Machine {
                             ..
                         } => self
                             .program
+                            .metadata
                             .dispatch
                             .get(&(crate::types::NominalTypeId::Variant(*variant), *slot))
                             .copied(),
                         _ => None,
                     }
                     .or_else(|| {
-                        let mut matches = self.program.dispatch.iter().filter_map(
+                        let mut matches = self.program.metadata.dispatch.iter().filter_map(
                             |((_, candidate_slot), target)| {
                                 if candidate_slot != slot {
                                     return None;
@@ -1123,7 +1131,7 @@ impl Machine {
                         write(
                             frame,
                             *destination,
-                            member(value, name, self.program.string_record)?,
+                            member(value, name, self.program.metadata.string_record)?,
                         )?;
                         continue;
                     }
@@ -1144,7 +1152,7 @@ impl Machine {
                         write(
                             frame,
                             *destination,
-                            member(value, name, self.program.string_record)?,
+                            member(value, name, self.program.metadata.string_record)?,
                         )?;
                         continue;
                     }
@@ -1403,24 +1411,31 @@ impl Machine {
                     };
                     let outcome = match value {
                         Ok(value) => self.remote_variant(
-                            self.program.remote_result,
+                            self.program.metadata.remote_result,
                             "Ok",
                             Value::from_wire(value)?,
                         )?,
                         Err(error) => {
                             let error = match error {
                                 crate::remote::RemoteError::Shutdown => self.remote_variant(
-                                    self.program.remote_error,
+                                    self.program.metadata.remote_error,
                                     "Shutdown",
                                     Value::Unit,
                                 )?,
                                 crate::remote::RemoteError::Failed(error) => self.remote_variant(
-                                    self.program.remote_error,
+                                    self.program.metadata.remote_error,
                                     "Failed",
-                                    Value::string(self.program.string_record, error.into_bytes()),
+                                    Value::string(
+                                        self.program.metadata.string_record,
+                                        error.into_bytes(),
+                                    ),
                                 )?,
                             };
-                            self.remote_variant(self.program.remote_result, "Error", error)?
+                            self.remote_variant(
+                                self.program.metadata.remote_result,
+                                "Error",
+                                error,
+                            )?
                         }
                     };
                     write(frame, destination, outcome)?;

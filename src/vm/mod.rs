@@ -17,19 +17,15 @@ mod runtime;
 mod value;
 mod verifier;
 
+pub use crate::codegen::metadata::{Constant, RuntimeRecord, RuntimeVariant};
 pub use binary::{BinaryError, FORMAT_VERSION, decode_program, encode_program};
 pub use compiler::{CompileOptions, compile, compile_with_options};
 pub(crate) use compiler::{compile_library, compile_shared};
 pub use host::HostContext;
-pub use ir::{
-    BytecodeFunction, Constant, Instruction, Program, ProgramMetrics, Register, RuntimeRecord,
-    RuntimeVariant,
-};
+pub use ir::{BytecodeFunction, Instruction, Program, ProgramMetrics, Register};
 pub use machine::{Machine, release_value};
 pub use optimizer::optimize;
 pub use runtime::Capture;
-#[cfg(test)]
-pub(crate) use value::RecordLayout;
 pub use value::Value;
 pub(crate) use verifier::type_states;
 pub use verifier::verify;
@@ -109,7 +105,7 @@ func main() -> Int {
             .values()
             .find(|function| function.name == "preserve")
             .unwrap();
-        let main = &program.functions[&program.main.unwrap()];
+        let main = &program.functions[&program.metadata.main.unwrap()];
 
         assert!(preserve.returns_reference);
         assert!(!main.returns_reference);
@@ -300,7 +296,7 @@ func main() -> Int {
     fn verifier_rejects_out_of_frame_registers() {
         let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
         let mut program = compile(&compilation).unwrap();
-        let main = program.main.unwrap();
+        let main = program.metadata.main.unwrap();
         program.functions.get_mut(&main).unwrap().instructions[0] = Instruction::LoadConstant {
             destination: Register(u16::MAX),
             constant: 0,
@@ -312,9 +308,9 @@ func main() -> Int {
     fn verifier_rejects_a_return_with_the_wrong_type() {
         let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
         let mut program = compile(&compilation).unwrap();
-        let main = program.main.unwrap();
-        let bool_constant = u16::try_from(program.constants.len()).unwrap();
-        program.constants.push(Constant::Bool(true));
+        let main = program.metadata.main.unwrap();
+        let bool_constant = u16::try_from(program.metadata.constants.len()).unwrap();
+        program.metadata.constants.push(Constant::Bool(true));
         let function = program.functions.get_mut(&main).unwrap();
         let return_index = function
             .instructions
@@ -341,7 +337,7 @@ func main() -> Int {
     fn verifier_rejects_a_read_after_drop() {
         let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
         let mut program = compile(&compilation).unwrap();
-        let main = program.main.unwrap();
+        let main = program.metadata.main.unwrap();
         let function = program.functions.get_mut(&main).unwrap();
         let return_index = function
             .instructions
@@ -364,14 +360,15 @@ func main() -> Int {
     fn verifier_rejects_a_register_initialized_on_only_one_cfg_edge() {
         let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
         let mut program = compile(&compilation).unwrap();
-        let main = program.main.unwrap();
+        let main = program.metadata.main.unwrap();
         let integer = program
+            .metadata
             .constants
             .iter()
             .position(|constant| matches!(constant, Constant::Integer(42)))
             .unwrap() as u16;
-        let boolean = u16::try_from(program.constants.len()).unwrap();
-        program.constants.push(Constant::Bool(true));
+        let boolean = u16::try_from(program.metadata.constants.len()).unwrap();
+        program.metadata.constants.push(Constant::Bool(true));
         let function = program.functions.get_mut(&main).unwrap();
         function.registers = 2;
         function.instructions = vec![
@@ -405,7 +402,7 @@ func main() -> Int {
         .unwrap();
         let mut program =
             compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
-        let main = program.main.unwrap();
+        let main = program.metadata.main.unwrap();
         let (target, argument) = program.functions[&main]
             .instructions
             .iter()
@@ -440,9 +437,9 @@ func main() -> Int {
         .unwrap();
         let mut program =
             compile_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
-        let main = program.main.unwrap();
-        let bool_constant = u16::try_from(program.constants.len()).unwrap();
-        program.constants.push(Constant::Bool(true));
+        let main = program.metadata.main.unwrap();
+        let bool_constant = u16::try_from(program.metadata.constants.len()).unwrap();
+        program.metadata.constants.push(Constant::Bool(true));
         let function = program.functions.get_mut(&main).unwrap();
         let call_index = function
             .instructions
@@ -476,8 +473,8 @@ func main() -> Int {
         optimize(&mut program);
         verify(&program).unwrap();
 
-        let function = &program.functions[&program.main.unwrap()];
-        assert_eq!(program.constants, [Constant::Integer(42)]);
+        let function = &program.functions[&program.metadata.main.unwrap()];
+        assert_eq!(program.metadata.constants, [Constant::Integer(42)]);
         assert_eq!(function.registers, 1);
         assert_eq!(
             function.instructions.len(),
@@ -537,7 +534,7 @@ func main() -> Int {
         .unwrap();
         let program = compile(&compilation).unwrap();
         verify(&program).unwrap();
-        let main = &program.functions[&program.main.unwrap()];
+        let main = &program.functions[&program.metadata.main.unwrap()];
 
         assert!(
             main.instructions
@@ -576,7 +573,7 @@ func main() -> Int {
         .unwrap();
         let program = compile(&compilation).unwrap();
         verify(&program).unwrap();
-        let main = &program.functions[&program.main.unwrap()];
+        let main = &program.functions[&program.metadata.main.unwrap()];
 
         assert!(
             main.instructions
@@ -602,7 +599,7 @@ func main() -> Int {
         .unwrap();
         let named = compile(&named).unwrap();
         assert!(
-            named.functions[&named.main.unwrap()]
+            named.functions[&named.metadata.main.unwrap()]
                 .instructions
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::CallClosure { .. }))
@@ -619,7 +616,7 @@ func main() -> Int {
         .unwrap();
         let borrowed = compile(&borrowed).unwrap();
         assert!(
-            borrowed.functions[&borrowed.main.unwrap()]
+            borrowed.functions[&borrowed.metadata.main.unwrap()]
                 .instructions
                 .iter()
                 .any(|instruction| matches!(instruction, Instruction::CallClosure { .. }))

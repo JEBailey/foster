@@ -15,7 +15,7 @@ pub enum MemoryManagement {
 /// Target-independent and target-specific layout information used while lowering objects.
 #[derive(Clone, Copy)]
 pub(super) struct NativeLayouts<'a> {
-    pub(super) program: &'a Program,
+    pub(super) metadata: &'a crate::codegen::metadata::ProgramMetadata,
     pub(super) logical: &'a LayoutRegistry,
     pub(super) physical: &'a PhysicalRegistry,
 }
@@ -41,7 +41,7 @@ impl NativeLayouts<'_> {
 
     pub(super) fn string_layout(self) -> LayoutId {
         self.logical
-            .record(self.program.string_record.expect("native String schema"))
+            .record(self.metadata.string_record.expect("native String schema"))
             .expect("native String layout")
     }
 
@@ -49,7 +49,7 @@ impl NativeLayouts<'_> {
     /// Their stored pointer is a String, not an allocated Symbol wrapper.
     pub(super) fn storage_layout(self, layout: LayoutId) -> LayoutId {
         if matches!(self.logical.get(layout).kind,
-            LayoutKind::Record { record, .. } if Some(record) == self.program.symbol_record)
+            LayoutKind::Record { record, .. } if Some(record) == self.metadata.symbol_record)
         {
             self.string_layout()
         } else {

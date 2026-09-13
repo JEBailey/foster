@@ -83,7 +83,8 @@ pub(super) fn reachable_instances(
             collect_nominal_types(&ty, &mut concrete_nominals);
         }
         for instruction in &body.instructions {
-            if let Some(ty) = instruction_layout_type(program, instruction, &instance.substitutions)
+            if let Some(ty) =
+                instruction_layout_type(&program.metadata, instruction, &instance.substitutions)
             {
                 collect_nominal_types(&ty, &mut concrete_nominals);
             }
@@ -211,7 +212,7 @@ pub(super) fn reachable_instances(
                 continue;
             };
             for (slot, argument_types) in &contract_calls {
-                let Some(target) = program.dispatch.get(&(nominal, *slot)).copied() else {
+                let Some(target) = program.metadata.dispatch.get(&(nominal, *slot)).copied() else {
                     continue;
                 };
                 let target_body = &program.functions[&target];
@@ -409,12 +410,15 @@ pub(super) fn executable_type_for_native(
         NativeType::Float => ExecutableType::Float,
         NativeType::CodePoint => ExecutableType::CodePoint,
         NativeType::Byte => ExecutableType::Byte,
-        NativeType::String => program
-            .string_record
-            .map_or(ExecutableType::Unknown, |record| ExecutableType::Record {
-                record,
-                arguments: Vec::new(),
-            }),
+        NativeType::String => {
+            program
+                .metadata
+                .string_record
+                .map_or(ExecutableType::Unknown, |record| ExecutableType::Record {
+                    record,
+                    arguments: Vec::new(),
+                })
+        }
         NativeType::Object(layout) => match &layouts.get(layout).kind {
             LayoutKind::Record {
                 record, arguments, ..
@@ -517,8 +521,13 @@ pub(super) fn contract_candidates(
     let dynamic = matches!(
         environment.layouts.get(receiver_layout).kind,
         LayoutKind::Opaque
-    ) || receiver_nominal
-        .is_some_and(|nominal| !environment.program.dispatch.contains_key(&(nominal, slot)));
+    ) || receiver_nominal.is_some_and(|nominal| {
+        !environment
+            .program
+            .metadata
+            .dispatch
+            .contains_key(&(nominal, slot))
+    });
     let mut candidates = Vec::new();
     for layout in environment
         .layouts
@@ -550,7 +559,12 @@ pub(super) fn contract_candidates(
         let Some(nominal) = nominal_id(&concrete, environment.compilation) else {
             continue;
         };
-        let Some(implementation) = environment.program.dispatch.get(&(nominal, slot)).copied()
+        let Some(implementation) = environment
+            .program
+            .metadata
+            .dispatch
+            .get(&(nominal, slot))
+            .copied()
         else {
             continue;
         };
@@ -562,7 +576,7 @@ pub(super) fn contract_candidates(
                     return None;
                 }
                 let signature = &environment.function_types[function];
-                let receiver_type = if matches!(layout.kind, LayoutKind::Record { record, .. } if Some(record) == environment.program.string_record) { NativeType::String } else { NativeType::Object(layout.id) };
+                let receiver_type = if matches!(layout.kind, LayoutKind::Record { record, .. } if Some(record) == environment.program.metadata.string_record) { NativeType::String } else { NativeType::Object(layout.id) };
                 (signature.parameters.first() == Some(&receiver_type)
                     && signature.parameters.len() == argument_types.len() + 1
                     && signature.parameters[1..].iter().zip(argument_types).all(|(expected, actual)| contract_argument_matches(*actual, *expected, environment)))
@@ -739,9 +753,11 @@ pub(super) fn collect_function_types(
                 }
             }
             for instruction in &program.functions[&function].instructions {
-                if let Some(ty) =
-                    instruction_layout_type(program, instruction, &instance.key.substitutions)
-                {
+                if let Some(ty) = instruction_layout_type(
+                    &program.metadata,
+                    instruction,
+                    &instance.key.substitutions,
+                ) {
                     layouts.instantiate_type(&ty)?;
                 }
                 if let Instruction::Builtin { builtin, .. } = instruction

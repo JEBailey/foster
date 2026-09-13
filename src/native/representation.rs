@@ -1,7 +1,7 @@
 //! Logical-to-native type and layout conversion.
 use super::{
-    Compilation, FosterError, HashMap, Instruction, LayoutRegistry, NativeType, Program, Type,
-    TypeId, native_error,
+    Compilation, FosterError, HashMap, Instruction, LayoutRegistry, NativeType, Type, TypeId,
+    native_error,
 };
 
 pub(super) fn native_builtin_result_types(
@@ -34,7 +34,7 @@ pub(super) fn native_builtin_result_types(
 }
 
 pub(super) fn instruction_layout_type(
-    program: &Program,
+    program: &crate::codegen::metadata::ProgramMetadata,
     instruction: &Instruction,
     specialization: &crate::codegen::types::Specialization,
 ) -> Option<crate::codegen::types::ExecutableType> {

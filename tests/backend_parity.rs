@@ -1551,13 +1551,13 @@ fn verifier_rejects_inconsistent_specialized_call_results() {
         assert!(vm::decode_program(&vm::encode_program(&program).unwrap()).is_ok());
         program
             .functions
-            .get_mut(&program.main.unwrap())
+            .get_mut(&program.metadata.main.unwrap())
             .unwrap()
             .result_type = foster::codegen::types::ExecutableType::Integer;
         assert!(
             vm::verify(&program).is_err(),
             "{:#?}",
-            program.functions[&program.main.unwrap()]
+            program.functions[&program.metadata.main.unwrap()]
         );
         assert!(vm::encode_program(&program).is_err());
     }

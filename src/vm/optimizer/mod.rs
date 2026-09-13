@@ -149,7 +149,7 @@ mod tests {
         let after = &program.functions[&barrier_id];
         assert_eq!(before.instructions.len(), after.instructions.len());
         assert_eq!(before.instruction_spans, after.instruction_spans);
-        assert!(after.instructions.iter().any(|i| matches!(i, Instruction::LoadConstant { constant, .. } if program.constants[usize::from(*constant)] == Constant::Integer(7))));
+        assert!(after.instructions.iter().any(|i| matches!(i, Instruction::LoadConstant { constant, .. } if program.metadata.constants[usize::from(*constant)] == Constant::Integer(7))));
         let bytes = vm::encode_program(&program).unwrap();
         let decoded = vm::decode_program(&bytes).unwrap();
         assert_eq!(Machine::new(&decoded).run_main().unwrap(), baseline);

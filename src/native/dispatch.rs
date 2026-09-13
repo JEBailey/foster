@@ -40,7 +40,7 @@ pub(super) fn lower(
     if arguments.is_empty() {
         if receiver_type == NativeType::String && candidates.is_empty() {
             let actual = field_type(
-                environment.program,
+                &environment.program.metadata,
                 environment.layouts,
                 environment.physical_layouts,
                 receiver_type,
@@ -77,7 +77,7 @@ pub(super) fn lower(
             }
             let ty = match &layout.kind {
                 LayoutKind::Record { record, .. }
-                    if Some(*record) == environment.program.string_record =>
+                    if Some(*record) == environment.program.metadata.string_record =>
                 {
                     NativeType::String
                 }
@@ -93,7 +93,7 @@ pub(super) fn lower(
                 continue;
             }
             if let Ok(result) = field_type(
-                environment.program,
+                &environment.program.metadata,
                 environment.layouts,
                 environment.physical_layouts,
                 ty,
@@ -398,6 +398,7 @@ fn aggregate_result_matches(
     };
     if env
         .program
+        .metadata
         .dispatch
         .keys()
         .any(|(owner, slot)| *owner == nominal && *slot == crate::types::DEINIT_SLOT)

@@ -17,7 +17,12 @@ pub(super) fn native_reference_receiver(
         let LayoutKind::Pointer { pointee, .. } = &backend.ir.layouts.get(layout).kind else {
             break;
         };
-        ty = native_verification_type(backend.ir.program, backend.ir.layouts, pointee, None)?;
+        ty = native_verification_type(
+            &backend.ir.program.metadata,
+            backend.ir.layouts,
+            pointee,
+            None,
+        )?;
         value = builder.ins().load(
             cranelift_type(ty, module.target_config().pointer_type()),
             MemFlagsData::trusted(),
