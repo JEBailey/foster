@@ -76,7 +76,9 @@ pub(super) fn lower_portable_native(
             };
             let physical = objects.layouts.physical.get(layout);
             if address.is_none()
-                && function.storage_hints[source_value.0 as usize]
+                && function
+                    .values
+                    .hint(source_value.0 as usize)
                     .is_some_and(|home| mutable_parameter_homes.contains(&home))
             {
                 return Ok(Some(source));
@@ -384,7 +386,9 @@ pub(super) fn lower_portable_native(
             {
                 return Ok(Some(get(object)));
             }
-            let home = function.storage_hints[object.0 as usize]
+            let home = function
+                .values
+                .hint(object.0 as usize)
                 .and_then(|home| homes.get(&home).copied())
                 .ok_or_else(|| native_error("referenced value has no native storage home"))?;
             Ok(Some(builder.ins().stack_addr(
@@ -953,7 +957,7 @@ pub(super) fn lower_portable_native(
                     builder,
                     module,
                     helper,
-                    &runtime_signature(*destination, arguments, &function.value_types),
+                    &runtime_signature(*destination, arguments, &function.values),
                     &lowered,
                 )?,
                 NativeIntrinsic::Host => lower_native_host_intrinsic(

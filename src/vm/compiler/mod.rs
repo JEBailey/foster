@@ -175,41 +175,36 @@ fn compile_construction(compilation: &Compilation) -> Result<Program, FosterErro
         .records
         .iter()
         .map(|(id, value)| {
-            let fields = compilation.types.record_field_types.get(&id);
-            let (names, field_types) = fields.map_or_else(
+            use crate::codegen::metadata::RecordField;
+            let fields = compilation.types.record_field_types.get(&id).map_or_else(
                 || {
-                    let mut names = value
+                    let mut fields = value
                         .fields
                         .iter()
-                        .map(|field| field.name.clone())
+                        .map(|field| RecordField {
+                            name: field.name.clone(),
+                            ty: ExecutableType::Unknown,
+                        })
                         .collect::<Vec<_>>();
-                    names.sort();
-                    let field_types = vec![ExecutableType::Unknown; names.len()];
-                    (names, field_types)
+                    fields.sort_by(|a, b| a.name.cmp(&b.name));
+                    fields
                 },
                 |fields| {
                     fields
                         .iter()
-                        .map(|(name, ty)| {
-                            (
-                                name.clone(),
-                                verification_type(&compilation.hir, &compilation.types, *ty, 0),
-                            )
+                        .map(|(name, ty)| RecordField {
+                            name: name.clone(),
+                            ty: verification_type(&compilation.hir, &compilation.types, *ty, 0),
                         })
-                        .unzip()
+                        .collect()
                 },
             );
-            (
+            Ok((
                 id,
-                RuntimeRecord {
-                    name: value.name.clone(),
-                    parameters: value.parameters.clone(),
-                    layout: std::sync::Arc::new(crate::codegen::metadata::RecordLayout::new(names)),
-                    field_types,
-                },
-            )
+                RuntimeRecord::new(value.name.clone(), value.parameters.clone(), fields)?,
+            ))
         })
-        .collect();
+        .collect::<Result<_, FosterError>>()?;
     compiler.program.metadata.string_record = compilation.types.core.string;
     compiler.program.metadata.symbol_record = compilation.types.core.symbol;
     compiler.program.metadata.list_record = compilation.types.core.list;

@@ -39,7 +39,7 @@ pub(super) fn cranelift_representation(
 pub(super) fn runtime_signature(
     destination: ir::Value,
     arguments: &[ir::Value],
-    value_types: &[NativeType],
+    value_types: &ir::ValueTable,
 ) -> ir::Signature {
     ir::Signature {
         parameters: arguments

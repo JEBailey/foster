@@ -534,22 +534,14 @@ pub fn nominal_layouts(
         registry
             .record_parameters
             .insert(*record, runtime.parameters.clone());
-        if runtime.layout.names().len() != runtime.field_types.len() {
-            return Err(FosterError::runtime(format!(
-                "record `{}` has inconsistent typed layout metadata",
-                runtime.name
-            )));
-        }
         let fields = runtime
-            .layout
-            .names()
+            .fields()
             .iter()
-            .zip(&runtime.field_types)
             .enumerate()
-            .map(|(index, (name, ty))| Slot {
+            .map(|(index, field)| Slot {
                 index: index as u32,
-                name: name.clone(),
-                ty: ty.clone(),
+                name: field.name.clone(),
+                ty: field.ty.clone(),
                 ownership: Ownership::Owned,
             })
             .collect();
@@ -730,7 +722,7 @@ fn collect_runtime_layouts(program: &Program, registry: &mut Registry) {
         }
     }
     for record in program.metadata.records.values() {
-        types.extend(record.field_types.iter().cloned());
+        types.extend(record.fields().iter().map(|field| field.ty.clone()));
     }
     for variant in program.metadata.variants.values() {
         types.extend(variant.payload.iter().cloned());
@@ -898,11 +890,10 @@ fn canonicalize_and_verify(program: &mut Program, registry: &Registry) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::codegen::metadata::{ProgramMetadata, RecordLayout, RuntimeRecord};
+    use crate::codegen::metadata::{ProgramMetadata, RecordField, RuntimeRecord};
     use crate::hir::{Function, FunctionId, Record, RecordId};
     use crate::vm::{BytecodeFunction, Register};
     use la_arena::{Idx, RawIdx};
-    use std::sync::Arc;
 
     #[test]
     fn record_fields_are_legalized_to_layout_order() {
@@ -911,12 +902,21 @@ mod tests {
         let mut program = Program::default();
         program.metadata.records.insert(
             record,
-            RuntimeRecord {
-                name: "Pair".into(),
-                parameters: Vec::new(),
-                layout: Arc::new(RecordLayout::new(vec!["a".into(), "b".into()])),
-                field_types: vec![ExecutableType::Integer, ExecutableType::Bool],
-            },
+            RuntimeRecord::new(
+                "Pair".into(),
+                vec![],
+                vec![
+                    RecordField {
+                        name: "a".into(),
+                        ty: ExecutableType::Integer,
+                    },
+                    RecordField {
+                        name: "b".into(),
+                        ty: ExecutableType::Bool,
+                    },
+                ],
+            )
+            .unwrap(),
         );
         program.functions.insert(
             function,
@@ -972,11 +972,16 @@ mod tests {
     fn logical_layout_ids_do_not_depend_on_hash_map_insertion_order() {
         let first: RecordId = Idx::<Record>::from_raw(RawIdx::from_u32(0));
         let second: RecordId = Idx::<Record>::from_raw(RawIdx::from_u32(1));
-        let runtime = |name: &str| RuntimeRecord {
-            name: name.into(),
-            parameters: Vec::new(),
-            layout: Arc::new(RecordLayout::new(vec!["value".into()])),
-            field_types: vec![ExecutableType::Integer],
+        let runtime = |name: &str| {
+            RuntimeRecord::new(
+                name.into(),
+                vec![],
+                vec![RecordField {
+                    name: "value".into(),
+                    ty: ExecutableType::Integer,
+                }],
+            )
+            .unwrap()
         };
         let mut left = ProgramMetadata::default();
         left.records.insert(second, runtime("Second"));

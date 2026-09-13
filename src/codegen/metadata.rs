@@ -43,14 +43,63 @@ pub struct ProgramMetadata {
     pub variants: HashMap<VariantId, RuntimeVariant>,
 }
 
+/// Field names and types stay paired; the lookup layout is derived at construction.
+///
+/// ```compile_fail
+/// use foster::codegen::metadata::RuntimeRecord;
+/// fn invalidate(record: &mut RuntimeRecord) {
+///     record.fields().clear();
+/// }
+/// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct RuntimeRecord {
     pub name: String,
     /// Generic parameters in declaration order.
     pub parameters: Vec<String>,
-    pub layout: Arc<RecordLayout>,
-    /// Declared field types in the same canonical order as `layout`.
-    pub field_types: Vec<ExecutableType>,
+    layout: Arc<RecordLayout>,
+    fields: Vec<RecordField>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecordField {
+    pub name: String,
+    pub ty: ExecutableType,
+}
+
+impl RuntimeRecord {
+    /// Preserve declared storage order and reject ambiguous field-name lookup.
+    pub fn new(
+        name: String,
+        parameters: Vec<String>,
+        fields: Vec<RecordField>,
+    ) -> Result<Self, crate::error::FosterError> {
+        let layout = RecordLayout::new(fields.iter().map(|field| field.name.clone()).collect());
+        if layout.indices.len() != fields.len() {
+            return Err(crate::error::FosterError::runtime(format!(
+                "record `{name}` has duplicate field names"
+            )));
+        }
+        Ok(Self {
+            name,
+            parameters,
+            layout: Arc::new(layout),
+            fields,
+        })
+    }
+
+    pub fn fields(&self) -> &[RecordField] {
+        &self.fields
+    }
+    pub fn layout(&self) -> &Arc<RecordLayout> {
+        &self.layout
+    }
+
+    /// Linking may remap types without changing names or storage positions.
+    pub fn map_field_types(&mut self, mut map: impl FnMut(&mut ExecutableType)) {
+        for field in &mut self.fields {
+            map(&mut field.ty);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -103,5 +152,56 @@ impl ProgramMetadata {
                 },
             ],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn record_fields_preserve_storage_order_and_names_when_types_are_remapped() {
+        let mut record = RuntimeRecord::new(
+            "Pair".into(),
+            vec![],
+            vec![
+                RecordField {
+                    name: "second".into(),
+                    ty: ExecutableType::Generic("T".into()),
+                },
+                RecordField {
+                    name: "first".into(),
+                    ty: ExecutableType::Bool,
+                },
+            ],
+        )
+        .unwrap();
+        let layout = record.layout().clone();
+        record.map_field_types(|ty| {
+            if matches!(ty, ExecutableType::Generic(_)) {
+                *ty = ExecutableType::Integer;
+            }
+        });
+        assert!(Arc::ptr_eq(&layout, record.layout()));
+        assert_eq!(record.layout().names(), &["second", "first"]);
+        for (index, field) in record.fields().iter().enumerate() {
+            assert_eq!(record.layout().index(&field.name), Some(index));
+        }
+        assert_eq!(record.fields()[0].ty, ExecutableType::Integer);
+        assert_eq!(record.fields()[1].ty, ExecutableType::Bool);
+    }
+
+    #[test]
+    fn record_fields_reject_duplicate_names() {
+        let field = RecordField {
+            name: "value".into(),
+            ty: ExecutableType::Integer,
+        };
+        assert!(
+            RuntimeRecord::new("Duplicate".into(), vec![], vec![field.clone(), field])
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate field names")
+        );
     }
 }

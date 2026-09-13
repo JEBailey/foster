@@ -146,9 +146,7 @@ pub(crate) fn link(
         }
         for (source, record) in &library.code.metadata.records {
             let mut remapped = record.clone();
-            for ty in &mut remapped.field_types {
-                mapping.ty(ty);
-            }
+            remapped.map_field_types(|ty| mapping.ty(ty));
             if program
                 .metadata
                 .records

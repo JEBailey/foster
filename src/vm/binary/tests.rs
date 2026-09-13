@@ -301,7 +301,11 @@ func main() -> Int { make(42).value }
         .find(|record| record.name == "Box")
         .unwrap();
     assert_eq!(
-        record.field_types,
+        record
+            .fields()
+            .iter()
+            .map(|field| field.ty.clone())
+            .collect::<Vec<_>>(),
         vec![ExecutableType::Generic("T".into())]
     );
     assert_eq!(record.parameters, vec!["T"]);

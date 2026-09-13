@@ -46,7 +46,9 @@ impl NativeFunction {
     /// Source-level logical alternatives for an SSA value, when it has a source storage home.
     /// ABI-only temporaries have no separate Foster identity and return an empty slice.
     pub fn logical_types(&self, value: ir::Value) -> &[ExecutableType] {
-        self.ir.storage_hints[value.0 as usize]
+        self.ir
+            .values
+            .hint(value.0 as usize)
             .map_or(&[], |home| &self.logical_register_types[usize::from(home)])
     }
 }
@@ -171,7 +173,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
             physical: &prepared.physical_layouts,
         };
         let management = lowered
-            .value_types
+            .values
             .iter()
             .map(|ty| layouts.management(*ty))
             .collect();
@@ -184,7 +186,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
             .zip(&source.mutable_parameters)
             .filter_map(|(value, mutable)| {
                 mutable
-                    .then(|| lowered.storage_hints[value.0 as usize])
+                    .then(|| lowered.values.hint(value.0 as usize))
                     .flatten()
             })
             .collect::<HashSet<_>>();
@@ -192,16 +194,14 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
             .receiver
             .is_some()
             && let Some(receiver) = lowered.parameters.get(parameter_offset)
-            && let Some(home) = lowered.storage_hints[receiver.0 as usize]
+            && let Some(home) = lowered.values.hint(receiver.0 as usize)
         {
             mutable_parameter_homes.insert(home);
         }
         let mut home_types = std::collections::BTreeMap::new();
-        for (value, home) in lowered.storage_hints.iter().enumerate() {
+        for (value, home) in lowered.values.hints().enumerate() {
             if let Some(home) = home {
-                home_types
-                    .entry(*home)
-                    .or_insert(lowered.value_types[value]);
+                home_types.entry(*home).or_insert(lowered.values[value]);
             }
         }
         let specialize = |ty: &ExecutableType| ty.specialize(&instance.key.substitutions);
@@ -382,14 +382,14 @@ func main() -> Int {
                 .any(|policy| matches!(policy, MemoryManagement::ManagedObject(_)))
         }));
         for function in prepared.functions() {
-            for (ty, management) in function.ir.value_types.iter().zip(function.management()) {
+            for (ty, management) in function.ir.values.iter().zip(function.management()) {
                 if *ty == NativeType::String {
                     assert!(matches!(management, MemoryManagement::ManagedObject(_)));
                 }
             }
         }
         for function in prepared.functions() {
-            assert_eq!(function.management().len(), function.ir.value_types.len());
+            assert_eq!(function.management().len(), function.ir.values.len());
             assert_eq!(
                 prepared.program.functions[&function.source_function()].parameter_modes,
                 function

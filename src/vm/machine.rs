@@ -239,7 +239,7 @@ impl Cleanup {
             Value::Record {
                 record: Some(record),
                 name: metadata.name.clone(),
-                fields: RecordFields::new(metadata.layout.clone(), values)
+                fields: RecordFields::new(metadata.layout().clone(), values)
                     .expect("cleanup retains the record layout"),
             }
         };
@@ -546,7 +546,7 @@ impl Machine {
                         .map(|(_, register)| read(frame, *register))
                         .collect::<Result<Vec<_>, RuntimeError>>()?;
                     let metadata = &self.program.metadata.records[record];
-                    let fields = RecordFields::new(metadata.layout.clone(), values)?;
+                    let fields = RecordFields::new(metadata.layout().clone(), values)?;
                     if let Some(function) = self
                         .program
                         .metadata

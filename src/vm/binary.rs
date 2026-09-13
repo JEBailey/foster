@@ -82,10 +82,10 @@ pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
         for parameter in &record.parameters {
             w.string(parameter)?;
         }
-        w.u32(record.layout.names().len())?;
-        for (field, ty) in record.layout.names().iter().zip(&record.field_types) {
-            w.string(field)?;
-            w.verification_type(ty)?;
+        w.u32(record.fields().len())?;
+        for field in record.fields() {
+            w.string(&field.name)?;
+            w.verification_type(&field.ty)?;
         }
     }
 
@@ -156,16 +156,16 @@ pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
         let id = r.id::<Record>()?;
         let name = r.string()?;
         let parameters = r.vec(|r| r.string())?;
-        let fields = r.vec(|r| Ok((r.string()?, r.verification_type(0)?)))?;
-        let (names, field_types) = fields.into_iter().unzip();
+        let fields = r.vec(|r| {
+            Ok(crate::codegen::metadata::RecordField {
+                name: r.string()?,
+                ty: r.verification_type(0)?,
+            })
+        })?;
         Ok((
             id,
-            RuntimeRecord {
-                name,
-                parameters,
-                layout: std::sync::Arc::new(crate::codegen::metadata::RecordLayout::new(names)),
-                field_types,
-            },
+            RuntimeRecord::new(name, parameters, fields)
+                .map_err(|error| BinaryError::new(error.to_string()))?,
         ))
     })?;
     let dispatch = r.map(|r| {

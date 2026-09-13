@@ -197,7 +197,13 @@ SSA instructions carry their source spans, and captures carry their value/type p
 construction buffers enter through length-checked adapters. `SharedProgram` exposes immutable
 access to its functions, metadata, and derived signatures; sealing validates both the construction
 program and SSA. Backend transforms consume this boundary and validate their resulting IR.
-Dense value tables and CFG relationships remain verifier-checked rather than individually wrapped.
+Retaining shared SSA and lowering it to VM bytecode use one sealing routine, including construction
+validation and whole-graph signature checks. VM lowering commits new bodies only after every
+function succeeds; errors preserve the original bodies and constant pool.
+SSA value allocation uses `ir::ValueBuilder`, which assigns stable IDs and stores each type with
+its optional construction storage home. Finished functions expose an immutable `ValueTable`;
+native specialization resumes a builder to retype existing IDs and allocate temporaries.
+Definition uniqueness, parameter/edge compatibility, and CFG relationships remain verifier-checked.
 
 `codegen::metadata::ProgramMetadata` owns constants, symbolic identities, nominal record/variant
 schemas, dispatch targets, core-type identities, and entry-point conventions. Logical record field
@@ -207,6 +213,8 @@ with bytecode functions and the drop-insertion flag. The binary field order and 
 Nominal layout construction and native representation/ownership helpers accept neutral metadata.
 Shared sealing retains construction bodies separately, and native verification and specialization
 still use them for register-flow evidence; extracting metadata does not remove that dependency.
+Record schemas store paired `RecordField` entries. Construction derives their immutable lookup
+layout and rejects duplicate names; linking remaps field types without changing storage order.
 
 The portable, versioned bytecode remains the VM's execution and distribution format. The native
 IR is a shared internal backend boundary rather than a replacement for bytecode, leaving room for

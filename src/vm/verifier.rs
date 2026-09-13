@@ -117,14 +117,8 @@ fn verify_program_metadata(program: &Program) -> Result<(), FosterError> {
         }
     }
     for record in program.metadata.records.values() {
-        if record.layout.names().len() != record.field_types.len() {
-            return Err(FosterError::runtime(format!(
-                "bytecode record `{}` has inconsistent typed field metadata",
-                record.name
-            )));
-        }
-        for ty in &record.field_types {
-            verify_metadata_type(program, ty, 0)?;
+        for field in record.fields() {
+            verify_metadata_type(program, &field.ty, 0)?;
         }
     }
     for variant in program.metadata.variants.values() {
@@ -471,7 +465,7 @@ fn verify_function_structure(
                 for ty in type_arguments {
                     verify_metadata_type(program, ty, 0)?;
                 }
-                let expected = metadata.layout.names();
+                let expected = metadata.layout().names();
                 if fields.len() != expected.len()
                     || fields.iter().map(|(name, _)| name).ne(expected.iter())
                 {
@@ -1591,7 +1585,7 @@ fn verification_field_type(
         ExecutableType::Record { record, arguments } => {
             let metadata = program.metadata.records.get(record)?;
             let index = metadata
-                .layout
+                .layout()
                 .names()
                 .iter()
                 .position(|name| name == field)?;
@@ -1601,7 +1595,7 @@ fn verification_field_type(
                 .cloned()
                 .zip(arguments.iter().cloned())
                 .collect::<HashMap<_, _>>();
-            Some(metadata.field_types.get(index)?.substitute(&substitutions))
+            Some(metadata.fields().get(index)?.ty.substitute(&substitutions))
         }
         ExecutableType::List(element) => match field {
             "empty?" => Some(ExecutableType::Bool),

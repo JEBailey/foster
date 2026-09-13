@@ -31,7 +31,12 @@ pub(super) fn lower_shared_to_native_ir(
         .zip(external_types)
         .filter_map(|(value, ty)| {
             matches!(ty, crate::codegen::types::ExecutableType::Reference(_))
-                .then(|| shared.storage_hints[value.0 as usize].map(|home| (home, *value)))
+                .then(|| {
+                    shared
+                        .values
+                        .hint(value.0 as usize)
+                        .map(|home| (home, *value))
+                })
                 .flatten()
         })
         .collect::<HashMap<_, _>>();
@@ -42,23 +47,14 @@ pub(super) fn lower_shared_to_native_ir(
         environment,
         &remote_calls,
     )?;
-    let mut value_types = shared
-        .storage_hints
-        .iter()
-        .enumerate()
-        .map(|(index, register)| {
-            register
-                .and_then(|register| inferred[usize::from(register)])
-                .or_else(|| {
-                    shared
-                        .value_types
-                        .get(index)
-                        .copied()
-                        .map(native_shared_type)
-                })
-                .unwrap_or(NativeType::Unit)
-        })
-        .collect::<Vec<_>>();
+    let mut values = shared.values.clone().into_builder();
+    for (index, ty) in shared.values.iter().enumerate() {
+        values[index] = shared
+            .values
+            .hint(index)
+            .and_then(|register| inferred[usize::from(register)])
+            .unwrap_or_else(|| native_shared_type(*ty));
+    }
     for (home, value) in &reference_homes {
         let Some(crate::codegen::types::ExecutableType::Reference(pointee)) = metadata
             .capture_types
@@ -77,16 +73,16 @@ pub(super) fn lower_shared_to_native_ir(
         )?;
         // The ABI input is a typed address, while every SSA value carrying
         // that storage home after the prologue is the loaded pointee value.
-        for (index, storage_home) in shared.storage_hints.iter().enumerate() {
+        for (index, storage_home) in shared.values.hints().enumerate() {
             if storage_home == &Some(*home) {
-                value_types[index] = pointee_type;
+                values[index] = pointee_type;
             }
         }
         let layout = environment
             .layouts
             .pointer(&pointee, crate::codegen::layout::Ownership::Borrowed)
             .ok_or_else(|| native_error("captured reference has no native layout"))?;
-        value_types[value.0 as usize] = NativeType::Object(layout);
+        values[value.0 as usize] = NativeType::Object(layout);
     }
     // Empty values carried after a Drop have no storage home. Recover their
     // specialized layout from the receiving block instead of keeping Opaque.
@@ -111,13 +107,12 @@ pub(super) fn lower_shared_to_native_ir(
                 .iter()
                 .zip(&shared.blocks[target.0 as usize].parameters)
             {
-                if seeds.contains(argument) && shared.storage_hints[argument.0 as usize].is_none() {
-                    value_types[argument.0 as usize] = value_types[parameter.0 as usize];
+                if seeds.contains(argument) && shared.values.hint(argument.0 as usize).is_none() {
+                    values[argument.0 as usize] = values[parameter.0 as usize];
                 }
             }
         }
     }
-    let mut storage_hints = shared.storage_hints.clone();
     let mut entry_seeds = shared.entry_seeds.clone();
     let mut blocks = Vec::with_capacity(shared.blocks.len());
     let mut cleanup_edges = Vec::new();
@@ -127,15 +122,13 @@ pub(super) fn lower_shared_to_native_ir(
         let mut state = HashMap::<u16, ir::Value>::new();
         let mut temporaries = BTreeSet::new();
         for value in &block.parameters {
-            if let Some(home) = shared.storage_hints[value.0 as usize] {
+            if let Some(home) = shared.values.hint(value.0 as usize) {
                 state.insert(home, *value);
             }
         }
         let mut instructions = Vec::new();
         let mut spans = Vec::new();
-        let poll = ir::Value(value_types.len() as u32);
-        value_types.push(NativeType::Bool);
-        storage_hints.push(None);
+        let poll = values.allocate(NativeType::Bool, None);
         failure_cleanup.values.insert(
             (block_index, 0),
             owned_home_values(&state, &reference_homes).collect(),
@@ -160,8 +153,7 @@ pub(super) fn lower_shared_to_native_ir(
                 metadata,
                 instance,
                 environment,
-                &mut value_types,
-                &mut storage_hints,
+                &mut values,
                 NativeFunctionFacts {
                     reference_homes: &reference_homes,
                     remote_calls: &remote_calls,
@@ -171,11 +163,12 @@ pub(super) fn lower_shared_to_native_ir(
                 if let ir::Instruction::Portable(ir::PortableInstruction::Drop { value }) =
                     &instruction
                 {
-                    if !remove_shared_home(&mut state, &storage_hints, *value) {
+                    if !remove_shared_home(&mut state, &values, *value) {
                         continue;
                     }
                     temporaries.remove(value);
-                    if storage_hints[value.0 as usize]
+                    if values
+                        .hint(value.0 as usize)
                         .is_some_and(|home| reference_homes.contains_key(&home))
                     {
                         // A loaded reference parameter never owns its caller's value.
@@ -183,7 +176,7 @@ pub(super) fn lower_shared_to_native_ir(
                     }
                 }
                 for value in consumed {
-                    remove_shared_home(&mut state, &storage_hints, value);
+                    remove_shared_home(&mut state, &values, value);
                     temporaries.remove(&value);
                 }
                 // ABI argument copies and conversions have no construction home,
@@ -192,7 +185,7 @@ pub(super) fn lower_shared_to_native_ir(
                     .chain(temporaries.iter().copied())
                     .filter(|value| {
                         matches!(
-                            value_types[value.0 as usize],
+                            values[value.0 as usize],
                             NativeType::String | NativeType::Object(_)
                         )
                     })
@@ -204,7 +197,7 @@ pub(super) fn lower_shared_to_native_ir(
                     .values
                     .insert((block_index, instructions.len()), live);
                 for destination in instruction.destinations() {
-                    if let Some(home) = storage_hints[destination.0 as usize] {
+                    if let Some(home) = values.hint(destination.0 as usize) {
                         state.insert(home, destination);
                     } else if !matches!(
                         &instruction,
@@ -226,13 +219,14 @@ pub(super) fn lower_shared_to_native_ir(
         let mut clear_transferred = |arguments: &mut Vec<ir::Value>| {
             for argument in arguments {
                 if matches!(
-                    value_types[argument.0 as usize],
+                    values[argument.0 as usize],
                     NativeType::String | NativeType::Object(_)
-                ) && storage_hints[argument.0 as usize]
+                ) && values
+                    .hint(argument.0 as usize)
                     .is_some_and(|home| !state.contains_key(&home))
                 {
-                    let ty = value_types[argument.0 as usize];
-                    let empty = allocate_shared_value(&mut value_types, &mut storage_hints, ty);
+                    let ty = values[argument.0 as usize];
+                    let empty = allocate_shared_value(&mut values, ty);
                     entry_seeds.push(empty);
                     *argument = empty;
                 }
@@ -253,15 +247,11 @@ pub(super) fn lower_shared_to_native_ir(
         if let ir::Terminator::Return(returned) = &terminator {
             let mut returned = *returned;
             if let Some(conversion) = ReturnConversion::between(
-                value_types[returned.0 as usize],
+                values[returned.0 as usize],
                 function_signature.result,
                 environment,
             )? {
-                let converted = allocate_shared_value(
-                    &mut value_types,
-                    &mut storage_hints,
-                    function_signature.result,
-                );
+                let converted = allocate_shared_value(&mut values, function_signature.result);
                 instructions.push(conversion.instruction(converted, returned));
                 spans.push(block.terminator_span.clone());
                 match conversion {
@@ -278,7 +268,7 @@ pub(super) fn lower_shared_to_native_ir(
                             ir::PortableInstruction::Drop { value: returned },
                         ));
                         spans.push(block.terminator_span.clone());
-                        remove_shared_home(&mut state, &storage_hints, returned);
+                        remove_shared_home(&mut state, &values, returned);
                     }
                     _ => {}
                 }
@@ -292,16 +282,16 @@ pub(super) fn lower_shared_to_native_ir(
             {
                 if value != returned
                     && matches!(
-                        value_types[value.0 as usize],
+                        values[value.0 as usize],
                         NativeType::Object(_) | NativeType::String
                     )
                 {
-                    remove_shared_home(&mut state, &storage_hints, value);
+                    remove_shared_home(&mut state, &values, value);
                     let live = owned_home_values(&state, &reference_homes)
                         .chain(temporaries.iter().copied())
                         .filter(|value| {
                             matches!(
-                                value_types[value.0 as usize],
+                                values[value.0 as usize],
                                 NativeType::Object(_) | NativeType::String
                             )
                         })
@@ -329,7 +319,7 @@ pub(super) fn lower_shared_to_native_ir(
                 .filter(|value| !arguments.contains(value))
                 .filter(|value| {
                     matches!(
-                        value_types[value.0 as usize],
+                        values[value.0 as usize],
                         NativeType::Object(_) | NativeType::String
                     )
                 })
@@ -399,7 +389,7 @@ pub(super) fn lower_shared_to_native_ir(
         .filter(|value| !shared.entry_arguments.contains(value))
         .filter(|value| {
             matches!(
-                value_types[value.0 as usize],
+                values[value.0 as usize],
                 NativeType::String | NativeType::Object(_)
             )
         })
@@ -451,14 +441,14 @@ pub(super) fn lower_shared_to_native_ir(
                     )
                     .ok_or_else(|| native_error("captured reference has no native layout"))?,
             );
-            value_types[input.0 as usize] = reference_type;
+            values[input.0 as usize] = reference_type;
             let loaded_type = native_verification_type(
                 &environment.program.metadata,
                 environment.layouts,
                 &concrete_pointee,
                 None,
             )?;
-            let loaded = allocate_shared_value(&mut value_types, &mut storage_hints, loaded_type);
+            let loaded = allocate_shared_value(&mut values, loaded_type);
             prologue_instructions.push(ir::Instruction::RuntimeCall {
                 destination: loaded,
                 helper: reference_load_helper(loaded_type),
@@ -506,8 +496,7 @@ pub(super) fn lower_shared_to_native_ir(
             entry_seeds,
             entry,
             entry_arguments,
-            value_types,
-            storage_hints,
+            values: values.finish(),
             blocks,
         },
         failure_cleanup,
@@ -661,10 +650,10 @@ impl ReturnConversion {
 
 fn remove_shared_home(
     state: &mut HashMap<u16, ir::Value>,
-    storage_hints: &[Option<u16>],
+    values: &ir::ValueTable,
     value: ir::Value,
 ) -> bool {
-    let Some(home) = storage_hints[value.0 as usize] else {
+    let Some(home) = values.hint(value.0 as usize) else {
         return true;
     };
     if state.get(&home) == Some(&value) {
@@ -675,15 +664,8 @@ fn remove_shared_home(
     }
 }
 
-fn allocate_shared_value(
-    value_types: &mut Vec<NativeType>,
-    storage_hints: &mut Vec<Option<u16>>,
-    ty: NativeType,
-) -> ir::Value {
-    let value = ir::Value(value_types.len() as u32);
-    value_types.push(ty);
-    storage_hints.push(None);
-    value
+fn allocate_shared_value(values: &mut ir::ValueBuilder, ty: NativeType) -> ir::Value {
+    values.allocate(ty, None)
 }
 
 struct NativeFunctionFacts<'a> {
@@ -696,8 +678,7 @@ fn lower_shared_instruction(
     metadata: &BytecodeFunction,
     instance: &SpecializationKey,
     environment: NativeIrEnvironment<'_>,
-    value_types: &mut Vec<NativeType>,
-    storage_hints: &mut Vec<Option<u16>>,
+    values: &mut ir::ValueBuilder,
     facts: NativeFunctionFacts<'_>,
 ) -> Result<Vec<(ir::Instruction, Vec<ir::Value>)>, FosterError> {
     // Interface and callable storage may receive concrete values. Normalize
@@ -706,15 +687,13 @@ fn lower_shared_instruction(
     let mut wrappers = Vec::new();
     let mut prefix = Vec::new();
     if let ir::Instruction::Portable(portable) = &mut adapted {
-        let object_layout = |value: ir::Value| match dereference_native_type(
-            value_types[value.0 as usize],
-            environment,
-        )
-        .ok()?
-        {
-            NativeType::Object(layout) => Some(layout),
-            _ => None,
-        };
+        let object_layout =
+            |value: ir::Value| match dereference_native_type(values[value.0 as usize], environment)
+                .ok()?
+            {
+                NativeType::Object(layout) => Some(layout),
+                _ => None,
+            };
         let mut sources = Vec::new();
         match portable {
             ir::PortableInstruction::Move {
@@ -810,17 +789,13 @@ fn lower_shared_instruction(
             if let Some(layout) = layout {
                 let expected = NativeType::Object(layout);
                 let conversion = if callable_conversion(
-                    value_types[source.0 as usize],
+                    values[source.0 as usize],
                     expected,
                     environment.layouts,
                 ) {
                     Some(true)
                 } else if matches!(
-                    erased_conversion(
-                        value_types[source.0 as usize],
-                        expected,
-                        environment.layouts
-                    ),
+                    erased_conversion(values[source.0 as usize], expected, environment.layouts),
                     Some(ErasedConversion::Box)
                 ) {
                     Some(false)
@@ -828,7 +803,7 @@ fn lower_shared_instruction(
                     None
                 };
                 if let Some(callable) = conversion {
-                    let wrapper = allocate_shared_value(value_types, storage_hints, expected);
+                    let wrapper = allocate_shared_value(values, expected);
                     prefix.push((
                         if callable {
                             ir::Instruction::WrapCallable {
@@ -855,8 +830,7 @@ fn lower_shared_instruction(
             metadata,
             instance,
             environment,
-            value_types,
-            storage_hints,
+            values,
             facts,
         )?);
         prefix.extend(wrappers.into_iter().map(|value| {
@@ -867,7 +841,7 @@ fn lower_shared_instruction(
         }));
         return Ok(prefix);
     }
-    let ty = |value: ir::Value| value_types[value.0 as usize];
+    let ty = |value: ir::Value| values[value.0 as usize];
     let one = |instruction| vec![(instruction, Vec::new())];
     let ir::Instruction::Portable(portable) = instruction else {
         return Ok(one(instruction.clone()));
@@ -899,7 +873,8 @@ fn lower_shared_instruction(
             destination,
             source,
         } => {
-            let Some(reference) = storage_hints[source.0 as usize]
+            let Some(reference) = values
+                .hint(source.0 as usize)
                 .and_then(|home| facts.reference_homes.get(&home).copied())
             else {
                 return Ok(one(instruction.clone()));
@@ -908,7 +883,7 @@ fn lower_shared_instruction(
             // original address so replacing storage updates the caller as well.
             let reference_type = ty(reference);
             let value_type = ty(*destination);
-            let unique = allocate_shared_value(value_types, storage_hints, reference_type);
+            let unique = allocate_shared_value(values, reference_type);
             Ok(vec![
                 (
                     ir::Instruction::Portable(ir::PortableInstruction::CopyOnWrite {
@@ -936,7 +911,8 @@ fn lower_shared_instruction(
             object,
             ..
         } => {
-            if let Some(reference) = storage_hints[object.0 as usize]
+            if let Some(reference) = values
+                .hint(object.0 as usize)
                 .and_then(|home| facts.reference_homes.get(&home).copied())
             {
                 // A reborrow of a reference parameter/capture must keep the caller's
@@ -955,14 +931,15 @@ fn lower_shared_instruction(
             destination,
             source,
         } => {
-            let Some(reference) = storage_hints[destination.0 as usize]
+            let Some(reference) = values
+                .hint(destination.0 as usize)
                 .and_then(|home| facts.reference_homes.get(&home).copied())
             else {
                 return Ok(one(instruction.clone()));
             };
             let stored_type = ty(*source);
             let reference_type = ty(reference);
-            let stored = allocate_shared_value(value_types, storage_hints, NativeType::Unit);
+            let stored = allocate_shared_value(values, NativeType::Unit);
             Ok(vec![
                 (
                     ir::Instruction::RuntimeCall {
@@ -998,7 +975,7 @@ fn lower_shared_instruction(
             let mut left = *left;
             let mut right = *right;
             for operand in [&mut left, &mut right] {
-                let operand_type = value_types[operand.0 as usize];
+                let operand_type = values[operand.0 as usize];
                 if let NativeType::Object(layout) = operand_type
                     && let LayoutKind::Pointer { pointee, .. } =
                         &environment.layouts.get(layout).kind
@@ -1009,7 +986,7 @@ fn lower_shared_instruction(
                         pointee,
                         None,
                     )?;
-                    let loaded = allocate_shared_value(value_types, storage_hints, loaded_type);
+                    let loaded = allocate_shared_value(values, loaded_type);
                     result.push((
                         ir::Instruction::RuntimeCall {
                             destination: loaded,
@@ -1028,15 +1005,14 @@ fn lower_shared_instruction(
             if matches!(
                 operator,
                 BinaryOp::Add | BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Divide
-            ) && value_types[destination.0 as usize] == NativeType::Int
+            ) && values[destination.0 as usize] == NativeType::Int
             {
                 for operand in [&mut left, &mut right] {
                     if matches!(
-                        value_types[operand.0 as usize],
+                        values[operand.0 as usize],
                         NativeType::Byte | NativeType::CodePoint
                     ) {
-                        let extended =
-                            allocate_shared_value(value_types, storage_hints, NativeType::Int);
+                        let extended = allocate_shared_value(values, NativeType::Int);
                         result.push((
                             ir::Instruction::IntegerExtend {
                                 destination: extended,
@@ -1048,13 +1024,13 @@ fn lower_shared_instruction(
                     }
                 }
             }
-            if value_types[left.0 as usize] == NativeType::Int
+            if values[left.0 as usize] == NativeType::Int
                 && matches!(
-                    value_types[right.0 as usize],
+                    values[right.0 as usize],
                     NativeType::Byte | NativeType::CodePoint
                 )
             {
-                let extended = allocate_shared_value(value_types, storage_hints, NativeType::Int);
+                let extended = allocate_shared_value(values, NativeType::Int);
                 result.push((
                     ir::Instruction::IntegerExtend {
                         destination: extended,
@@ -1064,13 +1040,13 @@ fn lower_shared_instruction(
                 ));
                 right = extended;
             } else if !matches!(operator, BinaryOp::ShiftLeft | BinaryOp::ShiftRight)
-                && value_types[right.0 as usize] == NativeType::Int
+                && values[right.0 as usize] == NativeType::Int
                 && matches!(
-                    value_types[left.0 as usize],
+                    values[left.0 as usize],
                     NativeType::Byte | NativeType::CodePoint
                 )
             {
-                let extended = allocate_shared_value(value_types, storage_hints, NativeType::Int);
+                let extended = allocate_shared_value(values, NativeType::Int);
                 result.push((
                     ir::Instruction::IntegerExtend {
                         destination: extended,
@@ -1107,8 +1083,7 @@ fn lower_shared_instruction(
                 &environment.program.functions[function].parameter_modes,
                 &environment.function_types[&target].parameters,
                 environment,
-                value_types,
-                storage_hints,
+                values,
                 &mut result,
             )?;
             Ok({
@@ -1150,8 +1125,7 @@ fn lower_shared_instruction(
                 &modes,
                 &environment.function_types[&target].parameters,
                 environment,
-                value_types,
-                storage_hints,
+                values,
                 &mut result,
             )?;
             result.push((
@@ -1183,8 +1157,7 @@ fn lower_shared_instruction(
                 captures,
                 expected_captures,
                 environment.layouts,
-                value_types,
-                storage_hints,
+                values,
                 &mut result,
                 &metadata.name,
             )?;
@@ -1193,8 +1166,7 @@ fn lower_shared_instruction(
                 &environment.program.functions[function].parameter_modes,
                 &environment.function_types[&target].parameters[captures.len()..],
                 environment,
-                value_types,
-                storage_hints,
+                values,
                 &mut result,
             )?;
             lowered.extend(ordinary);
@@ -1228,8 +1200,7 @@ fn lower_shared_instruction(
                 captures,
                 expected_captures,
                 environment.layouts,
-                value_types,
-                storage_hints,
+                values,
                 &mut result,
                 &metadata.name,
             )?;
@@ -1239,11 +1210,11 @@ fn lower_shared_instruction(
                 .ok_or_else(|| native_error("closure construction has no concrete layout"))?;
             let wrapped = callable_conversion(
                 NativeType::Object(layout),
-                value_types[destination.0 as usize],
+                values[destination.0 as usize],
                 environment.layouts,
             );
             let concrete = if wrapped {
-                allocate_shared_value(value_types, storage_hints, NativeType::Object(layout))
+                allocate_shared_value(values, NativeType::Object(layout))
             } else {
                 *destination
             };
@@ -1332,8 +1303,7 @@ fn lower_shared_instruction(
                 &modes,
                 &expected,
                 environment,
-                value_types,
-                storage_hints,
+                values,
                 &mut result,
             )?;
             result.push((
@@ -1414,7 +1384,7 @@ fn lower_shared_instruction(
             Ok(one(ir::Instruction::RuntimeCall {
                 destination: *destination,
                 helper,
-                signature: runtime_signature(*destination, &arguments, value_types),
+                signature: runtime_signature(*destination, &arguments, values),
                 arguments,
             }))
         }
@@ -1434,7 +1404,7 @@ fn lower_shared_instruction(
                     .layouts
                     .builtin(&crate::codegen::types::ExecutableType::Bytes)
                     .ok_or_else(|| native_error("String byte storage has no native layout"))?;
-                value_types[destination.0 as usize] = NativeType::Object(bytes);
+                values[destination.0 as usize] = NativeType::Object(bytes);
                 return Ok(one(ir::Instruction::StringToBytes {
                     destination: *destination,
                     source: *object,
@@ -1473,7 +1443,7 @@ fn lower_shared_instruction(
             Ok(one(ir::Instruction::RuntimeCall {
                 destination: *destination,
                 helper,
-                signature: runtime_signature(*destination, &arguments, value_types),
+                signature: runtime_signature(*destination, &arguments, values),
                 arguments,
             }))
         }
@@ -1512,8 +1482,7 @@ fn lower_shared_instruction(
                     &modes[1..],
                     &target.parameters[1..],
                     environment,
-                    value_types,
-                    storage_hints,
+                    values,
                     &mut lowered,
                 )?
             } else {
@@ -1537,8 +1506,7 @@ fn lower_shared_instruction(
             builtin,
             arguments,
         } => {
-            value_types[destination.0 as usize] =
-                native_intrinsic_result_type(*builtin, environment)?;
+            values[destination.0 as usize] = native_intrinsic_result_type(*builtin, environment)?;
             if matches!(
                 builtin.descriptor().native,
                 crate::intrinsics::NativeIntrinsic::Print { .. }
@@ -1546,10 +1514,10 @@ fn lower_shared_instruction(
                 let mut result = Vec::new();
                 let mut lowered = Vec::new();
                 for argument in arguments {
-                    let source = value_types[argument.0 as usize];
+                    let source = values[argument.0 as usize];
                     let pointee = dereference_native_type(source, environment)?;
                     if source != pointee {
-                        let loaded = allocate_shared_value(value_types, storage_hints, pointee);
+                        let loaded = allocate_shared_value(values, pointee);
                         result.push((
                             ir::Instruction::RuntimeCall {
                                 destination: loaded,
@@ -1599,7 +1567,8 @@ fn lower_shared_instruction(
             arguments,
             ..
         } => {
-            let target = storage_hints[destination.0 as usize]
+            let target = values
+                .hint(destination.0 as usize)
                 .and_then(|home| facts.remote_calls.get(&home))
                 .ok_or_else(|| native_error("remote SSA call has no verified specialization"))?
                 .target;
@@ -1614,8 +1583,7 @@ fn lower_shared_instruction(
                 &modes,
                 &environment.function_types[&target].parameters[1..],
                 environment,
-                value_types,
-                storage_hints,
+                values,
                 &mut result,
             )?;
             result.push((
@@ -1644,8 +1612,7 @@ fn shared_call_arguments(
     modes: &[ParameterMode],
     expected_types: &[NativeType],
     environment: NativeIrEnvironment<'_>,
-    value_types: &mut Vec<NativeType>,
-    storage_hints: &mut Vec<Option<u16>>,
+    values: &mut ir::ValueBuilder,
     instructions: &mut Vec<(ir::Instruction, Vec<ir::Value>)>,
 ) -> Result<(Vec<ir::Value>, Vec<ir::Value>), FosterError> {
     if arguments.len() != modes.len() || arguments.len() != expected_types.len() {
@@ -1657,14 +1624,14 @@ fn shared_call_arguments(
     let mut lowered = Vec::with_capacity(arguments.len());
     let mut consumed = Vec::new();
     for ((argument, mode), expected) in arguments.iter().zip(modes).zip(expected_types) {
-        let source_type = value_types[argument.0 as usize];
+        let source_type = values[argument.0 as usize];
         let pointee_type = dereference_native_type(source_type, environment)?;
         let loaded;
         let argument = if *mode == ParameterMode::Borrow
             && source_type != pointee_type
             && source_type != *expected
         {
-            loaded = allocate_shared_value(value_types, storage_hints, pointee_type);
+            loaded = allocate_shared_value(values, pointee_type);
             instructions.push((
                 ir::Instruction::RuntimeCall {
                     destination: loaded,
@@ -1681,9 +1648,9 @@ fn shared_call_arguments(
         } else {
             argument
         };
-        let ty = value_types[argument.0 as usize];
+        let ty = values[argument.0 as usize];
         if callable_conversion(ty, *expected, layouts) {
-            let callable = allocate_shared_value(value_types, storage_hints, *expected);
+            let callable = allocate_shared_value(values, *expected);
             instructions.push((
                 ir::Instruction::WrapCallable {
                     destination: callable,
@@ -1701,7 +1668,7 @@ fn shared_call_arguments(
             continue;
         }
         if let Some(boxing) = erased_conversion(ty, *expected, layouts) {
-            let converted = allocate_shared_value(value_types, storage_hints, *expected);
+            let converted = allocate_shared_value(values, *expected);
             instructions.push((
                 match boxing {
                     ErasedConversion::Box => ir::Instruction::BoxValue {
@@ -1727,7 +1694,7 @@ fn shared_call_arguments(
         if *mode == ParameterMode::Borrow
             && matches!(ty, NativeType::Object(_) | NativeType::String)
         {
-            let retained = allocate_shared_value(value_types, storage_hints, ty);
+            let retained = allocate_shared_value(values, ty);
             instructions.push((
                 ir::Instruction::Portable(ir::PortableInstruction::Move {
                     destination: retained,
@@ -1746,7 +1713,7 @@ fn shared_call_arguments(
     consumed.extend(
         lowered
             .iter()
-            .filter(|value| storage_hints[value.0 as usize].is_none()),
+            .filter(|value| values.hint(value.0 as usize).is_none()),
     );
     Ok((lowered, consumed))
 }
@@ -1796,8 +1763,7 @@ fn shared_capture_arguments(
     captures: &[(crate::hir::CaptureMode, ir::Value)],
     expected_types: &[NativeType],
     layouts: &LayoutRegistry,
-    value_types: &mut Vec<NativeType>,
-    storage_hints: &mut Vec<Option<u16>>,
+    values: &mut ir::ValueBuilder,
     instructions: &mut Vec<(ir::Instruction, Vec<ir::Value>)>,
     function: &str,
 ) -> Result<(Vec<ir::Value>, Vec<ir::Value>), FosterError> {
@@ -1807,9 +1773,9 @@ fn shared_capture_arguments(
     let mut lowered = Vec::with_capacity(captures.len());
     let mut consumed = Vec::new();
     for ((mode, value), expected) in captures.iter().zip(expected_types) {
-        let ty = value_types[value.0 as usize];
+        let ty = values[value.0 as usize];
         if callable_conversion(ty, *expected, layouts) {
-            let callable = allocate_shared_value(value_types, storage_hints, *expected);
+            let callable = allocate_shared_value(values, *expected);
             instructions.push((
                 ir::Instruction::WrapCallable {
                     destination: callable,
@@ -1827,7 +1793,7 @@ fn shared_capture_arguments(
             continue;
         }
         if let Some(boxing) = erased_conversion(ty, *expected, layouts) {
-            let converted = allocate_shared_value(value_types, storage_hints, *expected);
+            let converted = allocate_shared_value(values, *expected);
             instructions.push((
                 match boxing {
                     ErasedConversion::Box => ir::Instruction::BoxValue {
@@ -1857,7 +1823,7 @@ fn shared_capture_arguments(
             }
             crate::hir::CaptureMode::Copy => {
                 if matches!(ty, NativeType::Object(_) | NativeType::String) {
-                    let retained = allocate_shared_value(value_types, storage_hints, ty);
+                    let retained = allocate_shared_value(values, ty);
                     instructions.push((
                         ir::Instruction::Portable(ir::PortableInstruction::Move {
                             destination: retained,
@@ -1876,8 +1842,7 @@ fn shared_capture_arguments(
                         "native closure `{function}` has a non-reference capture ABI"
                     )));
                 };
-                let reference =
-                    allocate_shared_value(value_types, storage_hints, NativeType::Object(*layout));
+                let reference = allocate_shared_value(values, NativeType::Object(*layout));
                 instructions.push((
                     ir::Instruction::Portable(ir::PortableInstruction::MakeWholeReference {
                         destination: reference,
@@ -1898,7 +1863,7 @@ fn shared_capture_arguments(
     consumed.extend(
         lowered
             .iter()
-            .filter(|value| storage_hints[value.0 as usize].is_none()),
+            .filter(|value| values.hint(value.0 as usize).is_none()),
     );
     Ok((lowered, consumed))
 }

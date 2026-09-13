@@ -65,7 +65,27 @@ impl SharedProgram {
 
 /// Retain the compiler's first SSA graph instead of immediately de-SSA lowering it to bytecode.
 pub fn seal_program(construction: vm::Program) -> Result<SharedProgram, LowerError> {
-    vm::verify(&construction)
+    let SealedFunctions {
+        functions,
+        signatures,
+    } = seal_construction(&construction)?;
+    Ok(SharedProgram {
+        metadata: construction.metadata,
+        construction_functions: construction.functions,
+        drops_inserted: construction.drops_inserted,
+        functions,
+        signatures,
+    })
+}
+
+/// Both program consumers receive the same complete, verified SSA graph and signatures.
+struct SealedFunctions {
+    functions: HashMap<FunctionId, ir::Function>,
+    signatures: HashMap<FunctionId, ir::Signature>,
+}
+
+fn seal_construction(construction: &vm::Program) -> Result<SealedFunctions, LowerError> {
+    vm::verify(construction)
         .map_err(|error| LowerError(format!("invalid construction metadata: {error}")))?;
     let result_types = construction
         .functions
@@ -91,10 +111,7 @@ pub fn seal_program(construction: vm::Program) -> Result<SharedProgram, LowerErr
             .verify(&signatures)
             .map_err(|error| LowerError(format!("invalid shared IR: {error}")))?;
     }
-    Ok(SharedProgram {
-        metadata: construction.metadata,
-        construction_functions: construction.functions,
-        drops_inserted: construction.drops_inserted,
+    Ok(SealedFunctions {
         functions,
         signatures,
     })
@@ -102,35 +119,16 @@ pub fn seal_program(construction: vm::Program) -> Result<SharedProgram, LowerErr
 
 /// Make shared SSA the mandatory backend boundary for every executable VM function.
 pub fn lower_program_through_shared_ir(program: &mut vm::Program) -> Result<(), LowerError> {
-    // Own the table during the transaction instead of cloning every instruction payload. Any
-    // sealing/lowering failure restores the original functions before returning.
-    let originals = std::mem::take(&mut program.functions);
-    let result_types = originals
-        .iter()
-        .map(|(id, function)| (*id, shared_type(&function.result_type)))
-        .collect::<HashMap<_, _>>();
-    let mut sealed = HashMap::with_capacity(originals.len());
-    for (id, function) in &originals {
-        if function.intrinsic_stub {
-            continue;
-        }
-        match seal_function_with_types(&program.metadata.constants, &result_types, function) {
-            Ok(function) => {
-                sealed.insert(*id, function);
-            }
-            Err(error) => {
-                program.functions = originals;
-                return Err(error);
-            }
-        }
-    }
-    let signatures = sealed
-        .iter()
-        .map(|(id, function)| (*id, function.signature.clone()))
-        .collect::<HashMap<_, _>>();
-    let mut lowered = HashMap::with_capacity(originals.len());
-    for (id, function) in sealed {
-        let original = &originals[&id];
+    let SealedFunctions {
+        functions,
+        signatures,
+    } = seal_construction(program)?;
+    // Keep original bodies until every lowering succeeds, without cloning instruction payloads.
+    // Lowering only appends constants, so truncation also restores metadata after an error.
+    let original_constant_count = program.metadata.constants.len();
+    let mut lowered = HashMap::with_capacity(program.functions.len());
+    for (id, function) in functions {
+        let original = &program.functions[&id];
         let metadata = FunctionMetadata::from_bytecode(original);
         match lower_function(
             &function,
@@ -142,12 +140,12 @@ pub fn lower_program_through_shared_ir(program: &mut vm::Program) -> Result<(), 
                 lowered.insert(id, function);
             }
             Err(error) => {
-                program.functions = originals;
+                program.metadata.constants.truncate(original_constant_count);
                 return Err(error);
             }
         }
     }
-    for (id, function) in originals {
+    for (id, function) in std::mem::take(&mut program.functions) {
         if function.intrinsic_stub {
             lowered.insert(id, function);
         }
@@ -274,8 +272,7 @@ fn seal_function_with_types(
         }
     }
     let liveness = crate::vm::optimizer::analysis::liveness_with_exit_uses(function, &origins);
-    let mut value_types = Vec::new();
-    let mut storage_hints = Vec::new();
+    let mut values = ir::ValueBuilder::default();
     let mut externals = Vec::new();
     for (register, ty) in hints
         .iter()
@@ -284,8 +281,7 @@ fn seal_function_with_types(
         .take(usize::from(function.captures + function.parameters))
     {
         externals.push(allocate_lifted_value(
-            &mut value_types,
-            &mut storage_hints,
+            &mut values,
             ty,
             Register(register as u16),
         ));
@@ -304,12 +300,7 @@ fn seal_function_with_types(
         let values = registers
             .iter()
             .map(|register| {
-                allocate_lifted_value(
-                    &mut value_types,
-                    &mut storage_hints,
-                    hints[usize::from(register.0)],
-                    *register,
-                )
+                allocate_lifted_value(&mut values, hints[usize::from(register.0)], *register)
             })
             .collect::<Vec<_>>();
         parameter_registers.push(registers);
@@ -324,8 +315,7 @@ fn seal_function_with_types(
                 .copied()
                 .unwrap_or_else(|| {
                     let seed = allocate_lifted_value(
-                        &mut value_types,
-                        &mut storage_hints,
+                        &mut values,
                         hints[usize::from(register.0)],
                         *register,
                     );
@@ -372,12 +362,8 @@ fn seal_function_with_types(
                 && writable.contains(destination)
             {
                 let old = lifted_register(&state, *object, function)?;
-                let unique = allocate_lifted_value(
-                    &mut value_types,
-                    &mut storage_hints,
-                    hints[usize::from(object.0)],
-                    *object,
-                );
+                let unique =
+                    allocate_lifted_value(&mut values, hints[usize::from(object.0)], *object);
                 instructions.push(ir::Instruction::Portable(
                     ir::PortableInstruction::CopyOnWrite {
                         destination: unique,
@@ -450,12 +436,11 @@ fn seal_function_with_types(
                         // A later ownership boundary can drop the same home on another
                         // path. Carry an empty value along that edge, never its old owner.
                         let empty = allocate_lifted_value(
-                            &mut value_types,
-                            &mut storage_hints,
+                            &mut values,
                             hints[usize::from(register.0)],
                             *register,
                         );
-                        storage_hints[empty.0 as usize] = None;
+                        values.set_storage_hint(empty, None);
                         entry_seeds.push(empty);
                         state[usize::from(register.0)] = Some(empty);
                     } else {
@@ -471,12 +456,8 @@ fn seal_function_with_types(
                     // A mutable field address must belong to this value's unique record,
                     // not to a record still shared with an independently owned snapshot.
                     let old = lifted_register(&state, *object, function)?;
-                    let unique = allocate_lifted_value(
-                        &mut value_types,
-                        &mut storage_hints,
-                        hints[usize::from(object.0)],
-                        *object,
-                    );
+                    let unique =
+                        allocate_lifted_value(&mut values, hints[usize::from(object.0)], *object);
                     instructions.push(ir::Instruction::Portable(
                         ir::PortableInstruction::CopyOnWrite {
                             destination: unique,
@@ -485,8 +466,7 @@ fn seal_function_with_types(
                     ));
                     instruction_spans.push(source_span.clone());
                     let address = allocate_lifted_value(
-                        &mut value_types,
-                        &mut storage_hints,
+                        &mut values,
                         hints[usize::from(destination.0)],
                         *destination,
                     );
@@ -509,12 +489,8 @@ fn seal_function_with_types(
                 } => {
                     let old = lifted_register(&state, *object, function)?;
                     let value = lifted_register(&state, *source, function)?;
-                    let unique = allocate_lifted_value(
-                        &mut value_types,
-                        &mut storage_hints,
-                        hints[usize::from(object.0)],
-                        *object,
-                    );
+                    let unique =
+                        allocate_lifted_value(&mut values, hints[usize::from(object.0)], *object);
                     instructions.push(ir::Instruction::Portable(
                         ir::PortableInstruction::CopyOnWrite {
                             destination: unique,
@@ -540,12 +516,8 @@ fn seal_function_with_types(
                     let old = lifted_register(&state, *object, function)?;
                     let index = lifted_register(&state, *index, function)?;
                     let value = lifted_register(&state, *source, function)?;
-                    let unique = allocate_lifted_value(
-                        &mut value_types,
-                        &mut storage_hints,
-                        hints[usize::from(object.0)],
-                        *object,
-                    );
+                    let unique =
+                        allocate_lifted_value(&mut values, hints[usize::from(object.0)], *object);
                     instructions.push(ir::Instruction::Portable(
                         ir::PortableInstruction::CopyOnWrite {
                             destination: unique,
@@ -570,12 +542,8 @@ fn seal_function_with_types(
                 } => {
                     let old = lifted_register(&state, *object, function)?;
                     let pushed = lifted_register(&state, *value, function)?;
-                    let unique = allocate_lifted_value(
-                        &mut value_types,
-                        &mut storage_hints,
-                        hints[usize::from(object.0)],
-                        *object,
-                    );
+                    let unique =
+                        allocate_lifted_value(&mut values, hints[usize::from(object.0)], *object);
                     instructions.push(ir::Instruction::Portable(
                         ir::PortableInstruction::CopyOnWrite {
                             destination: unique,
@@ -583,12 +551,7 @@ fn seal_function_with_types(
                         },
                     ));
                     instruction_spans.push(source_span.clone());
-                    let result = allocate_lifted_value(
-                        &mut value_types,
-                        &mut storage_hints,
-                        Type::Unit,
-                        *destination,
-                    );
+                    let result = allocate_lifted_value(&mut values, Type::Unit, *destination);
                     instructions.push(ir::Instruction::Portable(ir::PortableInstruction::Push {
                         destination: result,
                         object: unique,
@@ -606,8 +569,7 @@ fn seal_function_with_types(
                     let mut destinations = Vec::with_capacity(definitions.len());
                     for register in definitions {
                         let value = allocate_lifted_value(
-                            &mut value_types,
-                            &mut storage_hints,
+                            &mut values,
                             hints[usize::from(register.0)],
                             register,
                         );
@@ -633,12 +595,11 @@ fn seal_function_with_types(
                         state[usize::from(source.0)] =
                             if liveness.live_out[source_index].contains(source) {
                                 let empty = allocate_lifted_value(
-                                    &mut value_types,
-                                    &mut storage_hints,
+                                    &mut values,
                                     hints[usize::from(source.0)],
                                     *source,
                                 );
-                                storage_hints[empty.0 as usize] = None;
+                                values.set_storage_hint(empty, None);
                                 entry_seeds.push(empty);
                                 Some(empty)
                             } else {
@@ -696,22 +657,13 @@ fn seal_function_with_types(
         entry_seeds,
         entry: Block(0),
         entry_arguments,
-        value_types,
-        storage_hints,
+        values: values.finish(),
         blocks,
     })
 }
 
-fn allocate_lifted_value(
-    types: &mut Vec<Type>,
-    homes: &mut Vec<Option<u16>>,
-    ty: Type,
-    register: Register,
-) -> Value {
-    let value = Value(types.len() as u32);
-    types.push(ty);
-    homes.push(Some(register.0));
-    value
+fn allocate_lifted_value(values: &mut ir::ValueBuilder, ty: Type, register: Register) -> Value {
+    values.allocate(ty, Some(register.0))
 }
 
 fn lifted_register(
@@ -1243,13 +1195,13 @@ pub fn lower_function(
         .map_err(|error| LowerError(format!("invalid shared IR: {error}")))?;
 
     let mut registers = function
-        .storage_hints
-        .iter()
+        .values
+        .hints()
         .map(|home| home.map(Register))
         .collect::<Vec<_>>();
     let mut next = function
-        .storage_hints
-        .iter()
+        .values
+        .hints()
         .flatten()
         .copied()
         .max()
@@ -1262,14 +1214,18 @@ pub fn lower_function(
     {
         assign(&mut registers, *parameter, &mut next)?;
     }
-    for index in 0..function.value_types.len() {
-        assign(&mut registers, Value(index as u32), &mut next)?;
+    for index in 0..function.values.len() {
+        assign(
+            &mut registers,
+            function.values.value(index).unwrap(),
+            &mut next,
+        )?;
     }
     let mut emissions = Vec::new();
     let mut labels = vec![None; function.blocks.len()];
 
     for seed in &function.entry_seeds {
-        if function.storage_hints[seed.0 as usize].is_none() {
+        if function.values.hint(seed.0 as usize).is_none() {
             lower_instruction(
                 &ir::Instruction::Constant {
                     destination: *seed,
@@ -2013,10 +1969,95 @@ mod tests {
                 instruction_spans: vec![span],
             },
         );
-        let original = program.functions.clone();
+        let original = program.clone();
 
         assert!(lower_program_through_shared_ir(&mut program).is_err());
-        assert_eq!(program.functions, original);
+        assert_eq!(program, original);
+    }
+
+    #[test]
+    fn program_consumers_reject_the_same_invalid_construction() {
+        let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
+        let program = crate::vm::compile(&compilation).unwrap();
+        for defect in ["entry", "spans", "types", "symbols"] {
+            let mut invalid = program.clone();
+            let main = invalid.metadata.main.unwrap();
+            match defect {
+                "entry" => invalid.metadata.main_arguments = true,
+                "spans" => invalid
+                    .functions
+                    .get_mut(&main)
+                    .unwrap()
+                    .instruction_spans
+                    .clear(),
+                "types" => {
+                    invalid.functions.get_mut(&main).unwrap().result_type = ExecutableType::Bool
+                }
+                "symbols" => invalid.metadata.symbols.version = u16::MAX,
+                _ => unreachable!(),
+            }
+            let snapshot = invalid.clone();
+            let retained_error = seal_program(invalid.clone()).unwrap_err();
+            let lowered_error = lower_program_through_shared_ir(&mut invalid).unwrap_err();
+            assert_eq!(retained_error, lowered_error, "{defect}");
+            assert_eq!(invalid, snapshot, "{defect}");
+        }
+    }
+
+    #[test]
+    fn vm_lowering_rolls_back_constants_after_successful_sealing() {
+        let id = Idx::from_raw(RawIdx::from_u32(0));
+        let mut program = Program::default();
+        // Repeated cleanup creates an empty SSA seed. Lowering materializes that seed as
+        // Unit, which is absent from this full constant pool, so its append must fail.
+        program.metadata.constants = vec![Constant::Integer(42); usize::from(u16::MAX) + 1];
+        program.metadata.main = Some(id);
+        program.functions.insert(
+            id,
+            vm::BytecodeFunction {
+                name: "full_constant_pool".into(),
+                intrinsic_stub: false,
+                parameters: 0,
+                parameter_types: vec![],
+                parameter_modes: vec![],
+                mutable_parameters: vec![],
+                returns_reference: false,
+                captures: 0,
+                capture_types: vec![],
+                result_type: ExecutableType::Integer,
+                registers: 2,
+                instructions: vec![
+                    vm::Instruction::LoadConstant {
+                        destination: Register(0),
+                        constant: 0,
+                    },
+                    vm::Instruction::Drop {
+                        register: Register(0),
+                    },
+                    vm::Instruction::Drop {
+                        register: Register(0),
+                    },
+                    vm::Instruction::LoadConstant {
+                        destination: Register(1),
+                        constant: 0,
+                    },
+                    vm::Instruction::Return {
+                        source: Register(1),
+                    },
+                ],
+                instruction_spans: vec![0..1, 1..2, 2..3, 3..4, 4..5],
+            },
+        );
+        seal_program(program.clone()).unwrap();
+        let before = vm::encode_program(&program).unwrap();
+        assert_eq!(
+            lower_program_through_shared_ir(&mut program)
+                .unwrap_err()
+                .to_string(),
+            "too many VM constants"
+        );
+        // Check the entire executable, including bodies, source spans, and metadata.
+        assert_eq!(vm::encode_program(&program).unwrap(), before);
     }
 
     #[test]
@@ -2071,8 +2112,7 @@ mod tests {
             entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: vec![],
-            value_types: vec![Type::Int; 2],
-            storage_hints: vec![None; 2],
+            values: vec![Type::Int; 2].into_iter().collect(),
             blocks: vec![ir::BlockData {
                 parameters: vec![],
                 instructions,
@@ -2112,7 +2152,7 @@ mod tests {
             entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: vec![Value(0), Value(1), Value(2)],
-            value_types: vec![
+            values: vec![
                 Type::Bool,
                 Type::Int,
                 Type::Int,
@@ -2120,8 +2160,9 @@ mod tests {
                 Type::Int,
                 Type::Int,
                 Type::Int,
-            ],
-            storage_hints: vec![None; 7],
+            ]
+            .into_iter()
+            .collect(),
             blocks: vec![
                 ir::BlockData {
                     parameters: vec![Value(3), Value(4), Value(5)],
@@ -2211,8 +2252,9 @@ mod tests {
             entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: vec![],
-            value_types: vec![Type::Bool, Type::Int, Type::Int, Type::Int],
-            storage_hints: vec![None; 4],
+            values: vec![Type::Bool, Type::Int, Type::Int, Type::Int]
+                .into_iter()
+                .collect(),
             blocks: vec![
                 ir::BlockData {
                     parameters: vec![],

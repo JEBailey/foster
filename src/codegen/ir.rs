@@ -75,7 +75,123 @@ pub struct Signature {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct Value(pub u32);
+/// Function-local identity allocated by `ValueBuilder`.
+///
+/// ```compile_fail
+/// use foster::codegen::ir::Value;
+/// let unchecked = Value(42);
+/// ```
+pub struct Value(pub(crate) u32);
+
+impl Value {
+    pub fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+/// One SSA identity's type and optional construction storage home.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ValueData {
+    ty: Type,
+    storage_hint: Option<u16>,
+}
+
+/// Dense immutable value metadata. Entries cannot be independently inserted or removed.
+///
+/// ```compile_fail
+/// use foster::codegen::ir::{ValueTable, Type};
+/// fn invalidate(values: &mut ValueTable) { values[0] = Type::Bool; }
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct ValueTable {
+    entries: Vec<ValueData>,
+}
+
+impl ValueTable {
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+    pub fn get(&self, index: usize) -> Option<&Type> {
+        self.entries.get(index).map(|entry| &entry.ty)
+    }
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Type> {
+        self.entries.iter().map(|entry| &entry.ty)
+    }
+    pub fn hints(&self) -> impl ExactSizeIterator<Item = &Option<u16>> {
+        self.entries.iter().map(|entry| &entry.storage_hint)
+    }
+    pub fn hint(&self, index: usize) -> Option<u16> {
+        self.entries[index].storage_hint
+    }
+    pub fn value(&self, index: usize) -> Option<Value> {
+        self.entries.get(index).map(|_| Value(index as u32))
+    }
+    pub fn into_builder(self) -> ValueBuilder {
+        ValueBuilder { values: self }
+    }
+}
+
+impl std::ops::Index<usize> for ValueTable {
+    type Output = Type;
+    fn index(&self, index: usize) -> &Type {
+        &self.entries[index].ty
+    }
+}
+
+/// Allocates stable function-local IDs and keeps their type/storage information together.
+/// Retyping an existing value never changes its ID or the IDs of later values.
+/// Definition, dominance, and cross-function correctness are checked by the SSA verifier.
+#[derive(Debug, Default)]
+pub struct ValueBuilder {
+    values: ValueTable,
+}
+
+impl ValueBuilder {
+    pub fn allocate(&mut self, ty: Type, storage_hint: Option<u16>) -> Value {
+        let id = u32::try_from(self.values.len()).expect("SSA value ID space exhausted");
+        self.values.entries.push(ValueData { ty, storage_hint });
+        Value(id)
+    }
+    pub fn set_storage_hint(&mut self, value: Value, hint: Option<u16>) {
+        self.values.entries[value.index()].storage_hint = hint;
+    }
+    pub fn finish(self) -> ValueTable {
+        self.values
+    }
+}
+
+impl std::ops::Deref for ValueBuilder {
+    type Target = ValueTable;
+    fn deref(&self) -> &ValueTable {
+        &self.values
+    }
+}
+
+impl std::ops::Index<usize> for ValueBuilder {
+    type Output = Type;
+    fn index(&self, index: usize) -> &Type {
+        &self.values[index]
+    }
+}
+
+impl std::ops::IndexMut<usize> for ValueBuilder {
+    fn index_mut(&mut self, index: usize) -> &mut Type {
+        &mut self.values.entries[index].ty
+    }
+}
+
+impl FromIterator<Type> for ValueTable {
+    fn from_iter<T: IntoIterator<Item = Type>>(types: T) -> Self {
+        let mut builder = ValueBuilder::default();
+        for ty in types {
+            builder.allocate(ty, None);
+        }
+        builder.finish()
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Block(pub u32);
@@ -98,15 +214,13 @@ pub struct Function {
     pub entry_seeds: Vec<Value>,
     pub entry: Block,
     pub entry_arguments: Vec<Value>,
-    pub value_types: Vec<Type>,
-    /// Optional VM storage identity used when references make register placement observable.
-    pub storage_hints: Vec<Option<u16>>,
+    pub values: ValueTable,
     pub blocks: Vec<BlockData>,
 }
 
 impl Function {
     pub fn value_type(&self, value: Value) -> Type {
-        self.value_types[value.0 as usize]
+        self.values[value.index()]
     }
 
     pub fn verify(&self, signatures: &HashMap<FunctionId, Signature>) -> Result<(), VerifyError> {
@@ -701,11 +815,6 @@ impl<'a> Verifier<'a> {
                 self.function.signature.parameters.len()
             )));
         }
-        if self.function.storage_hints.len() != self.function.value_types.len() {
-            return Err(VerifyError::new(
-                "storage hint count does not match typed value count",
-            ));
-        }
         for (value, ty) in self
             .function
             .captures
@@ -745,10 +854,10 @@ impl<'a> Verifier<'a> {
                 self.predecessors[target.0 as usize].push(block_id);
             }
         }
-        if self.definitions.len() != self.function.value_types.len() {
+        if self.definitions.len() != self.function.values.len() {
             return Err(VerifyError::new(format!(
                 "{} typed values have no unique definition",
-                self.function.value_types.len() - self.definitions.len()
+                self.function.values.len() - self.definitions.len()
             )));
         }
         self.compute_dominators();
@@ -773,7 +882,7 @@ impl<'a> Verifier<'a> {
 
     fn value_type(&self, value: Value) -> Result<Type, VerifyError> {
         self.function
-            .value_types
+            .values
             .get(value.0 as usize)
             .copied()
             .ok_or_else(|| VerifyError::new(format!("value v{} is out of range", value.0)))
@@ -1324,6 +1433,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn value_builder_preserves_ids_and_homes_during_specialization() {
+        let mut builder = ValueBuilder::default();
+        let argument = builder.allocate(Type::Opaque, Some(7));
+        let temporary = builder.allocate(Type::Int, None);
+        let original = builder.finish();
+        let mut specialized = original.clone().into_builder();
+        specialized[argument.index()] = Type::String;
+        specialized.set_storage_hint(temporary, Some(9));
+        let extra = specialized.allocate(Type::Bool, None);
+        let specialized = specialized.finish();
+        assert_eq!(
+            (argument.index(), temporary.index(), extra.index()),
+            (0, 1, 2)
+        );
+        assert_eq!(specialized.value(0), Some(argument));
+        assert_eq!(specialized.value(3), None);
+        assert_eq!(specialized[argument.index()], Type::String);
+        assert_eq!(
+            specialized.hints().copied().collect::<Vec<_>>(),
+            vec![Some(7), Some(9), None]
+        );
+        assert_eq!(original[argument.index()], Type::Opaque);
+        assert_eq!(original.hint(temporary.index()), None);
+        assert_eq!(original.len(), 2);
+    }
+
+    #[test]
     fn instruction_adapter_rejects_missing_and_extra_spans() {
         let instruction = Instruction::Constant {
             destination: Value(0),
@@ -1346,8 +1482,7 @@ mod tests {
             entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: vec![Value(0)],
-            value_types: vec![Type::Bool, Type::Int],
-            storage_hints: vec![None; 2],
+            values: vec![Type::Bool, Type::Int].into_iter().collect(),
             blocks: vec![BlockData {
                 parameters: vec![Value(1)],
                 instructions: SpannedInstruction::from_parts(Vec::new(), Vec::new()),
@@ -1372,8 +1507,7 @@ mod tests {
             entry_seeds: vec![],
             entry: Block(0),
             entry_arguments: Vec::new(),
-            value_types: vec![Type::Int],
-            storage_hints: vec![None; 1],
+            values: vec![Type::Int].into_iter().collect(),
             blocks: vec![
                 BlockData {
                     parameters: Vec::new(),

@@ -26,7 +26,7 @@ pub(super) fn lower_native_ir(
             ir::Instruction::Portable(ir::PortableInstruction::MakeWholeReference {
                 object,
                 ..
-            }) => function.storage_hints[object.0 as usize],
+            }) => function.values.hint(object.0 as usize),
             _ => None,
         })
         .collect::<HashSet<_>>();
@@ -87,7 +87,7 @@ pub(super) fn lower_native_ir(
         values.insert(*seed, value);
     }
     for value in function.parameters.iter().chain(&function.entry_seeds) {
-        if let Some(home) = function.storage_hints[value.0 as usize] {
+        if let Some(home) = function.values.hint(value.0 as usize) {
             builder
                 .ins()
                 .stack_store(pointer_type, values[value], homes[&home], 0);
@@ -111,7 +111,7 @@ pub(super) fn lower_native_ir(
             .zip(builder.block_params(lowered_block).to_vec())
         {
             values.insert(*parameter, lowered);
-            if let Some(home) = function.storage_hints[parameter.0 as usize] {
+            if let Some(home) = function.values.hint(parameter.0 as usize) {
                 builder
                     .ins()
                     .stack_store(pointer_type, lowered, homes[&home], 0);
@@ -119,7 +119,7 @@ pub(super) fn lower_native_ir(
         }
         for (instruction_index, instruction) in block.instructions.iter().enumerate() {
             for operand in instruction.operands() {
-                if let Some(home) = function.storage_hints[operand.0 as usize]
+                if let Some(home) = function.values.hint(operand.0 as usize)
                     && referenced_homes.contains(&home)
                 {
                     let loaded = builder.ins().stack_load(
@@ -138,7 +138,7 @@ pub(super) fn lower_native_ir(
                 .into_iter()
                 .flatten()
                 .filter_map(|value| {
-                    let home = function.storage_hints[value.0 as usize]?;
+                    let home = function.values.hint(value.0 as usize)?;
                     referenced_homes
                         .contains(&home)
                         .then(|| (values[value], homes[&home]))
@@ -218,7 +218,7 @@ pub(super) fn lower_native_ir(
                     *destination,
                     result.expect("value-producing native instruction"),
                 );
-                if let Some(home) = function.storage_hints[destination.0 as usize] {
+                if let Some(home) = function.values.hint(destination.0 as usize) {
                     builder
                         .ins()
                         .stack_store(pointer_type, values[destination], homes[&home], 0);
@@ -241,7 +241,7 @@ pub(super) fn lower_native_ir(
             ir::Terminator::Return(value) => vec![*value],
         };
         for operand in operands {
-            if let Some(home) = function.storage_hints[operand.0 as usize]
+            if let Some(home) = function.values.hint(operand.0 as usize)
                 && referenced_homes.contains(&home)
             {
                 let loaded = builder.ins().stack_load(

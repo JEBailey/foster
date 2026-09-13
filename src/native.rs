@@ -347,7 +347,7 @@ func main() -> Int {
                 ir::Terminator::Return(_) => {}
             }
         }
-        assert_eq!(definitions.len(), function.value_types.len());
+        assert_eq!(definitions.len(), function.values.len());
         assert!(has_branch);
         assert!(has_back_edge);
         assert!(has_pruned_parameters);
