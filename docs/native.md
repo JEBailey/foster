@@ -71,14 +71,18 @@ The `Bytecode` and `Native` policies explicitly preserve these backend differenc
 
 | Decision | Bytecode | Native |
 | --- | --- | --- |
-| Intersections and alias argument metadata | Erase to `Unknown` | Retain members in `Union` |
+| Intersections | Erase to `Unknown` | Retain unordered requirements in `Intersection` |
+| Alias argument metadata | Erase to `Unknown` | Retain alias identity and positional arguments in `AliasArguments` |
 | Record erasure | Erase fieldless records without copy/deinit capabilities | Erase nested structural dispatch contracts; preserve root nominal identity |
 | Empty remote receiver | Preserve nominal identity for dispatch | Apply ordinary nested conversion |
 | Nesting at depth 64 | Return `Unknown` | Report the native specialization nesting error |
 | Builtin list arguments | Use the first argument, or `Unknown` if absent | Recognize the builtin only with exactly one argument |
 
-Native `Union` here retains member metadata behind an opaque representation; it does not
-change an intersection's source-level requirement into a union. Native record classification
+`Alternatives` describes control-flow possibilities and uses any-member matching for expected
+types. Native `Intersection` and `AliasArguments` retain metadata behind opaque representations
+and never use that matching rule. Intersections are canonicalized as sets; alias arguments retain
+their order and duplicates. Both native-only forms are rejected by bytecode validation and encoding.
+Native record classification
 preserves private storage and distinguishes concrete implementations from inherited defaults.
 Both policies erase sequence views and modules, and share scalar, container, callable, nominal,
 and generic conversion. Native specialization supplies executable generic substitutions;

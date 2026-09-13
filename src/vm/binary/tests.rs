@@ -3,6 +3,66 @@ use super::*;
 use crate::vm::{CompileOptions, Machine, compile, compile_with_options};
 
 #[test]
+fn alternatives_keep_tag_16_and_reject_noncanonical_encodings() {
+    use ExecutableType as T;
+    let alternatives = T::alternatives(vec![T::Integer, T::Bool]);
+    let mut writer = Writer { bytes: Vec::new() };
+    writer.verification_type(&alternatives).unwrap();
+    assert_eq!(writer.bytes, vec![16, 2, 0, 0, 0, 2, 3]);
+    assert_eq!(
+        Reader {
+            bytes: &writer.bytes,
+            offset: 0
+        }
+        .verification_type(0)
+        .unwrap(),
+        alternatives
+    );
+    for members in [
+        vec![],
+        vec![T::Integer],
+        vec![T::Integer, T::Bool],
+        vec![T::Bool, T::Bool],
+        vec![T::Unknown, T::Bool],
+        vec![T::Integer, alternatives],
+    ] {
+        let mut writer = Writer { bytes: Vec::new() };
+        writer.verification_type(&T::Alternatives(members)).unwrap();
+        assert!(
+            Reader {
+                bytes: &writer.bytes,
+                offset: 0
+            }
+            .verification_type(0)
+            .unwrap_err()
+            .to_string()
+            .contains("non-canonical")
+        );
+    }
+}
+
+#[test]
+fn native_views_cannot_be_serialized_as_alternatives() {
+    use ExecutableType as T;
+    for view in [
+        T::intersection(vec![T::Bool, T::Integer]),
+        T::AliasArguments {
+            alias: id(0),
+            arguments: vec![T::Bool, T::Integer],
+        },
+    ] {
+        let mut writer = Writer { bytes: Vec::new() };
+        assert!(
+            writer
+                .verification_type(&T::List(Box::new(view)))
+                .unwrap_err()
+                .to_string()
+                .contains("native structural metadata")
+        );
+    }
+}
+
+#[test]
 fn decoder_rejects_noncanonical_specialization_names() {
     for names in [["Z", "A"], ["T", "T"]] {
         let mut writer = Writer { bytes: Vec::new() };

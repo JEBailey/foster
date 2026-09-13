@@ -192,12 +192,17 @@ impl Writer {
                     self.verification_type(argument)?;
                 }
             }
-            ExecutableType::Union(members) => {
+            ExecutableType::Alternatives(members) => {
                 self.u8(16);
                 self.u32(members.len())?;
                 for member in members {
                     self.verification_type(member)?;
                 }
+            }
+            ExecutableType::Intersection(_) | ExecutableType::AliasArguments { .. } => {
+                return Err(BinaryError::new(
+                    "native structural metadata cannot be encoded as bytecode",
+                ));
             }
         }
         Ok(())

@@ -208,7 +208,7 @@ fn views_aliases_and_remote_receivers_preserve_backend_metadata() {
     assert_eq!(bytecode(&compilation, view, 0), V::Unknown);
     assert_eq!(
         native(&compilation, view, 0),
-        Ok(V::Union(vec![
+        Ok(V::intersection(vec![
             V::Unknown,
             V::Record {
                 record: ordinary,
@@ -247,7 +247,10 @@ fn views_aliases_and_remote_receivers_preserve_backend_metadata() {
         assert_eq!(
             native(&compilation, ty, 0),
             Ok(if alias {
-                V::Union(vec![V::Generic("T".into())])
+                V::AliasArguments {
+                    alias: variant,
+                    arguments: vec![V::Generic("T".into())],
+                }
             } else {
                 nominal
             })

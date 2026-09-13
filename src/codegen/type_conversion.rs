@@ -100,7 +100,7 @@ pub(crate) fn convert<P: Policy>(
     };
     let view = |members: &[TypeId]| match P::VIEWS {
         StructuralViews::Erase => Ok(V::Unknown),
-        StructuralViews::RetainMembers => Ok(V::Union(arguments(members)?)),
+        StructuralViews::RetainMembers => Ok(V::intersection(arguments(members)?)),
     };
     Ok(match &information.types[ty] {
         Type::Generic(name) => substitutions
@@ -200,7 +200,13 @@ pub(crate) fn convert<P: Policy>(
             if hir.variant_types[*variant].kind == VariantKind::Alias {
                 // Preserve the previous alias-argument metadata policy. Resolving aliases
                 // to their targets is a separate semantic change, not part of this walk.
-                view(values)?
+                match P::VIEWS {
+                    StructuralViews::Erase => V::Unknown,
+                    StructuralViews::RetainMembers => V::AliasArguments {
+                        alias: *variant,
+                        arguments: arguments(values)?,
+                    },
+                }
             } else {
                 V::Variant {
                     variant: *variant,

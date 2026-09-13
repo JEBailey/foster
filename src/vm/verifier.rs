@@ -205,8 +205,11 @@ fn verify_metadata_type(
             }
             nested(result)
         }
-        ExecutableType::Union(members) => {
-            if members.len() < 2 || members.windows(2).any(|pair| pair[0] >= pair[1]) {
+        ExecutableType::Intersection(_) | ExecutableType::AliasArguments { .. } => Err(
+            FosterError::runtime("native structural metadata is not valid bytecode metadata"),
+        ),
+        ExecutableType::Alternatives(members) => {
+            if !ExecutableType::canonical_alternatives(members) {
                 return Err(FosterError::runtime(
                     "bytecode aggregate metadata has a non-canonical union type",
                 ));
@@ -536,8 +539,11 @@ fn verify_type(
             }
             verify_type(program, function, result, depth + 1)
         }
-        ExecutableType::Union(members) => {
-            if members.len() < 2 {
+        ExecutableType::Intersection(_) | ExecutableType::AliasArguments { .. } => Err(
+            FosterError::runtime("native structural metadata is not valid bytecode metadata"),
+        ),
+        ExecutableType::Alternatives(members) => {
+            if !ExecutableType::canonical_alternatives(members) {
                 return Err(FosterError::runtime(format!(
                     "bytecode function `{}` has a non-canonical union verification type",
                     function.name
@@ -545,12 +551,6 @@ fn verify_type(
             }
             for member in members {
                 verify_type(program, function, member, depth + 1)?;
-            }
-            if members.windows(2).any(|pair| pair[0] >= pair[1]) {
-                return Err(FosterError::runtime(format!(
-                    "bytecode function `{}` has an unsorted or duplicate union verification type",
-                    function.name
-                )));
             }
             Ok(())
         }
@@ -1716,7 +1716,7 @@ fn readable_type(
 ) -> Result<ExecutableType, FosterError> {
     match ty {
         ExecutableType::Reference(value) => Ok(*value),
-        ExecutableType::Union(members) => {
+        ExecutableType::Alternatives(members) => {
             let mut members = members.into_iter();
             let Some(first) = members.next() else {
                 return Ok(ExecutableType::Unknown);
@@ -1851,19 +1851,10 @@ fn merge_types(
         (ExecutableType::Future(left), ExecutableType::Future(right)) => Ok(
             ExecutableType::Future(Box::new(merge_types(_function, _index, left, right)?)),
         ),
-        _ => {
-            let mut members = Vec::new();
-            for ty in [left, right] {
-                if let ExecutableType::Union(nested) = ty {
-                    members.extend(nested.iter().cloned());
-                } else {
-                    members.push(ty.clone());
-                }
-            }
-            members.sort();
-            members.dedup();
-            Ok(ExecutableType::Union(members))
-        }
+        _ => Ok(ExecutableType::alternatives(vec![
+            left.clone(),
+            right.clone(),
+        ])),
     }
 }
 
@@ -1895,10 +1886,10 @@ fn compatible(found: &ExecutableType, expected: &ExecutableType) -> bool {
         return true;
     }
     match (found, expected) {
-        (ExecutableType::Union(found), expected) => {
+        (ExecutableType::Alternatives(found), expected) => {
             found.iter().all(|found| compatible(found, expected))
         }
-        (found, ExecutableType::Union(expected)) => {
+        (found, ExecutableType::Alternatives(expected)) => {
             expected.iter().any(|expected| compatible(found, expected))
         }
         (ExecutableType::CodePoint | ExecutableType::Byte, ExecutableType::Integer) => true,
@@ -2158,4 +2149,55 @@ fn type_error<T>(
         index,
         format!("requires {expected}, found {found:?}"),
     )
+}
+
+#[cfg(test)]
+mod type_semantics_tests {
+    use super::*;
+
+    #[test]
+    fn only_control_flow_alternatives_use_any_member_matching() {
+        use ExecutableType as T;
+        let alternatives = T::alternatives(vec![T::Bool, T::Integer]);
+        let intersection = T::intersection(vec![T::Bool, T::Integer]);
+        assert!(compatible(&T::Integer, &alternatives));
+        assert!(!compatible(&alternatives, &T::Integer));
+        assert!(!compatible(&T::Integer, &intersection));
+        assert!(!compatible(&intersection, &T::Integer));
+        let alias = T::AliasArguments {
+            alias: crate::hir::VariantTypeId::from_raw(la_arena::RawIdx::from_u32(0)),
+            arguments: vec![T::Integer],
+        };
+        assert!(!compatible(&T::Integer, &alias));
+        assert!(!compatible(&alias, &T::Integer));
+    }
+
+    #[test]
+    fn bytecode_rejects_native_metadata_in_signatures_and_aggregate_metadata() {
+        use ExecutableType as T;
+        let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
+        let program = crate::vm::compile(&compilation).unwrap();
+        let function = &program.functions[&program.main.unwrap()];
+        for view in [
+            T::intersection(vec![T::Integer]),
+            T::AliasArguments {
+                alias: crate::hir::VariantTypeId::from_raw(la_arena::RawIdx::from_u32(0)),
+                arguments: vec![T::Integer],
+            },
+        ] {
+            let nested = T::List(Box::new(view));
+            assert!(
+                verify_type(&program, function, &nested, 0)
+                    .unwrap_err()
+                    .message
+                    .contains("native structural metadata")
+            );
+            assert!(
+                verify_metadata_type(&program, &nested, 0)
+                    .unwrap_err()
+                    .message
+                    .contains("native structural metadata")
+            );
+        }
+    }
 }

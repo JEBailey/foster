@@ -145,15 +145,73 @@ pub enum ExecutableType {
         variant: VariantTypeId,
         arguments: Vec<ExecutableType>,
     },
-    /// Member metadata used for control-flow alternatives and native structural views.
-    /// Native conversion also uses this for intersections and alias arguments. It therefore
-    /// does not denote a source-level union or establish alternative-based conformance.
-    /// Native layout selection treats the value as opaque; consumers interpret its members
-    /// according to their phase, rather than assuming one concrete aggregate representation.
-    Union(Vec<ExecutableType>),
+    /// Possible types of a value at a control-flow join. Every found alternative must satisfy
+    /// an expected type; an expected alternatives set accepts any matching member.
+    /// Canonical sets are sorted, unique, flattened, and contain at least two members.
+    Alternatives(Vec<ExecutableType>),
+    /// Simultaneous structural requirements retained by native conversion. These unordered
+    /// members are metadata behind an opaque representation, not possible runtime alternatives.
+    /// Bytecode conversion erases this view; it cannot appear in portable bytecode metadata.
+    Intersection(Vec<ExecutableType>),
+    /// Positional generic arguments retained for an unresolved alias by native conversion.
+    /// These are not the alias's target or alternatives. Order and repeated arguments matter.
+    /// Bytecode conversion erases this metadata; native layout remains opaque.
+    AliasArguments {
+        alias: VariantTypeId,
+        arguments: Vec<ExecutableType>,
+    },
 }
 
 impl ExecutableType {
+    pub(crate) fn canonical_alternatives(members: &[Self]) -> bool {
+        members.len() >= 2
+            && members.windows(2).all(|pair| pair[0] < pair[1])
+            && members
+                .iter()
+                .all(|member| !matches!(member, Self::Unknown | Self::Alternatives(_)))
+    }
+
+    /// Canonicalize control-flow alternatives, with Unknown as the top type.
+    pub fn alternatives(members: Vec<Self>) -> Self {
+        let mut flattened = Vec::new();
+        for member in members {
+            match member {
+                Self::Unknown => return Self::Unknown,
+                Self::Alternatives(nested) => match Self::alternatives(nested) {
+                    Self::Unknown => return Self::Unknown,
+                    Self::Alternatives(nested) => flattened.extend(nested),
+                    other => flattened.push(other),
+                },
+                other => flattened.push(other),
+            }
+        }
+        flattened.sort();
+        flattened.dedup();
+        match flattened.len() {
+            0 => Self::Unknown,
+            1 => flattened.pop().unwrap(),
+            _ => Self::Alternatives(flattened),
+        }
+    }
+
+    /// Canonicalize simultaneous requirements without collapsing them into a concrete type.
+    pub fn intersection(members: Vec<Self>) -> Self {
+        let mut flattened = Vec::new();
+        for member in members {
+            match member {
+                Self::Intersection(nested) => {
+                    let Self::Intersection(nested) = Self::intersection(nested) else {
+                        unreachable!()
+                    };
+                    flattened.extend(nested);
+                }
+                other => flattened.push(other),
+            }
+        }
+        flattened.sort();
+        flattened.dedup();
+        Self::Intersection(flattened)
+    }
     /// Collect generic bindings from an operand's retained shape. This does not check
     /// conformance: callers establish compatible shapes separately, and the first binding wins.
     pub(crate) fn infer_specialization(
@@ -251,7 +309,11 @@ impl ExecutableType {
             }
             Self::Record { arguments, .. }
             | Self::Variant { arguments, .. }
-            | Self::Union(arguments) => 1 + arguments.iter().map(Self::depth).max().unwrap_or(0),
+            | Self::Alternatives(arguments)
+            | Self::Intersection(arguments)
+            | Self::AliasArguments { arguments, .. } => {
+                1 + arguments.iter().map(Self::depth).max().unwrap_or(0)
+            }
             _ => 1,
         }
     }
@@ -268,7 +330,11 @@ impl ExecutableType {
             } => parameters.iter().any(|p| p.ty.contains_generic()) || result.contains_generic(),
             Self::Record { arguments, .. }
             | Self::Variant { arguments, .. }
-            | Self::Union(arguments) => arguments.iter().any(Self::contains_generic),
+            | Self::Alternatives(arguments)
+            | Self::Intersection(arguments)
+            | Self::AliasArguments { arguments, .. } => {
+                arguments.iter().any(Self::contains_generic)
+            }
             _ => false,
         }
     }
@@ -321,12 +387,25 @@ impl ExecutableType {
                     .map(|ty| ty.substitute_with(lookup))
                     .collect(),
             },
-            Self::Union(members) => Self::Union(
+            Self::Alternatives(members) => Self::alternatives(
                 members
                     .iter()
                     .map(|ty| ty.substitute_with(lookup))
                     .collect(),
             ),
+            Self::Intersection(members) => Self::intersection(
+                members
+                    .iter()
+                    .map(|ty| ty.substitute_with(lookup))
+                    .collect(),
+            ),
+            Self::AliasArguments { alias, arguments } => Self::AliasArguments {
+                alias: *alias,
+                arguments: arguments
+                    .iter()
+                    .map(|ty| ty.substitute_with(lookup))
+                    .collect(),
+            },
             _ => self.clone(),
         }
     }
@@ -335,6 +414,69 @@ impl ExecutableType {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn alternatives_and_intersections_have_distinct_identity_and_normalization() {
+        use ExecutableType as T;
+        let members = vec![T::Integer, T::Bool, T::Integer];
+        let alternatives = T::alternatives(members.clone());
+        let intersection = T::intersection(members);
+        assert_ne!(alternatives, intersection);
+        assert_eq!(alternatives, T::Alternatives(vec![T::Bool, T::Integer]));
+        assert_eq!(intersection, T::Intersection(vec![T::Bool, T::Integer]));
+        assert_eq!(
+            T::intersection(vec![T::Integer, intersection.clone()]),
+            intersection
+        );
+        assert_eq!(
+            T::alternatives(vec![T::Integer, alternatives.clone()]),
+            alternatives
+        );
+        assert_eq!(T::alternatives(vec![T::Integer, T::Unknown]), T::Unknown);
+        assert_eq!(
+            T::intersection(vec![T::Unknown]),
+            T::Intersection(vec![T::Unknown])
+        );
+        assert_eq!(
+            T::intersection(vec![T::Integer]),
+            T::Intersection(vec![T::Integer])
+        );
+    }
+
+    #[test]
+    fn specialization_recanonicalizes_sets_but_preserves_alias_positions() {
+        use ExecutableType as T;
+        let alias = VariantTypeId::from_raw(la_arena::RawIdx::from_u32(0));
+        let arguments = vec![
+            T::Generic("A".into()),
+            T::Generic("Z".into()),
+            T::Generic("A".into()),
+        ];
+        let substitutions = HashMap::from([("A".into(), T::Integer), ("Z".into(), T::Bool)]);
+        assert_eq!(
+            T::alternatives(arguments.clone()).substitute(&substitutions),
+            T::Alternatives(vec![T::Bool, T::Integer])
+        );
+        assert_eq!(
+            T::intersection(arguments.clone()).substitute(&substitutions),
+            T::Intersection(vec![T::Bool, T::Integer])
+        );
+        let metadata = T::AliasArguments { alias, arguments };
+        assert!(metadata.contains_generic());
+        assert_eq!(metadata.depth(), 2);
+        assert_eq!(
+            metadata.substitute(&substitutions),
+            T::AliasArguments {
+                alias,
+                arguments: vec![T::Integer, T::Bool, T::Integer]
+            }
+        );
+        let same = HashMap::from([("A".into(), T::Bool), ("Z".into(), T::Bool)]);
+        assert_eq!(
+            T::alternatives(vec![T::Generic("A".into()), T::Generic("Z".into())]).substitute(&same),
+            T::Bool
+        );
+    }
 
     #[test]
     fn specialization_canonicalizes_identity_and_rejects_duplicate_names() {

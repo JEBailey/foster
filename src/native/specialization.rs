@@ -329,7 +329,11 @@ fn collect_nominal_types(
             }
             collect_nominal_types(result, output);
         }
-        ExecutableType::Union(values) => {
+        ExecutableType::Alternatives(values)
+        | ExecutableType::Intersection(values)
+        | ExecutableType::AliasArguments {
+            arguments: values, ..
+        } => {
             for value in values {
                 collect_nominal_types(value, output);
             }

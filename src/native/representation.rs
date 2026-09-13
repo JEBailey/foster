@@ -160,7 +160,10 @@ pub(super) fn native_type(
                 .iter()
                 .map(|ty| specialized_executable_type(compilation, *ty, substitutions, 1))
                 .collect::<Result<Vec<_>, _>>()?;
-            layouts.instantiate_type(&crate::codegen::types::ExecutableType::Union(members))?;
+            layouts.instantiate_type(&crate::codegen::types::ExecutableType::AliasArguments {
+                alias: variant,
+                arguments: members,
+            })?;
             Ok(NativeType::Object(layouts.opaque()))
         }
         Type::Variant {
@@ -289,9 +292,10 @@ pub(super) fn concrete_native_type(
                 .map(NativeType::Object)
                 .ok_or_else(|| native_error(format!("runtime type in `{function}` has no layout")))
         }
-        ExecutableType::Unknown | ExecutableType::Union(_) => {
-            Ok(NativeType::Object(layouts.opaque()))
-        }
+        ExecutableType::Unknown
+        | ExecutableType::Alternatives(_)
+        | ExecutableType::Intersection(_)
+        | ExecutableType::AliasArguments { .. } => Ok(NativeType::Object(layouts.opaque())),
         unsupported => Err(native_error(format!(
             "native specialization of `{function}` does not yet support `{unsupported:?}`"
         ))),

@@ -808,9 +808,10 @@ pub(super) fn native_verification_type(
             .or(physical_pointee)
             .map(NativeType::Object)
             .ok_or_else(|| native_error("reference has no native layout")),
-        ExecutableType::Unknown | ExecutableType::Union(_) => {
-            Ok(NativeType::Object(layouts.opaque()))
-        }
+        ExecutableType::Unknown
+        | ExecutableType::Alternatives(_)
+        | ExecutableType::Intersection(_)
+        | ExecutableType::AliasArguments { .. } => Ok(NativeType::Object(layouts.opaque())),
         ExecutableType::Generic(name) => Err(native_error(format!(
             "unresolved generic `{name}` has no native representation"
         ))),

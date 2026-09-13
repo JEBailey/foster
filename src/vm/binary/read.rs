@@ -178,7 +178,13 @@ impl<'a> Reader<'a> {
                 variant: self.id::<VariantType>()?,
                 arguments: self.vec(|reader| nested(reader))?,
             },
-            16 => ExecutableType::Union(self.vec(|reader| nested(reader))?),
+            16 => {
+                let members = self.vec(|reader| nested(reader))?;
+                if !ExecutableType::canonical_alternatives(&members) {
+                    return Err(BinaryError::new("non-canonical control-flow alternatives"));
+                }
+                ExecutableType::Alternatives(members)
+            }
             17 => ExecutableType::Generic(self.string()?),
             tag => {
                 return Err(BinaryError::new(format!(

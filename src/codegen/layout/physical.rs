@@ -1075,9 +1075,11 @@ fn value_semantic(registry: &Registry, ty: &ExecutableType) -> ValueSemantic {
             _ => ValueSemantic::Object,
         },
         ExecutableType::Reference(_) => ValueSemantic::Reference,
-        ExecutableType::Unknown | ExecutableType::Union(_) | ExecutableType::Generic(_) => {
-            ValueSemantic::Opaque
-        }
+        ExecutableType::Unknown
+        | ExecutableType::Alternatives(_)
+        | ExecutableType::Intersection(_)
+        | ExecutableType::AliasArguments { .. }
+        | ExecutableType::Generic(_) => ValueSemantic::Opaque,
         ExecutableType::Bytes
         | ExecutableType::ByteBuffer
         | ExecutableType::List(_)

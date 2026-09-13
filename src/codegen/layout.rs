@@ -190,7 +190,11 @@ impl Registry {
                 self.instantiate_type(result)?;
                 self.instantiate_builtin(ty);
             }
-            ExecutableType::Union(members) => {
+            ExecutableType::Alternatives(members)
+            | ExecutableType::Intersection(members)
+            | ExecutableType::AliasArguments {
+                arguments: members, ..
+            } => {
                 for member in members {
                     self.instantiate_type(member)?;
                 }
@@ -443,7 +447,10 @@ impl Registry {
                 layout: self.pointer(pointee, Ownership::Borrowed),
                 ownership: Ownership::Borrowed,
             },
-            ExecutableType::Unknown | ExecutableType::Union(_) => LegalType::Opaque,
+            ExecutableType::Unknown
+            | ExecutableType::Alternatives(_)
+            | ExecutableType::Intersection(_)
+            | ExecutableType::AliasArguments { .. } => LegalType::Opaque,
             ExecutableType::Generic(_) => LegalType::UnresolvedGeneric,
             ExecutableType::Bytes
             | ExecutableType::ByteBuffer
@@ -753,7 +760,11 @@ fn visit_runtime_types(ty: &ExecutableType, registry: &mut Registry) {
                 .for_each(|ty| visit_runtime_types(&ty.ty, registry));
             visit_runtime_types(result, registry);
         }
-        ExecutableType::Union(types) => {
+        ExecutableType::Alternatives(types)
+        | ExecutableType::Intersection(types)
+        | ExecutableType::AliasArguments {
+            arguments: types, ..
+        } => {
             types
                 .iter()
                 .for_each(|ty| visit_runtime_types(ty, registry));

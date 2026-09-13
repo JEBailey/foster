@@ -114,8 +114,11 @@ Verification type tags are `0 Unknown`, `1 Unit`, `2 Bool`, `3 Integer`, `4 Floa
 `13 Function(vector<ExecutableType>, vector<ParameterMode>, ExecutableType)`,
 `14 Record(RecordId, vector<ExecutableType> arguments)`,
 `15 Variant(VariantTypeId, vector<ExecutableType> arguments)`,
-`16 Union(vector<ExecutableType>)`, and `17 Generic(string identity)`. Union members are sorted,
-unique, and contain at least two types. Readers reject verification types nested more than 64
+`16 Alternatives(vector<ExecutableType>)` (formerly named `Union`), and `17 Generic(string identity)`.
+Alternative members are sorted, unique, flattened, contain at least two types, and exclude `Unknown`
+(which would absorb the alternatives). The tag and encoding are unchanged. Native `Intersection`
+and `AliasArguments` metadata have no bytecode tags and cannot be serialized.
+Readers reject verification types nested more than 64
 levels deep. Generic identities are retained so target-specific layout selection can materialize a
 concrete nominal layout for each reachable native specialization.
 
