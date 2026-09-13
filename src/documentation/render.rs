@@ -327,6 +327,7 @@ pub(super) fn site(compilation: &Compilation) -> Site {
 fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
     let module = &compilation.hir.modules[module_id];
     let mut body = String::from("<div id=\"module-overview\"><h2>Overview</h2>");
+    body.push_str("<details class=\"reference-help\"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details>");
     if let Some(documentation) = &module.documentation {
         body.push_str("<article class=\"module-documentation\">");
         body.push_str(&markdown(documentation));
@@ -385,14 +386,15 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
             "constant",
         );
     }
-    for function_id in module
-        .functions
-        .values()
-        .filter_map(|overloads| overloads.first().copied())
-    {
-        if !visible_function(compilation, function_id) {
+    for overloads in module.functions.values() {
+        let visible = overloads
+            .iter()
+            .copied()
+            .filter(|id| visible_function(compilation, *id))
+            .collect::<Vec<_>>();
+        let Some(&function_id) = visible.first() else {
             continue;
-        }
+        };
         count += 1;
         let function = &compilation.hir.functions[function_id];
         let source_name = source_function_name(function);
@@ -414,15 +416,43 @@ fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
                 );
             }
         }
-        declaration(
-            &mut body,
-            &function.name,
-            &source_name,
-            function.public,
-            &function_signature(compilation, function_id),
-            function.documentation.as_deref(),
-            "function",
-        );
+        if visible.len() == 1 {
+            declaration(
+                &mut body,
+                &function.name,
+                &source_name,
+                function.public,
+                &function_signature(compilation, function_id),
+                function.documentation.as_deref(),
+                "function",
+            );
+        } else {
+            let _ = write!(
+                body,
+                "<article id=\"{}\"><h2><a class=\"anchor\" href=\"#{}\">{}</a><span class=\"badge kind\">function</span></h2>",
+                escape(&function.name),
+                escape(&function.name),
+                escape(&source_name)
+            );
+            for (index, id) in visible.iter().enumerate() {
+                let overload = &compilation.hir.functions[*id];
+                let _ = write!(
+                    body,
+                    "<section><h3>Overload {}{}</h3><pre><code>{}</code></pre>",
+                    index + 1,
+                    visibility_badge(overload.public),
+                    function_signature(compilation, *id)
+                );
+                body.push_str(&markdown(
+                    overload
+                        .documentation
+                        .as_deref()
+                        .unwrap_or("No documentation provided."),
+                ));
+                body.push_str("</section>");
+            }
+            body.push_str("<a class=\"back-to-navigation\" href=\"#page-navigation\">↑ On this page</a></article>");
+        }
     }
     if count == 0 {
         body.push_str("<p class=\"empty\">This module has no declarations.</p>");
@@ -600,7 +630,12 @@ fn type_card(
     let functions = compilation.hir.modules[module_id]
         .functions
         .values()
-        .filter_map(|overloads| overloads.first().copied())
+        .filter_map(|overloads| {
+            overloads
+                .iter()
+                .copied()
+                .find(|id| compilation.hir.functions[*id].public)
+        })
         .filter(|id| {
             compilation.hir.functions[*id].public
                 && function_owner(compilation, *id).as_deref() == Some(name)
@@ -786,7 +821,7 @@ fn record_signature(compilation: &Compilation, record: &crate::hir::Record) -> S
         String::new()
     } else {
         format!(
-            " &amp; {}",
+            " &amp; {} &amp;",
             record
                 .compositions
                 .iter()
@@ -834,7 +869,7 @@ fn record_signature(compilation: &Compilation, record: &crate::hir::Record) -> S
     }));
     let members = members.join("\n");
     format!(
-        "{}type {}{}{compositions} {{\n{members}\n}}",
+        "{}type {}{} ={compositions} {{\n{members}\n}}",
         if record.public { "pub " } else { "" },
         record.name,
         escape(&angled(&record.parameters))
@@ -1118,6 +1153,25 @@ func main() -> Int { 0 }
         let rendered = markdown("- first\n- second\n\n**important**");
         assert!(rendered.contains("<ul>"));
         assert!(rendered.contains("<strong>important</strong>"));
+    }
+
+    #[test]
+    fn overloaded_functions_keep_every_signature_description_and_visibility() {
+        let compilation = crate::compile(
+            "/// Integer conversion.\nfunc convert(value: Int) -> Int { value }\n\
+             /// Boolean conversion.\npub func convert(value: Bool) -> Int { branch value { true -> 1\n_ -> 0 } }\n\
+             func main() {}",
+        ).unwrap();
+        let site = site(&compilation);
+        let html = &site.modules[0].html;
+        assert!(html.contains("func convert(value: Int)"));
+        assert!(html.contains("pub func convert(value: Bool)"));
+        assert!(html.contains("Integer conversion."));
+        assert!(html.contains("Boolean conversion."));
+        assert!(html.contains("Overload 1<span class=\"badge visibility-private\">"));
+        assert!(html.contains("Overload 2<span class=\"badge visibility-public\">"));
+        assert_eq!(html.matches("<article id=\"convert\">").count(), 1);
+        assert_eq!(site.declaration_count, 2);
     }
 
     #[test]

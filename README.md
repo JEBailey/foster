@@ -6,6 +6,8 @@ runtime member lookup. Its defining direction is single ownership with group-par
 references, inferred effect contracts, structurally adaptable records, and lightweight remote
 objects running on virtual threads. The bootstrap compiler and register VM are written in Rust.
 
+Use the [documentation guide](docs/README.md) to find language, library, and compiler references.
+
 ## Try it
 
 ```powershell
@@ -104,6 +106,10 @@ The index lists modules alphabetically in collapsible namespace groups, with ind
 modules, namespace shortcuts, and search that reveals matching groups.
 Module pages summarize the public types they provide,
 including fields, enum cases, required methods, and linked functions or methods.
+Visibility uses green public and amber private pills for declarations and fields.
+Expand **How to read this reference** for calling conventions, ownership, and effects.
+Each function name has one navigation entry; all its overloads appear with their own
+signatures and descriptions. Declaration counts count an overload group once.
 Type references in signatures and fields link to their declarations in the generated site.
 Primitive types link to their library module; omitted types and modules remain plain text.
 Module pages keep an overview and declaration navigation alongside the reference on wide screens.

@@ -39,6 +39,12 @@ foster docs library --serve
 The site is written to `library/documentation`. Edit source comments and
 regenerate; do not maintain generated HTML by hand.
 
+Start with this guide to choose an API, then use module pages for precise signatures,
+ownership, bounds, and errors. Expand **How to read this reference** on a module page
+for the visibility and effect notation. Public and private labels apply to each
+member independently; a public type does not expose its private fields. Overloads
+share a navigation entry but retain separate signatures and descriptions.
+
 ## Find an API
 
 | Task | Modules |
@@ -55,6 +61,7 @@ regenerate; do not maintain generated HTML by hand.
 | Common contracts | [core.copy](core/copy.fos), [core.drop](core/drop.fos), [core.ordering](core/ordering.fos), [core.functions](core/functions.fos) |
 | Files and resource locations | [std.fs](std/fs.fos), [std.path](std/path.fos), [std.uri](std/uri.fos), [std.resource](std/resource.fos) |
 | Streams and TCP | [std.io](std/io.fos), [std.net.tcp](std/net/tcp.fos) |
+| Application-supplied file and network providers | [std.host](std/host.fos), [provider guide](../docs/host-providers.md) |
 | Process inputs | [std.process](std/process.fos), [std.env](std/env.fos) |
 | Time and calendars | [std.time](std/time.fos), [civil](std/time/civil.fos), [zone](std/time/zone.fos), [format](std/time/format.fos) |
 | Random values | [std.random](std/random.fos), [generator](std/random/generator.fos), [distribution](std/random/distribution.fos), [secure](std/random/secure.fos), [sequence](std/random/sequence.fos) |
@@ -141,6 +148,9 @@ reserved allocation size.
 
 - Filesystem, TCP, clock reads, and operating-system entropy use the host runtime.
   Text algorithms, collections, calendar arithmetic, parsing, and SHA-256 are Foster code.
+  `RuntimeHost` uses the installed runtime provider; applications can instead pass
+  their own `FileProvider` or `NetworkProvider`. Rust embedding configuration is
+  described in the [provider guide](../docs/host-providers.md).
 - Whole-file I/O allocates in proportion to input. Stream helpers stop at the
   first error without rolling back earlier I/O. `File.flush` is a no-op, not a
   durability guarantee.
