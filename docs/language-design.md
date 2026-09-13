@@ -32,6 +32,10 @@ A project may select that source root with `package.source` in a `foster.toml` m
 is relative to the project directory and defaults to `src`. Without a manifest, a directory passed
 directly to a Foster command remains the source root.
 
+`[discovery] libraries = ["vendor"]` selects folders containing compiled `.flib` dependencies.
+These paths are relative to the manifest and are separate from the source root; see
+[compiled library discovery](compiled-libraries.md) for naming and conflict rules.
+
 ```text
 json.fos          json, with declarations
 json/

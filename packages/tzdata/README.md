@@ -14,9 +14,12 @@ foster build packages/tzdata --library -o target/tzdata.flib
 Copy that artifact into an application's `vendor` directory and declare:
 
 ```toml
-[dependencies]
-tzdata = { path = "vendor/tzdata.flib" }
+[discovery]
+libraries = ["vendor"]
 ```
+
+Foster discovers `vendor/tzdata.flib` as the `tzdata` dependency. To select only this artifact
+explicitly instead, use `[dependencies]` with `tzdata = { path = "vendor/tzdata.flib" }`.
 
 ```foster
 import core.result

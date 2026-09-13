@@ -66,6 +66,48 @@ fn run(compilation: &foster::compiler::Compilation) -> Value {
 }
 
 #[test]
+fn discovered_library_runs_without_an_explicit_dependency() {
+    let workspace = Workspace::new();
+    workspace.library("pub func answer() -> Int { 42 }");
+    fs::create_dir_all(workspace.0.join("src")).unwrap();
+    fs::create_dir(workspace.0.join("vendor")).unwrap();
+    fs::rename(
+        workspace.0.join("example.flib"),
+        workspace.0.join("vendor/example.flib"),
+    )
+    .unwrap();
+    fs::write(
+        workspace.0.join("foster.toml"),
+        "[package]\nname = 'consumer'\n[discovery]\nlibraries = ['vendor']\n",
+    )
+    .unwrap();
+    fs::write(
+        workspace.0.join("src/main.fos"),
+        "import example\nfunc main() -> Int { answer() }\n",
+    )
+    .unwrap();
+    let compilation =
+        foster::check_project(&foster::project::Project::load(&workspace.0).unwrap()).unwrap();
+    assert_eq!(run(&compilation), Value::Integer(42));
+    let executable = workspace
+        .0
+        .join(format!("discovered{}", std::env::consts::EXE_SUFFIX));
+    foster::native::build_executable(
+        &compilation,
+        &executable,
+        foster::native::CompileOptions::default(),
+    )
+    .unwrap();
+    let output = Command::new(executable).output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+}
+
+#[test]
 fn closure_factory_metadata_preserves_hidden_parameter_dependencies() {
     let workspace = Workspace::new();
     workspace.library(

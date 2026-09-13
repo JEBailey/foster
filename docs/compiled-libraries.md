@@ -27,6 +27,29 @@ are mounted under `math.<original-path>`. The dependency alias does not change t
 symbol identity. `check`, `run`, `build`, native builds, and `pack` use these dependencies.
 The library source and its original project directory are not needed by the consumer.
 
+Alternatively, declare folders to discover libraries automatically:
+
+```toml
+[package]
+name = "application"
+source = "src"
+
+[discovery]
+libraries = ["vendor", "../shared-libraries"]
+```
+
+Each folder is relative to `foster.toml` and must exist. Foster discovers `.flib` files directly
+inside it, without searching subfolders. For example, `vendor/tzdata.flib` becomes available as
+`import tzdata`. Filenames must be valid module names; `core` and `std` remain reserved.
+All discovered artifacts become project dependencies, including ones not imported by source.
+No folders are searched by default, and this does not change source-module discovery.
+
+Two discovered libraries with the same name (including names differing only by case) are an error;
+folder order never selects a winner. An explicit `[dependencies]` entry overrides discovery for
+that exact name, allowing a particular artifact or source project to be selected. Listing the
+same folder more than once is harmless. These rules also apply to source dependencies with their
+own manifests. Existing duplicate-package and artifact compatibility checks still apply.
+
 ## Compilation and linking
 
 The artifact contains declaration metadata, checked callable descriptors, and portable generic

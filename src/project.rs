@@ -60,7 +60,7 @@ impl Project {
         })?;
         reject_unknown_keys(
             table,
-            &["package", "dependencies"],
+            &["package", "dependencies", "discovery"],
             &format!("project manifest `{}`", manifest_path.display()),
         )?;
 
@@ -116,10 +116,13 @@ impl Project {
             )));
         }
 
-        let dependencies = find_entry(table, "dependencies")
+        let mut dependencies = find_entry(table, "dependencies")
             .map(|value| parse_dependencies(value, &root, manifest_path))
             .transpose()?
             .unwrap_or_default();
+        if let Some(discovery) = find_entry(table, "discovery") {
+            discover_libraries(discovery, &root, manifest_path, &mut dependencies)?;
+        }
 
         Ok(Self {
             name: name.to_owned(),
@@ -329,6 +332,116 @@ fn parse_dependencies(
         );
     }
     Ok(dependencies)
+}
+
+fn discover_libraries(
+    value: &Value,
+    root: &Path,
+    manifest_path: &Path,
+    dependencies: &mut BTreeMap<String, ProjectDependency>,
+) -> Result<(), FosterError> {
+    let location = format!("`[discovery]` in `{}`", manifest_path.display());
+    let table = value_table(value)
+        .ok_or_else(|| FosterError::runtime(format!("{location} must be a TOML table")))?;
+    reject_unknown_keys(table, &["libraries"], &location)?;
+    let Some(value) = find_entry(table, "libraries") else {
+        return Ok(());
+    };
+    let folders = match value {
+        Value::Variant {
+            alternative,
+            payload,
+            ..
+        } if alternative.as_ref() == "Array" => payload.first().and_then(Value::as_list),
+        _ => None,
+    }
+    .ok_or_else(|| {
+        FosterError::runtime(format!(
+            "`discovery.libraries` in `{}` must be an array of strings",
+            manifest_path.display()
+        ))
+    })?;
+    let explicit = dependencies.keys().cloned().collect::<HashSet<_>>();
+    let mut visited = HashSet::new();
+    let mut discovered = BTreeMap::<String, (String, PathBuf)>::new();
+    for folder in folders {
+        let folder = value_string(folder).ok_or_else(|| {
+            FosterError::runtime(format!(
+                "`discovery.libraries` in `{}` must be an array of strings",
+                manifest_path.display()
+            ))
+        })?;
+        let path = Path::new(folder);
+        if folder.trim().is_empty()
+            || path.is_absolute()
+            || path
+                .components()
+                .any(|component| matches!(component, Component::RootDir | Component::Prefix(_)))
+        {
+            return Err(FosterError::runtime(format!(
+                "`discovery.libraries` in `{}` requires non-empty relative folder paths",
+                manifest_path.display()
+            )));
+        }
+        let directory = root.join(path);
+        let canonical = fs::canonicalize(&directory).map_err(|error| {
+            FosterError::runtime(format!(
+                "cannot resolve library discovery folder `{}` from `{}`: {error}",
+                directory.display(),
+                manifest_path.display()
+            ))
+        })?;
+        if !visited.insert(canonical) {
+            continue;
+        }
+        let entries = fs::read_dir(&directory)
+            .and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
+            .map_err(|error| {
+                FosterError::runtime(format!(
+                    "cannot read library discovery folder `{}` from `{}`: {error}",
+                    directory.display(),
+                    manifest_path.display()
+                ))
+            })?;
+        let mut paths = entries
+            .into_iter()
+            .map(|entry| entry.path())
+            .collect::<Vec<_>>();
+        paths.sort();
+        for path in paths {
+            if path.extension().is_none_or(|extension| extension != "flib") || !path.is_file() {
+                continue;
+            }
+            let name = path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .ok_or_else(|| {
+                    FosterError::runtime(format!(
+                        "library discovery filename `{}` must be valid UTF-8",
+                        path.display()
+                    ))
+                })?;
+            validate_dependency_name(name, manifest_path)?;
+            if explicit.contains(name) {
+                continue;
+            }
+            // Do not let filesystem case sensitivity decide which import wins.
+            let key = name.to_lowercase();
+            if let Some((previous_name, previous)) = discovered.get(&key) {
+                return Err(FosterError::runtime(format!(
+                    "ambiguous discovered library `{name}` in `{}`: `{}` and `{}`; select an explicit `[dependencies]` path or use distinct module names (previous name `{previous_name}`)",
+                    manifest_path.display(),
+                    previous.display(),
+                    path.display()
+                )));
+            }
+            discovered.insert(key, (name.to_owned(), path));
+        }
+    }
+    for (_, (name, root)) in discovered {
+        dependencies.insert(name.clone(), ProjectDependency { name, root });
+    }
+    Ok(())
 }
 
 fn validate_dependency_name(name: &str, manifest_path: &Path) -> Result<(), FosterError> {
@@ -593,6 +706,99 @@ mod tests {
         assert_eq!(project.source_root, root.join("source"));
         assert!(project.dependencies.is_empty());
 
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn discovers_library_folders_and_respects_explicit_paths() {
+        let root = temporary_project("library-discovery");
+        for folder in ["vendor", "other", "vendor/nested"] {
+            fs::create_dir_all(root.join(folder)).unwrap();
+        }
+        for file in [
+            "vendor/math.flib",
+            "other/text.flib",
+            "vendor/ignored.fos",
+            "vendor/nested/hidden.flib",
+        ] {
+            fs::write(root.join(file), []).unwrap();
+        }
+        let manifest = "[package]\nname = 'app'\nsource = 'source'\n[discovery]\nlibraries = ['vendor', 'other', './vendor']\n";
+        fs::write(root.join(MANIFEST_NAME), manifest).unwrap();
+        let project = Project::load(&root).unwrap();
+        assert_eq!(
+            project
+                .dependencies
+                .keys()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            ["math", "text"]
+        );
+        assert_eq!(project.resolve_dependencies().unwrap().len(), 2);
+
+        fs::write(root.join("other/MATH.flib"), []).unwrap();
+        assert!(
+            Project::load(&root)
+                .unwrap_err()
+                .message
+                .contains("ambiguous discovered library")
+        );
+        fs::remove_file(root.join("other/MATH.flib")).unwrap();
+        fs::write(root.join("other/math.flib"), []).unwrap();
+        assert!(
+            Project::load(&root)
+                .unwrap_err()
+                .message
+                .contains("ambiguous discovered library `math`")
+        );
+        fs::write(
+            root.join(MANIFEST_NAME),
+            format!("{manifest}[dependencies]\nmath = {{ path = 'other/math.flib' }}\n"),
+        )
+        .unwrap();
+        assert_eq!(
+            Project::load(&root).unwrap().dependencies["math"].root,
+            root.join("other/math.flib")
+        );
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejects_invalid_library_discovery_configuration() {
+        let root = temporary_project("invalid-library-discovery");
+        let prefix = "[package]\nname = 'app'\nsource = 'source'\n";
+        for (config, expected) in [
+            ("discovery = 4\n", "unknown key `discovery`"),
+            ("[discovery]\nlibraries = 'vendor'\n", "array of strings"),
+            ("[discovery]\nlibraries = [4]\n", "array of strings"),
+            ("[discovery]\nlibraries = ['']\n", "non-empty relative"),
+            (
+                "[discovery]\nlibraries = ['/absolute']\n",
+                "non-empty relative",
+            ),
+            (
+                "[discovery]\nlibraries = ['missing']\n",
+                "library discovery folder",
+            ),
+            ("[discovery]\nrecursive = true\n", "unknown key `recursive`"),
+        ] {
+            fs::write(root.join(MANIFEST_NAME), format!("{prefix}{config}")).unwrap();
+            let error = Project::load(&root).unwrap_err();
+            assert!(error.message.contains(expected), "{config}: {error}");
+        }
+        fs::create_dir(root.join("vendor")).unwrap();
+        fs::write(root.join("vendor/std.flib"), []).unwrap();
+        fs::write(
+            root.join(MANIFEST_NAME),
+            format!("{prefix}[discovery]\nlibraries = ['vendor']\n"),
+        )
+        .unwrap();
+        assert!(
+            Project::load(&root)
+                .unwrap_err()
+                .message
+                .contains("portable module name")
+        );
         fs::remove_dir_all(root).unwrap();
     }
 
