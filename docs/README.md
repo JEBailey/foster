@@ -6,6 +6,7 @@ references describe implemented behavior; the roadmap describes proposed work.
 | Goal | Start here | More detail |
 | --- | --- | --- |
 | Run a first program or create a project | [Repository README](../README.md) | [Examples](../examples/README.md) |
+| Generate or edit Foster with a coding agent | [Agent instructions](../AGENTS.md) | [Writing Foster](writing-foster.md), with executable examples |
 | Learn syntax and language rules | [Language design](language-design.md) | [Semantic contract](semantics.md) |
 | Choose library APIs | [Library guide](../library/README.md) | [Library reference](core-library.md); generate the API site with `cargo run --bin foster -- docs library --serve` |
 | Understand ownership and mutation | [Ownership](ownership.md) | [Closures](closures.md), [effects](effect-derivation.md), [remote objects](remote-semantics.md) |

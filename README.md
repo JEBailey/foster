@@ -7,6 +7,8 @@ references, inferred effect contracts, structurally adaptable records, and light
 objects running on virtual threads. The bootstrap compiler and register VM are written in Rust.
 
 Use the [documentation guide](docs/README.md) to find language, library, and compiler references.
+Coding agents should start with [AGENTS.md](AGENTS.md) and the
+[Foster writing guide](docs/writing-foster.md), which includes compiler-checked examples.
 
 ## Try it
 
