@@ -18,10 +18,12 @@ pub(crate) mod schema;
 mod value;
 mod verifier;
 
+#[cfg(test)]
+pub(crate) use crate::codegen::compile as compile_shared;
 pub use crate::codegen::metadata::{Constant, RuntimeRecord, RuntimeVariant};
 pub use binary::{BinaryError, FORMAT_VERSION, decode_program, encode_program};
 pub use compiler::{CompileOptions, compile, compile_with_options};
-pub(crate) use compiler::{compile_library, compile_shared};
+pub(crate) use compiler::{compile_construction, compile_library};
 pub use host::HostContext;
 pub use ir::{BytecodeFunction, Instruction, Program, ProgramMetrics, Register};
 pub use machine::{Machine, release_value};

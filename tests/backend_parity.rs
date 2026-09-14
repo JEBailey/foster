@@ -2,6 +2,28 @@
 use foster::{native, vm};
 
 #[test]
+fn scalar_optimization_preserves_mutation_and_reference_aliases() {
+    check(
+        "scalar-barriers",
+        r#"
+func update[g: group Int](value: ref[g] Int) -> Int [mut g] {
+    let before = 20 + 22
+    value = value + 1
+    let after = 3 * 4
+    before + after + value
+}
+func main() -> Int {
+    let values = [5, 9]
+    let selected = ref values[0]
+    let result = update(ref selected)
+    result + values[0]
+}
+"#,
+        Ok("66"),
+    );
+}
+
+#[test]
 fn ssa_callable_joins_convert_branch_and_loop_arguments() {
     check(
         "ssa-callable-joins",

@@ -1,6 +1,6 @@
 //! Function preparation, home tracking, cleanup, and control-flow assembly.
 use crate::native::{
-    BTreeSet, BytecodeFunction, FailureCleanup, FosterError, HashMap, NativeIrEnvironment,
+    BTreeSet, FailureCleanup, FosterError, FunctionDeclaration, HashMap, NativeIrEnvironment,
     NativeType, Range, SpecializationKey, abi, infer_value_types, ir, native_error,
     native_verification_type, reference_load_helper, verified_remote_calls,
 };
@@ -10,7 +10,7 @@ use super::edges::{adapt_arguments, record_cleanup};
 use super::instructions::{NativeFunctionFacts, lower_shared_instruction};
 pub(in crate::native) fn lower_shared_to_native_ir(
     shared: &ir::Function,
-    metadata: &BytecodeFunction,
+    metadata: &FunctionDeclaration,
     source_states: &crate::codegen::flow::FunctionFacts,
     function_signature: &ir::Signature,
     instance: &SpecializationKey,

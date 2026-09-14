@@ -58,6 +58,9 @@ impl NativeFunction {
 /// The source compilation is borrowed only for nominal/source metadata used by the emitter.
 pub struct NativeProgram<'a> {
     pub(super) compilation: &'a Compilation,
+    canonical: std::sync::Arc<crate::codegen::shared::SharedProgram>,
+    optimized: bool,
+    alternate: std::sync::OnceLock<Box<NativeProgram<'a>>>,
     pub(super) program: Program,
     pub(super) layouts: LayoutRegistry,
     pub(super) physical_layouts: PhysicalRegistry,
@@ -74,9 +77,29 @@ pub struct NativeProgram<'a> {
 
 /// Prepare once, then render or emit any number of objects without repeating specialization.
 pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterError> {
-    let shared = vm::compile_shared(compilation)?;
-    let (mut program, shared_functions, facts) = shared.into_parts();
-    let mut layouts = crate::codegen::layout::legalize(&mut program)?;
+    prepare_with_options(compilation, CompileOptions { optimize: false })
+}
+
+/// Prepare the requested optimization mode directly, without building a baseline variant.
+pub fn prepare_with_options(
+    compilation: &Compilation,
+    options: CompileOptions,
+) -> Result<NativeProgram<'_>, FosterError> {
+    let shared = std::sync::Arc::new(crate::codegen::compile(compilation)?);
+    prepare_shared(compilation, shared, options.optimize)
+}
+
+fn prepare_shared(
+    compilation: &Compilation,
+    canonical: std::sync::Arc<crate::codegen::shared::SharedProgram>,
+    optimized: bool,
+) -> Result<NativeProgram<'_>, FosterError> {
+    let shared = if optimized {
+        canonical.as_ref().clone().optimized()?
+    } else {
+        canonical.as_ref().clone()
+    };
+    let (program, facts, mut layouts) = shared.into_parts();
     if let Some(record) = program.metadata.string_record {
         layouts.instantiate_type(&ExecutableType::Record {
             record,
@@ -88,7 +111,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         .metadata
         .main
         .ok_or_else(|| native_error("native compilation requires a `main` function"))?;
-    let instances = reachable_instances(compilation, &program, &shared_functions, main, &facts)?;
+    let instances = reachable_instances(compilation, &program, &program.bodies, main, &facts)?;
     let instance_ids = instances
         .iter()
         .map(|instance| (instance.key.clone(), instance.ir_function))
@@ -127,6 +150,9 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
     let (runtime_strings, runtime_string_indices, runtime_literal_indices) =
         runtime_strings(&program);
     let mut prepared = NativeProgram {
+        canonical,
+        optimized,
+        alternate: std::sync::OnceLock::new(),
         compilation,
         program,
         layouts,
@@ -146,7 +172,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
         let source_states = &facts[&instance.key.function];
         let environment = prepared.environment();
         let (lowered, failure_cleanup) = lower_shared_to_native_ir(
-            &shared_functions[&instance.key.function],
+            &prepared.program.bodies[&instance.key.function],
             source,
             source_states,
             &prepared.function_types[&instance.ir_function],
@@ -202,7 +228,7 @@ pub fn prepare(compilation: &Compilation) -> Result<NativeProgram<'_>, FosterErr
             }
         }
         let specialize = |ty: &ExecutableType| ty.specialize(&instance.key.substitutions);
-        let logical_value_types = shared_functions[&instance.key.function]
+        let logical_value_types = prepared.program.bodies[&instance.key.function]
             .values
             .iter()
             .enumerate()
@@ -268,7 +294,15 @@ impl NativeProgram<'_> {
     }
 
     pub fn compile_object(&self, options: CompileOptions) -> Result<ObjectArtifact, FosterError> {
-        emit_object(self, options)
+        if options.optimize == self.optimized {
+            return emit_object(self, options);
+        }
+        if self.alternate.get().is_none() {
+            let prepared =
+                prepare_shared(self.compilation, self.canonical.clone(), options.optimize)?;
+            let _ = self.alternate.set(Box::new(prepared));
+        }
+        emit_object(self.alternate.get().unwrap(), options)
     }
 
     pub fn build_executable(
@@ -297,6 +331,43 @@ impl NativeProgram<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_optimization_precedes_native_specialization_and_cleanup() {
+        let compilation = crate::compile("func choose(flag: Bool) -> Int { return 20 + 22 if flag\n 1 / 0 }\nfunc main() -> Int { choose(true) }").unwrap();
+        let baseline =
+            prepare_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
+        let optimized =
+            prepare_with_options(&compilation, CompileOptions { optimize: true }).unwrap();
+        assert!(optimized.functions.len() < baseline.functions.len());
+        let main = optimized
+            .functions
+            .iter()
+            .find(|function| function.source_function() == optimized.main)
+            .unwrap();
+        assert!(
+            !main
+                .ir
+                .blocks
+                .iter()
+                .flat_map(|block| &block.instructions)
+                .any(|entry| matches!(
+                    entry.instruction,
+                    ir::Instruction::Binary { .. } | ir::Instruction::Call { .. }
+                ))
+        );
+        optimized
+            .compile_object(CompileOptions { optimize: true })
+            .unwrap();
+        optimized
+            .compile_object(CompileOptions { optimize: false })
+            .unwrap();
+        let alternate = optimized.alternate.get().unwrap() as *const _;
+        optimized
+            .compile_object(CompileOptions { optimize: false })
+            .unwrap();
+        assert_eq!(alternate, optimized.alternate.get().unwrap() as *const _);
+    }
 
     #[test]
     fn one_prepared_program_renders_and_emits_without_mutating_its_ir() {

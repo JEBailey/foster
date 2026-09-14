@@ -1,56 +1,32 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
+#[cfg(test)]
+use std::collections::{HashSet, VecDeque};
 use std::hash::{Hash, Hasher};
 
+#[cfg(test)]
 use crate::vm::Value;
 
-use super::super::{Constant, Instruction, Program, Register, operations};
+use super::super::{Constant, Instruction, Program};
+#[cfg(test)]
+use super::super::{Register, operations};
+#[cfg(test)]
 use super::analysis::definitions;
 
+#[cfg(test)]
 type Constants = HashMap<Register, Constant>;
 
-pub(super) fn fold(program: &mut Program) {
-    let (constants, functions) = (&mut program.metadata.constants, &mut program.functions);
-    let mut interner = None;
-    for function in functions.values_mut() {
-        // Converge before rewriting: back edges can invalidate initial facts.
-        // Keep snapshots only at block entries, not after every instruction.
-        let facts = constant_blocks(&function.instructions, constants);
-        for (range, incoming) in facts.ranges.into_iter().zip(facts.incoming) {
-            let Some(mut known) = incoming else { continue };
-            for index in range {
-                let instruction = &mut function.instructions[index];
-                if let Instruction::JumpIfFalse { condition, target } = instruction
-                    && let Some(Constant::Bool(condition)) = known.get(condition)
-                {
-                    *instruction = Instruction::Jump {
-                        target: if *condition { index + 1 } else { *target },
-                    };
-                } else if matches!(
-                    instruction,
-                    Instruction::Unary { .. } | Instruction::Binary { .. }
-                ) && let Some((destination, value)) =
-                    evaluate(instruction, &known, constants)
-                    && let Some(constant) = interner
-                        .get_or_insert_with(|| ConstantInterner::new(constants))
-                        .intern(constants, value)
-                {
-                    *instruction = Instruction::LoadConstant {
-                        destination,
-                        constant,
-                    };
-                }
-                known = transfer(instruction, known, constants);
-            }
-        }
-    }
-}
-
+#[cfg(test)]
 struct ConstantBlocks {
     ranges: Vec<std::ops::Range<usize>>,
     incoming: Vec<Option<Constants>>,
 }
 
-fn constant_blocks(instructions: &[Instruction], constants: &[Constant]) -> ConstantBlocks {
+#[cfg(test)]
+fn constant_blocks(
+    instructions: &[Instruction],
+    constants: &[Constant],
+    exposed: &HashSet<Register>,
+) -> ConstantBlocks {
     let count = instructions.len();
     if count == 0 {
         return ConstantBlocks {
@@ -107,6 +83,7 @@ fn constant_blocks(instructions: &[Instruction], constants: &[Constant]) -> Cons
         let mut outgoing = incoming[block].as_ref().unwrap().clone();
         for index in ranges[block].clone() {
             outgoing = transfer(&instructions[index], outgoing, constants);
+            forget_exposed_definitions(&instructions[index], &mut outgoing, exposed);
         }
         for &next in &successors[block] {
             let changed = match &mut incoming[next] {
@@ -138,7 +115,7 @@ fn available_constants(
     instructions: &[Instruction],
     constants: &[Constant],
 ) -> Vec<Option<Constants>> {
-    let facts = constant_blocks(instructions, constants);
+    let facts = constant_blocks(instructions, constants, &HashSet::new());
     let mut incoming = vec![None; instructions.len()];
     for (range, known) in facts.ranges.into_iter().zip(facts.incoming) {
         let Some(mut known) = known else { continue };
@@ -150,6 +127,7 @@ fn available_constants(
     incoming
 }
 
+#[cfg(test)]
 fn evaluate(
     instruction: &Instruction,
     known: &Constants,
@@ -199,12 +177,25 @@ fn evaluate(
     Some((destination, value))
 }
 
+#[cfg(test)]
+fn forget_exposed_definitions(
+    instruction: &Instruction,
+    known: &mut Constants,
+    exposed: &HashSet<Register>,
+) {
+    // Transfer only introduces facts for definitions. Avoid scanning every
+    // available constant after each instruction in large straight-line bodies.
+    for definition in definitions(instruction) {
+        if exposed.contains(&definition) {
+            known.remove(&definition);
+        }
+    }
+}
+
+#[cfg(test)]
 fn transfer(instruction: &Instruction, mut known: Constants, constants: &[Constant]) -> Constants {
     let value = evaluate(instruction, &known, constants);
-    if matches!(
-        instruction,
-        Instruction::Call { .. } | Instruction::CallValue { .. } | Instruction::CallClosure { .. }
-    ) {
+    if super::effects::invalidates_facts(instruction) {
         known.clear();
     }
     // Kill definitions even when evaluation fails or an operand is unknown.
@@ -229,7 +220,12 @@ pub(super) fn deduplicate(program: &mut Program) {
     // Most instructions reuse an existing constant index. Remap each old index
     // once rather than hashing its value at every use.
     let mut remapped = vec![None; old.len()];
-    for function in program.functions.values_mut() {
+    // Constant numbering is part of serialized bytecode. HashMap iteration
+    // must not make otherwise identical optimized builds differ on disk.
+    let mut ids = program.functions.keys().copied().collect::<Vec<_>>();
+    ids.sort();
+    for id in ids {
+        let function = program.functions.get_mut(&id).unwrap();
         for instruction in &mut function.instructions {
             if let Instruction::LoadConstant { constant, .. } = instruction {
                 let old_index = usize::from(*constant);
@@ -244,6 +240,7 @@ pub(super) fn deduplicate(program: &mut Program) {
     program.metadata.constants = unique;
 }
 
+#[cfg(test)]
 fn value_constant(value: Value) -> Option<Constant> {
     match value {
         Value::Unit => Some(Constant::Unit),

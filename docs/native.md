@@ -17,7 +17,7 @@ foster build benchmarks/fibonacci.fos --native -o fibonacci.exe
 
 Without `-o`, a source file produces a sibling executable with the source extension removed. A
 directory package produces `main` (or `main.exe` on Windows) inside that directory. `--optimize`
-is the default; `--no-optimize` disables both Cranelift and linker optimization.
+is the default; `--no-optimize` disables shared SSA, Cranelift, and linker optimization.
 
 The shared Rust runtime is compiled once per runtime source, Rust toolchain/host, and optimization
 mode, then reused across native builds and compiler processes. Each executable still compiles its
@@ -211,7 +211,8 @@ lookup also lives there; it has no VM values or physical offsets. `vm::Program` 
 with bytecode functions and the drop-insertion flag. The binary field order and format are unchanged.
 `SharedProgram::metadata()` and `NativeProgram::metadata()` expose only the neutral data.
 Nominal layout construction and native representation/ownership helpers accept neutral metadata.
-Shared sealing retains construction bodies separately for backend validation and bytecode emission.
+Shared sealing discards construction bodies. Neutral declarations retain callable metadata, and
+SSA bodies are authoritative for literals, layout discovery, reachability, and both backends.
 Native logical flow and physical representation inference both consume the sealed SSA graph.
 Record schemas store paired `RecordField` entries. Construction derives their immutable lookup
 layout and rejects duplicate names; linking remaps field types without changing storage order.
@@ -220,8 +221,8 @@ layout and rejects duplicate names; linking remaps field types without changing 
 The public `codegen::vm` entry points are re-exported from focused implementation modules:
 `src/codegen/vm/program.rs` owns program sealing and transactional lowering; `src/codegen/vm/construction.rs` builds SSA;
 `src/codegen/vm/emission.rs` assigns registers and emits edge copies; `src/codegen/vm/instructions.rs` holds opcode mappings.
-Differential evidence checks and regression tests live separately. The single
-`src/vm/schema.rs` adapter constructs logical function schemas for both verification and sealing.
+Differential evidence checks and regression tests live separately. Neutral declarations supply
+logical schemas for sealing; `src/vm/schema.rs` adapts bytecode for VM verification.
 
 `codegen::flow` owns logical flow analysis. A sealed program retains paired logical function
 schemas, immutable per-function facts, and the exact SSA graphs those facts describe. A query at
@@ -258,10 +259,18 @@ the VM and other native code generators without exposing Cranelift types to the 
 Foster scalar types map to Cranelift types only in the Cranelift emitter. All reachable functions
 are declared before any is defined, allowing direct recursion and mutual recursion.
 
-`native::prepare` produces an immutable `NativeProgram`: reachability, specialization, layout
-calculation, native SSA lowering, and verification happen once. Its `emit_ir`, `compile_object`,
-and `build_executable` methods reuse those exact functions and layouts, including across optimization
-modes. The convenience functions with the same names prepare a fresh program for a single request.
+`SharedProgram::optimized()` is the common semantic pipeline: bounded scalar leaf inlining,
+constant propagation, branch pruning, unreachable-block removal, and dead scalar elimination.
+Transforms invalidate graph-specific evidence, verify the resulting SSA, and rebuild logical flow
+for affected functions. Native specialization, representation inference, and cleanup planning run
+only after this boundary; no semantic transform runs over already planned cleanup sites.
+
+`native::prepare` produces an immutable baseline `NativeProgram`. Rendering remains stable.
+Requesting another optimization mode prepares and caches a separate variant from the retained
+canonical SSA, including new specialization and cleanup evidence. Repeated object emission reuses
+that variant. `native::prepare_with_options` and the convenience compilation/build functions
+prepare the requested mode directly.
+Cranelift performs machine-specific optimization after native representation and ABI lowering.
 Each prepared function retains its specialized logical signature and parameter ownership modes,
 compact verified logical alternatives by original SSA value, and a per-value memory-management
 classification. This preserves distinctions such as String versus Symbol after both become pointers.
@@ -307,7 +316,7 @@ runtime-backed structural values. Portable bytecode version 25 retains generic i
 parameters and arguments, and sorted substitutions at statically resolved calls and closure
 construction. Native
 reachability is keyed by function plus substitutions. Logical SSA facts are calculated once per
-sealed function and reused by all specializations and layout/lowering passes. Built-in representation selection uses canonical record IDs.
+verified graph revision and reused by all specializations and layout/lowering passes. Built-in representation selection uses canonical record IDs.
 Native preparation materializes concrete signatures and
 record/enum/closure and runtime-backed generic layouts before target-specific physical layout
 calculation. Generic lists, callable signatures, remote/future handles, and places are cached by

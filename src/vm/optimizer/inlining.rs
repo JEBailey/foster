@@ -8,29 +8,6 @@ use crate::codegen::types::ExecutableType;
 
 const INLINE_INSTRUCTION_LIMIT: usize = 16;
 const CALLER_INSTRUCTION_BUDGET: usize = 128;
-const INLINE_ROUND_LIMIT: usize = 4;
-
-pub(super) fn inline_small_functions(program: &mut Program) {
-    // Snapshot each round so iteration order cannot affect eligibility. Only
-    // leaf bodies are copied: recursive cycles never become candidates, while
-    // wrappers can become leaves after their callees have been expanded.
-    for _ in 0..INLINE_ROUND_LIMIT {
-        let candidates = program
-            .functions
-            .iter()
-            .filter(|(_, function)| eligible(function))
-            .map(|(id, function)| (*id, function.clone()))
-            .collect::<HashMap<_, _>>();
-        let mut changed = false;
-        for (caller_id, caller) in &mut program.functions {
-            changed |= inline_calls(*caller_id, caller, &candidates);
-        }
-        if !changed {
-            break;
-        }
-    }
-}
-
 fn scalar(ty: &ExecutableType) -> bool {
     matches!(
         ty,
@@ -46,7 +23,7 @@ fn scalar(ty: &ExecutableType) -> bool {
 fn eligible(function: &BytecodeFunction) -> bool {
     if function.captures != 0
         || function.returns_reference
-        || super::optimization_barrier(function)
+        || super::storage_identity_barrier(function)
         || function.instructions.len() > INLINE_INSTRUCTION_LIMIT
         || !matches!(
             function.instructions.last(),

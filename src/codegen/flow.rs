@@ -43,7 +43,7 @@ pub(crate) enum PointFacts {
 }
 
 /// Created by analysis and published with the exact sealed graph it describes.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FunctionFacts {
     pub(crate) points: Vec<Vec<PointFacts>>,
     pub(crate) values: Vec<Vec<ExecutableType>>,

@@ -23,18 +23,21 @@ use la_arena::RawIdx;
 
 use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
 use crate::codegen::ir;
+use crate::codegen::ir::PortableInstruction as Instruction;
 use crate::codegen::layout::physical::{
     AlternativeLayout, DropField, DropPlan, PhysicalKind, PhysicalRegistry, ScalarKind,
     TargetLayout, ValueLayout, ValueSemantic,
 };
 use crate::codegen::layout::{LayoutId, LayoutKind, Registry as LayoutRegistry};
 use crate::codegen::metadata::Constant;
+use crate::codegen::program::{FunctionDeclaration, Program};
 use crate::codegen::types::ExecutableType;
 use crate::compiler::Compilation;
 use crate::error::FosterError;
 use crate::hir::{FunctionId, Pattern};
 use crate::types::{Type, TypeId};
-use crate::vm::{self, BytecodeFunction, Instruction, Program};
+#[cfg(test)]
+use crate::vm;
 
 pub mod abi;
 mod buffers;
@@ -114,12 +117,12 @@ mod runtime;
 mod runtime_cache;
 pub use ownership::MemoryManagement;
 use ownership::*;
-pub use program::{LogicalSignature, NativeFunction, NativeProgram, prepare};
+pub use program::{LogicalSignature, NativeFunction, NativeProgram, prepare, prepare_with_options};
 
 /// Primitive Foster values supported by the native ABI.
 pub use crate::codegen::ir::Type as NativeType;
 
-/// Controls machine-code optimization performed by Cranelift.
+/// Controls shared SSA optimization and machine-code optimization performed by Cranelift.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CompileOptions {
     pub optimize: bool,
@@ -210,7 +213,7 @@ pub fn compile_object(
     compilation: &Compilation,
     options: CompileOptions,
 ) -> Result<ObjectArtifact, FosterError> {
-    prepare(compilation)?.compile_object(options)
+    program::prepare_with_options(compilation, options)?.compile_object(options)
 }
 
 /// Compile and link a standalone host executable using the installed Rust linker toolchain.
@@ -219,7 +222,7 @@ pub fn build_executable(
     output: impl AsRef<Path>,
     options: CompileOptions,
 ) -> Result<(), FosterError> {
-    prepare(compilation)?.build_executable(output, options)
+    program::prepare_with_options(compilation, options)?.build_executable(output, options)
 }
 
 fn absolute_path(path: &Path) -> Result<PathBuf, FosterError> {
@@ -315,8 +318,13 @@ func main() -> Int {
         let mut has_back_edge = false;
         let mut has_pruned_parameters = false;
         for (block_index, block) in function.blocks.iter().enumerate() {
-            has_pruned_parameters |=
-                block.parameters.len() < usize::from(program.functions[&main].registers);
+            has_pruned_parameters |= block.parameters.len()
+                < program.bodies[&main]
+                    .values
+                    .hints()
+                    .flatten()
+                    .collect::<HashSet<_>>()
+                    .len();
             for parameter in &block.parameters {
                 assert!(definitions.insert(*parameter));
             }

@@ -1533,3 +1533,5 @@ mod tests {
         assert!(error.to_string().contains("does not dominate"));
     }
 }
+
+mod rewrite;

@@ -6,89 +6,118 @@ use super::emission::{FunctionMetadata, lower_function};
 use super::evidence::compare_flow;
 use crate::codegen::flow::{FunctionFacts, FunctionSchema};
 use crate::codegen::ir::{self};
-use crate::codegen::metadata::ProgramMetadata;
 use crate::hir::FunctionId;
-use crate::vm::schema::logical_schema;
+
+pub use crate::codegen::shared::SharedProgram;
 use crate::vm::{self};
 use std::collections::HashMap;
-/// Validated SSA plus immutable nominal/runtime metadata shared by executable backends.
-/// Construct through `seal_program`; transforms consume the boundary and must validate their output.
-///
-/// ```compile_fail
-/// use foster::codegen::vm::SharedProgram;
-/// fn invalidate(program: &mut SharedProgram) {
-///     program.functions().clear();
-/// }
-/// ```
-#[derive(Debug)]
-pub struct SharedProgram {
-    metadata: ProgramMetadata,
-    construction_functions: HashMap<FunctionId, vm::BytecodeFunction>,
-    drops_inserted: bool,
-    functions: HashMap<FunctionId, ir::Function>,
-    signatures: HashMap<FunctionId, ir::Signature>,
-    schemas: HashMap<FunctionId, FunctionSchema>,
-    facts: HashMap<FunctionId, FunctionFacts>,
-}
-
-impl SharedProgram {
-    pub fn schemas(&self) -> &HashMap<FunctionId, FunctionSchema> {
-        &self.schemas
-    }
-    pub fn facts(&self, function: FunctionId) -> &FunctionFacts {
-        &self.facts[&function]
-    }
-    pub fn metadata(&self) -> &ProgramMetadata {
-        &self.metadata
-    }
-    pub fn functions(&self) -> &HashMap<FunctionId, ir::Function> {
-        &self.functions
-    }
-    pub fn signatures(&self) -> &HashMap<FunctionId, ir::Signature> {
-        &self.signatures
-    }
-
-    /// Consuming extraction for backend transformation; the result is no longer a sealed program.
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        vm::Program,
-        HashMap<FunctionId, ir::Function>,
-        HashMap<FunctionId, FunctionFacts>,
-    ) {
-        (
-            vm::Program {
-                metadata: self.metadata,
-                functions: self.construction_functions,
-                drops_inserted: self.drops_inserted,
-            },
-            self.functions,
-            self.facts,
-        )
-    }
-}
-
 /// Retain the compiler's first SSA graph instead of immediately de-SSA lowering it to bytecode.
-pub fn seal_program(construction: vm::Program) -> Result<SharedProgram, LowerError> {
+pub fn seal_program(mut construction: vm::Program) -> Result<SharedProgram, LowerError> {
+    let layouts = crate::codegen::layout::legalize(&mut construction)
+        .map_err(|e| LowerError(e.to_string()))?;
     let SealedFunctions {
         functions,
         signatures,
         schemas,
         facts,
+        write_bindings,
     } = seal_construction(&construction)?;
     Ok(SharedProgram {
-        metadata: construction.metadata,
-        construction_functions: construction.functions,
+        program: crate::codegen::program::Program {
+            metadata: construction.metadata,
+            functions: construction
+                .functions
+                .iter()
+                .map(|(id, body)| {
+                    (
+                        *id,
+                        crate::codegen::program::FunctionDeclaration::from_construction(body),
+                    )
+                })
+                .collect(),
+            bodies: functions,
+        },
+        layouts,
         drops_inserted: construction.drops_inserted,
-        functions,
         signatures,
         schemas,
         facts,
+        write_bindings,
     })
+}
+
+/// Backend-only register assignment. Logical analyses have already been sealed.
+pub(crate) fn lower_shared_program(shared: SharedProgram) -> Result<vm::Program, LowerError> {
+    let mut program = vm::Program {
+        metadata: shared.program.metadata,
+        functions: HashMap::new(),
+        drops_inserted: shared.drops_inserted,
+    };
+    let mut ids = shared.program.functions.keys().copied().collect::<Vec<_>>();
+    ids.sort();
+    for id in ids {
+        let declaration = &shared.program.functions[&id];
+        let function = if declaration.intrinsic_stub {
+            // Stubs are declarations in shared SSA. The existing bytecode
+            // format requires a structural body, although calls to it are forbidden.
+            let constant = if let Some(index) = program
+                .metadata
+                .constants
+                .iter()
+                .position(|value| *value == vm::Constant::Unit)
+            {
+                u16::try_from(index).map_err(|_| LowerError("too many VM constants".into()))?
+            } else {
+                let index = u16::try_from(program.metadata.constants.len())
+                    .map_err(|_| LowerError("too many VM constants".into()))?;
+                program.metadata.constants.push(vm::Constant::Unit);
+                index
+            };
+            let result = declaration
+                .parameters
+                .checked_add(declaration.captures)
+                .ok_or_else(|| LowerError("intrinsic register prefix overflow".into()))?;
+            vm::BytecodeFunction {
+                name: declaration.name.clone(),
+                intrinsic_stub: true,
+                parameters: declaration.parameters,
+                parameter_types: declaration.parameter_types.clone(),
+                parameter_modes: declaration.parameter_modes.clone(),
+                mutable_parameters: declaration.mutable_parameters.clone(),
+                returns_reference: declaration.returns_reference,
+                captures: declaration.captures,
+                capture_types: declaration.capture_types.clone(),
+                result_type: declaration.result_type.clone(),
+                registers: result
+                    .checked_add(1)
+                    .ok_or_else(|| LowerError("intrinsic register prefix overflow".into()))?,
+                instructions: vec![
+                    vm::Instruction::LoadConstant {
+                        destination: vm::Register(result),
+                        constant,
+                    },
+                    vm::Instruction::Return {
+                        source: vm::Register(result),
+                    },
+                ],
+                instruction_spans: vec![0..0, 0..0],
+            }
+        } else {
+            lower_function(
+                &shared.program.bodies[&id],
+                &shared.signatures,
+                &mut program.metadata.constants,
+                FunctionMetadata::from_declaration(declaration),
+            )?
+        };
+        program.functions.insert(id, function);
+    }
+    Ok(program)
 }
 
 /// Both program consumers receive the same complete, verified SSA graph and signatures.
 struct SealedFunctions {
+    write_bindings: HashMap<FunctionId, HashMap<ir::Value, ir::Value>>,
     schemas: HashMap<FunctionId, FunctionSchema>,
     facts: HashMap<FunctionId, FunctionFacts>,
     functions: HashMap<FunctionId, ir::Function>,
@@ -106,7 +135,12 @@ fn seal_construction(construction: &vm::Program) -> Result<SealedFunctions, Lowe
     let schemas = construction
         .functions
         .iter()
-        .map(|(id, body)| (*id, logical_schema(body)))
+        .map(|(id, body)| {
+            (
+                *id,
+                crate::codegen::program::FunctionDeclaration::from_construction(body).schema(),
+            )
+        })
         .collect();
     let mut facts = HashMap::new();
     let mut source_maps = HashMap::new();
@@ -150,6 +184,10 @@ fn seal_construction(construction: &vm::Program) -> Result<SealedFunctions, Lowe
         facts.insert(*id, analyzed);
     }
     Ok(SealedFunctions {
+        write_bindings: source_maps
+            .into_iter()
+            .map(|(id, evidence)| (id, evidence.write_bindings))
+            .collect(),
         functions,
         signatures,
         schemas,
@@ -159,38 +197,22 @@ fn seal_construction(construction: &vm::Program) -> Result<SealedFunctions, Lowe
 
 /// Make shared SSA the mandatory backend boundary for every executable VM function.
 pub fn lower_program_through_shared_ir(program: &mut vm::Program) -> Result<(), LowerError> {
-    let SealedFunctions {
-        functions,
-        signatures,
-        ..
-    } = seal_construction(program)?;
-    // Keep original bodies until every lowering succeeds, without cloning instruction payloads.
-    // Lowering only appends constants, so truncation also restores metadata after an error.
-    let original_constant_count = program.metadata.constants.len();
-    let mut lowered = HashMap::with_capacity(program.functions.len());
-    for (id, function) in functions {
-        let original = &program.functions[&id];
-        let metadata = FunctionMetadata::from_bytecode(original);
-        match lower_function(
-            &function,
-            &signatures,
-            &mut program.metadata.constants,
-            metadata,
-        ) {
-            Ok(function) => {
-                lowered.insert(id, function);
-            }
-            Err(error) => {
-                program.metadata.constants.truncate(original_constant_count);
-                return Err(error);
-            }
-        }
-    }
-    for (id, function) in std::mem::take(&mut program.functions) {
-        if function.intrinsic_stub {
-            lowered.insert(id, function);
-        }
-    }
-    program.functions = lowered;
+    lower_program_through_shared_ir_with_options(program, false)
+}
+
+pub(crate) fn lower_program_through_shared_ir_with_options(
+    program: &mut vm::Program,
+    optimize: bool,
+) -> Result<(), LowerError> {
+    // Publish only after sealing, optimization and lowering all succeed.
+    let shared = seal_program(program.clone())?;
+    let shared = if optimize {
+        shared
+            .optimized()
+            .map_err(|error| LowerError(error.to_string()))?
+    } else {
+        shared
+    };
+    *program = lower_shared_program(shared)?;
     Ok(())
 }

@@ -151,7 +151,7 @@ fn match_generic_types(
     }
 }
 
-fn compile_construction(compilation: &Compilation) -> Result<Program, FosterError> {
+pub(crate) fn compile_construction(compilation: &Compilation) -> Result<Program, FosterError> {
     let closure_captures = compilation
         .hir
         .expressions
@@ -286,34 +286,20 @@ pub fn compile_with_options(
     compilation: &Compilation,
     options: CompileOptions,
 ) -> Result<Program, FosterError> {
-    let mut program = compile_construction(compilation)?;
-    // Freeze all aggregate field/tag/capture/place layouts before any backend rewrite. The VM
-    // consumes the canonical operand order and then de-SSA lowers the shared representation.
-    crate::codegen::layout::legalize(&mut program)?;
-    crate::codegen::vm::lower_program_through_shared_ir(&mut program)
+    let shared = crate::codegen::compile(compilation)?;
+    let shared = if options.optimize {
+        shared.optimized()?
+    } else {
+        shared
+    };
+    let mut program = crate::codegen::vm::lower_shared_program(shared)
         .map_err(|error| FosterError::runtime(format!("shared VM lowering failed: {error}")))?;
     if options.optimize {
-        super::optimizer::optimize(&mut program);
+        super::optimizer::finish_backend(&mut program);
     }
-    super::optimizer::insert_drops(&mut program);
-    program.metadata.symbols = crate::symbols::Table::from_compilation(compilation, &program)?;
+    super::optimizer::finalize_register_drops(&mut program);
     crate::symbols::link(&mut program)?;
     Ok(program)
-}
-
-/// Compile directly to the typed shared-SSA boundary without de-SSA bytecode lowering.
-pub(crate) fn compile_shared(
-    compilation: &Compilation,
-) -> Result<crate::codegen::vm::SharedProgram, FosterError> {
-    let mut program = compile_construction(compilation)?;
-    crate::codegen::layout::legalize(&mut program)?;
-    // Drop insertion is still expressed over construction registers. Sealing then turns those
-    // ownership operations into SSA instructions; native codegen never reconstructs bytecode.
-    super::optimizer::insert_drops(&mut program);
-    program.metadata.symbols = crate::symbols::Table::from_compilation(compilation, &program)?;
-    crate::symbols::link(&mut program)?;
-    crate::codegen::vm::seal_program(program)
-        .map_err(|error| FosterError::runtime(format!("shared native lowering failed: {error}")))
 }
 
 struct Compiler<'a> {

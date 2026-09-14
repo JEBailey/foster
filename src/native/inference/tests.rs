@@ -7,7 +7,7 @@ fn unavailable_arguments_in_unreachable_blocks_use_the_callee_abi() {
     )
     .unwrap();
     let prepared = crate::native::prepare(&compilation).unwrap();
-    let (_, functions, _) = crate::vm::compile_shared(&compilation)
+    let (source_program, _, _) = crate::vm::compile_shared(&compilation)
         .unwrap()
         .into_parts();
     let instance = prepared
@@ -15,7 +15,7 @@ fn unavailable_arguments_in_unreachable_blocks_use_the_callee_abi() {
         .iter()
         .find(|instance| instance.key.function == prepared.main)
         .unwrap();
-    let mut function = functions[&prepared.main].clone();
+    let mut function = source_program.bodies[&prepared.main].clone();
     let callee = function
         .blocks
         .iter()
@@ -50,7 +50,8 @@ fn unavailable_arguments_in_unreachable_blocks_use_the_callee_abi() {
     });
     function
         .verify(
-            &functions
+            &source_program
+                .bodies
                 .iter()
                 .map(|(id, function)| (*id, function.signature.clone()))
                 .collect(),
@@ -89,7 +90,7 @@ func main() -> Int {
     )
     .unwrap();
     let prepared = crate::native::prepare(&compilation).unwrap();
-    let (_, functions, _) = crate::vm::compile_shared(&compilation)
+    let (source_program, _, _) = crate::vm::compile_shared(&compilation)
         .unwrap()
         .into_parts();
     let instance = &prepared
@@ -97,7 +98,7 @@ func main() -> Int {
         .iter()
         .find(|instance| instance.key.function == prepared.main)
         .unwrap();
-    let mut function = functions[&prepared.main].clone();
+    let mut function = source_program.bodies[&prepared.main].clone();
     let infer = |function: &ir::Function| {
         infer_value_types(
             function,

@@ -47,10 +47,9 @@ pub(super) fn runtime_strings(
     }
     let mut functions = program.functions.iter().collect::<Vec<_>>();
     functions.sort_unstable_by_key(|(function, _)| function.into_raw().into_u32());
-    for (_, function) in functions {
-        for pattern in function
-            .instructions
-            .iter()
+    for (id, _) in functions {
+        for pattern in program
+            .instructions(*id)
             .filter_map(|instruction| match instruction {
                 Instruction::MatchPattern { pattern, .. } => Some(pattern),
                 _ => None,

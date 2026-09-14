@@ -301,10 +301,12 @@ source
   -> type, structural-contract, and fixed-point effect inference
   -> loan, capture, group, and ownership checks
   -> ownership MIR validation
-  -> unsealed executable construction and legalized scalar/pointer layouts
-  -> shared typed SSA
-       -> de-SSA edge copies + register assignment -> bytecode -> optimizer -> verifier -> VM
-       -> Cranelift instructions -> object -> host linker -> executable
+  -> temporary register construction with explicit drops
+  -> layout legalization and shared typed SSA
+  -> shared inlining, constants, branch pruning, dead scalar elimination
+  -> verified SSA and rebuilt logical flow
+       -> de-SSA edge copies + register assignment -> VM representation cleanup -> verifier -> VM
+       -> specialization + native ABI/cleanup lowering -> Cranelift -> object -> linker -> executable
 ```
 
 The VM remains the complete executable semantic reference; there is no AST interpreter fallback.

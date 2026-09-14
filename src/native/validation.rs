@@ -30,7 +30,16 @@ pub(super) fn validate_program(
                 body.name
             )));
         }
-        for (index, instruction) in body.instructions.iter().enumerate() {
+        for entry in program.bodies[&instance.key.function]
+            .blocks
+            .iter()
+            .flat_map(|block| &block.instructions)
+        {
+            let ir::Instruction::Portable(instruction) = &entry.instruction else {
+                return Err(native_error(
+                    "native preparation requires canonical portable SSA",
+                ));
+            };
             let supported = matches!(
                 instruction,
                 Instruction::Drop { .. }
@@ -38,8 +47,6 @@ pub(super) fn validate_program(
                     | Instruction::Move { .. }
                     | Instruction::Unary { .. }
                     | Instruction::Binary { .. }
-                    | Instruction::Jump { .. }
-                    | Instruction::JumpIfFalse { .. }
                     | Instruction::Assert { .. }
                     | Instruction::Call { .. }
                     | Instruction::CallMethod { .. }
@@ -67,7 +74,7 @@ pub(super) fn validate_program(
                     | Instruction::RemoteCall { .. }
                     | Instruction::Await { .. }
                     | Instruction::CallContractMethod { .. }
-                    | Instruction::Return { .. }
+                    | Instruction::CopyOnWrite { .. }
             );
             if !supported {
                 let layout_note = match instruction {
@@ -95,10 +102,8 @@ pub(super) fn validate_program(
                     layout_note
                 ))
                 .with_help("use `foster build` without `--native` for the complete VM language");
-                if let Some(span) = body.instruction_spans.get(index) {
-                    error =
-                        error.with_primary_label(span.clone(), "unsupported in the native backend");
-                }
+                error = error
+                    .with_primary_label(entry.span.clone(), "unsupported in the native backend");
                 return Err(error);
             }
             if let Instruction::Builtin { builtin, .. } = instruction

@@ -1,6 +1,6 @@
 //! Per-instruction native legalization.
 use crate::native::{
-    BinaryOp, BytecodeFunction, Constant, FosterError, HashMap, LayoutKind, NativeIrEnvironment,
+    BinaryOp, Constant, FosterError, FunctionDeclaration, HashMap, LayoutKind, NativeIrEnvironment,
     NativeType, ParameterMode, PhysicalKind, SpecializationKey, VerifiedRemoteCall, abi,
     contract_candidates, dereference_native_type, ir, native_error, native_field_helper,
     native_intrinsic_result_type, native_verification_type, reference_load_helper,
@@ -18,7 +18,7 @@ pub(super) struct NativeFunctionFacts<'a> {
 
 pub(super) fn lower_shared_instruction(
     instruction: &ir::Instruction,
-    metadata: &BytecodeFunction,
+    metadata: &FunctionDeclaration,
     instance: &SpecializationKey,
     environment: NativeIrEnvironment<'_>,
     values: &mut ir::ValueBuilder,

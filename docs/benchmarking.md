@@ -20,11 +20,23 @@ excluded because scheduler load and machine differences make them unreliable.
 
 ## Optimizer analysis cost
 
+The shared SSA pipeline in `src/codegen/optimizer.rs` runs before VM de-SSA and before native
+specialization, representation inference, and cleanup planning. It performs bounded scalar leaf
+inlining, typed constant propagation, branch pruning, unreachable-block removal, and dead scalar
+elimination. Integer arithmetic remains checked, floats are not reassociated, and reference-exposed
+homes are excluded. Changed graphs are verified and logical flow evidence is rebuilt before either
+backend consumes them. Native object emission caches a separate prepared variant for each mode.
+
+VM passes now handle representation and register cleanup; they do not repeat semantic inlining or
+constant folding. Regression tests check analysis dimensions after graph changes, preserved traps,
+and VM/native behavior in both optimization modes. Structural reductions are not a measured runtime
+speedup. Track compiler cost as well as runtime throughput when extending this pipeline.
+
 Liveness precomputes operands and CFG edges and uses a predecessor worklist with dense bitsets.
 The four dense matrices are capped at 32 MiB; larger layouts use a sparse worklist instead.
 Results retain the existing set interface used by SSA sealing, drop insertion, and register allocation.
-Constant propagation keeps fixed-point states at basic-block entries and processes each block in
-order, avoiding a growing map snapshot per instruction. Constant interning uses a hash index with
+SSA constant propagation keeps one fact per immutable scalar identity and conservatively joins
+block arguments, avoiding a growing map snapshot per instruction. Constant interning uses a hash index with
 float-bit equality, and pool deduplication caches each old index's remapping.
 
 The compiler benchmarks include `bytecode_many_constants` (256 distinct additions) and

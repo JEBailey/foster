@@ -131,8 +131,11 @@ fn sealed_program_rejects_invalid_metadata_and_keeps_signatures_consistent() {
         assert_eq!(sealed.signatures()[id], function.signature);
     }
     assert_eq!(sealed.metadata(), &program.metadata);
-    let (restored, _, _) = sealed.into_parts();
-    assert_eq!(restored, program);
+    let restored = lower_shared_program(sealed).unwrap();
+    assert_eq!(
+        Machine::new(&restored).run_main().unwrap(),
+        Machine::new(&program).run_main().unwrap()
+    );
     let mut invalid = program;
     invalid
         .functions

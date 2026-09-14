@@ -74,7 +74,7 @@ pub(super) fn reachable_instances(
         {
             collect_nominal_types(&ty, &mut concrete_nominals);
         }
-        for instruction in &body.instructions {
+        for instruction in program.instructions(instance.function) {
             if let Some(ty) =
                 instruction_layout_type(&program.metadata, instruction, &instance.substitutions)
             {
@@ -736,7 +736,7 @@ pub(super) fn collect_function_types(
             for ty in facts[&function].types() {
                 layouts.instantiate_type(&ty.specialize(&instance.key.substitutions))?;
             }
-            for instruction in &program.functions[&function].instructions {
+            for instruction in program.instructions(function) {
                 if let Some(ty) = instruction_layout_type(
                     &program.metadata,
                     instruction,

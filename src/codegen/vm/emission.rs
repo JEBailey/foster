@@ -21,7 +21,9 @@ pub struct FunctionMetadata {
 }
 
 impl FunctionMetadata {
-    pub(super) fn from_bytecode(function: &vm::BytecodeFunction) -> Self {
+    pub(crate) fn from_declaration(
+        function: &crate::codegen::program::FunctionDeclaration,
+    ) -> Self {
         Self {
             intrinsic_stub: function.intrinsic_stub,
             parameter_modes: function.parameter_modes.clone(),

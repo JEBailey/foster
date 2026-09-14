@@ -8,25 +8,41 @@ mod constants;
 mod control_flow;
 mod copies;
 mod drops;
+#[cfg(test)]
+mod effects;
+// Legacy register algorithms remain only as test oracles during migration.
+#[cfg(test)]
 mod inlining;
 mod registers;
 
 /// Optimizes a complete bytecode program while retaining one source span per instruction.
 pub fn optimize(program: &mut Program) {
-    // Exclude barrier functions from local rewrites and inlining candidates.
+    let shared = crate::codegen::vm::seal_program(program.clone())
+        .expect("optimization requires valid bytecode")
+        .optimized()
+        .expect("shared optimization must preserve valid SSA");
+    let mut lowered = crate::codegen::vm::lower_shared_program(shared)
+        .expect("optimized SSA must lower to bytecode");
+    finish_backend(&mut lowered);
+    finalize_register_drops(&mut lowered);
+    *program = lowered;
+}
+
+pub(crate) fn finish_backend(program: &mut Program) {
+    // Exclude storage-sensitive functions from register and closure rewrites.
     // Restore them before remapping the shared constant pool.
     let deferred_ids = program
         .functions
         .iter()
-        .filter(|(_, function)| optimization_barrier(function))
+        .filter(|(_, function)| storage_identity_barrier(function))
         .map(|(id, _)| *id)
         .collect::<Vec<_>>();
     let deferred = deferred_ids
-        .into_iter()
+        .iter()
+        .copied()
         .filter_map(|id| program.functions.remove(&id).map(|function| (id, function)))
         .collect::<Vec<_>>();
-    inlining::inline_small_functions(program);
-    constants::fold(program);
+
     control_flow::simplify(program);
     copies::propagate(program);
     registers::eliminate_dead_writes(program);
@@ -41,7 +57,9 @@ pub fn optimize(program: &mut Program) {
     constants::deduplicate(program);
 }
 
-fn optimization_barrier(function: &super::BytecodeFunction) -> bool {
+/// Structural rewrites still require proof that storage identity is unobservable.
+/// This is intentionally stronger than the instruction-level folding barriers.
+fn storage_identity_barrier(function: &super::BytecodeFunction) -> bool {
     function.mutable_parameters.iter().any(|mutable| *mutable)
         || function.instructions.iter().any(|instruction| {
             matches!(
@@ -75,10 +93,81 @@ pub(crate) fn insert_drops(program: &mut Program) {
     drops::insert(program);
 }
 
+/// Account for edge-copy temporaries and representation rewrites introduced
+/// after shared ownership lowering. Existing explicit releases are retained.
+pub(crate) fn finalize_register_drops(program: &mut Program) {
+    program.drops_inserted = false;
+    drops::insert(program);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::vm::{self, Constant, Machine, Value};
+
+    #[test]
+    fn repeated_optimized_builds_have_identical_constant_numbering() {
+        let compilation = crate::compile(
+            "func first() -> Int { 20 + 22 }
+             func second() -> Int { 3 * 7 }
+             func main() -> Int { first() + second() }",
+        )
+        .unwrap();
+        let first = vm::encode_program(&vm::compile(&compilation).unwrap()).unwrap();
+        for _ in 0..4 {
+            let next = vm::encode_program(&vm::compile(&compilation).unwrap()).unwrap();
+            assert!(
+                first == next,
+                "optimized bytecode depends on function map ordering"
+            );
+        }
+    }
+
+    #[test]
+    fn folds_scalars_inside_mutating_functions_without_reusing_places() {
+        let compilation = crate::compile(
+            "func update[g: group Int](value: ref[g] Int) -> Int [mut g] {
+                 let before = 20 + 22
+                 value = value + 1
+                 let after = 3 * 4
+                 before + after + value
+             }
+             func main() -> Int {
+                 let value = 5
+                 update(ref value) + value
+             }",
+        )
+        .unwrap();
+        let mut program =
+            vm::compile_with_options(&compilation, vm::CompileOptions { optimize: false }).unwrap();
+        let id = *program
+            .functions
+            .iter()
+            .find(|(_, f)| f.name == "update")
+            .unwrap()
+            .0;
+        let original = program.functions[&id].clone();
+        let count = |function: &vm::BytecodeFunction| {
+            function
+                .instructions
+                .iter()
+                .filter(|i| matches!(i, Instruction::Binary { .. }))
+                .count()
+        };
+        let expected = Machine::new(&program).run_main().unwrap();
+        optimize(&mut program);
+        vm::verify(&program).unwrap();
+        assert!(count(&program.functions[&id]) < count(&original));
+        assert_eq!(program.functions[&id].registers, original.registers);
+        assert!(
+            program.functions[&id]
+                .instruction_spans
+                .iter()
+                .all(|span| original.instruction_spans.contains(span))
+        );
+        assert_eq!(Machine::new(&program).run_main().unwrap(), expected);
+        assert_eq!(expected, Value::Integer(66));
+    }
 
     #[test]
     fn direct_and_contract_calls_preserve_receiver_storage() {
@@ -147,8 +236,13 @@ mod tests {
                 .any(|i| matches!(i, Instruction::Binary { .. }))
         );
         let after = &program.functions[&barrier_id];
-        assert_eq!(before.instructions.len(), after.instructions.len());
-        assert_eq!(before.instruction_spans, after.instruction_spans);
+        assert_eq!(after.instructions.len(), after.instruction_spans.len());
+        assert!(
+            after
+                .instruction_spans
+                .iter()
+                .all(|span| before.instruction_spans.contains(span))
+        );
         assert!(after.instructions.iter().any(|i| matches!(i, Instruction::LoadConstant { constant, .. } if program.metadata.constants[usize::from(*constant)] == Constant::Integer(7))));
         let bytes = vm::encode_program(&program).unwrap();
         let decoded = vm::decode_program(&bytes).unwrap();

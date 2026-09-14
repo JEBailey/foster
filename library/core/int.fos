@@ -17,6 +17,9 @@ intrinsic type RawInt
 pub type Int = & Copy & {
     value: RawInt
 
+    /// Returns the distance from zero: negative values become positive; zero and positive values stay the same.
+    /// Leaves `self` unchanged. For example, `(-7).absolute()` returns `7`.
+    /// Do not pass `-9223372036854775808`: its positive counterpart cannot fit in `Int`.
     pub func absolute(self) -> Int [read self]
     pub func minimum(self, right: Int) -> Int [read self, read right]
     pub func maximum(self, right: Int) -> Int [read self, read right]
@@ -36,8 +39,28 @@ impl Int {
     /// Explicitly copies this scalar value.
     pub func copy(self: Int) -> self [read self] { Int { value: self.value } }
 
-    /// Returns the absolute value of this integer.
-    /// The signed minimum has no positive `Int` counterpart and must not be supplied.
+    /// Returns the distance from zero, ignoring the sign of this integer.
+    ///
+    /// Negative values become positive. Zero and positive values stay the same.
+    /// The method returns an `Int` and leaves `self` unchanged; no `move` is needed.
+    ///
+    /// ```foster
+    /// import core.int
+    ///
+    /// func main() -> Int {
+    ///     let offset = -7
+    ///     assert(offset.absolute() == 7)
+    ///     assert(offset == -7)
+    ///     assert(0.absolute() == 0)
+    ///     assert(7.absolute() == 7)
+    ///     0
+    /// }
+    /// ```
+    ///
+    /// Do not pass `-9223372036854775808`, the smallest signed 64-bit integer.
+    /// Its positive counterpart, `9223372036854775808`, exceeds the largest `Int`.
+    /// This method does not return an `Option` or `Result` for that case;
+    /// callers must exclude it before calling.
     pub func absolute(self: Int) -> Int {
         branch {
             self < 0 -> -self

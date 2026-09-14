@@ -4,9 +4,10 @@ Foster uses a custom register VM as its executable semantic reference. The pipel
 
 ```text
 source -> AST -> resolved HIR -> type/effect/loan/ownership checks
-       -> ownership MIR validation -> temporary register construction -> layout legalization
-       -> shared typed SSA -> de-SSA register assignment and edge copies
-       -> optional bytecode optimizer -> liveness-driven drops -> verifier -> machine
+       -> ownership MIR validation -> temporary register construction -> explicit drops
+       -> layout legalization -> shared typed SSA -> optional shared semantic optimization
+       -> rebuilt logical flow -> de-SSA register assignment and edge copies
+       -> VM representation cleanup, register reuse, temporary releases -> verifier -> machine
 ```
 
 Ownership-MIR and bytecode lowering consume the authoritative semantic branch/loop CFG in
@@ -21,16 +22,21 @@ the function is then sealed into typed basic-block SSA. The SSA verifier checks 
 dominance, block arguments, signatures, and terminators. The unsealed construction form is never
 optimized, serialized, or executed.
 
+The canonical program retains neutral function declarations, layouts, and SSA bodies, without
+retaining construction bytecode. Both backends run `SharedProgram::optimized()` before lowering.
+Shared passes perform bounded scalar leaf inlining, typed constant propagation, constant-branch
+pruning, unreachable-block removal, and dead scalar value elimination. Integer folding preserves
+checked failures; floating-point folding preserves operand order and uses bit-identical constants.
+Reference-exposed homes and aliases are excluded from scalar facts. Loops with unknown incoming
+values remain conservative. Every changed graph is verified and its logical flow facts rebuilt.
+
 The VM de-SSA backend splits critical edges, resolves parallel-copy cycles, and assigns storage
-homes. Its structured bytecode is both the optimizer-facing IR and executable form. The explicit
-optimizer pipeline performs CFG-aware typed constant and branch folding, control-flow cleanup, copy
-propagation, liveness-based dead-write elimination and register reuse, and constant-pool
-deduplication. Constant propagation retains facts that agree on every reachable incoming path,
-including loop back edges. Functions with ownership, mutation, or concurrency barriers are excluded
-from these rewrites and inlining candidates independently; their constants participate in the final
-shared-pool remapping. Rewrites preserve the parallel instruction source-span table. Capture/parameter
-frame prefixes and reference origins are pinned where identity is observable. The structured
-program has a deterministic, versioned
+homes. Its remaining passes handle edge/jump cleanup, register copy propagation, dead register
+writes, closure representation, register reuse, and constant-pool deduplication. Semantic inlining
+and constant folding no longer run over bytecode. Storage-sensitive functions remain excluded
+from register reuse and copy propagation. Rewrites retain the source span of each surviving
+instruction. Capture/parameter frame prefixes and reference origins stay pinned where identity
+is observable. The program has a deterministic, versioned
 [compiled bytecode format](binary-format.md) for caching and distribution. Bytecode is verified
 before execution and again after deserialization.
 

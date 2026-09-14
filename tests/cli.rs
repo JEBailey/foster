@@ -403,11 +403,20 @@ fn build_can_emit_deterministic_typed_native_ir() {
     let output = String::from_utf8(first.stdout).unwrap();
     assert!(output.starts_with("foster-codegen-ir 1\n"), "{output}");
     assert!(
-        output.contains("function fibonacci(v0: Int/i64)"),
+        output
+            .lines()
+            .any(|line| line.starts_with("function fibonacci(")
+                && line.ends_with("v0: Int/i64) -> Int/i64 {")),
         "{output}"
     );
     assert!(output.contains("Bool/i8 = binary Less"), "{output}");
-    assert!(output.contains("entry -> b0(v0)"), "{output}");
+    // Sealing may supply storage seeds in addition to the ordinary argument.
+    assert!(
+        output.lines().any(|line| line
+            .strip_prefix("  entry -> b0(")
+            .is_some_and(|arguments| arguments == "v0)" || arguments.starts_with("v0, "))),
+        "{output}"
+    );
 }
 
 #[test]
