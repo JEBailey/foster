@@ -1,0 +1,45 @@
+//! Collections, algorithms, and host services for Foster applications.
+//!
+//! `std` builds on the [core library](core.html#module-overview). It provides
+//! reusable ways to process values and interact with the outside world: iterate
+//! a collection, read a file, exchange bytes over TCP, measure elapsed time, or
+//! generate random values. Many operations are written in Foster; operating-system
+//! services pass through the runtime's host boundary.
+//!
+//! ## Find a module
+//!
+//! | Need | Modules |
+//! | --- | --- |
+//! | Process items one at a time | [Iterators and lazy pipelines](std-iter.html#module-overview), [sequence algorithms](std-sequence.html#module-overview), [checkpointable cursors](std-cursor.html#module-overview) |
+//! | Choose a collection | [Collection contracts](std-collections.html#module-overview), [maps](std-collections-map.html#module-overview), [sets](std-collections-set.html#module-overview), [hash maps](std-collections-hash_map.html#module-overview), [hash sets](std-collections-hash_set.html#module-overview) |
+//! | Queue or stack values | [Queues](std-collections-queue.html#module-overview), [double-ended queues](std-collections-deque.html#module-overview), [stacks](std-collections-stack.html#module-overview) |
+//! | Read or write data | [Streams](std-io.html#module-overview), [files](std-fs.html#module-overview), [TCP connections](std-net-tcp.html#module-overview) |
+//! | Describe locations and providers | [Paths](std-path.html#module-overview), [URIs](std-uri.html#module-overview), [resources](std-resource.html#module-overview), [host providers](std-host.html#module-overview) |
+//! | Work with dates or elapsed time | [Clocks and exact time](std-time.html#module-overview), [civil dates](std-time-civil.html#module-overview), [time zones](std-time-zone.html#module-overview), [time formatting](std-time-format.html#module-overview) |
+//! | Generate random values | [Random sources](std-random.html#module-overview), [seeded generators](std-random-generator.html#module-overview), [distributions](std-random-distribution.html#module-overview), [secure randomness](std-random-secure.html#module-overview), [random selection and shuffling](std-random-sequence.html#module-overview) |
+//! | Read application inputs | [Command arguments](std-process.html#module-overview), [environment](std-env.html#module-overview), [TOML configuration](std-toml.html#module-overview) |
+//! | Compute a content digest | [SHA-256](std-crypto-sha256.html#module-overview) |
+//!
+//! ## Choosing an API
+//!
+//! Import a specific module, such as `import std.time`; importing `std` does not
+//! import all its children. Module functions use `module::function(...)`, while
+//! operations on a value use `value.method(...)`.
+//!
+//! A contract describes what a value can do without choosing its storage. For
+//! example, `Map<K, V>` describes map operations; `ListMap` and `HashMap` provide
+//! different implementations. Choose a concrete implementation for construction
+//! and a contract when an algorithm should accept several implementations.
+//!
+//! Collection operations may borrow their input, consume it, or produce a snapshot.
+//! Iterator pipelines defer element work until they are advanced. Read the method's
+//! effects before reusing a collection or retaining references into it.
+//!
+//! Host operations can fail because a file is missing, a connection closes, or a
+//! provider denies access. Fallible APIs return typed `Result` values; handle the
+//! error or propagate it with `try`. Stream operations can make partial progress
+//! before failure. A path or URI describes a location without granting access to it.
+//!
+//! Use a wall clock for timestamps and a monotonic clock for elapsed time. Regional
+//! time-zone data is supplied separately by the optional `tzdata` package. Use a
+//! seeded generator for repeatable random sequences and secure randomness for secrets.

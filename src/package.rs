@@ -740,7 +740,7 @@ impl Package {
                 origin: ModuleOrigin::Embedded,
             });
         }
-        for (name, source) in EMBEDDED_MODULES {
+        for (name, source) in EMBEDDED_MODULES.iter().chain(EMBEDDED_NAMESPACE_OVERVIEWS) {
             let program = parse_embedded_module(cache, name, source).map_err(|error| {
                 FosterError::runtime(format!("embedded module `{name}` is invalid: {error}"))
             })?;
@@ -1141,6 +1141,11 @@ pub(crate) fn embedded_source_path(module: &str) -> Option<Utf8PathBuf> {
     let bundled = Utf8PathBuf::from_path_buf(bundled).ok()?;
     bundled.is_file().then_some(bundled)
 }
+
+const EMBEDDED_NAMESPACE_OVERVIEWS: &[(&str, &str)] = &[
+    ("core", include_str!("../library/core.fos")),
+    ("std", include_str!("../library/std.fos")),
+];
 
 const EMBEDDED_MODULES: &[(&str, &str)] = &[
     (

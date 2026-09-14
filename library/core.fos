@@ -1,0 +1,37 @@
+//! Foundational values and contracts for writing Foster programs.
+//!
+//! `core` provides the building blocks used throughout the library: numbers, text,
+//! lists, optional values, recoverable errors, and contracts for copying, cleanup,
+//! and comparison. Start here when choosing how to represent a value. The
+//! [standard library](std.html#module-overview) adds collections, algorithms, and
+//! services such as files, networking, clocks, and randomness.
+//!
+//! ## Find a module
+//!
+//! | Need | Modules |
+//! | --- | --- |
+//! | Numbers and Boolean values | [Integers](core-int.html#module-overview), [floats](core-float.html#module-overview), [booleans](core-bool.html#module-overview) |
+//! | Text and identifiers | [Strings and text cursors](core-string.html#module-overview), [Unicode scalars](core-code_point.html#module-overview), [symbols](core-symbol.html#module-overview) |
+//! | Binary data | [A single byte](core-byte.html#module-overview), [immutable bytes](core-bytes.html#module-overview), [mutable byte buffers](core-bytes-buffer.html#module-overview) |
+//! | Ordered values and ranges | [Lists](core-list.html#module-overview), [ranges](core-range.html#module-overview) |
+//! | Absence and failure | [Option](core-option.html#module-overview), [Result](core-result.html#module-overview), [remote errors](core-remote_error.html#module-overview) |
+//! | Shared behavioral contracts | [Copying](core-copy.html#module-overview), [cleanup](core-drop.html#module-overview), [comparison and hashing](core-ordering.html#module-overview), [callable aliases](core-functions.html#module-overview) |
+//!
+//! ## Using core
+//!
+//! Import the module whose operations you need, such as `import core.string`.
+//! Importing `core` does not import every child module. Some foundational types
+//! are always available to the language; explicit imports expose their full library APIs.
+//!
+//! `Option<T>` represents a value that may be absent. `Result<T, E>` represents
+//! either a successful value or an error explaining failure. Their individual
+//! module pages show how to inspect and transform those outcomes.
+//!
+//! String positions normally count grapheme clusters: the pieces of text a reader
+//! sees as characters. A cluster can contain several Unicode scalars and UTF-8 bytes.
+//! Choose explicit scalar or byte APIs when those are the units your work needs.
+//!
+//! Read each operation's ownership and boundary rules. For example, copying an
+//! element out of a list can fail if the element does not support `Copy`, and an
+//! integer operation can fail if its result does not fit in 64 bits. A familiar
+//! method name does not imply automatic copying, clamping, or error recovery.

@@ -97,6 +97,22 @@ func main() -> Int { 0 }
 "#,
     )
     .unwrap();
+    for namespace in ["core", "std"] {
+        let module = compilation
+            .hir
+            .modules
+            .iter()
+            .find(|(_, module)| module.name == namespace)
+            .expect("embedded library namespace must exist")
+            .1;
+        assert!(
+            module
+                .documentation
+                .as_deref()
+                .is_some_and(|text| text.contains("## Find a module")),
+            "{namespace} must retain its embedded overview"
+        );
+    }
     let mut checked = 0;
     for (id, function) in compilation.hir.functions.iter() {
         let module = &compilation.hir.modules[function.module].name;

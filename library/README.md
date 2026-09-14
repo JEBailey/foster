@@ -5,6 +5,9 @@ randomness, and host I/O. Foundational types live under `core`; general-purpose
 facilities live under `std`. Import modules explicitly: Foster has no prelude
 that imports their declarations for you.
 
+Start with the [core overview](core.fos) for foundational values and contracts,
+or the [standard overview](std.fos) for collections, algorithms, and host services.
+
 The `.fos` files here are the authoritative implementation and API documentation.
 Their Markdown comments appear in generated pages and LSP hovers. Installed
 compilers embed the library, so consumers do not need a checkout.
