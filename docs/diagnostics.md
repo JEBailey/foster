@@ -19,6 +19,10 @@ failing call. The `in module.function` prefix identifies the enclosing function,
 For example, an error inside `integer_text?` for `unsigned.slice(2)` names member `slice` as the
 operation expecting two arguments. Method argument counts exclude the receiver.
 
+Equality type errors label both operands with their full types, including generic arguments such as
+`Option<CodePoint>` and `Option<String>`. The language server publishes secondary labels as clickable
+related locations as well as including their explanations in the diagnostic message.
+
 Ownership diagnostics currently reserve these codes:
 
 | Code | Meaning |
@@ -54,6 +58,10 @@ Shared-SSA sealing, final bytecode verification, and native supported-subset err
 build/run commands. LSP tests keep source-builtin names and parameter metadata synchronized with the
 authoritative intrinsic registry; intrinsic-backed library functions otherwise use their ordinary
 Foster declarations for tooling.
+
+Within a recovered body, method navigation on a parameter can use its retained declared type.
+This fallback only selects a method when the receiver identifies one unambiguous implementation;
+it does not infer missing local-variable types or choose between overloads.
 
 The LSP reuses eligible unchanged body results and cancels obsolete analysis. See
 [interactive checking](incremental-checking.md) for invalidation rules, recovery boundaries,

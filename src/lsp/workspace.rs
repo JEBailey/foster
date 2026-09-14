@@ -99,7 +99,7 @@ impl Workspace {
                             .filter(|diagnostic| {
                                 diagnostic.source_module.as_deref() == Some(&module.name)
                             })
-                            .map(|diagnostic| compiler_diagnostic(source, diagnostic))
+                            .map(|diagnostic| compiler_diagnostic(source, &uri, diagnostic))
                             .collect::<Vec<_>>();
                         diagnostics.extend(
                             self.compilations
@@ -727,6 +727,24 @@ fn symbol_at(
     let (name, start) = identifier_at(source, offset)?;
     let module = &compilation.hir.modules[module_id];
     let qualifier = qualifier_before(source, start);
+    // Recovery removes a failed body, but its parameter signatures remain valid.
+    // Resolve simple parameter receivers from those signatures on a cold open too.
+    if let Some(receiver) = qualifier.as_deref()
+        && let Some(function) = function_at(compilation, module_id, offset)
+        && compilation.hir.functions[function].body.is_empty()
+        && let Some(index) = compilation.hir.functions[function]
+            .parameters
+            .iter()
+            .position(|parameter| compilation.hir.locals[parameter.local].name == receiver)
+        && let Some(ty) = compilation
+            .types
+            .function_type(function)
+            .and_then(|signature| signature.parameters.get(index))
+        && let Some(owner) = nominal_owner_from_type(&compilation.types, ty.ty)
+        && let Some(target) = member_function_for_owner(compilation, owner, name)
+    {
+        return Some(SymbolIdentity::Function(target));
+    }
     if let Some(expression) = expression_at(compilation, module_id, offset) {
         if let crate::hir::Expr::Call { callee, .. } = compilation.hir.expressions[expression]
             && let Some(function) = compilation
@@ -1435,6 +1453,14 @@ fn member_function(
 ) -> Option<crate::hir::FunctionId> {
     let ty = compilation.types.expression_type(object)?;
     let owner = nominal_owner_from_type(&compilation.types, ty)?;
+    member_function_for_owner(compilation, owner, member)
+}
+
+fn member_function_for_owner(
+    compilation: &crate::compiler::Compilation,
+    owner: NominalOwner,
+    member: &str,
+) -> Option<crate::hir::FunctionId> {
     let (module, name) = match owner {
         NominalOwner::Record(record) => {
             let definition = &compilation.hir.records[record];
@@ -1458,7 +1484,7 @@ fn member_function(
         .functions
         .get(&qualified_name)
         .and_then(|overloads| {
-            overloads.iter().copied().find(|function| {
+            let mut candidates = overloads.iter().copied().filter(|function| {
                 let receiver_matches = compilation
                     .types
                     .function_type(*function)
@@ -1486,7 +1512,9 @@ fn member_function(
                         )
                     });
                 receiver_matches && compilation.hir.functions[*function].receiver.is_some()
-            })
+            });
+            let first = candidates.next()?;
+            candidates.next().is_none().then_some(first)
         })?;
     Some(function)
 }
@@ -1876,7 +1904,11 @@ fn documented_hover(signature: String, documentation: Option<&str>) -> String {
     hover
 }
 
-fn compiler_diagnostic(source: &str, diagnostic: &crate::diagnostic::Diagnostic) -> Diagnostic {
+fn compiler_diagnostic(
+    source: &str,
+    uri: &Uri,
+    diagnostic: &crate::diagnostic::Diagnostic,
+) -> Diagnostic {
     let range = diagnostic
         .labels
         .iter()
@@ -1896,7 +1928,21 @@ fn compiler_diagnostic(source: &str, diagnostic: &crate::diagnostic::Diagnostic)
         code_description: None,
         source: Some("foster".into()),
         message: lsp_diagnostic_message(diagnostic),
-        related_information: None,
+        related_information: {
+            let related = diagnostic
+                .labels
+                .iter()
+                .filter(|label| !label.primary)
+                .map(|label| lsp_types::DiagnosticRelatedInformation {
+                    location: Location::new(
+                        uri.clone(),
+                        byte_range_to_lsp(source, label.range.clone()),
+                    ),
+                    message: label.message.clone(),
+                })
+                .collect::<Vec<_>>();
+            (!related.is_empty()).then_some(related)
+        },
         tags: None,
         data: None,
     }
@@ -1905,15 +1951,15 @@ fn compiler_diagnostic(source: &str, diagnostic: &crate::diagnostic::Diagnostic)
 fn lsp_diagnostic_message(diagnostic: &crate::diagnostic::Diagnostic) -> String {
     let mut message = diagnostic.message.clone();
     for label in diagnostic.labels.iter().filter(|label| !label.primary) {
-        message.push_str("\n\n");
+        message.push_str("\n");
         message.push_str(&label.message);
     }
     for note in &diagnostic.notes {
-        message.push_str("\n\nnote: ");
+        message.push_str("\nnote: ");
         message.push_str(note);
     }
     if let Some(help) = &diagnostic.help {
-        message.push_str("\n\nhelp: ");
+        message.push_str("\nhelp: ");
         message.push_str(help);
     }
     message

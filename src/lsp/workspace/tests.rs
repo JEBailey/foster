@@ -1,5 +1,58 @@
 use super::*;
 
+#[test]
+fn failed_comparison_keeps_parameter_method_navigation_and_operand_locations() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = "import core.string\nimport core.option\n\nfunc compare(prefix: String) -> Bool {\n    let pattern = prefix.iterator()\n    Option.Some('a') != pattern.next()\n}\n";
+    workspace.open(uri.clone(), source.into(), 1);
+    let compilation = workspace.compile_for(&uri).unwrap();
+    let diagnostic = compilation
+        .diagnostics
+        .iter()
+        .find(|diagnostic| diagnostic.message.contains("type mismatch"))
+        .expect("comparison should reject code points versus grapheme strings");
+    let diagnostic = compiler_diagnostic(source, &uri, diagnostic);
+    assert!(!diagnostic.message.contains("\n\n"));
+    assert!(
+        diagnostic.message.contains("Option<CodePoint>"),
+        "{}",
+        diagnostic.message
+    );
+    assert!(
+        diagnostic.message.contains("Option<String>"),
+        "{}",
+        diagnostic.message
+    );
+    let related = diagnostic.related_information.unwrap();
+    assert_eq!(related.len(), 2);
+    for (item, expression) in related.iter().zip(["Option.Some('a')", "pattern.next()"]) {
+        assert_eq!(item.location.uri, uri);
+        let start = source.find(expression).unwrap();
+        assert_eq!(
+            item.location.range,
+            byte_range_to_lsp(source, start..start + expression.len())
+        );
+    }
+    let location = workspace
+        .definition(&TextDocumentPositionParams::new(
+            lsp_types::TextDocumentIdentifier::new(uri),
+            Position::new(4, 27),
+        ))
+        .expect("iterator navigation should survive a later error on a cold open");
+    assert_eq!(
+        uri_to_path(&location.uri).unwrap(),
+        std::env::current_dir()
+            .unwrap()
+            .join("library/core/string.fos")
+    );
+    let core = include_str!("../../../library/core/string.fos");
+    let line = core
+        .lines()
+        .position(|line| line.contains("pub func iterator(self: String)"))
+        .unwrap() as u32;
+    assert_eq!(location.range.start, Position::new(line, 13));
+}
+
 fn fixture_workspace() -> (Workspace, Uri, PathBuf) {
     let root = std::env::current_dir()
         .unwrap()
@@ -771,7 +824,13 @@ func main() -> Int {
     assert!(hints.iter().any(|hint| {
         matches!(&hint.label, lsp_types::InlayHintLabel::String(label) if label == ": Int")
             && hint.kind == Some(lsp_types::InlayHintKind::TYPE)
+            && hint.position == Position::new(4, 13)
     }));
+    assert!(
+        hints
+            .iter()
+            .all(|hint| hint.position != Position::new(6, 1))
+    );
     for expected in ["left:", "right:"] {
         assert!(hints.iter().any(|hint| {
                 matches!(&hint.label, lsp_types::InlayHintLabel::LabelParts(parts) if parts.iter().any(|part| part.value == expected && part.location.is_some()))
@@ -789,6 +848,7 @@ func main() -> Int {
     let add_two = add(prefix, _)
     add_two(2)
 }
+
 "#;
     workspace.open(uri.clone(), source.into(), 1);
     workspace.compile_for(&uri).unwrap();
@@ -1749,4 +1809,29 @@ fn compilation_includes_manifest_path_dependencies() {
     );
 
     std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn nested_binding_hints_use_names_and_hide_try_temporaries() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = "import core.result\nfunc example(input: Result<Int, String>) -> Result<Int, String> {\n    let value = try input\n    branch {\n        true -> { let nested = value\n            Result.Ok(nested) }\n        _ -> Result.Ok(0)\n    }\n}\n";
+    workspace.open(uri.clone(), source.into(), 1);
+    assert!(workspace.compile_for(&uri).unwrap().diagnostics.is_empty());
+    let hints = workspace
+        .inlay_hints(&InlayHintParams {
+            work_done_progress_params: Default::default(),
+            text_document: lsp_types::TextDocumentIdentifier::new(uri),
+            range: byte_range_to_lsp(source, 0..source.len() - 1),
+        })
+        .unwrap();
+    let positions = hints
+        .iter()
+        .filter(|hint| hint.kind == Some(lsp_types::InlayHintKind::TYPE))
+        .map(|hint| hint.position)
+        .collect::<Vec<_>>();
+    let expected = ["let value", "let nested"].map(|name| {
+        let end = source.find(name).unwrap() + name.len();
+        byte_range_to_lsp(source, end..end).start
+    });
+    assert_eq!(positions, expected);
 }

@@ -756,6 +756,8 @@ impl Checker<'_> {
         operator: BinaryOp,
         right: ExprId,
     ) -> Result<Ty, FosterError> {
+        let left_expression = left;
+        let right_expression = right;
         let left = self.infer_expression(function, left)?;
         let right = self.infer_expression(function, right)?;
         match operator {
@@ -792,7 +794,32 @@ impl Checker<'_> {
                 {
                     self.infer_numeric_binary(function, left, right)?;
                 } else {
-                    self.unify(left, right, function)?;
+                    let left_description = self.describe(&self.resolved(left.clone()));
+                    let right_description = self.describe(&self.resolved(right.clone()));
+                    self.unify(left, right, function).map_err(|mut error| {
+                        if let (Some(left), Some(right)) = (
+                            self.hir.expression_spans.get(&left_expression),
+                            self.hir.expression_spans.get(&right_expression),
+                        ) {
+                            error = error.with_primary_label(
+                                left.start..right.end,
+                                "comparison operands have incompatible types",
+                            );
+                        }
+                        for (expression, side, description) in [
+                            (left_expression, "left", left_description),
+                            (right_expression, "right", right_description),
+                        ] {
+                            if let Some(span) = self.hir.expression_spans.get(&expression) {
+                                error = error.with_label(
+                                    span.clone(),
+                                    format!("{side} operand has type `{description}`"),
+                                );
+                            }
+                        }
+                        // Keep the comparison as the primary error, with clickable operands.
+                        error
+                    })?;
                 }
                 Ok(Ty::Bool)
             }

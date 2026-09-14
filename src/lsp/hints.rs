@@ -5,11 +5,40 @@ use lsp_types::{
 };
 
 use crate::compiler::Compilation;
+use crate::hir::visit::Visitor;
 use crate::hir::{Expr, ExprId, LocalKind};
 
 use super::byte_range_to_lsp;
 use super::snapshot::SemanticSnapshot;
 use super::workspace::{callable_presentation, module_for_uri, position_to_offset};
+
+struct BindingNames<'a> {
+    tokens: &'a [crate::lexer::Token],
+    spans: std::collections::HashMap<crate::hir::LocalId, std::ops::Range<usize>>,
+}
+
+impl Visitor for BindingNames<'_> {
+    fn visit_block(
+        &mut self,
+        hir: &crate::hir::PackageHir,
+        block: &crate::block::Block<crate::hir::Stmt>,
+    ) {
+        for (statement, span) in block.iter_spanned() {
+            if let crate::hir::Stmt::Bind { local, .. } = statement {
+                let start = self
+                    .tokens
+                    .partition_point(|token| token.range.start < span.start);
+                if let Some(token) = self.tokens[start..].iter()
+                    .take_while(|token| token.range.end <= span.end)
+                    .find(|token| matches!(&token.kind, crate::lexer::TokenKind::Ident(name) if name == &hir.locals[*local].name))
+                {
+                    self.spans.insert(*local, token.range.clone());
+                }
+            }
+            self.visit_statement(hir, statement);
+        }
+    }
+}
 
 pub(super) fn inlay_hints(
     compilation: &Compilation,
@@ -25,6 +54,19 @@ pub(super) fn inlay_hints(
     let requested_start = position_to_offset(source, params.range.start)?;
     let requested_end = position_to_offset(source, params.range.end)?;
     let mut hints = Vec::new();
+    let tokens = crate::lexer::lex(source).ok()?;
+    let mut bindings = BindingNames {
+        tokens: &tokens,
+        spans: Default::default(),
+    };
+    for (_, function) in compilation
+        .hir
+        .functions
+        .iter()
+        .filter(|(_, function)| function.module == module_id)
+    {
+        bindings.visit_block(&compilation.hir, &function.body);
+    }
 
     for (local_id, local) in compilation
         .hir
@@ -32,7 +74,15 @@ pub(super) fn inlay_hints(
         .iter()
         .filter(|(_, local)| compilation.hir.functions[local.function].module == module_id)
     {
-        if local.span.end < requested_start || local.span.end > requested_end {
+        if local.name.starts_with('$') {
+            continue;
+        }
+        let span = bindings.spans.get(&local_id).unwrap_or(&local.span);
+        // Only attach type hints to actual source names, never broad fallback spans.
+        if source.get(span.clone()) != Some(local.name.as_str()) {
+            continue;
+        }
+        if span.end < requested_start || span.end > requested_end {
             continue;
         }
         let inferred = match local.kind {
@@ -56,7 +106,7 @@ pub(super) fn inlay_hints(
         };
         let display = compilation.types.display(ty);
         hints.push(InlayHint {
-            position: byte_range_to_lsp(source, local.span.end..local.span.end).start,
+            position: byte_range_to_lsp(source, span.end..span.end).start,
             label: InlayHintLabel::String(format!(": {display}")),
             kind: Some(InlayHintKind::TYPE),
             text_edits: None,

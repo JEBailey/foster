@@ -755,15 +755,15 @@ pub(super) fn error_diagnostic(source: &str, error: crate::error::FosterError) -
             );
         let mut message = compiler.message;
         for label in compiler.labels.iter().filter(|label| !label.primary) {
-            message.push_str("\n\n");
+            message.push_str("\n");
             message.push_str(&label.message);
         }
         for note in compiler.notes {
-            message.push_str("\n\nnote: ");
+            message.push_str("\nnote: ");
             message.push_str(&note);
         }
         if let Some(help) = compiler.help {
-            message.push_str("\n\nhelp: ");
+            message.push_str("\nhelp: ");
             message.push_str(&help);
         }
         return Diagnostic {
