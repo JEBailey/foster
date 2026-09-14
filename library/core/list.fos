@@ -73,7 +73,6 @@ pub type List<T> = & Sequence<T> & Collection<T> & {
     /// Combines a nonempty list into one value, or returns `None` for an empty list.
     pub func reduce(self, combine: func(T, T) -> T) -> Option<T> [read combine, read self]
 
-
 }
 
 /// Why an independently owned element could not be obtained.

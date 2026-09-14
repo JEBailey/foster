@@ -47,7 +47,6 @@ pub type Bytes = & Copy & Sequence<Byte> & Collection<Byte> & Equality<Bytes> & 
     /// Checks UTF-8 scalar boundaries without allocating decoded text or copied suffixes.
     pub func utf8_valid?(self) -> Bool [read self]
 
-
 }
 
 /// Describes a failed UTF-8 decoding operation.

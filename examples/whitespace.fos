@@ -7,4 +7,3 @@ func skip_whitespace(characters: String) -> String {
 func main() -> String {
     skip_whitespace(" \nFoster")
 }
-
