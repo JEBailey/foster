@@ -1,52 +1,87 @@
-# Documentation review — 2026-09-12
+# Documentation review — 2026-09-14
 
 ## Scope and assessment
 
-Reviewed the documentation entry points, library documentation standard, generated
-page renderer, and representative source comments for lists, strings, iterators,
-streams, time zones, and host providers. Checked local Markdown file destinations
-across the repository README, library guide/standard, and existing `docs` guides.
-This is a usability and presentation review, not an exhaustive verification of
-every API claim or executable example.
+This pass inventoried all 48 repository Markdown files, scanned their local links and
+Foster code fences, and reviewed consistency between the guides, current source, tests,
+and generated API reference. Semantic checks focused on syntax, ownership, time,
+iteration, host services, compilation, and artifact formats. This is a repository-wide
+documentation audit, not a proof of every implementation or API claim.
 
-The existing level of library detail is appropriate: summaries explain purpose,
-while ownership, bounds, units, and typed failures receive additional detail where
-they change how callers use an operation. In particular, list copying failures,
-Unicode position units, partial stream progress, and advisory readiness should
-remain explicit. The library documentation standard already calls for this level
-of detail without requiring repetitive sections for simple operations.
+| Documentation area | Review emphasis |
+| --- | --- |
+| Root README, AGENTS, writing guide, examples catalogs | Discoverability, commands, source syntax, complete examples |
+| Language, semantics, ownership, closures, effects, remote rules | Contract consistency, supported analysis, conservative limits |
+| Library guide, reference, documentation standard, contract audit, library review | Ownership, failures, public contracts, source-comment coverage |
+| Time, Unicode, randomness, hash collections | Units, bounds, examples, provider availability |
+| VM, native, binary format, packages, compiled libraries, symbolic modules | Current pipeline, format versions, runtime behavior |
+| Diagnostics, interactive checking, testing, coverage, ownership verification, analysis precision | Current implementation and verification boundaries |
+| Host/runtime READMEs, Unicode/tzdata tools, tzdata package | Embedding, regeneration, dependency setup |
+| Editor README/changelog, benchmarking guide and three result reports | Instructions versus historical measurements and release notes |
+| Documentation index, development policy, roadmap | Reader routing and implemented versus proposed work |
 
-## Changes made
+The overall organization and level of API detail are appropriate. Keep beginner
+examples short, explain ownership and failure behavior where they affect callers,
+and keep compiler representation details in contributor references. Public/private
+labels remain necessary for fields as well as methods. Source signatures, rather
+than generated resolved reference notation, remain the syntax to copy into programs.
 
-- Render every overload's signature, visibility, and documentation under one
-  function navigation entry. Previously only the first overload was rendered,
-  hiding valid call forms and their contracts. Public type summaries also select
-  a public overload when a private overload is declared first.
-- Add a collapsible reading guide to module pages. It explains member visibility,
-  field access versus method calls, ownership/effects, and optional/typed failures.
-  It explicitly identifies resolved signatures as reference notation, not source
-  declarations to paste into a program.
-- Correct record signatures to show `=` and composition separators.
-- Add `std.host` to library API selection and link its provider guide.
-- Add a documentation entry map separating language/library use from compiler
-  internals, and clarify overload grouping/counts in the repository README.
+## Findings corrected
 
-## Maintenance priorities
-
-Keep preconditions and failure behavior in source API comments, with broader
-examples in guides. Keep embedding setup in the host-provider guide rather than
-repeating Rust configuration in every Foster method comment. Preserve explicit
-private/public labels instead of suggesting that a public type exposes all fields.
-
-Documentation presence checks cannot establish semantic accuracy. Boundary claims
-and examples still require implementation review and appropriate execution tests
-when their APIs change. Local-file link checks do not validate remote URLs or
-Markdown heading anchors. Field-level documentation remains unsupported by the
-parser; describe field units and invariants in the owning type comment.
+- The time guide contained invalid bare `assert` branch arms, unsupported line breaks
+  after call-opening parentheses, and missing `move` markers for consuming arguments.
+  Corrected the examples, stated their shared import/function context, and added
+  [an executable guide check](../tests/documentation_examples.rs).
+- Twelve required methods on `Int` lacked documentation even though their implementations
+  were documented. Added matching summaries, bounds, and ownership-relevant details;
+  the existing library documentation coverage test now passes.
+- The README built `recursion.fbc` but instructed readers to run `fibonacci.fbc`.
+  Both commands now name the same artifact.
+- Compiled-library and package guides named bytecode version 26 instead of 27.
+  The bytecode tag inventory also omitted TCP readiness tags 62–64.
+- The VM guide repeated obsolete register-inliner limits. It now describes the shared
+  SSA inliner and its current bounds. The native guide now identifies neutral layout
+  metadata and avoids naming an older bytecode version as current.
+- The README and roadmap described native `await` as blocking without distinguishing
+  ordinary threads from actor coroutines. Actor waits already suspend their coroutine.
+- The host README attributed provider-owned state to each context. It now explains
+  that contexts sharing a provider also share its state and handles.
+- Time and library guides described regional IANA data as unavailable or future work.
+  They now point to the optional tzdata package. The core reference also recognizes
+  implemented timed TCP readiness and active owner-shutdown outcomes.
+- Analysis-precision and semantic-gap descriptions lagged behind bounded callable-target
+  sets, factory/aggregate borrower summaries, and computed/saved integer conditions.
+  Updated those descriptions without claiming general theorem proving.
+- Corrected the public-type inventory count to 130, clarified iterator mutation permission
+  and resource construction side effects, and updated the benchmark guide's recovery description.
 
 ## Validation
 
-All eight documentation-renderer tests passed, including overload visibility and
-description coverage, field labels, and generated type-link destinations. The
-standard-library documentation-coverage test passed. A local-file link scan of
-33 Markdown files, including the new guides, found no missing destinations.
+- Inventoried 150 `foster` Markdown code blocks. Nine self-contained programs with
+  `main` compiled and ran on the VM. The remaining complete tzdata program requires
+  a separately built dependency and was not run in this pass.
+- The time guide's 30 code blocks compile together with their documented imports;
+  its 26 statement snippets run in separate functions and their assertions pass.
+  Three helper function examples are type-checked; the import block supplies context.
+- Standard-library documentation coverage passed, checking 995 implementation functions
+  and attached module, public-type, and required-method documentation.
+- All eight documentation-renderer tests passed, including overloads, visibility,
+  Markdown rendering, and generated type links.
+- Regenerated the library site: 1,230 declarations in 60 modules. All 8,697 local links
+  across its 61 HTML pages resolve to existing files and, where applicable, anchors.
+- Repository Markdown local file links and heading links resolve. Rust formatting and
+  whitespace checks were run on the changed test and patch.
+
+## Limits and maintenance
+
+Code-fence parsing is a triage tool: type fragments, abbreviated examples, and deliberately
+rejected programs are not standalone applications. Complete-program execution and the new
+time-guide test provide stronger evidence for their specific examples. This pass did not
+execute every API comment example, every example-directory program, or the full backend
+conformance suite. It did not fetch external URLs or remeasure historical benchmarks.
+
+Documentation presence and link checks cannot prove behavioral accuracy. Preserve explicit
+bounds, units, consumption, and failure descriptions in authoritative `.fos` comments, and
+keep required-method comments consistent with implementation comments. Field-level comments
+remain unsupported; document field meaning in the owning type's comment. Rebuild installed
+compilers and language servers when distributing embedded comment changes.

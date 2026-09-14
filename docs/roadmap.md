@@ -108,7 +108,8 @@ storage and borrowing contract than the proposed list-backed arena.
 - Refine scalar inference for dynamically erased values in the shared SSA verifier. Erased
   heterogeneous joins retain an explicit opaque type until
   the bytecode ownership/type verifier resolves their concrete flow state.
-- Implement resumable suspension/state-machine lowering; native `await` currently blocks.
+- Evaluate state-machine lowering as an alternative to the current stackful coroutine runtime.
+  Native actor `await` already suspends its coroutine; an ordinary thread waits for completion.
   Extend native runtime services and cross-target object output, and address additional unsupported
   cases as conformance tests identify them, with the VM as semantic reference.
 - Compact the bytecode encoding after its instruction model is stable.

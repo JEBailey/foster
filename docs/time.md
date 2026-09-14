@@ -27,6 +27,11 @@ Imports expose public declarations directly. They also bind the final module com
 `time::now()` and `format::parse_instant(source)` can be used when qualification makes an operation
 clearer.
 
+The examples below share these imports. Place statement snippets inside a function;
+snippets beginning with `func` are module-level declarations. The executable check in
+`tests/documentation_examples.rs` compiles them together and runs the statement examples.
+Use `move` for existing values passed to consuming constructors, as shown below.
+
 ## Choosing a type
 
 Choose a type according to what the value means, not how it will initially be displayed:
@@ -65,8 +70,8 @@ Use `subtract`, `negated`, `zero?`, `compare`, and `equal?` for duration arithme
 
 ```foster
 branch Duration.from_parts(12, 500000000) {
-    Result.Ok(value) -> assert(value.total_milliseconds() == 12500)
-    Result.Error(error) -> assert(false, error.message)
+    Result.Ok(value) -> { assert(value.total_milliseconds() == 12500) }
+    Result.Error(error) -> { assert(false, error.message) }
 }
 ```
 
@@ -197,7 +202,7 @@ branch Date.from(2024, 2, 29) {
         assert(value.month() == 2)
         ()
     }
-    Result.Error(error) -> assert(false, error.message)
+    Result.Error(error) -> { assert(false, error.message) }
 }
 
 assert(Date.from(2023, 2, 29).error?())
@@ -209,7 +214,7 @@ assert(TimeOfDay.from(24, 0, 0, 0).error?())
 ```foster
 let date = Date.from_epoch_day(0)
 let time_of_day = TimeOfDay.midnight()
-let local = date.at(time_of_day)
+let local = (move date).at(move time_of_day)
 
 assert(local.date().year() == 1970)
 assert(local.time().hour() == 0)
@@ -252,14 +257,14 @@ must choose an `Overflow` policy:
 branch Date.from(2024, 1, 31) {
     Result.Ok(january_31) -> {
         branch january_31.add(Span.from_months(1), Overflow.Constrain) {
-            Result.Ok(value) -> assert(value.day() == 29)
-            Result.Error(error) -> assert(false, error.message)
+            Result.Ok(value) -> { assert(value.day() == 29) }
+            Result.Error(error) -> { assert(false, error.message) }
         }
 
         assert(january_31.add(Span.from_months(1), Overflow.Reject).error?())
         ()
     }
-    Result.Error(error) -> assert(false, error.message)
+    Result.Error(error) -> { assert(false, error.message) }
 }
 ```
 
@@ -267,10 +272,7 @@ branch Date.from(2024, 1, 31) {
 Clock components added to `DateTime` carry into the adjacent civil date:
 
 ```foster
-let local = DateTime.from(
-    Date.from_epoch_day(0),
-    TimeOfDay.from_nanosecond_of_day(23 * 60 * 60 * 1000000000)
-)
+let local = DateTime.from(Date.from_epoch_day(0), TimeOfDay.from_nanosecond_of_day(23 * 60 * 60 * 1000000000))
 
 let two_hours = Span.from(0, 0, 0, 0, 2, 0, 0, 0)
 
@@ -280,7 +282,7 @@ branch local.add(two_hours, Overflow.Reject) {
         assert(value.time().hour() == 1)
         ()
     }
-    Result.Error(error) -> assert(false, error.message)
+    Result.Error(error) -> { assert(false, error.message) }
 }
 ```
 
@@ -302,16 +304,9 @@ To request the same local clock time on the next calendar day, first interpret t
 zone and then add a calendar span:
 
 ```foster
-let current = ZonedDateTime.from_instant(
-    time::now(),
-    FixedOffsetZone.utc()
-)
+let current = ZonedDateTime.from_instant(time::now(), FixedOffsetZone.utc())
 
-let tomorrow = current.add_span(
-    Span.from_days(1),
-    Overflow.Reject,
-    Disambiguation.Compatible
-)
+let tomorrow = current.add_span(Span.from_days(1), Overflow.Reject, Disambiguation.Compatible)
 ```
 
 In a regional zone, a calendar day can correspond to 23, 24, or 25 elapsed hours around offset
@@ -335,13 +330,13 @@ rules. Converting from an instant is always unambiguous:
 ```foster
 branch Offset.from_seconds(-5 * 60 * 60) {
     Result.Ok(offset_value) -> {
-        let value = OffsetDateTime.from_instant(Instant.epoch(), offset_value)
+        let value = OffsetDateTime.from_instant(Instant.epoch(), move offset_value)
 
         assert(value.instant().equal?(Instant.epoch()))
         assert(value.local().epoch_seconds() == -5 * 60 * 60)
         ()
     }
-    Result.Error(error) -> assert(false, error.message)
+    Result.Error(error) -> { assert(false, error.message) }
 }
 ```
 
@@ -352,11 +347,11 @@ let local = DateTime.from(Date.from_epoch_day(0), TimeOfDay.midnight())
 
 branch Offset.from_seconds(2 * 60 * 60) {
     Result.Ok(offset_value) -> {
-        let value = OffsetDateTime.from_local(local, offset_value)
+        let value = OffsetDateTime.from_local(local, move offset_value)
         assert(value.instant().epoch_seconds() == -2 * 60 * 60)
         ()
     }
-    Result.Error(error) -> assert(false, error.message)
+    Result.Error(error) -> { assert(false, error.message) }
 }
 ```
 
@@ -375,10 +370,7 @@ fields.
 `FixedOffsetZone` is the built-in implementation. UTC is the simplest example:
 
 ```foster
-let value = ZonedDateTime.from_instant(
-    Instant.epoch(),
-    FixedOffsetZone.utc()
-)
+let value = ZonedDateTime.from_instant(Instant.epoch(), FixedOffsetZone.utc())
 
 assert(value.zone_id() == "UTC")
 assert(value.offset().seconds() == 0)
@@ -409,13 +401,9 @@ calling code compatible with regional zones:
 ```foster
 let local = DateTime.from(Date.from_epoch_day(0), TimeOfDay.midnight())
 
-branch ZonedDateTime.from_local(
-    local,
-    FixedOffsetZone.utc(),
-    Disambiguation.Reject
-) {
-    Result.Ok(value) -> assert(value.instant().equal?(Instant.epoch()))
-    Result.Error(error) -> assert(false, error.message)
+branch ZonedDateTime.from_local(local, FixedOffsetZone.utc(), Disambiguation.Reject) {
+    Result.Ok(value) -> { assert(value.instant().equal?(Instant.epoch())) }
+    Result.Error(error) -> { assert(false, error.message) }
 }
 ```
 
@@ -467,7 +455,7 @@ branch format::parse_date_time("2024-02-29T23:59:58.123400") {
         assert(format::date_time(move value) == "2024-02-29T23:59:58.1234")
         ()
     }
-    Result.Error(error) -> assert(false, error.message)
+    Result.Error(error) -> { assert(false, error.message) }
 }
 ```
 
@@ -490,10 +478,7 @@ excluded. An end before the start is rejected, while an empty interval with equa
 valid.
 
 ```foster
-branch Interval.from(
-    Instant.from_epoch_seconds(10),
-    Instant.from_epoch_seconds(20)
-) {
+branch Interval.from(Instant.from_epoch_seconds(10), Instant.from_epoch_seconds(20)) {
     Result.Ok(window) -> {
         assert(window.contains?(Instant.from_epoch_seconds(10)))
         assert(window.contains?(Instant.from_epoch_seconds(19)))
@@ -501,7 +486,7 @@ branch Interval.from(
         assert(window.duration().equal?(Duration.from_seconds(10)))
         ()
     }
-    Result.Error(error) -> assert(false, error.message)
+    Result.Error(error) -> { assert(false, error.message) }
 }
 ```
 
@@ -520,7 +505,7 @@ branch YearMonth.from(2024, 2) {
         assert(february.on_day(29).success?())
         ()
     }
-    Result.Error(error) -> assert(false, error.message)
+    Result.Error(error) -> { assert(false, error.message) }
 }
 ```
 
@@ -529,8 +514,8 @@ representable, but placing it in a non-leap year returns an error:
 
 ```foster
 branch MonthDay.from(2, 29) {
-    Result.Ok(leap_day) -> assert(leap_day.in_year(2023).error?())
-    Result.Error(error) -> assert(false, error.message)
+    Result.Ok(leap_day) -> { assert(leap_day.in_year(2023).error?()) }
+    Result.Error(error) -> { assert(false, error.message) }
 }
 ```
 
@@ -550,7 +535,7 @@ Use `try` when a function returns the same error type:
 ```foster
 func beginning_of_leap_day() -> Result<DateTime, CivilError> {
     let date = try Date.from(2024, 2, 29)
-    Result.Ok(date.at(TimeOfDay.midnight()))
+    Result.Ok((move date).at(TimeOfDay.midnight()))
 }
 ```
 
@@ -560,12 +545,12 @@ errors retain the input `value`, and zone errors include the `zone` identifier.
 
 ## Current scope and limitations
 
-The current implementation deliberately establishes the type and contract taxonomy before adding
-provider data and advanced operations:
+The embedded library provides the time value model; regional data is a separate dependency:
 
 - `FixedOffsetZone`, including UTC, is the built-in zone implementation.
-- `TimeZoneDatabase` is a structural provider contract, but a versioned IANA database and regional
-  identifiers such as `America/New_York` are not supplied yet.
+- `TimeZoneDatabase` is a structural provider contract. The optional
+  [tzdata package](../packages/tzdata/README.md) supplies pinned IANA data and regional
+  identifiers such as `America/New_York`; build and declare that dependency before importing it.
 - ISO-8601 Gregorian civil values are implemented; additional calendar providers are not supplied.
 - Formatting is portable and locale-independent; reusable format patterns and locale providers are
   roadmap work.
@@ -574,9 +559,8 @@ provider data and advanced operations:
 - The date parser currently accepts the exact four-digit `YYYY-MM-DD` shape. Extended years emitted
   by the date formatter are not yet accepted by `parse_date`.
 
-Until regional zone data is available, the API can express and test gaps and overlaps through the
-`TimeZone` contract, but applications cannot look up real-world regional transition histories from
-the standard library.
+Applications can also implement `TimeZone` directly to test gaps and overlaps with controlled
+rules. See the tzdata package guide for real-world regional lookup and its supported date range.
 
 ## Common recipes
 

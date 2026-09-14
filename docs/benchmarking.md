@@ -65,7 +65,8 @@ These are local measurements, not timing thresholds enforced by tests.
 Measure cold requests, repeated requests without edits, and requests after an open-buffer change
 separately. Use a release compiler for interactive latency measurements; a debug compiler measures
 unoptimized compiler work as well as the language-server behavior. Include a document with errors:
-semantic recovery currently restarts checking after replacing each failed body with a stub.
+semantic recovery replaces a batch of independently failed bodies with stubs before resuming
+checking. See [interactive checking](incremental-checking.md) for reuse and invalidation rules.
 
 The type checker reuses the converged inference pass for final effect and composition validation.
 Within each pass, it caches expanded record fields and methods only when both generic arguments

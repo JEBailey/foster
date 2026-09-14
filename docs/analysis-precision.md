@@ -21,7 +21,8 @@ that list while the string is still used.
 - Stable boolean places, enum patterns, and direct scalar comparisons retain branch facts.
   Equality/inequality normalization and some dynamic-index disjointness are supported.
 - Boolean combinations and saved local Boolean conditions retain the bounded facts described below.
-  Comparisons of computed values remain conservative. The loan checker widens to shared facts
+  Repeated integer addition, subtraction, and multiplication trees can retain comparison facts.
+  Other computed values remain conservative. The loan checker widens to shared facts
   after sixteen alternatives; more reasoning must remain bounded.
 
 See [ownership analysis](ownership.md#current-limitations-and-evolution) and
@@ -63,13 +64,23 @@ reference-parameter summary. Both `callbacks[0](...)` and assigning `callbacks[0
 retain the selected slot's dependencies, rather than combining all list elements. Replacing a
 slot invalidates its previous summary. Tests distinguish two functions returning references to
 different inputs, reject invalidation of the selected input, and verify VM/native results with
-optimization enabled and disabled. An index supplied at runtime remains conservative.
+optimization enabled and disabled.
 
-Dynamic-index target selection, target identity returned through
-opaque factories, capture-specific result summaries, and hidden borrowers in aggregate parameters
-remain conservative. Known targets can still retain unnecessary environment dependencies for
-borrow-containing results. Effectful calls and reference captures may discard more target knowledge
-than necessary. Pending remote-request relationships are tracked separately and are not discharged by these proofs.
+Runtime-index selection from a known local callable list retains the union of possible targets'
+result dependencies, bounded to eight distinct targets. For example, if every target returns only
+its first argument, the result need not borrow the second argument. If any target can return the
+second argument, that dependency remains. Unknown entries, larger target sets, and mutations that
+invalidate list knowledge use the conservative checked-contract fallback. Captured loans remain
+live independently of these parameter summaries.
+
+Source factories can propagate known returned targets through direct-call chains under the same
+eight-target bound. Symbolic contents dependencies track borrowers inside incoming generic and
+aggregate parameters, including those forwarded through returned closures or records. Callers
+substitute the actual loans; borrowing a factory's local slot still cannot escape its invocation.
+Unknown factory parameters and opaque external targets use conservative contracts. Known targets
+can still retain unnecessary environment dependencies for borrow-containing results, and effectful
+calls or reference captures may discard target knowledge. Pending remote-request relationships are
+tracked separately and are not discharged by these proofs.
 
 ## 2. Bounded reasoning for compound conditions
 
@@ -78,10 +89,11 @@ For example, reshape under `a && b` and use an earlier loan only under `not a ||
 mutually exclusive while both operands remain unchanged. Reshape and use under the same
 condition remain a conflict.
 
-The analysis supports `&&`, `||`, and `not` over existing supported facts. Preserve short-circuit evaluation
-and any effects of evaluated operands. Add computed-value comparisons only in a later bounded
-step with explicit identity, purity, and invalidation rules; do not assume repeated function calls
-return the same value or apply arithmetic identities that ignore overflow behavior.
+The analysis supports `&&`, `||`, and `not` over existing supported facts, preserving short-circuit
+evaluation and effects. Comparisons can correlate repeated integer `+`, `-`, and `*` expression
+trees over supported places and constants, bounded to 64 nodes per comparison operand. This is
+structural identity, not algebraic simplification: repeated function calls are not assumed to
+return the same value, and checked arithmetic failure behavior is preserved.
 
 Implementation: boolean conditions are lowered to atomic ownership-CFG edges in evaluation order,
 including boolean branch subjects and guarded returns, breaks, and continues. Integer comparisons
@@ -90,15 +102,16 @@ Assignments forget overlapping facts and facts about possible alias origins, inc
 reborrows. Calls forget facts for their declared mutation targets, including every argument in a shared group; indirect calls conservatively
 forget all predicate facts. The forward and backward analyses use the same invalidation rules,
 including across loop backedges. Each join retains at most 16 alternatives before widening to
-common facts. Computed predicates (including dynamically indexed predicate places), repeated calls, and general arithmetic equivalence remain
+common facts. Unsupported computed predicates (including dynamically indexed predicate places), repeated calls, and general arithmetic equivalence remain
 conservative.
 
 Saving a pure Boolean condition in a local preserves its relationship to the input locals.
 For example, after `let can_update = ready && allowed`, a branch on `can_update` can be correlated
 with `not ready || not allowed`. This supports Boolean local reads, constants, `not`, and pure
-Boolean selections including `&&`/`||`, bounded to 64 HIR expression nodes per initializer.
-Assignments and local aliases use the same tracking. Calls, projected reads, comparisons, and
-larger expressions in initializers retain the conservative behavior.
+Boolean selections including `&&`/`||`, and supported integer comparisons, bounded to 64 HIR
+expression nodes per initializer. Integer comparisons may include stable stored fields and the
+arithmetic trees described above. Assignments and local aliases use the same tracking. Calls,
+unsupported projected reads, and larger expressions retain the conservative behavior.
 
 The stored Boolean remains a snapshot: changing `ready` never changes `can_update`. Writes to an
 input invalidate facts about that input, while the saved value and its unchanged aliases retain

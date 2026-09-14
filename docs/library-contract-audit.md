@@ -46,7 +46,7 @@ it does not prohibit structural use. Alias targets retain their own contracts. C
 definitions appear in this inventory too. The table lists direct compositions; inherited
 contracts are reachable through these links in generated documentation.
 
-The library exposes **127 public type declarations**.
+The library exposes **130 public type declarations**.
 
 | Type | Direct contracts |
 | --- | --- |

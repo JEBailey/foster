@@ -322,7 +322,7 @@ edges consistent between static checking and execution.
 
 ```powershell
 cargo run --bin foster -- build examples/showcase/recursion.fos -o recursion.fbc
-cargo run --bin foster -- run fibonacci.fbc
+cargo run --bin foster -- run recursion.fbc
 ```
 
 The initial AOT backend emits host machine code with Cranelift and asks the installed Rust
@@ -344,8 +344,8 @@ control flow. Supported core list, string, byte, and byte-buffer algorithms comp
 Foster code. A versioned platform ABI provides filesystem and path operations, the working
 directory, clocks, operating-system entropy, handle-based TCP listeners and connections, and
 in-process actor workers. Native code can spawn owned or borrowed actors, queue FIFO method calls,
-and consume their futures with a blocking `await`. Resumable suspension/state-machine lowering is
-not yet implemented. See [native compilation](docs/native.md) for the exact boundary.
+and consume their futures with `await`. Await suspends an actor coroutine; an ordinary thread
+waits for completion. See [native compilation](docs/native.md) for the exact boundary.
 
 The de-SSA VM emitter owns critical-edge splitting, cycle-safe parallel copies, and deterministic
 register assignment. Aggregate legalization separately freezes typed record slots, enum tags and

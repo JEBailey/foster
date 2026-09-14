@@ -57,7 +57,7 @@ specialization, SSA metadata, layout selection, and bytecode verification. Seman
 describes source requirements; `ExecutableType` retains executable shape and ownership modes;
 legalized SSA types and physical layouts select representation, sizes, alignment, and offsets.
 The shared definitions and substitution helpers have no VM dependency. Layout construction
-still consumes VM program metadata through its existing adapter.
+consumes the neutral `ProgramMetadata` shared by both backends.
 
 `Unknown` means erased or unknown shape: it is the verifier's top type and selects an opaque
 native representation, without proving source conformance. `Generic` names can remain during
@@ -312,7 +312,7 @@ function is sealed into SSA; that unsealed form is never optimized, serialized, 
 Before backend-specific emission, logical layout legalization reduces values to scalars or pointers
 and builds deterministic descriptions for record field slots and declared types, enum alternative
 tags and payloads, closure environments and capture ownership, reference place handles, and
-runtime-backed structural values. Portable bytecode version 25 retains generic identities, nominal
+runtime-backed structural values. Portable bytecode retains generic identities, nominal
 parameters and arguments, and sorted substitutions at statically resolved calls and closure
 construction. Native
 reachability is keyed by function plus substitutions. Logical SSA facts are calculated once per

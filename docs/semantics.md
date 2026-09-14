@@ -365,8 +365,9 @@ Remaining work is organized in the [roadmap](roadmap.md). The main semantic limi
 - Remote completion proofs remain conservative for pending transfers across function boundaries
   and unmodeled completion patterns. See [supported proofs](remote-semantics.md#supported-static-proofs).
 - Cross-worker scheduling, liveness, host interruption, and process-wide shutdown ordering remain open.
-- Loan analysis remains conservative for dynamic callable targets, hidden borrowers, computed
-  predicates, and richer arithmetic relationships. See [analysis precision](analysis-precision.md).
+- Loan analysis remains conservative beyond its bounded callable-target sets, symbolic borrower
+  summaries, and supported integer/Boolean predicates. General arithmetic equivalence and opaque
+  callable relationships are not proved. See [analysis precision](analysis-precision.md).
 - Generic sequence head/rest adapters can copy tails; structural conformance and slicing do not
   promise zero-copy traversal.
 

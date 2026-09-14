@@ -96,16 +96,15 @@ Capture modes: `0 Copy`, `1 Move`, `2 Ref`. Parameter modes: `0 Borrow`, `1 Cons
 operators: `0 Negate`, `1 Not`, `2 BitNot`. Binary tags in order are Add, Subtract, Multiply,
 Divide, BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight, Equal, NotEqual, Less, LessEqual, Greater,
 GreaterEqual. Builtin tags use the explicit stable values in the intrinsic registry, from `Print = 0` through
-`RandomBytes = 61`. Version 14 appended `IoReadRange = 56`, `IoAppendBytes = 57`, and
-`IoFileLength = 58`. Version 15 appended `TimeWallNow = 59` and `TimeMonotonicNow = 60`.
-Version 16 appends `RandomBytes = 61`; all earlier tags retain their previous values. Version 18
-adds declared record-field and enum-payload types to aggregate metadata. Version 19 adds declared
-nominal parameter names, concrete construction arguments, and deterministic generic substitutions
-on statically resolved calls; instruction and type tags remain unchanged.
-Version 20 adds the same deterministic generic substitutions to closure construction and
-specialized closure calls, so code and environment layout share one monomorphization identity.
-Version 22 adds concrete element types to `MakeList` and concrete pointee types to reference
-construction. This preserves empty generic-list and projected-reference layouts through the shared
+`TcpWaitAccept = 64`. Readiness tags are `TcpWaitReadable = 62`, `TcpWaitWritable = 63`,
+and `TcpWaitAccept = 64`. Other host-service tags include `IoReadRange = 56`, `IoAppendBytes = 57`,
+`IoFileLength = 58`, `TimeWallNow = 59`, `TimeMonotonicNow = 60`, and `RandomBytes = 61`.
+
+Aggregate metadata retains declared record-field and enum-payload types, nominal parameter names,
+and concrete construction arguments. Statically resolved calls and closure construction retain
+deterministic generic substitutions, so code and environment layout share one specialization
+identity. `MakeList` retains its concrete element type, and reference construction retains its
+pointee type. These preserve empty generic-list and projected-reference layouts across the shared
 SSA, bytecode, and native boundaries.
 
 Verification type tags are `0 Unknown`, `1 Unit`, `2 Bool`, `3 Integer`, `4 Float`, `5 CodePoint`,

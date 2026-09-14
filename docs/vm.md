@@ -85,13 +85,13 @@ as long as that identity remains observable. Conditional branches receive cleanu
 edges when their condition dies at the branch. Frame teardown remains the final cleanup boundary
 for protected slots and returned values.
 
-The interprocedural tier inlines small leaf functions, including forward branches and early returns
-in scalar bodies. Up to four rounds expose wrapper chains without expanding recursive call cycles.
-Candidates are limited to 16 instructions; the complete expanded caller, including parameter copies
-and early-return jumps, must fit a 128-instruction budget. Loops, reference results, and branching
-aggregate bodies remain excluded. Inlined parameters receive
-fresh virtual registers before copy propagation, so assigning to a parameter cannot mutate the
-caller's argument slot. Escape analysis recognizes single-use closure values when delaying capture
+The shared SSA inliner handles small acyclic scalar leaf bodies, including branches and early
+returns. Candidates contain at most 32 instructions and terminators; expansion uses a
+128-instruction-and-terminator caller budget over at most four rounds. Captures, mutable
+parameters, reference results, aggregate values, and loops exclude a candidate. Inlining assigns
+fresh SSA identities, preserving parameter value semantics before either backend assigns storage.
+
+VM escape analysis recognizes single-use closure values when delaying capture
 is safe and replaces the allocation plus dynamic dispatch pair with `CallClosure`. Reference
 captures preserve slot identity; move captures are specialized only for immediate invocation.
 Projected references contain one weak root plus a field/index path. Extending a projection through

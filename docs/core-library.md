@@ -50,7 +50,7 @@ being added accidentally.
 | `std.collections.deque` | Storage-free double-ended `Deque<T>` contract and `ListDeque<T>` |
 | `std.collections.stack` | Storage-free LIFO `Stack<T>` contract and `ListStack<T>` |
 | `core.range` | Generic reusable `Range<T>` sequence view |
-| `core.remote_error` | Remote execution failures and the reserved shutdown outcome |
+| `core.remote_error` | Remote execution failures and owner-shutdown outcomes |
 | `core.result` | Success/error values, transformations, recovery, eager and lazy fallbacks, flattening, and queries |
 | `core.ordering` | Equality, total-ordering, and hashing contracts plus `Less`, `Equal`, and `Greater` |
 | `std.sequence` | Shared map, filter, fold, search, slicing, and query algorithms for strings and lists |
@@ -170,6 +170,7 @@ this table for an intrinsic because it has no Foster implementation body.
 | `TcpHost.listen`, `TcpHost.connect`, `TcpHost.accept` | Establish TCP resources |
 | `TcpHost.read_bytes`, `TcpHost.write_bytes` | Operate on TCP connections; Foster wrappers implement UTF-8 text reads and writes |
 | `TcpHost.set_timeout` | Configure TCP connection timeouts |
+| `TcpHost.wait_readable`, `TcpHost.wait_writable`, `TcpHost.wait_accept` | Wait for advisory connection or listener readiness with a timeout |
 | `TcpHost.close_listener`, `TcpHost.close_connection` | Close TCP resources |
 | `TimeHost.wall_now` | Read canonical Unix seconds and fractional nanoseconds from the wall clock |
 | `TimeHost.monotonic_now` | Read host-context-relative monotonic nanoseconds for elapsed measurement |
@@ -196,7 +197,8 @@ only when applied to a civil or zoned value.
 `LocalResolution` exposes `Unique`, `Ambiguous`, and `Skipped` outcomes. Converting a local value to
 a zoned value requires a `Disambiguation` policy, so daylight-saving overlaps and gaps cannot be
 silently discarded. `FixedOffsetZone` supplies the `TimeZone` contract; regional IANA
-rule data is a provider-layer roadmap item. `Calendar` and `TimeZoneDatabase` are structural
+rule data is supplied by the optional [tzdata package](../packages/tzdata/README.md).
+`Calendar` and `TimeZoneDatabase` are structural
 contracts so additional calendars and versioned zone databases do not require changing the value
 taxonomy.
 
@@ -406,7 +408,9 @@ UTF-8 helpers remain available, while protocol parsing and higher-level policy b
 including during failure cleanup. Consuming `close()` releases a handle early and reports any
 error; it clears the owned handle so subsequent destruction does not close it again. Automatic
 cleanup ignores close errors and preserves an existing execution failure.
-Socket readiness, TLS, and explicit filesystem/network capability tokens remain future work.
+Timed socket readiness is available through `ReadReady` and `WriteReady`; see
+[host providers](host-providers.md#timed-readiness) for timeout and advisory-readiness semantics.
+TLS and language-enforced filesystem/network capability isolation remain future work.
 
 Core APIs should not bypass ownership. In particular, operations that must retain an owned generic
 value after invoking user code require a borrowed-callback type; they are intentionally omitted

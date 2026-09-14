@@ -160,7 +160,8 @@ reserved allocation size.
 - Paths use host-platform rules. Canonicalization accesses the filesystem; URI
   construction performs no network I/O and does not parse every URI component.
 - Use monotonic clocks for elapsed time. Civil spans are not elapsed durations.
-  Time-zone contracts allow custom providers, but no IANA database ships here.
+  Time-zone contracts allow custom providers. Regional IANA rules are supplied by the
+  optional [tzdata package](../packages/tzdata/README.md), separately from the embedded library.
 - Seeded generators have explicit reproducibility guarantees. Secure entropy
   APIs produce unpredictable tokens; collection hashes are not cryptographic digests.
 - Numeric helpers retain their documented edge behavior. `Float.compare` returns

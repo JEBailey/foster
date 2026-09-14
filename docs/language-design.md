@@ -873,7 +873,7 @@ pub type Iterable<T> = {
 }
 ```
 
-`Iterator<T>` is stateful. Each `next()` call has exclusive mutation access to the iterator and
+`Iterator<T>` is stateful. Each `next()` call requires mutation permission on the iterator and
 returns `Option.None` after exhaustion. `Iterable<T>` is repeatable: its read-only `iterator()`
 method creates an independent iterator. An iterable is opened with `value.iterator()`.
 
@@ -956,7 +956,8 @@ granting or assuming I/O authority.
 `std.path.Path`, `std.uri.Uri`, and `std.net.tcp.TcpEndpoint` implement
 `ResourceIdentifier`. `std.fs.File` is an opaque `Resource<Path>` with file capabilities;
 `tcp::Connection` and `tcp::Listener` are opaque `Resource<TcpEndpoint>` providers with their own
-stream, accepting, and closing capabilities. Construction remains side-effect free. A general URI
+stream, accepting, and closing capabilities. Constructing identifiers and a `File` value does not
+perform I/O; connecting, listening, and accepting do access the host. A general URI
 is only an identifier: an explicit protocol provider must validate and convert it before opening a
 file, connection, or listener.
 
