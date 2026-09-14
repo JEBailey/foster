@@ -1,11 +1,12 @@
 //! Function preparation, home tracking, cleanup, and control-flow assembly.
 use crate::native::{
-    BTreeSet, BytecodeFunction, FailureCleanup, FosterError, HashMap, HashSet, NativeIrEnvironment,
-    NativeType, Range, SpecializationKey, abi, infer_register_types, ir, native_error,
+    BTreeSet, BytecodeFunction, FailureCleanup, FosterError, HashMap, NativeIrEnvironment,
+    NativeType, Range, SpecializationKey, abi, infer_value_types, ir, native_error,
     native_verification_type, reference_load_helper, verified_remote_calls,
 };
 
 use super::conversions::{ReturnConversion, allocate_shared_value};
+use super::edges::{adapt_arguments, record_cleanup};
 use super::instructions::{NativeFunctionFacts, lower_shared_instruction};
 pub(in crate::native) fn lower_shared_to_native_ir(
     shared: &ir::Function,
@@ -16,19 +17,6 @@ pub(in crate::native) fn lower_shared_to_native_ir(
     environment: NativeIrEnvironment<'_>,
 ) -> Result<(ir::Function, FailureCleanup), FosterError> {
     let remote_calls = verified_remote_calls(shared, source_states, instance, environment)?;
-    // Temporary bridge for construction-based physical representation inference only.
-    // Preserve construction order if multiple SSA results reuse one home.
-    let mut ordered_remote_calls = remote_calls.iter().collect::<Vec<_>>();
-    ordered_remote_calls.sort_by_key(|(value, _)| value.index());
-    let home_remote_calls = ordered_remote_calls
-        .into_iter()
-        .filter_map(|(value, call)| {
-            shared
-                .values
-                .hint(value.index())
-                .map(|home| (home, call.clone()))
-        })
-        .collect();
     let external_values = shared
         .captures
         .iter()
@@ -51,78 +39,17 @@ pub(in crate::native) fn lower_shared_to_native_ir(
                 .flatten()
         })
         .collect::<HashMap<_, _>>();
-    let inferred = infer_register_types(
-        metadata,
+    let inferred = infer_value_types(
+        shared,
         &function_signature.parameters,
         instance,
         environment,
-        &home_remote_calls,
+        &remote_calls,
     )?;
     let mut values = shared.values.clone().into_builder();
-    for (index, ty) in shared.values.iter().enumerate() {
-        values[index] = shared
-            .values
-            .hint(index)
-            .and_then(|register| inferred[usize::from(register)])
-            .unwrap_or_else(|| native_shared_type(*ty));
-    }
-    for (home, value) in &reference_homes {
-        let Some(crate::codegen::types::ExecutableType::Reference(pointee)) = metadata
-            .capture_types
-            .iter()
-            .chain(&metadata.parameter_types)
-            .nth(usize::from(*home))
-        else {
-            continue;
-        };
-        let pointee = pointee.specialize(&instance.substitutions);
-        let pointee_type = native_verification_type(
-            &environment.program.metadata,
-            environment.layouts,
-            &pointee,
-            None,
-        )?;
-        // The ABI input is a typed address, while every SSA value carrying
-        // that storage home after the prologue is the loaded pointee value.
-        for (index, storage_home) in shared.values.hints().enumerate() {
-            if storage_home == &Some(*home) {
-                values[index] = pointee_type;
-            }
-        }
-        let layout = environment
-            .layouts
-            .pointer(&pointee, crate::codegen::layout::Ownership::Borrowed)
-            .ok_or_else(|| native_error("captured reference has no native layout"))?;
-        values[value.0 as usize] = NativeType::Object(layout);
-    }
-    // Empty values carried after a Drop have no storage home. Recover their
-    // specialized layout from the receiving block instead of keeping Opaque.
-    let seeds = shared.entry_seeds.iter().copied().collect::<HashSet<_>>();
-    for block in &shared.blocks {
-        let edges = match &block.terminator {
-            ir::Terminator::Jump { target, arguments } => vec![(*target, arguments)],
-            ir::Terminator::Branch {
-                then_target,
-                then_arguments,
-                else_target,
-                else_arguments,
-                ..
-            } => vec![
-                (*then_target, then_arguments),
-                (*else_target, else_arguments),
-            ],
-            ir::Terminator::Return(_) => Vec::new(),
-        };
-        for (target, arguments) in edges {
-            for (argument, parameter) in arguments
-                .iter()
-                .zip(&shared.blocks[target.0 as usize].parameters)
-            {
-                if seeds.contains(argument) && shared.values.hint(argument.0 as usize).is_none() {
-                    values[argument.0 as usize] = values[parameter.0 as usize];
-                }
-            }
-        }
+    let empty = inferred.empty;
+    for (index, ty) in inferred.types.into_iter().enumerate() {
+        values[index] = ty;
     }
     let mut entry_seeds = shared.entry_seeds.clone();
     let mut blocks = Vec::with_capacity(shared.blocks.len());
@@ -323,7 +250,7 @@ pub(in crate::native) fn lower_shared_to_native_ir(
         // Pruned SSA block arguments no longer carry dead storage into the successor.
         // Release that storage on the particular edge where its lifetime ends.
         let owned = owned_home_values(&state, &reference_homes).collect::<BTreeSet<_>>();
-        let dying = |arguments: &[ir::Value]| {
+        let dying = |arguments: &[ir::Value], values: &ir::ValueTable| {
             owned
                 .iter()
                 .copied()
@@ -338,8 +265,28 @@ pub(in crate::native) fn lower_shared_to_native_ir(
                 .collect::<Vec<_>>()
         };
         match &mut terminator {
-            ir::Terminator::Jump { arguments, .. } => {
-                for drop in dying(arguments) {
+            ir::Terminator::Jump { target, arguments } => {
+                let conversions = adapt_arguments(
+                    arguments,
+                    &shared.blocks[target.0 as usize].parameters,
+                    &mut values,
+                    &mut entry_seeds,
+                    &empty,
+                    environment,
+                )?;
+                let edge_instructions = conversions
+                    .into_iter()
+                    .chain(dying(arguments, &values))
+                    .collect::<Vec<_>>();
+                record_cleanup(
+                    &edge_instructions,
+                    owned.iter().chain(&temporaries).copied(),
+                    block_index,
+                    instructions.len(),
+                    &values,
+                    &mut failure_cleanup,
+                );
+                for drop in edge_instructions {
                     instructions.push(drop);
                     spans.push(block.terminator_span.clone());
                 }
@@ -354,11 +301,27 @@ pub(in crate::native) fn lower_shared_to_native_ir(
                 for (target, arguments) in
                     [(then_target, then_arguments), (else_target, else_arguments)]
                 {
-                    let drops = dying(arguments);
+                    let mut drops = adapt_arguments(
+                        arguments,
+                        &shared.blocks[target.0 as usize].parameters,
+                        &mut values,
+                        &mut entry_seeds,
+                        &empty,
+                        environment,
+                    )?;
+                    drops.extend(dying(arguments, &values));
                     if drops.is_empty() {
                         continue;
                     }
                     let edge = ir::Block((shared.blocks.len() + cleanup_edges.len()) as u32);
+                    record_cleanup(
+                        &drops,
+                        owned.iter().chain(&temporaries).copied(),
+                        edge.0 as usize,
+                        0,
+                        &values,
+                        &mut failure_cleanup,
+                    );
                     cleanup_edges.push(ir::BlockData {
                         parameters: Vec::new(),
                         instructions: drops
@@ -407,7 +370,11 @@ pub(in crate::native) fn lower_shared_to_native_ir(
         .collect::<Vec<_>>();
     let mut entry = shared.entry;
     let mut entry_arguments = shared.entry_arguments.clone();
-    if !reference_homes.is_empty() || !unused_parameters.is_empty() {
+    let entry_needs_conversion = entry_arguments
+        .iter()
+        .zip(&shared.blocks[shared.entry.0 as usize].parameters)
+        .any(|(argument, parameter)| values[argument.index()] != values[parameter.index()]);
+    if !reference_homes.is_empty() || !unused_parameters.is_empty() || entry_needs_conversion {
         failure_cleanup.values = failure_cleanup
             .values
             .into_iter()
@@ -475,11 +442,46 @@ pub(in crate::native) fn lower_shared_to_native_ir(
         for block in &mut blocks {
             shift_native_blocks(&mut block.terminator, 1);
         }
-        let arguments = shared
+        let mut arguments = shared
             .entry_arguments
             .iter()
             .map(|value| loaded_captures.get(value).copied().unwrap_or(*value))
-            .collect();
+            .collect::<Vec<_>>();
+        let original_arguments = arguments.clone();
+        let conversion_offset = prologue_instructions.len();
+        let conversions = adapt_arguments(
+            &mut arguments,
+            &shared.blocks[shared.entry.0 as usize].parameters,
+            &mut values,
+            &mut entry_seeds,
+            &empty,
+            environment,
+        )?;
+        for instruction in conversions {
+            prologue_instructions.push(instruction);
+            prologue_spans.push(Range::default());
+        }
+        for value in original_arguments.iter().copied().collect::<BTreeSet<_>>() {
+            if !arguments.contains(&value)
+                && matches!(
+                    values[value.index()],
+                    NativeType::Object(_) | NativeType::String
+                )
+            {
+                prologue_instructions.push(ir::Instruction::Portable(
+                    ir::PortableInstruction::Drop { value },
+                ));
+                prologue_spans.push(Range::default());
+            }
+        }
+        record_cleanup(
+            &prologue_instructions[conversion_offset..],
+            original_arguments,
+            0,
+            conversion_offset,
+            &values,
+            &mut failure_cleanup,
+        );
         blocks.insert(
             0,
             ir::BlockData {
@@ -526,20 +528,6 @@ fn shift_native_blocks(terminator: &mut ir::Terminator, offset: u32) {
             else_target.0 += offset;
         }
         ir::Terminator::Return(_) => {}
-    }
-}
-
-fn native_shared_type(ty: ir::Type) -> NativeType {
-    match ty {
-        ir::Type::Opaque => NativeType::Opaque,
-        ir::Type::Unit => NativeType::Unit,
-        ir::Type::Bool => NativeType::Bool,
-        ir::Type::Int => NativeType::Int,
-        ir::Type::Float => NativeType::Float,
-        ir::Type::CodePoint => NativeType::CodePoint,
-        ir::Type::Byte => NativeType::Byte,
-        ir::Type::String => NativeType::String,
-        ir::Type::Object(layout) => NativeType::Object(layout),
     }
 }
 

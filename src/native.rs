@@ -34,7 +34,7 @@ use crate::compiler::Compilation;
 use crate::error::FosterError;
 use crate::hir::{FunctionId, Pattern};
 use crate::types::{Type, TypeId};
-use crate::vm::{self, BytecodeFunction, Instruction, Program, Register};
+use crate::vm::{self, BytecodeFunction, Instruction, Program};
 
 pub mod abi;
 mod buffers;
@@ -54,7 +54,7 @@ mod host;
 use host::{NativeHostArguments, lower_native_host_intrinsic};
 mod inference;
 use inference::{
-    dereference_native_type, field_type, infer_register_types, native_intrinsic_result_type,
+    dereference_native_type, field_type, infer_value_types, native_intrinsic_result_type,
     native_verification_type,
 };
 mod legalize;

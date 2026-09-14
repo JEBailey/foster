@@ -1,5 +1,6 @@
 //! Legalize shared SSA into native representations and ownership operations.
 mod conversions;
+mod edges;
 mod function;
 mod instructions;
 pub(super) use conversions::{ErasedConversion, callable_conversion, erased_conversion};

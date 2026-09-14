@@ -211,8 +211,8 @@ lookup also lives there; it has no VM values or physical offsets. `vm::Program` 
 with bytecode functions and the drop-insertion flag. The binary field order and format are unchanged.
 `SharedProgram::metadata()` and `NativeProgram::metadata()` expose only the neutral data.
 Nominal layout construction and native representation/ownership helpers accept neutral metadata.
-Shared sealing retains construction bodies separately for physical representation inference and
-backend validation. Native logical flow consumers use the sealed SSA facts described below.
+Shared sealing retains construction bodies separately for backend validation and bytecode emission.
+Native logical flow and physical representation inference both consume the sealed SSA graph.
 Record schemas store paired `RecordField` entries. Construction derives their immutable lookup
 layout and rejects duplicate names; linking remaps field types without changing storage order.
 
@@ -240,8 +240,17 @@ against the VM slot adapter; the source correspondence exists only in test build
 
 Native contract arguments and remote receivers/arguments query these SSA sites. Remote call targets
 are keyed by SSA result identity, and logical summaries no longer combine unrelated values that
-reuse a storage home. Native physical representation inference still has a construction-register
-bridge; removing that bridge is a separate remaining boundary, not a source of logical flow facts.
+reuse a storage home. Native physical representation inference propagates layouts from SSA
+definitions through block arguments to a fixed point, including loop backedges. It does not read
+construction registers or storage hints. Logical flow proves source-language facts; native inference
+selects physical layouts and callable ABIs. They remain distinct analyses over the same graph.
+Different closure environments join at a uniform callable ABI, and erased/concrete values join
+at an erased ABI. Native edge legalization inserts conversions before parallel argument assignment
+and releases the old owners on the affected edge. Storage hints remain ownership locations during
+legalization, rather than identities for type inference.
+`src/native/inference.rs` owns the fixed-point solver; its `instructions` and `representations`
+modules contain result-layout rules and layout/ABI helpers. Empty storage tokens receive layouts
+from their receiving blocks or callee ABIs, without constraining live producers backwards.
 
 The portable, versioned bytecode remains the VM's execution and distribution format. The native
 IR is a shared internal backend boundary rather than a replacement for bytecode, leaving room for

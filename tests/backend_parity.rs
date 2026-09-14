@@ -2,6 +2,30 @@
 use foster::{native, vm};
 
 #[test]
+fn ssa_callable_joins_convert_branch_and_loop_arguments() {
+    check(
+        "ssa-callable-joins",
+        r#"
+func first(value: Int) -> Int { value + 1 }
+func second(value: Int) -> Int { value + 2 }
+func choose(flag: Bool) -> Int {
+    let callback = first
+    let count = 0
+    loop {
+        callback = branch flag { true -> first
+            _ -> second }
+        count = count + 1
+        break if count == 2
+    }
+    callback(20)
+}
+func main() -> Int { choose(true) + choose(false) }
+"#,
+        Ok("43"),
+    );
+}
+
+#[test]
 fn reordered_generic_intersection_dispatch_runs_on_both_backends() {
     check(
         "reordered-intersection-dispatch",
