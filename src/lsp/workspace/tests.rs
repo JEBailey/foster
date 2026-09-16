@@ -1,6 +1,45 @@
 use super::*;
 
 #[test]
+fn constrained_method_signature_displays_requirements() {
+    let compilation = crate::compile("import core.copy\ntype Box<T> = { value: T }\nimpl Box<T & Copy> { func copied(self) -> T [read self] { self.value.copy() } }\nfunc main() -> Int { Box { value: 42 }.copied() }").unwrap();
+    let module = compilation.hir.module_named("main").unwrap();
+    let method = compilation
+        .hir
+        .function_named(module, "Box.copied")
+        .unwrap();
+    let signature = function_signature(&compilation, method, false);
+    assert!(signature.contains("T & Copy"), "{signature}");
+}
+
+#[test]
+fn type_branch_hover_and_copy_navigation() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = "import core.copy\nfunc classify<T>(value: T) -> Int {\n    branch value {\n        is Int -> value + 1\n        is Copy -> { value.copy()\n0 }\n        _ -> 0\n    }\n}\nfunc main() -> Int { classify(41) }\n";
+    workspace.open(uri.clone(), source.into(), 1);
+    let params = |position| {
+        TextDocumentPositionParams::new(
+            lsp_types::TextDocumentIdentifier::new(uri.clone()),
+            position,
+        )
+    };
+    let HoverContents::Markup(hover) = workspace
+        .hover(&params(Position::new(3, 20)))
+        .unwrap()
+        .contents
+    else {
+        panic!("expected hover")
+    };
+    assert!(hover.value.contains("value: Int"), "{}", hover.value);
+    let definition = workspace.definition(&params(Position::new(4, 28))).unwrap();
+    assert!(
+        uri_to_path(&definition.uri)
+            .unwrap()
+            .ends_with("library/core/copy.fos")
+    );
+}
+
+#[test]
 fn failed_comparison_keeps_parameter_method_navigation_and_operand_locations() {
     let (mut workspace, uri, _) = fixture_workspace();
     let source = "import core.string\nimport core.option\n\nfunc compare(prefix: String) -> Bool {\n    let pattern = prefix.iterator()\n    Option.Some('a') != pattern.next()\n}\n";

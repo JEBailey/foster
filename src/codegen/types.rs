@@ -162,6 +162,54 @@ pub enum ExecutableType {
     },
 }
 
+/// A conformance witness with generic leaves applies to every instantiation of
+/// that schema. It is produced only after checking the generic declaration.
+pub(crate) fn conformance_witness_matches(
+    witness: &ExecutableType,
+    actual: &ExecutableType,
+) -> bool {
+    use ExecutableType as E;
+    match (witness, actual) {
+        (E::Generic(_), _) => true,
+        (
+            E::Record {
+                record: a,
+                arguments: aa,
+            },
+            E::Record {
+                record: b,
+                arguments: ba,
+            },
+        ) => {
+            a == b
+                && aa.len() == ba.len()
+                && aa
+                    .iter()
+                    .zip(ba)
+                    .all(|(a, b)| conformance_witness_matches(a, b))
+        }
+        (
+            E::Variant {
+                variant: a,
+                arguments: aa,
+            },
+            E::Variant {
+                variant: b,
+                arguments: ba,
+            },
+        ) => {
+            a == b
+                && aa.len() == ba.len()
+                && aa
+                    .iter()
+                    .zip(ba)
+                    .all(|(a, b)| conformance_witness_matches(a, b))
+        }
+        (E::List(a), E::List(b)) => conformance_witness_matches(a, b),
+        _ => witness == actual,
+    }
+}
+
 /// Canonical control-flow possibilities. Only checked ExecutableType constructors create these.
 ///
 /// ```compile_fail

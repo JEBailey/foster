@@ -8,3 +8,16 @@ pub type Copy = {
     /// Creates an independent value of the concrete receiver type without consuming the source.
     pub func copy(self) -> self [read self]
 }
+
+/// Creates an independent copy without consuming the source, including in generic code.
+/// The value must support Copy; a noncopyable value raises a runtime error.
+pub func copy<T>(value: T) -> T [read value] {
+    assert(can_copy(value), "value does not implement Copy")
+    copy_value(value)
+}
+
+/// Tests the runtime capability without invoking user copying code.
+func can_copy<T>(value: T) -> Bool [read value] = intrinsic("value.can_copy")
+
+/// Dispatches Copy after capability validation.
+func copy_value<T>(value: T) -> T [read value] = intrinsic("value.copy")

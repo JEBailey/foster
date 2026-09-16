@@ -415,8 +415,9 @@ TLS and language-enforced filesystem/network capability isolation remain future 
 Core APIs should not bypass ownership. In particular, operations that must retain an owned generic
 value after invoking user code require a borrowed-callback type; they are intentionally omitted
 until that contract can be expressed without weakening move checking. For the same reason,
-`Map.get`, `keys`, and `values` consume the map when returning owned generic values, while
-queries such as `contains_key?`, `length`, and `empty?` only borrow it.
+`Map.get` explicitly copies the selected value without consuming the map. `Map.remove`
+transfers the selected value and preserves the remaining map. `keys` and `values` consume
+the map, while queries such as `contains_key?`, `length`, and `empty?` only borrow it.
 
 ## Explicit type contracts
 

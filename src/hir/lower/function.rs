@@ -444,7 +444,31 @@ impl FunctionLowerer<'_> {
                             BranchTest::Condition(self.lower_expression(e)?)
                         }
                         ast::BranchTest::Wildcard => BranchTest::Wildcard,
-                        ast::BranchTest::Pattern(p) => BranchTest::Pattern(self.lower_pattern(p)?),
+                        ast::BranchTest::Pattern(p) => {
+                            let mut pattern = self.lower_pattern(p)?;
+                            let inner = match &mut pattern {
+                                Pattern::Spanned { pattern, .. } => pattern.as_mut(),
+                                pattern => pattern,
+                            };
+                            if let Pattern::IsType { binding, .. } = inner
+                                && let Some(subject) = subject
+                                && let Expr::Name(ResolvedName::Local(original)) =
+                                    self.hir.expressions[subject]
+                            {
+                                let name = self.hir.locals[original].name.clone();
+                                let local = self.hir.locals.alloc(Local {
+                                    span: p
+                                        .span()
+                                        .unwrap_or(self.hir.functions[self.function].span.clone()),
+                                    function: self.function,
+                                    name: name.clone(),
+                                    kind: LocalKind::TypePattern,
+                                });
+                                self.locals.insert(name, local);
+                                *binding = Some(local);
+                            }
+                            BranchTest::Pattern(pattern)
+                        }
                     };
                     let mut body = crate::block::Block::new();
                     for (statement, statement_span) in arm.body.iter_spanned() {
@@ -566,6 +590,125 @@ impl FunctionLowerer<'_> {
         }
 
         Ok(match pattern {
+            ast::Pattern::Is(ty) => {
+                use crate::codegen::types::ExecutableType as E;
+                if matches!(ty, ast::TypeExpr::Unit) {
+                    return Ok(Pattern::IsType {
+                        target: E::Unit,
+                        source: E::Unknown,
+                        conforming: Vec::new(),
+                        binding: None,
+                    });
+                }
+                let ast::TypeExpr::Named(path, arguments) = ty else {
+                    return Err(self.error("`is` expects a named type"));
+                };
+                if !arguments.is_empty() {
+                    return Err(
+                        self.error("runtime type patterns do not yet support type arguments")
+                    );
+                }
+                let scalar = match path.as_str() {
+                    "Bool" => Some(E::Bool),
+                    "Int" => Some(E::Integer),
+                    "Float" => Some(E::Float),
+                    "Byte" => Some(E::Byte),
+                    "CodePoint" => Some(E::CodePoint),
+                    "String" | "Symbol" => Some(E::Record {
+                        record: self
+                            .hir
+                            .record_named(
+                                self.hir
+                                    .module_named(if path == "String" {
+                                        "core.string"
+                                    } else {
+                                        "core.symbol"
+                                    })
+                                    .unwrap(),
+                                path,
+                            )
+                            .unwrap(),
+                        arguments: Vec::new(),
+                    }),
+                    "Bytes" => Some(E::Bytes),
+                    _ => None,
+                };
+                if let Some(target) = scalar {
+                    return Ok(Pattern::IsType {
+                        target,
+                        source: E::Unknown,
+                        conforming: Vec::new(),
+                        binding: None,
+                    });
+                }
+                let (modules, name) = if let Some((qualifier, name)) = path.rsplit_once('.') {
+                    let module =
+                        self.imports.get(qualifier).copied().ok_or_else(|| {
+                            self.error(format!("unknown type module `{qualifier}`"))
+                        })?;
+                    (vec![module], name)
+                } else {
+                    let mut modules = vec![self.module];
+                    modules.extend(self.imports.values().copied());
+                    (modules, path.as_str())
+                };
+                let mut targets = Vec::new();
+                for module in modules {
+                    if let Some(record) = self.hir.record_named(module, name)
+                        && (module == self.module || self.hir.records[record].public)
+                    {
+                        if !self.hir.records[record].parameters.is_empty() {
+                            return Err(
+                                self.error("runtime type patterns require a nongeneric type")
+                            );
+                        }
+                        targets.push(E::Record {
+                            record,
+                            arguments: Vec::new(),
+                        });
+                    } else if let Some(variant) = self.hir.variant_type_named(module, name)
+                        && (module == self.module || self.hir.variant_types[variant].public)
+                    {
+                        if self.hir.variant_types[variant].kind != ast::VariantKind::Enum
+                            || !self.hir.variant_types[variant].parameters.is_empty()
+                        {
+                            return Err(self.error("runtime type patterns require a concrete nongeneric enum or record"));
+                        }
+                        targets.push(E::Variant {
+                            variant,
+                            arguments: Vec::new(),
+                        });
+                    }
+                    if module == self.module && !targets.is_empty() {
+                        break;
+                    }
+                }
+                targets.sort();
+                targets.dedup();
+                let [target] = targets.as_slice() else {
+                    return Err(self.error(format!(
+                        "unknown, private, or ambiguous type `{path}` in `is` pattern"
+                    )));
+                };
+                Pattern::IsType {
+                    target: match target {
+                        E::Record { record, .. } => match (
+                            self.hir.modules[self.hir.records[*record].module]
+                                .name
+                                .as_str(),
+                            self.hir.records[*record].name.as_str(),
+                        ) {
+                            ("core.int", "Int") => E::Integer,
+                            ("core.bytes", "Bytes") => E::Bytes,
+                            _ => target.clone(),
+                        },
+                        _ => target.clone(),
+                    },
+                    source: E::Unknown,
+                    conforming: Vec::new(),
+                    binding: None,
+                }
+            }
             ast::Pattern::Wildcard => Pattern::Wildcard,
             ast::Pattern::Binding(name) => {
                 let local = self.hir.locals.alloc(Local {

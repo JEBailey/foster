@@ -196,6 +196,11 @@ impl CoreRecords {
 
 #[derive(Debug, Default)]
 pub struct TypeInformation {
+    /// Runtime inhabitants accepted by the same structural checks as assignment.
+    pub type_conformances: HashMap<
+        (FunctionId, crate::codegen::types::ExecutableType),
+        Vec<crate::codegen::types::ExecutableType>,
+    >,
     pub core: CoreRecords,
     pub types: Arena<Type>,
     pub expressions: HashMap<ExprId, TypeId>,

@@ -96,6 +96,10 @@ impl Checker<'_> {
                 return Err(self.error(function, "deinit is called automatically when ownership ends; it cannot be called directly"));
             }
             let object_type = self.infer_expression(function, object)?;
+            let original_type = object_type.clone();
+            let object_type = self.refined_receiver(object, object_type);
+            let object_type = self.constraint_view(function, object_type)?;
+            let refinement = (object_type != original_type).then_some(original_type);
             if name == "freeze"
                 && self.is_byte_buffer_type(&object_type)
                 && !matches!(self.hir.expressions[object], hir::Expr::MoveOut(_))
@@ -133,8 +137,13 @@ impl Checker<'_> {
                     &extension_overloads,
                 );
             }
-            let contract_overloads =
+            let mut contract_overloads =
                 self.contract_method_overloads(function, object_type.clone(), &name)?;
+            if let Some(receiver) = &refinement {
+                for method in &mut contract_overloads {
+                    method.result = self.method_result_for_receiver(method, receiver.clone());
+                }
+            }
             if contract_overloads.len() > 1 {
                 return self.infer_overloaded_contract_method_call(
                     function,
@@ -145,7 +154,9 @@ impl Checker<'_> {
                     &contract_overloads,
                 );
             }
-            if let Some(method) = self.contract_method_type(function, object_type.clone(), &name)? {
+            if let Some(method) =
+                self.contract_method_type(function, object_type.clone(), &name, refinement)?
+            {
                 if let Some(method_function) = selected_inherent_method {
                     let remote = matches!(self.resolved(object_type.clone()), Ty::Remote(_));
                     self.resolved_calls.insert(
@@ -161,7 +172,15 @@ impl Checker<'_> {
                         Ty::Callable { parameters, .. } => self.method_key(&name, parameters),
                         _ => unreachable!("contract methods are callable"),
                     };
-                    let slot = self.dispatch_slot(dispatch);
+                    let slot = if name == "copy"
+                        && matches!(&method,
+                        Ty::Callable { parameters, result, effects, suspends: false, .. }
+                        if parameters.is_empty() && self.resolved((**result).clone()) == self.resolved(self.expressions[&object].clone()) && effects.iter().all(|effect| effect.kind == crate::ast::EffectKind::Read))
+                    {
+                        crate::types::COPY_SLOT
+                    } else {
+                        self.dispatch_slot(dispatch)
+                    };
                     self.resolved_calls.insert(
                         callee,
                         ResolvedCall::ContractMethod {
@@ -237,7 +256,7 @@ impl Checker<'_> {
             }
             _ => None,
         };
-        let argument_types = arguments
+        let mut argument_types = arguments
             .iter()
             .enumerate()
             .map(|(index, argument)| match &expected_arguments {
@@ -265,6 +284,15 @@ impl Checker<'_> {
                 Some(_) => self.infer_expression(function, *argument),
             })
             .collect::<Result<Vec<_>, _>>()?;
+        if let Some(expected) = &expected_arguments {
+            for ((argument, actual), expected) in
+                arguments.iter().zip(&mut argument_types).zip(expected)
+            {
+                if self.has_type_evidence(*argument, expected) {
+                    *actual = expected.clone();
+                }
+            }
+        }
         // Preserve the relation between callable parameter/result groups before
         // multiple caller places collapse to the same frame group.
         for (expected, actual) in callee_type.parameter_types().zip(&argument_types) {
@@ -555,6 +583,12 @@ impl Checker<'_> {
         name: &str,
     ) -> Result<Ty, FosterError> {
         let object = self.resolved(object);
+        if matches!(object, Ty::Generic(_)) {
+            let view = self.constraint_view(function, object.clone())?;
+            if view != object {
+                return self.infer_member(function, view, name);
+            }
+        }
         if let Ty::Reference(_, value) = object {
             return self.infer_member(function, *value, name);
         }
@@ -701,6 +735,11 @@ impl Checker<'_> {
                 let mut found: Option<Ty> = None;
                 for component in members {
                     let candidate = match component {
+                        ref primitive
+                            if self.is_string_type(primitive) || self.is_bytes_type(primitive) =>
+                        {
+                            Some(self.infer_member(function, primitive.clone(), member)?)
+                        }
                         Ty::Record(record, arguments) => {
                             let has_field = self
                                 .effective_record_fields(record, &arguments)?
@@ -856,6 +895,7 @@ impl Checker<'_> {
             .cloned()
             .ok_or_else(|| self.error(caller, format!("function `{name}` is not a method")))?;
         self.unify(expected_receiver.ty, receiver, caller)?;
+        self.check_constraints_with_bindings(caller, function, &generics)?;
         parameters.remove(0);
         let result = self.instantiate(signature.result, &mut generics);
         Ok(Ty::Callable {
@@ -902,6 +942,7 @@ impl Checker<'_> {
         function: FunctionId,
         object: Ty,
         name: &str,
+        refinement: Option<Ty>,
     ) -> Result<Option<Ty>, FosterError> {
         // Builtin sequence tails preserve their concrete representation. The inherited
         // Sequence.rest contract returns a Sequence, which would erase that information.
@@ -914,11 +955,35 @@ impl Checker<'_> {
         }
         match self.resolved(object) {
             Ty::Record(record, arguments) => {
-                self.effective_method_type(function, record, &arguments, name)
+                let Some(receiver) = refinement else {
+                    return self.effective_method_type(function, record, &arguments, name);
+                };
+                let method = self
+                    .effective_record_methods(record, &arguments)?
+                    .into_iter()
+                    .find(|method| {
+                        method.name == name
+                            && (method.public
+                                || self
+                                    .can_access_module(function, self.hir.records[record].module))
+                    });
+                let Some(method) = method else {
+                    return Ok(None);
+                };
+                let result = self.method_result_for_receiver(&method, receiver);
+                Ok(Some(Ty::Callable {
+                    parameters: method.parameters,
+                    result: Box::new(result),
+                    erased: false,
+                    effects: method.effects,
+                    suspends: method.suspends,
+                }))
             }
             Ty::Intersection(members) => {
                 for member in members {
-                    if let Some(found) = self.contract_method_type(function, member, name)? {
+                    if let Some(found) =
+                        self.contract_method_type(function, member, name, refinement.clone())?
+                    {
                         return Ok(Some(found));
                     }
                 }
@@ -968,6 +1033,7 @@ impl Checker<'_> {
         self.unify(expected_receiver.ty, receiver, caller)?;
         parameters.remove(0);
         let result = self.instantiate(signature.result, &mut generics);
+        self.check_constraints_with_bindings(caller, method_function, &generics)?;
         Ok(Some((
             method_function,
             Ty::Callable {
@@ -1158,6 +1224,7 @@ impl Checker<'_> {
             }
         }
         self.unify(receiver.ty, Ty::Record(record, arguments), caller)?;
+        self.check_constraints_with_bindings(caller, method, &generics)?;
         let result = self.instantiate(signature.result, &mut generics);
         if remote && !remote_transferable(&self.resolved(result.clone())) {
             return Err(self.error(
@@ -1219,6 +1286,7 @@ impl Checker<'_> {
             .collect::<Vec<_>>();
         let receiver = parameters.remove(0);
         self.unify(receiver.ty, Ty::Variant(variant, arguments), caller)?;
+        self.check_constraints_with_bindings(caller, method, &generics)?;
         let result = self.instantiate(signature.result, &mut generics);
         Ok(Ty::Callable {
             parameters,

@@ -281,6 +281,7 @@ fn declaration_key(hir: &hir::PackageHir) -> String {
                 function.public,
                 &function.intrinsic,
                 &function.type_parameters,
+                &function.constraints,
                 &function.groups,
                 function
                     .parameters
@@ -590,7 +591,7 @@ impl Checker<'_> {
                 }
                 let key = match call {
                     ResolvedCall::ContractMethod { slot, .. } => {
-                        Some(self.dispatch_keys[slot.0 as usize].clone())
+                        self.dispatch_keys.get(slot.0 as usize).cloned()
                     }
                     _ => None,
                 };

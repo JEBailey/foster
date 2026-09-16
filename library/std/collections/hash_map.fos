@@ -2,25 +2,24 @@
 //!
 //! `Equal` keys must have equal hashes, and hash results must remain stable while
 //! keys are stored. Queries have expected constant-time bucket lookup and linear
-//! worst-case lookup. Iteration order is unspecified. get consumes the whole map;
-//! use contains_key? for a membership query that preserves it.
+//! worst-case lookup. Iteration order is unspecified. get returns a copy; remove
+//! returns the owned value and preserves the table and its other entries.
 
 import core.option
+import core.copy as copying
 import std.collections
 import std.collections.map
 import std.iter
 
 /// An unordered associative collection using equality and a caller-supplied hash.
 /// Equal keys must have equal, stable hashes. Hashes may be any Int, including negatives.
-/// Updates consume the table; iteration uses a snapshot in unspecified bucket order.
+/// put consumes the table; remove mutates it in place. Iteration uses a snapshot in unspecified bucket order.
 /// Lookups are expected O(1), worst-case O(n); growth rehashes all entries.
 pub type HashMap<K, V> = & Map<K, V> & {
     buckets: List<List<Entry<K, V>>>
     size: Int
     hasher: func(K) -> Int
 
-    /// Removes a key while preserving the table's hashing strategy and other entries.
-    pub func remove(self, key: K) -> HashMap<K, V> [mut self(buckets.items, size), consume self]
 }
 
 impl HashMap {
@@ -41,14 +40,14 @@ impl HashMap {
         find_index(self.buckets[bucket], key) >= 0
     }
 
-    /// Consumes the entire table and returns the matching value, or `None`.
-    /// All other entries are released. Use `contains_key?` for a borrowing membership test.
-    pub func get<K, V>(self: HashMap<K, V>, key: K) -> Option<V> [consume self] {
+    /// Returns an independent Copy of the value, preserving the map; absent keys return None.
+    /// A present noncopyable value raises a runtime error; use remove to obtain ownership.
+    pub func get<K, V>(self: HashMap<K, V>, key: K) -> Option<V> [read self.buckets, read key] {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
         let index = find_index(self.buckets[bucket], key)
         branch {
             index < 0 -> Option.None
-            _ -> Option.Some(self.buckets[bucket][index].value)
+            _ -> Option.Some(copying::copy(self.buckets[bucket][index].value))
         }
     }
 
@@ -74,14 +73,16 @@ impl HashMap {
         }
     }
 
-    /// Removes a key if present, leaving other colliding entries intact.
-    pub func remove<K, V>(self: HashMap<K, V>, key: K) -> HashMap<K, V> [mut self(buckets.items, size), consume self] {
+    /// Removes and returns the owned value, leaving other colliding entries and the hasher intact.
+    /// An absent key returns None and leaves the map unchanged. Values need not support Copy.
+    pub func remove<K, V>(self: HashMap<K, V>, key: K) -> Option<V> {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
         let index = find_index(self.buckets[bucket], key)
         branch {
-            index < 0 -> self
+            index < 0 -> Option.None
             _ -> {
                 let remaining = []
+                let removed = Option.None
                 let entries = self.buckets[bucket].iterator()
                 let cursor = 0
                 loop {
@@ -90,7 +91,7 @@ impl HashMap {
                         Option.Some(entry) -> {
                             branch {
                                 cursor != index -> remaining.push(entry)
-                                _ -> ()
+                                _ -> { removed = Option.Some(entry.value) }
                             }
                             cursor = cursor + 1
                         }
@@ -98,7 +99,7 @@ impl HashMap {
                 }
                 self.buckets[bucket] = remaining
                 self.size = self.size - 1
-                self
+                removed
             }
         }
     }
@@ -210,11 +211,12 @@ test "hash maps retain colliding keys through replacement and removal" {
     let table = HashMap.empty((key: Int) -> -1).put(1, "one").put(2, "two").put(3, "three").put(2, "updated")
     assert(table.length() == 3)
     assert(table.contains_key?(1))
-    table = (move table).remove(2).remove(99)
+    assert(table.remove(2) == Option.Some("updated"))
+    assert(table.remove(99) == Option.None)
     assert(table.length() == 2)
     assert(not table.contains_key?(2))
     assert(table.contains_key?(3))
-    assert((move table).get(1) == Option.Some("one"))
+    assert(table.get(1) == Option.Some("one"))
 }
 
 test "hash maps grow and accept every signed hash" {
@@ -233,7 +235,7 @@ test "hash maps grow and accept every signed hash" {
         assert(table.contains_key?(index))
         index = index + 1
     }
-    assert((move table).get(99) == Option.Some(198))
+    assert(table.get(99) == Option.Some(198))
     let negative = HashMap.empty((key: Int) -> -9223372036854775807 - 1)
     assert((move negative).put(1, 42).get(1) == Option.Some(42))
 }

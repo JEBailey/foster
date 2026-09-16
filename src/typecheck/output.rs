@@ -4,6 +4,7 @@ use super::*;
 
 impl Checker<'_> {
     pub(super) fn finish(mut self) -> Result<TypeInformation, FosterError> {
+        self.validate_constraint_uses()?;
         let called = self
             .hir
             .expressions
@@ -257,6 +258,102 @@ impl Checker<'_> {
                         .insert((NominalTypeId::Variant(variant), slot), function);
                 }
             }
+        }
+        let mut queries = self
+            .hir
+            .expressions
+            .iter()
+            .flat_map(|(expression, value)| {
+                let function = self.hir.expression_functions.get(&expression).copied();
+                let arms = match value {
+                    hir::Expr::Branch { arms, .. } => arms.as_slice(),
+                    _ => &[],
+                };
+                arms.iter().filter_map(move |arm| {
+                    let hir::BranchTest::Pattern(pattern) = &arm.test else {
+                        return None;
+                    };
+                    let hir::Pattern::IsType { target, .. } = pattern.unspanned() else {
+                        return None;
+                    };
+                    Some((function?, target.clone()))
+                })
+            })
+            .collect::<HashSet<_>>();
+        queries.extend(self.extra_type_queries.clone());
+        for (function, target) in queries {
+            let expected = self.pattern_type(&target);
+            self.validate_runtime_constraints(function, &expected)?;
+            let mut accepted = vec![target.clone()];
+            if matches!(expected, Ty::Record(_, _)) {
+                let candidates = self
+                    .hir
+                    .records
+                    .iter()
+                    .map(|(record, definition)| {
+                        Ty::Record(
+                            record,
+                            definition
+                                .parameters
+                                .iter()
+                                .cloned()
+                                .map(Ty::Generic)
+                                .collect(),
+                        )
+                    })
+                    .chain(
+                        self.hir
+                            .variant_types
+                            .iter()
+                            .filter(|(_, variant)| variant.kind == crate::ast::VariantKind::Enum)
+                            .map(|(variant, definition)| {
+                                Ty::Variant(
+                                    variant,
+                                    definition
+                                        .parameters
+                                        .iter()
+                                        .cloned()
+                                        .map(Ty::Generic)
+                                        .collect(),
+                                )
+                            }),
+                    )
+                    .chain([
+                        Ty::Unit,
+                        Ty::Bool,
+                        Ty::Int,
+                        Ty::Float,
+                        Ty::Byte,
+                        Ty::CodePoint,
+                    ])
+                    .collect::<Vec<_>>();
+                for actual in candidates {
+                    let substitutions = self.substitutions.clone();
+                    let next_variable = self.next_variable;
+                    let previous = self.suppress_constraint_assumptions;
+                    self.suppress_constraint_assumptions = true;
+                    let checked = self.coerce(expected.clone(), actual.clone(), function);
+                    self.suppress_constraint_assumptions = previous;
+                    let conforms = checked.is_ok();
+                    self.substitutions = substitutions;
+                    self.next_variable = next_variable;
+                    if conforms {
+                        let id = intern_type(&mut information, &mut interner, actual);
+                        let executable = crate::codegen::type_conversion::convert::<
+                            crate::codegen::type_conversion::Native,
+                        >(
+                            self.hir, &information, id, &Default::default(), 0
+                        )
+                        .map_err(|_| self.error(function, "runtime type exceeds nesting limit"))?;
+                        accepted.push(executable);
+                    }
+                }
+            }
+            accepted.sort();
+            accepted.dedup();
+            information
+                .type_conformances
+                .insert((function, target), accepted);
         }
         Ok(information)
     }

@@ -17,6 +17,8 @@ pub(in crate::native) fn lower_shared_to_native_ir(
     environment: NativeIrEnvironment<'_>,
 ) -> Result<(ir::Function, FailureCleanup), FosterError> {
     let remote_calls = verified_remote_calls(shared, source_states, instance, environment)?;
+    let specialized = specialize_type_branches(shared, instance, environment);
+    let shared = &specialized;
     let external_values = shared
         .captures
         .iter()
@@ -514,6 +516,142 @@ pub(in crate::native) fn lower_shared_to_native_ir(
         },
         failure_cleanup,
     ))
+}
+
+// Prune impossible arms before inferring their representations. Preserve value
+// IDs, which are also used by verified call and provenance facts.
+fn specialize_type_branches(
+    shared: &ir::Function,
+    instance: &SpecializationKey,
+    environment: NativeIrEnvironment<'_>,
+) -> ir::Function {
+    use crate::codegen::types::ExecutableType as E;
+    let mut function = shared.clone();
+    let mut known = HashMap::new();
+    for block in &function.blocks {
+        for entry in &block.instructions {
+            if let ir::Instruction::Portable(ir::PortableInstruction::MatchPattern {
+                destination,
+                pattern,
+                ..
+            }) = &entry.instruction
+                && let crate::hir::Pattern::IsType {
+                    source, conforming, ..
+                } = pattern.unspanned()
+            {
+                let source = source.specialize(&instance.substitutions);
+                if let E::Record { record, .. } = &source
+                    && crate::codegen::type_conversion::record_uses_dynamic_dispatch(
+                        &environment.compilation.hir,
+                        &environment.compilation.types,
+                        *record,
+                    )
+                {
+                    continue;
+                }
+                if matches!(
+                    source,
+                    E::Unit
+                        | E::Bool
+                        | E::Integer
+                        | E::Float
+                        | E::Byte
+                        | E::CodePoint
+                        | E::Bytes
+                        | E::List(_)
+                        | E::Record { .. }
+                        | E::Variant { .. }
+                ) && !source.contains_generic()
+                {
+                    known.insert(
+                        *destination,
+                        conforming.iter().any(|witness| {
+                            crate::codegen::types::conformance_witness_matches(witness, &source)
+                        }),
+                    );
+                }
+            }
+        }
+    }
+    for block in &mut function.blocks {
+        if let ir::Terminator::Branch {
+            condition,
+            then_target,
+            then_arguments,
+            else_target,
+            else_arguments,
+        } = &block.terminator
+            && let Some(matched) = known.get(condition)
+        {
+            block.terminator = if *matched {
+                ir::Terminator::Jump {
+                    target: *then_target,
+                    arguments: then_arguments.clone(),
+                }
+            } else {
+                ir::Terminator::Jump {
+                    target: *else_target,
+                    arguments: else_arguments.clone(),
+                }
+            };
+        }
+    }
+    let mut reachable = std::collections::HashSet::new();
+    let mut pending = vec![function.entry];
+    while let Some(block) = pending.pop() {
+        if !reachable.insert(block) {
+            continue;
+        }
+        match &function.blocks[block.0 as usize].terminator {
+            ir::Terminator::Jump { target, .. } => pending.push(*target),
+            ir::Terminator::Branch {
+                then_target,
+                else_target,
+                ..
+            } => pending.extend([*then_target, *else_target]),
+            ir::Terminator::Return(_) => {}
+        }
+    }
+    if reachable.len() == function.blocks.len() {
+        return function;
+    }
+    let map = (0..function.blocks.len())
+        .map(|i| ir::Block(i as u32))
+        .filter(|block| reachable.contains(block))
+        .enumerate()
+        .map(|(i, block)| (block, ir::Block(i as u32)))
+        .collect::<HashMap<_, _>>();
+    function.blocks = std::mem::take(&mut function.blocks)
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, mut block)| {
+            if !reachable.contains(&ir::Block(i as u32)) {
+                function.entry_seeds.extend(block.parameters);
+                function.entry_seeds.extend(
+                    block
+                        .instructions
+                        .iter()
+                        .flat_map(|entry| entry.destinations()),
+                );
+                return None;
+            }
+            match &mut block.terminator {
+                ir::Terminator::Jump { target, .. } => *target = map[target],
+                ir::Terminator::Branch {
+                    then_target,
+                    else_target,
+                    ..
+                } => {
+                    *then_target = map[then_target];
+                    *else_target = map[else_target];
+                }
+                _ => {}
+            }
+            Some(block)
+        })
+        .collect();
+    function.entry = map[&function.entry];
+    function
 }
 
 fn shift_native_blocks(terminator: &mut ir::Terminator, offset: u32) {

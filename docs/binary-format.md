@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Format version 27; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
+Format version 29; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -47,7 +47,7 @@ tags, truncation and trailing data, and invokes the VM verifier before returning
 | records | `vector<(RecordId, string, vector<string> parameters, vector<(string, ExecutableType)>)>` | runtime name, generic parameters, and typed indexed field layout |
 | dispatch | `vector<(NominalTypeId, u32 slot, FunctionId)>` | record and enum dispatch |
 | enum cases | `vector<(VariantId, VariantTypeId, string, vector<string> parameters, string, vector<ExecutableType>)>` | parent enum, generic parameters, case label, and declared payload layout |
-| symbolic modules | `string` | compact UTF-8 JSON descriptor table, version 1 |
+| symbolic modules | `string` | compact UTF-8 JSON descriptor table, version 2 |
 
 The symbolic module table groups package-qualified type/function identities, semantic descriptors,
 implementation bindings, and required imports. See [symbolic modules](symbolic-modules.md). Its JSON
@@ -90,7 +90,11 @@ String(string)`, `5 CodePoint(u32 scalar)`, `6 Symbol(string)`.
 
 Pattern tags: `0 Spanned(Pattern, Span)`, `1 Wildcard`, `2 Binding(LocalId)`, `3 Bool(bool)`, `4
 Integer(u64 bits)`, `5 Float(u64 bits)`, `6 String(string)`, `7 CodePoint(string)`, `8 Symbol(string)`,
-`9 Variant(VariantId, vector<Pattern>)`.
+`9 Variant(VariantId, vector<Pattern>)`, and
+`10 IsType(ExecutableType target, ExecutableType source, vector<ExecutableType> conforming, optional<LocalId> binding)`.
+Source typing preserves semantic distinctions such as String versus Symbol during
+native specialization. Conformance witnesses use the structural type checker;
+linking refreshes library witnesses to include client-defined types.
 
 Capture modes: `0 Copy`, `1 Move`, `2 Ref`. Parameter modes: `0 Borrow`, `1 Consume`. Unary
 operators: `0 Negate`, `1 Not`, `2 BitNot`. Binary tags in order are Add, Subtract, Multiply,
@@ -170,7 +174,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 27 readers accept only version 27 with zero flags. String accessors use Foster
+Version 29 readers accept only version 29 with zero flags. String accessors use Foster
 grapheme algorithms, and strings implement `Sequence<String>`; scalar-based artifacts
 from earlier versions must be rebuilt. The format retains the symbolic module table.
 Contract calls retain their checked

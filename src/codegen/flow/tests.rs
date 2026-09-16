@@ -6,16 +6,17 @@ fn reused_storage_keeps_distinct_value_types() {
     let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
     let mut program = vm::compile(&compilation).unwrap();
     let id = program.metadata.main.unwrap();
-    program.metadata.constants = vec![
+    let first_constant = program.metadata.constants.len() as u16;
+    program.metadata.constants.extend([
         crate::codegen::metadata::Constant::Bool(true),
         crate::codegen::metadata::Constant::Integer(42),
-    ];
+    ]);
     let body = program.functions.get_mut(&id).unwrap();
     body.registers = 1;
     body.instructions = vec![
         vm::Instruction::LoadConstant {
             destination: vm::Register(0),
-            constant: 0,
+            constant: first_constant,
         },
         vm::Instruction::Assert {
             condition: vm::Register(0),
@@ -26,7 +27,7 @@ fn reused_storage_keeps_distinct_value_types() {
         },
         vm::Instruction::LoadConstant {
             destination: vm::Register(0),
-            constant: 1,
+            constant: first_constant + 1,
         },
         vm::Instruction::Return {
             source: vm::Register(0),
@@ -53,7 +54,7 @@ fn reused_storage_keeps_distinct_value_types() {
         assert_eq!(function.values.hint(value.index()), Some(0));
         assert_eq!(
             facts.value_types(value),
-            &[if constant == 0 {
+            &[if constant == first_constant {
                 ExecutableType::Bool
             } else {
                 ExecutableType::Integer

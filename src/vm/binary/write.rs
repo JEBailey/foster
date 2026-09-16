@@ -639,6 +639,21 @@ impl Writer {
     }
     pub(super) fn pattern(&mut self, value: &Pattern) -> Result<(), BinaryError> {
         match value {
+            Pattern::IsType {
+                target,
+                source,
+                conforming,
+                binding,
+            } => {
+                self.u8(10);
+                self.verification_type(target)?;
+                self.verification_type(source)?;
+                self.u32(conforming.len())?;
+                for ty in conforming {
+                    self.verification_type(ty)?;
+                }
+                self.option_id(*binding);
+            }
             Pattern::Spanned { pattern, span } => {
                 self.u8(0);
                 self.pattern(pattern)?;

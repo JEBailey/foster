@@ -4,6 +4,7 @@ mod annotations;
 mod calls;
 mod composition;
 mod constants;
+mod constraints;
 mod context;
 mod effect_worklist;
 mod effects;
@@ -111,6 +112,8 @@ fn check_bodies(
 impl<'a> Checker<'a> {
     fn new(hir: &'a hir::PackageHir) -> Self {
         Self {
+            extra_type_queries: Vec::new(),
+            type_facts: Vec::new(),
             body_cache: None,
             body_cacheable: true,
             record_fields_cache: Default::default(),
@@ -136,6 +139,8 @@ impl<'a> Checker<'a> {
             effect_seeds: Default::default(),
             effect_dependencies: Default::default(),
             resolving_aliases: Vec::new(),
+            constraint_proofs: Vec::new(),
+            suppress_constraint_assumptions: false,
         }
     }
 
@@ -243,6 +248,7 @@ impl<'a> Checker<'a> {
         self.check_variant_declarations()?;
         self.declare_constants()?;
         self.declare_signatures()?;
+        self.validate_constraints()?;
         self.validate_overloads()?;
         self.check_record_compositions()?;
         self.check_variant_compositions()?;
@@ -655,6 +661,17 @@ impl<'a> Checker<'a> {
         }
         Ok(())
     }
+}
+
+pub(crate) fn check_runtime_type_queries(
+    hir: &hir::PackageHir,
+    queries: Vec<(FunctionId, crate::codegen::types::ExecutableType)>,
+) -> Result<TypeInformation, FosterError> {
+    let mut checker = Checker::new(hir)
+        .check(None)
+        .map_err(|errors| errors.into_iter().next().unwrap())?;
+    checker.extra_type_queries = queries;
+    checker.finish()
 }
 
 fn overload_type_key(

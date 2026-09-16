@@ -1,0 +1,60 @@
+import core.option
+import core.copy
+import core.list
+import std.collections.map
+import std.collections.hash_map
+
+type Payload = { pub values: List<Int> }
+impl Payload {
+    func copy(self: Payload) -> self { Payload { values: self.values.slice(0, self.values.length) } }
+}
+type Owned = { pub value: Int }
+
+func exercise(values: Map<Int, Payload>) -> () [reshape values] {
+    let copied = values.get(1)
+    branch copied {
+        Option.Some(item) -> { item.values.push(99) }
+        Option.None -> { assert(false, "missing copied value") }
+    }
+    branch values.get(1) {
+        Option.Some(item) -> { assert(item.values == [42], "get must return an independent copy") }
+        Option.None -> { assert(false) }
+    }
+    assert(values.length() == 2)
+    assert(values.get(99) == Option.None)
+    branch values.remove(1) {
+        Option.Some(item) -> { assert(item.values == [42]) }
+        Option.None -> { assert(false) }
+    }
+    assert(values.length() == 1)
+    assert(values.contains_key?(2))
+    assert(values.get(1) == Option.None)
+    assert(values.remove(1) == Option.None)
+    assert(values.length() == 1)
+    ()
+}
+
+func remove_owned(values: Map<Int, Owned>) -> () [reshape values] {
+    branch values.remove(1) {
+        Option.Some(item) -> { assert(item.value == 42) }
+        Option.None -> { assert(false) }
+    }
+    assert(values.length() == 1)
+    branch values.remove(2) {
+        Option.Some(item) -> { assert(item.value == 7) }
+        Option.None -> { assert(false) }
+    }
+    assert(values.empty?())
+    assert(values.remove(2) == Option.None)
+    ()
+}
+
+func main() -> Int {
+    let ordered = Map.empty().put(1, Payload { values: [42] }).put(2, Payload { values: [7] })
+    exercise(ordered)
+    let hashed = HashMap.empty((key: Int) -> 0).put(1, Payload { values: [42] }).put(2, Payload { values: [7] })
+    exercise(hashed)
+    remove_owned(Map.empty().put(1, Owned { value: 42 }).put(2, Owned { value: 7 }))
+    remove_owned(HashMap.empty((key: Int) -> 0).put(1, Owned { value: 42 }).put(2, Owned { value: 7 }))
+    42
+}

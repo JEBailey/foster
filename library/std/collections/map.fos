@@ -1,10 +1,11 @@
 //! Associative collection contracts and insertion-ordered list maps.
 //!
 //! `Map<K, V>` defines the shared API. `Map`.empty constructs `ListMap`, whose key searches
-//! are linear. Use std.collections.hash_map for hashed lookup. get consumes the
-//! map; contains_key? borrows it. put consumes and returns the updated collection.
+//! are linear. Use std.collections.hash_map for hashed lookup. get copies a value;
+//! remove transfers a value and preserves the map. put consumes and returns the updated collection.
 
 import core.option
+import core.copy as copying
 import std.collections
 import std.iter
 
@@ -15,11 +16,14 @@ pub type Entry<K, V> = {
 }
 
 /// An associative collection with unique keys and implementation-defined iteration order.
-/// Updates consume and return the concrete implementation. Lookup consumes the map so that
-/// values need not implement Copy; membership checks borrow it.
+/// Lookup copies the selected value. Removal mutates the map and transfers the selected value.
+/// put consumes and returns the concrete implementation; membership checks borrow it.
 pub type Map<K, V> = & Collection<Entry<K, V>> & {
-    /// Consumes the map and returns the value associated with `key`, if present.
-    pub func get(self, key: K) -> Option<V> [consume self]
+    /// Returns an independent Copy of the value, preserving the map; absent keys return None.
+    /// A present noncopyable value raises a runtime error; use remove to obtain ownership.
+    pub func get(self, key: K) -> Option<V> [read self, read key]
+    /// Removes and returns the owned value, preserving all other entries; absent keys return None.
+    pub func remove(self, key: K) -> Option<V> [read key, reshape self]
     /// Tests key membership without consuming the map.
     pub func contains_key?(self, key: K) -> Bool [read self, read key]
     /// Associates `key` with `value`, replacing an existing entry while preserving the implementation.
@@ -46,13 +50,41 @@ impl ListMap {
         ListMap { entries: [] }
     }
 
-    /// Consumes the map and returns the value associated with `key`, if present.
-    pub func get<K, V>(self: ListMap<K, V>, key: K) -> Option<V> [consume self] {
+    /// Returns an independent Copy of the value, preserving the map; absent keys return None.
+    /// A present noncopyable value raises a runtime error; use remove to obtain ownership.
+    pub func get<K, V>(self: ListMap<K, V>, key: K) -> Option<V> [read self.entries, read key] {
         let index = find_index(self.entries, key)
         branch {
             index < 0 -> Option.None
-            _ -> Option.Some(self.entries[index].value)
+            _ -> Option.Some(copying::copy(self.entries[index].value))
         }
+    }
+}
+
+impl ListMap {
+    /// Removes and returns the owned value, preserving the map and remaining insertion order.
+    /// An absent key returns None and leaves the map unchanged.
+    pub func remove<K, V>(self: ListMap<K, V>, key: K) -> Option<V> {
+        let index = find_index(self.entries, key)
+        return Option.None if index < 0
+        let remaining = []
+        let removed = Option.None
+        let entries = self.entries.iterator()
+        let cursor = 0
+        loop {
+            branch entries.next() {
+                Option.None -> { break }
+                Option.Some(entry) -> {
+                    branch {
+                        cursor == index -> { removed = Option.Some(entry.value) }
+                        _ -> remaining.push(entry)
+                    }
+                    cursor = cursor + 1
+                }
+            }
+        }
+        self.entries = remaining
+        removed
     }
 }
 
@@ -138,7 +170,7 @@ test "maps replace values without duplicating keys" {
     assert(not values.empty?())
     assert(values.contains_key?("a"))
     assert(not values.contains_key?("missing"))
-    let found = branch (move values).get("a") {
+    let found = branch values.get("a") {
         Option.Some(value) -> value == 2
         Option.None -> false
     }

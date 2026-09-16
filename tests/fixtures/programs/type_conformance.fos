@@ -1,0 +1,83 @@
+import core.copy
+import core.option
+
+type HasNumber = { pub func number(self) -> Int [read self] }
+type Duplicable = { pub func copy(self) -> self [read self] }
+type HasValue = { pub value: Int }
+type Incrementable = { pub func increment(self) -> () [mut self] }
+
+type Item = { value: Int }
+impl Item {
+    func number(self) -> Int [read self] { self.value }
+    func copy(self) -> self [read self] { Item { value: self.value } }
+    func increment(self) -> () [mut self] {
+        self.value = self.value + 1
+        ()
+    }
+}
+
+type Wrong = { value: Int }
+impl Wrong {
+    func number(self) -> Bool [read self] { true }
+}
+
+type Envelope<T> = { value: T }
+impl Envelope {
+    func number<T>(self: Envelope<T>) -> Int [read self] { 42 }
+}
+
+func number<T>(value: T) -> Int [read value] {
+    branch value {
+        is HasNumber -> read_number(value)
+        _ -> 0
+    }
+}
+
+func read_number(value: HasNumber) -> Int [read value] { value.number() }
+
+func copy_available(value: HasNumber) -> Bool [read value] {
+    branch value {
+        is Duplicable -> true
+        _ -> false
+    }
+}
+
+func duplicate<T>(value: T) -> Option<T> [read value] {
+    branch value {
+        is Duplicable -> Option.Some(value.copy())
+        _ -> Option.None
+    }
+}
+
+func increment<T>[g: group T](value: ref[g] T) -> () [mut g] {
+    branch value {
+        is Incrementable -> value.increment()
+        _ -> ()
+    }
+}
+
+func set_value<T>[g: group T](value: ref[g] T) -> () [mut g] {
+    branch value {
+        is HasValue -> { value.value = 41 }
+        _ -> ()
+    }
+}
+
+func main() -> Int {
+    let original = Item { value: 0 }
+    set_value(ref original)
+    assert(original.value == 41, "field mutation reaches caller")
+    increment(ref original)
+    assert(original.value == 42, "refinement preserves the original place")
+    branch duplicate(original) {
+        Option.Some(copied) -> { assert(copied.value == 42, "self result retains the concrete type") }
+        Option.None -> { assert(false) }
+    }
+    assert(number(original) == 42, "structural method dispatch")
+    assert(copy_available(original), "erased receivers retain their runtime types")
+    assert(number(Wrong { value: 42 }) == 0, "method signatures must conform")
+    assert(number(Envelope { value: true }) == 42, "generic receiver conformance")
+    assert(number(Envelope { value: 0 }) == 42, "another generic instantiation")
+    assert(duplicate(42) == Option.Some(42), "no special Copy type identity")
+    42
+}

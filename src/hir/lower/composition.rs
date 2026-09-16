@@ -309,6 +309,7 @@ fn collect(
                 || !source.receiver
                 || !source.public
                 || source.intrinsic.is_some()
+                || !source.constraints.is_empty()
             {
                 continue;
             }

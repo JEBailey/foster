@@ -557,6 +557,7 @@ impl Parser {
         let token = self.advance().clone();
         let start = token.range.start;
         let pattern = match token.kind {
+            TokenKind::Ident(name) if name == "is" => Pattern::Is(self.type_expr()?),
             TokenKind::Ident(name) if name == "_" => Pattern::Wildcard,
             TokenKind::True => Pattern::Bool(true),
             TokenKind::False => Pattern::Bool(false),

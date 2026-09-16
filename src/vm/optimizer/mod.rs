@@ -1,6 +1,7 @@
 //! Semantics-preserving rewrites over Foster's executable register IR.
 
 use super::{Instruction, Program};
+use crate::error::FosterError;
 
 pub(crate) mod analysis;
 mod closures;
@@ -16,16 +17,17 @@ mod inlining;
 mod registers;
 
 /// Optimizes a complete bytecode program while retaining one source span per instruction.
-pub fn optimize(program: &mut Program) {
+/// Returns validation or lowering errors without changing the input program.
+pub fn optimize(program: &mut Program) -> Result<(), FosterError> {
     let shared = crate::codegen::vm::seal_program(program.clone())
-        .expect("optimization requires valid bytecode")
-        .optimized()
-        .expect("shared optimization must preserve valid SSA");
+        .map_err(|error| FosterError::runtime(format!("shared SSA sealing failed: {error}")))?
+        .optimized()?;
     let mut lowered = crate::codegen::vm::lower_shared_program(shared)
-        .expect("optimized SSA must lower to bytecode");
+        .map_err(|error| FosterError::runtime(format!("shared VM lowering failed: {error}")))?;
     finish_backend(&mut lowered);
     finalize_register_drops(&mut lowered);
     *program = lowered;
+    Ok(())
 }
 
 pub(crate) fn finish_backend(program: &mut Program) {
@@ -155,7 +157,7 @@ mod tests {
                 .count()
         };
         let expected = Machine::new(&program).run_main().unwrap();
-        optimize(&mut program);
+        optimize(&mut program).unwrap();
         vm::verify(&program).unwrap();
         assert!(count(&program.functions[&id]) < count(&original));
         assert_eq!(program.functions[&id].registers, original.registers);
@@ -220,7 +222,7 @@ mod tests {
             .unwrap()
             .0;
         let before = program.functions[&barrier_id].clone();
-        optimize(&mut program);
+        optimize(&mut program).unwrap();
         vm::verify(&program).unwrap();
         assert_eq!(Machine::new(&program).run_main().unwrap(), baseline);
         assert_eq!(baseline, Value::Integer(49));

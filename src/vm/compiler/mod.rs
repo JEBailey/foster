@@ -35,6 +35,29 @@ fn opcode_intrinsic_instruction(
     value: Register,
 ) -> Instruction {
     match intrinsic {
+        OpcodeIntrinsic::ValueCanCopy | OpcodeIntrinsic::ValueCopy => {
+            Instruction::CallContractMethod {
+                destination,
+                receiver,
+                slot: if intrinsic == OpcodeIntrinsic::ValueCanCopy {
+                    crate::types::CAN_COPY_SLOT
+                } else {
+                    crate::types::COPY_SLOT
+                },
+                name: if intrinsic == OpcodeIntrinsic::ValueCanCopy {
+                    "can_copy?"
+                } else {
+                    "copy"
+                }
+                .into(),
+                arguments: Vec::new(),
+                result_type: if intrinsic == OpcodeIntrinsic::ValueCanCopy {
+                    ExecutableType::Bool
+                } else {
+                    ExecutableType::Unknown
+                },
+            }
+        }
         OpcodeIntrinsic::ListPush => Instruction::Push {
             destination,
             object: receiver,
@@ -271,9 +294,10 @@ pub(crate) fn compile_construction(compilation: &Compilation) -> Result<Program,
 
 /// Compiled generic library bodies, sealed through SSA but not finalized with register drops.
 pub(crate) fn compile_library(compilation: &Compilation) -> Result<Program, FosterError> {
-    let mut program = compile_construction(compilation)?;
-    crate::codegen::layout::legalize(&mut program)?;
-    crate::codegen::vm::lower_program_through_shared_ir(&mut program)
+    let construction = compile_construction(compilation)?;
+    let shared = crate::codegen::vm::seal_program(construction)
+        .map_err(|e| FosterError::runtime(e.to_string()))?;
+    let mut program = crate::codegen::vm::lower_shared_program(shared)
         .map_err(|e| FosterError::runtime(e.to_string()))?;
     program.metadata.main = None;
     program.metadata.main_arguments = false;
@@ -400,6 +424,15 @@ impl Compiler<'_> {
         }
         let intrinsic = function.intrinsic.as_deref().and_then(Intrinsic::from_key);
         let result = match intrinsic.and_then(Intrinsic::opcode) {
+            Some(opcode @ (OpcodeIntrinsic::ValueCopy | OpcodeIntrinsic::ValueCanCopy)) => {
+                let destination = lower.allocate();
+                let receiver = lower.locals[&function.parameters[0].local];
+                lower.emit(
+                    opcode_intrinsic_instruction(opcode, destination, receiver, receiver),
+                    function.span.clone(),
+                );
+                destination
+            }
             Some(opcode) => {
                 let [receiver, value] = function.parameters.as_slice() else {
                     return Err(FosterError::runtime(format!(
@@ -923,8 +956,16 @@ impl FunctionCompiler<'_> {
                 registers: &mut Vec<Register>,
             ) {
                 match pattern.unspanned() {
-                    hir::Pattern::Binding(local) => {
-                        if let Some(register) = locals.get(local) {
+                    hir::Pattern::Binding(local)
+                    | hir::Pattern::IsType {
+                        binding: Some(local),
+                        ..
+                    } => {
+                        if let Some(register) = locals.get(local)
+                            && !locals
+                                .iter()
+                                .any(|(other, found)| other != local && found == register)
+                        {
                             registers.push(*register);
                         }
                     }

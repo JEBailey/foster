@@ -63,6 +63,13 @@ fn program_consumers_reject_the_same_invalid_construction() {
         let lowered_error = lower_program_through_shared_ir(&mut invalid).unwrap_err();
         assert_eq!(retained_error, lowered_error, "{defect}");
         assert_eq!(invalid, snapshot, "{defect}");
+        let optimizer_error = vm::optimize(&mut invalid).unwrap_err();
+        assert!(
+            optimizer_error
+                .message
+                .contains(&retained_error.to_string())
+        );
+        assert_eq!(invalid, snapshot, "optimizer changed input with {defect}");
     }
 }
 
@@ -119,6 +126,12 @@ fn vm_lowering_rolls_back_constants_after_successful_sealing() {
         "too many VM constants"
     );
     // Check the entire executable, including bodies, source spans, and metadata.
+    assert_eq!(vm::encode_program(&program).unwrap(), before);
+    let error = vm::optimize(&mut program).unwrap_err();
+    assert_eq!(
+        error.message,
+        "shared VM lowering failed: too many VM constants"
+    );
     assert_eq!(vm::encode_program(&program).unwrap(), before);
 }
 

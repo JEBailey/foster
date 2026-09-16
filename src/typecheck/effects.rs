@@ -267,6 +267,15 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                     self.walk_expr(*subject);
                 }
                 for arm in arms {
+                    if let Some(subject) = subject
+                        && let hir::BranchTest::Pattern(pattern) = &arm.test
+                        && let hir::Pattern::IsType {
+                            binding: Some(local),
+                            ..
+                        } = pattern.unspanned()
+                    {
+                        self.owners.insert(*local, self.place_group(*subject));
+                    }
                     if let hir::BranchTest::Condition(test) = arm.test {
                         self.walk_expr(test);
                     }
@@ -405,6 +414,15 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 for arm in arms {
                     if let hir::BranchTest::Condition(test) = arm.test {
                         self.walk_expr(test);
+                    }
+                    if let Some(subject) = subject
+                        && let hir::BranchTest::Pattern(pattern) = &arm.test
+                        && let hir::Pattern::IsType {
+                            binding: Some(local),
+                            ..
+                        } = pattern.unspanned()
+                    {
+                        self.owners.insert(*local, self.place_group(*subject));
                     }
                     self.walk_statement_block(&arm.body, false);
                 }

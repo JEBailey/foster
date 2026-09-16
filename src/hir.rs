@@ -152,6 +152,7 @@ pub struct Function {
     pub public: bool,
     pub intrinsic: Option<String>,
     pub type_parameters: Vec<String>,
+    pub constraints: Vec<ast::TypeConstraint>,
     pub groups: Vec<ast::GroupParameter>,
     pub parameters: Vec<Parameter>,
     pub return_type: Option<ast::TypeExpr>,
@@ -175,6 +176,8 @@ pub struct Local {
 pub enum LocalKind {
     Parameter,
     Binding,
+    /// A branch-local view established by a concrete runtime type check.
+    TypePattern,
     /// An environment slot initialized from a value-capture expression.
     CapturedValue,
 }
@@ -327,6 +330,12 @@ pub enum BranchTest {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {
+    IsType {
+        target: crate::codegen::types::ExecutableType,
+        source: crate::codegen::types::ExecutableType,
+        conforming: Vec<crate::codegen::types::ExecutableType>,
+        binding: Option<LocalId>,
+    },
     Spanned {
         pattern: Box<Pattern>,
         span: std::ops::Range<usize>,

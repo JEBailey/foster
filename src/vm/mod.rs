@@ -474,11 +474,21 @@ func main() -> Int {
         let compilation =
             crate::compile("func main() -> Int { branch { true -> 20 + 22 _ -> 0 } }").unwrap();
         let mut program = compile(&compilation).unwrap();
-        optimize(&mut program);
+        optimize(&mut program).unwrap();
         verify(&program).unwrap();
 
         let function = &program.functions[&program.metadata.main.unwrap()];
-        assert_eq!(program.metadata.constants, [Constant::Integer(42)]);
+        let loaded = function
+            .instructions
+            .iter()
+            .filter_map(|instruction| match instruction {
+                Instruction::LoadConstant { constant, .. } => {
+                    Some(&program.metadata.constants[*constant as usize])
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(loaded, [&Constant::Integer(42)]);
         assert_eq!(function.registers, 1);
         assert_eq!(
             function.instructions.len(),

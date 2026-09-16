@@ -186,6 +186,20 @@ pub(super) fn build(
                 public: binding.public,
                 intrinsic: function.intrinsic.clone(),
                 type_parameters: binding.generic_names.clone(),
+                constraints: descriptor
+                    .constraints
+                    .iter()
+                    .map(|(index, requirement)| {
+                        Ok(ast::TypeConstraint {
+                            parameter: binding
+                                .generic_names
+                                .get(*index as usize)
+                                .ok_or_else(|| error("constraint parameter is out of range"))?
+                                .clone(),
+                            requirement: annotation(requirement)?,
+                        })
+                    })
+                    .collect::<Result<Vec<_>, FosterError>>()?,
                 groups,
                 parameters,
                 return_type: Some(annotation(&descriptor.result)?),
@@ -497,6 +511,9 @@ fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {
         }
     }
     fn function(f: &mut ast::Function, names: &BTreeMap<String, String>) {
+        for constraint in &mut f.constraints {
+            ty(&mut constraint.requirement, names);
+        }
         for p in &mut f.parameters {
             if let Some(t) = &mut p.ty {
                 ty(t, names);
@@ -698,6 +715,21 @@ pub(super) fn validate_function(
         || declaration.public != binding.public
         || declaration.receiver != descriptor.receiver
         || declaration.type_parameters != binding.generic_names
+        || declaration.constraints
+            != descriptor
+                .constraints
+                .iter()
+                .map(|(index, requirement)| {
+                    Ok(ast::TypeConstraint {
+                        parameter: binding
+                            .generic_names
+                            .get(*index as usize)
+                            .ok_or_else(|| error("constraint parameter is out of range"))?
+                            .clone(),
+                        requirement: annotation(requirement)?,
+                    })
+                })
+                .collect::<Result<Vec<_>, FosterError>>()?
         || declaration.suspends != descriptor.suspends
         || declaration.return_type.as_ref() != Some(&annotation(&descriptor.result)?)
         || declaration.effects != expected_effects

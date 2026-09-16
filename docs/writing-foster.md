@@ -6,7 +6,25 @@ forms; [language design](language-design.md) is the full syntax reference and
 complete program that returns `42`, checked by
 [agent documentation tests](../tests/agent_documentation.rs).
 
-## Find the right source first
+## Constrained implementation parameters
+
+Requirements on implementation parameters are structural. Here `T` must provide the
+method required by `Copy`; the copied result still has the original concrete type `T`.
+Import the requirement's module, and join multiple requirements with `&`.
+
+```foster
+import core.copy
+
+type Box<T> = { value: T }
+
+impl Box<T & Copy> {
+    func copied(self) -> T [read self] { self.value.copy() }
+}
+
+func main() -> Int { Box { value: 42 }.copied() }
+```
+
+## Find library declarations
 
 Read the [library guide](../library/README.md) to choose a module. Search its `.fos`
 source for the exact type, method, parameter order, and ownership contract. Names
@@ -165,6 +183,39 @@ borrows a place. This is not Rust's `&mut T` or lifetime syntax. Closure syntax 
 different ownership rules: read [closures](closures.md) before returning a closure
 that captures local state. Remote objects and suspension have additional rules in
 [remote semantics](remote-semantics.md); do not assume JavaScript async semantics.
+
+## Type and capability branches
+
+Use `is Copy` to test copyability in generic code. The test only reads the value;
+the successful arm can invoke `.copy()` and the fallback must handle failure.
+
+```foster
+import core.copy
+import core.result
+
+enum CopyError = NotCopyable
+
+func attempt<T>(value: T) -> Result<T, CopyError> [read value] {
+    branch value {
+        is Copy -> Result.Ok(value.copy())
+        _ -> Result.Error(CopyError.NotCopyable)
+    }
+}
+
+func main() -> Int {
+    branch attempt(42) {
+        Result.Ok(value) -> value
+        Result.Error(_) -> 0
+    }
+}
+```
+
+`is Type` checks whether the value satisfies that type, including user-defined
+structural contracts. The matching arm keeps its original type and gains access
+to the established contract. `Copy` uses the same rule; it is not a separate
+pattern operation. A `_` fallback is required. Parameterized test targets are not
+yet supported.
+See [type patterns](language-design.md#type-patterns) for the bounds.
 
 ## Common translation mistakes
 

@@ -1,0 +1,15 @@
+import core.copy
+
+pub type Item = { value: Int }
+
+impl Item {
+    pub func copy(self) -> self [read self] { Item { value: self.value } }
+}
+
+type Box<T> = { value: T }
+
+impl Box<T & Copy> {
+    func copied(self) -> T [read self] { self.value.copy() }
+}
+
+func main() -> Int { Box { value: Item { value: 42 } }.copied().value }

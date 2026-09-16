@@ -264,6 +264,46 @@ pub(crate) fn link(
             }
         }
     }
+    // A library's type tests must also recognize implementations defined by its
+    // client. Refresh the witnesses in the final linked type environment.
+    let queries = program
+        .functions
+        .iter()
+        .filter(|(id, _)| compilation.hir.external_functions.contains_key(id))
+        .flat_map(|(function, body)| {
+            body.instructions.iter().filter_map(move |instruction| {
+                let I::MatchPattern { pattern, .. } = instruction else {
+                    return None;
+                };
+                let hir::Pattern::IsType { target, .. } = pattern.unspanned() else {
+                    return None;
+                };
+                Some((*function, target.clone()))
+            })
+        })
+        .collect::<Vec<_>>();
+    if !queries.is_empty() {
+        let checked = crate::typecheck::check_runtime_type_queries(&compilation.hir, queries)?;
+        for (function, body) in &mut program.functions {
+            for instruction in &mut body.instructions {
+                let I::MatchPattern { pattern, .. } = instruction else {
+                    continue;
+                };
+                let pattern = match pattern {
+                    hir::Pattern::Spanned { pattern, .. } => pattern.as_mut(),
+                    pattern => pattern,
+                };
+                if let hir::Pattern::IsType {
+                    target, conforming, ..
+                } = pattern
+                    && let Some(witnesses) =
+                        checked.type_conformances.get(&(*function, target.clone()))
+                {
+                    *conforming = witnesses.clone();
+                }
+            }
+        }
+    }
     program.metadata.symbols = symbols::Table::from_compilation(compilation, program)?;
     Ok(())
 }
@@ -373,6 +413,18 @@ impl Mapping {
     }
     fn pattern(&self, pattern: &mut hir::Pattern) {
         match pattern {
+            hir::Pattern::IsType {
+                target,
+                source,
+                conforming,
+                ..
+            } => {
+                self.ty(target);
+                self.ty(source);
+                for ty in conforming {
+                    self.ty(ty);
+                }
+            }
             hir::Pattern::Variant { variant, fields } => {
                 *variant = id(self.cases[&raw(*variant)]);
                 for p in fields {

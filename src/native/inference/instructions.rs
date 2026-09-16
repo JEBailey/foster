@@ -494,7 +494,7 @@ pub(super) fn infer_instruction(
                 result[destination.index()] = Some(if *slot == crate::types::CAN_COPY_SLOT {
                     NativeType::Bool
                 } else {
-                    receiver
+                    dereference_native_type(receiver, environment)?
                 });
                 return Ok(());
             }
@@ -551,6 +551,13 @@ fn native_pattern_binding_types(
     bindings: &mut Vec<NativeType>,
 ) -> Result<(), FosterError> {
     match pattern.unspanned() {
+        Pattern::IsType {
+            target, binding, ..
+        } => {
+            if binding.is_some() {
+                bindings.push(native_verification_type(program, layouts, target, None)?);
+            }
+        }
         Pattern::Binding(_) => bindings.push(subject),
         Pattern::Variant { variant, fields } => {
             let parent = program.variants[variant].parent;

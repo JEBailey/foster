@@ -461,6 +461,12 @@ impl<'a> Reader<'a> {
                 variant: self.id::<Variant>()?,
                 fields: self.vec(|r| r.pattern())?,
             },
+            10 => Pattern::IsType {
+                target: self.verification_type(0)?,
+                source: self.verification_type(0)?,
+                conforming: self.vec(|r| r.verification_type(0))?,
+                binding: self.option_id()?,
+            },
             t => return Err(BinaryError::new(format!("unknown pattern tag {t}"))),
         })
     }

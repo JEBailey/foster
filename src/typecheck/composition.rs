@@ -338,6 +338,7 @@ impl Checker<'_> {
             signature.parameters[0].ty.clone(),
             function,
         )?;
+        self.check_unconditional_constraints(function, &generics)?;
         for (expected, actual) in required
             .parameters
             .iter()
@@ -878,6 +879,7 @@ impl Checker<'_> {
             signature.parameters[0].ty.clone(),
             function,
         )?;
+        self.check_unconditional_constraints(function, &generics)?;
         for (expected, actual) in required
             .parameters
             .iter()
@@ -1053,7 +1055,11 @@ impl Checker<'_> {
                     .all(|(expected, actual)| {
                         self.unify(expected.ty, actual.ty, *function).is_ok()
                     });
-            if compatible_parameters {
+            if compatible_parameters
+                && self
+                    .check_unconditional_constraints(*function, &generics)
+                    .is_ok()
+            {
                 found.push((*function, self.substitutions.clone(), self.next_variable));
             }
         }

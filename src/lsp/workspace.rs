@@ -371,7 +371,12 @@ impl Workspace {
         let qualifier = qualifier_before(current_source, start);
         let semantic_offset = snapshot.current_offset_to_semantic(current_offset)?;
 
-        let value = if qualifier.is_none()
+        let value = if let Some(symbol) =
+            symbol_at(&compilation, module_id, semantic_source, semantic_offset)
+            && let Some(value) = symbol_hover(&compilation, symbol)
+        {
+            value
+        } else if qualifier.is_none()
             && let Some(function_id) = function_at(&compilation, module_id, semantic_offset)
             && let Some((local_id, _)) = compilation
                 .hir
@@ -1611,7 +1616,25 @@ pub(super) fn function_signature(
     let effects = signature.map_or_else(String::new, |signature| {
         display_effects(&signature.effects, signature.suspends)
     });
-    let generics = angle_parameters(&function.type_parameters);
+    let generics = angle_parameters(
+        &function
+            .type_parameters
+            .iter()
+            .map(|name| {
+                let requirements = function
+                    .constraints
+                    .iter()
+                    .filter(|constraint| &constraint.parameter == name)
+                    .map(|constraint| display_type_expr(&constraint.requirement))
+                    .collect::<Vec<_>>();
+                if requirements.is_empty() {
+                    name.clone()
+                } else {
+                    format!("{name} & {}", requirements.join(" & "))
+                }
+            })
+            .collect::<Vec<_>>(),
+    );
     let group_entries = function
         .groups
         .iter()

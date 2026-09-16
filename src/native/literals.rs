@@ -76,7 +76,8 @@ fn collect_pattern_literals(pattern: &Pattern, visit: &mut impl FnMut(&str)) {
             }
         }
         Pattern::Spanned { .. } => unreachable!(),
-        Pattern::Wildcard
+        Pattern::IsType { .. }
+        | Pattern::Wildcard
         | Pattern::Binding(_)
         | Pattern::Bool(_)
         | Pattern::Integer(_)

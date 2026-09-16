@@ -1,0 +1,65 @@
+import core.copy
+import core.result
+import core.string
+import core.symbol
+import core.bytes.buffer
+import core.bytes as bytes
+import core.int as integers
+
+enum CopyError = NotCopyable
+type Item = { value: Int }
+impl Item {
+    func copy(self) -> self { Item { value: self.value } }
+}
+type Resource = { value: Int }
+enum Status = Ready | Done
+
+func attempt<T>(value: T) -> Result<T, CopyError> [read value] {
+    return branch value {
+        is Copy -> Result.Ok(value.copy())
+        _ -> Result.Error(CopyError.NotCopyable)
+    }
+}
+
+func main() -> Int {
+    let original = Item { value: 42 }
+    branch attempt(original) {
+        Result.Ok(copied) -> { assert(copied.value == 42) }
+        Result.Error(_) -> { assert(false) }
+    }
+    assert(original.value == 42)
+    assert(attempt(42) == Result.Ok(42))
+    assert(attempt(Resource { value: 0 }) == Result.Error(CopyError.NotCopyable))
+    assert(classify(40) == 42)
+    assert(classify(true) == 1)
+    assert(classify(Item { value: 41 }) == 42)
+    assert(classify(Resource { value: 41 }) == 42, "structural fields")
+    assert(classify(()) == 3, "unit narrowing")
+    assert(classify("hello") == 5, "String narrowing")
+    assert(classify(:hello) == 6, "Symbol narrowing")
+    assert(classify(Status.Ready) == 7, "enum narrowing")
+    assert(classify(ByteBuffer.empty()) == 9, "ByteBuffer narrowing")
+    assert(classify("".bytes) == 10, "qualified Bytes narrowing")
+    42
+}
+
+func classify<T>(value: T) -> Int [read value] {
+    branch value {
+        is integers::Int -> value + 2
+        is Bool -> branch {
+            value -> 1
+            _ -> 0
+        }
+        is Item -> value.value + 1
+        is () -> 3
+        is String -> value.length
+        is Symbol -> 6
+        is buffer::ByteBuffer -> value.length() + 9
+        is bytes::Bytes -> value.length + 10
+        is Status -> branch value {
+            Status.Ready -> 7
+            Status.Done -> 8
+        }
+        _ -> 0
+    }
+}

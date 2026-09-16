@@ -175,6 +175,7 @@ pub(super) fn lower_native_ir(
                     pattern,
                     backend.objects,
                     backend.ir.runtime_literal_indices,
+                    backend,
                 )?;
                 if lowered_bindings.len() != bindings.len() {
                     return Err(native_error(
@@ -266,10 +267,209 @@ fn lower_native_pattern(
     pattern: &Pattern,
     objects: ObjectRuntime<'_>,
     runtime_literal_indices: &HashMap<String, u64>,
+    backend: &NativeBackend<'_>,
 ) -> Result<(ClifValue, Vec<ClifValue>), FosterError> {
     let layouts = objects.layouts;
     let true_value = |builder: &mut FunctionBuilder<'_>| builder.ins().iconst(types::I8, 1);
     match pattern.unspanned() {
+        Pattern::IsType {
+            target,
+            source,
+            conforming,
+            binding,
+        } => {
+            if !conforming.is_empty() {
+                let mut matched = builder.ins().iconst(types::I8, 0);
+                for candidate in conforming {
+                    if candidate.contains_generic() {
+                        for layout in backend
+                            .ir
+                            .layouts
+                            .layouts()
+                            .iter()
+                            .filter(|layout| layout.materialized)
+                        {
+                            let concrete = match &layout.kind {
+                                LayoutKind::Record {
+                                    record, arguments, ..
+                                } => crate::codegen::types::ExecutableType::Record {
+                                    record: *record,
+                                    arguments: arguments.clone(),
+                                },
+                                LayoutKind::Variant {
+                                    variant_type,
+                                    arguments,
+                                    ..
+                                } => crate::codegen::types::ExecutableType::Variant {
+                                    variant: *variant_type,
+                                    arguments: arguments.clone(),
+                                },
+                                LayoutKind::Builtin { ty } => ty.clone(),
+                                _ => continue,
+                            };
+                            if !crate::codegen::types::conformance_witness_matches(
+                                candidate, &concrete,
+                            ) {
+                                continue;
+                            }
+                            let test = Pattern::IsType {
+                                target: concrete,
+                                source: source.clone(),
+                                conforming: Vec::new(),
+                                binding: None,
+                            };
+                            let (accepts, _) = lower_native_pattern(
+                                builder,
+                                module,
+                                subject,
+                                &test,
+                                objects,
+                                runtime_literal_indices,
+                                backend,
+                            )?;
+                            matched = builder.ins().bor(matched, accepts);
+                        }
+                        continue;
+                    }
+                    let test = Pattern::IsType {
+                        target: candidate.clone(),
+                        source: source.clone(),
+                        conforming: Vec::new(),
+                        binding: None,
+                    };
+                    let (accepts, _) = lower_native_pattern(
+                        builder,
+                        module,
+                        subject,
+                        &test,
+                        objects,
+                        runtime_literal_indices,
+                        backend,
+                    )?;
+                    matched = builder.ins().bor(matched, accepts);
+                }
+                let values = if binding.is_some() {
+                    {
+                        let test = Pattern::IsType {
+                            target: target.clone(),
+                            source: source.clone(),
+                            conforming: Vec::new(),
+                            binding: *binding,
+                        };
+                        lower_native_pattern(
+                            builder,
+                            module,
+                            subject,
+                            &test,
+                            objects,
+                            runtime_literal_indices,
+                            backend,
+                        )?
+                        .1
+                    }
+                } else {
+                    Vec::new()
+                };
+                return Ok((matched, values));
+            }
+            let expected = super::inference::native_verification_type(
+                &backend.ir.program.metadata,
+                backend.ir.layouts,
+                target,
+                None,
+            )?;
+            let word = module.target_config().pointer_type();
+            let result_ty = cranelift_type(expected, word);
+            let zero = |builder: &mut FunctionBuilder<'_>| {
+                if result_ty == types::F64 {
+                    builder.ins().f64const(0.0)
+                } else {
+                    builder.ins().iconst(result_ty, 0)
+                }
+            };
+            let opaque = match subject.ty {
+                NativeType::Object(layout) => match backend.ir.physical_layouts.get(layout).kind {
+                    PhysicalKind::Opaque {
+                        value_offset,
+                        semantic_offset,
+                        ..
+                    } => Some((value_offset, semantic_offset)),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let (matched, value) = if let Some((value_offset, semantic_offset)) = opaque {
+                let semantic = builder.ins().load(
+                    types::I8,
+                    MemFlagsData::trusted(),
+                    subject.value,
+                    semantic_offset as i32,
+                );
+                let expected_semantic = if matches!(target, crate::codegen::types::ExecutableType::Record { record, .. } if Some(*record) == backend.ir.program.metadata.symbol_record)
+                {
+                    ValueSemantic::Symbol
+                } else {
+                    native_type_semantic(expected, backend.ir.layouts)
+                };
+                let matched =
+                    builder
+                        .ins()
+                        .icmp_imm_s(IntCC::Equal, semantic, expected_semantic as i64);
+                let yes = builder.create_block();
+                let no = builder.create_block();
+                let join = builder.create_block();
+                builder.append_block_param(join, types::I8);
+                builder.append_block_param(join, result_ty);
+                builder.ins().brif(matched, yes, &[], no, &[]);
+                builder.switch_to_block(yes);
+                let value = builder.ins().load(
+                    result_ty,
+                    MemFlagsData::trusted(),
+                    subject.value,
+                    value_offset as i32,
+                );
+                let matched = if let NativeType::Object(layout) = expected {
+                    let descriptor = builder.ins().load(
+                        word,
+                        MemFlagsData::trusted(),
+                        value,
+                        backend.ir.physical_layouts.header().descriptor_offset as i32,
+                    );
+                    let expected =
+                        module.declare_data_in_func(objects.descriptors[&layout], builder.func);
+                    let expected = builder.ins().symbol_value(word, expected);
+                    builder.ins().icmp(IntCC::Equal, descriptor, expected)
+                } else {
+                    true_value(builder)
+                };
+                builder.ins().jump(join, &[matched.into(), value.into()]);
+                builder.switch_to_block(no);
+                let failed = builder.ins().iconst(types::I8, 0);
+                let value = zero(builder);
+                builder.ins().jump(join, &[failed.into(), value.into()]);
+                builder.switch_to_block(join);
+                (builder.block_params(join)[0], builder.block_params(join)[1])
+            } else {
+                let matched =
+                    subject.ty == expected && (expected != NativeType::String || source == target);
+                (
+                    builder.ins().iconst(types::I8, i64::from(matched)),
+                    if matched {
+                        subject.value
+                    } else {
+                        zero(builder)
+                    },
+                )
+            };
+            Ok((
+                matched,
+                if binding.is_some() {
+                    vec![value]
+                } else {
+                    Vec::new()
+                },
+            ))
+        }
         Pattern::Wildcard => Ok((true_value(builder), Vec::new())),
         Pattern::Binding(_) => Ok((true_value(builder), vec![subject.value])),
         Pattern::Bool(expected) => Ok((
@@ -392,6 +592,7 @@ fn lower_native_pattern(
                     pattern,
                     objects,
                     runtime_literal_indices,
+                    backend,
                 )?;
                 matched = builder.ins().band(matched, field_matched);
                 bindings.append(&mut field_bindings);

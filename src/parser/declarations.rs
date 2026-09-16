@@ -577,12 +577,32 @@ impl Parser {
         self.expect(&TokenKind::Impl, "expected `impl`")?;
         let owner_span = self.peek().range.clone();
         let owner = self.expect_ident("expected type name after `impl`")?;
-        let (type_parameters, groups) = self.function_parameters()?;
+        let mut type_parameters = Vec::new();
+        let mut constraints = Vec::new();
+        if self.take(&TokenKind::Less) {
+            loop {
+                let parameter = self.expect_ident("expected impl type parameter")?;
+                if self.take(&TokenKind::Ampersand) {
+                    constraints.push(crate::ast::TypeConstraint {
+                        parameter: parameter.clone(),
+                        requirement: self.type_expr()?,
+                    });
+                }
+                type_parameters.push(parameter);
+                if !self.take(&TokenKind::Comma) {
+                    break;
+                }
+            }
+            self.expect(
+                &TokenKind::Greater,
+                "expected `>` after impl type parameters",
+            )?;
+        }
         let mut seen = std::collections::HashSet::new();
         if type_parameters.iter().any(|name| !seen.insert(name)) {
             return Err(self.error("duplicate impl type parameter"));
         }
-        if !groups.is_empty() {
+        if self.at(&TokenKind::LBracket) {
             return Err(self.error("group parameters belong on individual functions"));
         }
         self.newlines();
@@ -591,7 +611,10 @@ impl Parser {
         let mut functions = Vec::new();
         while !self.at(&TokenKind::RBrace) && !self.at(&TokenKind::Eof) {
             let documentation = self.documentation();
-            functions.push(self.member_function(documentation, Some(&owner), &type_parameters)?);
+            let mut function =
+                self.member_function(documentation, Some(&owner), &type_parameters)?;
+            function.constraints = constraints.clone();
+            functions.push(function);
             self.newlines();
         }
         self.expect(&TokenKind::RBrace, "expected `}` after impl members")?;
@@ -601,6 +624,7 @@ impl Parser {
                 owner_span,
                 owner,
                 parameters: type_parameters,
+                constraints,
             },
             functions,
         ))
@@ -708,6 +732,7 @@ impl Parser {
             public,
             intrinsic,
             type_parameters,
+            constraints: Vec::new(),
             groups,
             parameters,
             return_type,

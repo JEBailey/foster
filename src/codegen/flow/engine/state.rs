@@ -18,6 +18,7 @@ pub(super) struct PendingPattern {
     pub(super) bindings: Vec<Value>,
     pub(super) irrefutable: bool,
     pub(super) covered_variant: Option<(Vec<Value>, VariantId)>,
+    pub(super) refined_subject: Option<(Vec<Value>, ExecutableType)>,
 }
 
 pub(super) fn bound_type(

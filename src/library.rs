@@ -18,7 +18,7 @@ mod interface;
 mod linking;
 
 const MAGIC: &[u8; 8] = b"FOSTERLB";
-pub const FORMAT_VERSION: u16 = 2;
+pub const FORMAT_VERSION: u16 = 3;
 const MAX_SECTION: usize = 256 * 1024 * 1024;
 
 #[derive(Debug, Clone)]

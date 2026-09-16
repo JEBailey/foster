@@ -49,6 +49,10 @@ pub(super) struct MemberConstraint {
 
 #[cfg_attr(test, derive(Clone))]
 pub(super) struct Checker<'a> {
+    pub(super) constraint_proofs: Vec<(FunctionId, Vec<Ty>)>,
+    pub(super) suppress_constraint_assumptions: bool,
+    pub(super) extra_type_queries: Vec<(FunctionId, crate::codegen::types::ExecutableType)>,
+    pub(super) type_facts: Vec<(LocalId, Ty)>,
     pub(super) body_cache: Option<incremental::SharedBodyCache>,
     pub(super) body_cacheable: bool,
     pub(super) record_fields_cache:

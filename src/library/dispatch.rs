@@ -47,6 +47,7 @@ pub(super) fn slots(
             D::Intersection(v) => S::Intersection(v.iter().map(nested).collect::<Result<_, _>>()?),
             D::Function(p, r) => S::Function(Box::new(symbols::Descriptor {
                 generics: 0,
+                constraints: vec![],
                 receiver: false,
                 parameters: p
                     .iter()
@@ -194,6 +195,7 @@ impl crate::dispatch::Tree for S {
             // Dispatch ignores callable effects and provenance, just as source MethodKey does.
             Self::Function(signature) => Self::Function(Box::new(symbols::Descriptor {
                 generics: 0,
+                constraints: vec![],
                 receiver: false,
                 parameters: signature
                     .parameters

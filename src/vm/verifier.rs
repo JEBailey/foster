@@ -516,6 +516,21 @@ fn verify_function_structure(
                     "pattern binding register count does not match the pattern",
                 );
             }
+            Instruction::MatchPattern { pattern, .. } => {
+                if let crate::hir::Pattern::IsType {
+                    target,
+                    source,
+                    conforming,
+                    ..
+                } = pattern.unspanned()
+                {
+                    verify_metadata_type(program, target, 0)?;
+                    verify_metadata_type(program, source, 0)?;
+                    for witness in conforming {
+                        verify_metadata_type(program, witness, 0)?;
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -609,7 +624,10 @@ fn target_function<'a>(
 
 fn pattern_binding_count(pattern: &crate::hir::Pattern) -> usize {
     match pattern.unspanned() {
-        crate::hir::Pattern::Binding(_) => 1,
+        crate::hir::Pattern::Binding(_)
+        | crate::hir::Pattern::IsType {
+            binding: Some(_), ..
+        } => 1,
         crate::hir::Pattern::Variant { fields, .. } => {
             fields.iter().map(pattern_binding_count).sum()
         }

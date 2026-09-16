@@ -100,6 +100,11 @@ impl Table {
                     .get(&function_id(definition.function))
                     .ok_or_else(|| error("missing implementation"))?;
                 if definition.descriptor.parameters.len() != usize::from(function.parameters)
+                    || definition
+                        .descriptor
+                        .constraints
+                        .iter()
+                        .any(|(index, _)| *index >= definition.descriptor.generics)
                     || definition.generic_names.len() != definition.descriptor.generics as usize
                     || definition
                         .generic_names

@@ -1719,7 +1719,10 @@ impl<'a> Builder<'a> {
 
     fn pattern_has_bindings(pattern: &hir::Pattern) -> bool {
         match pattern.unspanned() {
-            hir::Pattern::Binding(_) => true,
+            hir::Pattern::Binding(_)
+            | hir::Pattern::IsType {
+                binding: Some(_), ..
+            } => true,
             hir::Pattern::Variant { fields, .. } => fields.iter().any(Self::pattern_has_bindings),
             _ => false,
         }
@@ -1734,7 +1737,11 @@ impl<'a> Builder<'a> {
     ) {
         let span = pattern.span().unwrap_or(span);
         match pattern.unspanned() {
-            hir::Pattern::Binding(local) => {
+            hir::Pattern::Binding(local)
+            | hir::Pattern::IsType {
+                binding: Some(local),
+                ..
+            } => {
                 self.initialize(*local, span.clone());
                 if let Some(source) = source {
                     self.emit(Operation::StoreBorrower {

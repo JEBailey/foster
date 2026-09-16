@@ -150,6 +150,7 @@ impl<K: Clone + Eq + Hash> JournalSet<K> {
 }
 
 pub(super) struct BodyCheckpoint {
+    type_facts: Vec<(LocalId, Ty)>,
     substitutions: substitutions::Substitutions,
     next_variable: u32,
     body_cacheable: bool,
@@ -184,6 +185,7 @@ impl Checker<'_> {
     pub(super) fn begin_body(&mut self) -> BodyCheckpoint {
         journals!(self, begin);
         BodyCheckpoint {
+            type_facts: self.type_facts.clone(),
             // Substitution pages already use copy-on-write, including speculative overloads.
             substitutions: self.substitutions.clone(),
             next_variable: self.next_variable,
@@ -201,6 +203,7 @@ impl Checker<'_> {
     }
 
     pub(super) fn rollback_body(&mut self, checkpoint: BodyCheckpoint) {
+        self.type_facts = checkpoint.type_facts;
         journals!(self, rollback);
         self.substitutions = checkpoint.substitutions;
         self.next_variable = checkpoint.next_variable;
@@ -306,6 +309,7 @@ mod tests {
         assert_eq!(left.resolving_aliases, right.resolving_aliases);
         assert_eq!(left.next_variable, right.next_variable);
         assert_eq!(left.body_cacheable, right.body_cacheable);
+        assert_eq!(left.type_facts, right.type_facts);
         for variable in 0..variables {
             assert_eq!(
                 left.substitutions.get(&variable),

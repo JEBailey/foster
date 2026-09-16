@@ -1119,6 +1119,10 @@ impl FunctionCompiler<'_> {
         arms: &[hir::BranchArm],
         span: std::ops::Range<usize>,
     ) -> Result<Register, FosterError> {
+        let subject_type = subject
+            .and_then(|id| self.types.expression_type(id))
+            .map(|ty| verification_type(self.hir, self.types, ty, 0))
+            .unwrap_or(ExecutableType::Unknown);
         let subject = subject
             .map(|subject| self.expression(subject))
             .transpose()?;
@@ -1148,17 +1152,57 @@ impl FunctionCompiler<'_> {
                     }
                     (hir::BranchTest::Pattern(pattern), Some(unmatched), Some(subject)) => {
                         let mut bindings = Vec::new();
-                        self.allocate_pattern_bindings(pattern, &mut bindings);
+                        let alias = match pattern.unspanned() {
+                            hir::Pattern::IsType {
+                                target: ExecutableType::Record { record, .. },
+                                binding: Some(local),
+                                ..
+                            } if !matches!(
+                                self.hir.modules[self.hir.records[*record].module]
+                                    .name
+                                    .as_str(),
+                                "core.string" | "core.symbol" | "core.bytes" | "core.bytes.buffer"
+                            ) =>
+                            {
+                                Some(*local)
+                            }
+                            _ => None,
+                        };
+                        if let Some(local) = alias {
+                            self.locals.insert(local, subject);
+                        } else {
+                            self.allocate_pattern_bindings(pattern, &mut bindings);
+                        }
                         let condition = self.allocate();
-                        self.emit(
+                        let instruction = {
+                            let mut pattern = pattern.clone();
+                            let inner = match &mut pattern {
+                                hir::Pattern::Spanned { pattern, .. } => pattern.as_mut(),
+                                pattern => pattern,
+                            };
+                            if let hir::Pattern::IsType {
+                                source,
+                                target,
+                                conforming,
+                                binding,
+                            } = inner
+                            {
+                                if alias.is_some() {
+                                    *binding = None;
+                                }
+                                *source = subject_type.clone();
+                                *conforming = self.types.type_conformances
+                                    [&(self.function, target.clone())]
+                                    .clone();
+                            }
                             Instruction::MatchPattern {
                                 destination: condition,
                                 subject,
-                                pattern: pattern.clone(),
+                                pattern,
                                 bindings,
-                            },
-                            span.clone(),
-                        );
+                            }
+                        };
+                        self.emit(instruction, span.clone());
                         self.emit_branch_jump_if_false(
                             condition,
                             unmatched,
@@ -1264,7 +1308,11 @@ impl FunctionCompiler<'_> {
 
     fn allocate_pattern_bindings(&mut self, pattern: &hir::Pattern, bindings: &mut Vec<Register>) {
         match pattern.unspanned() {
-            hir::Pattern::Binding(local) => {
+            hir::Pattern::Binding(local)
+            | hir::Pattern::IsType {
+                binding: Some(local),
+                ..
+            } => {
                 let register = self.allocate();
                 self.locals.insert(*local, register);
                 bindings.push(register);

@@ -73,6 +73,15 @@ impl Table {
             }
             let mut descriptor = context.signature(signature);
             descriptor.receiver = function.receiver.is_some();
+            for constraint in &function.constraints {
+                append_constraint(
+                    &mut descriptor.constraints,
+                    context.generic(&constraint.parameter),
+                    context.annotation(&constraint.requirement),
+                );
+            }
+            descriptor.constraints.sort();
+            descriptor.constraints.dedup();
             descriptor.groups = function
                 .groups
                 .iter()
@@ -172,6 +181,21 @@ impl Table {
     }
 }
 
+fn append_constraint(
+    constraints: &mut Vec<(u32, SymbolType)>,
+    parameter: u32,
+    requirement: SymbolType,
+) {
+    match requirement {
+        SymbolType::Intersection(members) => {
+            for member in members {
+                append_constraint(constraints, parameter, member);
+            }
+        }
+        requirement => constraints.push((parameter, requirement)),
+    }
+}
+
 struct Context<'a> {
     compilation: &'a Compilation,
     lexical: ModuleId,
@@ -248,6 +272,7 @@ impl<'a> Context<'a> {
         let result = self.ty(signature.result);
         Descriptor {
             generics: self.generics.len() as u32,
+            constraints: Vec::new(),
             receiver: false,
             parameters,
             result,
@@ -410,6 +435,7 @@ impl<'a> Context<'a> {
                     .collect::<Vec<_>>();
                 SymbolType::Function(Box::new(Descriptor {
                     generics: self.generics.len() as u32,
+                    constraints: Vec::new(),
                     receiver: false,
                     result: self.annotation(result),
                     groups: Vec::new(),

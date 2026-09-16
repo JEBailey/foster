@@ -9,6 +9,7 @@ pub(super) fn lower(
     query: bool,
     backend: &NativeBackend<'_>,
 ) -> Result<ClifValue, FosterError> {
+    let (receiver, ty) = native_reference_receiver(builder, module, receiver, ty, backend)?;
     let trivial = matches!(
         ty,
         NativeType::Unit

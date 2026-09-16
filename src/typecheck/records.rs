@@ -10,6 +10,9 @@ impl Checker<'_> {
     ) -> Result<(), FosterError> {
         let expected = self.resolved(expected);
         let actual = self.resolved(actual);
+        if self.has_type_evidence(expression, &expected) {
+            return Ok(());
+        }
         if expected == Ty::Int && matches!(actual, Ty::CodePoint | Ty::Byte) {
             self.integer_promotions.insert(expression);
             self.expressions.insert(expression, Ty::Int);
@@ -147,10 +150,17 @@ impl Checker<'_> {
             (Ty::Record(expected, expected_arguments), actual @ Ty::Variant(_, _)) => {
                 self.coerce_record_shape(function, expected, &expected_arguments, actual)
             }
+            (Ty::Record(expected, expected_arguments), actual @ Ty::Generic(_)) => {
+                self.coerce_record_shape(function, expected, &expected_arguments, actual)
+            }
             (
                 Ty::Record(expected, expected_arguments),
                 actual @ (Ty::RawList(_) | Ty::Sequence(_) | Ty::RawBytes),
             ) => self.coerce_record_shape(function, expected, &expected_arguments, actual),
+            (
+                Ty::Record(expected, arguments),
+                actual @ (Ty::Int | Ty::Bool | Ty::Float | Ty::Byte | Ty::CodePoint | Ty::Unit),
+            ) => self.coerce_record_shape(function, expected, &arguments, actual),
             (expected, actual) => self.unify(expected, actual, function),
         }
     }
@@ -457,6 +467,15 @@ impl Checker<'_> {
         name: &str,
     ) -> Result<Option<Ty>, FosterError> {
         let actual = self.resolved(actual.clone());
+        if matches!(
+            actual,
+            Ty::Int | Ty::Bool | Ty::Float | Ty::Byte | Ty::CodePoint | Ty::Unit
+        ) {
+            return self
+                .infer_member(function, actual, name)
+                .map(Some)
+                .or(Ok(None));
+        }
         if let Some(method) = self.builtin_collection_method(&actual, name) {
             return Ok(Some(method));
         }
@@ -509,6 +528,22 @@ impl Checker<'_> {
         name: &str,
     ) -> Result<Vec<Ty>, FosterError> {
         let resolved = self.resolved(actual.clone());
+        if matches!(resolved, Ty::Generic(_)) {
+            let mut methods = Vec::new();
+            for requirement in self.constraint_requirements(function, &resolved)? {
+                for method in self.contract_method_overloads(function, requirement, name)? {
+                    let result = self.method_result_for_receiver(&method, resolved.clone());
+                    methods.push(Ty::Callable {
+                        parameters: method.parameters,
+                        result: Box::new(result),
+                        erased: false,
+                        effects: method.effects,
+                        suspends: method.suspends,
+                    });
+                }
+            }
+            return Ok(methods);
+        }
         if let Ty::Record(record, arguments) = &resolved {
             let methods = self
                 .effective_record_methods(*record, arguments)?
@@ -578,6 +613,14 @@ impl Checker<'_> {
     ) -> Result<Option<Ty>, FosterError> {
         let caller_module = self.hir.functions[function].module;
         match self.resolved(actual.clone()) {
+            generic @ Ty::Generic(_) => {
+                for requirement in self.constraint_requirements(function, &generic)? {
+                    if let Some(field) = self.structural_field_type(function, &requirement, name)? {
+                        return Ok(Some(field));
+                    }
+                }
+                Ok(None)
+            }
             Ty::Record(record, arguments) => {
                 let definition = self.hir.records[record].clone();
                 let fields = self.effective_record_fields(record, &arguments)?;

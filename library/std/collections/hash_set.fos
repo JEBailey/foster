@@ -53,7 +53,9 @@ impl HashSet {
 
     /// Returns a set without the supplied value; absent values leave it unchanged.
     pub func remove<T>(self: HashSet<T>, value: T) -> HashSet<T> [consume self] {
-        HashSet { table: (move self.table).remove(value) }
+        let table = move self.table
+        table.remove(value)
+        HashSet { table }
     }
 
     /// Creates a snapshot iterator in unspecified order.

@@ -768,7 +768,27 @@ fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
     let function = &compilation.hir.functions[id];
     let links = TypeLinks::new(compilation, function.module, &function.type_parameters);
     let signature = compilation.types.function_type(id);
-    let generics = escape(&angled(&function.type_parameters));
+    let generic_entries = function
+        .type_parameters
+        .iter()
+        .map(|name| {
+            let mut entry = escape(name);
+            for constraint in function
+                .constraints
+                .iter()
+                .filter(|constraint| &constraint.parameter == name)
+            {
+                entry.push_str(" &amp; ");
+                entry.push_str(&links.source(&constraint.requirement));
+            }
+            entry
+        })
+        .collect::<Vec<_>>();
+    let generics = if generic_entries.is_empty() {
+        String::new()
+    } else {
+        format!("&lt;{}&gt;", generic_entries.join(", "))
+    };
     let group_entries = function
         .groups
         .iter()
@@ -1005,6 +1025,18 @@ pub(super) fn escape(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn constrained_signatures_link_requirement_types() {
+        let compilation = crate::compile("pub type Copy = { pub func copy(self) -> self [read self] }\npub type Box<T> = { value: T }\nimpl Box<T & Copy> { pub func copied(self) -> T [read self] { self.value.copy() } }\nfunc main() -> Int { 42 }").unwrap();
+        let module = compilation.hir.module_named("main").unwrap();
+        let method = compilation
+            .hir
+            .function_named(module, "Box.copied")
+            .unwrap();
+        let rendered = super::function_signature(&compilation, method);
+        assert!(rendered.contains("T &amp; <a"), "{rendered}");
+        assert!(rendered.contains("Copy</a>"), "{rendered}");
+    }
     use super::*;
 
     #[test]

@@ -10,6 +10,49 @@ pub(super) fn matches(
     bindings: &mut Vec<Value>,
 ) -> bool {
     match (pattern.unspanned(), value) {
+        (
+            Pattern::IsType {
+                conforming,
+                binding,
+                ..
+            },
+            value,
+        ) => {
+            use crate::codegen::types::ExecutableType as E;
+            let matched = conforming.iter().any(|target| match (target, value) {
+                (E::Unit, Value::Unit) => true,
+                (E::Bool, Value::Bool(_))
+                | (E::Integer, Value::Integer(_))
+                | (E::Float, Value::Float(_))
+                | (E::Byte, Value::Byte(_))
+                | (E::CodePoint, Value::CodePoint(_)) => true,
+                (
+                    E::Record {
+                        record: expected, ..
+                    },
+                    Value::Record {
+                        record: Some(actual),
+                        ..
+                    },
+                ) => expected == actual,
+                (
+                    E::Variant {
+                        variant: expected, ..
+                    },
+                    Value::Variant {
+                        variant: Some(actual),
+                        ..
+                    },
+                ) => expected == actual,
+                (E::Bytes, value) => value.bytes_value().is_some(),
+                (E::List(_), value) => value.list_value().is_some(),
+                _ => false,
+            });
+            if matched && binding.is_some() {
+                bindings.push(value.clone());
+            }
+            matched
+        }
         (Pattern::Wildcard, _) => true,
         (Pattern::Binding(_), value) => {
             bindings.push(value.clone());

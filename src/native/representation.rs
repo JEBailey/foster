@@ -40,6 +40,13 @@ pub(super) fn instruction_layout_type(
 ) -> Option<crate::codegen::types::ExecutableType> {
     use crate::codegen::types::ExecutableType;
     match instruction {
+        Instruction::MatchPattern { pattern, .. } => {
+            if let crate::hir::Pattern::IsType { target, .. } = pattern.unspanned() {
+                Some(target.clone())
+            } else {
+                None
+            }
+        }
         Instruction::CallContractMethod { result_type, .. } => {
             Some(result_type.specialize(specialization))
         }

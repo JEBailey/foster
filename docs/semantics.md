@@ -1,7 +1,7 @@
 # Foster semantic specification
 
-Status: **draft normative specification**, revision 5, 2026-09-11.
-Baseline: **language version 8, ownership-model version 3**.
+Status: **draft normative specification**, revision 6, 2026-09-15.
+Baseline: **language version 10, ownership-model version 3**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
@@ -52,6 +52,15 @@ Methods and associated functions are declared in module-scope `impl Type { ... }
 The block supplies the member owner and optional shared type parameters. An unannotated first
 `self` parameter receives the block's type. Blocks share the existing member namespace and do
 not declare conformance; visibility remains per member. Module functions remain at module scope.
+
+An implementation header may constrain a generic parameter, as in `impl Box<T & Copy>`.
+Each member requires structural conformance of its bound arguments and may use those
+requirements in its body. The argument's concrete identity and ownership remain intact.
+All intersection requirements must hold; their order gives no dispatch priority.
+Constraints do not distinguish otherwise duplicate signatures or justify an unconditional
+required method. Compiled interfaces preserve and validate the same requirements.
+Runtime `is` against contracts with conditional method implementations, and conditional
+`copy`/`deinit` runtime hooks, are rejected until runtime generic evidence is available.
 
 **S-04 — Conformance.** Structural conformance requires compatible accessible fields and methods,
 including their ownership modes, effects, and suspension requirements. It does not require nominal
@@ -181,6 +190,16 @@ body instead of manufacturing a result.
 are considered in source order; the first matching arm executes and does not fall through.
 Enum coverage must account for refutable payload patterns, not merely mention each case name.
 A branch-arm block that completes without a final value expression produces `()`.
+
+`is Type` checks type conformance, including accessible structural fields,
+method signatures, receiver results, and effects. The matching arm retains the
+original type and adds the tested contract. `Copy` follows this same rule:
+`.copy()` returns the concrete receiver type, and testing never invokes it.
+Type-pattern branches require a fallback.
+Checks borrow their subjects, preserve input ownership and borrower provenance,
+and do not grant additional mutation permissions. See the
+[type-pattern rules](language-design.md#type-patterns) for supported
+targets and scope limits.
 
 `loop` repeats its body. `break` exits the nearest enclosing loop and `continue` begins that loop's
 next iteration. Neither targets a branch. Both are invalid outside loops. `return` leaves the

@@ -2,6 +2,144 @@
 use foster::{native, vm};
 
 #[test]
+fn constrained_implementation_preserves_concrete_values() {
+    check(
+        "impl-constraints",
+        include_str!("fixtures/programs/impl_constraints.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn type_branch_capability_and_concrete_narrowing() {
+    check(
+        "type-branch",
+        include_str!("fixtures/programs/type_branch.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn type_branch_queries_borrow_without_copying_or_extra_cleanup() {
+    check_stdout(
+        "type-branch-cleanup",
+        r#"
+import core.copy
+import core.drop
+type Item = { value: Int }
+impl Item {
+    func copy(self) -> self { println(1)
+        Item { value: self.value } }
+    func deinit(self) -> () { println(2) }
+}
+func inspect<T>(value: T) -> Int [read value] {
+    branch value {
+        is Item -> value.value
+        _ -> 0
+    }
+}
+func can<T>(value: T) -> Bool [read value] {
+    branch value {
+        is Copy -> true
+        _ -> false
+    }
+}
+func main() -> Int {
+    let value = Item { value: 42 }
+    assert(inspect(value) == 42)
+    assert(can(value))
+    println(9)
+    42
+}
+"#,
+        "9\n2\n42",
+    );
+}
+
+#[test]
+fn map_get_rejects_present_noncopyable_values() {
+    for (name, constructor) in [
+        ("list-map-copy-error", "Map.empty()"),
+        ("hash-map-copy-error", "HashMap.empty((key: Int) -> 0)"),
+    ] {
+        let source = r#"
+import core.option
+import std.collections.map
+import std.collections.hash_map
+type Resource = { value: Int }
+func main() -> Int {
+    let values = __MAP__.put(1, Resource { value: 42 })
+    assert(values.get(99) == Option.None)
+    assert(values.length() == 1)
+    branch values.get(1) {
+        Option.Some(value) -> value.value
+        Option.None -> 0
+    }
+}
+"#
+        .replace("__MAP__", constructor);
+        check(name, &source, Err("value does not implement Copy"));
+    }
+}
+
+#[test]
+fn map_access_preserves_originals_and_releases_removed_values_once() {
+    check_stdout(
+        "map-access-cleanup",
+        r#"
+import core.copy
+import core.drop
+import core.option
+import std.collections.map
+import std.collections.hash_map
+type Item = & Copy & Drop & { id: Int }
+impl Item {
+    func copy(self) -> self { Item { id: self.id + 10 } }
+    func deinit(self) -> () { println(self.id) }
+}
+func exercise(values: Map<Int, Item>) -> () [reshape values] {
+    branch values.get(1) {
+        Option.Some(item) -> { assert(item.id == 11) }
+        Option.None -> { assert(false) }
+    }
+    println(20)
+    branch values.remove(1) {
+        Option.Some(item) -> { assert(item.id == 1) }
+        Option.None -> { assert(false) }
+    }
+    println(30)
+    assert(values.length() == 1)
+    assert(values.contains_key?(2))
+    ()
+}
+func ordered() -> () {
+    let values = Map.empty().put(1, Item { id: 1 }).put(2, Item { id: 2 })
+    exercise(values)
+}
+func hashed() -> () {
+    let values = HashMap.empty((key: Int) -> 0).put(1, Item { id: 1 }).put(2, Item { id: 2 })
+    exercise(values)
+}
+func main() -> Int {
+    ordered()
+    hashed()
+    42
+}
+"#,
+        "11\n20\n1\n30\n2\n11\n20\n1\n30\n2\n42",
+    );
+}
+
+#[test]
+fn map_access_copies_and_removes_without_consuming_maps() {
+    check(
+        "map-access",
+        include_str!("fixtures/programs/map_access.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn scalar_optimization_preserves_mutation_and_reference_aliases() {
     check(
         "scalar-barriers",
@@ -2337,6 +2475,15 @@ fn user_record_names_do_not_select_builtin_representations() {
     check(
         "core-name-collisions",
         include_str!("fixtures/programs/core_name_collisions.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn type_branch_uniform_structural_conformance() {
+    check(
+        "type-conformance",
+        include_str!("fixtures/programs/type_conformance.fos"),
         Ok("42"),
     );
 }

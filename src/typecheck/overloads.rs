@@ -436,18 +436,27 @@ impl Checker<'_> {
                 parameters.iter().map(|p| p.ty.clone()),
                 &argument_types,
             ) {
+                let callable = Ty::Callable {
+                    parameters,
+                    result,
+                    erased,
+                    effects,
+                    suspends,
+                };
+                if self
+                    .check_callable_constraints(
+                        function,
+                        candidate,
+                        &callable,
+                        Some(receiver.clone()),
+                    )
+                    .is_err()
+                {
+                    continue;
+                }
                 matches.push(Ranked {
                     conversions,
-                    value: (
-                        candidate,
-                        Ty::Callable {
-                            parameters,
-                            result,
-                            erased,
-                            effects,
-                            suspends,
-                        },
-                    ),
+                    value: (candidate, callable),
                     substitutions: self.substitutions.clone(),
                     next_variable: self.next_variable,
                 });
@@ -643,6 +652,12 @@ impl Checker<'_> {
                 parameters.iter().map(|p| p.ty.clone()),
                 &argument_types,
             ) {
+                if self
+                    .check_callable_constraints(function, candidate, &callable, None)
+                    .is_err()
+                {
+                    continue;
+                }
                 matches.push(Ranked {
                     conversions,
                     value: (candidate, callable),

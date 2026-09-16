@@ -39,6 +39,15 @@ pub(super) fn lower_shared_instruction(
             };
         let mut sources = Vec::new();
         match portable {
+            ir::PortableInstruction::MatchPattern { pattern, .. } => {
+                let inner = match pattern {
+                    crate::hir::Pattern::Spanned { pattern, .. } => pattern.as_mut(),
+                    pattern => pattern,
+                };
+                if let crate::hir::Pattern::IsType { source, .. } = inner {
+                    *source = source.specialize(&instance.substitutions);
+                }
+            }
             ir::PortableInstruction::Move {
                 destination,
                 source,
@@ -183,6 +192,12 @@ pub(super) fn lower_shared_instruction(
             )
         }));
         return Ok(prefix);
+    }
+    if let ir::Instruction::Portable(ir::PortableInstruction::MatchPattern { pattern, .. }) =
+        &adapted
+        && matches!(pattern.unspanned(), crate::hir::Pattern::IsType { .. })
+    {
+        return Ok(vec![(adapted, Vec::new())]);
     }
     let ty = |value: ir::Value| values[value.0 as usize];
     let one = |instruction| vec![(instruction, Vec::new())];

@@ -64,6 +64,9 @@ pub(super) fn transfer(
                 };
                 pattern.conditions = rename(&pattern.conditions);
                 pattern.bindings = rename(&pattern.bindings);
+                if let Some((subjects, _)) = &mut pattern.refined_subject {
+                    *subjects = rename(subjects);
+                }
                 if let Some((subjects, _)) = &mut pattern.covered_variant {
                     *subjects = rename(subjects);
                 }
@@ -586,6 +589,36 @@ pub(super) fn transfer(
             bindings,
             pattern,
         } => {
+            if let crate::hir::Pattern::IsType { target, .. } = pattern.unspanned() {
+                let supported = match target {
+                    ExecutableType::Unit
+                    | ExecutableType::Bool
+                    | ExecutableType::Integer
+                    | ExecutableType::Float
+                    | ExecutableType::Byte
+                    | ExecutableType::CodePoint
+                    | ExecutableType::Bytes => true,
+                    ExecutableType::Record { record, arguments } => {
+                        arguments.is_empty() && program.metadata.records.contains_key(record)
+                    }
+                    ExecutableType::Variant { variant, arguments } => {
+                        arguments.is_empty()
+                            && program
+                                .metadata
+                                .variants
+                                .values()
+                                .any(|case| case.parent == *variant)
+                    }
+                    _ => false,
+                };
+                if !supported {
+                    return invalid_instruction(
+                        function,
+                        index,
+                        "unsupported runtime type-pattern target",
+                    );
+                }
+            }
             let subject_type = read_type(function, index, &state, *subject)?;
             let covered_variant = fully_covered_variant(pattern).map(|variant| (*subject, variant));
             let exhaustive = covered_variant.is_some_and(|(_, variant)| {
@@ -624,6 +657,14 @@ pub(super) fn transfer(
             )?;
             state.pending_pattern = Some(PendingPattern {
                 conditions: vec![*destination],
+                refined_subject: match pattern.unspanned() {
+                    crate::hir::Pattern::IsType {
+                        target,
+                        binding: None,
+                        ..
+                    } => Some((vec![*subject], target.clone())),
+                    _ => None,
+                },
                 bindings: bindings.clone(),
                 irrefutable: pattern_irrefutable(pattern) || exhaustive,
                 covered_variant: covered_variant.map(|(subject, variant)| (vec![subject], variant)),
@@ -638,6 +679,22 @@ pub(super) fn transfer(
             truthy.pending_pattern = None;
             let pattern = pattern.filter(|pattern| pattern.conditions.contains(condition));
             if let Some(pattern) = &pattern {
+                if let Some((subjects, _target)) = &pattern.refined_subject {
+                    for subject in subjects {
+                        // A structural view can have a different concrete descriptor.
+                        // Preserve reference storage while exposing its erased view.
+                        let view = ExecutableType::Unknown;
+                        let view = if matches!(
+                            truthy.bindings[subject.index()],
+                            Some(ExecutableType::Reference(_))
+                        ) {
+                            ExecutableType::Reference(Box::new(view))
+                        } else {
+                            view
+                        };
+                        truthy.bindings[subject.index()] = Some(view);
+                    }
+                }
                 for binding in &pattern.bindings {
                     write_type(
                         function,

@@ -709,6 +709,20 @@ fn collect_runtime_layouts(program: &Program, registry: &mut Registry) {
         types.insert(function.result_type.clone());
         for instruction in &function.instructions {
             match instruction {
+                Instruction::MatchPattern { pattern, .. } => {
+                    if let crate::hir::Pattern::IsType {
+                        target, conforming, ..
+                    } = pattern.unspanned()
+                    {
+                        types.insert(target.clone());
+                        types.extend(
+                            conforming
+                                .iter()
+                                .filter(|ty| !ty.contains_generic())
+                                .cloned(),
+                        );
+                    }
+                }
                 Instruction::MakeList { element_type, .. } => {
                     types.insert(ExecutableType::List(Box::new(element_type.clone())));
                 }

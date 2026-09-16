@@ -166,6 +166,18 @@ impl Checker<'_> {
                 local,
                 value: value_expression,
             } => {
+                let structural = self
+                    .type_facts
+                    .iter()
+                    .any(|(subject, ty)| subject == local && self.structural_pattern_type(ty));
+                // Other arm bindings may alias this same place.
+                self.type_facts.clear();
+                if self.hir.locals[*local].kind == hir::LocalKind::TypePattern && !structural {
+                    return Err(self.error(
+                        function,
+                        "mutation through a narrowed type-pattern binding is not supported yet",
+                    ));
+                }
                 let local_type = match &self.locals[local] {
                     Ty::Reference(_, value) => (**value).clone(),
                     ty => ty.clone(),
@@ -187,6 +199,12 @@ impl Checker<'_> {
                 value: value_expression,
             } => {
                 let place_type = self.infer_expression(function, *place)?;
+                if self.is_type_pattern_place(*place) {
+                    return Err(self.error(
+                        function,
+                        "mutation through a narrowed type-pattern binding is not supported yet",
+                    ));
+                }
                 if crate::semantics::expression_category(self.hir, &self.member_kinds, *place)
                     != crate::semantics::ExpressionCategory::Place
                 {
@@ -316,9 +334,11 @@ impl Checker<'_> {
                         true,
                     )?;
                 }
-                if let Some(value) =
-                    self.check_branch_body(function, &arm.body, Some(expected.clone()))?
-                {
+                let checkpoint = self.type_facts.len();
+                self.enter_type_pattern(subject, &arm.test);
+                let checked = self.check_branch_body(function, &arm.body, Some(expected.clone()));
+                self.type_facts.truncate(checkpoint);
+                if let Some(value) = checked? {
                     self.unify(expected.clone(), value, function)?;
                 }
             }
@@ -352,6 +372,27 @@ impl Checker<'_> {
     ) -> Result<Ty, FosterError> {
         crate::compiler::cancellation::check()?;
         let result = self.infer_expression_unlocated(function, expression_id);
+        if let hir::Expr::Call {
+            callee,
+            ref arguments,
+        } = self.hir.expressions[expression_id]
+            && let Some(Ty::Callable { effects, .. }) = self.expressions.get(&callee)
+            && effects
+                .iter()
+                .any(|effect| effect.kind != crate::ast::EffectKind::Read)
+        {
+            let narrowed_receiver = matches!(self.hir.expressions[callee], hir::Expr::Member { object, .. } if self.is_type_pattern_place(object));
+            if narrowed_receiver
+                || arguments
+                    .iter()
+                    .any(|argument| self.is_type_pattern_place(*argument))
+            {
+                return Err(self.error(function, "mutation or consumption through a narrowed type-pattern binding is not supported yet"));
+            }
+            // A mutation may replace an erased value through an alias. Require a
+            // fresh capability test before dispatching through the old proof.
+            self.type_facts.clear();
+        }
         result.map_err(|error| {
             let label = error.message.clone();
             self.error_at_expression(error, function, expression_id, label)
@@ -406,7 +447,8 @@ impl Checker<'_> {
                 self.infer_call(function, expression_id, callee, &arguments)?
             }
             hir::Expr::Member { object, name } => {
-                let object = self.infer_expression(function, object)?;
+                let original = self.infer_expression(function, object)?;
+                let object = self.refined_receiver(object, original);
                 let stored_field = self.has_stored_member(&object, &name)?;
                 let member = self.infer_member(function, object, &name)?;
                 let kind = if stored_field {
@@ -459,6 +501,12 @@ impl Checker<'_> {
             }
             hir::Expr::Reference(place) => {
                 let value = self.infer_expression(function, place)?;
+                if self.is_type_pattern_place(place) {
+                    return Err(self.error(
+                        function,
+                        "references to a narrowed type-pattern binding are not supported yet",
+                    ));
+                }
                 Ty::Reference(self.expression_group(place), Box::new(value))
             }
             hir::Expr::MoveOut(place) => self.infer_expression(function, place)?,
@@ -589,7 +637,11 @@ impl Checker<'_> {
                             true,
                         )?;
                     }
-                    if let Some(value) = self.check_branch_body(function, &arm.body, None)? {
+                    let checkpoint = self.type_facts.len();
+                    self.enter_type_pattern(subject, &arm.test);
+                    let checked = self.check_branch_body(function, &arm.body, None);
+                    self.type_facts.truncate(checkpoint);
+                    if let Some(value) = checked? {
                         self.unify(result.clone(), value, function)?;
                     }
                 }

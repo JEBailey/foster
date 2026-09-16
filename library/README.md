@@ -42,6 +42,16 @@ foster docs library --serve
 The site is written to `library/documentation`. Edit source comments and
 regenerate; do not maintain generated HTML by hand.
 
+The [Library documentation workflow](../.github/workflows/library-documentation.yml)
+generates and deploys the reference to GitHub Pages on pushes to `main`. Pull requests
+build the reference without deploying. You can also run the workflow manually on
+`main` from GitHub's Actions tab.
+
+For initial setup, select **Settings → Pages → Build and deployment → Source →
+GitHub Actions** in the repository. The deployment uses the `github-pages`
+environment and reports the live URL in the workflow run. The generated site uses
+relative links, so it works beneath the repository's Pages path.
+
 Start with this guide to choose an API, then use module pages for precise signatures,
 ownership, bounds, and errors. Expand **How to read this reference** on a module page
 for the visibility and effect notation. Public and private labels apply to each
@@ -79,8 +89,10 @@ See [Unicode maintenance](../tools/unicode/README.md) for provenance and regener
 
 Read the signature as well as the summary. A consuming operation transfers
 ownership; use `move` when passing an existing binding. Map updates return the
-updated collection, while `Map.get` consumes the entire map to return one optional
-value. `contains_key?` borrows the map when only membership matters.
+updated collection. `Map.get` borrows the map and returns an independent copy of the
+selected value; `None` means the key is absent. Present values must support Copy,
+checked at runtime. `Map.remove` mutates the map and transfers the selected value
+without copying it or consuming the other entries. `contains_key?` borrows the map.
 
 `List.at` distinguishes `OutOfBounds` and `NotCopyable`. `get`, `first`, and `last`
 return `None` for either unavailable or noncopyable elements. Direct indexing and

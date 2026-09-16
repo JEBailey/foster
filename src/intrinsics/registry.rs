@@ -527,6 +527,8 @@ pub fn native_member_runtime(receiver: NativeReceiverKind, member: &str) -> Opti
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum OpcodeIntrinsic {
+    ValueCanCopy,
+    ValueCopy,
     ListCanCopyAt,
     ListCopyAt,
     ListPush,
@@ -554,6 +556,26 @@ pub struct OpcodeIntrinsicDescriptor {
 }
 
 pub const OPCODE_INTRINSICS: &[OpcodeIntrinsicDescriptor] = &[
+    OpcodeIntrinsicDescriptor {
+        intrinsic: OpcodeIntrinsic::ValueCanCopy,
+        intrinsic_key: "value.can_copy",
+        module: "core.copy",
+        receiver: IntrinsicReceiverMode::Read,
+        signature: IntrinsicSignature {
+            parameters: intrinsic_parameters!([Read Any]),
+            result: IntrinsicType::Bool,
+        },
+    },
+    OpcodeIntrinsicDescriptor {
+        intrinsic: OpcodeIntrinsic::ValueCopy,
+        intrinsic_key: "value.copy",
+        module: "core.copy",
+        receiver: IntrinsicReceiverMode::Read,
+        signature: IntrinsicSignature {
+            parameters: intrinsic_parameters!([Read Any]),
+            result: IntrinsicType::Any,
+        },
+    },
     OpcodeIntrinsicDescriptor {
         intrinsic: OpcodeIntrinsic::ListCanCopyAt,
         intrinsic_key: "list.can_copy_at",
@@ -648,7 +670,12 @@ impl Intrinsic {
     }
 
     pub fn is_list_operation(self) -> bool {
-        self.opcode().is_some()
+        self.opcode().is_some_and(|opcode| {
+            !matches!(
+                opcode,
+                OpcodeIntrinsic::ValueCopy | OpcodeIntrinsic::ValueCanCopy
+            )
+        })
     }
 
     pub fn receiver_mode(self) -> Option<IntrinsicReceiverMode> {

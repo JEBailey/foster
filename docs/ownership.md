@@ -1,6 +1,6 @@
 # Foster Ownership and Borrowing
 
-Language version 8, ownership-model version 3.
+Language version 10, ownership-model version 3.
 
 This document describes Foster's ownership model, its source-level behavior, and how the compiler
 implements it today. It is intentionally separate from

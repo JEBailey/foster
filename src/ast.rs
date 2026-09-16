@@ -19,6 +19,14 @@ pub struct Implementation {
     pub owner_span: std::ops::Range<usize>,
     pub owner: String,
     pub parameters: Vec<String>,
+    pub constraints: Vec<TypeConstraint>,
+}
+
+/// Structural requirements on a generic parameter; its identity remains unchanged.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct TypeConstraint {
+    pub parameter: String,
+    pub requirement: TypeExpr,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
@@ -132,6 +140,7 @@ pub struct Function {
     pub public: bool,
     pub intrinsic: Option<String>,
     pub type_parameters: Vec<String>,
+    pub constraints: Vec<TypeConstraint>,
     pub groups: Vec<GroupParameter>,
     pub parameters: Vec<Parameter>,
     pub return_type: Option<TypeExpr>,
@@ -437,6 +446,7 @@ pub enum BranchTest {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum Pattern {
+    Is(TypeExpr),
     Spanned {
         pattern: Box<Pattern>,
         span: std::ops::Range<usize>,

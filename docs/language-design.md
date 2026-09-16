@@ -443,6 +443,24 @@ A member cannot redeclare a block parameter. A block may also omit type paramete
 members declaring their own parameters and explicitly annotating `self`, such as
 `impl Box { func get<T>(self: Box<T>) -> T { self.value } }`.
 
+An implementation parameter may carry structural requirements: `impl Box<T & Copy>`
+makes its members available when `T` has the accessible members required by `Copy`.
+`T` keeps its concrete type; this does not change the type declaration or store a
+contract value. Bodies can use the required members. Combine requirements with `&`,
+including parameterized contracts, as in `impl Map<K, V & Copy & Display>`.
+No nominal conformance declaration is needed. Parameter types, ownership modes,
+return types (including `self`), effects, and suspension must match the requirements.
+Constraints also apply to associated functions and function values. They do not
+introduce specialization priority: otherwise identical signatures remain duplicates.
+A conditional member cannot fulfill an unconditional requirement for all type arguments.
+Conditional members are not inherited as unconditional composition defaults.
+
+Runtime `is` queries whose required methods have conditional implementations are
+currently rejected because the VM does not retain generic argument evidence.
+Conditional `copy` and `deinit` methods are likewise rejected: their runtime hooks
+are selected by nominal type. Use statically checked constrained calls and structural
+parameters for conditional operations.
+
 Multiple blocks may group different operations for the same type. They share the type's member
 namespace and the ordinary overload and duplicate-declaration rules. Visibility and documentation
 belong to individual members; a block does not change access or structural conformance. Blocks
@@ -583,6 +601,58 @@ loop {
 An arm block that completes without a final value expression produces `()`. Unlike function bodies, branch-arm blocks do not
 use a trailing binding or assignment as their result. An unconditional control transfer
 leaves the arm instead of producing a result.
+
+### Type patterns
+
+In a subject branch, `is Type` checks whether the value satisfies that type's
+contract, without consuming it. A `_` arm is required. Structural records match
+by accessible fields, method signatures, receiver results, and effect bounds,
+using the same checks as structural assignment. Differently named records can
+satisfy the same contract. Numeric conversion is not a type test.
+
+When the subject is a local or parameter, the matching arm retains its original
+type and gains evidence for the tested contract. Other arms retain the original type. Testing
+a temporary evaluates it once; bind it to a name first to use its narrowed value.
+
+`Copy` follows the same rule as every other structural contract, resolved through
+normal type imports. Testing checks its implementation without invoking it.
+Inside that arm, `value.copy()` is available even for an unconstrained generic
+parameter and returns its original concrete type. A replacement or potentially
+mutating call invalidates the capability evidence; test again before using it.
+The operation still needs parentheses, and both arms need compatible results.
+
+```foster
+import core.copy
+import core.result
+
+enum CopyError = NotCopyable
+
+func attempt<T>(value: T) -> Result<T, CopyError> [read value] {
+    branch value {
+        is Copy -> Result.Ok(value.copy())
+        _ -> Result.Error(CopyError.NotCopyable)
+    }
+}
+
+func main() -> Int {
+    branch attempt(42) {
+        Result.Ok(value) -> value
+        Result.Error(_) -> 0
+    }
+}
+```
+
+Supported targets are `()`, scalar types, `String`, `Symbol`, `Bytes`, `ByteBuffer`,
+and nongeneric named records and enums, including structural method contracts.
+Type arguments, aliases, intersections,
+callable/reference targets, and nested type patterns are diagnosed rather than
+silently approximated. Generic receiver declarations can match when their
+contract holds for every instantiation; conformance depending on erased receiver
+type arguments is not yet supported.
+Narrowing grants neither ownership nor additional mutation permission.
+Structural record refinements preserve the original place and its reference
+groups. Scalar and builtin representation narrowing currently disallows writes,
+explicit references, and mutating calls through the narrowed binding.
 
 ## Logical operators
 

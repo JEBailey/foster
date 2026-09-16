@@ -16,7 +16,7 @@ use crate::{
     vm::{Instruction, Program},
 };
 
-pub const FORMAT_VERSION: u16 = 1;
+pub const FORMAT_VERSION: u16 = 2;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -81,6 +81,8 @@ pub struct Effect {
 #[serde(deny_unknown_fields)]
 pub struct Descriptor {
     pub generics: u32,
+    /// Structural requirements indexed by the constrained generic parameter.
+    pub constraints: Vec<(u32, SymbolType)>,
     pub receiver: bool,
     pub parameters: Vec<Parameter>,
     pub result: SymbolType,
@@ -109,6 +111,7 @@ impl Descriptor {
     /// effect and result-dependency narrowing. No source-level overload resolution is repeated.
     pub fn accepts(&self, implementation: &Self) -> bool {
         self.generics == implementation.generics
+            && self.constraints == implementation.constraints
             && self.receiver == implementation.receiver
             && self.parameters == implementation.parameters
             && self.result == implementation.result

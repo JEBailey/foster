@@ -66,6 +66,39 @@ fn run(compilation: &foster::compiler::Compilation) -> Value {
 }
 
 #[test]
+fn implementation_constraints_survive_library_round_trip() {
+    let workspace = Workspace::new();
+    let mut compiled = workspace.library(
+        r#"
+import core.copy
+pub type Box<T> = { pub value: T }
+impl Box<T & Copy> {
+    pub func copied(self) -> T [read self] { self.value.copy() }
+}
+"#,
+    );
+    let good = workspace
+        .consumer("import api\nfunc main() -> Int { Box { value: 42 }.copied() }")
+        .unwrap();
+    assert_eq!(run(&good), Value::Integer(42));
+    foster::native::prepare(&good).unwrap();
+    let error = workspace.consumer("import api\ntype Item = { value: Int }\nfunc main() -> Int { Box { value: Item { value: 1 } }.copied().value }").err().unwrap();
+    assert!(error.message.contains("constraint"), "{}", error.message);
+    let declaration = compiled
+        .interface
+        .modules
+        .iter_mut()
+        .flat_map(|module| &mut module.declarations.functions)
+        .find(|function| function.name == "Box.copied")
+        .unwrap();
+    declaration.constraints.clear();
+    assert!(
+        library::encode(&compiled).is_err(),
+        "library declarations cannot erase descriptor constraints"
+    );
+}
+
+#[test]
 fn intersection_dispatch_links_reordered_client_implementations() {
     let workspace = Workspace::new();
     let mut compiled = workspace.library(
@@ -335,6 +368,33 @@ func main() -> Int { evaluate(Local {}) }
         )
         .unwrap();
     assert_eq!(run(&app), Value::Integer(42));
+}
+
+#[test]
+fn type_branch_in_library_recognizes_client_types() {
+    let workspace = Workspace::new();
+    workspace.library(
+        r#"
+pub type Numbered = { pub func number(self) -> Int [read self] }
+pub func inspect<T>(value: T) -> Int [read value] {
+    branch value {
+        is Numbered -> value.number()
+        _ -> 0
+    }
+}
+"#,
+    );
+    let compilation = workspace
+        .consumer(
+            r#"
+import api
+pub type Local = { value: Int }
+impl Local { pub func number(self) -> Int [read self] { self.value } }
+func main() -> Int { inspect(Local { value: 42 }) }
+"#,
+        )
+        .unwrap();
+    assert_eq!(run(&compilation), Value::Integer(42));
 }
 
 #[test]
