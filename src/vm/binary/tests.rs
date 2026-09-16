@@ -391,11 +391,13 @@ func main() -> Int {
             )
         })
     }));
+    // The generic capture may own a resource at another call site. Preserve its
+    // environment lifetime, and round-trip its substitutions in that form too.
     assert!(optimized.functions.values().any(|function| {
         function.instructions.iter().any(|instruction| {
             matches!(
                 instruction,
-                Instruction::CallClosure { specialization, .. }
+                Instruction::MakeClosure { specialization, .. }
                     if !specialization.is_empty()
             )
         })

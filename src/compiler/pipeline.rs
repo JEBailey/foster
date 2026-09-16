@@ -64,17 +64,22 @@ fn check_impl(
         crate::hir::ownership::validate_groups_and_effects(&hir)
     })
     .map_err(|e| vec![CompileError::effects(e)])?;
-    let (initial_types, _) = profile::measure("types.initial", || {
+    let (initial_types, initial_diagnostics) = profile::measure("types.initial", || {
         types(&mut hir, recover, &recoverable, cache.clone())
     })?;
     crate::compiler::cancellation::check().map_err(|e| vec![CompileError::types(e)])?;
-    profile::measure("capture.modes", || {
+    let captures_changed = profile::measure("capture.modes", || {
         crate::hir::ownership::infer_capture_modes(&mut hir, &initial_types)
     })
     .map_err(|e| vec![CompileError::ownership(e)])?;
-    let (types, diagnostics) = profile::measure("types.final", || {
-        types(&mut hir, recover, &recoverable, cache.clone())
-    })?;
+    let (types, diagnostics) = if captures_changed {
+        profile::measure("types.final", || {
+            types(&mut hir, recover, &recoverable, cache.clone())
+        })?
+    } else {
+        profile::count("types.reused_initial");
+        (initial_types, initial_diagnostics)
+    };
     crate::compiler::cancellation::check().map_err(|e| vec![CompileError::types(e)])?;
     profile::measure("effects.validate", || {
         crate::hir::ownership::validate_groups_and_effects(&hir)

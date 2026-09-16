@@ -6,10 +6,10 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
+use super::storage::{Instruction, Program};
 use crate::codegen::types::ExecutableType;
 use crate::error::FosterError;
 use crate::hir::{FunctionId, RecordId, VariantId, VariantTypeId};
-use crate::vm::{Instruction, Program};
 
 pub mod physical;
 

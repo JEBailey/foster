@@ -4,7 +4,7 @@ use crate::error::FosterError;
 use crate::hir::FunctionId;
 use crate::types::NominalTypeId;
 
-use super::{BytecodeFunction, Instruction, Program};
+use super::{Function, Instruction, Program};
 use crate::codegen::types::ExecutableType;
 
 pub fn verify(program: &Program) -> Result<(), FosterError> {
@@ -265,7 +265,7 @@ fn verify_specialization(
 fn verify_function_structure(
     program: &Program,
     _id: FunctionId,
-    function: &BytecodeFunction,
+    function: &Function,
 ) -> Result<(), FosterError> {
     let parameter_count = usize::from(function.parameters);
     let capture_count = usize::from(function.captures);
@@ -539,7 +539,7 @@ fn verify_function_structure(
 
 fn verify_type(
     program: &Program,
-    function: &BytecodeFunction,
+    function: &Function,
     ty: &ExecutableType,
     depth: usize,
 ) -> Result<(), FosterError> {
@@ -610,10 +610,10 @@ fn verify_type(
 
 fn target_function<'a>(
     program: &'a Program,
-    function: &BytecodeFunction,
+    function: &Function,
     index: usize,
     target: FunctionId,
-) -> Result<&'a BytecodeFunction, FosterError> {
+) -> Result<&'a Function, FosterError> {
     program.functions.get(&target).ok_or_else(|| {
         FosterError::runtime(format!(
             "bytecode function `{}` instruction {index} references a missing function",
@@ -636,7 +636,7 @@ fn pattern_binding_count(pattern: &crate::hir::Pattern) -> usize {
 }
 
 fn invalid_instruction<T>(
-    function: &BytecodeFunction,
+    function: &Function,
     index: usize,
     message: impl std::fmt::Display,
 ) -> Result<T, FosterError> {
@@ -650,14 +650,14 @@ use crate::codegen::flow::{self, engine};
 use crate::codegen::ir::Value;
 pub(crate) fn type_states(
     program: &Program,
-    function: &BytecodeFunction,
+    function: &Function,
     schemas: &std::collections::HashMap<FunctionId, flow::FunctionSchema>,
 ) -> Result<Vec<Option<Vec<Option<ExecutableType>>>>, FosterError> {
     let schema = logical_schema(function);
     let body = engine::Body {
         write_bindings: &Default::default(),
         schema: &schema,
-        instructions: function.instructions.iter().map(vm_instruction).collect(),
+        instructions: function.instructions.iter().map(slot_instruction).collect(),
         value_count: usize::from(function.registers),
         entry_values: vec![],
         storage_policy: engine::StoragePolicy::ConsumingSlots,
@@ -671,26 +671,28 @@ pub(crate) fn type_states(
     )
     .map(|states| states.into_iter().map(|s| s.map(|s| s.bindings)).collect())
 }
-pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::Instruction {
+pub(crate) fn slot_instruction(
+    instruction: &crate::codegen::storage::Instruction,
+) -> engine::Instruction {
     match instruction {
-        crate::vm::Instruction::Drop { register } => engine::Instruction::Drop {
+        crate::codegen::storage::Instruction::Drop { register } => engine::Instruction::Drop {
             register: Value(u32::from(register.0)),
         },
-        crate::vm::Instruction::LoadConstant {
+        crate::codegen::storage::Instruction::LoadConstant {
             destination,
             constant,
         } => engine::Instruction::LoadConstant {
             destination: Value(u32::from(destination.0)),
             constant: constant.clone(),
         },
-        crate::vm::Instruction::Move {
+        crate::codegen::storage::Instruction::Move {
             destination,
             source,
         } => engine::Instruction::Move {
             destination: Value(u32::from(destination.0)),
             source: Value(u32::from(source.0)),
         },
-        crate::vm::Instruction::Unary {
+        crate::codegen::storage::Instruction::Unary {
             destination,
             operator,
             operand,
@@ -699,7 +701,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             operator: operator.clone(),
             operand: Value(u32::from(operand.0)),
         },
-        crate::vm::Instruction::Binary {
+        crate::codegen::storage::Instruction::Binary {
             destination,
             operator,
             left,
@@ -710,7 +712,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             left: Value(u32::from(left.0)),
             right: Value(u32::from(right.0)),
         },
-        crate::vm::Instruction::MakeList {
+        crate::codegen::storage::Instruction::MakeList {
             destination,
             element_type,
             elements,
@@ -719,7 +721,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             element_type: element_type.clone(),
             elements: elements.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
-        crate::vm::Instruction::Index {
+        crate::codegen::storage::Instruction::Index {
             destination,
             object,
             index,
@@ -728,7 +730,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             object: Value(u32::from(object.0)),
             index: Value(u32::from(index.0)),
         },
-        crate::vm::Instruction::MakeRecord {
+        crate::codegen::storage::Instruction::MakeRecord {
             destination,
             record,
             type_arguments: _,
@@ -741,7 +743,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
                 .map(|(a, r)| (a.clone(), Value(u32::from(r.0))))
                 .collect(),
         },
-        crate::vm::Instruction::MakeVariant {
+        crate::codegen::storage::Instruction::MakeVariant {
             destination,
             variant,
             type_arguments: _,
@@ -751,7 +753,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             variant: variant.clone(),
             payload: payload.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
-        crate::vm::Instruction::LoadField {
+        crate::codegen::storage::Instruction::LoadField {
             destination,
             object,
             field: _,
@@ -761,7 +763,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             object: Value(u32::from(object.0)),
             by_reference: by_reference.clone(),
         },
-        crate::vm::Instruction::StoreField {
+        crate::codegen::storage::Instruction::StoreField {
             object,
             field: _,
             source,
@@ -769,7 +771,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             object: Value(u32::from(object.0)),
             source: Value(u32::from(source.0)),
         },
-        crate::vm::Instruction::StoreIndex {
+        crate::codegen::storage::Instruction::StoreIndex {
             object,
             index,
             source,
@@ -778,7 +780,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             index: Value(u32::from(index.0)),
             source: Value(u32::from(source.0)),
         },
-        crate::vm::Instruction::MakeReference {
+        crate::codegen::storage::Instruction::MakeReference {
             destination,
             pointee_type,
             object,
@@ -789,7 +791,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             object: Value(u32::from(object.0)),
             index: Value(u32::from(index.0)),
         },
-        crate::vm::Instruction::MakeWholeReference {
+        crate::codegen::storage::Instruction::MakeWholeReference {
             destination,
             pointee_type,
             object,
@@ -798,7 +800,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             pointee_type: pointee_type.clone(),
             object: Value(u32::from(object.0)),
         },
-        crate::vm::Instruction::MakeFieldReference {
+        crate::codegen::storage::Instruction::MakeFieldReference {
             destination,
             pointee_type,
             object,
@@ -809,7 +811,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             object: Value(u32::from(object.0)),
             field: field.clone(),
         },
-        crate::vm::Instruction::MoveOut {
+        crate::codegen::storage::Instruction::MoveOut {
             by_reference,
             destination,
             source,
@@ -818,7 +820,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             destination: Value(u32::from(destination.0)),
             source: Value(u32::from(source.0)),
         },
-        crate::vm::Instruction::Push {
+        crate::codegen::storage::Instruction::Push {
             destination,
             object,
             value,
@@ -827,7 +829,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             object: Value(u32::from(object.0)),
             value: Value(u32::from(value.0)),
         },
-        crate::vm::Instruction::Append {
+        crate::codegen::storage::Instruction::Append {
             destination,
             object,
             value,
@@ -836,7 +838,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             object: Value(u32::from(object.0)),
             value: Value(u32::from(value.0)),
         },
-        crate::vm::Instruction::Contains {
+        crate::codegen::storage::Instruction::Contains {
             destination,
             value,
             candidates,
@@ -845,7 +847,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             value: Value(u32::from(value.0)),
             candidates: candidates.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
-        crate::vm::Instruction::Builtin {
+        crate::codegen::storage::Instruction::Builtin {
             destination,
             builtin,
             arguments,
@@ -854,20 +856,20 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             builtin: builtin.clone(),
             arguments: arguments.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
-        crate::vm::Instruction::SpawnRemote { destination, value } => {
+        crate::codegen::storage::Instruction::SpawnRemote { destination, value } => {
             engine::Instruction::SpawnRemote {
                 destination: Value(u32::from(destination.0)),
                 value: Value(u32::from(value.0)),
             }
         }
-        crate::vm::Instruction::SpawnRemoteBorrow {
+        crate::codegen::storage::Instruction::SpawnRemoteBorrow {
             destination,
             source,
         } => engine::Instruction::SpawnRemoteBorrow {
             destination: Value(u32::from(destination.0)),
             source: Value(u32::from(source.0)),
         },
-        crate::vm::Instruction::RemoteCall {
+        crate::codegen::storage::Instruction::RemoteCall {
             destination,
             remote,
             function,
@@ -881,14 +883,14 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
                 .map(|(a, r)| (a.clone(), Value(u32::from(r.0))))
                 .collect(),
         },
-        crate::vm::Instruction::Await {
+        crate::codegen::storage::Instruction::Await {
             destination,
             future,
         } => engine::Instruction::Await {
             destination: Value(u32::from(destination.0)),
             future: Value(u32::from(future.0)),
         },
-        crate::vm::Instruction::MatchPattern {
+        crate::codegen::storage::Instruction::MatchPattern {
             destination,
             subject,
             pattern,
@@ -899,20 +901,22 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             pattern: pattern.clone(),
             bindings: bindings.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
-        crate::vm::Instruction::Jump { target } => engine::Instruction::Jump {
+        crate::codegen::storage::Instruction::Jump { target } => engine::Instruction::Jump {
             target: target.clone(),
         },
-        crate::vm::Instruction::JumpIfFalse { condition, target } => {
+        crate::codegen::storage::Instruction::JumpIfFalse { condition, target } => {
             engine::Instruction::JumpIfFalse {
                 condition: Value(u32::from(condition.0)),
                 target: target.clone(),
             }
         }
-        crate::vm::Instruction::Assert { condition, message } => engine::Instruction::Assert {
-            condition: Value(u32::from(condition.0)),
-            message: message.map(|r| Value(u32::from(r.0))),
-        },
-        crate::vm::Instruction::Call {
+        crate::codegen::storage::Instruction::Assert { condition, message } => {
+            engine::Instruction::Assert {
+                condition: Value(u32::from(condition.0)),
+                message: message.map(|r| Value(u32::from(r.0))),
+            }
+        }
+        crate::codegen::storage::Instruction::Call {
             destination,
             function,
             specialization,
@@ -923,7 +927,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             specialization: specialization.clone(),
             arguments: arguments.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
-        crate::vm::Instruction::CallMethod {
+        crate::codegen::storage::Instruction::CallMethod {
             destination,
             receiver,
             function,
@@ -936,7 +940,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             specialization: specialization.clone(),
             arguments: arguments.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
-        crate::vm::Instruction::CallContractMethod {
+        crate::codegen::storage::Instruction::CallContractMethod {
             destination,
             receiver,
             slot,
@@ -951,7 +955,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             arguments: arguments.iter().map(|r| Value(u32::from(r.0))).collect(),
             result_type: result_type.clone(),
         },
-        crate::vm::Instruction::MakeClosure {
+        crate::codegen::storage::Instruction::MakeClosure {
             destination,
             function,
             specialization,
@@ -965,7 +969,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
                 .map(|(a, r)| (a.clone(), Value(u32::from(r.0))))
                 .collect(),
         },
-        crate::vm::Instruction::CallValue {
+        crate::codegen::storage::Instruction::CallValue {
             destination,
             callee,
             arguments,
@@ -974,7 +978,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
             callee: Value(u32::from(callee.0)),
             arguments: arguments.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
-        crate::vm::Instruction::CallClosure {
+        crate::codegen::storage::Instruction::CallClosure {
             destination,
             function,
             specialization,
@@ -990,7 +994,7 @@ pub(crate) fn vm_instruction(instruction: &crate::vm::Instruction) -> engine::In
                 .collect(),
             arguments: arguments.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
-        crate::vm::Instruction::Return { source } => engine::Instruction::Return {
+        crate::codegen::storage::Instruction::Return { source } => engine::Instruction::Return {
             source: Value(u32::from(source.0)),
         },
     }

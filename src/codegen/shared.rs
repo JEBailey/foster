@@ -8,17 +8,18 @@ use super::{
 };
 use crate::{error::FosterError, hir::FunctionId};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// The canonical executable boundary contains no retained construction bytecode.
 /// Transformations consume a boundary and publish new evidence only after verification.
 #[derive(Debug, Clone)]
 pub struct SharedProgram {
-    pub(crate) program: Program,
+    pub(crate) program: Arc<Program>,
     pub(crate) layouts: Registry,
     pub(crate) drops_inserted: bool,
     pub(crate) signatures: HashMap<FunctionId, ir::Signature>,
     pub(crate) schemas: HashMap<FunctionId, FunctionSchema>,
-    pub(crate) facts: HashMap<FunctionId, FunctionFacts>,
+    pub(crate) facts: HashMap<FunctionId, Arc<FunctionFacts>>,
     pub(crate) write_bindings: HashMap<FunctionId, HashMap<ir::Value, ir::Value>>,
 }
 
@@ -67,6 +68,9 @@ mod tests {
                 ))
         );
         for (id, body) in optimized.functions() {
+            if Arc::ptr_eq(&baseline.facts[id], &optimized.facts[id]) {
+                assert_eq!(body.to_string(), baseline.functions()[id].to_string());
+            }
             let facts = optimized.facts(*id);
             assert_eq!(facts.values.len(), body.values.len());
             assert_eq!(facts.points.len(), body.blocks.len());
@@ -134,15 +138,29 @@ impl SharedProgram {
     pub fn facts(&self, function: FunctionId) -> &FunctionFacts {
         &self.facts[&function]
     }
-    pub(crate) fn into_parts(self) -> (Program, HashMap<FunctionId, FunctionFacts>, Registry) {
+    #[cfg(test)]
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        Arc<Program>,
+        HashMap<FunctionId, Arc<FunctionFacts>>,
+        Registry,
+    ) {
         (self.program, self.facts, self.layouts)
     }
 
     /// All shared semantic passes run here, before either backend lowers SSA.
-    pub fn optimized(mut self) -> Result<Self, FosterError> {
+    pub fn optimized(self) -> Result<Self, FosterError> {
+        crate::compiler::profile::measure("shared.optimize", || self.optimize_inner())
+    }
+
+    fn optimize_inner(mut self) -> Result<Self, FosterError> {
         // No pass can observe evidence from the previous graph revision.
         let mut previous = std::mem::take(&mut self.facts);
-        let changed = super::optimizer::run_shared(&mut self.program, &mut self.write_bindings)?;
+        let program = crate::compiler::profile::measure("shared.mutable_graph", || {
+            Arc::make_mut(&mut self.program)
+        });
+        let changed = super::optimizer::run_shared(program, &mut self.write_bindings)?;
         // Changed graphs cannot retain instruction-indexed facts. Rebuild only
         // affected functions, including callers changed by interprocedural passes.
         let mut changed = changed.into_iter().collect::<Vec<_>>();
@@ -153,14 +171,16 @@ impl SharedProgram {
                 .verify(&self.signatures)
                 .map_err(|error| FosterError::runtime(format!("invalid optimized SSA: {error}")))?;
             previous.remove(&id);
-            let facts = super::flow::analyze(
-                &self.program.metadata,
-                &self.schemas,
-                &self.schemas[&id],
-                function,
-                &self.write_bindings[&id],
-            )?;
-            self.facts.insert(id, facts);
+            let facts = crate::compiler::profile::measure("shared.rebuild_flow", || {
+                super::flow::analyze(
+                    &self.program.metadata,
+                    &self.schemas,
+                    &self.schemas[&id],
+                    function,
+                    &self.write_bindings[&id],
+                )
+            })?;
+            self.facts.insert(id, Arc::new(facts));
         }
         self.facts.extend(previous);
         Ok(self)

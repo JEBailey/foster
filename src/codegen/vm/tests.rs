@@ -7,6 +7,7 @@ use crate::vm::{self, Register};
 use std::collections::HashMap;
 
 use super::*;
+use crate::codegen::sealing::seal_program;
 use crate::vm::{Machine, Program};
 use la_arena::{Idx, RawIdx};
 

@@ -194,7 +194,7 @@ impl Table {
 pub fn link(program: &mut Program) -> Result<(), FosterError> {
     // The normal compiler path has already assigned the final IDs. Avoid copying its code.
     if program.metadata.symbols.validate(program).is_ok() {
-        return crate::vm::verify(program);
+        return crate::codegen::storage::verification::verify(program);
     }
     let mut linked = program.clone();
     let definitions = linked
@@ -286,7 +286,7 @@ pub fn link(program: &mut Program) -> Result<(), FosterError> {
             }
         }
     }
-    crate::vm::verify(&linked)?;
+    crate::codegen::storage::verification::verify(&linked)?;
     *program = linked;
     Ok(())
 }

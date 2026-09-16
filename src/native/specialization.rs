@@ -8,7 +8,7 @@ use super::{
 use crate::codegen::types::ExecutableType;
 
 use crate::codegen::flow::{FunctionFacts, Site, ValueFact};
-pub(super) type FlowFacts = HashMap<FunctionId, FunctionFacts>;
+pub(super) type FlowFacts = HashMap<FunctionId, std::sync::Arc<FunctionFacts>>;
 fn known(
     facts: &FunctionFacts,
     site: Site,

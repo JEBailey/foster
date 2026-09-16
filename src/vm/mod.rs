@@ -8,30 +8,29 @@ pub(crate) mod builtins;
 mod compiler;
 mod entropy;
 mod host;
-mod ir;
+
 mod machine;
 mod operations;
 pub(crate) mod optimizer;
 mod patterns;
 mod runtime;
-pub(crate) mod schema;
 mod value;
-mod verifier;
+use crate::codegen::storage::verification as verifier;
 
 #[cfg(test)]
 pub(crate) use crate::codegen::compile as compile_shared;
 pub use crate::codegen::metadata::{Constant, RuntimeRecord, RuntimeVariant};
+pub use crate::codegen::storage::{
+    Function as BytecodeFunction, Instruction, Program, ProgramMetrics, Slot as Register,
+};
 pub use binary::{BinaryError, FORMAT_VERSION, decode_program, encode_program};
+pub(crate) use compiler::compile_library;
 pub use compiler::{CompileOptions, compile, compile_with_options};
-pub(crate) use compiler::{compile_construction, compile_library};
 pub use host::HostContext;
-pub use ir::{BytecodeFunction, Instruction, Program, ProgramMetrics, Register};
 pub use machine::{Machine, release_value};
 pub use optimizer::optimize;
 pub use runtime::Capture;
 pub use value::Value;
-#[cfg(test)]
-pub(crate) use verifier::type_states;
 pub use verifier::verify;
 
 pub fn run(compilation: &crate::compiler::Compilation) -> Result<Value, crate::error::FosterError> {

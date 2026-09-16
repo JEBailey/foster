@@ -1,0 +1,947 @@
+//! Lower checked HIR to target-independent slots before SSA sealing.
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+
+use crate::compiler::Compilation;
+use crate::error::FosterError;
+use crate::hir::{self, ExprId, FunctionId, LocalId, ResolvedName};
+use crate::intrinsics::{Intrinsic, OpcodeIntrinsic};
+use crate::types::TypeInformation;
+
+use crate::codegen::metadata::{Constant, RuntimeRecord, RuntimeVariant};
+use crate::codegen::storage::{Function, Instruction, Program, Slot};
+use crate::codegen::types::ExecutableType;
+
+mod lower;
+
+fn opcode_intrinsic_instruction(
+    intrinsic: OpcodeIntrinsic,
+    destination: Slot,
+    receiver: Slot,
+    value: Slot,
+) -> Instruction {
+    match intrinsic {
+        OpcodeIntrinsic::ValueCanCopy | OpcodeIntrinsic::ValueCopy => {
+            Instruction::CallContractMethod {
+                destination,
+                receiver,
+                slot: if intrinsic == OpcodeIntrinsic::ValueCanCopy {
+                    crate::types::CAN_COPY_SLOT
+                } else {
+                    crate::types::COPY_SLOT
+                },
+                name: if intrinsic == OpcodeIntrinsic::ValueCanCopy {
+                    "can_copy?"
+                } else {
+                    "copy"
+                }
+                .into(),
+                arguments: Vec::new(),
+                result_type: if intrinsic == OpcodeIntrinsic::ValueCanCopy {
+                    ExecutableType::Bool
+                } else {
+                    ExecutableType::Unknown
+                },
+            }
+        }
+        OpcodeIntrinsic::ListPush => Instruction::Push {
+            destination,
+            object: receiver,
+            value,
+        },
+        OpcodeIntrinsic::ListAppend => Instruction::Append {
+            destination,
+            object: receiver,
+            value,
+        },
+        OpcodeIntrinsic::ListCanCopyAt | OpcodeIntrinsic::ListCopyAt => {
+            unreachable!("copy dispatch uses two instructions")
+        }
+    }
+}
+
+fn collect_generic_names(
+    information: &TypeInformation,
+    ty: crate::types::TypeId,
+    names: &mut BTreeSet<String>,
+) {
+    use crate::types::Type;
+    match &information.types[ty] {
+        Type::Generic(name) => {
+            names.insert(name.clone());
+        }
+        Type::Reference { value, .. }
+        | Type::RawList(value)
+        | Type::Sequence(value)
+        | Type::Remote(value)
+        | Type::Future(value) => collect_generic_names(information, *value, names),
+        Type::Function(function) => {
+            for parameter in &function.parameters {
+                collect_generic_names(information, parameter.ty, names);
+            }
+            collect_generic_names(information, function.result, names);
+        }
+        Type::Record { arguments, .. } | Type::Variant { arguments, .. } => {
+            for argument in arguments {
+                collect_generic_names(information, *argument, names);
+            }
+        }
+        Type::Intersection(members) => {
+            for member in members {
+                collect_generic_names(information, *member, names);
+            }
+        }
+        Type::Unit
+        | Type::Bool
+        | Type::Int
+        | Type::RawInt
+        | Type::Float
+        | Type::CodePoint
+        | Type::Byte
+        | Type::RawBytes
+        | Type::RawByteBuffer
+        | Type::Module(_) => {}
+    }
+}
+
+fn match_generic_types(
+    information: &TypeInformation,
+    schema: crate::types::TypeId,
+    actual: crate::types::TypeId,
+    substitutions: &mut BTreeMap<String, crate::types::TypeId>,
+) {
+    use crate::types::Type;
+    match (&information.types[schema], &information.types[actual]) {
+        (Type::Generic(name), _) => {
+            substitutions.entry(name.clone()).or_insert(actual);
+        }
+        (Type::Reference { value: left, .. }, Type::Reference { value: right, .. })
+        | (Type::RawList(left), Type::RawList(right))
+        | (Type::Sequence(left), Type::Sequence(right))
+        | (Type::Remote(left), Type::Remote(right))
+        | (Type::Future(left), Type::Future(right)) => {
+            match_generic_types(information, *left, *right, substitutions);
+        }
+        (
+            Type::Record {
+                record: left,
+                arguments: left_arguments,
+            },
+            Type::Record {
+                record: right,
+                arguments: right_arguments,
+            },
+        ) if left == right => {
+            for (left, right) in left_arguments.iter().zip(right_arguments) {
+                match_generic_types(information, *left, *right, substitutions);
+            }
+        }
+        (
+            Type::Variant {
+                variant: left,
+                arguments: left_arguments,
+            },
+            Type::Variant {
+                variant: right,
+                arguments: right_arguments,
+            },
+        ) if left == right => {
+            for (left, right) in left_arguments.iter().zip(right_arguments) {
+                match_generic_types(information, *left, *right, substitutions);
+            }
+        }
+        (Type::Function(left), Type::Function(right)) => {
+            for (left, right) in left.parameters.iter().zip(&right.parameters) {
+                match_generic_types(information, left.ty, right.ty, substitutions);
+            }
+            match_generic_types(information, left.result, right.result, substitutions);
+        }
+        _ => {}
+    }
+}
+
+pub(crate) fn compile(compilation: &Compilation) -> Result<Program, FosterError> {
+    let closure_captures = compilation
+        .hir
+        .expressions
+        .iter()
+        .filter_map(|(_, expression)| match expression {
+            hir::Expr::Closure { function, captures } => Some((*function, captures.clone())),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+    let mut compiler = Compiler {
+        hir: &compilation.hir,
+        types: &compilation.types,
+        program: Program::default(),
+        closure_captures,
+    };
+    for (function, _) in compilation.hir.functions.iter() {
+        compiler.compile_function(function)?;
+    }
+    compiler.program.metadata.records = compilation
+        .hir
+        .records
+        .iter()
+        .map(|(id, value)| {
+            use crate::codegen::metadata::RecordField;
+            let fields = compilation.types.record_field_types.get(&id).map_or_else(
+                || {
+                    let mut fields = value
+                        .fields
+                        .iter()
+                        .map(|field| RecordField {
+                            name: field.name.clone(),
+                            ty: ExecutableType::Unknown,
+                        })
+                        .collect::<Vec<_>>();
+                    fields.sort_by(|a, b| a.name.cmp(&b.name));
+                    fields
+                },
+                |fields| {
+                    fields
+                        .iter()
+                        .map(|(name, ty)| RecordField {
+                            name: name.clone(),
+                            ty: verification_type(&compilation.hir, &compilation.types, *ty, 0),
+                        })
+                        .collect()
+                },
+            );
+            Ok((
+                id,
+                RuntimeRecord::new(value.name.clone(), value.parameters.clone(), fields)?,
+            ))
+        })
+        .collect::<Result<_, FosterError>>()?;
+    compiler.program.metadata.string_record = compilation.types.core.string;
+    compiler.program.metadata.symbol_record = compilation.types.core.symbol;
+    compiler.program.metadata.list_record = compilation.types.core.list;
+    compiler.program.metadata.bytes_record = compilation.types.core.bytes;
+    compiler.program.metadata.byte_buffer_record = compilation.types.core.byte_buffer;
+    compiler.program.metadata.dispatch = compilation.types.dispatch.clone();
+    compiler.program.metadata.remote_result = compilation
+        .hir
+        .module_named("core.result")
+        .and_then(|module| compilation.hir.variant_type_named(module, "Result"));
+    compiler.program.metadata.remote_error = compilation
+        .hir
+        .module_named("core.remote_error")
+        .and_then(|module| compilation.hir.variant_type_named(module, "RemoteError"));
+    let variant_type_names = compilation
+        .hir
+        .variant_types
+        .iter()
+        .map(|(id, value)| (id, std::sync::Arc::<str>::from(value.name.as_str())))
+        .collect::<HashMap<_, _>>();
+    compiler.program.metadata.variants = compilation
+        .hir
+        .variants
+        .iter()
+        .filter(|(_, value)| {
+            compilation.hir.variant_types[value.parent].kind == crate::ast::VariantKind::Enum
+        })
+        .map(|(id, value)| {
+            (
+                id,
+                RuntimeVariant {
+                    parent: value.parent,
+                    type_name: variant_type_names[&value.parent].clone(),
+                    parameters: compilation.hir.variant_types[value.parent]
+                        .parameters
+                        .clone(),
+                    alternative: std::sync::Arc::from(value.name.as_str()),
+                    payload: compilation
+                        .types
+                        .variant_payloads
+                        .get(&id)
+                        .and_then(|payload| *payload)
+                        .map(|ty| verification_type(&compilation.hir, &compilation.types, ty, 0))
+                        .into_iter()
+                        .collect(),
+                },
+            )
+        })
+        .collect();
+    compiler.program.metadata.main = compilation
+        .hir
+        .module_named("main")
+        .and_then(|module| compilation.hir.function_named(module, "main"));
+    compiler.program.metadata.main_arguments = compiler
+        .program
+        .metadata
+        .main
+        .map(|main| crate::entry::accepts_arguments(&compilation.hir, &compilation.types, main))
+        .transpose()?
+        .unwrap_or(false);
+    crate::library::link(compilation, &mut compiler.program)?;
+    Ok(compiler.program)
+}
+
+struct Compiler<'a> {
+    hir: &'a hir::PackageHir,
+    types: &'a TypeInformation,
+    program: Program,
+    closure_captures: HashMap<FunctionId, Vec<hir::Capture>>,
+}
+
+struct FunctionCompiler<'a> {
+    hir: &'a hir::PackageHir,
+    types: &'a TypeInformation,
+    closure_captures: &'a HashMap<FunctionId, Vec<hir::Capture>>,
+    constants: &'a mut Vec<Constant>,
+    function: FunctionId,
+    locals: HashMap<LocalId, Slot>,
+    instructions: Vec<Instruction>,
+    spans: Vec<std::ops::Range<usize>>,
+    next_register: u16,
+    loops: Vec<LoopContext>,
+    scopes: Vec<Vec<Slot>>,
+    temporary_scopes: Vec<Vec<Slot>>,
+    observable_cleanup: bool,
+}
+
+struct LoopContext {
+    scope_depth: usize,
+    start: usize,
+    breaks: Vec<usize>,
+}
+
+impl Compiler<'_> {
+    fn compile_function(&mut self, function_id: FunctionId) -> Result<(), FosterError> {
+        let function = &self.hir.functions[function_id];
+        let mut lower = FunctionCompiler {
+            hir: self.hir,
+            types: self.types,
+            closure_captures: &self.closure_captures,
+            constants: &mut self.program.metadata.constants,
+            function: function_id,
+            locals: HashMap::new(),
+            instructions: Vec::new(),
+            spans: Vec::new(),
+            next_register: 0,
+            loops: Vec::new(),
+            scopes: vec![Vec::new()],
+            temporary_scopes: Vec::new(),
+            observable_cleanup: self
+                .types
+                .dispatch
+                .keys()
+                .any(|(_, slot)| *slot == crate::types::DEINIT_SLOT)
+                || self
+                    .types
+                    .types
+                    .iter()
+                    .any(|(_, ty)| matches!(ty, crate::types::Type::Remote(_))),
+        };
+        let captures = self
+            .closure_captures
+            .get(&function_id)
+            .cloned()
+            .unwrap_or_default();
+        let capture_types = captures
+            .iter()
+            .map(|capture| {
+                let ty = self
+                    .types
+                    .local_type(capture.local)
+                    .map(|ty| verification_type(self.hir, self.types, ty, 0))
+                    .unwrap_or(ExecutableType::Unknown);
+                if capture.mode == crate::hir::CaptureMode::Ref
+                    && !matches!(ty, ExecutableType::Reference(_))
+                {
+                    ExecutableType::Reference(Box::new(ty))
+                } else {
+                    ty
+                }
+            })
+            .collect::<Vec<_>>();
+        for capture in &captures {
+            let register = lower.allocate();
+            lower.locals.insert(capture.local, register);
+        }
+        for (index, parameter) in function.parameters.iter().enumerate() {
+            let register = lower.allocate();
+            lower.locals.insert(parameter.local, register);
+            if lower.observable_cleanup
+                && self
+                    .types
+                    .function_type(function_id)
+                    .is_some_and(|signature| {
+                        signature.parameters[index].mode == crate::ast::ParameterMode::Consume
+                    })
+            {
+                lower.scopes[0].push(register);
+            }
+        }
+        let intrinsic = function.intrinsic.as_deref().and_then(Intrinsic::from_key);
+        let result = match intrinsic.and_then(Intrinsic::opcode) {
+            Some(opcode @ (OpcodeIntrinsic::ValueCopy | OpcodeIntrinsic::ValueCanCopy)) => {
+                let destination = lower.allocate();
+                let receiver = lower.locals[&function.parameters[0].local];
+                lower.emit(
+                    opcode_intrinsic_instruction(opcode, destination, receiver, receiver),
+                    function.span.clone(),
+                );
+                destination
+            }
+            Some(opcode) => {
+                let [receiver, value] = function.parameters.as_slice() else {
+                    return Err(FosterError::runtime(format!(
+                        "intrinsic `{}` requires a receiver and one value",
+                        function.name
+                    )));
+                };
+                let destination = lower.allocate();
+                lower.emit_list_intrinsic(
+                    opcode,
+                    destination,
+                    lower.locals[&receiver.local],
+                    lower.locals[&value.local],
+                    function.span.clone(),
+                );
+                destination
+            }
+            _ => {
+                let mut result = lower.load_constant(Constant::Unit, function.span.clone())?;
+                lower.compile_statements(&function.body, &function.span, &mut result)?;
+                result
+            }
+        };
+        let ends_with_unconditional_return = matches!(
+            function.body.last(),
+            Some(hir::Stmt::Return { guard: None, .. })
+        );
+        if !ends_with_unconditional_return {
+            lower.end_scopes(0, Some(result), function.span.clone());
+            lower.emit(
+                Instruction::Return { source: result },
+                function.span.clone(),
+            );
+        }
+        self.program.functions.insert(
+            function_id,
+            Function {
+                name: function.name.clone(),
+                intrinsic_stub: matches!(intrinsic, Some(Intrinsic::Builtin(_))),
+                parameters: function.parameters.len() as u16,
+                parameter_types: self
+                    .types
+                    .function_type(function_id)
+                    .map(|signature| {
+                        signature
+                            .parameters
+                            .iter()
+                            .map(|ty| verification_type(self.hir, self.types, ty.ty, 0))
+                            .collect()
+                    })
+                    .unwrap_or_else(|| vec![ExecutableType::Unknown; function.parameters.len()]),
+                parameter_modes: self
+                    .types
+                    .function_type(function_id)
+                    .map(|signature| signature.parameters.iter().map(|p| p.mode).collect())
+                    .unwrap_or_else(|| {
+                        vec![crate::ast::ParameterMode::Borrow; function.parameters.len()]
+                    }),
+                mutable_parameters: function
+                    .parameters
+                    .iter()
+                    .enumerate()
+                    .map(|(index, _)| {
+                        let Some(signature) = self.types.function_type(function_id) else {
+                            return false;
+                        };
+                        if signature.parameters[index].mode != crate::ast::ParameterMode::Borrow {
+                            return false;
+                        }
+                        let crate::types::Type::Reference { group, .. } =
+                            &self.types.types[signature.parameters[index].ty]
+                        else {
+                            return false;
+                        };
+                        function.effects.iter().any(|effect| {
+                            matches!(
+                                effect.kind,
+                                crate::ast::EffectKind::Mut | crate::ast::EffectKind::Reshape
+                            ) && effect.target.root == *group
+                        })
+                    })
+                    .collect(),
+                returns_reference: self
+                    .types
+                    .function_type(function_id)
+                    .is_some_and(|signature| {
+                        matches!(
+                            self.types.types[signature.result],
+                            crate::types::Type::Reference { .. }
+                        )
+                    }),
+                captures: captures.len() as u16,
+                capture_types,
+                result_type: self
+                    .types
+                    .function_type(function_id)
+                    .map(|signature| verification_type(self.hir, self.types, signature.result, 0))
+                    .unwrap_or(ExecutableType::Unknown),
+                registers: lower.next_register,
+                instructions: lower.instructions,
+                instruction_spans: lower.spans,
+            },
+        );
+        Ok(())
+    }
+}
+
+fn verification_type(
+    hir: &hir::PackageHir,
+    information: &TypeInformation,
+    ty: crate::types::TypeId,
+    depth: usize,
+) -> ExecutableType {
+    crate::codegen::type_conversion::convert::<crate::codegen::type_conversion::Bytecode>(
+        hir,
+        information,
+        ty,
+        &Default::default(),
+        depth,
+    )
+    .unwrap_or_else(|never| match never {})
+}
+
+fn projected_field_verification_type(
+    hir: &hir::PackageHir,
+    information: &TypeInformation,
+    receiver: &ExecutableType,
+    field: &str,
+) -> Option<ExecutableType> {
+    match receiver {
+        ExecutableType::Reference(pointee) => {
+            projected_field_verification_type(hir, information, pointee, field)
+        }
+        ExecutableType::Record { record, arguments } => {
+            let (_, field_type) = information
+                .record_field_types
+                .get(record)?
+                .iter()
+                .find(|(name, _)| name == field)?;
+            let substitutions = hir.records[*record]
+                .parameters
+                .iter()
+                .cloned()
+                .zip(arguments.iter().cloned())
+                .collect::<HashMap<_, _>>();
+            Some(verification_type(hir, information, *field_type, 0).substitute(&substitutions))
+        }
+        ExecutableType::List(element) => match field {
+            "empty?" => Some(ExecutableType::Bool),
+            "length" => Some(ExecutableType::Integer),
+            "head" => Some((**element).clone()),
+            "rest" => Some(receiver.clone()),
+            _ => None,
+        },
+        ExecutableType::Unknown | ExecutableType::Generic(_) => Some(ExecutableType::Unknown),
+        _ => None,
+    }
+}
+
+impl FunctionCompiler<'_> {
+    fn reference_binding(&self, local: LocalId) -> bool {
+        self.types
+            .local_type(local)
+            .is_some_and(|ty| matches!(self.types.types[ty], crate::types::Type::Reference { .. }))
+            || self.hir.functions[self.function]
+                .parameters
+                .iter()
+                .position(|parameter| parameter.local == local)
+                .and_then(|index| {
+                    self.types
+                        .function_type(self.function)
+                        .map(|signature| signature.parameters[index])
+                })
+                .is_some_and(|ty| {
+                    matches!(
+                        self.types.types[ty.ty],
+                        crate::types::Type::Reference { .. }
+                    )
+                })
+            || self
+                .closure_captures
+                .get(&self.function)
+                .is_some_and(|captures| {
+                    captures.iter().any(|capture| {
+                        capture.local == local && capture.mode == hir::CaptureMode::Ref
+                    })
+                })
+    }
+
+    fn end_temporaries(
+        &mut self,
+        all: bool,
+        preserved: Option<Slot>,
+        span: std::ops::Range<usize>,
+    ) {
+        if !self.observable_cleanup {
+            return;
+        }
+        let depth = if all {
+            0
+        } else {
+            self.temporary_scopes.len().saturating_sub(1)
+        };
+        let registers: Vec<_> = self.temporary_scopes[depth..]
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
+        let mut seen = std::collections::HashSet::new();
+        for register in registers.into_iter().rev() {
+            if Some(register) != preserved && seen.insert(register) {
+                self.emit(Instruction::Drop { register }, span.clone());
+            }
+        }
+    }
+    fn end_scopes(&mut self, depth: usize, preserved: Option<Slot>, span: std::ops::Range<usize>) {
+        if !self.observable_cleanup {
+            return;
+        }
+        let registers: Vec<_> = self.scopes[depth..].iter().flatten().copied().collect();
+        for register in registers.into_iter().rev() {
+            if Some(register) != preserved {
+                self.emit(Instruction::Drop { register }, span.clone());
+            }
+        }
+    }
+
+    fn owned_expression(&mut self, expression: ExprId) -> Result<Slot, FosterError> {
+        if self.observable_cleanup
+            && self
+                .types
+                .expression_type(expression)
+                .is_some_and(|ty| self.types.has_cleanup(ty))
+        {
+            let span = self
+                .hir
+                .expression_spans
+                .get(&expression)
+                .cloned()
+                .unwrap_or_else(|| self.hir.functions[self.function].span.clone());
+            self.move_expression(expression, span)
+        } else {
+            self.expression(expression)
+        }
+    }
+    fn emit_list_intrinsic(
+        &mut self,
+        intrinsic: OpcodeIntrinsic,
+        destination: Slot,
+        receiver: Slot,
+        index: Slot,
+        span: std::ops::Range<usize>,
+    ) {
+        if matches!(
+            intrinsic,
+            OpcodeIntrinsic::ListCanCopyAt | OpcodeIntrinsic::ListCopyAt
+        ) {
+            let value = self.allocate();
+            self.emit(
+                Instruction::Index {
+                    destination: value,
+                    object: receiver,
+                    index,
+                },
+                span.clone(),
+            );
+            let (slot, name) = if intrinsic == OpcodeIntrinsic::ListCanCopyAt {
+                (crate::types::CAN_COPY_SLOT, "can_copy?")
+            } else {
+                (crate::types::COPY_SLOT, "copy")
+            };
+            self.emit(
+                Instruction::CallContractMethod {
+                    destination,
+                    receiver: value,
+                    slot,
+                    name: name.into(),
+                    arguments: Vec::new(),
+                    result_type: if slot == crate::types::CAN_COPY_SLOT {
+                        ExecutableType::Bool
+                    } else {
+                        ExecutableType::Unknown
+                    },
+                },
+                span,
+            );
+        } else {
+            self.emit(
+                opcode_intrinsic_instruction(intrinsic, destination, receiver, index),
+                span,
+            );
+        }
+    }
+
+    pub(super) fn compile_statements(
+        &mut self,
+        statements: &crate::block::Block<hir::Stmt>,
+        fallback_span: &std::ops::Range<usize>,
+        result: &mut Slot,
+    ) -> Result<(), FosterError> {
+        self.scopes.push(Vec::new());
+        for (statement, statement_span) in statements.iter_spanned() {
+            self.temporary_scopes.push(Vec::new());
+            let span = if statement_span.is_empty() {
+                fallback_span.clone()
+            } else {
+                statement_span.clone()
+            };
+            match statement {
+                hir::Stmt::Return { value, guard } => {
+                    if let Some(guard) = guard {
+                        let condition = self.expression(*guard)?;
+                        let jump = self.emit(
+                            Instruction::JumpIfFalse {
+                                condition,
+                                target: 0,
+                            },
+                            span.clone(),
+                        );
+                        *result = self.owned_expression(*value)?;
+                        self.end_temporaries(true, Some(*result), span.clone());
+                        self.end_scopes(0, Some(*result), span.clone());
+                        self.emit(Instruction::Return { source: *result }, span);
+                        let target = self.instructions.len();
+                        self.patch_target(jump, target)?;
+                    } else {
+                        *result = self.owned_expression(*value)?;
+                        self.end_temporaries(true, Some(*result), span.clone());
+                        self.end_scopes(0, Some(*result), span.clone());
+                        self.emit(Instruction::Return { source: *result }, span);
+                    }
+                }
+                hir::Stmt::Assert { condition, message } => {
+                    let condition = self.expression(*condition)?;
+                    let message = message
+                        .map(|message| self.expression(message))
+                        .transpose()?;
+                    self.emit(Instruction::Assert { condition, message }, span.clone());
+                    *result = self.load_constant(Constant::Unit, span)?;
+                }
+                hir::Stmt::Loop { body } => {
+                    let cfg = crate::control_flow::LoopCfg::new();
+                    let mut offsets = [0; 3];
+                    offsets[cfg.header.0] = self.instructions.len();
+                    offsets[cfg.body.0] = self.instructions.len();
+                    self.loops.push(LoopContext {
+                        scope_depth: self.scopes.len(),
+                        start: offsets[cfg.header.0],
+                        breaks: Vec::new(),
+                    });
+                    self.compile_statements(body, &span, result)?;
+                    self.emit(
+                        Instruction::Jump {
+                            target: offsets[cfg.header.0],
+                        },
+                        span.clone(),
+                    );
+                    offsets[cfg.exit.0] = self.instructions.len();
+                    *result = self.load_constant(Constant::Unit, span)?;
+                    let context = self.loops.pop().expect("a loop context was pushed");
+                    for jump in context.breaks {
+                        self.patch_target(jump, offsets[cfg.exit.0])?;
+                    }
+                }
+                hir::Stmt::Break { guard } => {
+                    self.compile_break(*guard, span)?;
+                }
+                hir::Stmt::Continue { guard } => {
+                    self.compile_continue(*guard, span)?;
+                }
+                hir::Stmt::Bind { local, value } => {
+                    let destination = self.allocate();
+                    self.locals.insert(*local, destination);
+                    let value = self.owned_expression(*value)?;
+                    if self.observable_cleanup
+                        && self
+                            .types
+                            .local_type(*local)
+                            .is_some_and(|ty| self.types.has_cleanup(ty))
+                    {
+                        self.scopes.last_mut().unwrap().push(destination);
+                    }
+                    self.emit(
+                        Instruction::Move {
+                            destination,
+                            source: value,
+                        },
+                        span.clone(),
+                    );
+                    *result = destination;
+                }
+                hir::Stmt::Assign { local, value } => {
+                    let value = self.owned_expression(*value)?;
+                    let destination = self.locals[local];
+                    if self.observable_cleanup && !self.reference_binding(*local) {
+                        self.emit(
+                            Instruction::Drop {
+                                register: destination,
+                            },
+                            span.clone(),
+                        );
+                    }
+                    self.emit(
+                        Instruction::Move {
+                            destination,
+                            source: value,
+                        },
+                        span,
+                    );
+                    *result = destination;
+                }
+                hir::Stmt::Expr(value) => *result = self.expression(*value)?,
+                hir::Stmt::Set { place, value } => {
+                    // Foster assignments evaluate the complete right-hand side
+                    // before selecting the left-hand destination.
+                    let value = self.owned_expression(*value)?;
+                    self.store_place(*place, value, span.clone())?;
+                    *result = value;
+                }
+            }
+            self.end_temporaries(false, Some(*result), statement_span.clone());
+            self.temporary_scopes.pop();
+        }
+        if self.observable_cleanup && self.scopes.last().unwrap().contains(result) {
+            let destination = self.allocate();
+            self.emit(
+                Instruction::MoveOut {
+                    by_reference: false,
+                    destination,
+                    source: *result,
+                },
+                fallback_span.clone(),
+            );
+            *result = destination;
+        }
+        self.end_scopes(self.scopes.len() - 1, Some(*result), fallback_span.clone());
+        self.scopes.pop();
+        Ok(())
+    }
+
+    fn compile_break(
+        &mut self,
+        guard: Option<ExprId>,
+        span: std::ops::Range<usize>,
+    ) -> Result<(), FosterError> {
+        let skip = if let Some(guard) = guard {
+            let condition = self.expression(guard)?;
+            Some(self.emit(
+                Instruction::JumpIfFalse {
+                    condition,
+                    target: 0,
+                },
+                span.clone(),
+            ))
+        } else {
+            None
+        };
+        self.loops
+            .last()
+            .ok_or_else(|| FosterError::runtime("loop transfer has no enclosing loop"))?;
+        self.end_temporaries(false, None, span.clone());
+        self.end_scopes(self.loops.last().unwrap().scope_depth, None, span.clone());
+        let jump = self.emit(Instruction::Jump { target: 0 }, span);
+        self.loops
+            .last_mut()
+            .expect("loop context exists")
+            .breaks
+            .push(jump);
+        if let Some(skip) = skip {
+            self.patch_target(skip, self.instructions.len())?;
+        }
+        Ok(())
+    }
+
+    fn compile_continue(
+        &mut self,
+        guard: Option<ExprId>,
+        span: std::ops::Range<usize>,
+    ) -> Result<(), FosterError> {
+        let skip = if let Some(guard) = guard {
+            let condition = self.expression(guard)?;
+            Some(self.emit(
+                Instruction::JumpIfFalse {
+                    condition,
+                    target: 0,
+                },
+                span.clone(),
+            ))
+        } else {
+            None
+        };
+        let target = self
+            .loops
+            .last()
+            .ok_or_else(|| FosterError::runtime("continue has no enclosing loop"))?
+            .start;
+        self.end_temporaries(false, None, span.clone());
+        self.end_scopes(self.loops.last().unwrap().scope_depth, None, span.clone());
+        self.emit(Instruction::Jump { target }, span);
+        if let Some(skip) = skip {
+            self.patch_target(skip, self.instructions.len())?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn compile_branch_body(
+        &mut self,
+        arm: &hir::BranchArm,
+        fallback_span: &std::ops::Range<usize>,
+    ) -> Result<Slot, FosterError> {
+        let mut bindings = Vec::new();
+        if let hir::BranchTest::Pattern(pattern) = &arm.test {
+            fn collect(
+                pattern: &hir::Pattern,
+                locals: &HashMap<LocalId, Slot>,
+                registers: &mut Vec<Slot>,
+            ) {
+                match pattern.unspanned() {
+                    hir::Pattern::Binding(local)
+                    | hir::Pattern::IsType {
+                        binding: Some(local),
+                        ..
+                    } => {
+                        if let Some(register) = locals.get(local)
+                            && !locals
+                                .iter()
+                                .any(|(other, found)| other != local && found == register)
+                        {
+                            registers.push(*register);
+                        }
+                    }
+                    hir::Pattern::Variant { fields, .. } => {
+                        for field in fields {
+                            collect(field, locals, registers);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            collect(pattern, &self.locals, &mut bindings);
+        }
+        self.scopes.push(bindings);
+        let mut result = self.load_constant(Constant::Unit, fallback_span.clone())?;
+        self.compile_statements(&arm.body, fallback_span, &mut result)?;
+        if self.observable_cleanup && self.scopes.last().unwrap().contains(&result) {
+            let destination = self.allocate();
+            self.emit(
+                Instruction::MoveOut {
+                    by_reference: false,
+                    destination,
+                    source: result,
+                },
+                fallback_span.clone(),
+            );
+            result = destination;
+        }
+        self.end_scopes(self.scopes.len() - 1, Some(result), fallback_span.clone());
+        self.scopes.pop();
+        Ok(result)
+    }
+}

@@ -9,11 +9,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     ast,
+    codegen::storage::{Instruction, Program},
     compiler::Compilation,
     error::FosterError,
     hir::{FunctionId, ModuleId},
     types::{Type, TypeId},
-    vm::{Instruction, Program},
 };
 
 pub const FORMAT_VERSION: u16 = 2;

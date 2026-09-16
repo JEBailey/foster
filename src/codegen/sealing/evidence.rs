@@ -1,21 +1,22 @@
 //! Differential oracle comparing construction-slot and SSA use-site facts.
-use super::LowerError;
-use super::construction::SealingEvidence;
+use super::SealingEvidence;
+use crate::codegen::LowerError;
 use crate::codegen::flow::PointFacts;
 use crate::codegen::flow::{FunctionFacts, FunctionSchema};
 use crate::codegen::ir::{self, Block};
+use crate::codegen::storage;
 use crate::hir::FunctionId;
-use crate::vm::{self};
 use std::collections::HashMap;
 #[cfg(test)]
 fn construction_facts(
-    program: &vm::Program,
-    body: &vm::BytecodeFunction,
+    program: &storage::Program,
+    body: &storage::Function,
     shared: &ir::Function,
     sources: &SealingEvidence,
     schemas: &HashMap<FunctionId, FunctionSchema>,
 ) -> Result<FunctionFacts, LowerError> {
-    let states = vm::type_states(program, body, schemas).map_err(|e| LowerError(e.to_string()))?;
+    let states = storage::verification::type_states(program, body, schemas)
+        .map_err(|e| LowerError(e.to_string()))?;
     let mut values = vec![std::collections::BTreeSet::new(); shared.values.len()];
     let points = shared
         .blocks
@@ -84,8 +85,8 @@ fn construction_facts(
 
 #[cfg(test)]
 pub(super) fn compare_flow(
-    program: &vm::Program,
-    body: &vm::BytecodeFunction,
+    program: &storage::Program,
+    body: &storage::Function,
     shared: &ir::Function,
     sources: &SealingEvidence,
     actual: &FunctionFacts,

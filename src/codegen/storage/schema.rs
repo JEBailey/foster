@@ -1,8 +1,8 @@
 //! Logical callable schema adapter for validated bytecode signatures.
-use super::BytecodeFunction;
+use super::Function;
 use crate::codegen::flow;
 
-pub(crate) fn logical_schema(f: &BytecodeFunction) -> flow::FunctionSchema {
+pub(crate) fn logical_schema(f: &Function) -> flow::FunctionSchema {
     flow::FunctionSchema {
         name: f.name.clone(),
         parameters: crate::types::Parameter::from_parts(

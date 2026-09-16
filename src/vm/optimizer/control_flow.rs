@@ -2,25 +2,29 @@ use std::collections::HashSet;
 
 use super::super::{BytecodeFunction, Instruction, Program};
 
-pub(super) fn simplify(program: &mut Program) {
+pub(super) fn simplify(program: &mut Program) -> bool {
+    let mut changed = false;
     for function in program.functions.values_mut() {
-        redirect_jump_chains(function);
-        retain(function, reachable(&function.instructions));
+        let pinned = super::storage::pinned(function);
+        changed |= redirect_jump_chains(function);
+        changed |= retain(function, reachable(&function.instructions));
         let keep = function
             .instructions
             .iter()
             .enumerate()
             .map(|(index, instruction)| {
-                !matches!(instruction, Instruction::Move { destination, source } if destination == source)
+                !matches!(instruction, Instruction::Move { destination, source } if destination == source && !pinned.contains(destination))
                     && !matches!(instruction, Instruction::Jump { target } if *target == index + 1)
             })
             .collect();
-        retain(function, keep);
-        redirect_jump_chains(function);
+        changed |= retain(function, keep);
+        changed |= redirect_jump_chains(function);
     }
+    changed
 }
 
-fn redirect_jump_chains(function: &mut BytecodeFunction) {
+fn redirect_jump_chains(function: &mut BytecodeFunction) -> bool {
+    let mut changed = false;
     let targets = function
         .instructions
         .iter()
@@ -35,13 +39,16 @@ fn redirect_jump_chains(function: &mut BytecodeFunction) {
             _ => continue,
         };
         let mut seen = HashSet::new();
+        let original = *target;
         while let Some(Some(next)) = targets.get(*target) {
             if !seen.insert(*target) {
                 break;
             }
             *target = *next;
         }
+        changed |= original != *target;
     }
+    changed
 }
 
 fn reachable(instructions: &[Instruction]) -> Vec<bool> {
@@ -64,9 +71,9 @@ fn reachable(instructions: &[Instruction]) -> Vec<bool> {
     reachable
 }
 
-fn retain(function: &mut BytecodeFunction, keep: Vec<bool>) {
+fn retain(function: &mut BytecodeFunction, keep: Vec<bool>) -> bool {
     if keep.iter().all(|keep| *keep) {
-        return;
+        return false;
     }
     let old_len = function.instructions.len();
     let mut next_kept = vec![None; old_len + 1];
@@ -101,4 +108,5 @@ fn retain(function: &mut BytecodeFunction, keep: Vec<bool>) {
     }
     function.instructions = instructions;
     function.instruction_spans = spans;
+    true
 }

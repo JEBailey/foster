@@ -1,25 +1,28 @@
 //! Semantics-preserving rewrites over Foster's executable register IR.
 
-use super::{Instruction, Program};
+#[cfg(test)]
+use super::Instruction;
+use super::Program;
 use crate::error::FosterError;
 
-pub(crate) mod analysis;
+pub(crate) use crate::codegen::storage::analysis;
 mod closures;
 mod constants;
 mod control_flow;
 mod copies;
-mod drops;
+use crate::codegen::storage::lifetimes as drops;
 #[cfg(test)]
 mod effects;
 // Legacy register algorithms remain only as test oracles during migration.
 #[cfg(test)]
 mod inlining;
 mod registers;
+mod storage;
 
 /// Optimizes a complete bytecode program while retaining one source span per instruction.
 /// Returns validation or lowering errors without changing the input program.
 pub fn optimize(program: &mut Program) -> Result<(), FosterError> {
-    let shared = crate::codegen::vm::seal_program(program.clone())
+    let shared = crate::codegen::sealing::seal_program(program.clone())
         .map_err(|error| FosterError::runtime(format!("shared SSA sealing failed: {error}")))?
         .optimized()?;
     let mut lowered = crate::codegen::vm::lower_shared_program(shared)
@@ -31,68 +34,29 @@ pub fn optimize(program: &mut Program) -> Result<(), FosterError> {
 }
 
 pub(crate) fn finish_backend(program: &mut Program) {
-    // Exclude storage-sensitive functions from register and closure rewrites.
-    // Restore them before remapping the shared constant pool.
-    let deferred_ids = program
-        .functions
-        .iter()
-        .filter(|(_, function)| storage_identity_barrier(function))
-        .map(|(id, _)| *id)
-        .collect::<Vec<_>>();
-    let deferred = deferred_ids
-        .iter()
-        .copied()
-        .filter_map(|id| program.functions.remove(&id).map(|function| (id, function)))
-        .collect::<Vec<_>>();
-
-    control_flow::simplify(program);
-    copies::propagate(program);
-    registers::eliminate_dead_writes(program);
-    control_flow::simplify(program);
-    closures::specialize_non_escaping(program);
-    registers::eliminate_dead_writes(program);
-    control_flow::simplify(program);
-    registers::compact(program);
-    control_flow::simplify(program);
-    registers::compact(program);
-    program.functions.extend(deferred);
-    constants::deduplicate(program);
-}
-
-/// Structural rewrites still require proof that storage identity is unobservable.
-/// This is intentionally stronger than the instruction-level folding barriers.
-fn storage_identity_barrier(function: &super::BytecodeFunction) -> bool {
-    function.mutable_parameters.iter().any(|mutable| *mutable)
-        || function.instructions.iter().any(|instruction| {
-            matches!(
-                instruction,
-                Instruction::StoreField { .. }
-                    | Instruction::LoadField {
-                        by_reference: true,
-                        ..
-                    }
-                    | Instruction::StoreIndex { .. }
-                    | Instruction::MakeReference { .. }
-                    | Instruction::MakeWholeReference { .. }
-                    | Instruction::MakeFieldReference { .. }
-                    | Instruction::MoveOut { .. }
-                    | Instruction::Push { .. }
-                    | Instruction::Append { .. }
-                    | Instruction::Contains { .. }
-                    | Instruction::Builtin { .. }
-                    | Instruction::SpawnRemote { .. }
-                    | Instruction::SpawnRemoteBorrow { .. }
-                    | Instruction::RemoteCall { .. }
-                    | Instruction::Await { .. }
-                    | Instruction::CallMethod { .. }
-                    | Instruction::CallContractMethod { .. }
-            )
-        })
-}
-
-/// Inserts deterministic register releases after all representational rewrites.
-pub(crate) fn insert_drops(program: &mut Program) {
-    drops::insert(program);
+    use crate::compiler::profile::measure;
+    measure("vm.cfg", || control_flow::simplify(program));
+    let copies_changed = measure("vm.copies", || copies::propagate(program));
+    let dead_writes_changed = measure("vm.dead_writes", || {
+        registers::eliminate_dead_writes(program)
+    });
+    if copies_changed || dead_writes_changed {
+        measure("vm.cfg", || control_flow::simplify(program));
+    }
+    if measure("vm.closures", || closures::specialize_non_escaping(program)) {
+        measure("vm.dead_writes", || {
+            registers::eliminate_dead_writes(program)
+        });
+        measure("vm.cfg", || control_flow::simplify(program));
+    }
+    // Coloring can turn copies into self-moves. Only rebuild interference if
+    // cleanup actually changes the graph after coloring.
+    if measure("vm.registers", || registers::compact(program))
+        && measure("vm.cfg", || control_flow::simplify(program))
+    {
+        measure("vm.registers", || registers::compact(program));
+    }
+    measure("vm.constants", || constants::deduplicate(program));
 }
 
 /// Account for edge-copy temporaries and representation rewrites introduced
@@ -106,6 +70,80 @@ pub(crate) fn finalize_register_drops(program: &mut Program) {
 mod tests {
     use super::*;
     use crate::vm::{self, Constant, Machine, Value};
+
+    #[test]
+    fn local_cleanup_preserves_reference_origins_in_the_same_function() {
+        use crate::codegen::types::ExecutableType;
+        use vm::Register as R;
+        let id = crate::hir::FunctionId::from_raw(la_arena::RawIdx::from_u32(0));
+        let mut program = Program::default();
+        program.metadata.constants = vec![
+            Constant::Integer(5),
+            Constant::Integer(7),
+            Constant::Integer(99),
+        ];
+        program.metadata.main = Some(id);
+        let instructions = vec![
+            Instruction::LoadConstant {
+                destination: R(0),
+                constant: 0,
+            },
+            Instruction::MakeWholeReference {
+                destination: R(1),
+                object: R(0),
+                pointee_type: ExecutableType::Integer,
+            },
+            Instruction::LoadConstant {
+                destination: R(4),
+                constant: 1,
+            },
+            Instruction::Move {
+                destination: R(0),
+                source: R(4),
+            },
+            Instruction::LoadConstant {
+                destination: R(2),
+                constant: 2,
+            },
+            Instruction::Move {
+                destination: R(3),
+                source: R(2),
+            },
+            Instruction::Return { source: R(1) },
+        ];
+        program.functions.insert(
+            id,
+            vm::BytecodeFunction {
+                name: "main".into(),
+                intrinsic_stub: false,
+                parameters: 0,
+                parameter_types: vec![],
+                parameter_modes: vec![],
+                mutable_parameters: vec![],
+                returns_reference: false,
+                captures: 0,
+                capture_types: vec![],
+                result_type: ExecutableType::Integer,
+                registers: 5,
+                instruction_spans: vec![0..0; instructions.len()],
+                instructions,
+            },
+        );
+        vm::verify(&program).unwrap();
+        assert_eq!(
+            Machine::new(&program).run_main().unwrap(),
+            Value::Integer(7)
+        );
+        finish_backend(&mut program);
+        finalize_register_drops(&mut program);
+        vm::verify(&program).unwrap();
+        assert_eq!(
+            Machine::new(&program).run_main().unwrap(),
+            Value::Integer(7)
+        );
+        assert!(program.functions[&id].registers < 5);
+        assert!(!program.metadata.constants.contains(&Constant::Integer(99)));
+    }
 
     #[test]
     fn repeated_optimized_builds_have_identical_constant_numbering() {
@@ -160,7 +198,7 @@ mod tests {
         optimize(&mut program).unwrap();
         vm::verify(&program).unwrap();
         assert!(count(&program.functions[&id]) < count(&original));
-        assert_eq!(program.functions[&id].registers, original.registers);
+        assert!(program.functions[&id].registers < original.registers);
         assert!(
             program.functions[&id]
                 .instruction_spans

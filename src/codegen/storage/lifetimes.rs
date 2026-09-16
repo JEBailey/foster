@@ -1,9 +1,11 @@
+//! Lifetime lowering over shared slots, independent of executable VM encoding.
+//! Also completes releases for temporary slots introduced during SSA destruction.
 use std::collections::{HashMap, HashSet};
 
-use super::super::{BytecodeFunction, Instruction, Program, Register};
 use super::analysis::{definitions, liveness, uses};
+use super::{Function, Instruction, Program, Slot};
 
-pub(super) fn insert(program: &mut Program) {
+pub(crate) fn insert(program: &mut Program) {
     if program.drops_inserted {
         return;
     }
@@ -14,7 +16,7 @@ pub(super) fn insert(program: &mut Program) {
     program.drops_inserted = true;
 }
 
-fn protected_slots(program: &Program) -> HashMap<crate::hir::FunctionId, HashSet<Register>> {
+fn protected_slots(program: &Program) -> HashMap<crate::hir::FunctionId, HashSet<Slot>> {
     let mut protected = HashMap::<_, HashSet<_>>::new();
     for (caller, function) in &program.functions {
         // Parameters can contain projected references. Assigning such a
@@ -47,7 +49,7 @@ fn protected_slots(program: &Program) -> HashMap<crate::hir::FunctionId, HashSet
                             protected
                                 .entry(*target)
                                 .or_default()
-                                .insert(Register(index as u16));
+                                .insert(Slot(index as u16));
                         }
                     }
                 }
@@ -58,10 +60,7 @@ fn protected_slots(program: &Program) -> HashMap<crate::hir::FunctionId, HashSet
                     function: target, ..
                 } => {
                     let receiver = program.functions[target].captures;
-                    protected
-                        .entry(*target)
-                        .or_default()
-                        .insert(Register(receiver));
+                    protected.entry(*target).or_default().insert(Slot(receiver));
                 }
                 _ => {}
             }
@@ -70,7 +69,7 @@ fn protected_slots(program: &Program) -> HashMap<crate::hir::FunctionId, HashSet
     protected
 }
 
-fn protect_reference_origins(function: &BytecodeFunction, protected: &mut HashSet<Register>) {
+fn protect_reference_origins(function: &Function, protected: &mut HashSet<Slot>) {
     for instruction in &function.instructions {
         if let Instruction::MakeReference { object, .. }
         | Instruction::MakeWholeReference { object, .. }
@@ -87,7 +86,7 @@ fn protect_reference_origins(function: &BytecodeFunction, protected: &mut HashSe
     }
 }
 
-fn insert_function(function: &mut BytecodeFunction, protected: HashSet<Register>) {
+fn insert_function(function: &mut Function, protected: HashSet<Slot>) {
     if function.instructions.is_empty() {
         return;
     }
@@ -99,12 +98,12 @@ fn insert_function(function: &mut BytecodeFunction, protected: HashSet<Register>
     let mut spans = Vec::new();
     let mut old_to_new = vec![0; original.len()];
     let mut jump_patches = Vec::<(usize, usize)>::new();
-    let mut branch_cleanups = Vec::<(usize, usize, Vec<Register>, std::ops::Range<usize>)>::new();
+    let mut branch_cleanups = Vec::<(usize, usize, Vec<Slot>, std::ops::Range<usize>)>::new();
 
     let entry_span = original_spans.first().cloned().unwrap_or(0..0);
     let prefix = function.captures.saturating_add(function.parameters);
     let unused_prefix = (0..prefix)
-        .map(Register)
+        .map(Slot)
         .filter(|register| !protected.contains(register) && !live.live_in[0].contains(register))
         .collect::<Vec<_>>();
 
@@ -196,9 +195,9 @@ fn insert_function(function: &mut BytecodeFunction, protected: HashSet<Register>
 
 fn dying_registers(
     instruction: &Instruction,
-    live_out: &HashSet<Register>,
-    protected: &HashSet<Register>,
-) -> Vec<Register> {
+    live_out: &HashSet<Slot>,
+    protected: &HashSet<Slot>,
+) -> Vec<Slot> {
     let mut dying = uses(instruction);
     dying.extend(definitions(instruction));
     dying.sort_by_key(|register| register.0);
@@ -208,10 +207,10 @@ fn dying_registers(
 }
 
 fn edge_drops(
-    current: &HashSet<Register>,
-    successor: &HashSet<Register>,
-    protected: &HashSet<Register>,
-) -> Vec<Register> {
+    current: &HashSet<Slot>,
+    successor: &HashSet<Slot>,
+    protected: &HashSet<Slot>,
+) -> Vec<Slot> {
     let mut drops = current
         .difference(successor)
         .filter(|register| !protected.contains(register))
@@ -224,7 +223,7 @@ fn edge_drops(
 fn emit_drops(
     instructions: &mut Vec<Instruction>,
     spans: &mut Vec<std::ops::Range<usize>>,
-    registers: &[Register],
+    registers: &[Slot],
     span: &std::ops::Range<usize>,
 ) {
     for register in registers {
@@ -242,7 +241,7 @@ mod tests {
 
     #[test]
     fn drops_a_condition_on_both_branch_edges() {
-        let mut function = BytecodeFunction {
+        let mut function = Function {
             name: "branch".to_owned(),
             intrinsic_stub: false,
             parameters: 1,
@@ -256,23 +255,19 @@ mod tests {
             registers: 2,
             instructions: vec![
                 Instruction::JumpIfFalse {
-                    condition: Register(0),
+                    condition: Slot(0),
                     target: 3,
                 },
                 Instruction::LoadConstant {
-                    destination: Register(1),
+                    destination: Slot(1),
                     constant: 0,
                 },
-                Instruction::Return {
-                    source: Register(1),
-                },
+                Instruction::Return { source: Slot(1) },
                 Instruction::LoadConstant {
-                    destination: Register(1),
+                    destination: Slot(1),
                     constant: 0,
                 },
-                Instruction::Return {
-                    source: Register(1),
-                },
+                Instruction::Return { source: Slot(1) },
             ],
             instruction_spans: vec![0..1; 5],
         };
@@ -283,7 +278,7 @@ mod tests {
             function
                 .instructions
                 .iter()
-                .filter(|instruction| matches!(instruction, Instruction::Drop { register } if *register == Register(0)))
+                .filter(|instruction| matches!(instruction, Instruction::Drop { register } if *register == Slot(0)))
                 .count(),
             2
         );
@@ -291,7 +286,7 @@ mod tests {
 
     #[test]
     fn retains_the_origin_of_a_field_loaded_by_reference() {
-        let mut function = BytecodeFunction {
+        let mut function = Function {
             name: "field receiver".to_owned(),
             intrinsic_stub: false,
             parameters: 1,
@@ -305,14 +300,12 @@ mod tests {
             registers: 2,
             instructions: vec![
                 Instruction::LoadField {
-                    destination: Register(1),
-                    object: Register(0),
+                    destination: Slot(1),
+                    object: Slot(0),
                     field: "location".to_owned(),
                     by_reference: true,
                 },
-                Instruction::Return {
-                    source: Register(1),
-                },
+                Instruction::Return { source: Slot(1) },
             ],
             instruction_spans: vec![0..1; 2],
         };
@@ -322,7 +315,7 @@ mod tests {
         insert_function(&mut function, protected);
 
         assert!(!function.instructions.iter().any(
-            |instruction| matches!(instruction, Instruction::Drop { register } if *register == Register(0))
+            |instruction| matches!(instruction, Instruction::Drop { register } if *register == Slot(0))
         ));
     }
 }

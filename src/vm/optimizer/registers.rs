@@ -1,11 +1,11 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::hir::CaptureMode;
-
 use super::super::{BytecodeFunction, Instruction, Program, Register};
 use super::analysis::{definitions, liveness, uses};
+use super::storage::pinned;
 
-pub(super) fn eliminate_dead_writes(program: &mut Program) {
+pub(super) fn eliminate_dead_writes(program: &mut Program) -> bool {
+    let mut changed = false;
     for function in program.functions.values_mut() {
         loop {
             let live = liveness(function);
@@ -16,7 +16,7 @@ pub(super) fn eliminate_dead_writes(program: &mut Program) {
                 .enumerate()
                 .map(|(index, instruction)| match instruction {
                     Instruction::LoadConstant { destination, .. } => {
-                        live.live_out[index].contains(destination)
+                        live.live_out[index].contains(destination) || pinned.contains(destination)
                     }
                     Instruction::Move { destination, .. } => {
                         live.live_out[index].contains(destination) || pinned.contains(destination)
@@ -27,12 +27,15 @@ pub(super) fn eliminate_dead_writes(program: &mut Program) {
             if keep.iter().all(|keep| *keep) {
                 break;
             }
+            changed = true;
             retain_without_jumps(function, keep);
         }
     }
+    changed
 }
 
-pub(super) fn compact(program: &mut Program) {
+pub(super) fn compact(program: &mut Program) -> bool {
+    let mut changed = false;
     for function in program.functions.values_mut() {
         let prefix = function.captures.saturating_add(function.parameters);
         let live = liveness(function);
@@ -115,30 +118,14 @@ pub(super) fn compact(program: &mut Program) {
                 });
             mapping.insert(register, Register(color));
         }
+        changed |= function.registers != next_color
+            || mapping.iter().any(|(before, after)| before != after);
         for instruction in &mut function.instructions {
             rewrite_registers(instruction, &mapping);
         }
         function.registers = next_color;
     }
-}
-
-fn pinned(function: &BytecodeFunction) -> HashSet<Register> {
-    // A borrowed parameter may hold a projected place even when its logical
-    // type is a value type. Reusing that home would write through to the caller.
-    let prefix = function.captures.saturating_add(function.parameters);
-    let mut pinned = (0..prefix).map(Register).collect::<HashSet<_>>();
-    for instruction in &function.instructions {
-        if let Instruction::MakeClosure { captures, .. }
-        | Instruction::CallClosure { captures, .. } = instruction
-        {
-            pinned.extend(
-                captures.iter().filter_map(|(mode, register)| {
-                    (*mode == CaptureMode::Ref).then_some(*register)
-                }),
-            );
-        }
-    }
-    pinned
+    changed
 }
 
 fn add_clique(graph: &mut HashMap<Register, HashSet<Register>>, registers: &[Register]) {
@@ -194,169 +181,5 @@ pub(super) fn rewrite_registers(
     instruction: &mut Instruction,
     mapping: &HashMap<Register, Register>,
 ) {
-    match instruction {
-        Instruction::Drop { register } => rewrite(register, mapping),
-        Instruction::LoadConstant { destination, .. } => rewrite(destination, mapping),
-        Instruction::Move {
-            destination,
-            source,
-        } => {
-            rewrite(destination, mapping);
-            rewrite(source, mapping);
-        }
-        Instruction::Unary {
-            destination,
-            operand,
-            ..
-        } => {
-            rewrite(destination, mapping);
-            rewrite(operand, mapping);
-        }
-        Instruction::Binary {
-            destination,
-            left,
-            right,
-            ..
-        } => {
-            rewrite(destination, mapping);
-            rewrite(left, mapping);
-            rewrite(right, mapping);
-        }
-        Instruction::MakeList {
-            destination,
-            elements,
-            ..
-        } => {
-            rewrite(destination, mapping);
-            elements
-                .iter_mut()
-                .for_each(|register| rewrite(register, mapping));
-        }
-        Instruction::Index {
-            destination,
-            object,
-            index,
-        } => {
-            rewrite(destination, mapping);
-            rewrite(object, mapping);
-            rewrite(index, mapping);
-        }
-        Instruction::MakeRecord {
-            destination,
-            fields,
-            ..
-        } => {
-            rewrite(destination, mapping);
-            fields
-                .iter_mut()
-                .for_each(|(_, register)| rewrite(register, mapping));
-        }
-        Instruction::MakeVariant {
-            destination,
-            payload,
-            ..
-        } => {
-            rewrite(destination, mapping);
-            payload
-                .iter_mut()
-                .for_each(|register| rewrite(register, mapping));
-        }
-        Instruction::LoadField {
-            destination,
-            object,
-            ..
-        } => {
-            rewrite(destination, mapping);
-            rewrite(object, mapping);
-        }
-        Instruction::MatchPattern {
-            destination,
-            subject,
-            bindings,
-            ..
-        } => {
-            rewrite(destination, mapping);
-            rewrite(subject, mapping);
-            bindings
-                .iter_mut()
-                .for_each(|register| rewrite(register, mapping));
-        }
-        Instruction::JumpIfFalse { condition, .. } => rewrite(condition, mapping),
-        Instruction::Call {
-            destination,
-            arguments,
-            ..
-        } => {
-            rewrite(destination, mapping);
-            arguments
-                .iter_mut()
-                .for_each(|register| rewrite(register, mapping));
-        }
-        Instruction::CallMethod {
-            destination,
-            receiver,
-            arguments,
-            ..
-        }
-        | Instruction::CallContractMethod {
-            destination,
-            receiver,
-            arguments,
-            ..
-        } => {
-            rewrite(destination, mapping);
-            rewrite(receiver, mapping);
-            arguments
-                .iter_mut()
-                .for_each(|register| rewrite(register, mapping));
-        }
-        Instruction::MakeClosure {
-            destination,
-            captures,
-            ..
-        } => {
-            rewrite(destination, mapping);
-            captures
-                .iter_mut()
-                .for_each(|(_, register)| rewrite(register, mapping));
-        }
-        Instruction::CallValue {
-            destination,
-            callee,
-            arguments,
-        } => {
-            rewrite(destination, mapping);
-            rewrite(callee, mapping);
-            arguments
-                .iter_mut()
-                .for_each(|register| rewrite(register, mapping));
-        }
-        Instruction::CallClosure {
-            destination,
-            captures,
-            arguments,
-            ..
-        } => {
-            rewrite(destination, mapping);
-            captures
-                .iter_mut()
-                .for_each(|(_, register)| rewrite(register, mapping));
-            arguments
-                .iter_mut()
-                .for_each(|register| rewrite(register, mapping));
-        }
-        Instruction::Return { source } => rewrite(source, mapping),
-        Instruction::Assert { condition, message } => {
-            rewrite(condition, mapping);
-            message
-                .iter_mut()
-                .for_each(|message| rewrite(message, mapping));
-        }
-        Instruction::Jump { .. } => {}
-        _ => {}
-    }
-}
-
-fn rewrite(register: &mut Register, mapping: &HashMap<Register, Register>) {
-    *register = mapping[register];
+    instruction.visit_registers_mut(|register| *register = mapping[register]);
 }

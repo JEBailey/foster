@@ -23,7 +23,17 @@ fn scalar(ty: &ExecutableType) -> bool {
 fn eligible(function: &BytecodeFunction) -> bool {
     if function.captures != 0
         || function.returns_reference
-        || super::storage_identity_barrier(function)
+        || function.mutable_parameters.iter().any(|mutable| *mutable)
+        || function.instructions.iter().any(|instruction| {
+            matches!(
+                instruction,
+                Instruction::MakeReference { .. }
+                    | Instruction::MakeWholeReference { .. }
+                    | Instruction::MakeFieldReference { .. }
+                    | Instruction::StoreField { .. }
+                    | Instruction::StoreIndex { .. }
+            )
+        })
         || function.instructions.len() > INLINE_INSTRUCTION_LIMIT
         || !matches!(
             function.instructions.last(),

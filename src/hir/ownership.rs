@@ -337,7 +337,8 @@ fn statement_expressions(statement: &Stmt) -> Vec<ExprId> {
 pub(crate) fn infer_capture_modes(
     hir: &mut PackageHir,
     types: &crate::types::TypeInformation,
-) -> Result<(), FosterError> {
+) -> Result<bool, FosterError> {
+    let mut changed = false;
     let closures = hir
         .expressions
         .iter()
@@ -352,6 +353,7 @@ pub(crate) fn infer_capture_modes(
                 .local_type(capture.local)
                 .expect("captured locals have inferred types");
             if capture.mode == CaptureMode::Pending {
+                changed = true;
                 capture.mode = if is_copy_type(types, ty) {
                     CaptureMode::Copy
                 } else {
@@ -372,7 +374,7 @@ pub(crate) fn infer_capture_modes(
             }
         }
     }
-    Ok(())
+    Ok(changed)
 }
 
 fn is_copy_type(types: &crate::types::TypeInformation, ty: crate::types::TypeId) -> bool {

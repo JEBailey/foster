@@ -20,6 +20,54 @@ excluded because scheduler load and machine differences make them unreliable.
 
 ## Optimizer analysis cost
 
+### Phase timings and allocation traffic
+
+Set `FOSTER_COMPILER_PROFILE=1` to write JSON reports to stderr for frontend checking,
+VM compilation, native preparation, object emission, and linking. Nested compiler calls
+contribute to their outer report. Reports include phase call counts and inclusive milliseconds;
+do not sum nested phases. Failed calls also produce reports. Profiling is off by default.
+`FOSTER_LSP_PROFILE=1` continues to provide request-scoped editor reports.
+
+Build with `--features compiler-profile` to also measure successful allocation requests
+and requested bytes per phase. This opt-in feature installs a `System` allocator wrapper;
+normal builds do not install it. Applications supplying their own global allocator should
+leave the feature disabled. Counts cover the current thread only, exclude subprocesses,
+and include reallocations at their full requested size. They measure allocation traffic,
+not live memory, peak heap size, or RSS. Reports explicitly indicate whether allocation
+tracking is enabled. Timing includes instrumentation overhead; use ordinary release
+benchmarks to establish speed improvements.
+
+For a repeatable five-iteration sample of the frontend and both backends, without executing
+Foster code or building/linking the native runtime, run from the repository root:
+
+```powershell
+$env:FOSTER_COMPILER_PROFILE = '1'
+cargo run --example profile_compiler --features compiler-profile -- benchmarks/fibonacci.fos 2> target/compiler-profile.log
+Remove-Item Env:FOSTER_COMPILER_PROFILE
+```
+
+Each iteration checks once, then builds VM bytecode and a native object first with optimization
+disabled and then enabled. Compare matching phases and modes, and discard the first iteration
+when assessing warmed runs. Larger existing benchmark source files can replace Fibonacci.
+
+A local Windows debug sample on 2026-09-15 compared the instrumented pipeline before and
+after shared-state reuse and conditional rechecking/cleanup. Allocation requests averaged over
+the final four Fibonacci iterations were:
+
+| Operation | Before | After |
+| --- | ---: | ---: |
+| Frontend checking | 5,124 | 3,814 |
+| Native preparation, optimization disabled | 5,164 | 4,599 |
+| Native preparation, optimization enabled | 6,087 | 5,942 |
+| VM compilation, optimization disabled | 5,482 | 5,493 |
+| VM compilation, optimization enabled | 7,526 | 6,961 |
+
+On that sample, optimized VM CFG cleanup calls fell from four to two and register allocation
+calls from two to one. These are workload-specific allocation and scheduling observations;
+the small instrumented timing sample does not establish a general compiler speedup.
+
+### Scheduling and analysis reuse
+
 The shared SSA pipeline in `src/codegen/optimizer.rs` runs before VM de-SSA and before native
 specialization, representation inference, and cleanup planning. It performs bounded scalar leaf
 inlining, typed constant propagation, branch pruning, unreachable-block removal, and dead scalar
@@ -28,7 +76,12 @@ homes are excluded. Changed graphs are verified and logical flow evidence is reb
 backend consumes them. Native object emission caches a separate prepared variant for each mode.
 
 VM passes now handle representation and register cleanup; they do not repeat semantic inlining or
-constant folding. Regression tests check analysis dimensions after graph changes, preserved traps,
+constant folding. Passes report changes so follow-up CFG cleanup, closure-related dead-write
+elimination, and a second register allocation run only when their inputs changed. Shared CFG
+edge iteration does not allocate temporary vectors. Frontend checking retains its initial types
+and diagnostics when capture inference changes no modes; changed captures still trigger a full
+second check, followed by effect and ownership validation.
+Regression tests check analysis dimensions after graph changes, preserved traps,
 and VM/native behavior in both optimization modes. Structural reductions are not a measured runtime
 speedup. Track compiler cost as well as runtime throughput when extending this pipeline.
 

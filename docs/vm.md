@@ -4,7 +4,7 @@ Foster uses a custom register VM as its executable semantic reference. The pipel
 
 ```text
 source -> AST -> resolved HIR -> type/effect/loan/ownership checks
-       -> ownership MIR validation -> temporary register construction -> explicit drops
+       -> ownership MIR validation -> shared slot construction -> shared lifetime releases
        -> layout legalization -> shared typed SSA -> optional shared semantic optimization
        -> rebuilt logical flow -> de-SSA register assignment and edge copies
        -> VM representation cleanup, register reuse, temporary releases -> verifier -> machine
@@ -16,14 +16,14 @@ Conditional arm tests are evaluated in sequence, matched arms complete the branc
 is exclusively a loop transfer. Branch result decisions use the same reachability-aware arm-flow
 summary.
 
-HIR lowering first constructs temporary virtual registers and explicit jumps. Layout legalization
+Shared HIR lowering first constructs logical storage slots and explicit jumps. Layout legalization
 canonicalizes record slots, enum tags and payloads, closure captures, and reference place handles;
 the function is then sealed into typed basic-block SSA. The SSA verifier checks unique definitions,
 dominance, block arguments, signatures, and terminators. The unsealed construction form is never
 optimized, serialized, or executed.
 
 The canonical program retains neutral function declarations, layouts, and SSA bodies, without
-retaining construction bytecode. Both backends run `SharedProgram::optimized()` before lowering.
+retaining the temporary slot program. Both backends run `SharedProgram::optimized()` before lowering.
 Shared passes perform bounded scalar leaf inlining, typed constant propagation, constant-branch
 pruning, unreachable-block removal, and dead scalar value elimination. Integer folding preserves
 checked failures; floating-point folding preserves operand order and uses bit-identical constants.
@@ -33,8 +33,14 @@ values remain conservative. Every changed graph is verified and its logical flow
 The VM de-SSA backend splits critical edges, resolves parallel-copy cycles, and assigns storage
 homes. Its remaining passes handle edge/jump cleanup, register copy propagation, dead register
 writes, closure representation, register reuse, and constant-pool deduplication. Semantic inlining
-and constant folding no longer run over bytecode. Storage-sensitive functions remain excluded
-from register reuse and copy propagation. Rewrites retain the source span of each surviving
+and constant folding no longer run over bytecode. Passes report changes so dependent cleanup and
+repeated register allocation can be skipped when their inputs are unchanged. Storage evidence pins
+parameters, reference origins, projected places, call/opaque-operation operands and results, and
+their move aliases. Those slots retain distinct identities while independent values in the same
+function remain eligible for cleanup and register reuse. Copy facts stop at effects and releases;
+closure specialization separately checks exposure and capture timing. Register renaming visits
+every instruction variant, including references, mutation, and remote calls.
+Rewrites retain the source span of each surviving
 instruction. Capture/parameter frame prefixes and reference origins stay pinned where identity
 is observable. The program has a deterministic, versioned
 [compiled bytecode format](binary-format.md) for caching and distribution. Bytecode is verified
@@ -94,6 +100,8 @@ fresh SSA identities, preserving parameter value semantics before either backend
 VM escape analysis recognizes single-use closure values when delaying capture
 is safe and replaces the allocation plus dynamic dispatch pair with `CallClosure`. Reference
 captures preserve slot identity; move captures are specialized only for immediate invocation.
+Owned captures must have known scalar types with trivial destruction; managed or unresolved
+captures retain their closure environment so specialization cannot advance observable cleanup.
 Projected references contain one weak root plus a field/index path. Extending a projection through
 an intermediate reference wrapper flattens onto that root, so nested method receivers do not need a
 strong keep-alive edge or form an `Rc` cycle.

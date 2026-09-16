@@ -61,7 +61,7 @@ pub struct NativeProgram<'a> {
     canonical: std::sync::Arc<crate::codegen::shared::SharedProgram>,
     optimized: bool,
     alternate: std::sync::OnceLock<Box<NativeProgram<'a>>>,
-    pub(super) program: Program,
+    pub(super) program: std::sync::Arc<Program>,
     pub(super) layouts: LayoutRegistry,
     pub(super) physical_layouts: PhysicalRegistry,
     pub(super) main: FunctionId,
@@ -85,8 +85,12 @@ pub fn prepare_with_options(
     compilation: &Compilation,
     options: CompileOptions,
 ) -> Result<NativeProgram<'_>, FosterError> {
-    let shared = std::sync::Arc::new(crate::codegen::compile(compilation)?);
-    prepare_shared(compilation, shared, options.optimize)
+    crate::compiler::profile::compilation("native.prepare", || {
+        let shared = std::sync::Arc::new(crate::codegen::compile(compilation)?);
+        crate::compiler::profile::measure("native.prepare", || {
+            prepare_shared(compilation, shared, options.optimize)
+        })
+    })
 }
 
 fn prepare_shared(
@@ -94,12 +98,16 @@ fn prepare_shared(
     canonical: std::sync::Arc<crate::codegen::shared::SharedProgram>,
     optimized: bool,
 ) -> Result<NativeProgram<'_>, FosterError> {
-    let shared = if optimized {
-        canonical.as_ref().clone().optimized()?
-    } else {
-        canonical.as_ref().clone()
-    };
-    let (program, facts, mut layouts) = shared.into_parts();
+    // Baseline preparation borrows the verified boundary. Optimized preparation
+    // copies the mutable graph on write and shares unchanged analysis evidence.
+    let optimized_shared = optimized
+        .then(|| canonical.as_ref().clone().optimized())
+        .transpose()?;
+    let shared = optimized_shared.as_ref().unwrap_or(canonical.as_ref());
+    let program = shared.program.clone();
+    let facts = &shared.facts;
+    let mut layouts =
+        crate::compiler::profile::measure("native.clone_layouts", || shared.layouts.clone());
     if let Some(record) = program.metadata.string_record {
         layouts.instantiate_type(&ExecutableType::Record {
             record,
@@ -111,20 +119,24 @@ fn prepare_shared(
         .metadata
         .main
         .ok_or_else(|| native_error("native compilation requires a `main` function"))?;
-    let instances = reachable_instances(compilation, &program, &program.bodies, main, &facts)?;
+    let instances = crate::compiler::profile::measure("native.reachability", || {
+        reachable_instances(compilation, &program, &program.bodies, main, facts)
+    })?;
     let instance_ids = instances
         .iter()
         .map(|instance| (instance.key.clone(), instance.ir_function))
         .collect();
     let builtin_result_types = native_builtin_result_types(compilation)?;
-    let function_types = collect_function_types(
-        compilation,
-        &program,
-        &instances,
-        &builtin_result_types,
-        &mut layouts,
-        &facts,
-    )?;
+    let function_types = crate::compiler::profile::measure("native.signatures", || {
+        collect_function_types(
+            compilation,
+            &program,
+            &instances,
+            &builtin_result_types,
+            &mut layouts,
+            facts,
+        )
+    })?;
     // Projected mutable fields are addresses, not the objects stored at those addresses.
     // Materialize typed borrowed pointers before freezing the physical-layout registry.
     let field_types = layouts
@@ -142,15 +154,15 @@ fn prepare_shared(
     for ty in field_types {
         layouts.instantiate_type(&ExecutableType::Reference(Box::new(ty)))?;
     }
-    let physical_layouts =
-        PhysicalRegistry::build(&layouts, TargetLayout::host()).map_err(|error| {
-            native_error(format!("cannot calculate native object layouts: {error}"))
-        })?;
+    let physical_layouts = crate::compiler::profile::measure("native.layouts", || {
+        PhysicalRegistry::build(&layouts, TargetLayout::host())
+    })
+    .map_err(|error| native_error(format!("cannot calculate native object layouts: {error}")))?;
     validate_program(compilation, &program, &instances, &function_types, &layouts)?;
     let (runtime_strings, runtime_string_indices, runtime_literal_indices) =
         runtime_strings(&program);
     let mut prepared = NativeProgram {
-        canonical,
+        canonical: canonical.clone(),
         optimized,
         alternate: std::sync::OnceLock::new(),
         compilation,
@@ -171,14 +183,16 @@ fn prepare_shared(
         let source = &prepared.program.functions[&instance.key.function];
         let source_states = &facts[&instance.key.function];
         let environment = prepared.environment();
-        let (lowered, failure_cleanup) = lower_shared_to_native_ir(
-            &prepared.program.bodies[&instance.key.function],
-            source,
-            source_states,
-            &prepared.function_types[&instance.ir_function],
-            &instance.key,
-            environment,
-        )?;
+        let (lowered, failure_cleanup) = crate::compiler::profile::measure("native.lower", || {
+            lower_shared_to_native_ir(
+                &prepared.program.bodies[&instance.key.function],
+                source,
+                source_states,
+                &prepared.function_types[&instance.ir_function],
+                &instance.key,
+                environment,
+            )
+        })?;
         lowered.verify(&prepared.function_types).map_err(|error| {
             native_error(format!("invalid native IR for `{}`: {error}", source.name))
         })?;
@@ -294,15 +308,24 @@ impl NativeProgram<'_> {
     }
 
     pub fn compile_object(&self, options: CompileOptions) -> Result<ObjectArtifact, FosterError> {
+        crate::compiler::profile::compilation("native.object", || {
+            self.compile_object_inner(options)
+        })
+    }
+
+    fn compile_object_inner(&self, options: CompileOptions) -> Result<ObjectArtifact, FosterError> {
         if options.optimize == self.optimized {
-            return emit_object(self, options);
+            return crate::compiler::profile::measure("native.emit", || emit_object(self, options));
         }
         if self.alternate.get().is_none() {
-            let prepared =
-                prepare_shared(self.compilation, self.canonical.clone(), options.optimize)?;
+            let prepared = crate::compiler::profile::measure("native.prepare", || {
+                prepare_shared(self.compilation, self.canonical.clone(), options.optimize)
+            })?;
             let _ = self.alternate.set(Box::new(prepared));
         }
-        emit_object(self.alternate.get().unwrap(), options)
+        crate::compiler::profile::measure("native.emit", || {
+            emit_object(self.alternate.get().unwrap(), options)
+        })
     }
 
     pub fn build_executable(
@@ -310,7 +333,12 @@ impl NativeProgram<'_> {
         output: impl AsRef<Path>,
         options: CompileOptions,
     ) -> Result<(), FosterError> {
-        runtime::link_executable(self.compile_object(options)?, output.as_ref(), options)
+        crate::compiler::profile::compilation("native.build", || {
+            let object = self.compile_object(options)?;
+            crate::compiler::profile::measure("native.link", || {
+                runtime::link_executable(object, output.as_ref(), options)
+            })
+        })
     }
 
     pub(super) fn environment(&self) -> NativeIrEnvironment<'_> {
@@ -339,6 +367,14 @@ mod tests {
             prepare_with_options(&compilation, CompileOptions { optimize: false }).unwrap();
         let optimized =
             prepare_with_options(&compilation, CompileOptions { optimize: true }).unwrap();
+        assert!(std::sync::Arc::ptr_eq(
+            &baseline.program,
+            &baseline.canonical.program
+        ));
+        assert!(!std::sync::Arc::ptr_eq(
+            &optimized.program,
+            &optimized.canonical.program
+        ));
         assert!(optimized.functions.len() < baseline.functions.len());
         let main = optimized
             .functions

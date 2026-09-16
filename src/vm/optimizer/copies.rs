@@ -7,16 +7,19 @@ use super::analysis::{definitions, successors};
 
 type Copies = HashMap<Register, Register>;
 
-pub(super) fn propagate(program: &mut Program) {
+pub(super) fn propagate(program: &mut Program) -> bool {
+    let mut changed = false;
     for function in program.functions.values_mut() {
         let incoming = available_copies(function);
         for (index, instruction) in function.instructions.iter_mut().enumerate() {
-            rewrite_uses(instruction, &incoming[index]);
+            changed |= rewrite_uses(instruction, &incoming[index]);
         }
     }
+    changed
 }
 
 fn available_copies(function: &BytecodeFunction) -> Vec<Copies> {
+    let pinned = super::storage::pinned(function);
     let count = function.instructions.len();
     let mut predecessors = vec![Vec::new(); count];
     for index in 0..count {
@@ -38,7 +41,7 @@ fn available_copies(function: &BytecodeFunction) -> Vec<Copies> {
                         .map(|previous| &outgoing[*previous]),
                 )
             };
-            let next_out = transfer(&function.instructions[index], next_in.clone());
+            let next_out = transfer(&function.instructions[index], next_in.clone(), &pinned);
             changed |= next_in != incoming[index] || next_out != outgoing[index];
             incoming[index] = next_in;
             outgoing[index] = next_out;
@@ -49,11 +52,12 @@ fn available_copies(function: &BytecodeFunction) -> Vec<Copies> {
     }
 }
 
-fn transfer(instruction: &Instruction, mut copies: Copies) -> Copies {
-    if matches!(
-        instruction,
-        Instruction::Call { .. } | Instruction::CallValue { .. } | Instruction::CallClosure { .. }
-    ) {
+fn transfer(
+    instruction: &Instruction,
+    mut copies: Copies,
+    pinned: &std::collections::HashSet<Register>,
+) -> Copies {
+    if super::storage::invalidates_copies(instruction) {
         copies.clear();
     }
     for definition in definitions(instruction) {
@@ -72,7 +76,7 @@ fn transfer(instruction: &Instruction, mut copies: Copies) -> Copies {
     } = instruction
     {
         let source = resolve(&copies, *source);
-        if *destination != source {
+        if *destination != source && !pinned.contains(destination) && !pinned.contains(&source) {
             copies.insert(*destination, source);
         }
     }
@@ -101,8 +105,13 @@ fn resolve(copies: &Copies, mut register: Register) -> Register {
     register
 }
 
-fn rewrite_uses(instruction: &mut Instruction, copies: &Copies) {
-    let rewrite = |register: &mut Register| *register = resolve(copies, *register);
+fn rewrite_uses(instruction: &mut Instruction, copies: &Copies) -> bool {
+    let mut changed = false;
+    let mut rewrite = |register: &mut Register| {
+        let resolved = resolve(copies, *register);
+        changed |= resolved != *register;
+        *register = resolved;
+    };
     match instruction {
         Instruction::Move { source, .. } => rewrite(source),
         Instruction::Unary { operand, .. } => rewrite(operand),
@@ -158,4 +167,5 @@ fn rewrite_uses(instruction: &mut Instruction, copies: &Copies) {
         Instruction::LoadConstant { .. } | Instruction::Jump { .. } => {}
         _ => {}
     }
+    changed
 }

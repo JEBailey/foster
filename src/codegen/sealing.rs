@@ -1,18 +1,22 @@
-//! Seal virtual-register construction into SSA and retain logical write bindings.
-use super::LowerError;
-use super::instructions::portable_instruction;
+//! Seal shared slot construction into SSA and retain logical write bindings.
+#[cfg(test)]
+mod evidence;
+mod instructions;
+mod program;
+use self::instructions::portable_instruction;
+use crate::codegen::LowerError;
 use crate::codegen::ir::{self, Block, Type, Value};
 use crate::codegen::metadata::Constant;
+use crate::codegen::storage::{self, Slot};
 use crate::codegen::types::ExecutableType;
 use crate::hir::FunctionId;
-use crate::vm::{self, Register};
+pub use program::seal_program;
 use std::collections::HashMap;
 use std::ops::Range;
-/// Seal the HIR compiler's unstructured virtual-register construction into block-argument SSA
-/// while retaining observable VM storage homes.
+/// Seal shared logical slots into block-argument SSA while retaining observable storage homes.
 pub fn seal_function(
-    program: &vm::Program,
-    function: &vm::BytecodeFunction,
+    program: &storage::Program,
+    function: &storage::Function,
 ) -> Result<ir::Function, LowerError> {
     let result_types = program
         .functions
@@ -23,19 +27,19 @@ pub fn seal_function(
 }
 
 #[derive(Default)]
-pub(super) struct SealingEvidence {
+pub(crate) struct SealingEvidence {
     // Prior SSA binding of a destination: Reference values denote assignment through a place.
-    pub(super) write_bindings: HashMap<Value, Value>,
+    pub(crate) write_bindings: HashMap<Value, Value>,
     #[cfg(test)]
-    pub(super) sites: Vec<Vec<usize>>,
+    pub(crate) sites: Vec<Vec<usize>>,
     #[cfg(test)]
-    pub(super) bindings: HashMap<usize, Vec<Option<Value>>>,
+    pub(crate) bindings: HashMap<usize, Vec<Option<Value>>>,
 }
 
 fn seal_function_with_types(
     constants: &[Constant],
     result_types: &HashMap<FunctionId, ExecutableType>,
-    function: &vm::BytecodeFunction,
+    function: &storage::Function,
 ) -> Result<ir::Function, LowerError> {
     seal_function_with_evidence(constants, result_types, function).map(|(function, _)| function)
 }
@@ -43,7 +47,7 @@ fn seal_function_with_types(
 pub(super) fn seal_function_with_evidence(
     constants: &[Constant],
     result_types: &HashMap<FunctionId, ExecutableType>,
-    function: &vm::BytecodeFunction,
+    function: &storage::Function,
 ) -> Result<(ir::Function, SealingEvidence), LowerError> {
     if function.instructions.is_empty() {
         return Err(LowerError(
@@ -61,18 +65,18 @@ pub(super) fn seal_function_with_evidence(
     let mut origins = std::collections::HashSet::new();
     for instruction in &function.instructions {
         match instruction {
-            vm::Instruction::MakeReference { object, .. }
-            | vm::Instruction::MakeWholeReference { object, .. }
-            | vm::Instruction::MakeFieldReference { object, .. }
-            | vm::Instruction::LoadField {
+            storage::Instruction::MakeReference { object, .. }
+            | storage::Instruction::MakeWholeReference { object, .. }
+            | storage::Instruction::MakeFieldReference { object, .. }
+            | storage::Instruction::LoadField {
                 object,
                 by_reference: true,
                 ..
             } => {
                 origins.insert(*object);
             }
-            vm::Instruction::MakeClosure { captures, .. }
-            | vm::Instruction::CallClosure { captures, .. } => {
+            storage::Instruction::MakeClosure { captures, .. }
+            | storage::Instruction::CallClosure { captures, .. } => {
                 origins.extend(captures.iter().filter_map(|(mode, source)| {
                     (*mode == crate::hir::CaptureMode::Ref).then_some(*source)
                 }));
@@ -84,9 +88,9 @@ pub(super) fn seal_function_with_evidence(
     // child addresses; detaching only the final record would mutate a shared list.
     let mut writable = std::collections::HashSet::new();
     for instruction in &function.instructions {
-        if let vm::Instruction::StoreField { object, .. }
-        | vm::Instruction::StoreIndex { object, .. }
-        | vm::Instruction::MoveOut {
+        if let storage::Instruction::StoreField { object, .. }
+        | storage::Instruction::StoreIndex { object, .. }
+        | storage::Instruction::MoveOut {
             source: object,
             by_reference: true,
             ..
@@ -98,12 +102,12 @@ pub(super) fn seal_function_with_evidence(
     loop {
         let mut changed = false;
         for instruction in function.instructions.iter().rev() {
-            if let vm::Instruction::MakeReference {
+            if let storage::Instruction::MakeReference {
                 destination,
                 object,
                 ..
             }
-            | vm::Instruction::MakeFieldReference {
+            | storage::Instruction::MakeFieldReference {
                 destination,
                 object,
                 ..
@@ -123,25 +127,25 @@ pub(super) fn seal_function_with_evidence(
         .chain(&function.parameter_types)
         .enumerate()
         .filter_map(|(index, ty)| {
-            matches!(ty, ExecutableType::Reference(_)).then_some(Register(index as u16))
+            matches!(ty, ExecutableType::Reference(_)).then_some(Slot(index as u16))
         })
         .collect::<std::collections::HashSet<_>>();
     for instruction in &function.instructions {
         let destination = match instruction {
-            vm::Instruction::MakeReference { destination, .. }
-            | vm::Instruction::MakeWholeReference { destination, .. }
-            | vm::Instruction::MakeFieldReference { destination, .. }
-            | vm::Instruction::LoadField { destination, by_reference: true, .. }
+            storage::Instruction::MakeReference { destination, .. }
+            | storage::Instruction::MakeWholeReference { destination, .. }
+            | storage::Instruction::MakeFieldReference { destination, .. }
+            | storage::Instruction::LoadField { destination, by_reference: true, .. }
             // These reads can produce a reference depending on their operand's logical schema.
-            | vm::Instruction::Index { destination, .. }
-            | vm::Instruction::MoveOut { destination, .. }
-            | vm::Instruction::CallValue { destination, .. }
-            | vm::Instruction::CallContractMethod { destination, .. }
-            | vm::Instruction::Await { destination, .. }
-            | vm::Instruction::Binary { destination, operator: crate::ast::BinaryOp::Add, .. } => Some(*destination),
-            vm::Instruction::Call { destination, function, specialization, .. }
-            | vm::Instruction::CallMethod { destination, function, specialization, .. }
-            | vm::Instruction::CallClosure { destination, function, specialization, .. }
+            | storage::Instruction::Index { destination, .. }
+            | storage::Instruction::MoveOut { destination, .. }
+            | storage::Instruction::CallValue { destination, .. }
+            | storage::Instruction::CallContractMethod { destination, .. }
+            | storage::Instruction::Await { destination, .. }
+            | storage::Instruction::Binary { destination, operator: crate::ast::BinaryOp::Add, .. } => Some(*destination),
+            storage::Instruction::Call { destination, function, specialization, .. }
+            | storage::Instruction::CallMethod { destination, function, specialization, .. }
+            | storage::Instruction::CallClosure { destination, function, specialization, .. }
                 if result_types.get(function).is_some_and(|ty| matches!(ty.specialize(specialization), ExecutableType::Reference(_))) => Some(*destination),
             _ => None,
         };
@@ -150,7 +154,7 @@ pub(super) fn seal_function_with_evidence(
     loop {
         let before = reference_homes.len();
         for instruction in &function.instructions {
-            if let vm::Instruction::Move {
+            if let storage::Instruction::Move {
                 destination,
                 source,
             } = instruction
@@ -163,7 +167,7 @@ pub(super) fn seal_function_with_evidence(
             break;
         }
     }
-    let liveness = crate::vm::optimizer::analysis::liveness_with_write_bindings(
+    let liveness = crate::codegen::storage::analysis::liveness_with_write_bindings(
         function,
         &origins,
         &reference_homes,
@@ -179,13 +183,13 @@ pub(super) fn seal_function_with_evidence(
         externals.push(allocate_lifted_value(
             &mut values,
             ty,
-            Register(register as u16),
+            Slot(register as u16),
         ));
     }
     let capture_count = usize::from(function.captures);
     let captures = externals[..capture_count].to_vec();
     let parameters = externals[capture_count..].to_vec();
-    let mut parameter_registers: Vec<Vec<Register>> = Vec::new();
+    let mut parameter_registers: Vec<Vec<Slot>> = Vec::new();
     let mut block_parameters: Vec<Vec<Value>> = Vec::new();
     for leader in &leaders {
         let mut registers = liveness.live_in[*leader]
@@ -257,12 +261,12 @@ pub(super) fn seal_function_with_evidence(
                 .get(source_index)
                 .cloned()
                 .unwrap_or_default();
-            if let vm::Instruction::MakeReference {
+            if let storage::Instruction::MakeReference {
                 destination,
                 object,
                 ..
             }
-            | vm::Instruction::MakeFieldReference {
+            | storage::Instruction::MakeFieldReference {
                 destination,
                 object,
                 ..
@@ -282,7 +286,7 @@ pub(super) fn seal_function_with_evidence(
                 state[usize::from(object.0)] = Some(unique);
             }
             match operation {
-                vm::Instruction::Jump { target } => {
+                storage::Instruction::Jump { target } => {
                     terminator_span = source_span;
                     let target =
                         leader_blocks[*target].expect("validated jump targets are block leaders");
@@ -297,7 +301,7 @@ pub(super) fn seal_function_with_evidence(
                     });
                     break;
                 }
-                vm::Instruction::JumpIfFalse { condition, target } => {
+                storage::Instruction::JumpIfFalse { condition, target } => {
                     terminator_span = source_span;
                     let then_target = leader_blocks[source_index + 1].ok_or_else(|| {
                         LowerError(format!(
@@ -326,14 +330,14 @@ pub(super) fn seal_function_with_evidence(
                     });
                     break;
                 }
-                vm::Instruction::Return { source } => {
+                storage::Instruction::Return { source } => {
                     terminator_span = source_span;
                     terminator = Some(ir::Terminator::Return(lifted_register(
                         &state, *source, function,
                     )?));
                     break;
                 }
-                vm::Instruction::Drop { register } => {
+                storage::Instruction::Drop { register } => {
                     if let Some(value) = state[usize::from(register.0)] {
                         instructions.push(ir::Instruction::Portable(
                             ir::PortableInstruction::Drop { value },
@@ -355,7 +359,7 @@ pub(super) fn seal_function_with_evidence(
                         state[usize::from(register.0)] = None;
                     }
                 }
-                vm::Instruction::LoadField {
+                storage::Instruction::LoadField {
                     destination,
                     object,
                     field,
@@ -390,7 +394,7 @@ pub(super) fn seal_function_with_evidence(
                     state[usize::from(object.0)] = Some(unique);
                     state[usize::from(destination.0)] = Some(address);
                 }
-                vm::Instruction::StoreField {
+                storage::Instruction::StoreField {
                     object,
                     field,
                     source,
@@ -416,7 +420,7 @@ pub(super) fn seal_function_with_evidence(
                     instruction_spans.push(source_span);
                     state[usize::from(object.0)] = Some(unique);
                 }
-                vm::Instruction::StoreIndex {
+                storage::Instruction::StoreIndex {
                     object,
                     index,
                     source,
@@ -443,7 +447,7 @@ pub(super) fn seal_function_with_evidence(
                     instruction_spans.push(source_span);
                     state[usize::from(object.0)] = Some(unique);
                 }
-                vm::Instruction::Push {
+                storage::Instruction::Push {
                     destination,
                     object,
                     value,
@@ -473,10 +477,10 @@ pub(super) fn seal_function_with_evidence(
                     state[usize::from(destination.0)] = Some(result);
                 }
                 operation => {
-                    for register in crate::vm::optimizer::analysis::uses(operation) {
+                    for register in crate::codegen::storage::analysis::uses(operation) {
                         lifted_register(&state, register, function)?;
                     }
-                    let definitions = crate::vm::optimizer::analysis::definitions(operation);
+                    let definitions = crate::codegen::storage::analysis::definitions(operation);
                     let mut destinations = Vec::with_capacity(definitions.len());
                     for register in definitions {
                         let value = allocate_lifted_value(
@@ -498,7 +502,7 @@ pub(super) fn seal_function_with_evidence(
                     for (register, value) in destinations {
                         state[usize::from(register.0)] = Some(value);
                     }
-                    if let vm::Instruction::MoveOut {
+                    if let storage::Instruction::MoveOut {
                         source,
                         by_reference: false,
                         ..
@@ -585,14 +589,14 @@ pub(super) fn seal_function_with_evidence(
     ))
 }
 
-fn allocate_lifted_value(values: &mut ir::ValueBuilder, ty: Type, register: Register) -> Value {
+fn allocate_lifted_value(values: &mut ir::ValueBuilder, ty: Type, register: Slot) -> Value {
     values.allocate(ty, Some(register.0))
 }
 
 fn lifted_register(
     state: &[Option<Value>],
-    register: Register,
-    function: &vm::BytecodeFunction,
+    register: Slot,
+    function: &storage::Function,
 ) -> Result<Value, LowerError> {
     state[usize::from(register.0)].ok_or_else(|| {
         LowerError(format!(
@@ -604,9 +608,9 @@ fn lifted_register(
 
 fn lifted_edge_arguments(
     target: Block,
-    parameter_registers: &[Vec<Register>],
+    parameter_registers: &[Vec<Slot>],
     state: &[Option<Value>],
-    function: &vm::BytecodeFunction,
+    function: &storage::Function,
 ) -> Result<Vec<Value>, LowerError> {
     parameter_registers[target.0 as usize]
         .iter()
@@ -614,12 +618,13 @@ fn lifted_edge_arguments(
         .collect()
 }
 
-fn block_leaders(function: &vm::BytecodeFunction) -> Result<Vec<usize>, LowerError> {
+fn block_leaders(function: &storage::Function) -> Result<Vec<usize>, LowerError> {
     let mut leaders = vec![false; function.instructions.len()];
     leaders[0] = true;
     for (index, instruction) in function.instructions.iter().enumerate() {
         match instruction {
-            vm::Instruction::Jump { target } | vm::Instruction::JumpIfFalse { target, .. } => {
+            storage::Instruction::Jump { target }
+            | storage::Instruction::JumpIfFalse { target, .. } => {
                 if *target >= function.instructions.len() {
                     return Err(LowerError(format!("invalid jump target {target}")));
                 }
@@ -628,7 +633,7 @@ fn block_leaders(function: &vm::BytecodeFunction) -> Result<Vec<usize>, LowerErr
                     leaders[index + 1] = true;
                 }
             }
-            vm::Instruction::Return { .. } if index + 1 < function.instructions.len() => {
+            storage::Instruction::Return { .. } if index + 1 < function.instructions.len() => {
                 leaders[index + 1] = true;
             }
             _ => {}
@@ -656,7 +661,7 @@ fn shared_type(ty: &ExecutableType) -> Type {
 fn register_type_hints(
     constants: &[Constant],
     result_types: &HashMap<FunctionId, ExecutableType>,
-    function: &vm::BytecodeFunction,
+    function: &storage::Function,
 ) -> Vec<Type> {
     let mut hints = vec![Type::Opaque; usize::from(function.registers)];
     for (index, ty) in function
@@ -669,7 +674,7 @@ fn register_type_hints(
     }
     for instruction in &function.instructions {
         let (destination, ty) = match instruction {
-            vm::Instruction::LoadConstant {
+            storage::Instruction::LoadConstant {
                 destination,
                 constant,
             } => (
@@ -684,7 +689,7 @@ fn register_type_hints(
                     Constant::Symbol(_) => Type::Opaque,
                 },
             ),
-            vm::Instruction::Unary {
+            storage::Instruction::Unary {
                 destination,
                 operator,
                 operand,
@@ -696,7 +701,7 @@ fn register_type_hints(
                     crate::ast::UnaryOp::Negate => hints[usize::from(operand.0)],
                 },
             ),
-            vm::Instruction::Binary {
+            storage::Instruction::Binary {
                 destination,
                 operator,
                 left,
@@ -717,23 +722,25 @@ fn register_type_hints(
                     hints[usize::from(left.0)]
                 },
             ),
-            vm::Instruction::Move {
+            storage::Instruction::Move {
                 destination,
                 source,
             } => (Some(*destination), hints[usize::from(source.0)]),
-            vm::Instruction::Contains { destination, .. }
-            | vm::Instruction::MatchPattern { destination, .. } => (Some(*destination), Type::Bool),
-            vm::Instruction::Call {
+            storage::Instruction::Contains { destination, .. }
+            | storage::Instruction::MatchPattern { destination, .. } => {
+                (Some(*destination), Type::Bool)
+            }
+            storage::Instruction::Call {
                 destination,
                 function,
                 ..
             }
-            | vm::Instruction::CallMethod {
+            | storage::Instruction::CallMethod {
                 destination,
                 function,
                 ..
             }
-            | vm::Instruction::CallClosure {
+            | storage::Instruction::CallClosure {
                 destination,
                 function,
                 ..
@@ -750,12 +757,12 @@ fn register_type_hints(
             hints[usize::from(destination.0)] = ty;
         }
         match instruction {
-            vm::Instruction::JumpIfFalse { condition, .. }
-            | vm::Instruction::Assert {
+            storage::Instruction::JumpIfFalse { condition, .. }
+            | storage::Instruction::Assert {
                 condition,
                 message: _,
             } => hints[usize::from(condition.0)] = Type::Bool,
-            vm::Instruction::Return { source } => {
+            storage::Instruction::Return { source } => {
                 hints[usize::from(source.0)] = shared_type(&function.result_type);
             }
             _ => {}

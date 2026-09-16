@@ -1,3 +1,10 @@
+//! Shared slot IR used during construction and after VM SSA destruction.
+//! Slots express observable storage identity; they are not machine registers.
+
+pub(crate) mod analysis;
+pub(crate) mod lifetimes;
+pub(crate) mod schema;
+pub(crate) mod verification;
 use std::collections::HashMap;
 use std::ops::Range;
 
@@ -8,7 +15,7 @@ use crate::intrinsics::Builtin;
 use crate::types::DispatchSlot;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Register(pub u16);
+pub struct Slot(pub u16);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Instruction {
@@ -17,188 +24,188 @@ pub enum Instruction {
     /// A promoted register detaches rather than writing through its slot because
     /// reference captures may still own and observe that slot.
     Drop {
-        register: Register,
+        register: Slot,
     },
     LoadConstant {
-        destination: Register,
+        destination: Slot,
         constant: u16,
     },
     Move {
-        destination: Register,
-        source: Register,
+        destination: Slot,
+        source: Slot,
     },
     Unary {
-        destination: Register,
+        destination: Slot,
         operator: UnaryOp,
-        operand: Register,
+        operand: Slot,
     },
     Binary {
-        destination: Register,
+        destination: Slot,
         operator: BinaryOp,
-        left: Register,
-        right: Register,
+        left: Slot,
+        right: Slot,
     },
     MakeList {
-        destination: Register,
+        destination: Slot,
         element_type: ExecutableType,
-        elements: Vec<Register>,
+        elements: Vec<Slot>,
     },
     Index {
-        destination: Register,
-        object: Register,
-        index: Register,
+        destination: Slot,
+        object: Slot,
+        index: Slot,
     },
     MakeRecord {
-        destination: Register,
+        destination: Slot,
         record: RecordId,
         type_arguments: Vec<ExecutableType>,
-        fields: Vec<(String, Register)>,
+        fields: Vec<(String, Slot)>,
     },
     MakeVariant {
-        destination: Register,
+        destination: Slot,
         variant: VariantId,
         type_arguments: Vec<ExecutableType>,
-        payload: Vec<Register>,
+        payload: Vec<Slot>,
     },
     LoadField {
-        destination: Register,
-        object: Register,
+        destination: Slot,
+        object: Slot,
         field: String,
         by_reference: bool,
     },
     StoreField {
-        object: Register,
+        object: Slot,
         field: String,
-        source: Register,
+        source: Slot,
     },
     StoreIndex {
-        object: Register,
-        index: Register,
-        source: Register,
+        object: Slot,
+        index: Slot,
+        source: Slot,
     },
     MakeReference {
-        destination: Register,
+        destination: Slot,
         pointee_type: ExecutableType,
-        object: Register,
-        index: Register,
+        object: Slot,
+        index: Slot,
     },
     MakeWholeReference {
-        destination: Register,
+        destination: Slot,
         pointee_type: ExecutableType,
-        object: Register,
+        object: Slot,
     },
     MakeFieldReference {
-        destination: Register,
+        destination: Slot,
         pointee_type: ExecutableType,
-        object: Register,
+        object: Slot,
         field: String,
     },
     MoveOut {
         by_reference: bool,
-        destination: Register,
-        source: Register,
+        destination: Slot,
+        source: Slot,
     },
     Push {
-        destination: Register,
-        object: Register,
-        value: Register,
+        destination: Slot,
+        object: Slot,
+        value: Slot,
     },
     Append {
-        destination: Register,
-        object: Register,
-        value: Register,
+        destination: Slot,
+        object: Slot,
+        value: Slot,
     },
     Contains {
-        destination: Register,
-        value: Register,
-        candidates: Vec<Register>,
+        destination: Slot,
+        value: Slot,
+        candidates: Vec<Slot>,
     },
     Builtin {
-        destination: Register,
+        destination: Slot,
         builtin: Builtin,
-        arguments: Vec<Register>,
+        arguments: Vec<Slot>,
     },
     SpawnRemote {
-        destination: Register,
-        value: Register,
+        destination: Slot,
+        value: Slot,
     },
     SpawnRemoteBorrow {
-        destination: Register,
-        source: Register,
+        destination: Slot,
+        source: Slot,
     },
     RemoteCall {
-        destination: Register,
-        remote: Register,
+        destination: Slot,
+        remote: Slot,
         function: FunctionId,
-        arguments: Vec<(crate::ast::ParameterMode, Register)>,
+        arguments: Vec<(crate::ast::ParameterMode, Slot)>,
     },
     Await {
-        destination: Register,
-        future: Register,
+        destination: Slot,
+        future: Slot,
     },
     MatchPattern {
-        destination: Register,
-        subject: Register,
+        destination: Slot,
+        subject: Slot,
         pattern: crate::hir::Pattern,
-        bindings: Vec<Register>,
+        bindings: Vec<Slot>,
     },
     Jump {
         target: usize,
     },
     JumpIfFalse {
-        condition: Register,
+        condition: Slot,
         target: usize,
     },
     Assert {
-        condition: Register,
-        message: Option<Register>,
+        condition: Slot,
+        message: Option<Slot>,
     },
     Call {
-        destination: Register,
+        destination: Slot,
         function: FunctionId,
         specialization: Specialization,
-        arguments: Vec<Register>,
+        arguments: Vec<Slot>,
     },
     CallMethod {
-        destination: Register,
-        receiver: Register,
+        destination: Slot,
+        receiver: Slot,
         function: FunctionId,
         specialization: Specialization,
-        arguments: Vec<Register>,
+        arguments: Vec<Slot>,
     },
     CallContractMethod {
-        destination: Register,
-        receiver: Register,
+        destination: Slot,
+        receiver: Slot,
         slot: DispatchSlot,
         name: String,
-        arguments: Vec<Register>,
+        arguments: Vec<Slot>,
         result_type: ExecutableType,
     },
     MakeClosure {
-        destination: Register,
+        destination: Slot,
         function: FunctionId,
         specialization: Specialization,
-        captures: Vec<(crate::hir::CaptureMode, Register)>,
+        captures: Vec<(crate::hir::CaptureMode, Slot)>,
     },
     CallValue {
-        destination: Register,
-        callee: Register,
-        arguments: Vec<Register>,
+        destination: Slot,
+        callee: Slot,
+        arguments: Vec<Slot>,
     },
     CallClosure {
-        destination: Register,
+        destination: Slot,
         function: FunctionId,
         specialization: Specialization,
-        captures: Vec<(crate::hir::CaptureMode, Register)>,
-        arguments: Vec<Register>,
+        captures: Vec<(crate::hir::CaptureMode, Slot)>,
+        arguments: Vec<Slot>,
     },
     Return {
-        source: Register,
+        source: Slot,
     },
 }
 
 impl Instruction {
-    pub(crate) fn visit_registers(&self, mut visit: impl FnMut(Register)) {
+    pub(crate) fn visit_registers(&self, mut visit: impl FnMut(Slot)) {
         match self {
             Self::Drop { register } => visit(*register),
             Self::LoadConstant { destination, .. } => visit(*destination),
@@ -446,8 +453,263 @@ impl Instruction {
     }
 }
 
+impl Instruction {
+    pub(crate) fn visit_registers_mut(&mut self, mut visit: impl FnMut(&mut Slot)) {
+        match self {
+            Self::Drop { register } => visit(register),
+            Self::LoadConstant { destination, .. } => visit(destination),
+            Self::Move {
+                destination,
+                source,
+            } => {
+                visit(destination);
+                visit(source);
+            }
+            Self::Unary {
+                destination,
+                operand,
+                ..
+            } => {
+                visit(destination);
+                visit(operand);
+            }
+            Self::Binary {
+                destination,
+                left,
+                right,
+                ..
+            } => {
+                visit(destination);
+                visit(left);
+                visit(right);
+            }
+            Self::MakeList {
+                destination,
+                elements,
+                ..
+            } => {
+                visit(destination);
+                elements.iter_mut().for_each(&mut visit);
+            }
+            Self::Index {
+                destination,
+                object,
+                index,
+            } => {
+                visit(destination);
+                visit(object);
+                visit(index);
+            }
+            Self::MakeRecord {
+                destination,
+                fields,
+                ..
+            } => {
+                visit(destination);
+                fields.iter_mut().for_each(|(_, register)| visit(register));
+            }
+            Self::MakeVariant {
+                destination,
+                payload,
+                ..
+            } => {
+                visit(destination);
+                payload.iter_mut().for_each(&mut visit);
+            }
+            Self::LoadField {
+                destination,
+                object,
+                ..
+            } => {
+                visit(destination);
+                visit(object);
+            }
+            Self::StoreField { object, source, .. } => {
+                visit(object);
+                visit(source);
+            }
+            Self::StoreIndex {
+                object,
+                index,
+                source,
+            } => {
+                visit(object);
+                visit(index);
+                visit(source);
+            }
+            Self::MakeReference {
+                destination,
+                object,
+                index,
+                ..
+            } => {
+                visit(destination);
+                visit(object);
+                visit(index);
+            }
+            Self::MakeWholeReference {
+                destination,
+                object,
+                ..
+            } => {
+                visit(destination);
+                visit(object);
+            }
+            Self::MakeFieldReference {
+                destination,
+                object,
+                ..
+            } => {
+                visit(destination);
+                visit(object);
+            }
+            Self::MoveOut {
+                destination,
+                source,
+                ..
+            } => {
+                visit(destination);
+                visit(source);
+            }
+            Self::Push {
+                destination,
+                object,
+                value,
+            }
+            | Self::Append {
+                destination,
+                object,
+                value,
+            } => {
+                visit(destination);
+                visit(object);
+                visit(value);
+            }
+            Self::Contains {
+                destination,
+                value,
+                candidates,
+            } => {
+                visit(destination);
+                visit(value);
+                candidates.iter_mut().for_each(&mut visit);
+            }
+            Self::Builtin {
+                destination,
+                arguments,
+                ..
+            } => {
+                visit(destination);
+                arguments.iter_mut().for_each(&mut visit);
+            }
+            Self::SpawnRemote { destination, value } => {
+                visit(destination);
+                visit(value);
+            }
+            Self::SpawnRemoteBorrow {
+                destination,
+                source,
+            } => {
+                visit(destination);
+                visit(source);
+            }
+            Self::RemoteCall {
+                destination,
+                remote,
+                arguments,
+                ..
+            } => {
+                visit(destination);
+                visit(remote);
+                arguments
+                    .iter_mut()
+                    .for_each(|(_, register)| visit(register));
+            }
+            Self::Await {
+                destination,
+                future,
+            } => {
+                visit(destination);
+                visit(future);
+            }
+            Self::MatchPattern {
+                destination,
+                subject,
+                bindings,
+                ..
+            } => {
+                visit(destination);
+                visit(subject);
+                bindings.iter_mut().for_each(&mut visit);
+            }
+            Self::Jump { .. } => {}
+            Self::JumpIfFalse { condition, .. } => visit(condition),
+            Self::Assert { condition, message } => {
+                visit(condition);
+                message.iter_mut().for_each(&mut visit);
+            }
+            Self::Call {
+                destination,
+                arguments,
+                ..
+            } => {
+                visit(destination);
+                arguments.iter_mut().for_each(visit);
+            }
+            Self::CallMethod {
+                destination,
+                receiver,
+                arguments,
+                ..
+            }
+            | Self::CallContractMethod {
+                destination,
+                receiver,
+                arguments,
+                ..
+            } => {
+                visit(destination);
+                visit(receiver);
+                arguments.iter_mut().for_each(&mut visit);
+            }
+            Self::MakeClosure {
+                destination,
+                captures,
+                ..
+            } => {
+                visit(destination);
+                captures
+                    .iter_mut()
+                    .for_each(|(_, register)| visit(register));
+            }
+            Self::CallValue {
+                destination,
+                callee,
+                arguments,
+            } => {
+                visit(destination);
+                visit(callee);
+                arguments.iter_mut().for_each(&mut visit);
+            }
+            Self::CallClosure {
+                destination,
+                captures,
+                arguments,
+                ..
+            } => {
+                visit(destination);
+                captures
+                    .iter_mut()
+                    .for_each(|(_, register)| visit(register));
+                arguments.iter_mut().for_each(&mut visit);
+            }
+            Self::Return { source } => visit(source),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
-pub struct BytecodeFunction {
+pub struct Function {
     pub name: String,
     /// A source intrinsic declaration whose executable call sites lower to `Builtin`.
     pub intrinsic_stub: bool,
@@ -469,7 +731,7 @@ pub struct BytecodeFunction {
 pub struct Program {
     pub metadata: crate::codegen::metadata::ProgramMetadata,
     pub drops_inserted: bool,
-    pub functions: HashMap<FunctionId, BytecodeFunction>,
+    pub functions: HashMap<FunctionId, Function>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

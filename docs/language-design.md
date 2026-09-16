@@ -1285,7 +1285,7 @@ The implemented pipeline is:
 ```text
 source -> tokens -> AST -> resolved HIR -> type/effect inference
        -> loan/group/capture checks -> ownership MIR validation
-       -> temporary register construction -> layout legalization -> shared typed SSA
+       -> shared logical-slot construction -> layout legalization -> shared typed SSA
             -> de-SSA bytecode -> optional optimizer -> drops -> verifier -> VM
             -> supported-subset validation -> Cranelift AOT -> host executable
 ```

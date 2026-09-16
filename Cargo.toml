@@ -8,6 +8,10 @@ license = "MIT OR Apache-2.0"
 [lib]
 path = "src/lib.rs"
 
+[features]
+# Opt-in allocator instrumentation for compiler profiling builds.
+compiler-profile = []
+
 [[bin]]
 name = "foster"
 path = "src/main.rs"

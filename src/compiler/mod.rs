@@ -36,8 +36,10 @@ impl Compiler {
 
     pub fn check(&self, package: Package) -> Result<Compilation, FosterError> {
         let diagnostic_package = package.clone();
-        pipeline::check(package)
-            .map_err(|error| diagnostic_package.locate_compiler_error(FosterError::from(error)))
+        profile::compilation("frontend", || {
+            pipeline::check(package)
+                .map_err(|error| diagnostic_package.locate_compiler_error(FosterError::from(error)))
+        })
     }
 }
 

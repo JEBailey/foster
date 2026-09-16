@@ -1,21 +1,22 @@
 //! CFG simplification and value liveness over canonical SSA.
 use super::*;
 
-pub(super) fn edges(terminator: &ir::Terminator) -> Vec<(ir::Block, &[Value])> {
-    match terminator {
-        ir::Terminator::Jump { target, arguments } => vec![(*target, arguments)],
+pub(super) fn edges(terminator: &ir::Terminator) -> impl Iterator<Item = (ir::Block, &[Value])> {
+    let edges: [Option<(ir::Block, &[Value])>; 2] = match terminator {
+        ir::Terminator::Jump { target, arguments } => [Some((*target, arguments)), None],
         ir::Terminator::Branch {
             then_target,
             then_arguments,
             else_target,
             else_arguments,
             ..
-        } => vec![
-            (*then_target, then_arguments),
-            (*else_target, else_arguments),
+        } => [
+            Some((*then_target, then_arguments)),
+            Some((*else_target, else_arguments)),
         ],
-        ir::Terminator::Return(_) => vec![],
-    }
+        ir::Terminator::Return(_) => [None, None],
+    };
+    edges.into_iter().flatten()
 }
 
 pub(super) fn simplify(
@@ -126,9 +127,7 @@ pub(super) fn simplify(
     while let Some(block) = pending.pop() {
         if reachable.insert(block) {
             pending.extend(
-                edges(&function.blocks[block.0 as usize].terminator)
-                    .into_iter()
-                    .map(|(target, _)| target),
+                edges(&function.blocks[block.0 as usize].terminator).map(|(target, _)| target),
             );
         }
     }

@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
-use super::super::{BytecodeFunction, Instruction, Register};
+use super::{Function, Instruction, Slot};
 
 pub(crate) struct Liveness {
-    pub(crate) live_in: Vec<HashSet<Register>>,
-    pub(crate) live_out: Vec<HashSet<Register>>,
+    pub(crate) live_in: Vec<HashSet<Slot>>,
+    pub(crate) live_out: Vec<HashSet<Slot>>,
 }
 
 pub(crate) fn successors(instructions: &[Instruction], index: usize) -> Vec<usize> {
@@ -23,7 +23,7 @@ pub(crate) fn successors(instructions: &[Instruction], index: usize) -> Vec<usiz
     }
 }
 
-pub(crate) fn definitions(instruction: &Instruction) -> Vec<Register> {
+pub(crate) fn definitions(instruction: &Instruction) -> Vec<Slot> {
     match instruction {
         Instruction::Drop {
             register: destination,
@@ -74,7 +74,7 @@ pub(crate) fn definitions(instruction: &Instruction) -> Vec<Register> {
     }
 }
 
-pub(crate) fn uses(instruction: &Instruction) -> Vec<Register> {
+pub(crate) fn uses(instruction: &Instruction) -> Vec<Slot> {
     let mut uses = Vec::new();
     match instruction {
         Instruction::Drop { register } => uses.push(*register),
@@ -177,22 +177,19 @@ pub(crate) fn uses(instruction: &Instruction) -> Vec<Register> {
     uses
 }
 
-pub(crate) fn liveness(function: &BytecodeFunction) -> Liveness {
+pub(crate) fn liveness(function: &Function) -> Liveness {
     liveness_with_exit_uses(function, &HashSet::new())
 }
 
-pub(crate) fn liveness_with_exit_uses(
-    function: &BytecodeFunction,
-    exit_uses: &HashSet<Register>,
-) -> Liveness {
+pub(crate) fn liveness_with_exit_uses(function: &Function, exit_uses: &HashSet<Slot>) -> Liveness {
     liveness_with_write_bindings(function, exit_uses, &HashSet::new())
 }
 
 /// Sealing also needs the previous binding when a write may assign through a reference.
 pub(crate) fn liveness_with_write_bindings(
-    function: &BytecodeFunction,
-    exit_uses: &HashSet<Register>,
-    reference_homes: &HashSet<Register>,
+    function: &Function,
+    exit_uses: &HashSet<Slot>,
+    reference_homes: &HashSet<Slot>,
 ) -> Liveness {
     let count = function.instructions.len();
     let successors = (0..count)
@@ -286,8 +283,8 @@ pub(crate) fn liveness_with_write_bindings(
 fn sparse_liveness(
     successors: &[Vec<usize>],
     predecessors: &[Vec<usize>],
-    uses: Vec<Vec<Register>>,
-    definitions: Vec<Vec<Register>>,
+    uses: Vec<Vec<Slot>>,
+    definitions: Vec<Vec<Slot>>,
 ) -> Liveness {
     let count = successors.len();
     let uses = uses
@@ -324,7 +321,7 @@ fn sparse_liveness(
     Liveness { live_in, live_out }
 }
 
-fn register_sets(rows: &[u64], words: usize) -> Vec<HashSet<Register>> {
+fn register_sets(rows: &[u64], words: usize) -> Vec<HashSet<Slot>> {
     rows.chunks_exact(words)
         .map(|row| {
             let mut registers =
@@ -332,7 +329,7 @@ fn register_sets(rows: &[u64], words: usize) -> Vec<HashSet<Register>> {
             for (index, &word) in row.iter().enumerate() {
                 let mut remaining = word;
                 while remaining != 0 {
-                    registers.insert(Register(
+                    registers.insert(Slot(
                         (index * 64 + remaining.trailing_zeros() as usize) as u16,
                     ));
                     remaining &= remaining - 1;
@@ -346,7 +343,7 @@ fn register_sets(rows: &[u64], words: usize) -> Vec<HashSet<Register>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn reference(function: &BytecodeFunction, exit_uses: &HashSet<Register>) -> Liveness {
+    fn reference(function: &Function, exit_uses: &HashSet<Slot>) -> Liveness {
         let count = function.instructions.len();
         let mut live_in = vec![HashSet::new(); count];
         let mut live_out = vec![HashSet::new(); count];
@@ -401,8 +398,8 @@ mod tests {
             function.instructions = (0..64)
                 .map(|_| {
                     let opcode = next() % 7;
-                    let destination = Register((next() % 128) as u16);
-                    let source = Register((next() % 128) as u16);
+                    let destination = Slot((next() % 128) as u16);
+                    let source = Slot((next() % 128) as u16);
                     let target = next() as usize % 64;
                     match opcode {
                         0 => Instruction::LoadConstant {
@@ -417,7 +414,7 @@ mod tests {
                             destination,
                             operator: crate::ast::BinaryOp::Add,
                             left: source,
-                            right: Register(64),
+                            right: Slot(64),
                         },
                         3 => Instruction::JumpIfFalse {
                             condition: source,
@@ -429,7 +426,7 @@ mod tests {
                     }
                 })
                 .collect();
-            let exits = HashSet::from([Register(0), Register(63), Register(127)]);
+            let exits = HashSet::from([Slot(0), Slot(63), Slot(127)]);
             let actual = liveness_with_exit_uses(&function, &exits);
             let expected = reference(&function, &exits);
             assert_eq!(
@@ -458,9 +455,9 @@ mod tests {
         function.instructions = vec![Instruction::Jump { target: 0 }];
         assert_eq!(liveness(&function).live_in, vec![HashSet::new()]);
         function.instructions = vec![Instruction::Return {
-            source: Register(65534),
+            source: Slot(65534),
         }];
-        let exits = HashSet::from([Register(65535)]);
+        let exits = HashSet::from([Slot(65535)]);
         let actual = liveness_with_exit_uses(&function, &exits);
         assert_eq!(actual.live_in, reference(&function, &exits).live_in);
         assert_eq!(actual.live_out, vec![HashSet::new()]);
@@ -477,13 +474,13 @@ mod tests {
             .clone();
         function.instructions = vec![
             Instruction::Move {
-                destination: Register(65534),
-                source: Register(65533)
+                destination: Slot(65534),
+                source: Slot(65533)
             };
             2048
         ];
         function.instructions.push(Instruction::Return {
-            source: Register(65534),
+            source: Slot(65534),
         });
         let actual = liveness(&function);
         let expected = reference(&function, &HashSet::new());

@@ -1,4 +1,6 @@
-//! Opt-in, request-local frontend telemetry. Never writes to LSP stdout.
+//! Opt-in, thread-local compiler telemetry. Reports go to stderr only.
+#[cfg(feature = "compiler-profile")]
+mod allocations;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::time::Instant;
@@ -11,12 +13,16 @@ pub(crate) struct Report {
     phases: BTreeMap<&'static str, Timing>,
     counters: BTreeMap<&'static str, usize>,
     body_hit_rate: Option<f64>,
+    #[cfg(feature = "compiler-profile")]
+    allocations: allocations::Allocations,
 }
 
 #[derive(Default, serde::Serialize)]
 struct Timing {
     calls: usize,
     inclusive_ms: f64,
+    #[cfg(feature = "compiler-profile")]
+    allocations: allocations::Allocations,
 }
 
 thread_local! {
@@ -32,15 +38,26 @@ pub(crate) fn count(name: &'static str) {
 }
 
 pub(crate) fn measure<T>(name: &'static str, work: impl FnOnce() -> T) -> T {
-    struct Timer(Option<Instant>, &'static str);
+    struct Timer(
+        Option<Instant>,
+        &'static str,
+        #[cfg(feature = "compiler-profile")] allocations::Allocations,
+    );
     impl Drop for Timer {
         fn drop(&mut self) {
             if let Some(start) = self.0 {
+                #[cfg(feature = "compiler-profile")]
+                let allocated = allocations::snapshot().since(self.2);
                 ACTIVE.with(|active| {
                     if let Some(report) = active.borrow_mut().as_mut() {
                         let timing = report.phases.entry(self.1).or_default();
                         timing.calls += 1;
                         timing.inclusive_ms += start.elapsed().as_secs_f64() * 1000.0;
+                        #[cfg(feature = "compiler-profile")]
+                        {
+                            timing.allocations.calls += allocated.calls;
+                            timing.allocations.bytes += allocated.bytes;
+                        }
                     }
                 });
             }
@@ -49,6 +66,8 @@ pub(crate) fn measure<T>(name: &'static str, work: impl FnOnce() -> T) -> T {
     let _timer = Timer(
         ACTIVE.with(|active| active.borrow().as_ref().map(|_| Instant::now())),
         name,
+        #[cfg(feature = "compiler-profile")]
+        allocations::snapshot(),
     );
     work()
 }
@@ -62,14 +81,45 @@ fn collect<T>(work: impl FnOnce() -> T) -> (T, Report) {
     }
     let _restore = Restore(ACTIVE.with(|active| active.replace(Some(Report::default()))));
     let start = Instant::now();
+    #[cfg(feature = "compiler-profile")]
+    let allocated = allocations::snapshot();
     let result = work();
+    #[cfg(feature = "compiler-profile")]
+    let allocated = allocations::snapshot().since(allocated);
     let mut report = ACTIVE.with(|active| active.borrow_mut().take().unwrap());
     report.total_ms = start.elapsed().as_secs_f64() * 1000.0;
+    #[cfg(feature = "compiler-profile")]
+    {
+        report.allocations = allocated;
+    }
     let hits = report.counters.get("body.hit").copied().unwrap_or(0)
         + report.counters.get("body.error_hit").copied().unwrap_or(0);
     let attempts = hits + report.counters.get("body.checked").copied().unwrap_or(0);
     report.body_hit_rate = (attempts != 0).then(|| hits as f64 / attempts as f64);
     (result, report)
+}
+
+/// Profile a compiler API call; nested calls contribute to their outer report.
+pub(crate) fn compilation<T>(
+    operation: &str,
+    work: impl FnOnce() -> Result<T, FosterError>,
+) -> Result<T, FosterError> {
+    if std::env::var("FOSTER_COMPILER_PROFILE").as_deref() != Ok("1")
+        || ACTIVE.with(|active| active.borrow().is_some())
+    {
+        return work();
+    }
+    let (result, report) = collect(work);
+    eprintln!(
+        "FOSTER_COMPILER_PROFILE {}",
+        serde_json::json!({
+            "schema": 1, "operation": operation,
+            "allocation_tracking": cfg!(feature = "compiler-profile"),
+            "outcome": if result.is_ok() { "ok" } else { "error" },
+            "analysis": report,
+        })
+    );
+    result
 }
 
 pub(crate) fn request<T>(
@@ -92,6 +142,7 @@ pub(crate) fn request<T>(
         "FOSTER_LSP_PROFILE {}",
         serde_json::json!({
             "schema": 1, "operation": operation, "document": document,
+            "allocation_tracking": cfg!(feature = "compiler-profile"),
             "outcome": outcome, "analysis": report,
         })
     );
@@ -101,6 +152,70 @@ pub(crate) fn request<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn capture_inference_rechecks_only_when_modes_change() {
+        let (compilation, report) = collect(|| crate::compile("func main() -> Int { 42 }"));
+        compilation.unwrap();
+        assert_eq!(report.counters["types.reused_initial"], 1);
+        assert!(!report.phases.contains_key("types.final"));
+
+        let (compilation, report) = collect(|| {
+            crate::compile(
+                "func main() -> Int { let factor = 7\nlet scale = (value: Int) -> value * factor\nscale(6) }",
+            )
+        });
+        let compilation = compilation.unwrap();
+        assert_eq!(report.phases["types.final"].calls, 1);
+        assert!(!report.counters.contains_key("types.reused_initial"));
+        assert_eq!(
+            crate::vm::run(&compilation).unwrap(),
+            crate::vm::Value::Integer(42)
+        );
+    }
+
+    #[test]
+    fn backend_reports_skip_redundant_cleanup_for_a_constant_program() {
+        let compilation = crate::compile("func main() -> Int { 42 }").unwrap();
+        let (program, report) = collect(|| crate::vm::compile(&compilation));
+        crate::vm::verify(&program.unwrap()).unwrap();
+        assert_eq!(report.phases["vm.dead_writes"].calls, 1);
+        assert_eq!(report.phases["vm.registers"].calls, 1);
+        for phase in [
+            "shared.construction",
+            "shared.seal",
+            "shared.optimize",
+            "vm.lower",
+            "vm.drops",
+        ] {
+            assert!(report.phases.contains_key(phase), "missing {phase}");
+        }
+    }
+
+    #[cfg(feature = "compiler-profile")]
+    #[test]
+    fn allocation_traffic_is_inclusive_and_thread_local() {
+        let (_, report) = collect(|| {
+            measure("outer", || {
+                measure("inner", || std::hint::black_box(vec![42u8; 8192]));
+            })
+        });
+        assert!(report.phases["inner"].allocations.bytes >= 8192);
+        assert!(report.phases["inner"].allocations.calls >= 1);
+        assert!(
+            report.phases["outer"].allocations.bytes >= report.phases["inner"].allocations.bytes
+        );
+        assert!(report.allocations.bytes >= report.phases["outer"].allocations.bytes);
+        std::thread::spawn(|| {
+            assert!(ACTIVE.with(|active| active.borrow().is_none()));
+            let before = allocations::snapshot();
+            std::hint::black_box(vec![0u8; 4096]);
+            assert!(allocations::snapshot().since(before).bytes >= 4096);
+        })
+        .join()
+        .unwrap();
+        assert!(ACTIVE.with(|active| active.borrow().is_none()));
+    }
 
     #[test]
     fn native_preparation_analyzes_each_body_once_across_specializations() {

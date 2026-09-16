@@ -34,7 +34,7 @@ fn reused_storage_keeps_distinct_value_types() {
         },
     ];
     body.instruction_spans = vec![0..0; body.instructions.len()];
-    let shared = crate::codegen::vm::seal_program(program).unwrap();
+    let shared = crate::codegen::sealing::seal_program(program).unwrap();
     let function = &shared.functions()[&id];
     let facts = shared.facts(id);
     let definitions = function

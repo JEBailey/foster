@@ -1,12 +1,20 @@
 use std::collections::HashMap;
 
+use crate::codegen::types::ExecutableType;
 use crate::hir::CaptureMode;
 
 use super::super::{Instruction, Program, Register};
 use super::analysis::{definitions, uses};
 
-pub(super) fn specialize_non_escaping(program: &mut Program) {
+pub(super) fn specialize_non_escaping(program: &mut Program) -> bool {
+    let capture_types = program
+        .functions
+        .iter()
+        .map(|(id, function)| (*id, function.capture_types.clone()))
+        .collect::<HashMap<_, _>>();
+    let mut changed = false;
     for function in program.functions.values_mut() {
+        let pinned = super::storage::pinned(function);
         let mut use_counts = HashMap::<Register, usize>::new();
         for instruction in &function.instructions {
             if matches!(instruction, Instruction::Drop { .. }) {
@@ -39,6 +47,31 @@ pub(super) fn specialize_non_escaping(program: &mut Program) {
             .collect::<Vec<_>>();
 
         for (creation, closure, target, specialization, captures) in candidates {
+            if pinned.contains(&closure) {
+                continue;
+            }
+            // A direct call releases owned captures on return, whereas a closure
+            // environment can retain them until its later release. Only shorten
+            // that lifetime when every owned capture has trivial destruction.
+            let Some(types) = capture_types.get(&target) else {
+                continue;
+            };
+            if types.len() != captures.len()
+                || captures.iter().zip(types).any(|((mode, _), ty)| {
+                    *mode != CaptureMode::Ref
+                        && !matches!(
+                            ty.specialize(&specialization),
+                            ExecutableType::Unit
+                                | ExecutableType::Bool
+                                | ExecutableType::Integer
+                                | ExecutableType::Float
+                                | ExecutableType::CodePoint
+                                | ExecutableType::Byte
+                        )
+                })
+            {
+                continue;
+            }
             let mut aliases = vec![closure];
             let mut transports = Vec::new();
             let mut found = None;
@@ -89,6 +122,7 @@ pub(super) fn specialize_non_escaping(program: &mut Program) {
             else {
                 unreachable!("the call was located above")
             };
+            changed = true;
             function.instructions[creation] = Instruction::Move {
                 destination: closure,
                 source: closure,
@@ -136,6 +170,7 @@ pub(super) fn specialize_non_escaping(program: &mut Program) {
             }
         }
     }
+    changed
 }
 
 fn safe_to_delay_capture(
@@ -168,15 +203,17 @@ fn safe_to_delay_capture(
         if moving {
             return false;
         }
-        if matches!(
-            instruction,
-            Instruction::Jump { .. }
-                | Instruction::JumpIfFalse { .. }
-                | Instruction::Return { .. }
-                | Instruction::Call { .. }
-                | Instruction::CallValue { .. }
-                | Instruction::CallClosure { .. }
-        ) {
+        if super::storage::invalidates_copies(instruction)
+            || matches!(
+                instruction,
+                Instruction::Jump { .. }
+                    | Instruction::JumpIfFalse { .. }
+                    | Instruction::Return { .. }
+                    | Instruction::Call { .. }
+                    | Instruction::CallValue { .. }
+                    | Instruction::CallClosure { .. }
+            )
+        {
             return false;
         }
         let definitions = definitions(instruction);

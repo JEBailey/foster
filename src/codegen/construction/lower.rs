@@ -2,7 +2,7 @@ use super::*;
 use crate::intrinsics::{Builtin, Intrinsic, IntrinsicReceiverMode};
 
 impl FunctionCompiler<'_> {
-    pub(super) fn expression(&mut self, id: ExprId) -> Result<Register, FosterError> {
+    pub(super) fn expression(&mut self, id: ExprId) -> Result<Slot, FosterError> {
         let source = self.expression_unwrapped(id)?;
         if self.observable_cleanup
             && !self.locals.values().any(|local| *local == source)
@@ -42,7 +42,7 @@ impl FunctionCompiler<'_> {
         &mut self,
         place: ExprId,
         span: std::ops::Range<usize>,
-    ) -> Result<Register, FosterError> {
+    ) -> Result<Slot, FosterError> {
         let Some(place) =
             crate::semantics::expression_place(self.hir, &self.types.member_kinds, place)
         else {
@@ -135,7 +135,7 @@ impl FunctionCompiler<'_> {
         &mut self,
         expression: ExprId,
         span: std::ops::Range<usize>,
-    ) -> Result<Register, FosterError> {
+    ) -> Result<Slot, FosterError> {
         let Some(place) =
             crate::semantics::expression_place(self.hir, &self.types.member_kinds, expression)
         else {
@@ -159,7 +159,7 @@ impl FunctionCompiler<'_> {
         Ok(destination)
     }
 
-    fn expression_unwrapped(&mut self, id: ExprId) -> Result<Register, FosterError> {
+    fn expression_unwrapped(&mut self, id: ExprId) -> Result<Slot, FosterError> {
         let span = self
             .hir
             .expression_spans
@@ -752,7 +752,7 @@ impl FunctionCompiler<'_> {
     pub(super) fn store_place(
         &mut self,
         place: ExprId,
-        source: Register,
+        source: Slot,
         span: std::ops::Range<usize>,
     ) -> Result<(), FosterError> {
         match &self.hir.expressions[place] {
@@ -799,7 +799,7 @@ impl FunctionCompiler<'_> {
         &mut self,
         expression: ExprId,
         span: std::ops::Range<usize>,
-    ) -> Result<Register, FosterError> {
+    ) -> Result<Slot, FosterError> {
         if crate::semantics::expression_place(self.hir, &self.types.member_kinds, expression)
             .is_some_and(|place| !place.projections.is_empty())
         {
@@ -809,7 +809,7 @@ impl FunctionCompiler<'_> {
         }
     }
 
-    fn method_receiver(&mut self, id: ExprId) -> Result<Register, FosterError> {
+    fn method_receiver(&mut self, id: ExprId) -> Result<Slot, FosterError> {
         let hir::Expr::Member { object, name } = &self.hir.expressions[id] else {
             return self.expression(id);
         };
@@ -836,9 +836,9 @@ impl FunctionCompiler<'_> {
     fn lower_list_intrinsic(
         &mut self,
         function: hir::FunctionId,
-        receiver: Register,
-        arguments: &[Register],
-        destination: Register,
+        receiver: Slot,
+        arguments: &[Slot],
+        destination: Slot,
         span: std::ops::Range<usize>,
     ) -> Result<bool, FosterError> {
         let [value] = arguments else {
@@ -904,7 +904,7 @@ impl FunctionCompiler<'_> {
     fn function_captures(
         &self,
         function: hir::FunctionId,
-    ) -> Result<Vec<(hir::CaptureMode, Register)>, FosterError> {
+    ) -> Result<Vec<(hir::CaptureMode, Slot)>, FosterError> {
         // Named nested functions only use lexical captures. Value captures are
         // emitted by the closure expression that owns their source operands.
         self.closure_captures
@@ -928,7 +928,7 @@ impl FunctionCompiler<'_> {
         &mut self,
         constant: Constant,
         span: std::ops::Range<usize>,
-    ) -> Result<Register, FosterError> {
+    ) -> Result<Slot, FosterError> {
         let index = u16::try_from(self.constants.len())
             .map_err(|_| FosterError::runtime("VM constant table exceeds 65535 entries"))?;
         self.constants.push(constant);
@@ -947,7 +947,7 @@ impl FunctionCompiler<'_> {
         &mut self,
         value: &hir::ConstantValue,
         span: std::ops::Range<usize>,
-    ) -> Result<Register, FosterError> {
+    ) -> Result<Slot, FosterError> {
         Ok(match value {
             hir::ConstantValue::Unit => self.load_constant(Constant::Unit, span)?,
             hir::ConstantValue::Bool(value) => self.load_constant(Constant::Bool(*value), span)?,
@@ -988,8 +988,8 @@ impl FunctionCompiler<'_> {
         })
     }
 
-    pub(super) fn allocate(&mut self) -> Register {
-        let register = Register(self.next_register);
+    pub(super) fn allocate(&mut self) -> Slot {
+        let register = Slot(self.next_register);
         self.next_register = self
             .next_register
             .checked_add(1)
@@ -1118,7 +1118,7 @@ impl FunctionCompiler<'_> {
         subject: Option<ExprId>,
         arms: &[hir::BranchArm],
         span: std::ops::Range<usize>,
-    ) -> Result<Register, FosterError> {
+    ) -> Result<Slot, FosterError> {
         let subject_type = subject
             .and_then(|id| self.types.expression_type(id))
             .map(|ty| verification_type(self.hir, self.types, ty, 0))
@@ -1277,7 +1277,7 @@ impl FunctionCompiler<'_> {
 
     fn emit_branch_jump_if_false(
         &mut self,
-        condition: Register,
+        condition: Slot,
         target: crate::control_flow::NodeId,
         labels: &[Option<usize>],
         pending: &mut [Vec<usize>],
@@ -1306,7 +1306,7 @@ impl FunctionCompiler<'_> {
         }
     }
 
-    fn allocate_pattern_bindings(&mut self, pattern: &hir::Pattern, bindings: &mut Vec<Register>) {
+    fn allocate_pattern_bindings(&mut self, pattern: &hir::Pattern, bindings: &mut Vec<Slot>) {
         match pattern.unspanned() {
             hir::Pattern::Binding(local)
             | hir::Pattern::IsType {

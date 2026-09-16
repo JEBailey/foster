@@ -20,7 +20,7 @@ pub struct FunctionDeclaration {
 }
 
 impl FunctionDeclaration {
-    pub(crate) fn from_construction(body: &crate::vm::BytecodeFunction) -> Self {
+    pub(crate) fn from_construction(body: &super::storage::Function) -> Self {
         Self {
             name: body.name.clone(),
             intrinsic_stub: body.intrinsic_stub,
@@ -76,14 +76,19 @@ impl Program {
 pub fn compile(
     compilation: &crate::compiler::Compilation,
 ) -> Result<super::shared::SharedProgram, crate::error::FosterError> {
-    let mut program = crate::vm::compile_construction(compilation)?;
+    use crate::compiler::profile::measure;
+    let mut program = measure("shared.construction", || {
+        super::construction::compile(compilation)
+    })?;
 
-    // Drop insertion is still expressed over construction registers. Sealing then turns those
-    // ownership operations into SSA instructions; native codegen never reconstructs bytecode.
-    crate::vm::optimizer::insert_drops(&mut program);
+    // Shared lifetime lowering emits ownership releases over logical slots.
+    // Sealing preserves those releases and storage identities in SSA for both backends.
+    measure("shared.drops", || {
+        super::storage::lifetimes::insert(&mut program)
+    });
     program.metadata.symbols = crate::symbols::Table::from_compilation(compilation, &program)?;
     crate::symbols::link(&mut program)?;
-    crate::codegen::vm::seal_program(program).map_err(|error| {
+    measure("shared.seal", || super::sealing::seal_program(program)).map_err(|error| {
         crate::error::FosterError::runtime(format!("shared SSA sealing failed: {error}"))
     })
 }

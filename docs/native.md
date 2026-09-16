@@ -218,11 +218,13 @@ Record schemas store paired `RecordField` entries. Construction derives their im
 layout and rejects duplicate names; linking remaps field types without changing storage order.
 
 
-The public `codegen::vm` entry points are re-exported from focused implementation modules:
-`src/codegen/vm/program.rs` owns program sealing and transactional lowering; `src/codegen/vm/construction.rs` builds SSA;
-`src/codegen/vm/emission.rs` assigns registers and emits edge copies; `src/codegen/vm/instructions.rs` holds opcode mappings.
-Differential evidence checks and regression tests live separately. Neutral declarations supply
-logical schemas for sealing; `src/vm/schema.rs` adapts bytecode for VM verification.
+`src/codegen/construction.rs` lowers HIR into the shared slot IR in `codegen::storage`.
+Shared lifetime analysis and validation live under `src/codegen/storage/`; `codegen::sealing`
+builds the authoritative SSA graph. These production stages do not depend on the VM backend.
+`src/codegen/vm/emission.rs` assigns VM registers and emits edge copies;
+`src/codegen/vm/instructions.rs` maps SSA operations to slot instructions for serialization
+and execution. The VM reuses the shared slot model and verifier. Native lowering consumes SSA
+directly. Differential evidence checks compare slot-flow and SSA-flow facts at sealing.
 
 `codegen::flow` owns logical flow analysis. A sealed program retains paired logical function
 schemas, immutable per-function facts, and the exact SSA graphs those facts describe. A query at
@@ -270,6 +272,12 @@ Requesting another optimization mode prepares and caches a separate variant from
 canonical SSA, including new specialization and cleanup evidence. Repeated object emission reuses
 that variant. `native::prepare_with_options` and the convenience compilation/build functions
 prepare the requested mode directly.
+
+Baseline preparation shares the canonical SSA graph instead of cloning the complete shared
+program. Optimized preparation copies the graph on mutation and shares immutable flow facts for
+unchanged functions; changed functions receive fresh analysis evidence. Native preparation copies
+the layout registry because specialization adds layouts. The retained canonical graph still allows
+the other optimization mode to be prepared without reconstructing bytecode or repeating the frontend.
 Cranelift performs machine-specific optimization after native representation and ABI lowering.
 Each prepared function retains its specialized logical signature and parameter ownership modes,
 compact verified logical alternatives by original SSA value, and a per-value memory-management

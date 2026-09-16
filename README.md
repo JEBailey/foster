@@ -303,7 +303,7 @@ source
   -> type, structural-contract, and fixed-point effect inference
   -> loan, capture, group, and ownership checks
   -> ownership MIR validation
-  -> temporary register construction with explicit drops
+  -> shared logical-slot construction with explicit drops
   -> layout legalization and shared typed SSA
   -> shared inlining, constants, branch pruning, dead scalar elimination
   -> verified SSA and rebuilt logical flow
