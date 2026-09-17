@@ -19,7 +19,7 @@ pub type Symbol = & Copy & {
 
 impl Symbol {
     /// Explicitly copies this immutable identifier.
-    pub func copy(self: Symbol) -> self [read self] { self }
+    pub func copy(self) -> self [read self] { self }
 }
 
 test "symbols support explicit copying" {

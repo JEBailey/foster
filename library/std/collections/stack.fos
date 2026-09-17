@@ -28,34 +28,34 @@ pub type ListStack<T> = & Stack<T> & {
     values: List<T>
 }
 
-impl ListStack {
+impl ListStack<T> {
     /// Creates an empty stack.
-    pub func empty<T>() -> ListStack<T> {
+    pub func empty() -> ListStack<T> {
         ListStack { values: [] }
     }
 
     /// Returns the number of stacked values.
-    pub func length<T>(self: ListStack<T>) -> Int {
+    pub func length(self) -> Int {
         self.values.length
     }
 
     /// Returns whether the stack contains no values.
-    pub func empty?<T>(self: ListStack<T>) -> Bool {
+    pub func empty?(self) -> Bool {
         self.values.empty?
     }
 
     /// Creates an independent iterator from top to bottom.
-    pub func iterator<T>(self: ListStack<T>) -> Iterator<T> {
+    pub func iterator(self) -> Iterator<T> {
         reverse(self.values, []).iterator()
     }
 
     /// Returns a stack with `value` placed on top.
-    pub func push<T>(self: ListStack<T>, value: T) -> ListStack<T> [consume self, consume value] {
+    pub func push(self, value: T) -> ListStack<T> [consume self, consume value] {
         ListStack { values: self.values.append(value) }
     }
 
     /// Removes the top value and returns the remaining stack.
-    pub func pop<T>(self: ListStack<T>) -> Option<StackItem<T, ListStack<T>>> [consume self] {
+    pub func pop(self) -> Option<StackItem<T, ListStack<T>>> [consume self] {
         branch {
             self.values.empty? -> Option.None
             _ -> pop_values(move self.values, [])

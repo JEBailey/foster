@@ -692,7 +692,7 @@ and `core.remote_error` to name these variants. Domain Result errors remain insi
 
 ```foster
 impl Counter {
-    func increment(self: Counter, amount: Int) -> Int {
+    func increment(self, amount: Int) -> Int {
         self.value = self.value + amount
         self.value
     }
@@ -1187,7 +1187,7 @@ and VM lowering retain the contract without source-level suffixes:
 
 ```foster
 impl Inventory {
-    func restock(self: Inventory, amount: Int) -> Int {
+    func restock(self, amount: Int) -> Int {
         self.count = self.count + amount
         self.count
     }

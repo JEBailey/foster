@@ -27,34 +27,34 @@ pub type ListQueue<T> = & Queue<T> & {
     values: List<T>
 }
 
-impl ListQueue {
+impl ListQueue<T> {
     /// Creates an empty queue.
-    pub func empty<T>() -> ListQueue<T> {
+    pub func empty() -> ListQueue<T> {
         ListQueue { values: [] }
     }
 
     /// Returns the number of queued values.
-    pub func length<T>(self: ListQueue<T>) -> Int {
+    pub func length(self) -> Int {
         self.values.length
     }
 
     /// Returns whether the queue contains no values.
-    pub func empty?<T>(self: ListQueue<T>) -> Bool {
+    pub func empty?(self) -> Bool {
         self.values.empty?
     }
 
     /// Creates an independent iterator from front to back.
-    pub func iterator<T>(self: ListQueue<T>) -> Iterator<T> {
+    pub func iterator(self) -> Iterator<T> {
         self.values.iterator()
     }
 
     /// Returns a queue with `value` added at the back.
-    pub func push<T>(self: ListQueue<T>, value: T) -> ListQueue<T> [consume self, consume value] {
+    pub func push(self, value: T) -> ListQueue<T> [consume self, consume value] {
         ListQueue { values: self.values.append(value) }
     }
 
     /// Removes the front value and returns the remaining queue.
-    pub func pop<T>(self: ListQueue<T>) -> Option<QueueItem<T, ListQueue<T>>> [consume self] {
+    pub func pop(self) -> Option<QueueItem<T, ListQueue<T>>> [consume self] {
         branch {
             self.values.empty? -> Option.None
             _ -> Option.Some(QueueItem { value: self.values.head, remaining: ListQueue { values: self.values.rest } })

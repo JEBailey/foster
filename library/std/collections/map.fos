@@ -43,15 +43,15 @@ pub type ListMap<K, V> = & Map<K, V> & {
     entries: List<Entry<K, V>>
 }
 
-impl ListMap {
+impl ListMap<K, V> {
     /// Creates an empty map.
-    pub func empty<K, V>() -> ListMap<K, V> {
+    pub func empty() -> ListMap<K, V> {
         ListMap { entries: [] }
     }
 
     /// Borrows the stored value; absent keys return None. No Copy is required.
     /// The reference permits mutation and cannot outlive or survive reshaping the map.
-    pub func borrow<K, V>(self: ListMap<K, V>, key: K) -> Option<ref[self] V> [read self.entries, read key] {
+    pub func borrow(self, key: K) -> Option<ref[self] V> [read self.entries, read key] {
         let index = find_index(self.entries, key)
         branch {
             index < 0 -> Option.None
@@ -60,10 +60,10 @@ impl ListMap {
     }
 }
 
-impl ListMap {
+impl ListMap<K, V> {
     /// Removes and returns the owned value, preserving the map and remaining insertion order.
     /// An absent key returns None and leaves the map unchanged.
-    pub func remove<K, V>(self: ListMap<K, V>, key: K) -> Option<V> {
+    pub func remove(self, key: K) -> Option<V> {
         let index = find_index(self.entries, key)
         return Option.None if index < 0
         let remaining = []
@@ -91,16 +91,16 @@ func find_index<K, V>(entries: List<Entry<K, V>>, key: K) -> Int {
     -1
 }
 
-impl ListMap {
+impl ListMap<K, V> {
     /// Returns whether the map contains `key` without consuming the map.
-    pub func contains_key?<K, V>(self: ListMap<K, V>, key: K) -> Bool {
+    pub func contains_key?(self, key: K) -> Bool {
         find_index(self.entries, key) >= 0
     }
 }
 
-impl ListMap {
+impl ListMap<K, V> {
     /// Returns a map with `key` associated with `value`, replacing an existing entry when present.
-    pub func put<K, V>(self: ListMap<K, V>, key: K, value: V) -> ListMap<K, V> [mut self.entries, consume key, consume self, consume value] {
+    pub func put(self, key: K, value: V) -> ListMap<K, V> [mut self.entries, consume key, consume self, consume value] {
         let index = find_index(self.entries, key)
         branch {
             index >= 0 -> { self.entries[index] = Entry { key, value } }
@@ -110,25 +110,25 @@ impl ListMap {
     }
 }
 
-impl ListMap {
+impl ListMap<K, V> {
     /// Returns the number of entries in the map.
-    pub func length<K, V>(self: ListMap<K, V>) -> Int {
+    pub func length(self) -> Int {
         self.entries.length
     }
 
     /// Returns whether the map contains no entries.
-    pub func empty?<K, V>(self: ListMap<K, V>) -> Bool {
+    pub func empty?(self) -> Bool {
         self.entries.empty?
     }
 
     /// Creates an independent iterator in insertion order.
     /// Replacing an existing key does not move its entry to the end.
-    pub func iterator<K, V>(self: ListMap<K, V>) -> Iterator<Entry<K, V>> {
+    pub func iterator(self) -> Iterator<Entry<K, V>> {
         self.entries.iterator()
     }
 
     /// Consumes the map and returns its keys in storage order.
-    pub func keys<K, V>(self: ListMap<K, V>) -> List<K> [consume self] {
+    pub func keys(self) -> List<K> [consume self] {
         let result = []
         for entry in self {
             result.push(entry.key)
@@ -137,9 +137,9 @@ impl ListMap {
     }
 }
 
-impl ListMap {
+impl ListMap<K, V> {
     /// Consumes the map and returns its values in storage order.
-    pub func values<K, V>(self: ListMap<K, V>) -> List<V> [consume self] {
+    pub func values(self) -> List<V> [consume self] {
         let result = []
         for entry in self {
             result.push(entry.value)

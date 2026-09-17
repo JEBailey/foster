@@ -17,14 +17,14 @@ impl FloatHost {
 
 impl Float {
     /// Explicitly copies this scalar value.
-    pub func copy(self: Float) -> self [read self] { self }
+    pub func copy(self) -> self [read self] { self }
 
     /// Formats a binary64 value as round-trippable decimal text.
-    pub func as_string(self: Float) -> String { FloatHost.format(self) }
+    pub func as_string(self) -> String { FloatHost.format(self) }
 
     /// Negates `self` when it compares less than zero.
     /// Preserves NaN and negative zero, which do not satisfy that comparison.
-    pub func absolute(self: Float) -> Float {
+    pub func absolute(self) -> Float {
         branch {
             self < 0.0 -> -self
             _ -> self
@@ -33,7 +33,7 @@ impl Float {
 
     /// Returns `self` when `self <= right`, otherwise `right`.
     /// An unordered comparison returns `right`; NaN handling is operand-order dependent.
-    pub func minimum(self: Float, right: Float) -> Float {
+    pub func minimum(self, right: Float) -> Float {
         branch {
             self <= right -> self
             _ -> right
@@ -42,7 +42,7 @@ impl Float {
 
     /// Returns `self` when `self >= right`, otherwise `right`.
     /// An unordered comparison returns `right`; NaN handling is operand-order dependent.
-    pub func maximum(self: Float, right: Float) -> Float {
+    pub func maximum(self, right: Float) -> Float {
         branch {
             self >= right -> self
             _ -> right
@@ -52,13 +52,13 @@ impl Float {
     /// Applies `maximum(lower).minimum(upper)` to `self`.
     /// Use ordered bounds with `lower <= upper` for interval clamping.
     /// NaN and reversed bounds are not rejected.
-    pub func clamp(self: Float, lower: Float, upper: Float) -> Float {
+    pub func clamp(self, lower: Float, upper: Float) -> Float {
         self.maximum(lower).minimum(upper)
     }
 
     /// Returns `-1` for a negative value and `1` for a positive value.
     /// Returns `0` for either signed zero or NaN.
-    pub func sign(self: Float) -> Int {
+    pub func sign(self) -> Int {
         branch {
             self < 0.0 -> -1
             self > 0.0 -> 1
@@ -69,7 +69,7 @@ impl Float {
     /// Returns `Less` or `Greater` when the corresponding comparison succeeds.
     /// Otherwise returns `Equal`, including comparisons involving NaN.
     /// This method is not an IEEE total ordering and does not imply equality.
-    pub func compare(self: Float, right: Float) -> Ordering {
+    pub func compare(self, right: Float) -> Ordering {
         branch {
             self < right -> Ordering.Less
             self > right -> Ordering.Greater
@@ -79,7 +79,7 @@ impl Float {
 
     /// Returns false when `self < lower`; otherwise evaluates `self <= upper`.
     /// Use ordered, non-NaN bounds for an inclusive interval membership test.
-    pub func between?(self: Float, lower: Float, upper: Float) -> Bool {
+    pub func between?(self, lower: Float, upper: Float) -> Bool {
         branch {
             self < lower -> false
             _ -> self <= upper

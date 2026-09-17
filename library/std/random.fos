@@ -61,21 +61,21 @@ impl SystemRandom {
 
     /// Returns exactly `count` bytes of operating-system entropy.
     /// Accepts `0..1048576`, inclusive; invalid sizes or unavailable entropy return `RandomError`.
-    pub func bytes(self: SystemRandom, count: Int) -> Result<Bytes, RandomError> {
+    pub func bytes(self, count: Int) -> Result<Bytes, RandomError> {
         return failure("bytes", count, "random byte count must not be negative") if count < 0
         return failure("bytes", count, "random byte count must not exceed 1048576") if count > 1048576
         RandomHost.bytes(count)
     }
 
     /// Returns a uniformly distributed 31-bit nonnegative integer from operating-system entropy.
-    pub func next(self: SystemRandom) -> Result<Int, RandomError> {
+    pub func next(self) -> Result<Int, RandomError> {
         let entropy = try self.bytes(4)
         let first = entropy[0].int.modulo(128)
         Result.Ok(((first * 256 + entropy[1].int) * 256 + entropy[2].int) * 256 + entropy[3].int)
     }
 
     /// Returns the largest value produced by `SystemRandom.next`.
-    pub func maximum(self: SystemRandom) -> Int { 2147483647 }
+    pub func maximum(self) -> Int { 2147483647 }
 }
 
 /// Draws an unbiased integer in `[0, count)` and advances `source`.
@@ -151,14 +151,14 @@ type RandomTestSource = & RandomSource & {
 
 impl RandomTestSource {
     /// Returns the current test value and advances cyclically.
-    func next(self: RandomTestSource) -> Result<Int, RandomError> [mut self.value, read self.maximum_value] {
+    func next(self) -> Result<Int, RandomError> [mut self.value, read self.maximum_value] {
         let value = self.value
         self.value = branch { value >= self.maximum_value -> 0 _ -> value + 1 }
         Result.Ok(value)
     }
 
     /// Returns the configured test-source maximum.
-    func maximum(self: RandomTestSource) -> Int { self.maximum_value }
+    func maximum(self) -> Int { self.maximum_value }
 }
 
 test "uniform integer operations use half-open bounds and validate requests" {

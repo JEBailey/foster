@@ -49,7 +49,7 @@ func analyze(source: String) -> Metrics {
 }
 
 impl Analyzer {
-    func run(self: Analyzer) -> Metrics {
+    func run(self) -> Metrics {
         analyze(self.source)
     }
 }

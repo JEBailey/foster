@@ -18,13 +18,13 @@ func create_account(owner: String, opening_balance: Int) -> AccountResult {
 }
 
 impl Account {
-    func deposit(self: Account, amount: Int) -> Int {
+    func deposit(self, amount: Int) -> Int {
         self.balance = self.balance + amount
         self.transactions = self.transactions.append(amount)
         self.balance
     }
 
-    func summary(self: Account) -> String {
+    func summary(self) -> String {
         self.owner + " account"
     }
 }

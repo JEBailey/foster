@@ -7,15 +7,15 @@
 
 impl Bool {
     /// Explicitly copies this scalar value.
-    pub func copy(self: Bool) -> self [read self] { self }
+    pub func copy(self) -> self [read self] { self }
 
     /// Returns true when exactly one value is true.
-    pub func xor(self: Bool, right: Bool) -> Bool {
+    pub func xor(self, right: Bool) -> Bool {
         self != right
     }
 
     /// Returns a singleton list containing `value` when `condition` is true, or an empty list otherwise.
-    pub func then<T>(self: Bool, value: T) -> List<T> [read self, consume value] {
+    pub func then<T>(self, value: T) -> List<T> [read self, consume value] {
         return [value] if self
         []
     }

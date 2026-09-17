@@ -41,7 +41,7 @@ pub type Hashing = {
 
 impl Ordering {
     /// Reverses an ordering, exchanging `Less` and `Greater` while preserving `Equal`.
-    pub func reverse(self: Ordering) -> Ordering {
+    pub func reverse(self) -> Ordering {
         branch self {
             Ordering.Less -> Ordering.Greater
             Ordering.Equal -> Ordering.Equal

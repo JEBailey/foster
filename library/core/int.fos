@@ -55,7 +55,7 @@ pub type Int = & Copy & {
 
 impl Int {
     /// Explicitly copies this scalar value.
-    pub func copy(self: Int) -> self [read self] { Int { value: self.value } }
+    pub func copy(self) -> self [read self] { Int { value: self.value } }
 
     /// Returns the distance from zero, ignoring the sign of this integer.
     ///
@@ -79,7 +79,7 @@ impl Int {
     /// Its positive counterpart, `9223372036854775808`, exceeds the largest `Int`.
     /// This method does not return an `Option` or `Result` for that case;
     /// callers must exclude it before calling.
-    pub func absolute(self: Int) -> Int {
+    pub func absolute(self) -> Int {
         branch {
             self < 0 -> -self
             _ -> self
@@ -87,7 +87,7 @@ impl Int {
     }
 
     /// Returns the smaller of `self` and `right`.
-    pub func minimum(self: Int, right: Int) -> Int {
+    pub func minimum(self, right: Int) -> Int {
         branch {
             self <= right -> self
             _ -> right
@@ -95,7 +95,7 @@ impl Int {
     }
 
     /// Returns the larger of `self` and `right`.
-    pub func maximum(self: Int, right: Int) -> Int {
+    pub func maximum(self, right: Int) -> Int {
         branch {
             self >= right -> self
             _ -> right
@@ -104,12 +104,12 @@ impl Int {
 
     /// Restricts `self` to the inclusive range `[lower, upper]`.
     /// Bounds are not validated; when `lower > upper`, the result is `upper`.
-    pub func clamp(self: Int, lower: Int, upper: Int) -> Int {
+    pub func clamp(self, lower: Int, upper: Int) -> Int {
         self.maximum(lower).minimum(upper)
     }
 
     /// Returns `-1`, `0`, or `1` according to the sign of `self`.
-    pub func sign(self: Int) -> Int {
+    pub func sign(self) -> Int {
         branch {
             self < 0 -> -1
             self > 0 -> 1
@@ -118,7 +118,7 @@ impl Int {
     }
 
     /// Compares two integers and returns their ordering.
-    pub func compare(self: Int, right: Int) -> Ordering {
+    pub func compare(self, right: Int) -> Ordering {
         branch {
             self < right -> Ordering.Less
             self > right -> Ordering.Greater
@@ -127,7 +127,7 @@ impl Int {
     }
 
     /// Returns whether `self` lies in the inclusive range from `lower` to `upper`.
-    pub func between?(self: Int, lower: Int, upper: Int) -> Bool {
+    pub func between?(self, lower: Int, upper: Int) -> Bool {
         branch {
             self < lower -> false
             _ -> self <= upper
@@ -135,43 +135,42 @@ impl Int {
     }
 
     /// Returns whether `self` is evenly divisible by two.
-    pub func even?(self: Int) -> Bool {
+    pub func even?(self) -> Bool {
         self / 2 * 2 == self
     }
 
     /// Returns whether `self` is not evenly divisible by two.
-    pub func odd?(self: Int) -> Bool {
+    pub func odd?(self) -> Bool {
         self / 2 * 2 != self
     }
 
     /// Raises `self` to `exponent` by repeated multiplication.
     /// Returns `1` for zero or negative exponents, including `0.power(0)`.
     /// The result must fit `Int`; this is not arbitrary-precision exponentiation.
-    pub func power(self: Int, exponent: Int) -> Int {
+    pub func power(self, exponent: Int) -> Int {
         power_of(self, exponent)
     }
 
     /// Returns the remainder after division truncated toward zero.
     /// A nonzero remainder has the dividend's sign; this is not Euclidean modulo.
     /// `divisor` must be nonzero and the division must be representable in `Int`.
-    pub func modulo(self: Int, divisor: Int) -> Int {
+    pub func modulo(self, divisor: Int) -> Int {
         self - self / divisor * divisor
     }
 
     /// Materializes consecutive integers in the half-open range `[self, end)`.
     /// Returns an empty list when `end <= self`; storage grows with the result length.
-    pub func range(self: Int, end: Int) -> List<Int> {
+    pub func range(self, end: Int) -> List<Int> {
         range_into(self, end, [])
     }
 
     /// Formats an integer as decimal text.
-    pub func as_string(self: Int) -> String {
+    pub func as_string(self) -> String {
         branch {
             self < 0 -> "-" + negative_string(self)
             _ -> unsigned_string(self)
         }
     }
-
 }
 
 /// Multiplies the base for each remaining exponent step.

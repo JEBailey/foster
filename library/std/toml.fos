@@ -127,19 +127,19 @@ pub func parse(source: String) -> Result<TomlDocument, TomlError> {
 
 impl TomlDocument {
     /// Renders a typed TOML document as deterministic TOML text.
-    pub func render(self: TomlDocument) -> Result<String, TomlError> [consume self] {
+    pub func render(self) -> Result<String, TomlError> [consume self] {
         render_entries(move self.entries, "")
     }
 
     /// Finds a top-level document value by key.
-    pub func get(self: TomlDocument, key: String) -> Option<TomlValue> [consume key, consume self] {
+    pub func get(self, key: String) -> Option<TomlValue> [consume key, consume self] {
         find_entry(move self.entries, move key)
     }
 }
 
 impl TomlValue {
     /// Finds a value by key when `value` is a table, returning `None` otherwise.
-    pub func get(self: TomlValue, key: String) -> Option<TomlValue> [consume key, consume self] {
+    pub func get(self, key: String) -> Option<TomlValue> [consume key, consume self] {
         branch self {
             TomlValue.Table(entries) -> find_entry(move entries, move key)
             _ -> Option.None
@@ -158,7 +158,7 @@ func find_entry(entries: List<TomlEntry>, key: String) -> Option<TomlValue> {
 
 impl Parser {
     /// Internal helper for the Foster TOML implementation.
-    func parse_document(self: Parser) -> Result<TomlDocument, TomlError> [mut self] {
+    func parse_document(self) -> Result<TomlDocument, TomlError> [mut self] {
         self.skip_document_space()
         self.parse_statements()
         branch {
@@ -168,7 +168,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_statements(self: Parser) -> () [mut self] {
+    func parse_statements(self) -> () [mut self] {
         while !self.failed?() && !self.remaining.empty? {
             branch {
                 self.remaining.starts_with?("[[") -> self.parse_header(true)
@@ -181,7 +181,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_key_value(self: Parser) -> () [mut self] {
+    func parse_key_value(self) -> () [mut self] {
         let keys = self.parse_key_path()
         self.skip_horizontal_space()
         return self.fail("expected `=` after key") if not self.peek?('=')
@@ -204,7 +204,7 @@ func key_parts(keys: List<String>) -> List<PathPart> {
 
 impl Parser {
     /// Internal helper for the Foster TOML implementation.
-    func parse_header(self: Parser, array_header: Bool) -> () [mut self] {
+    func parse_header(self, array_header: Bool) -> () [mut self] {
         self.take()
         self.take_array_header_open(array_header)
         self.skip_horizontal_space()
@@ -217,14 +217,14 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func take_array_header_open(self: Parser, array_header: Bool) -> () [mut self(remaining, column)] {
+    func take_array_header_open(self, array_header: Bool) -> () [mut self(remaining, column)] {
         return () if not array_header
         self.take()
         ()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func close_array_header(self: Parser, keys: List<String>) -> () [consume self.errors, read self.line, mut self(errors, remaining, column), consume self.entries, mut self(entries, context), consume keys] {
+    func close_array_header(self, keys: List<String>) -> () [consume self.errors, read self.line, mut self(errors, remaining, column), consume self.entries, mut self(entries, context), consume keys] {
         return self.fail("expected `]]` after array-of-tables header") if not self.remaining.starts_with?("]]" )
         self.take()
         self.take()
@@ -232,7 +232,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func finish_statement(self: Parser) -> () [mut self] {
+    func finish_statement(self) -> () [mut self] {
         return () if self.failed?()
         self.skip_horizontal_space()
         self.skip_comment()
@@ -244,7 +244,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func skip_document_space(self: Parser) -> () [mut self] {
+    func skip_document_space(self) -> () [mut self] {
         while !self.failed?() {
             self.skip_horizontal_space()
             self.skip_comment()
@@ -254,20 +254,20 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func skip_horizontal_space(self: Parser) -> () [mut self] {
+    func skip_horizontal_space(self) -> () [mut self] {
         let prefix = self.remaining.scalar_take_while((character: CodePoint) -> character == ' ' || character == '\t')
         self.consume_text(prefix)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func skip_comment(self: Parser) -> () [mut self] {
+    func skip_comment(self) -> () [mut self] {
         return () if not self.peek?('#')
         self.take()
         self.skip_comment_text()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func skip_comment_text(self: Parser) -> () [mut self] {
+    func skip_comment_text(self) -> () [mut self] {
         return () if self.remaining.empty?
         return () if self.newline?()
         return self.fail("control character is not allowed in a comment") if control_character?(self.remaining.scalar_head())
@@ -276,19 +276,19 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func newline?(self: Parser) -> Bool {
+    func newline?(self) -> Bool {
         self.remaining.starts_with?("\n") || self.remaining.starts_with?("\r\n")
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func take_newline(self: Parser) -> () [mut self(remaining, line, column), consume self.errors, mut self.errors] {
+    func take_newline(self) -> () [mut self(remaining, line, column), consume self.errors, mut self.errors] {
         return self.take_crlf() if self.remaining.starts_with?("\r\n")
         return self.take_lf() if self.remaining.starts_with?("\n")
         self.fail("expected a newline")
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func take_crlf(self: Parser) -> () [mut self(remaining, line, column)] {
+    func take_crlf(self) -> () [mut self(remaining, line, column)] {
         self.remaining = self.remaining.scalar_rest().scalar_rest()
         self.line = self.line + 1
         self.column = 1
@@ -296,7 +296,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func take_lf(self: Parser) -> () [mut self(remaining, line, column)] {
+    func take_lf(self) -> () [mut self(remaining, line, column)] {
         self.remaining = self.remaining.scalar_rest()
         self.line = self.line + 1
         self.column = 1
@@ -304,7 +304,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func peek?(self: Parser, expected: CodePoint) -> Bool {
+    func peek?(self, expected: CodePoint) -> Bool {
         branch {
             self.remaining.empty? -> false
             _ -> self.remaining.scalar_head() == expected
@@ -312,7 +312,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func take(self: Parser) -> CodePoint [mut self(remaining, column)] {
+    func take(self) -> CodePoint [mut self(remaining, column)] {
         let character = self.remaining.scalar_head()
         self.remaining = self.remaining.scalar_rest()
         self.column = self.column + 1
@@ -320,10 +320,10 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func failed?(self: Parser) -> Bool { not self.errors.empty? }
+    func failed?(self) -> Bool { not self.errors.empty? }
 
     /// Internal helper for the Foster TOML implementation.
-    func fail(self: Parser, message: String) -> () [consume self.errors, read self(line, column), mut self.errors, consume message] {
+    func fail(self, message: String) -> () [consume self.errors, read self(line, column), mut self.errors, consume message] {
         return () if self.failed?()
         self.errors = self.errors.append(TomlError {
             message: move message,
@@ -334,25 +334,25 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func fail_at(self: Parser, message: String, line: Int, column: Int) -> () [consume self.errors, mut self.errors, consume message] {
+    func fail_at(self, message: String, line: Int, column: Int) -> () [consume self.errors, mut self.errors, consume message] {
         return () if self.failed?()
         self.errors = self.errors.append(TomlError {
             message: move message,
-            line: line,
-            column: column
+            line,
+            column
         })
         ()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_key_path(self: Parser) -> List<String> [mut self] {
+    func parse_key_path(self) -> List<String> [mut self] {
         let first = self.parse_key()
         return [] if self.failed?()
         self.parse_key_tail([first])
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_key_tail(self: Parser, keys: List<String>) -> List<String> [mut self, consume keys] {
+    func parse_key_tail(self, keys: List<String>) -> List<String> [mut self, consume keys] {
         self.skip_horizontal_space()
         return keys if not self.peek?('.')
         self.take()
@@ -362,7 +362,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_key(self: Parser) -> String [mut self] {
+    func parse_key(self) -> String [mut self] {
         branch {
             self.remaining.starts_with?("\"") -> self.parse_basic_string(false)
             self.remaining.starts_with?("'") -> self.parse_literal_string(false)
@@ -371,20 +371,20 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_bare_key(self: Parser) -> String [mut self] {
+    func parse_bare_key(self) -> String [mut self] {
         let output = self.remaining.scalar_take_while(bare_key_character?)
         self.consume_text(output)
         self.finish_bare_key(move output)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func finish_bare_key(self: Parser, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func finish_bare_key(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail_empty_key(output.empty?)
         output
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func fail_empty_key(self: Parser, empty: Bool) -> () [consume self.errors, read self(line, column), mut self.errors] {
+    func fail_empty_key(self, empty: Bool) -> () [consume self.errors, read self(line, column), mut self.errors] {
         return () if not empty
         self.fail("expected a key")
     }
@@ -397,26 +397,26 @@ func bare_key_character?(character: CodePoint) -> Bool {
 
 impl Parser {
     /// Internal helper for the Foster TOML implementation.
-    func parse_basic_string(self: Parser, multiline: Bool) -> String [mut self] {
+    func parse_basic_string(self, multiline: Bool) -> String [mut self] {
         self.open_basic_string(multiline)
         self.parse_basic_characters("", multiline)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func open_basic_string(self: Parser, multiline: Bool) -> () [mut self] {
+    func open_basic_string(self, multiline: Bool) -> () [mut self] {
         return self.open_multiline_basic() if multiline
         self.take()
         ()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func open_multiline_basic(self: Parser) -> () [mut self] {
+    func open_multiline_basic(self) -> () [mut self] {
         self.consume_text("\"\"\"")
         self.trim_multiline_first_newline()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_basic_characters(self: Parser, output: String, multiline: Bool) -> String [mut self, consume output] {
+    func parse_basic_characters(self, output: String, multiline: Bool) -> String [mut self, consume output] {
         return self.unterminated_basic(move output) if self.remaining.empty?
         return self.close_multiline_basic(move output) if multiline && self.remaining.starts_with?("\"\"\"")
         return self.close_basic(move output) if not multiline && self.peek?('\"')
@@ -428,50 +428,50 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func unterminated_basic(self: Parser, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func unterminated_basic(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("unterminated basic string")
         output
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func close_multiline_basic(self: Parser, output: String) -> String [mut self, consume output] {
+    func close_multiline_basic(self, output: String) -> String [mut self, consume output] {
         self.consume_text("\"\"\"")
         self.take_extra_quotes(move output, 0)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func close_basic(self: Parser, output: String) -> String [mut self(remaining, column), consume output] {
+    func close_basic(self, output: String) -> String [mut self(remaining, column), consume output] {
         self.take()
         output
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func start_escape(self: Parser, output: String, multiline: Bool) -> String [mut self, consume output] {
+    func start_escape(self, output: String, multiline: Bool) -> String [mut self, consume output] {
         self.take()
         self.parse_escape(move output, multiline)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func basic_newline(self: Parser, output: String, multiline: Bool) -> String [mut self, consume output] {
+    func basic_newline(self, output: String, multiline: Bool) -> String [mut self, consume output] {
         return self.invalid_basic_newline(move output) if not multiline
         self.take_newline()
         self.parse_basic_characters(output + "\n", true)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func invalid_basic_newline(self: Parser, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func invalid_basic_newline(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("newline is not allowed in a basic string")
         output
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func forbidden_basic(self: Parser, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func forbidden_basic(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("control character is not allowed in a string")
         output
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_escape(self: Parser, output: String, multiline: Bool) -> String [mut self, consume output] {
+    func parse_escape(self, output: String, multiline: Bool) -> String [mut self, consume output] {
         branch {
             multiline && self.escape_fold_start?() -> self.fold_escape(move output)
             self.remaining.empty? -> self.unterminated_escape(move output)
@@ -491,37 +491,37 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func fold_escape(self: Parser, output: String) -> String [mut self, consume output] {
+    func fold_escape(self, output: String) -> String [mut self, consume output] {
         self.skip_escape_fold()
         self.parse_basic_characters(move output, true)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func unterminated_escape(self: Parser, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func unterminated_escape(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("unterminated escape sequence")
         output
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func invalid_escape(self: Parser, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func invalid_escape(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("invalid basic-string escape sequence")
         output
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func escaped_character(self: Parser, output: String, escaped: String, multiline: Bool) -> String [mut self, consume output] {
+    func escaped_character(self, output: String, escaped: String, multiline: Bool) -> String [mut self, consume output] {
         self.take()
         self.parse_basic_characters(output + escaped, multiline)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func escaped_code_point(self: Parser, output: String, value: Int, multiline: Bool) -> String [mut self, consume output] {
+    func escaped_code_point(self, output: String, value: Int, multiline: Bool) -> String [mut self, consume output] {
         self.take()
         self.parse_basic_characters(output + from_code_point(value).string, multiline)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_unicode_escape(self: Parser, output: String, digits: Int, multiline: Bool) -> String [mut self, consume output] {
+    func parse_unicode_escape(self, output: String, digits: Int, multiline: Bool) -> String [mut self, consume output] {
         self.take()
         let value = self.take_hex_digits(digits, 0)
         branch CodePoint.from(value) {
@@ -531,13 +531,13 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func invalid_unicode_escape(self: Parser, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func invalid_unicode_escape(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("escape does not name a Unicode scalar value")
         output
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func take_hex_digits(self: Parser, remaining: Int, value: Int) -> Int [mut self] {
+    func take_hex_digits(self, remaining: Int, value: Int) -> Int [mut self] {
         return value if remaining == 0
         return self.incomplete_hex(value) if self.remaining.empty?
         return self.invalid_hex(value) if not hex_digit?(self.remaining.scalar_head())
@@ -546,19 +546,19 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func incomplete_hex(self: Parser, value: Int) -> Int [consume self.errors, read self(line, column), mut self.errors] {
+    func incomplete_hex(self, value: Int) -> Int [consume self.errors, read self(line, column), mut self.errors] {
         self.fail("incomplete hexadecimal escape")
         value
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func invalid_hex(self: Parser, value: Int) -> Int [consume self.errors, read self(line, column), mut self.errors] {
+    func invalid_hex(self, value: Int) -> Int [consume self.errors, read self(line, column), mut self.errors] {
         self.fail("expected a hexadecimal digit in escape")
         value
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func escape_fold_start?(self: Parser) -> Bool {
+    func escape_fold_start?(self) -> Bool {
         fold_space_then_newline?(self.remaining)
     }
 }
@@ -575,52 +575,52 @@ func fold_space_then_newline?(value: String) -> Bool {
 
 impl Parser {
     /// Internal helper for the Foster TOML implementation.
-    func skip_escape_fold(self: Parser) -> () [mut self] {
+    func skip_escape_fold(self) -> () [mut self] {
         self.skip_horizontal_space()
         self.take_newline()
         self.skip_multiline_whitespace()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func skip_multiline_whitespace(self: Parser) -> () [mut self] {
+    func skip_multiline_whitespace(self) -> () [mut self] {
         return self.skip_one_multiline_space() if self.peek?(' ') || self.peek?('\t')
         return self.skip_one_multiline_newline() if self.newline?()
         ()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func skip_one_multiline_space(self: Parser) -> () [mut self] {
+    func skip_one_multiline_space(self) -> () [mut self] {
         self.take()
         self.skip_multiline_whitespace()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func skip_one_multiline_newline(self: Parser) -> () [mut self] {
+    func skip_one_multiline_newline(self) -> () [mut self] {
         self.take_newline()
         self.skip_multiline_whitespace()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_literal_string(self: Parser, multiline: Bool) -> String [mut self] {
+    func parse_literal_string(self, multiline: Bool) -> String [mut self] {
         self.open_literal_string(multiline)
         self.parse_literal_characters("", multiline)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func open_literal_string(self: Parser, multiline: Bool) -> () [mut self] {
+    func open_literal_string(self, multiline: Bool) -> () [mut self] {
         return self.open_multiline_literal() if multiline
         self.take()
         ()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func open_multiline_literal(self: Parser) -> () [mut self] {
+    func open_multiline_literal(self) -> () [mut self] {
         self.consume_text("'''")
         self.trim_multiline_first_newline()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_literal_characters(self: Parser, output: String, multiline: Bool) -> String [mut self, consume output] {
+    func parse_literal_characters(self, output: String, multiline: Bool) -> String [mut self, consume output] {
         return self.unterminated_literal(move output) if self.remaining.empty?
         return self.close_multiline_literal(move output) if multiline && self.remaining.starts_with?("'''")
         return self.close_literal(move output) if not multiline && self.peek?('\'')
@@ -631,64 +631,64 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func unterminated_literal(self: Parser, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func unterminated_literal(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("unterminated literal string")
         output
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func close_multiline_literal(self: Parser, output: String) -> String [mut self, consume output] {
+    func close_multiline_literal(self, output: String) -> String [mut self, consume output] {
         self.consume_text("'''")
         self.take_extra_apostrophes(move output, 0)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func close_literal(self: Parser, output: String) -> String [mut self(remaining, column), consume output] {
+    func close_literal(self, output: String) -> String [mut self(remaining, column), consume output] {
         self.take()
         output
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func literal_newline(self: Parser, output: String, multiline: Bool) -> String [mut self, consume output] {
+    func literal_newline(self, output: String, multiline: Bool) -> String [mut self, consume output] {
         return self.invalid_literal_newline(move output) if not multiline
         self.take_newline()
         self.parse_literal_characters(output + "\n", true)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func invalid_literal_newline(self: Parser, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func invalid_literal_newline(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("newline is not allowed in a literal string")
         output
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func forbidden_literal(self: Parser, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
+    func forbidden_literal(self, output: String) -> String [consume self.errors, read self(line, column), mut self.errors, consume output] {
         self.fail("control character is not allowed in a string")
         output
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func take_extra_quotes(self: Parser, output: String, count: Int) -> String [mut self, consume output] {
+    func take_extra_quotes(self, output: String, count: Int) -> String [mut self, consume output] {
         return output if count >= 2 || not self.peek?('\"')
         self.take()
         self.take_extra_quotes(output + "\"", count + 1)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func take_extra_apostrophes(self: Parser, output: String, count: Int) -> String [mut self, consume output] {
+    func take_extra_apostrophes(self, output: String, count: Int) -> String [mut self, consume output] {
         return output if count >= 2 || not self.peek?('\'')
         self.take()
         self.take_extra_apostrophes(output + "'", count + 1)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func trim_multiline_first_newline(self: Parser) -> () [mut self(remaining, line, column), consume self.errors, mut self.errors] {
+    func trim_multiline_first_newline(self) -> () [mut self(remaining, line, column), consume self.errors, mut self.errors] {
         return () if not self.newline?()
         self.take_newline()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func consume_text(self: Parser, text: String) -> () [mut self] {
+    func consume_text(self, text: String) -> () [mut self] {
         return () if text.empty?
         self.take()
         self.consume_text(text.scalar_rest())
@@ -737,7 +737,7 @@ func hex_value(character: CodePoint) -> Int {
 
 impl Parser {
     /// Internal helper for the Foster TOML implementation.
-    func parse_value(self: Parser) -> TomlValue [mut self] {
+    func parse_value(self) -> TomlValue [mut self] {
         branch {
             self.remaining.starts_with?("\"\"\"") -> TomlValue.String(self.parse_basic_string(true))
             self.remaining.starts_with?("'''") -> TomlValue.String(self.parse_literal_string(true))
@@ -750,7 +750,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_array(self: Parser) -> TomlValue [mut self] {
+    func parse_array(self) -> TomlValue [mut self] {
         let start_line = self.line
         let start_column = self.column
         self.take()
@@ -760,13 +760,13 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func empty_array(self: Parser) -> TomlValue [mut self(remaining, column)] {
+    func empty_array(self) -> TomlValue [mut self(remaining, column)] {
         self.take()
         TomlValue.Array([])
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_array_values(self: Parser, values: List<TomlValue>, start_line: Int, start_column: Int) -> TomlValue [mut self, consume values] {
+    func parse_array_values(self, values: List<TomlValue>, start_line: Int, start_column: Int) -> TomlValue [mut self, consume values] {
         return self.unterminated_array(move values, start_line, start_column) if self.remaining.empty?
         let value = self.parse_value()
         return TomlValue.Array(move values) if self.failed?()
@@ -782,25 +782,25 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func unterminated_array(self: Parser, values: List<TomlValue>, line: Int, column: Int) -> TomlValue [consume self.errors, mut self.errors, consume values] {
+    func unterminated_array(self, values: List<TomlValue>, line: Int, column: Int) -> TomlValue [consume self.errors, mut self.errors, consume values] {
         self.fail_at("unterminated array", line, column)
         TomlValue.Array(move values)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func close_array(self: Parser, values: List<TomlValue>) -> TomlValue [mut self(remaining, column), consume values] {
+    func close_array(self, values: List<TomlValue>) -> TomlValue [mut self(remaining, column), consume values] {
         self.take()
         TomlValue.Array(move values)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func invalid_array(self: Parser, values: List<TomlValue>) -> TomlValue [consume self.errors, read self(line, column), mut self.errors, consume values] {
+    func invalid_array(self, values: List<TomlValue>) -> TomlValue [consume self.errors, read self(line, column), mut self.errors, consume values] {
         self.fail("expected `,` or `]` in array")
         TomlValue.Array(move values)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_inline_table(self: Parser) -> TomlValue [mut self] {
+    func parse_inline_table(self) -> TomlValue [mut self] {
         self.take()
         self.skip_value_space()
         return self.empty_inline_table() if self.peek?('}')
@@ -808,13 +808,13 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func empty_inline_table(self: Parser) -> TomlValue [mut self(remaining, column)] {
+    func empty_inline_table(self) -> TomlValue [mut self(remaining, column)] {
         self.take()
         TomlValue.Table([])
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_inline_entries(self: Parser, entries: List<TomlEntry>) -> TomlValue [mut self, consume entries] {
+    func parse_inline_entries(self, entries: List<TomlEntry>) -> TomlValue [mut self, consume entries] {
         let keys = self.parse_key_path()
         self.skip_horizontal_space()
         return TomlValue.Table(move entries) if not self.expect_character('=', "expected `=` after inline-table key")
@@ -829,13 +829,13 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func invalid_inline_insert(self: Parser, message: String) -> TomlValue [consume self.errors, read self(line, column), mut self.errors, consume message] {
+    func invalid_inline_insert(self, message: String) -> TomlValue [consume self.errors, read self(line, column), mut self.errors, consume message] {
         self.fail(move message)
         TomlValue.Table([])
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func finish_inline_entry(self: Parser, entries: List<TomlEntry>) -> TomlValue [mut self, consume entries] {
+    func finish_inline_entry(self, entries: List<TomlEntry>) -> TomlValue [mut self, consume entries] {
         self.skip_value_space()
         return self.close_inline_table(move entries) if self.peek?('}')
         return self.invalid_inline_table(move entries) if not self.peek?(',')
@@ -846,19 +846,19 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func close_inline_table(self: Parser, entries: List<TomlEntry>) -> TomlValue [mut self(remaining, column), consume entries] {
+    func close_inline_table(self, entries: List<TomlEntry>) -> TomlValue [mut self(remaining, column), consume entries] {
         self.take()
         TomlValue.Table(move entries)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func invalid_inline_table(self: Parser, entries: List<TomlEntry>) -> TomlValue [consume self.errors, read self(line, column), mut self.errors, consume entries] {
+    func invalid_inline_table(self, entries: List<TomlEntry>) -> TomlValue [consume self.errors, read self(line, column), mut self.errors, consume entries] {
         self.fail("expected `,` or `}` in inline table")
         TomlValue.Table(move entries)
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func skip_value_space(self: Parser) -> () [mut self] {
+    func skip_value_space(self) -> () [mut self] {
         self.skip_horizontal_space()
         self.skip_comment()
         return () if not self.newline?()
@@ -867,20 +867,20 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func expect_character(self: Parser, expected: CodePoint, message: String) -> Bool [mut self(remaining, column), consume self.errors, read self.line, mut self.errors, consume message] {
+    func expect_character(self, expected: CodePoint, message: String) -> Bool [mut self(remaining, column), consume self.errors, read self.line, mut self.errors, consume message] {
         return self.take_expected_character() if self.peek?(expected)
         self.fail(move message)
         false
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func take_expected_character(self: Parser) -> Bool [mut self(remaining, column)] {
+    func take_expected_character(self) -> Bool [mut self(remaining, column)] {
         self.take()
         true
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func parse_bare_value(self: Parser) -> TomlValue [mut self] {
+    func parse_bare_value(self) -> TomlValue [mut self] {
         let token = self.take_bare_value("")
         branch {
             token.empty? -> self.missing_value()
@@ -898,19 +898,19 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func missing_value(self: Parser) -> TomlValue [consume self.errors, read self(line, column), mut self.errors] {
+    func missing_value(self) -> TomlValue [consume self.errors, read self(line, column), mut self.errors] {
         self.fail("expected a TOML value")
         TomlValue.String("")
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func invalid_value(self: Parser) -> TomlValue [consume self.errors, read self(line, column), mut self.errors] {
+    func invalid_value(self) -> TomlValue [consume self.errors, read self(line, column), mut self.errors] {
         self.fail("invalid TOML value")
         TomlValue.String("")
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func take_bare_value(self: Parser, output: String) -> String [mut self, consume output] {
+    func take_bare_value(self, output: String) -> String [mut self, consume output] {
         return output if self.remaining.empty?
         return self.take_date_time_space(move output) if date_time_space?(output, self.remaining)
         return output if bare_value_end?(self.remaining.scalar_head())
@@ -919,7 +919,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func take_date_time_space(self: Parser, output: String) -> String [mut self, consume output] {
+    func take_date_time_space(self, output: String) -> String [mut self, consume output] {
         self.take()
         self.take_bare_value(output + "T")
     }
@@ -1016,7 +1016,7 @@ func digit_for_base?(character: CodePoint, base: Int) -> Bool {
 
 impl Parser {
     /// Internal helper for the Foster TOML implementation.
-    func parse_integer(self: Parser, text: String) -> Int [mut self, consume text] {
+    func parse_integer(self, text: String) -> Int [mut self, consume text] {
         let negative = text.starts_with?("-")
         let unsigned = drop_sign(move text)
         branch {
@@ -1028,7 +1028,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func accumulate_integer(self: Parser, text: String, base: Int, negative: Bool, value: Int) -> Int [mut self] {
+    func accumulate_integer(self, text: String, base: Int, negative: Bool, value: Int) -> Int [mut self] {
         return value if text.empty?
         return self.accumulate_integer(text.scalar_rest(), base, negative, value) if text.scalar_head() == '_'
         let digit = hex_value(text.scalar_head())
@@ -1041,7 +1041,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func integer_overflow(self: Parser) -> Int [consume self.errors, read self(line, column), mut self.errors] {
+    func integer_overflow(self) -> Int [consume self.errors, read self(line, column), mut self.errors] {
         self.fail("integer is outside the signed 64-bit range")
         0
     }
@@ -1113,14 +1113,14 @@ func decimal_component?(value: String) -> Bool { based_digits?(value, 10) }
 
 impl Parser {
     /// Internal helper for the Foster TOML implementation.
-    func insert_value(self: Parser, path: List<PathPart>, value: TomlValue) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self.entries, consume path, consume value] {
+    func insert_value(self, path: List<PathPart>, value: TomlValue) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self.entries, consume path, consume value] {
         return self.fail("duplicate key or table/value conflict") if path_conflict?(self.entries, path)
         self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.Value(move value) })
         ()
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func declare_table(self: Parser, keys: List<String>) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self(entries, context), consume keys] {
+    func declare_table(self, keys: List<String>) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self(entries, context), consume keys] {
         let path = resolve_header_path(self.entries, [], move keys)
         return self.fail("table is already defined") if exact_path?(self.entries, path)
         return self.fail("table conflicts with an existing value") if scalar_prefix_conflict?(self.entries, path)
@@ -1131,7 +1131,7 @@ impl Parser {
     }
 
     /// Internal helper for the Foster TOML implementation.
-    func declare_array_table(self: Parser, keys: List<String>) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self(entries, context), consume keys] {
+    func declare_array_table(self, keys: List<String>) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self(entries, context), consume keys] {
         return self.fail("array-of-tables header requires a key") if keys.empty?
         let parents = keys.take(keys.length - 1)
         let name = keys.last().unwrap_or("")

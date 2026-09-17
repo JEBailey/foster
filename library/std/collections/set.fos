@@ -30,39 +30,39 @@ pub type ListSet<T> = & Set<T> & {
     values: List<T>
 }
 
-impl ListSet {
+impl ListSet<T> {
     /// Creates an empty set.
-    pub func empty<T>() -> ListSet<T> {
+    pub func empty() -> ListSet<T> {
         ListSet { values: [] }
     }
 
     /// Creates a set containing each input value once.
-    pub func from<T>(values: List<T>) -> ListSet<T> [consume values] {
+    pub func from(values: List<T>) -> ListSet<T> [consume values] {
         ListSet { values: unique(move values, []) }
     }
 
     /// Returns the number of values in the set.
-    pub func length<T>(self: ListSet<T>) -> Int {
+    pub func length(self) -> Int {
         self.values.length
     }
 
     /// Returns whether the set contains no values.
-    pub func empty?<T>(self: ListSet<T>) -> Bool {
+    pub func empty?(self) -> Bool {
         self.values.empty?
     }
 
     /// Creates an independent iterator in insertion order.
-    pub func iterator<T>(self: ListSet<T>) -> Iterator<T> {
+    pub func iterator(self) -> Iterator<T> {
         self.values.iterator()
     }
 
     /// Returns whether `value` is present.
-    pub func contains?<T>(self: ListSet<T>, value: T) -> Bool {
+    pub func contains?(self, value: T) -> Bool {
         contains_value?(self.values, value)
     }
 
     /// Returns a set containing `value`.
-    pub func insert<T>(self: ListSet<T>, value: T) -> ListSet<T> [consume self, consume value] {
+    pub func insert(self, value: T) -> ListSet<T> [consume self, consume value] {
         branch {
             self.contains?(value) -> self
             _ -> ListSet { values: self.values.append(value) }
@@ -70,7 +70,7 @@ impl ListSet {
     }
 
     /// Returns a set without `value`.
-    pub func remove<T>(self: ListSet<T>, value: T) -> ListSet<T> [consume self] {
+    pub func remove(self, value: T) -> ListSet<T> [consume self] {
         ListSet { values: without(move self.values, value, []) }
     }
 }

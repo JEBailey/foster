@@ -12,7 +12,7 @@ const LIMIT = 1114112
 
 type Mapping = { point: Int, targets: List<Int> }
 impl Mapping {
-    func copy(self: Mapping) -> self { Mapping { point: self.point, targets: self.targets.slice(0, self.targets.length) } }
+    func copy(self) -> self { Mapping { point: self.point, targets: self.targets.slice(0, self.targets.length) } }
 }
 type Database = {
     categories: List<Int>

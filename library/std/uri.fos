@@ -57,16 +57,16 @@ impl Uri {
     }
 
     /// Returns the complete URI text.
-    pub func as_string(self: Uri) -> String { self.value.scalar_slice(0, self.value.scalar_length()) }
+    pub func as_string(self) -> String { self.value.scalar_slice(0, self.value.scalar_length()) }
 
     /// Returns the stable identifier supplied to a protocol provider.
-    pub func resource_id(self: Uri) -> String { self.as_string() }
+    pub func resource_id(self) -> String { self.as_string() }
 
     /// Returns the scheme spelling supplied to the parser.
-    pub func scheme(self: Uri) -> String { self.scheme_value.scalar_slice(0, self.scheme_value.scalar_length()) }
+    pub func scheme(self) -> String { self.scheme_value.scalar_slice(0, self.scheme_value.scalar_length()) }
 
     /// Returns the resource portion following the URI scheme separator.
-    pub func path(self: Uri) -> String { self.path_value.scalar_slice(0, self.path_value.scalar_length()) }
+    pub func path(self) -> String { self.path_value.scalar_slice(0, self.path_value.scalar_length()) }
 }
 
 /// Scans the URI scheme until its separator.

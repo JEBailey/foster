@@ -35,9 +35,9 @@ type ListIterator<T> = & Iterator<T> & {
     index: Int
 }
 
-impl ListIterator {
+impl ListIterator<T> {
     /// Reads the next indexed element, retaining the backing snapshot until release.
-    func next<T>(self: ListIterator<T>) -> Option<T> {
+    func next(self) -> Option<T> {
         branch {
             self.index >= self.values.length -> Option.None
             _ -> {
@@ -57,7 +57,7 @@ type BytesIterator = & Iterator<Byte> & {
 
 impl BytesIterator {
     /// Returns the next byte, or None after exhaustion.
-    func next(self: BytesIterator) -> Option<Byte> {
+    func next(self) -> Option<Byte> {
         branch {
             self.index >= self.data.length -> Option.None
             _ -> {
@@ -69,9 +69,9 @@ impl BytesIterator {
     }
 }
 
-impl SequenceIterator {
+impl SequenceIterator<T> {
     /// Advances a sequence-backed iterator unless it has been exhausted.
-    func next<T>(self: SequenceIterator<T>) -> Option<T> {
+    func next(self) -> Option<T> {
         branch {
             self.remaining.empty?() -> Option.None
             _ -> self.advance()
@@ -79,31 +79,35 @@ impl SequenceIterator {
     }
 
     /// Removes and returns the current head of a non-empty sequence cursor.
-    func advance<T>(self: SequenceIterator<T>) -> Option<T> {
+    func advance(self) -> Option<T> {
         let value = self.remaining.head()
         self.remaining = self.remaining.rest()
         Option.Some(value)
     }
 }
 
-impl Iterator {
+impl Iterator<T> {
     /// Compiler-selected constructor for a list snapshot.
-    func from_list<T>(values: List<T>) -> Iterator<T> [consume values] {
+    func from_list(values: List<T>) -> Iterator<T> [consume values] {
         ListIterator { values: move values, index: 0 }
     }
+}
 
+impl Iterator {
     /// Compiler-selected constructor for a byte snapshot.
     func from_bytes(values: Bytes) -> Iterator<Byte> [consume values] {
         BytesIterator { data: move values, index: 0 }
     }
+}
 
+impl Iterator<T> {
     /// Consumes a sequence into an independent stateful iterator.
-    pub func from_sequence<T>(values: Sequence<T>) -> Iterator<T> [consume values] {
+    pub func from_sequence(values: Sequence<T>) -> Iterator<T> [consume values] {
         SequenceIterator { remaining: move values }
     }
 
     /// Calls `action` once for every remaining element without growing the call stack.
-    pub func for_each<T>(self: Iterator<T>, action: Consumer<T>) -> () [mut self] {
+    pub func for_each(self, action: Consumer<T>) -> () [mut self] {
         loop {
             branch self.next() {
                 Option.Some(value) -> action(move value)
@@ -114,7 +118,7 @@ impl Iterator {
     }
 
     /// Reduces every remaining element into one owned accumulator, from left to right.
-    pub func fold<T, U>(self: Iterator<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [mut self, consume initial] {
+    pub func fold<U>(self, initial: U, combine: func(consume U, consume T) -> U) -> U [mut self, consume initial] {
         let accumulated = move initial
         loop {
             branch self.next() {
@@ -129,7 +133,7 @@ impl Iterator {
     }
 
     /// Returns the first match, leaving later elements unconsumed.
-    pub func find<T>(self: Iterator<T>, predicate: Predicate<T>) -> Option<T> [mut self] {
+    pub func find(self, predicate: Predicate<T>) -> Option<T> [mut self] {
         loop {
             branch self.next() {
                 Option.Some(value) -> {
@@ -143,7 +147,7 @@ impl Iterator {
     }
 
     /// Stops pulling as soon as an element satisfies `predicate`.
-    pub func any?<T>(self: Iterator<T>, predicate: Predicate<T>) -> Bool [mut self] {
+    pub func any?(self, predicate: Predicate<T>) -> Bool [mut self] {
         loop {
             branch self.next() {
                 Option.Some(value) -> {
@@ -157,7 +161,7 @@ impl Iterator {
     }
 
     /// Stops pulling as soon as an element fails `predicate`.
-    pub func all?<T>(self: Iterator<T>, predicate: Predicate<T>) -> Bool [mut self] {
+    pub func all?(self, predicate: Predicate<T>) -> Bool [mut self] {
         loop {
             branch self.next() {
                 Option.Some(value) -> {
@@ -171,7 +175,7 @@ impl Iterator {
     }
 
     /// Counts every remaining element and leaves the iterator exhausted.
-    pub func count<T>(self: Iterator<T>) -> Int [mut self] {
+    pub func count(self) -> Int [mut self] {
         let total = 0
         loop {
             branch self.next() {
@@ -186,7 +190,7 @@ impl Iterator {
     }
 
     /// Collects the remaining elements into one growing list.
-    pub func collect<T>(self: Iterator<T>) -> List<T> [mut self] {
+    pub func collect(self) -> List<T> [mut self] {
         let output = []
         loop {
             branch self.next() {

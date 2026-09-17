@@ -18,14 +18,14 @@ pub type HashSet<T> = & Set<T> & {
     pub func values(self) -> List<T> [consume self]
 }
 
-impl HashSet {
+impl HashSet<T> {
     /// Creates an empty set using the supplied stable hash function.
-    pub func empty<T>(hasher: func(T) -> Int) -> HashSet<T> [consume hasher] {
+    pub func empty(hasher: func(T) -> Int) -> HashSet<T> [consume hasher] {
         HashSet { table: HashMap.empty(move hasher) }
     }
 
     /// Creates a set containing each input value once.
-    pub func from<T>(values: List<T>, hasher: func(T) -> Int) -> HashSet<T> [consume values, consume hasher] {
+    pub func from(values: List<T>, hasher: func(T) -> Int) -> HashSet<T> [consume values, consume hasher] {
         let result = HashSet.empty(move hasher)
         for value in values {
             result = (move result).insert(move value)
@@ -34,28 +34,28 @@ impl HashSet {
     }
 
     /// Returns the number of distinct values.
-    pub func length<T>(self: HashSet<T>) -> Int { self.table.length() }
+    pub func length(self) -> Int { self.table.length() }
 
     /// Returns whether the set has no values.
-    pub func empty?<T>(self: HashSet<T>) -> Bool { self.table.empty?() }
+    pub func empty?(self) -> Bool { self.table.empty?() }
 
     /// Tests membership without consuming the set.
-    pub func contains?<T>(self: HashSet<T>, value: T) -> Bool { self.table.contains_key?(value) }
+    pub func contains?(self, value: T) -> Bool { self.table.contains_key?(value) }
 
     /// Returns a set containing the supplied value.
-    pub func insert<T>(self: HashSet<T>, value: T) -> HashSet<T> [consume self, consume value] {
+    pub func insert(self, value: T) -> HashSet<T> [consume self, consume value] {
         HashSet { table: (move self.table).put(move value, ()) }
     }
 
     /// Returns a set without the supplied value; absent values leave it unchanged.
-    pub func remove<T>(self: HashSet<T>, value: T) -> HashSet<T> [consume self] {
+    pub func remove(self, value: T) -> HashSet<T> [consume self] {
         let table = move self.table
         table.remove(value)
         HashSet { table }
     }
 
     /// Creates a snapshot iterator in unspecified order.
-    pub func iterator<T>(self: HashSet<T>) -> Iterator<T> {
+    pub func iterator(self) -> Iterator<T> {
         let values = []
         for entry in self.table {
             values.push(entry.key)
@@ -64,7 +64,7 @@ impl HashSet {
     }
 
     /// Consumes the set and returns its values in unspecified order.
-    pub func values<T>(self: HashSet<T>) -> List<T> [consume self] {
+    pub func values(self) -> List<T> [consume self] {
         (move self.table).keys()
     }
 }

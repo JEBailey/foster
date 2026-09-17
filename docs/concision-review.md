@@ -219,3 +219,19 @@ Taker's prefix comparison now uses two scalar cursors, resolving the type mismat
 recorded above. Its regression covers combining marks, an advanced checkpoint,
 an empty prefix, and an overlong prefix. Traversal changes preserve explicit
 copying and the distinction between Unicode scalars and grapheme clusters.
+
+## Follow-up: inferred receivers
+
+Ordinary implementation methods across the library, tools, examples, benchmarks,
+and Taker use inferred `self`. Shared type parameters live on implementation
+headers; method-specific parameters stay on methods. Explicit references and
+specialized receivers retain their annotations. Compiler fixtures that exercise
+explicit receiver syntax remain explicit.
+
+## Follow-up: field shorthand and propagation
+
+Remaining same-name field initializers in TOML diagnostics and the inventory
+example use shorthand. Filesystem, path, TCP, and month-day validation use `try`
+for direct error propagation. Borrowed `Result` methods, error conversion,
+recovery, and custom parser outcomes retain their branches; replacing those
+with consuming `try` expressions would change their contracts.

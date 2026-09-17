@@ -27,9 +27,9 @@ pub enum Result<T, E> = Ok(T)
         pub func or_else<F>(self, recover: func(E) -> Result<T, F>) -> Result<T, F> [read recover, read self]
     }
 
-impl Result {
+impl Result<T, E> {
     /// Applies `transform` to a successful value and preserves an error.
-    pub func map<T, E, U>(self: Result<T, E>, transform: func(T) -> U) -> Result<U, E> {
+    pub func map<U>(self, transform: func(T) -> U) -> Result<U, E> {
         branch self {
             Result.Ok(value) -> Result.Ok(transform(value))
             Result.Error(error) -> Result.Error(error)
@@ -37,7 +37,7 @@ impl Result {
     }
 
     /// Applies `transform` to an error and preserves a successful value.
-    pub func map_error<T, E, F>(self: Result<T, E>, transform: func(E) -> F) -> Result<T, F> {
+    pub func map_error<F>(self, transform: func(E) -> F) -> Result<T, F> {
         branch self {
             Result.Ok(value) -> Result.Ok(value)
             Result.Error(error) -> Result.Error(transform(error))
@@ -45,7 +45,7 @@ impl Result {
     }
 
     /// Applies a result-producing transform to a successful value and flattens the result.
-    pub func and_then<T, E, U>(self: Result<T, E>, transform: func(T) -> Result<U, E>) -> Result<U, E> {
+    pub func and_then<U>(self, transform: func(T) -> Result<U, E>) -> Result<U, E> {
         branch self {
             Result.Ok(value) -> transform(value)
             Result.Error(error) -> Result.Error(error)
@@ -53,7 +53,7 @@ impl Result {
     }
 
     /// Returns whether the result is successful.
-    pub func success?<T, E>(self: Result<T, E>) -> Bool {
+    pub func success?(self) -> Bool {
         branch self {
             Result.Ok(_) -> true
             Result.Error(_) -> false
@@ -61,7 +61,7 @@ impl Result {
     }
 
     /// Returns whether the result contains an error.
-    pub func error?<T, E>(self: Result<T, E>) -> Bool {
+    pub func error?(self) -> Bool {
         branch self {
             Result.Ok(_) -> false
             Result.Error(_) -> true
@@ -69,7 +69,7 @@ impl Result {
     }
 
     /// Returns the successful value, or a fallback when the result contains an error.
-    pub func unwrap_or<T, E>(self: Result<T, E>, fallback: T) -> T [consume fallback, read self] {
+    pub func unwrap_or(self, fallback: T) -> T [consume fallback, read self] {
         branch self {
             Result.Ok(value) -> value
             Result.Error(_) -> fallback
@@ -77,7 +77,7 @@ impl Result {
     }
 
     /// Returns the successful value, or computes a fallback from the error.
-    pub func unwrap_or_else<T, E>(self: Result<T, E>, fallback: func(E) -> T) -> T {
+    pub func unwrap_or_else(self, fallback: func(E) -> T) -> T {
         branch self {
             Result.Ok(value) -> value
             Result.Error(error) -> fallback(error)
@@ -85,13 +85,15 @@ impl Result {
     }
 
     /// Preserves a successful value, or recovers by transforming the error into another result.
-    pub func or_else<T, E, F>(self: Result<T, E>, recover: func(E) -> Result<T, F>) -> Result<T, F> {
+    pub func or_else<F>(self, recover: func(E) -> Result<T, F>) -> Result<T, F> {
         branch self {
             Result.Ok(value) -> Result.Ok(value)
             Result.Error(error) -> recover(error)
         }
     }
+}
 
+impl Result {
     /// Removes one layer from a nested successful result.
     pub func flatten<T, E>(self: Result<Result<T, E>, E>) -> Result<T, E> {
         branch self {

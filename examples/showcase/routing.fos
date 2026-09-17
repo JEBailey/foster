@@ -11,7 +11,7 @@ type StaticServer = {
 }
 
 impl StaticServer {
-    func handle(self: StaticServer, method: String, target: String) -> FileResponse {
+    func handle(self, method: String, target: String) -> FileResponse {
         branch {
             method != "GET" -> FileResponse { status: 405, reason: "Method Not Allowed" }
             target == "/../private.txt" -> FileResponse { status: 403, reason: "Forbidden" }

@@ -41,13 +41,13 @@ pub type ByteBuffer = {
 
 impl ByteBuffer {
     /// Returns whether the buffer contains no bytes.
-    pub func empty?(self: ByteBuffer) -> Bool { self.value.empty? }
+    pub func empty?(self) -> Bool { self.value.empty? }
 
     /// Returns the number of buffered bytes.
-    pub func length(self: ByteBuffer) -> Int { self.value.length }
+    pub func length(self) -> Int { self.value.length }
 
     /// Reports current length without exposing allocation strategy.
-    pub func capacity(self: ByteBuffer) -> Int { self.value.length }
+    pub func capacity(self) -> Int { self.value.length }
 
     /// Creates an empty mutable byte buffer.
     pub func empty() -> ByteBuffer {
@@ -62,13 +62,13 @@ impl ByteBuffer {
     }
 
     /// Appends one byte.
-    pub func push(self: ByteBuffer, value: Byte) -> () [reshape self.value.items] {
+    pub func push(self, value: Byte) -> () [reshape self.value.items] {
         self.value.push(value)
         ()
     }
 
     /// Appends an immutable byte sequence.
-    pub func extend(self: ByteBuffer, values: Bytes) -> () [reshape self.value.items] {
+    pub func extend(self, values: Bytes) -> () [reshape self.value.items] {
         for value in values {
             self.value.push(value)
         }
@@ -76,14 +76,14 @@ impl ByteBuffer {
     }
 
     /// Removes every buffered byte.
-    pub func clear(self: ByteBuffer) -> () [mut self.value] {
+    pub func clear(self) -> () [mut self.value] {
         self.value = []
         ()
     }
 
     /// Keeps at most the first `length` bytes; a larger length leaves the buffer unchanged.
     /// Asserts if `length` is negative.
-    pub func truncate(self: ByteBuffer, length: Int) -> () [mut self.value] {
+    pub func truncate(self, length: Int) -> () [mut self.value] {
         assert(length >= 0, "truncate length cannot be negative")
         self.value = self.value.take(length)
         ()
@@ -91,18 +91,18 @@ impl ByteBuffer {
 
     /// Accepts a nonnegative allocation hint; negative values fail an assertion.
     /// The current implementation does not reserve storage in advance.
-    pub func reserve(self: ByteBuffer, additional: Int) -> () {
+    pub func reserve(self, additional: Int) -> () {
         assert(additional >= 0, "reserve amount cannot be negative")
         ()
     }
 
     /// Consumes the buffer and packs its values into immutable bytes.
-    pub func freeze(self: ByteBuffer) -> Bytes [consume self] {
+    pub func freeze(self) -> Bytes [consume self] {
         Bytes.from(move self.value)
     }
 
     /// Copies the current values into immutable bytes.
-    pub func snapshot(self: ByteBuffer) -> Bytes {
+    pub func snapshot(self) -> Bytes {
         Bytes.from(self.value.map((value: Byte) -> value))
     }
 }

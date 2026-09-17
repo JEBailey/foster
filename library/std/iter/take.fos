@@ -11,9 +11,9 @@ type TakeIterator<T> = & Iterator<T> & {
     remaining: Int
 }
 
-impl TakeIterator {
+impl TakeIterator<T> {
     /// Pulls one value while the take limit remains positive.
-    func next<T>(self: TakeIterator<T>) -> Option<T> {
+    func next(self) -> Option<T> {
         branch {
             self.remaining <= 0 -> Option.None
             _ -> self.take_next()
@@ -21,15 +21,15 @@ impl TakeIterator {
     }
 
     /// Decrements a positive take limit before pulling from the source iterator.
-    func take_next<T>(self: TakeIterator<T>) -> Option<T> {
+    func take_next(self) -> Option<T> {
         self.remaining = self.remaining - 1
         self.source.next()
     }
 }
 
-impl Iterator {
+impl Iterator<T> {
     /// Lazily yields at most `amount` remaining elements.
-    pub func take<T>(self: Iterator<T>, amount: Int) -> Iterator<T> [consume self] {
+    pub func take(self, amount: Int) -> Iterator<T> [consume self] {
         TakeIterator { source: move self, remaining: amount }
     }
 }

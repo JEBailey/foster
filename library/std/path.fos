@@ -55,40 +55,40 @@ impl Path {
     pub func from(value: String) -> Path { Path { value } }
 
     /// Returns the host path text.
-    pub func as_string(self: Path) -> String { self.value.slice(0, self.value.length) }
+    pub func as_string(self) -> String { self.value.slice(0, self.value.length) }
 
     /// Returns the stable identifier supplied to the filesystem provider.
-    pub func resource_id(self: Path) -> String { self.as_string() }
+    pub func resource_id(self) -> String { self.as_string() }
 
     /// Joins this path with another typed path.
-    pub func join(self: Path, right: Path) -> Path {
+    pub func join(self, right: Path) -> Path {
         Path.from(PathHost.join(self.value, right.value))
     }
 
     /// Joins one textual path component onto this path.
-    pub func child(self: Path, component: String) -> Path {
+    pub func child(self, component: String) -> Path {
         Path.from(PathHost.join(self.value, component))
     }
 
     /// Returns this path's parent, or `None` when no parent component exists.
-    pub func parent(self: Path) -> Option<Path> {
+    pub func parent(self) -> Option<Path> {
         path_option(PathHost.parent(self.value))
     }
 
     /// Returns this path's final component, or `None` when it is absent.
-    pub func file_name(self: Path) -> Option<String> {
+    pub func file_name(self) -> Option<String> {
         optional_component(PathHost.file_name(self.value))
     }
 
     /// Returns this path's final extension without its separator.
-    pub func extension(self: Path) -> Option<String> {
+    pub func extension(self) -> Option<String> {
         optional_component(PathHost.extension(self.value))
     }
 
     /// Resolves this path through the filesystem to an absolute canonical path.
     /// The path must be resolvable; missing paths and host failures return `IoError`.
     /// Use lexical composition when the destination does not exist yet.
-    pub func canonical(self: Path) -> Result<Path, IoError> {
+    pub func canonical(self) -> Result<Path, IoError> {
         path_result(PathHost.canonicalize(self.value))
     }
 }
@@ -137,10 +137,8 @@ func path_option(value: String) -> Option<Path> {
 
 /// Converts a successful host path result into a typed path.
 func path_result(outcome: Result<String, IoError>) -> Result<Path, IoError> [consume outcome] {
-    branch move outcome {
-        Result.Error(error) -> Result.Error(error)
-        Result.Ok(value) -> Result.Ok(Path.from(move value))
-    }
+    let value = try move outcome
+    Result.Ok(Path.from(move value))
 }
 
 /// Resolves `path` to an absolute canonical path.

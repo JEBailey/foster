@@ -32,22 +32,22 @@ impl LehmerRandom {
     }
 
     /// Returns the next portable zero-based generator value.
-    pub func next(self: LehmerRandom) -> Result<Int, RandomError> [mut self.state] {
+    pub func next(self) -> Result<Int, RandomError> [mut self.state] {
         self.state = lehmer_step(self.state)
         Result.Ok(self.state - 1)
     }
 
     /// Returns the inclusive maximum portable generator value.
-    pub func maximum(self: LehmerRandom) -> Int { LEHMER_MAXIMUM }
+    pub func maximum(self) -> Int { LEHMER_MAXIMUM }
 
     /// Resets the portable sequence from any integer seed.
-    pub func reseed(self: LehmerRandom, seed: Int) -> () [mut self.state] {
+    pub func reseed(self, seed: Int) -> () [mut self.state] {
         self.state = normalized_seed(seed)
         ()
     }
 
     /// Derives another owned portable stream while advancing this generator.
-    pub func split(self: LehmerRandom) -> RandomSource [mut self.state] {
+    pub func split(self) -> RandomSource [mut self.state] {
         self.state = lehmer_step(self.state)
         LehmerRandom.from_seed(self.state + 104729)
     }
@@ -74,22 +74,22 @@ impl FastRandom {
     }
 
     /// Returns the next default-generator value.
-    pub func next(self: FastRandom) -> Result<Int, RandomError> [mut self.state] {
+    pub func next(self) -> Result<Int, RandomError> [mut self.state] {
         self.state = lehmer_step(self.state)
         Result.Ok(self.state - 1)
     }
 
     /// Returns the inclusive maximum default-generator value.
-    pub func maximum(self: FastRandom) -> Int { LEHMER_MAXIMUM }
+    pub func maximum(self) -> Int { LEHMER_MAXIMUM }
 
     /// Resets the default generator from any integer seed.
-    pub func reseed(self: FastRandom, seed: Int) -> () [mut self.state] {
+    pub func reseed(self, seed: Int) -> () [mut self.state] {
         self.state = normalized_seed(seed)
         ()
     }
 
     /// Derives another owned default stream while advancing this generator.
-    pub func split(self: FastRandom) -> RandomSource [mut self.state] {
+    pub func split(self) -> RandomSource [mut self.state] {
         self.state = lehmer_step(self.state)
         FastRandom.from_seed(self.state + 104729)
     }

@@ -11,9 +11,9 @@ type SkipIterator<T> = & Iterator<T> & {
     remaining: Int
 }
 
-impl SkipIterator {
+impl SkipIterator<T> {
     /// Discards the configured prefix before yielding source values.
-    func next<T>(self: SkipIterator<T>) -> Option<T> {
+    func next(self) -> Option<T> {
         while self.remaining > 0 {
             branch self.source.next() {
                 Option.Some(_) -> {
@@ -27,9 +27,9 @@ impl SkipIterator {
     }
 }
 
-impl Iterator {
+impl Iterator<T> {
     /// Lazily discards the first `amount` remaining elements.
-    pub func skip<T>(self: Iterator<T>, amount: Int) -> Iterator<T> [consume self] {
+    pub func skip(self, amount: Int) -> Iterator<T> [consume self] {
         SkipIterator { source: move self, remaining: amount }
     }
 }

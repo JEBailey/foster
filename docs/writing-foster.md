@@ -47,14 +47,20 @@ use a final `()` when a function should return unit after an assignment.
 
 Records use `type Name = { ... }`, construction uses `Name { field: value }`,
 and implementations use `impl Name { ... }`. Use `pub` on declarations and fields
-that other modules must access. Structural contracts match accessible members;
-there is no nominal `implements` requirement.
+that other modules must access. Prefer inferred `self` in implementation methods;
+put shared generic parameters on the `impl` header. Keep explicit receiver types
+for references and specialized receivers such as `List<String>`. Structural
+contracts match accessible members; there is no nominal `implements` requirement.
+
+Use field shorthand when a field and its source variable have the same name:
+`Frame { rule, position }` means `Frame { rule: rule, position: position }`.
+Keep explicit initializers for expressions and ownership markers such as `move`.
 
 ```foster
 type Counter = { value: Int }
 
 impl Counter {
-    func increment(self: Counter) -> () [mut self] {
+    func increment(self) -> () [mut self] {
         self.value = self.value + 1
         ()
     }
@@ -132,6 +138,8 @@ func main() -> Int {
 
 `try` unwraps success or returns the error from the enclosing function. The
 enclosing function must return a compatible `Result` with the same error type.
+Prefer it for direct error propagation. Keep `branch` for error conversion or
+recovery, and for borrowed results: `try` consumes its operand.
 `assert(condition, "message")` stops execution on failure; it does not produce a
 recoverable error. Generics use `<T>`; group declarations use brackets instead.
 

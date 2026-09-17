@@ -12,9 +12,9 @@ type FilterIterator<T> = & Iterator<T> & {
     predicate: Predicate<T>
 }
 
-impl FilterIterator {
+impl FilterIterator<T> {
     /// Pulls until a filtered iterator finds a matching value or reaches exhaustion.
-    func next<T>(self: FilterIterator<T>) -> Option<T> {
+    func next(self) -> Option<T> {
         loop {
             branch self.source.next() {
                 Option.Some(value) -> {
@@ -28,9 +28,9 @@ impl FilterIterator {
     }
 }
 
-impl Iterator {
+impl Iterator<T> {
     /// Lazily retains this iterator's remaining elements that satisfy `predicate`.
-    pub func filter<T>(self: Iterator<T>, predicate: Predicate<T>) -> Iterator<T> [consume self, consume predicate] {
+    pub func filter(self, predicate: Predicate<T>) -> Iterator<T> [consume self, consume predicate] {
         FilterIterator { source: move self, predicate: move predicate }
     }
 }

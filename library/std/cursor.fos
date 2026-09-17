@@ -48,13 +48,13 @@ pub type ListCursor<T> = & Cursor<T> & {
     offset: Int
 }
 
-impl ListCursor {
+impl ListCursor<T> {
     /// Takes ownership of a stable list snapshot.
-    pub func from<T>(values: List<T>) -> ListCursor<T> [consume values] {
+    pub func from(values: List<T>) -> ListCursor<T> [consume values] {
         ListCursor { values: move values, offset: 0 }
     }
     /// Reads the current element without advancing.
-    pub func peek<T>(self: ListCursor<T>) -> Option<T> {
+    pub func peek(self) -> Option<T> {
         branch {
             self.offset >= self.values.length -> Option.None
             _ -> branch self.values.at(self.offset) { Result.Ok(value) -> Option.Some(value) Result.Error(_) -> { assert(false, "cursor elements must support Copy")
@@ -62,22 +62,22 @@ impl ListCursor {
         }
     }
     /// Reads one element and advances, remaining exhausted at the end.
-    pub func next<T>(self: ListCursor<T>) -> Option<T> {
+    pub func next(self) -> Option<T> {
         let value = self.peek()
         branch { self.offset < self.values.length -> { self.offset = self.offset + 1 } _ -> () }
         value
     }
     /// Returns the current element offset.
-    pub func checkpoint<T>(self: ListCursor<T>) -> Int { self.offset }
+    pub func checkpoint(self) -> Int { self.offset }
     /// Restores an element offset in `[0, length]`, including the exhausted position.
     /// Returns false without moving for an out-of-range offset.
-    pub func restore<T>(self: ListCursor<T>, position: Int) -> Bool {
+    pub func restore(self, position: Int) -> Bool {
         return false if position < 0 || position > self.values.length
         self.offset = position
         true
     }
     /// Copies a valid element range.
-    pub func span<T>(self: ListCursor<T>, start: Int, end: Int) -> Option<List<T>> {
+    pub func span(self, start: Int, end: Int) -> Option<List<T>> {
         return Option.None if start < 0 || end < start || end > self.values.length
         Option.Some(self.values.slice(start, end))
     }
@@ -95,27 +95,27 @@ impl BytesCursor {
     /// Takes ownership of a byte snapshot.
     pub func from(data: Bytes) -> BytesCursor [consume data] { BytesCursor { data: move data, offset: 0 } }
     /// Reads the current byte without advancing.
-    pub func peek(self: BytesCursor) -> Option<Byte> {
+    pub func peek(self) -> Option<Byte> {
         branch { self.offset >= self.data.length -> Option.None
             _ -> Option.Some(self.data[self.offset]) }
     }
     /// Reads one byte and advances.
-    pub func next(self: BytesCursor) -> Option<Byte> {
+    pub func next(self) -> Option<Byte> {
         let value = self.peek()
         branch { self.offset < self.data.length -> { self.offset = self.offset + 1 } _ -> () }
         value
     }
     /// Returns the byte offset.
-    pub func checkpoint(self: BytesCursor) -> Int { self.offset }
+    pub func checkpoint(self) -> Int { self.offset }
     /// Restores a byte offset in `[0, length]`, including the exhausted position.
     /// Returns false without moving for an out-of-range offset.
-    pub func restore(self: BytesCursor, position: Int) -> Bool {
+    pub func restore(self, position: Int) -> Bool {
         return false if position < 0 || position > self.data.length
         self.offset = position
         true
     }
     /// Copies the bytes in a valid range into an item list.
-    pub func span(self: BytesCursor, start: Int, end: Int) -> Option<List<Byte>> {
+    pub func span(self, start: Int, end: Int) -> Option<List<Byte>> {
         return Option.None if start < 0 || end < start || end > self.data.length
         let values = []
         let index = start
@@ -126,7 +126,7 @@ impl BytesCursor {
         Option.Some(values)
     }
     /// Copies a valid byte range.
-    pub func byte_span(self: BytesCursor, start: Int, end: Int) -> Option<Bytes> {
+    pub func byte_span(self, start: Int, end: Int) -> Option<Bytes> {
         return Option.None if start < 0 || end < start || end > self.data.length
         Option.Some(self.data.slice(start, end))
     }

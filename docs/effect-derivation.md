@@ -104,7 +104,7 @@ named `self`:
 
 ```foster
 impl Counter {
-    func increment(self: Counter, amount: Int) -> Int [mut self] {
+    func increment(self, amount: Int) -> Int [mut self] {
         self.value = self.value + amount
         self.value
     }

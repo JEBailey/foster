@@ -67,7 +67,7 @@ pub type HexError = {
 
 impl Bytes {
     /// Returns an independent immutable byte value.
-    pub func copy(self: Bytes) -> self [read self] { BytesHost.from_list(BytesHost.to_list(self)) }
+    pub func copy(self) -> self [read self] { BytesHost.from_list(BytesHost.to_list(self)) }
 
     /// Creates an empty immutable byte sequence.
     pub func empty() -> Bytes {
@@ -102,7 +102,7 @@ impl Bytes {
     }
 
     /// Concatenates two immutable byte sequences.
-    pub func concat(self: Bytes, other: Bytes) -> Bytes {
+    pub func concat(self, other: Bytes) -> Bytes {
         let output = self.list()
         for octet in other {
             output.push(octet)
@@ -112,7 +112,7 @@ impl Bytes {
 
     /// Copies bytes in the half-open range `[start, end)`.
     /// Asserts unless `0 <= start <= end <= length`; bounds are not clamped.
-    pub func slice(self: Bytes, start: Int, end: Int) -> Bytes {
+    pub func slice(self, start: Int, end: Int) -> Bytes {
         assert(start >= 0 && end >= start && end <= self.length, "byte slice is out of bounds")
         let output = []
         let index = start
@@ -124,12 +124,12 @@ impl Bytes {
     }
 
     /// Expands compact bytes into a Foster list.
-    pub func list(self: Bytes) -> List<Byte> {
+    pub func list(self) -> List<Byte> {
         BytesHost.to_list(self)
     }
 
     /// Encodes bytes as lowercase hexadecimal text.
-    pub func hex(self: Bytes) -> String {
+    pub func hex(self) -> String {
         let output = []
         for octet in self {
             let value = octet.int
@@ -146,7 +146,7 @@ impl Bytes {
     }
 
     /// Returns whether two byte sequences contain identical values.
-    pub func equal?(self: Bytes, other: Bytes) -> Bool {
+    pub func equal?(self, other: Bytes) -> Bool {
         return false if self.length != other.length
         let index = 0
         while index < self.length {
@@ -157,7 +157,7 @@ impl Bytes {
     }
 
     /// Computes a deterministic hash over the byte sequence.
-    pub func hash(self: Bytes) -> Int {
+    pub func hash(self) -> Int {
         let state = 17
         for octet in self {
             state = state + octet
@@ -166,7 +166,7 @@ impl Bytes {
     }
 
     /// Checks UTF-8 scalar boundaries without allocating decoded text or copied suffixes.
-    pub func utf8_valid?(self: Bytes) -> Bool {
+    pub func utf8_valid?(self) -> Bool {
         let index = 0
         while index < self.length {
             let first = self[index].int
