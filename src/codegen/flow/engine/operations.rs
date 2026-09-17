@@ -53,6 +53,7 @@ pub(crate) enum Instruction {
     MakeVariant {
         destination: Value,
         variant: VariantId,
+        type_arguments: Vec<ExecutableType>,
         payload: Vec<Value>,
     },
     LoadField {

@@ -1178,7 +1178,7 @@ func next_array_index(entries: List<FlatEntry>, prefix: List<PathPart>, name: St
 /// Internal helper for the Foster TOML implementation.
 func direct_item_index(path: List<PathPart>, prefix: List<PathPart>, name: String) -> Int {
     return -1 if not path_starts_with?(path, prefix)
-    branch path.get(prefix.length) {
+    branch path.borrow(prefix.length) {
         Option.Some(part) -> branch part {
             PathPart.ArrayItem(item) -> branch {
                 item.key == name -> item.index
@@ -1236,7 +1236,7 @@ func child_key_conflict?(entries: List<FlatEntry>, prefix: List<PathPart>, name:
 /// Internal helper for the Foster TOML implementation.
 func direct_key_child?(path: List<PathPart>, prefix: List<PathPart>, name: String) -> Bool {
     return false if not path_starts_with?(path, prefix)
-    branch path.get(prefix.length) {
+    branch path.borrow(prefix.length) {
         Option.Some(part) -> branch part {
             PathPart.Key(candidate) -> candidate == name
             _ -> false
@@ -1278,10 +1278,10 @@ func direct_children(entries: List<FlatEntry>, prefix: List<PathPart>, output: L
 /// Internal helper for the Foster TOML implementation.
 func direct_child(path: List<PathPart>, prefix: List<PathPart>) -> Option<Child> {
     return Option.None if not path_starts_with?(path, prefix)
-    branch path.get(prefix.length) {
+    branch path.borrow(prefix.length) {
         Option.Some(part) -> branch part {
-            PathPart.Key(name) -> Option.Some(Child.Table(move name))
-            PathPart.ArrayItem(item) -> Option.Some(Child.Array(move item.key))
+            PathPart.Key(name) -> Option.Some(Child.Table(name.copy()))
+            PathPart.ArrayItem(item) -> Option.Some(Child.Array(item.key.copy()))
         }
         Option.None -> Option.None
     }
@@ -1542,7 +1542,7 @@ func valid_offset?(value: String) -> Bool {
 
 /// Internal helper for the Foster TOML implementation.
 func character_at?(value: String, index: Int, expected: CodePoint) -> Bool {
-    branch value.code_points().get(index) {
+    branch value.code_points().borrow(index) {
         Option.Some(character) -> character == expected
         Option.None -> false
     }
@@ -1551,7 +1551,7 @@ func character_at?(value: String, index: Int, expected: CodePoint) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func digits_at?(value: String, start: Int, count: Int) -> Bool {
     return true if count == 0
-    branch value.code_points().get(start) {
+    branch value.code_points().borrow(start) {
         Option.Some(character) -> branch {
             decimal_digit?(character) -> digits_at?(value, start + 1, count - 1)
             _ -> false
@@ -1563,7 +1563,7 @@ func digits_at?(value: String, start: Int, count: Int) -> Bool {
 /// Internal helper for the Foster TOML implementation.
 func decimal_at(value: String, start: Int, count: Int, output: Int) -> Int {
     return output if count == 0
-    branch value.code_points().get(start) {
+    branch value.code_points().borrow(start) {
         Option.Some(character) -> decimal_at(value, start + 1, count - 1, output * 10 + hex_value(character))
         Option.None -> output
     }

@@ -161,11 +161,12 @@ pub(crate) fn ssa_instruction(
         crate::codegen::ir::PortableInstruction::MakeVariant {
             destination,
             variant,
-            type_arguments: _,
+            type_arguments,
             payload,
         } => engine::Instruction::MakeVariant {
             destination: *destination,
             variant: *variant,
+            type_arguments: type_arguments.clone(),
             payload: payload.clone(),
         },
         crate::codegen::ir::PortableInstruction::LoadField {

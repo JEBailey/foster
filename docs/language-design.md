@@ -1105,6 +1105,11 @@ A reference is parameterized by a group describing its possible target locations
 ref[people] Person
 ```
 
+An instance method may return `ref[self] T`, including within `Option`, using its implicit
+receiver group. The returned reference borrows receiver storage and supports mutation under
+the usual effect rules. Collection `borrow` methods use this contract; `remove` returns an
+owned value instead.
+
 Reference types do not contain mutability. Mutation is an effect performed by a function:
 
 ```foster

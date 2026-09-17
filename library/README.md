@@ -89,12 +89,14 @@ See [Unicode maintenance](../tools/unicode/README.md) for provenance and regener
 
 Read the signature as well as the summary. A consuming operation transfers
 ownership; use `move` when passing an existing binding. Map updates return the
-updated collection. `Map.get` borrows the map and returns an independent copy of the
-selected value; `None` means the key is absent. Present values must support Copy,
-checked at runtime. `Map.remove` mutates the map and transfers the selected value
+updated collection. `Map.borrow` returns a reference to the stored value; `None` means the key is absent.
+References permit mutation and must not outlive or survive reshaping the collection. `Map.remove` mutates the map and transfers the selected value
 without copying it or consuming the other entries. `contains_key?` borrows the map.
 
-`List.at` distinguishes `OutOfBounds` and `NotCopyable`. `get`, `first`, and `last`
+`List.borrow(index)` returns a reference or None for an invalid index; `List.remove(index)`
+transfers the element, preserves order, and takes O(n) time. Neither requires Copy.
+
+`List.at` distinguishes `OutOfBounds` and `NotCopyable`. `first` and `last`
 return `None` for either unavailable or noncopyable elements. Direct indexing and
 checked slices have preconditions; they are not fallible lookup APIs.
 

@@ -14,7 +14,10 @@ import std.random.generator
 pub func choose_with<T>(source: RandomSource, values: List<T>) -> Result<Option<T>, RandomError> [mut source] {
     return Result.Ok(Option.None) if values.empty?
     let index = try random::below_with(source, values.length)
-    Result.Ok(values.get(index))
+    Result.Ok(branch values.at(index) {
+        Result.Ok(value) -> Option.Some(value)
+        Result.Error(_) -> Option.None
+    })
 }
 
 /// Chooses one list element using operating-system randomness.

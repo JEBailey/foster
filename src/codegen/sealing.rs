@@ -131,6 +131,11 @@ pub(super) fn seal_function_with_evidence(
         })
         .collect::<std::collections::HashSet<_>>();
     for instruction in &function.instructions {
+        // Variant payloads may carry references. Keep their previous bindings
+        // available for assignment; flow analysis determines which are references.
+        if let storage::Instruction::MatchPattern { bindings, .. } = instruction {
+            reference_homes.extend(bindings.iter().copied());
+        }
         let destination = match instruction {
             storage::Instruction::MakeReference { destination, .. }
             | storage::Instruction::MakeWholeReference { destination, .. }

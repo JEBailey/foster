@@ -2,7 +2,7 @@
 //! Also completes releases for temporary slots introduced during SSA destruction.
 use std::collections::{HashMap, HashSet};
 
-use super::analysis::{definitions, liveness, uses};
+use super::analysis::{definitions, uses};
 use super::{Function, Instruction, Program, Slot};
 
 pub(crate) fn insert(program: &mut Program) {
@@ -91,7 +91,22 @@ fn insert_function(function: &mut Function, protected: HashSet<Slot>) {
         return;
     }
 
-    let live = liveness(function);
+    // Pattern payloads can be references: assignment uses their existing binding.
+    // Preserve it until the assignment without extending unrelated payload lifetimes.
+    let pattern_bindings = function
+        .instructions
+        .iter()
+        .filter_map(|instruction| {
+            if let Instruction::MatchPattern { bindings, .. } = instruction {
+                Some(bindings.iter().copied())
+            } else {
+                None
+            }
+        })
+        .flatten()
+        .collect();
+    let live =
+        super::analysis::liveness_with_write_bindings(function, &HashSet::new(), &pattern_bindings);
     let original = std::mem::take(&mut function.instructions);
     let original_spans = std::mem::take(&mut function.instruction_spans);
     let mut instructions = Vec::new();

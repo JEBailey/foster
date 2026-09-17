@@ -92,11 +92,18 @@ a `CodePoint` type annotation opens that module even when it has not yet been im
 
 ## Explicit copies and indexed reads
 
+`List.borrow(index)` and `Map.borrow(key)` return an optional reference to the stored
+value, with no Copy requirement. References permit mutation. Finish using them before
+removing entries or reshaping their collection. Call `.copy()` explicitly on a borrowed
+value when an independent owned value is needed and its type supports Copy.
+`remove` returns an optional owned value and preserves the collection. List removal
+preserves the remaining order and takes O(n) time.
+
 `List.at(index)` returns `Result<T, ListReadError>`. It checks the index first, returning
 `OutOfBounds` if invalid, then returns `NotCopyable` if the concrete element has no `Copy`
 implementation. Success calls `copy()` and returns its independently owned result. The source
 list remains intact. Use `try values.at(index)` from a compatible Result-returning function, or
-branch on the result. `get`, `first`, and `last` return `None` for either unavailable case.
+branch on the result. `first` and `last` return `None` for either unavailable case.
 
 Borrowing algorithms such as `map`, `contains?`, `any?`, and `all?` can inspect noncopyable
 elements. Algorithms that preserve the source while producing owned elements, including slicing
@@ -415,7 +422,8 @@ TLS and language-enforced filesystem/network capability isolation remain future 
 Core APIs should not bypass ownership. In particular, operations that must retain an owned generic
 value after invoking user code require a borrowed-callback type; they are intentionally omitted
 until that contract can be expressed without weakening move checking. For the same reason,
-`Map.get` explicitly copies the selected value without consuming the map. `Map.remove`
+`Map.borrow` returns a reference to the selected value without copying or consuming it.
+The reference permits mutation and must be finished before the map is reshaped. `Map.remove`
 transfers the selected value and preserves the remaining map. `keys` and `values` consume
 the map, while queries such as `contains_key?`, `length`, and `empty?` only borrow it.
 

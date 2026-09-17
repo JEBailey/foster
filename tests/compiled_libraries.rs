@@ -66,6 +66,61 @@ fn run(compilation: &foster::compiler::Compilation) -> Value {
 }
 
 #[test]
+fn receiver_borrows_survive_library_and_bytecode_round_trip() {
+    let workspace = Workspace::new();
+    workspace.library(
+        r#"
+import core.option
+pub type Box = { pub value: Int }
+impl Box {
+    pub func borrow(self: Box) -> Option<ref[self] Int> [read self] {
+        Option.Some(ref self.value)
+    }
+    pub func replace(self: Box) -> () [reshape self] {
+        self = Box { value: 0 }
+        ()
+    }
+}
+"#,
+    );
+    let good = workspace
+        .consumer(
+            r#"
+import api
+import core.option
+func main() -> Int {
+    let owner = Box { value: 1 }
+    branch owner.borrow() {
+        Option.Some(value) -> { value = 42 }
+        Option.None -> { assert(false) }
+    }
+    owner.value
+}
+"#,
+        )
+        .unwrap();
+    assert_eq!(run(&good), Value::Integer(42));
+    foster::native::prepare(&good).unwrap();
+    let error = workspace
+        .consumer(
+            r#"
+import api
+import core.option
+func main() -> Int {
+    let owner = Box { value: 1 }
+    let borrowed = owner.borrow()
+    owner.replace()
+    branch borrowed { Option.Some(value) -> value
+        Option.None -> 0 }
+}
+"#,
+        )
+        .err()
+        .expect("linked borrower retains its owner dependency");
+    assert_eq!(error.code.as_deref(), Some("E0401"));
+}
+
+#[test]
 fn implementation_constraints_survive_library_round_trip() {
     let workspace = Workspace::new();
     let mut compiled = workspace.library(

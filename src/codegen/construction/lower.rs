@@ -358,7 +358,19 @@ impl FunctionCompiler<'_> {
                         let remote = *remote;
                         let receiver_mode =
                             self.intrinsic(function).and_then(Intrinsic::receiver_mode);
-                        let receiver = if remote
+                        let receiver = if !remote
+                            && (crate::hir::queries::type_exposes_group(
+                                self.hir.functions[function].return_type.as_ref(),
+                                "self",
+                            ) || matches!(
+                                self.hir.functions[function]
+                                    .parameters
+                                    .first()
+                                    .and_then(|parameter| parameter.ty.as_ref()),
+                                Some(crate::ast::TypeExpr::Reference { .. })
+                            )) {
+                            self.reference_expression(*object, span.clone())?
+                        } else if remote
                             || matches!(
                                 receiver_mode,
                                 Some(IntrinsicReceiverMode::Read | IntrinsicReceiverMode::Consume)

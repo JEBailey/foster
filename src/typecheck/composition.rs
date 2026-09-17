@@ -876,7 +876,10 @@ impl Checker<'_> {
         }
         self.unify(
             Ty::Record(owner, arguments.to_vec()),
-            signature.parameters[0].ty.clone(),
+            match signature.parameters[0].ty.clone() {
+                Ty::Reference(_, value) => *value,
+                value => value,
+            },
             function,
         )?;
         self.check_unconditional_constraints(function, &generics)?;

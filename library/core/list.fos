@@ -1,7 +1,8 @@
 //! `Ordered` homogeneous collections and eager collection algorithms.
 //!
 //! Indexes are zero-based. at distinguishes out-of-bounds access from an element
-//! that cannot be copied; get, first, and last collapse both cases to `None`.
+//! that cannot be copied; first and last collapse both cases to `None`.
+//! borrow returns a reference; remove transfers an element and preserves the list.
 //! Borrowing reads preserve the list. Consuming updates return the resulting list.
 //! Use std.iter adaptors when intermediate collection allocation is unnecessary.
 
@@ -53,9 +54,12 @@ pub type List<T> = & Sequence<T> & Collection<T> & {
     pub func reverse(self) -> List<T> [read self]
     /// Appends every element of `right`, consuming the left list.
     pub func concat(self, right: List<T>) -> List<T> [consume self, read right]
-    /// Copies the element, or returns `None` for invalid indexes or noncopyable elements.
-    /// Use `at` when the caller needs to distinguish those failures.
-    pub func get(self, index: Int) -> Option<T> [read self]
+    /// Borrows the stored element; invalid indexes return None. No Copy is required.
+    /// The reference permits mutation and cannot outlive or survive reshaping the list.
+    pub func borrow(self, index: Int) -> Option<ref[self] T> [read self]
+    /// Removes and returns an owned element, preserving the list and remaining order.
+    /// Invalid indexes return None without changing the list. Takes O(n) time.
+    pub func remove(self, index: Int) -> Option<T> [mut self, reshape self.items]
     /// Copies elements in the half-open range `[start, end)`.
     /// Asserts unless `0 <= start <= end <= length`; selected elements must support Copy.
     pub func slice(self, start: Int, end: Int) -> List<T> [read end, read self, read start]
@@ -122,12 +126,18 @@ impl List {
 
     /// Copies the first element, or returns `None` when it is absent or not copyable.
     pub func first<T>(self: List<T>) -> Option<T> {
-        self.get(0)
+        branch self.at(0) {
+            Result.Ok(value) -> Option.Some(value)
+            Result.Error(_) -> Option.None
+        }
     }
 
     /// Copies the final element, or returns `None` when it is absent or not copyable.
     pub func last<T>(self: List<T>) -> Option<T> {
-        self.get(self.length - 1)
+        branch self.at(self.length - 1) {
+            Result.Ok(value) -> Option.Some(value)
+            Result.Error(_) -> Option.None
+        }
     }
 
     /// Applies `transform` to every element, from left to right.
@@ -230,13 +240,36 @@ impl List {
         result
     }
 
-    /// Copies the element, or returns `None` for invalid indexes or noncopyable elements.
-    /// Use `at` when the caller needs to distinguish those failures.
-    pub func get<T>(self: List<T>, index: Int) -> Option<T> [read self] {
-        branch self.at(index) {
-            Result.Ok(value) -> Option.Some(value)
-            Result.Error(_) -> Option.None
+    /// Borrows the stored element; invalid indexes return None. No Copy is required.
+    /// The reference permits mutation and cannot outlive or survive reshaping the list.
+    pub func borrow<T>(self: List<T>, index: Int) -> Option<ref[self] T> [read self] {
+        branch {
+            index < 0 || index >= self.length -> Option.None
+            _ -> Option.Some(ref self[index])
         }
+    }
+
+    /// Removes and returns an owned element, preserving the list and remaining order.
+    /// Invalid indexes return None without changing the list. Takes O(n) time.
+    pub func remove<T>(self: ref[self] List<T>, index: Int) -> Option<T> [mut self, reshape self.items] {
+        return Option.None if index < 0 || index >= self.length
+        let removed = Option.None
+        let entries = removal_entries(self)
+        self = []
+        let cursor = 0
+        loop {
+            branch entries.next() {
+                Option.None -> { break }
+                Option.Some(value) -> {
+                    branch {
+                        cursor == index -> { removed = Option.Some(value) }
+                        _ -> self.push(value)
+                    }
+                    cursor = cursor + 1
+                }
+            }
+        }
+        removed
     }
 
     /// Copies elements in the half-open range `[start, end)`.
@@ -359,6 +392,11 @@ impl List {
     }
 }
 
+/// Retains the original storage while removal rebuilds the receiver in place.
+func removal_entries<T>(values: List<T>) -> Iterator<T> {
+    values.iterator()
+}
+
 test "list algorithms transform and aggregate values" {
     let values = [1, 2, 3].map((value: Int) -> value * 2)
     assert(values == [2, 4, 6])
@@ -367,8 +405,8 @@ test "list algorithms transform and aggregate values" {
     assert(values.slice(1, 3) == [4, 6])
     assert(values.take(-1) == [])
     assert(values.take(99) == values)
-    assert(values.get(-1) == Option.None)
-    assert(values.get(3) == Option.None)
+    assert(values.borrow(-1) == Option.None)
+    assert(values.borrow(3) == Option.None)
     assert(values.last() == Option.Some(6))
     assert([[1, 2], [], [3]].flatten() == [1, 2, 3])
     assert(["λ", "", "🙂"].join("|") == "λ||🙂")

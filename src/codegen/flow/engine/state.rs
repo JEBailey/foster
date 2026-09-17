@@ -15,7 +15,7 @@ pub(crate) struct FlowState {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct PendingPattern {
     pub(super) conditions: Vec<Value>,
-    pub(super) bindings: Vec<Value>,
+    pub(super) bindings: Vec<(Value, ExecutableType)>,
     pub(super) irrefutable: bool,
     pub(super) covered_variant: Option<(Vec<Value>, VariantId)>,
     pub(super) refined_subject: Option<(Vec<Value>, ExecutableType)>,

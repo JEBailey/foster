@@ -194,16 +194,18 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 }
                 hir::Stmt::Bind { local, value } => {
                     self.walk_consumed_expr(*value);
-                    let group = match self.checker.hir.expressions[*value] {
-                        hir::Expr::Reference(place) => self.place_group(place),
-                        _ => self
-                            .checker
-                            .locals
-                            .get(local)
-                            .and_then(|ty| reference_group(&self.checker.resolved(ty.clone())))
-                            .map(crate::ast::GroupPath::root)
-                            .unwrap_or_else(|| crate::ast::GroupPath::root(FRAME_GROUP)),
-                    };
+                    let group = self.borrowed_result_group(*value).unwrap_or_else(|| {
+                        match self.checker.hir.expressions[*value] {
+                            hir::Expr::Reference(place) => self.place_group(place),
+                            _ => self
+                                .checker
+                                .locals
+                                .get(local)
+                                .and_then(|ty| reference_group(&self.checker.resolved(ty.clone())))
+                                .map(crate::ast::GroupPath::root)
+                                .unwrap_or_else(|| crate::ast::GroupPath::root(FRAME_GROUP)),
+                        }
+                    });
                     self.owners.insert(*local, group);
                 }
                 hir::Stmt::Assign { local, value } => {
@@ -267,6 +269,11 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                     self.walk_expr(*subject);
                 }
                 for arm in arms {
+                    if let Some(subject) = subject
+                        && let hir::BranchTest::Pattern(pattern) = &arm.test
+                    {
+                        self.bind_borrowed_pattern(pattern, *subject);
+                    }
                     if let Some(subject) = subject
                         && let hir::BranchTest::Pattern(pattern) = &arm.test
                         && let hir::Pattern::IsType {
@@ -412,6 +419,11 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                     self.walk_expr(*subject);
                 }
                 for arm in arms {
+                    if let Some(subject) = subject
+                        && let hir::BranchTest::Pattern(pattern) = &arm.test
+                    {
+                        self.bind_borrowed_pattern(pattern, *subject);
+                    }
                     if let hir::BranchTest::Condition(test) = arm.test {
                         self.walk_expr(test);
                     }
@@ -641,6 +653,61 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             hir::Expr::Name(ResolvedName::Function(function)) => Some(*function),
             hir::Expr::Member { object, name } => self.method_for(*object, name),
             _ => None,
+        }
+    }
+
+    fn borrowed_result_group(&self, expression: ExprId) -> Option<crate::ast::GroupPath> {
+        fn contains_reference(ty: &Ty, group: Option<&str>) -> bool {
+            match ty {
+                Ty::Reference(found, _) => group.is_none_or(|group| group == found),
+                Ty::Record(_, arguments) | Ty::Variant(_, arguments) => {
+                    arguments.iter().any(|ty| contains_reference(ty, group))
+                }
+                _ => false,
+            }
+        }
+        let ty = self.checker.expressions.get(&expression)?;
+        if !contains_reference(&self.checker.resolved(ty.clone()), None) {
+            return None;
+        }
+        match self.checker.hir.expressions[expression] {
+            hir::Expr::Name(ResolvedName::Local(local)) => Some(self.local_group(local)),
+            hir::Expr::Reference(place) => Some(self.place_group(place)),
+            hir::Expr::Call { callee, .. } => {
+                if let hir::Expr::Member { object, .. } = self.checker.hir.expressions[callee]
+                    && let Some(Ty::Callable { result, .. }) = self
+                        .checker
+                        .expressions
+                        .get(&callee)
+                        .map(|ty| self.checker.resolved(ty.clone()))
+                    && contains_reference(&result, Some("self"))
+                {
+                    Some(self.place_group(object))
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    fn bind_borrowed_pattern(&mut self, pattern: &hir::Pattern, subject: ExprId) {
+        match pattern.unspanned() {
+            hir::Pattern::Binding(local)
+                if self.checker.locals.get(local).is_some_and(|ty| {
+                    matches!(self.checker.resolved(ty.clone()), Ty::Reference(..))
+                }) =>
+            {
+                if let Some(group) = self.borrowed_result_group(subject) {
+                    self.owners.insert(*local, group);
+                }
+            }
+            hir::Pattern::Variant { fields, .. } => {
+                for field in fields {
+                    self.bind_borrowed_pattern(field, subject);
+                }
+            }
+            _ => {}
         }
     }
 

@@ -768,16 +768,25 @@ pub(super) fn lower_portable_native(
             object,
             field,
             by_reference: false,
-        } => lower_native_field(
-            builder,
-            module,
-            get(object),
-            function.value_type(*object),
-            function.value_type(*destination),
-            field,
-            objects,
-        )
-        .map(Some),
+        } => {
+            let (receiver, receiver_type) = native_reference_receiver(
+                builder,
+                module,
+                get(object),
+                function.value_type(*object),
+                backend,
+            )?;
+            lower_native_field(
+                builder,
+                module,
+                receiver,
+                receiver_type,
+                function.value_type(*destination),
+                field,
+                objects,
+            )
+            .map(Some)
+        }
         ir::PortableInstruction::StoreField {
             object,
             field,

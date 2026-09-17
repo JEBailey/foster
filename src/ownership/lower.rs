@@ -131,7 +131,13 @@ impl<'a> Builder<'a> {
                     span: definition.span.clone(),
                 });
             }
-            if matches!(parameter.ty, Some(crate::ast::TypeExpr::Reference { .. })) {
+            if matches!(parameter.ty, Some(crate::ast::TypeExpr::Reference { .. }))
+                || (definition.receiver == Some(parameter.local)
+                    && crate::hir::queries::type_exposes_group(
+                        definition.return_type.as_ref(),
+                        "self",
+                    ))
+            {
                 let destination = Self::local_place(parameter.local);
                 let value = self.issue_reborrow(destination.clone(), definition.span.clone());
                 self.emit(Operation::StoreBorrower {
@@ -1139,6 +1145,41 @@ impl<'a> Builder<'a> {
     }
 
     fn call_result_borrow_value(&mut self, callee: ExprId, arguments: &[ExprId]) -> BorrowValue {
+        let contents = self.call_result_contents(callee, arguments);
+        if let hir::Expr::Member { object, .. } = self.hir.expressions[callee]
+            && self.types.expression_type(callee).is_some_and(|ty| {
+                matches!(&self.types.types[ty], crate::types::Type::Function(signature)
+                    if self.result_borrows_receiver(signature.result))
+            })
+            && let Some(origin) = self
+                .owned_place(object)
+                .or_else(|| self.active_temporaries.get(&object).cloned())
+        {
+            let receiver = self.issue_reborrow(origin, self.span(callee));
+            self.loans.last_mut().unwrap().may_target_descendants = true;
+            return BorrowValue::Merge(vec![contents, receiver]);
+        }
+        contents
+    }
+
+    fn result_borrows_receiver(&self, ty: crate::types::TypeId) -> bool {
+        use crate::types::Type;
+        match &self.types.types[ty] {
+            Type::Reference { group, value } => {
+                group == "self" || self.result_borrows_receiver(*value)
+            }
+            Type::Record { arguments, .. } | Type::Variant { arguments, .. } => {
+                arguments.iter().any(|ty| self.result_borrows_receiver(*ty))
+            }
+            Type::RawList(value) | Type::Sequence(value) | Type::Future(value) => {
+                self.result_borrows_receiver(*value)
+            }
+            Type::Function(signature) => self.result_borrows_receiver(signature.result),
+            _ => false,
+        }
+    }
+
+    fn call_result_contents(&mut self, callee: ExprId, arguments: &[ExprId]) -> BorrowValue {
         let direct = self.types.resolved_function_for_callee(callee);
         let Some(function) = direct else {
             let signature =
@@ -1200,6 +1241,7 @@ impl<'a> Builder<'a> {
         self.loans.push(LoanDefinition {
             id,
             origin: origin.clone(),
+            may_target_descendants: false,
             issued_at: MirPoint {
                 block: self.current,
                 operation: self.blocks[self.current].operations.len(),

@@ -199,6 +199,10 @@ frame-local value cannot be returned.
 
 Methods may use `self` as their receiver group. Non-method functions cannot declare effects on
 `self`. Compiler-created closure functions derive group effects from their reference captures.
+Method results may expose `ref[self] T`, including inside `Option`, to borrow storage from
+the receiver. Such results remain tied to the receiver's lifetime; reshaping or consuming
+the receiver invalidates them. A structural contract retains that dependency even when
+the implementation's storage fields are hidden.
 
 ### Group ownership at a glance
 

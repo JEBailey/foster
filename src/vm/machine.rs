@@ -580,13 +580,29 @@ impl Machine {
                     destination,
                     variant,
                     payload,
-                    ..
+                    type_arguments,
                 } => {
                     let metadata = &self.program.metadata.variants[variant];
+                    let substitutions = metadata
+                        .parameters
+                        .iter()
+                        .cloned()
+                        .zip(type_arguments.iter().cloned())
+                        .collect();
                     let payload: Vec<_> = payload
                         .iter()
                         .copied()
-                        .map(|register| read(frame, register))
+                        .zip(&metadata.payload)
+                        .map(|(register, ty)| {
+                            if matches!(
+                                ty.substitute(&substitutions),
+                                crate::codegen::types::ExecutableType::Reference(_)
+                            ) {
+                                Ok(bind(frame, register))
+                            } else {
+                                read(frame, register)
+                            }
+                        })
                         .collect::<Result<_, _>>()?;
                     let payload = super::value::VariantPayload::from(payload);
                     if let Some(function) = self

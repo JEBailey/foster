@@ -2,11 +2,10 @@
 //!
 //! `Equal` keys must have equal hashes, and hash results must remain stable while
 //! keys are stored. Queries have expected constant-time bucket lookup and linear
-//! worst-case lookup. Iteration order is unspecified. get returns a copy; remove
+//! worst-case lookup. Iteration order is unspecified. borrow returns a reference; remove
 //! returns the owned value and preserves the table and its other entries.
 
 import core.option
-import core.copy as copying
 import std.collections
 import std.collections.map
 import std.iter
@@ -40,14 +39,14 @@ impl HashMap {
         find_index(self.buckets[bucket], key) >= 0
     }
 
-    /// Returns an independent Copy of the value, preserving the map; absent keys return None.
-    /// A present noncopyable value raises a runtime error; use remove to obtain ownership.
-    pub func get<K, V>(self: HashMap<K, V>, key: K) -> Option<V> [read self.buckets, read key] {
+    /// Borrows the stored value; absent keys return None. No Copy is required.
+    /// The reference permits mutation and cannot outlive or survive reshaping the map.
+    pub func borrow<K, V>(self: HashMap<K, V>, key: K) -> Option<ref[self] V> [read self.buckets, read key] {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
         let index = find_index(self.buckets[bucket], key)
         branch {
             index < 0 -> Option.None
-            _ -> Option.Some(copying::copy(self.buckets[bucket][index].value))
+            _ -> Option.Some(ref self.buckets[bucket][index].value)
         }
     }
 
@@ -216,7 +215,8 @@ test "hash maps retain colliding keys through replacement and removal" {
     assert(table.length() == 2)
     assert(not table.contains_key?(2))
     assert(table.contains_key?(3))
-    assert(table.get(1) == Option.Some("one"))
+    assert(branch table.borrow(1) { Option.Some(value) -> value == "one"
+        Option.None -> false })
 }
 
 test "hash maps grow and accept every signed hash" {
@@ -235,7 +235,10 @@ test "hash maps grow and accept every signed hash" {
         assert(table.contains_key?(index))
         index = index + 1
     }
-    assert(table.get(99) == Option.Some(198))
+    assert(branch table.borrow(99) { Option.Some(value) -> value == 198
+        Option.None -> false })
     let negative = HashMap.empty((key: Int) -> -9223372036854775807 - 1)
-    assert((move negative).put(1, 42).get(1) == Option.Some(42))
+    negative = (move negative).put(1, 42)
+    assert(branch negative.borrow(1) { Option.Some(value) -> value == 42
+        Option.None -> false })
 }

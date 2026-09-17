@@ -38,8 +38,9 @@ func algorithms() -> Result<Int, ListReadError> {
     detached.items.push(2)
     assert(detached.items == [1, 2], "detached field must receive the appended element")
     assert((try stored.at(0)).items == [1], "shared source field must remain unchanged")
-    let selected = original.get(0)
-    assert(selected == Option.Some(Box { value: 42 }))
+    let selected = original.borrow(0)
+    assert(branch selected { Option.Some(item) -> item.value == 42
+        Option.None -> false })
     assert((try original.at(0)).value == 42)
     assert([1, 2, 3].find(match_second) == Option.Some(2))
     assert([1, 2, 3].any?(match_second))

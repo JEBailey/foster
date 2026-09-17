@@ -329,6 +329,10 @@ impl Checker<'_> {
             argument_types,
             result.clone(),
         )?;
+        if let hir::Expr::Member { object, .. } = self.hir.expressions[callee] {
+            let groups = HashMap::from([("self".to_owned(), self.expression_group(object))]);
+            return Ok(substitute_groups(self.resolved(result), &groups));
+        }
         Ok(result)
     }
 
@@ -894,7 +898,11 @@ impl Checker<'_> {
             .first()
             .cloned()
             .ok_or_else(|| self.error(caller, format!("function `{name}` is not a method")))?;
-        self.unify(expected_receiver.ty, receiver, caller)?;
+        let receiver_type = match expected_receiver.ty {
+            Ty::Reference(_, value) => *value,
+            value => value,
+        };
+        self.unify(receiver_type, receiver, caller)?;
         self.check_constraints_with_bindings(caller, function, &generics)?;
         parameters.remove(0);
         let result = self.instantiate(signature.result, &mut generics);
@@ -1223,7 +1231,11 @@ impl Checker<'_> {
                 }
             }
         }
-        self.unify(receiver.ty, Ty::Record(record, arguments), caller)?;
+        let receiver_type = match receiver.ty {
+            Ty::Reference(_, value) => *value,
+            value => value,
+        };
+        self.unify(receiver_type, Ty::Record(record, arguments), caller)?;
         self.check_constraints_with_bindings(caller, method, &generics)?;
         let result = self.instantiate(signature.result, &mut generics);
         if remote && !remote_transferable(&self.resolved(result.clone())) {

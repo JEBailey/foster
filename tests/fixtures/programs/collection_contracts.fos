@@ -21,7 +21,8 @@ func update_map(values: Map<String, Int>) -> Map<String, Int> [mut values, consu
 func map_answer(values: Map<String, Int>) -> Int [consume values] {
     assert(values.length() == 1)
     assert(values.contains_key?("answer"))
-    values.get("answer").unwrap_or(0)
+    branch values.borrow("answer") { Option.Some(value) -> value + 0
+        Option.None -> 0 }
 }
 func update_set(values: Set<Int>) -> Set<Int> [mut values, consume values] {
     (move values).insert(42).insert(42).remove(7)

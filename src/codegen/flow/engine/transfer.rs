@@ -14,6 +14,38 @@ use super::{Body, Instruction, Program, StoragePolicy};
 use crate::codegen::{ir::Value, types::ExecutableType};
 use crate::error::FosterError;
 use crate::intrinsics::IntrinsicArgumentMode;
+
+fn pattern_binding_types(
+    program: &Program,
+    pattern: &crate::hir::Pattern,
+    subject: &ExecutableType,
+    bindings: &mut Vec<ExecutableType>,
+) {
+    use crate::hir::Pattern;
+    match pattern.unspanned() {
+        Pattern::Binding(_) => bindings.push(subject.clone()),
+        Pattern::IsType {
+            binding: Some(_), ..
+        } => bindings.push(ExecutableType::Unknown),
+        Pattern::Variant { variant, fields } => {
+            let metadata = &program.metadata.variants[variant];
+            let substitutions = match subject {
+                ExecutableType::Variant { arguments, .. } => metadata
+                    .parameters
+                    .iter()
+                    .cloned()
+                    .zip(arguments.iter().cloned())
+                    .collect(),
+                _ => std::collections::HashMap::new(),
+            };
+            for (field, schema) in fields.iter().zip(&metadata.payload) {
+                pattern_binding_types(program, field, &schema.substitute(&substitutions), bindings);
+            }
+        }
+        _ => {}
+    }
+}
+
 pub(super) fn transfer(
     program: &Program,
     function: &Body,
@@ -63,7 +95,15 @@ pub(super) fn transfer(
                     aliases
                 };
                 pattern.conditions = rename(&pattern.conditions);
-                pattern.bindings = rename(&pattern.bindings);
+                pattern.bindings = pattern
+                    .bindings
+                    .iter()
+                    .flat_map(|(value, ty)| {
+                        rename(&[*value])
+                            .into_iter()
+                            .map(|value| (value, ty.clone()))
+                    })
+                    .collect();
                 if let Some((subjects, _)) = &mut pattern.refined_subject {
                     *subjects = rename(subjects);
                 }
@@ -189,7 +229,7 @@ pub(super) fn transfer(
             destination,
             variant,
             payload,
-            ..
+            type_arguments,
         } => {
             for register in payload {
                 read_type(function, index, &state, *register)?;
@@ -201,7 +241,7 @@ pub(super) fn transfer(
                 *destination,
                 ExecutableType::Variant {
                     variant: program.metadata.variants[variant].parent,
-                    arguments: Vec::new(),
+                    arguments: type_arguments.clone(),
                 },
             )?;
         }
@@ -655,6 +695,8 @@ pub(super) fn transfer(
                 *destination,
                 ExecutableType::Bool,
             )?;
+            let mut binding_types = Vec::new();
+            pattern_binding_types(program, pattern, &subject_type, &mut binding_types);
             state.pending_pattern = Some(PendingPattern {
                 conditions: vec![*destination],
                 refined_subject: match pattern.unspanned() {
@@ -665,7 +707,7 @@ pub(super) fn transfer(
                     } => Some((vec![*subject], target.clone())),
                     _ => None,
                 },
-                bindings: bindings.clone(),
+                bindings: bindings.iter().copied().zip(binding_types).collect(),
                 irrefutable: pattern_irrefutable(pattern) || exhaustive,
                 covered_variant: covered_variant.map(|(subject, variant)| (vec![subject], variant)),
             });
@@ -695,14 +737,8 @@ pub(super) fn transfer(
                         truthy.bindings[subject.index()] = Some(view);
                     }
                 }
-                for binding in &pattern.bindings {
-                    write_type(
-                        function,
-                        index,
-                        &mut truthy,
-                        *binding,
-                        ExecutableType::Unknown,
-                    )?;
+                for (binding, ty) in &pattern.bindings {
+                    write_type(function, index, &mut truthy, *binding, ty.clone())?;
                 }
                 if let Some((subjects, variant)) = &pattern.covered_variant {
                     for subject in subjects {

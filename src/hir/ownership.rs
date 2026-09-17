@@ -98,6 +98,9 @@ pub(crate) fn validate_groups_and_effects(hir: &PackageHir) -> Result<(), Foster
             }
         }
         let mut declared = std::collections::HashSet::new();
+        if is_method {
+            declared.insert("self");
+        }
         for group in &function.groups {
             if type_parameters.contains(group.name.as_str()) {
                 return Err(FosterError::runtime(format!(

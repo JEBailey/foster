@@ -746,11 +746,12 @@ pub(crate) fn slot_instruction(
         crate::codegen::storage::Instruction::MakeVariant {
             destination,
             variant,
-            type_arguments: _,
+            type_arguments,
             payload,
         } => engine::Instruction::MakeVariant {
             destination: Value(u32::from(destination.0)),
             variant: *variant,
+            type_arguments: type_arguments.clone(),
             payload: payload.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
         crate::codegen::storage::Instruction::LoadField {

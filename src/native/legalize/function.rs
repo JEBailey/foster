@@ -48,6 +48,24 @@ pub(in crate::native) fn lower_shared_to_native_ir(
         environment,
         &remote_calls,
     )?;
+    // A reference extracted from a variant remains the assignment target for
+    // its local, just like an explicit reference parameter.
+    let mut assignment_references = reference_homes.clone();
+    for instruction in shared.blocks.iter().flat_map(|block| &block.instructions) {
+        if let ir::Instruction::Portable(ir::PortableInstruction::MatchPattern {
+            bindings, ..
+        }) = &instruction.instruction
+        {
+            for binding in bindings {
+                let ty = inferred.types[binding.index()];
+                if crate::native::dereference_native_type(ty, environment)? != ty
+                    && let Some(home) = shared.values.hint(binding.index())
+                {
+                    assignment_references.insert(home, *binding);
+                }
+            }
+        }
+    }
     let mut values = shared.values.clone().into_builder();
     let empty = inferred.empty;
     for (index, ty) in inferred.types.into_iter().enumerate() {
@@ -95,7 +113,14 @@ pub(in crate::native) fn lower_shared_to_native_ir(
                 environment,
                 &mut values,
                 NativeFunctionFacts {
-                    reference_homes: &reference_homes,
+                    reference_homes: if matches!(
+                        instruction,
+                        ir::Instruction::Portable(ir::PortableInstruction::Move { .. })
+                    ) {
+                        &assignment_references
+                    } else {
+                        &reference_homes
+                    },
                     remote_calls: &remote_calls,
                 },
             )?;

@@ -65,10 +65,10 @@ func main() -> Int {
 }
 
 #[test]
-fn map_get_rejects_present_noncopyable_values() {
+fn map_borrow_supports_noncopyable_values() {
     for (name, constructor) in [
-        ("list-map-copy-error", "Map.empty()"),
-        ("hash-map-copy-error", "HashMap.empty((key: Int) -> 0)"),
+        ("list-map-borrow-owned", "Map.empty()"),
+        ("hash-map-borrow-owned", "HashMap.empty((key: Int) -> 0)"),
     ] {
         let source = r#"
 import core.option
@@ -77,16 +77,16 @@ import std.collections.hash_map
 type Resource = { value: Int }
 func main() -> Int {
     let values = __MAP__.put(1, Resource { value: 42 })
-    assert(values.get(99) == Option.None)
+    assert(values.borrow(99) == Option.None)
     assert(values.length() == 1)
-    branch values.get(1) {
+    branch values.borrow(1) {
         Option.Some(value) -> value.value
         Option.None -> 0
     }
 }
 "#
         .replace("__MAP__", constructor);
-        check(name, &source, Err("value does not implement Copy"));
+        check(name, &source, Ok("42"));
     }
 }
 
@@ -106,8 +106,8 @@ impl Item {
     func deinit(self) -> () { println(self.id) }
 }
 func exercise(values: Map<Int, Item>) -> () [reshape values] {
-    branch values.get(1) {
-        Option.Some(item) -> { assert(item.id == 11) }
+    branch values.borrow(1) {
+        Option.Some(item) -> { assert(item.id == 1) }
         Option.None -> { assert(false) }
     }
     println(20)
@@ -134,12 +134,12 @@ func main() -> Int {
     42
 }
 "#,
-        "11\n20\n1\n30\n2\n11\n20\n1\n30\n2\n42",
+        "20\n1\n30\n2\n20\n1\n30\n2\n42",
     );
 }
 
 #[test]
-fn map_access_copies_and_removes_without_consuming_maps() {
+fn map_access_borrows_and_removes_without_consuming_maps() {
     check(
         "map-access",
         include_str!("fixtures/programs/map_access.fos"),

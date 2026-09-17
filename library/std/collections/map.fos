@@ -1,11 +1,10 @@
 //! Associative collection contracts and insertion-ordered list maps.
 //!
 //! `Map<K, V>` defines the shared API. `Map`.empty constructs `ListMap`, whose key searches
-//! are linear. Use std.collections.hash_map for hashed lookup. get copies a value;
+//! are linear. Use std.collections.hash_map for hashed lookup. borrow returns a reference;
 //! remove transfers a value and preserves the map. put consumes and returns the updated collection.
 
 import core.option
-import core.copy as copying
 import std.collections
 import std.iter
 
@@ -16,12 +15,12 @@ pub type Entry<K, V> = {
 }
 
 /// An associative collection with unique keys and implementation-defined iteration order.
-/// Lookup copies the selected value. Removal mutates the map and transfers the selected value.
+/// Lookup borrows the stored value. Removal mutates the map and transfers the selected value.
 /// put consumes and returns the concrete implementation; membership checks borrow it.
 pub type Map<K, V> = & Collection<Entry<K, V>> & {
-    /// Returns an independent Copy of the value, preserving the map; absent keys return None.
-    /// A present noncopyable value raises a runtime error; use remove to obtain ownership.
-    pub func get(self, key: K) -> Option<V> [read self, read key]
+    /// Borrows the stored value; absent keys return None. No Copy is required.
+    /// The reference permits mutation and cannot outlive or survive reshaping the map.
+    pub func borrow(self, key: K) -> Option<ref[self] V> [read self, read key]
     /// Removes and returns the owned value, preserving all other entries; absent keys return None.
     pub func remove(self, key: K) -> Option<V> [read key, reshape self]
     /// Tests key membership without consuming the map.
@@ -50,13 +49,13 @@ impl ListMap {
         ListMap { entries: [] }
     }
 
-    /// Returns an independent Copy of the value, preserving the map; absent keys return None.
-    /// A present noncopyable value raises a runtime error; use remove to obtain ownership.
-    pub func get<K, V>(self: ListMap<K, V>, key: K) -> Option<V> [read self.entries, read key] {
+    /// Borrows the stored value; absent keys return None. No Copy is required.
+    /// The reference permits mutation and cannot outlive or survive reshaping the map.
+    pub func borrow<K, V>(self: ListMap<K, V>, key: K) -> Option<ref[self] V> [read self.entries, read key] {
         let index = find_index(self.entries, key)
         branch {
             index < 0 -> Option.None
-            _ -> Option.Some(copying::copy(self.entries[index].value))
+            _ -> Option.Some(ref self.entries[index].value)
         }
     }
 }
@@ -170,7 +169,7 @@ test "maps replace values without duplicating keys" {
     assert(not values.empty?())
     assert(values.contains_key?("a"))
     assert(not values.contains_key?("missing"))
-    let found = branch values.get("a") {
+    let found = branch values.borrow("a") {
         Option.Some(value) -> value == 2
         Option.None -> false
     }

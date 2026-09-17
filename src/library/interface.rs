@@ -403,6 +403,11 @@ pub(crate) fn mount(
         }
         let mut declarations = module.declarations.clone();
         rewrite(&mut declarations, &names);
+        for function in &mut declarations.functions {
+            if function.receiver {
+                restore_receiver_group(function);
+            }
+        }
         for (position, binding) in module.functions.iter().enumerate() {
             let mut context = library
                 .interface
@@ -465,6 +470,58 @@ pub(crate) fn mount(
     }
     package.libraries.push(library);
     Ok(())
+}
+
+/// Symbol descriptors use positional parameter roots; source method contracts
+/// expose the first parameter's group as `self`.
+fn restore_receiver_group(function: &mut ast::Function) {
+    fn effects(effects: &mut [ast::Effect]) {
+        for effect in effects {
+            if effect.target.root == "p0" {
+                effect.target.root = "self".into();
+            }
+        }
+    }
+    fn ty(value: &mut ast::TypeExpr) {
+        match value {
+            ast::TypeExpr::Reference { group, value } => {
+                if group == "p0" {
+                    *group = "self".into();
+                }
+                ty(value);
+            }
+            ast::TypeExpr::Named(_, arguments) | ast::TypeExpr::Intersection(arguments) => {
+                for argument in arguments {
+                    ty(argument);
+                }
+            }
+            ast::TypeExpr::Function {
+                parameters,
+                result,
+                effects: declared,
+                ..
+            } => {
+                for parameter in parameters {
+                    ty(parameter);
+                }
+                ty(result);
+                effects(declared);
+            }
+            ast::TypeExpr::Unit => {}
+        }
+    }
+    if let Some(receiver) = function.parameters.first_mut() {
+        receiver.name = "self".into();
+    }
+    for parameter in &mut function.parameters {
+        if let Some(annotation) = &mut parameter.ty {
+            ty(annotation);
+        }
+    }
+    if let Some(result) = &mut function.return_type {
+        ty(result);
+    }
+    effects(&mut function.effects);
 }
 
 fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {

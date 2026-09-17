@@ -66,13 +66,13 @@ pub(super) fn transfer(
                 .map(|p| &p.ty)
                 .map(|ty| ty.specialize(specialization))
                 .collect::<Vec<_>>();
-            let receiver = read_type(function, index, &state, *receiver)?;
-            require_type(
+            verify_arguments(
                 function,
                 index,
-                &receiver,
-                &parameter_types[0],
-                "method receiver",
+                &mut state,
+                std::iter::once((ParameterMode::Borrow, *receiver)),
+                std::iter::once(ParameterMode::Borrow),
+                std::iter::once(&parameter_types[0]),
             )?;
             verify_arguments(
                 function,

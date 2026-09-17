@@ -21,7 +21,10 @@ func main() -> Int {
     assert(scores.remove("Lin") == Option.Some(7))
     let languages = HashSet.from(["Foster", "Rust", "Foster"], hashing::text)
     assert(languages.length() == 2)
-    scores.get("Ada").unwrap_or(0)
+    branch scores.borrow("Ada") {
+        Option.Some(score) -> score
+        Option.None -> 0
+    }
 }
 ```
 
@@ -32,11 +35,11 @@ Hasher behavior and key equality must remain stable while keys are stored. The s
 hashing helpers are deterministic and are not designed to resist adversarial collision attacks.
 
 Both contracts compose `Collection`, exposing `length()`, `empty?()`, and `iterator()`.
-HashMap additionally provides `contains_key?`, `put`, `remove`, `get`, `keys`, and `values`.
+HashMap additionally provides `contains_key?`, `put`, `remove`, `borrow`, `keys`, and `values`.
 HashSet provides `contains?`, `insert`, `remove`, and `values`. Map `put` and set updates consume
-and return the collection. Map `get` borrows the map and returns `Option<V>` containing an
-independent Copy; a present noncopyable value raises a runtime error. `None` means only that
-the key is absent. Map `remove` mutates the map and returns the original owned value in
+and return the collection. Map `borrow` returns `Option<ref[self] V>` tied to the map storage.
+It supports noncopyable values and permits mutation through the reference. `None` means the key
+is absent. Finish using the reference before removing entries or replacing the map. Map `remove` mutates the map and returns the original owned value in
 `Option<V>`, preserving all other entries and supporting noncopyable values. Keys and values extraction
 consume the collection. Iterators retain independent snapshots, so later updates preserve
 the iterator's original contents.
@@ -46,6 +49,6 @@ resolved by equality checks within a bucket. Key search and updates have expecte
 with well-distributed hashes, and linear worst-case cost when hashes collide. Growth rehashes
 all entries. Live snapshots can add copy-on-write costs to updates. Removal rebuilds its
 collision chain and does not shrink the table. Table loops are iterative rather than recursive.
-The cost of `get` includes the selected value's Copy operation. HashMap iterator
+Lookup does not invoke Copy. HashMap iterator
 creation retains bucket storage; HashSet iterator creation collects a snapshot of its values
 in linear time and space.

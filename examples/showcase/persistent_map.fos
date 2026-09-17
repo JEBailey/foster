@@ -18,17 +18,17 @@ impl Map {
     }
 }
 
-func get_entries(entries: List<Entry>, key: Symbol) -> Lookup {
+func lookup_entries(entries: List<Entry>, key: Symbol) -> Lookup {
     branch {
         entries.empty? -> Missing
         entries.head.key == key -> Found(entries.head.value)
-        _ -> get_entries(entries.rest, key)
+        _ -> lookup_entries(entries.rest, key)
     }
 }
 
 impl Map {
-    func get(self: Map, key: Symbol) -> Lookup {
-        get_entries(self.entries, key)
+    func lookup(self: Map, key: Symbol) -> Lookup {
+        lookup_entries(self.entries, key)
     }
 }
 
@@ -58,7 +58,7 @@ func main() -> Int {
     user = user.put(:name, 1)
     user = user.put(:score, 95)
     let updated = user.put(:score, 96)
-    println("original:", value_or_zero(user.get(:score)))
-    println("updated:", value_or_zero(updated.get(:score)))
-    value_or_zero(updated.get(:score))
+    println("original:", value_or_zero(user.lookup(:score)))
+    println("updated:", value_or_zero(updated.lookup(:score)))
+    value_or_zero(updated.lookup(:score))
 }

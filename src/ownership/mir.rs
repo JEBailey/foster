@@ -238,6 +238,9 @@ pub struct ResultProvenance {
 pub struct LoanDefinition {
     pub id: LoanId,
     pub origin: Place,
+    /// A method result may target storage anywhere below its receiver when
+    /// its public contract does not expose the implementation's field path.
+    pub may_target_descendants: bool,
     pub issued_at: MirPoint,
     /// Loans contained by the place from which this loan was derived. There
     /// may be more than one after a control-flow join.

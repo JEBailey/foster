@@ -1374,16 +1374,24 @@ fn validate_returned_loan(
         .with_label(hir.locals[origin].span.clone(), "borrowed local is declared here")
         .with_help("return an owned value, or borrow from a reference parameter whose group appears in the result type"));
     };
-    let Some(crate::ast::TypeExpr::Reference { group, .. }) =
-        function.parameters[parameter].ty.as_ref()
-    else {
-        return Err(FosterError::runtime(format!(
+    let group = match function.parameters[parameter].ty.as_ref() {
+        Some(crate::ast::TypeExpr::Reference { group, .. }) => group.as_str(),
+        _ if function.receiver == Some(origin)
+            && !function.effects.iter().any(|effect| {
+                effect.kind == crate::ast::EffectKind::Consume && effect.target.root == "self"
+            }) =>
+        {
+            "self"
+        }
+        _ => {
+            return Err(FosterError::runtime(format!(
             "in `{module}.{}`: returned reference borrows parameter `{name}` without an exposed group",
             function.name
         ))
         .with_code(super::diagnostics::BORROW_ESCAPE)
         .with_source_module(module.clone())
         .with_primary_label(returned_at.clone(), "this return exposes a borrow without a named result group"));
+        }
     };
     if !crate::hir::queries::type_exposes_group(function.return_type.as_ref(), group) {
         return Err(FosterError::runtime(format!(
@@ -1500,7 +1508,7 @@ fn find_conflict_inner(
                     points[index + 1].loans.keys().any(|loan| {
                         aliases
                             .iter()
-                            .any(|place| invalidates(place, kind, &function.loans[loan.0].origin))
+                            .any(|place| invalidates(place, kind, &function.loans[loan.0]))
                     })
                 })
         });
@@ -1509,6 +1517,34 @@ fn find_conflict_inner(
     }
     let guarded = analyze_guarded_requirements(function, provenance);
     let reachability = analyze_path_reachability(function, provenance);
+    // A join can carry a returned loan's demand down an arm where that loan
+    // has not been issued. Such demand must not invalidate storage before the
+    // borrow exists. Keep an over-approximation of issuance, including loops.
+    let mut issued_entries = vec![HashSet::new(); function.blocks.len()];
+    loop {
+        let mut changed = false;
+        for (block, definition) in function.blocks.iter().enumerate() {
+            if provenance.points[block].is_none() {
+                continue;
+            }
+            let mut issued = issued_entries[block].clone();
+            issued.extend(
+                function
+                    .loans
+                    .iter()
+                    .filter(|loan| loan.issued_at.block == block)
+                    .map(|loan| loan.id),
+            );
+            for successor in definition.terminator.successors() {
+                let before = issued_entries[*successor].len();
+                issued_entries[*successor].extend(issued.iter().copied());
+                changed |= before != issued_entries[*successor].len();
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
     for (block, definition) in function.blocks.iter().enumerate() {
         let Some(points) = &requirements.points[block] else {
             continue;
@@ -1541,16 +1577,22 @@ fn find_conflict_inner(
                 .iter()
                 .filter_map(|(id, conservative_use)| {
                     let loan = &function.loans[id.0];
+                    if !issued_entries[block].contains(id)
+                        && !(loan.issued_at.block == block
+                            && loan.issued_at.operation <= operation_index)
+                    {
+                        return None;
+                    }
                     let place = aliases
                         .iter()
-                        .find(|place| invalidates(place, kind, &loan.origin))?;
+                        .find(|place| invalidates(place, kind, loan))?;
                     let issued_here = loan.issued_at.block == block
                         && loan.issued_at.operation == operation_index;
                     let replacement_through_parameter =
                         kind == InvalidationKind::Replace && is_parameter_reborrow(function, loan);
                     if issued_here
                         || replacement_through_parameter
-                        || !invalidates(place, kind, &loan.origin)
+                        || !invalidates(place, kind, loan)
                     {
                         return None;
                     }
@@ -1663,9 +1705,11 @@ fn is_parameter_reborrow(function: &Function, loan: &super::LoanDefinition) -> b
     )
 }
 
-fn invalidates(invalidated: &Place, kind: InvalidationKind, origin: &Place) -> bool {
+fn invalidates(invalidated: &Place, kind: InvalidationKind, loan: &super::LoanDefinition) -> bool {
+    let origin = &loan.origin;
     places_overlap(invalidated, origin)
         && (matches!(kind, InvalidationKind::Consume | InvalidationKind::Replace)
+            || loan.may_target_descendants
             || origin
                 .projections
                 .iter()
@@ -2132,6 +2176,7 @@ mod tests {
             projections: Vec::new(),
         };
         let loan = super::super::LoanDefinition {
+            may_target_descendants: false,
             id: LoanId(0),
             origin: Place {
                 root: PlaceRoot::Local(owner),
@@ -2225,6 +2270,7 @@ mod tests {
                 terminator: Terminator::Return,
             }],
             loans: vec![super::super::LoanDefinition {
+                may_target_descendants: false,
                 id: LoanId(0),
                 origin: Place {
                     root: PlaceRoot::Local(owner),
@@ -2288,6 +2334,7 @@ mod tests {
                 },
             ],
             loans: vec![super::super::LoanDefinition {
+                may_target_descendants: false,
                 id: LoanId(0),
                 origin: Place {
                     root: PlaceRoot::Local(owner),
@@ -2363,6 +2410,7 @@ mod tests {
                 terminator: Terminator::Return,
             }],
             loans: vec![super::super::LoanDefinition {
+                may_target_descendants: false,
                 id: LoanId(0),
                 origin: Place {
                     root: PlaceRoot::Local(owner),

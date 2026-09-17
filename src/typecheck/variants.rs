@@ -114,6 +114,10 @@ impl Checker<'_> {
                 }
             }
             hir::Pattern::Binding(local) => {
+                let expected = self.resolved(expected);
+                if let Some(group) = reference_group(&expected) {
+                    self.local_groups.insert(*local, group);
+                }
                 self.locals.insert(*local, expected);
                 if top_level {
                     *catch_all = true;

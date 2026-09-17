@@ -166,7 +166,7 @@ fn parallel_edges_preserve_every_pattern_alias_and_binding() {
     assert_eq!(states[2].as_ref().unwrap().bindings[5], None);
     assert_eq!(
         states[3].as_ref().unwrap().bindings[5],
-        Some(ExecutableType::Unknown)
+        Some(ExecutableType::Integer)
     );
     assert!(states[4].is_none(), "irrefutable binding has no false edge");
 }
