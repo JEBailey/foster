@@ -262,9 +262,12 @@ pub(super) fn runtime_call(
     let reference = module.declare_func_in_func(function, builder.func);
     let call = builder.ins().call(reference, arguments);
     let result = builder.inst_results(call)[0];
-    if matches!(
+    if name == abi::CANCELLATION_POINT {
+        // The poll already queried failure after handling cooperative scheduling.
+        propagate_native_failure_status(builder, module, result);
+    } else if matches!(
         name,
-        abi::CANCELLATION_POINT | abi::ASSERT | abi::FAIL | abi::STRING_GET | abi::PARSE_FLOAT
+        abi::ASSERT | abi::FAIL | abi::STRING_GET | abi::PARSE_FLOAT
     ) {
         propagate_native_failure(builder, module)?;
     }
@@ -287,6 +290,15 @@ pub(super) fn propagate_native_failure(
         },
         &[],
     )?;
+    propagate_native_failure_status(builder, module, pending);
+    Ok(())
+}
+
+fn propagate_native_failure_status(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    pending: ClifValue,
+) {
     let failed = builder.create_block();
     let continuation = builder.create_block();
     builder.ins().brif(pending, failed, &[], continuation, &[]);
@@ -311,7 +323,6 @@ pub(super) fn propagate_native_failure(
     };
     builder.ins().return_(&[placeholder]);
     builder.switch_to_block(continuation);
-    Ok(())
 }
 
 pub(super) fn fail_if(

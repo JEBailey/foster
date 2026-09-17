@@ -1,0 +1,299 @@
+[
+  {
+    "census": {
+      "allocated_bytes": 0,
+      "allocations": 0,
+      "buffer_copy_bytes": 0,
+      "buffer_copy_calls": 0,
+      "cancellation_polls": 300004,
+      "deallocations": 0
+    },
+    "diagnostic_poll_body_bypass_median_ns": 11087800,
+    "diagnostic_poll_body_bypass_samples_ns": [
+      11828600,
+      11507700,
+      10794000,
+      10751600,
+      10864700,
+      11126800,
+      11087800
+    ],
+    "iterations": 100000,
+    "median_ns": 23084400,
+    "result": "4999950000",
+    "samples_ns": [
+      23084400,
+      23280400,
+      22534200,
+      23102300,
+      22921200,
+      23327600,
+      22805900
+    ],
+    "workload": "scalar"
+  },
+  {
+    "census": {
+      "allocated_bytes": 4000000,
+      "allocations": 100000,
+      "buffer_copy_bytes": 0,
+      "buffer_copy_calls": 0,
+      "cancellation_polls": 300004,
+      "deallocations": 100000
+    },
+    "diagnostic_poll_body_bypass_median_ns": 24116200,
+    "diagnostic_poll_body_bypass_samples_ns": [
+      24581500,
+      24810100,
+      23929300,
+      24116200,
+      23722300,
+      23743000,
+      24406900
+    ],
+    "iterations": 100000,
+    "median_ns": 39351600,
+    "result": "5000050000",
+    "samples_ns": [
+      39371100,
+      39387600,
+      42417300,
+      38615200,
+      39351600,
+      38489900,
+      38968100
+    ],
+    "workload": "record_fresh"
+  },
+  {
+    "census": {
+      "allocated_bytes": 40,
+      "allocations": 1,
+      "buffer_copy_bytes": 0,
+      "buffer_copy_calls": 0,
+      "cancellation_polls": 300004,
+      "deallocations": 1
+    },
+    "diagnostic_poll_body_bypass_median_ns": 11316600,
+    "diagnostic_poll_body_bypass_samples_ns": [
+      11295700,
+      10982800,
+      10771000,
+      14086000,
+      12851000,
+      12191700,
+      11316600
+    ],
+    "iterations": 100000,
+    "median_ns": 23230300,
+    "result": "5000050000",
+    "samples_ns": [
+      23230300,
+      23080800,
+      22803300,
+      22946800,
+      23482600,
+      23816100,
+      23444600
+    ],
+    "workload": "record_reuse"
+  },
+  {
+    "census": {
+      "allocated_bytes": 40,
+      "allocations": 1,
+      "buffer_copy_bytes": 0,
+      "buffer_copy_calls": 0,
+      "cancellation_polls": 300004,
+      "deallocations": 1
+    },
+    "diagnostic_poll_body_bypass_median_ns": 11747700,
+    "diagnostic_poll_body_bypass_samples_ns": [
+      11564400,
+      14194600,
+      11747700,
+      12002700,
+      11555500,
+      11420300,
+      15456200
+    ],
+    "iterations": 100000,
+    "median_ns": 23416500,
+    "result": "1000000",
+    "samples_ns": [
+      22854000,
+      23251800,
+      23818300,
+      23106100,
+      23416500,
+      28143700,
+      24121100
+    ],
+    "workload": "field_read"
+  },
+  {
+    "census": {
+      "allocated_bytes": 40,
+      "allocations": 1,
+      "buffer_copy_bytes": 0,
+      "buffer_copy_calls": 0,
+      "cancellation_polls": 400004,
+      "deallocations": 1
+    },
+    "diagnostic_poll_body_bypass_median_ns": 22126000,
+    "diagnostic_poll_body_bypass_samples_ns": [
+      21863200,
+      21644600,
+      22383400,
+      23230400,
+      21969100,
+      22375300,
+      22126000
+    ],
+    "iterations": 100000,
+    "median_ns": 38740300,
+    "result": "1000000",
+    "samples_ns": [
+      38688500,
+      39756300,
+      37689800,
+      38740300,
+      41430800,
+      37146900,
+      41938900
+    ],
+    "workload": "method_read"
+  },
+  {
+    "census": {
+      "allocated_bytes": 8000000,
+      "allocations": 200000,
+      "buffer_copy_bytes": 0,
+      "buffer_copy_calls": 0,
+      "cancellation_polls": 300004,
+      "deallocations": 200000
+    },
+    "diagnostic_poll_body_bypass_median_ns": 28186900,
+    "diagnostic_poll_body_bypass_samples_ns": [
+      28153100,
+      28285100,
+      28180100,
+      28662600,
+      29040600,
+      28186900,
+      28087700
+    ],
+    "iterations": 100000,
+    "median_ns": 41533600,
+    "result": "4999950000",
+    "samples_ns": [
+      41121300,
+      42374800,
+      45233100,
+      44385700,
+      40858300,
+      41533600,
+      40745500
+    ],
+    "workload": "list_fresh"
+  },
+  {
+    "census": {
+      "allocated_bytes": 2097192,
+      "allocations": 19,
+      "buffer_copy_bytes": 0,
+      "buffer_copy_calls": 0,
+      "cancellation_polls": 300004,
+      "deallocations": 19
+    },
+    "diagnostic_poll_body_bypass_median_ns": 12004600,
+    "diagnostic_poll_body_bypass_samples_ns": [
+      11741000,
+      12879600,
+      12449900,
+      11991600,
+      12004600,
+      12500100,
+      11842300
+    ],
+    "iterations": 100000,
+    "median_ns": 23885900,
+    "result": "100001",
+    "samples_ns": [
+      23270900,
+      23990900,
+      23285300,
+      24410200,
+      23939700,
+      23885900,
+      23281900
+    ],
+    "workload": "list_push"
+  },
+  {
+    "census": {
+      "allocated_bytes": 28800000,
+      "allocations": 700000,
+      "buffer_copy_bytes": 0,
+      "buffer_copy_calls": 0,
+      "cancellation_polls": 1200004,
+      "deallocations": 700000
+    },
+    "diagnostic_poll_body_bypass_median_ns": 132820100,
+    "diagnostic_poll_body_bypass_samples_ns": [
+      131963600,
+      132924800,
+      130930300,
+      141198300,
+      133067700,
+      130676600,
+      132820100
+    ],
+    "iterations": 100000,
+    "median_ns": 182246100,
+    "result": "4999950000",
+    "samples_ns": [
+      190482200,
+      182032600,
+      190550600,
+      182399000,
+      182055800,
+      182246100,
+      181458400
+    ],
+    "workload": "list_iterator"
+  },
+  {
+    "census": {
+      "allocated_bytes": 36800000,
+      "allocations": 900000,
+      "buffer_copy_bytes": 0,
+      "buffer_copy_calls": 0,
+      "cancellation_polls": 1200004,
+      "deallocations": 900000
+    },
+    "diagnostic_poll_body_bypass_median_ns": 141414200,
+    "diagnostic_poll_body_bypass_samples_ns": [
+      139600300,
+      140291800,
+      147814700,
+      140465600,
+      141414200,
+      144174800,
+      146609000
+    ],
+    "iterations": 100000,
+    "median_ns": 190582400,
+    "result": "4999950000",
+    "samples_ns": [
+      190094900,
+      189478300,
+      193276700,
+      190843800,
+      195945100,
+      190582400,
+      189014300
+    ],
+    "workload": "list_snapshot"
+  }
+]

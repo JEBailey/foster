@@ -29,6 +29,10 @@ pruning, unreachable-block removal, and dead scalar value elimination. Integer f
 checked failures; floating-point folding preserves operand order and uses bit-identical constants.
 Reference-exposed homes and aliases are excluded from scalar facts. Loops with unknown incoming
 values remain conservative. Every changed graph is verified and its logical flow facts rebuilt.
+Shared scalar CSE reuses only dominating, non-trapping computations over immutable scalar
+identities. It protects operands of storage/ownership operations and their home aliases, and
+gives reused results independent VM storage. It does not eliminate memory reads, calls,
+checked arithmetic, shifts, or floating-point operations.
 
 The VM de-SSA backend splits critical edges, resolves parallel-copy cycles, and assigns storage
 homes. Its remaining passes handle edge/jump cleanup, register copy propagation, dead register

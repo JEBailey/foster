@@ -1497,7 +1497,9 @@ func main() { 0 }
 #[test]
 fn checks_explicit_import_core_library_usage() {
     let compilation = foster::check_package("tests/fixtures/core_consumer").unwrap();
-    assert!(compilation.package.module("core").unwrap().is_implicit());
+    let core = compilation.package.module("core").unwrap();
+    assert!(!core.is_implicit());
+    assert!(core.program.as_ref().unwrap().documentation.is_some());
     assert!(compilation.package.module("core.list").is_some());
     assert!(compilation.package.module("core.string").is_some());
     let string = compilation.hir.module_named("core.string").unwrap();

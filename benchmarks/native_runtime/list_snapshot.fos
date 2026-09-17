@@ -1,0 +1,17 @@
+import std.iter
+import core.option
+func main() -> Int {
+    let index = 0
+    let total = 0
+    while index < 100000 {
+        let values = [index, index + 1, index + 2, index + 3]
+        let snapshot = values.iterator()
+        values[0] = 0
+        total = total + branch snapshot.next() {
+            Option.Some(value) -> value
+            _ -> -1
+        }
+        index = index + 1
+    }
+    total
+}

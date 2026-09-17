@@ -55,7 +55,6 @@ impl Parser {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Ident(name) => Ok(name),
-            TokenKind::Copy => Ok("copy".into()),
             TokenKind::Move => Ok("move".into()),
             TokenKind::Ref => Ok("ref".into()),
             TokenKind::Group => Ok("group".into()),

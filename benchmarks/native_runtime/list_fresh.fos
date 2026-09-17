@@ -1,0 +1,10 @@
+func main() -> Int {
+    let index = 0
+    let total = 0
+    while index < 100000 {
+        let values = [index, index + 1, index + 2, index + 3]
+        total = total + values[0]
+        index = index + 1
+    }
+    total
+}

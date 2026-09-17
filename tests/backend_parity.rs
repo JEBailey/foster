@@ -2,6 +2,14 @@
 use foster::{native, vm};
 
 #[test]
+fn shared_cse_preserves_loop_results_on_both_backends() {
+    let source = include_str!("../benchmarks/scalar_cse.fos")
+        .replace("200000", "2000")
+        .replace("100000", "1000");
+    check("scalar-cse", &source, Ok("3000"));
+}
+
+#[test]
 fn constrained_implementation_preserves_concrete_values() {
     check(
         "impl-constraints",
@@ -2092,7 +2100,7 @@ fn invalid_destructors_and_partial_moves_are_rejected() {
         ),
         (
             "import core.copy\ntype Item = & Copy & { id: Int }\nimpl Item { func copy(self) -> Int { 1 } }\nfunc require_copy(value: Copy) -> () {}\nfunc main() -> () { require_copy(Item { id: 1 }) }",
-            "expected `Item`, found `Int`",
+            "type `Int` cannot adapt to `Item`",
         ),
     ] {
         let error = match foster::compile(source) {

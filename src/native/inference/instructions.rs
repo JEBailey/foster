@@ -101,7 +101,7 @@ pub(super) fn infer_instruction(
             operand,
         } => {
             result[destination.index()] = Some(match operator {
-                UnaryOp::Negate => value_type(&result, *operand, function)?,
+                UnaryOp::Negate => value_type(result, *operand, function)?,
                 UnaryOp::Not => NativeType::Bool,
                 UnaryOp::BitNot => NativeType::Byte,
             });
@@ -126,7 +126,7 @@ pub(super) fn infer_instruction(
                 | BinaryOp::ShiftRight => NativeType::Byte,
                 BinaryOp::Add | BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Divide => {
                     match dereference_native_type(
-                        value_type(&result, *left, function)?,
+                        value_type(result, *left, function)?,
                         environment,
                     )? {
                         NativeType::CodePoint | NativeType::Byte => NativeType::Int,
@@ -183,7 +183,7 @@ pub(super) fn infer_instruction(
             callee,
             ..
         } => {
-            let NativeType::Object(layout) = value_type(&result, *callee, function)? else {
+            let NativeType::Object(layout) = value_type(result, *callee, function)? else {
                 return Err(native_error(format!(
                     "dynamic call in `{}` has an erased callable representation",
                     function.name
@@ -286,7 +286,7 @@ pub(super) fn infer_instruction(
             by_reference,
         } => {
             let object =
-                dereference_native_type(value_type(&result, *object, function)?, environment)?;
+                dereference_native_type(value_type(result, *object, function)?, environment)?;
             if *by_reference {
                 let NativeType::Object(layout) = object else {
                     return Err(native_error("projected field requires a record"));
@@ -329,7 +329,7 @@ pub(super) fn infer_instruction(
             object,
             ..
         } => {
-            let object = value_type(&result, *object, function)?;
+            let object = value_type(result, *object, function)?;
             result[destination.index()] = Some(match object {
                 NativeType::String => NativeType::CodePoint,
                 NativeType::Object(layout) => {
@@ -391,7 +391,7 @@ pub(super) fn infer_instruction(
             destination,
             source,
         } => {
-            let source_type = value_type(&result, *source, function)?;
+            let source_type = value_type(result, *source, function)?;
             result[destination.index()] = Some(if *by_reference {
                 dereference_native_type(source_type, environment)?
             } else {
@@ -406,7 +406,7 @@ pub(super) fn infer_instruction(
             object,
             ..
         } => {
-            result[destination.index()] = Some(value_type(&result, *object, function)?);
+            result[destination.index()] = Some(value_type(result, *object, function)?);
         }
         Instruction::Contains { destination, .. } => {
             result[destination.index()] = Some(NativeType::Bool);
@@ -424,7 +424,7 @@ pub(super) fn infer_instruction(
             destination,
             source: value,
         } => {
-            let value = value_type(&result, *value, function)?;
+            let value = value_type(result, *value, function)?;
             let remote = ExecutableType::Remote(Box::new(executable_type_for_native(
                 value,
                 environment.program,
@@ -460,7 +460,7 @@ pub(super) fn infer_instruction(
             destination,
             future,
         } => {
-            let NativeType::Object(layout) = value_type(&result, *future, function)? else {
+            let NativeType::Object(layout) = value_type(result, *future, function)? else {
                 return Err(native_error(format!(
                     "await in `{}` has a non-object future",
                     function.name
@@ -489,7 +489,7 @@ pub(super) fn infer_instruction(
             result_type,
             ..
         } => {
-            let receiver = value_type(&result, *receiver, function)?;
+            let receiver = value_type(result, *receiver, function)?;
             if *slot == crate::types::CAN_COPY_SLOT || *slot == crate::types::COPY_SLOT {
                 result[destination.index()] = Some(if *slot == crate::types::CAN_COPY_SLOT {
                     NativeType::Bool
@@ -513,7 +513,7 @@ pub(super) fn infer_instruction(
             bindings,
         } => {
             result[destination.index()] = Some(NativeType::Bool);
-            let subject = value_type(&result, *subject, function)?;
+            let subject = value_type(result, *subject, function)?;
             let mut types = Vec::new();
             native_pattern_binding_types(
                 &environment.program.metadata,

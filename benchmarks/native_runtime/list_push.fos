@@ -1,0 +1,9 @@
+func main() -> Int {
+    let values = [0]
+    let index = 0
+    while index < 100000 {
+        values.push(index)
+        index = index + 1
+    }
+    values.length
+}

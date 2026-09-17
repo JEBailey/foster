@@ -3,6 +3,8 @@
 //! `Copy` describes observable independence, not a requirement to duplicate every
 //! allocation. Implementations may share immutable backing storage.
 
+import core.string
+
 /// A value that can produce another value of its concrete type without consuming itself.
 pub type Copy = {
     /// Creates an independent value of the concrete receiver type without consuming the source.
@@ -21,3 +23,18 @@ func can_copy<T>(value: T) -> Bool [read value] = intrinsic("value.can_copy")
 
 /// Dispatches Copy after capability validation.
 func copy_value<T>(value: T) -> T [read value] = intrinsic("value.copy")
+
+test "generic copying preserves scalar values" {
+    let original = 42
+    assert(copy(original) == 42)
+    assert(original == 42)
+}
+
+test "generic copying preserves independently owned strings" {
+    let original = "original"
+    let copied = copy(original)
+    assert(copied == original)
+    copied = "changed"
+    assert(original == "original")
+    assert(copied == "changed")
+}

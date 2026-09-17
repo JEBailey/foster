@@ -318,46 +318,6 @@ struct Mapping {
     constants: Vec<u16>,
 }
 
-#[cfg(test)]
-mod mapping_tests {
-    use super::*;
-
-    #[test]
-    fn relocation_restores_set_order_without_reordering_alias_arguments() {
-        let mapping = Mapping {
-            generic_names: BTreeMap::new(),
-            functions: BTreeMap::new(),
-            records: BTreeMap::from([(0, 9), (1, 3)]),
-            variants: BTreeMap::from([(0, 7)]),
-            cases: BTreeMap::new(),
-            slots: BTreeMap::new(),
-            constants: Vec::new(),
-        };
-        let record = |raw| V::Record {
-            record: id(raw),
-            arguments: Vec::new(),
-        };
-        let mut alternatives = V::alternatives(vec![record(0), record(1)]);
-        mapping.ty(&mut alternatives);
-        assert_eq!(alternatives, V::alternatives(vec![record(3), record(9)]));
-        let mut intersection = V::intersection(vec![record(0), record(1)]);
-        mapping.ty(&mut intersection);
-        assert_eq!(intersection, V::intersection(vec![record(3), record(9)]));
-        let mut alias = V::AliasArguments {
-            alias: id(0),
-            arguments: vec![record(0), record(1), record(0)],
-        };
-        mapping.ty(&mut alias);
-        assert_eq!(
-            alias,
-            V::AliasArguments {
-                alias: id(7),
-                arguments: vec![record(9), record(3), record(9)]
-            }
-        );
-    }
-}
-
 impl Mapping {
     fn ty(&self, ty: &mut V) {
         match ty {
@@ -507,5 +467,45 @@ impl Mapping {
             _ => {}
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod mapping_tests {
+    use super::*;
+
+    #[test]
+    fn relocation_restores_set_order_without_reordering_alias_arguments() {
+        let mapping = Mapping {
+            generic_names: BTreeMap::new(),
+            functions: BTreeMap::new(),
+            records: BTreeMap::from([(0, 9), (1, 3)]),
+            variants: BTreeMap::from([(0, 7)]),
+            cases: BTreeMap::new(),
+            slots: BTreeMap::new(),
+            constants: Vec::new(),
+        };
+        let record = |raw| V::Record {
+            record: id(raw),
+            arguments: Vec::new(),
+        };
+        let mut alternatives = V::alternatives(vec![record(0), record(1)]);
+        mapping.ty(&mut alternatives);
+        assert_eq!(alternatives, V::alternatives(vec![record(3), record(9)]));
+        let mut intersection = V::intersection(vec![record(0), record(1)]);
+        mapping.ty(&mut intersection);
+        assert_eq!(intersection, V::intersection(vec![record(3), record(9)]));
+        let mut alias = V::AliasArguments {
+            alias: id(0),
+            arguments: vec![record(0), record(1), record(0)],
+        };
+        mapping.ty(&mut alias);
+        assert_eq!(
+            alias,
+            V::AliasArguments {
+                alias: id(7),
+                arguments: vec![record(9), record(3), record(9)]
+            }
+        );
     }
 }

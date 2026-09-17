@@ -7,6 +7,7 @@ use crate::hir::{CaptureMode, FunctionId};
 use super::ir::{self, Instruction as I, PortableInstruction as P, Value};
 use super::metadata::Constant;
 
+mod cse;
 mod graph;
 mod inlining;
 
@@ -53,6 +54,22 @@ pub(crate) fn run_shared(
             ) {
                 break;
             }
+            verify(function)?;
+            changed.insert(id);
+        }
+        if crate::compiler::profile::measure("shared.cse", || {
+            cse::run(
+                function,
+                &program.metadata.constants,
+                writes.get_mut(&id).unwrap(),
+            )
+        }) {
+            graph::simplify(
+                function,
+                &mut program.metadata.constants,
+                writes.get_mut(&id).unwrap(),
+                &mut pool,
+            );
             verify(function)?;
             changed.insert(id);
         }
@@ -141,6 +158,13 @@ fn scalar_instruction(instruction: &I) -> bool {
 }
 
 fn exposed_homes(function: &ir::Function) -> HashSet<u16> {
+    exposed_homes_with(function, std::iter::empty())
+}
+
+fn exposed_homes_with(
+    function: &ir::Function,
+    additional: impl IntoIterator<Item = u16>,
+) -> HashSet<u16> {
     let mut exposed = function
         .parameters
         .iter()
@@ -148,6 +172,7 @@ fn exposed_homes(function: &ir::Function) -> HashSet<u16> {
         .chain(function.captures.iter().map(|capture| capture.value))
         .filter_map(|value| function.values.hint(value.index()))
         .collect::<HashSet<_>>();
+    exposed.extend(additional);
     let mut expose = |value: Value| {
         if let Some(home) = function.values.hint(value.index()) {
             exposed.insert(home);

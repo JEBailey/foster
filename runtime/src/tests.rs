@@ -1,6 +1,25 @@
 //! Test-only implementations of the program-specific string hooks.
 use super::*;
 
+#[test]
+fn cancellation_is_discovered_at_cleanup_safe_polls() {
+    let control = Arc::new(remote_lifecycle::Control::default());
+    control.terminate(remote_lifecycle::RemoteError::Shutdown);
+    FOSTER_CANCELLATION.with(|slot| *slot.borrow_mut() = Some(control));
+
+    // A successful call's result is not yet registered in the caller's cleanup
+    // set when this status check runs.
+    assert_eq!(foster_rt_v4_failure_pending(), 0);
+    foster_rt_v4_begin_cleanup();
+    assert_eq!(foster_rt_v4_cancellation_point(), 0);
+    foster_rt_v4_end_cleanup();
+    assert_eq!(foster_rt_v4_cancellation_point(), 1);
+    assert_eq!(foster_rt_v4_failure_pending(), 1);
+
+    FOSTER_CANCELLATION.with(|slot| slot.borrow_mut().take());
+    FOSTER_EXECUTION.with(|slot| slot.borrow_mut().take());
+}
+
 #[unsafe(no_mangle)]
 unsafe extern "C" fn foster_native_string(data: usize, length: i64) -> usize {
     // The runtime passes validated UTF-8 and an in-bounds byte count.

@@ -1,0 +1,17 @@
+func main() -> Int {
+    let index = 0
+    let total = 0
+    while index < 200000 {
+        let a = index < 100000
+        let b = index < 100000
+        let c = index < 100000
+        let d = index < 100000
+        assert(a == b)
+        assert(b == c)
+        assert(c == d)
+        total = total + branch { a -> 1
+            _ -> 2 }
+        index = index + 1
+    }
+    total
+}

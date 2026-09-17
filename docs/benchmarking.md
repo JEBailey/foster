@@ -233,6 +233,55 @@ reports in-process parse latency across three independent processes per backend.
 gets an explicit JIT warmup; Foster runs prebuilt optimized bytecode. Native compilation
 is attempted and failures are recorded separately. See the [measured results and scope](../benchmarks/results/taker-runtime.md).
 
+## Shared scalar CSE measurements
+
+`cargo run --release --example measure_backends -- benchmarks/scalar_cse.fos target/cse-native.exe`
+measures optimized VM compilation/execution and optimized native object compilation/execution.
+Use `benchmarks/fibonacci.fos` as a control. Run the same harness on the before/after compiler
+revisions with no other builds or tests running. Both revisions must enable normal optimization;
+comparing optimized with unoptimized builds would not isolate CSE.
+
+The harness compiles the frontend once, discards one warmup, and reports medians of nine samples.
+Compilation measurements include shared construction and optimization, but exclude frontend
+checking and native linking. Native runtime includes process startup and shutdown; small native
+differences need cautious interpretation. Use `FOSTER_NATIVE_CACHE_DIR` for a writable runtime
+cache. The `shared.cse` compiler-profile phase separately measures pass time and allocations.
+See the [recorded CSE results and limitations](../benchmarks/results/scalar-cse.md).
+
+## Native runtime profiling
+
+The [recorded baseline](../benchmarks/results/native-runtime-profile.md) includes
+per-workload timings, allocation counts, polling counts, and interpretation limits.
+The [cancellation-status reuse follow-up](../benchmarks/results/native-poll-status-reuse.md)
+records paired before/after execution measurements and the full validation outcome.
+
+Run the opt-in profiler alone, using release compilation:
+
+```powershell
+$env:FOSTER_NATIVE_CACHE_DIR = Join-Path (Get-Location) 'target/optimizer-test-cache'
+cargo test --release -p foster --lib native::runtime::profiling::profile_native_runtime -- --ignored --exact --nocapture
+```
+
+It builds the fixtures in `benchmarks/native_runtime/`, verifies reduced inputs on the VM,
+and checks native results for every sample. Executables, native IR, and `results.json` are
+written under `target/native-runtime-profile/`. All executables are built before measurement.
+Timing covers native entry execution and frame cleanup, excluding runtime initialization,
+process startup, compilation, and output. Each timing variant uses one warmup and seven
+measured fresh processes. Allocation census runs separately so counter overhead does not
+contaminate the reported ordinary execution times.
+
+The census counts Foster allocation/deallocation requests, requested bytes, calls/bytes through
+the explicit buffer-copy helper, and cancellation polls. It does not count all host Rust heap
+allocations, inline copies, or inline retain/release atomics. Instrumentation is test-only.
+
+A diagnostic executable also replaces the cancellation-poll body with a zero return. This
+ablation estimates overhead on the successful single-threaded fixtures; it is not a valid
+general runtime mode and must not be used for application execution. Generated caller failure
+branches remain present, but use the helper's returned status. Production executables retain
+all cancellation and scheduling behavior. The original baseline predates this status reuse
+and retained a separate caller query; its diagnostic bypass timings are not directly comparable
+with later bypass timings.
+
 ## Language server latency
 
 ```text

@@ -477,6 +477,11 @@ mod tests {
     fn deduplication_remaps_repeated_indices_without_changing_values() {
         let compilation = crate::compile("func main() -> Int { 0 }").unwrap();
         let mut program = crate::vm::compile_library(&compilation).unwrap();
+        // This fixture replaces the entire constant pool. Embedded library test
+        // bodies still refer to the original pool and are not part of this case.
+        program
+            .functions
+            .retain(|_, function| function.name == "main");
         let nan = f64::from_bits(0x7ff8_0000_0000_0001);
         let old = vec![
             Constant::Float(nan),

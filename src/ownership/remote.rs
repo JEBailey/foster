@@ -89,7 +89,16 @@ impl State {
                         .collect::<Vec<_>>()
                 })
                 .collect(),
-            BorrowValue::Reborrow { origin, .. } => self.read(origin),
+            BorrowValue::Reborrow { origin, .. } => {
+                // Parameter initialization models hidden borrowing through a
+                // ParameterContents origin. Remote ownership is seeded on the
+                // parameter itself; preserve that identity when the loan is stored.
+                let mut origin = origin.clone();
+                if let super::PlaceRoot::ParameterContents(local) = origin.root {
+                    origin.root = super::PlaceRoot::Local(local);
+                }
+                self.read(&origin)
+            }
             BorrowValue::Empty | BorrowValue::Loan(_) => vec![],
         }
     }

@@ -101,7 +101,7 @@ pub(crate) fn ssa_instruction(
             constant,
         } => engine::Instruction::LoadConstant {
             destination: *destination,
-            constant: constant.clone(),
+            constant: *constant,
         },
         crate::codegen::ir::PortableInstruction::Move {
             destination,
@@ -116,7 +116,7 @@ pub(crate) fn ssa_instruction(
             operand,
         } => engine::Instruction::Unary {
             destination: *destination,
-            operator: operator.clone(),
+            operator: *operator,
             operand: *operand,
         },
         crate::codegen::ir::PortableInstruction::Binary {
@@ -126,7 +126,7 @@ pub(crate) fn ssa_instruction(
             right,
         } => engine::Instruction::Binary {
             destination: *destination,
-            operator: operator.clone(),
+            operator: *operator,
             left: *left,
             right: *right,
         },
@@ -155,7 +155,7 @@ pub(crate) fn ssa_instruction(
             fields,
         } => engine::Instruction::MakeRecord {
             destination: *destination,
-            record: record.clone(),
+            record: *record,
             fields: fields.clone(),
         },
         crate::codegen::ir::PortableInstruction::MakeVariant {
@@ -165,7 +165,7 @@ pub(crate) fn ssa_instruction(
             payload,
         } => engine::Instruction::MakeVariant {
             destination: *destination,
-            variant: variant.clone(),
+            variant: *variant,
             payload: payload.clone(),
         },
         crate::codegen::ir::PortableInstruction::LoadField {
@@ -176,7 +176,7 @@ pub(crate) fn ssa_instruction(
         } => engine::Instruction::LoadField {
             destination: *destination,
             object: *object,
-            by_reference: by_reference.clone(),
+            by_reference: *by_reference,
         },
         crate::codegen::ir::PortableInstruction::StoreField {
             object,
@@ -231,7 +231,7 @@ pub(crate) fn ssa_instruction(
             destination,
             source,
         } => engine::Instruction::MoveOut {
-            by_reference: by_reference.clone(),
+            by_reference: *by_reference,
             destination: *destination,
             source: *source,
         },
@@ -268,7 +268,7 @@ pub(crate) fn ssa_instruction(
             arguments,
         } => engine::Instruction::Builtin {
             destination: *destination,
-            builtin: builtin.clone(),
+            builtin: *builtin,
             arguments: arguments.clone(),
         },
         crate::codegen::ir::PortableInstruction::SpawnRemote { destination, value } => {
@@ -292,7 +292,7 @@ pub(crate) fn ssa_instruction(
         } => engine::Instruction::RemoteCall {
             destination: *destination,
             remote: *remote,
-            function: function.clone(),
+            function: *function,
             arguments: arguments.clone(),
         },
         crate::codegen::ir::PortableInstruction::Await {
@@ -326,7 +326,7 @@ pub(crate) fn ssa_instruction(
             arguments,
         } => engine::Instruction::Call {
             destination: *destination,
-            function: function.clone(),
+            function: *function,
             specialization: specialization.clone(),
             arguments: arguments.clone(),
         },
@@ -339,7 +339,7 @@ pub(crate) fn ssa_instruction(
         } => engine::Instruction::CallMethod {
             destination: *destination,
             receiver: *receiver,
-            function: function.clone(),
+            function: *function,
             specialization: specialization.clone(),
             arguments: arguments.clone(),
         },
@@ -353,7 +353,7 @@ pub(crate) fn ssa_instruction(
         } => engine::Instruction::CallContractMethod {
             destination: *destination,
             receiver: *receiver,
-            slot: slot.clone(),
+            slot: *slot,
             name: name.clone(),
             arguments: arguments.clone(),
             result_type: result_type.clone(),
@@ -365,7 +365,7 @@ pub(crate) fn ssa_instruction(
             captures,
         } => engine::Instruction::MakeClosure {
             destination: *destination,
-            function: function.clone(),
+            function: *function,
             specialization: specialization.clone(),
             captures: captures.clone(),
         },
@@ -386,7 +386,7 @@ pub(crate) fn ssa_instruction(
             arguments,
         } => engine::Instruction::CallClosure {
             destination: *destination,
-            function: function.clone(),
+            function: *function,
             specialization: specialization.clone(),
             captures: captures.clone(),
             arguments: arguments.clone(),

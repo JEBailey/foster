@@ -263,10 +263,8 @@ impl Checker<'_> {
         for (expected, actual) in expected.into_iter().zip(actual) {
             self.unify(expected, actual, caller)?;
         }
-        if !remote {
-            if let Ty::Callable { result, .. } | Ty::Function(_, result) = callable {
-                self.unify(expected_result, (**result).clone(), caller)?;
-            }
+        if !remote && let Ty::Callable { result, .. } | Ty::Function(_, result) = callable {
+            self.unify(expected_result, (**result).clone(), caller)?;
         }
         self.check_constraints_with_bindings(caller, target, &bindings)
     }

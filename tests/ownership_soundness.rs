@@ -520,7 +520,11 @@ func main() { 0 }
     let first_dump = first.ownership.debug_dump(&first.hir);
     let second_dump = second.ownership.debug_dump(&second.hir);
     assert_eq!(first_dump, second_dump);
-    assert!(first_dump.contains("foster-language=8 ownership-model=3"));
+    assert!(first_dump.contains(&format!(
+        "foster-language={} ownership-model={}",
+        foster::ownership::LANGUAGE_VERSION,
+        foster::ownership::MODEL_VERSION
+    )));
     assert!(first_dump.contains("loan L"));
     assert!(first_dump.contains("region L"));
 

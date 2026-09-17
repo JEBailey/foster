@@ -147,6 +147,9 @@ use runtime cancellation; they do not masquerade as successful completion witnes
 
 Owner and future moves within a function preserve identities. A direct future returned by a
 helper using a borrowed remote parameter carries an obligation at its caller. Concrete remote
+parameters retain their owner identities through borrow-provenance initialization and local
+moves. A consumed remote parameter must complete its requests before destruction; returning
+its pending future does not transfer the owner to the caller. Concrete remote
 factory results and remote fields of concrete record factory results receive owner identities.
 Completed futures may escape, and an owner with no pending requests may transfer across a function
 boundary. Pending owner/aggregate transfers across function boundaries are conservatively rejected:

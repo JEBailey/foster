@@ -363,7 +363,9 @@ impl Checker<'_> {
                 return Err(self.error(
                     function,
                     format!(
-                        "type `{}` cannot be structurally adapted because field `{}` is private",
+                        "type mismatch: expected `{}`, found `{}`; type `{}` cannot be structurally adapted because field `{}` is private",
+                        self.describe(&Ty::Record(expected, expected_arguments.to_vec())),
+                        self.describe(&actual),
                         expected_definition.name, field.name
                     ),
                 ));

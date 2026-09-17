@@ -607,6 +607,13 @@ fn foster_execution_failure(message: String) {
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_failure_pending() -> u8 {
+    // Post-call checks must only observe failures raised by the call. Discovering
+    // cancellation here could discard a successful owned result before its
+    // caller has registered that result for cleanup.
+    FOSTER_EXECUTION.with(|execution| u8::from(execution.borrow().is_some()))
+}
+
+fn foster_poll_cancellation() {
     let cleaning = FOSTER_CLEANUP_FAILURES.with(|failures| !failures.borrow().is_empty());
     if !cleaning
         && let Some(error) = FOSTER_CANCELLATION.with(|control| {
@@ -618,7 +625,6 @@ extern "C" fn foster_rt_v4_failure_pending() -> u8 {
     {
         foster_execution_failure(error.to_string());
     }
-    FOSTER_EXECUTION.with(|execution| u8::from(execution.borrow().is_some()))
 }
 
 may::coroutine_local! {
@@ -661,6 +667,7 @@ extern "C" fn foster_rt_v4_cancellation_point() -> u8 {
             may::coroutine::sleep(std::time::Duration::ZERO);
         }
     }
+    foster_poll_cancellation();
     foster_rt_v4_failure_pending()
 }
 
@@ -820,6 +827,7 @@ extern "C" fn foster_rt_v4_future_await(future: usize) -> u64 {
         .take()
         .unwrap_or_else(|| foster_remote_abort("future has already been awaited"));
     let outcome = loop {
+        foster_poll_cancellation();
         if foster_rt_v4_failure_pending() != 0 {
             return 0;
         }

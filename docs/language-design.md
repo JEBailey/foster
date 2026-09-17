@@ -119,6 +119,9 @@ storage. They cannot be assigned to. Moving from a stored place invalidates that
 `move` to an already-produced owned value only makes the transfer explicit. Foster currently uses
 methods for user-defined computation rather than getter/setter declarations.
 
+`copy` is an ordinary identifier. It denotes a capture mode only in a capture clause
+such as `[copy value]`; functions, parameters, and locals may be named `copy`.
+
 `test` introduces a private test declaration identified by a non-empty string. Tests take no
 arguments and return `()`:
 

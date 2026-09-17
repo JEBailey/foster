@@ -499,7 +499,7 @@ impl Workspace {
                 );
             }
             for keyword in [
-                "assert", "await", "branch", "break", "continue", "copy", "false", "func", "impl",
+                "assert", "await", "branch", "break", "continue", "false", "func", "impl",
                 "import", "let", "loop", "while", "for", "in", "move", "not", "pub", "ref",
                 "remote", "return", "true", "type", "enum", "try",
             ] {
@@ -1974,7 +1974,7 @@ fn compiler_diagnostic(
 fn lsp_diagnostic_message(diagnostic: &crate::diagnostic::Diagnostic) -> String {
     let mut message = diagnostic.message.clone();
     for label in diagnostic.labels.iter().filter(|label| !label.primary) {
-        message.push_str("\n");
+        message.push('\n');
         message.push_str(&label.message);
     }
     for note in &diagnostic.notes {

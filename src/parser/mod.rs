@@ -85,6 +85,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn copy_is_an_identifier_outside_capture_mode_position() {
+        let tokens = crate::lexer::lex("copy").unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::Ident("copy".into()));
+        let source = "func copy(value: Int) -> Int { value + 1 }\n\
+            func keep(copy: Int) -> Int { copy }\n\
+            func main() -> Int {\n\
+                let calls = [copy(20)]\n\
+                let copy = calls[0]\n\
+                let values = [copy, copy + 1]\n\
+                let captured = [copy copy] () -> copy\n\
+                keep(values[0]) + captured()\n\
+            }";
+        assert_eq!(crate::run(source).unwrap(), crate::vm::Value::Integer(42));
+        crate::parse("func main(copy: Int) { let values = [copy] }").unwrap();
+    }
+
+    #[test]
+    fn copy_capture_mode_can_follow_other_capture_modes() {
+        crate::parse("func main() { let action = [move item, copy count, ref other] () -> count }")
+            .unwrap();
+    }
+
+    #[test]
     fn recovery_keeps_later_declarations_and_reports_independent_errors() {
         let source = "func broken_expression() -> Int { let value = }\n\
                       type Broken = { value: }\n\

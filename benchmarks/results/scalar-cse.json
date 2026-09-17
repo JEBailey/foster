@@ -1,0 +1,100 @@
+[
+  {
+    "run": "before-quiet",
+    "vm_compile_ms": 2.097,
+    "native_compile_ms": 6.659,
+    "vm_run_ms": 191.501,
+    "native_process_ms": 122.561
+  },
+  {
+    "run": "after-quiet",
+    "vm_compile_ms": 2.354,
+    "native_compile_ms": 6.396,
+    "vm_run_ms": 190.448,
+    "native_process_ms": 101.324
+  },
+  {
+    "run": "before-repeat",
+    "vm_compile_ms": 2.119,
+    "native_compile_ms": 6.482,
+    "vm_run_ms": 188.106,
+    "native_process_ms": 102.041
+  },
+  {
+    "run": "after-repeat",
+    "vm_compile_ms": 2.057,
+    "native_compile_ms": 6.236,
+    "vm_run_ms": 140.516,
+    "native_process_ms": 101.753
+  },
+  {
+    "run": "before-round3",
+    "vm_compile_ms": 2.113,
+    "native_compile_ms": 6.592,
+    "vm_run_ms": 188.423,
+    "native_process_ms": 102.367
+  },
+  {
+    "run": "after-round3",
+    "vm_compile_ms": 2.072,
+    "native_compile_ms": 6.616,
+    "vm_run_ms": 139.938,
+    "native_process_ms": 101.765
+  },
+  {
+    "run": "before-round4",
+    "vm_compile_ms": 2.097,
+    "native_compile_ms": 6.319,
+    "vm_run_ms": 187.34,
+    "native_process_ms": 102.325
+  },
+  {
+    "run": "after-round4",
+    "vm_compile_ms": 2.004,
+    "native_compile_ms": 6.276,
+    "vm_run_ms": 140.394,
+    "native_process_ms": 101.83
+  },
+  {
+    "run": "before-round5",
+    "vm_compile_ms": 2.108,
+    "native_compile_ms": 6.488,
+    "vm_run_ms": 187.293,
+    "native_process_ms": 101.766
+  },
+  {
+    "run": "after-round5",
+    "vm_compile_ms": 2.157,
+    "native_compile_ms": 6.639,
+    "vm_run_ms": 139.851,
+    "native_process_ms": 101.662
+  },
+  {
+    "run": "control-before-quiet",
+    "vm_compile_ms": 1.157,
+    "native_compile_ms": 5.455,
+    "vm_run_ms": 13.662,
+    "native_process_ms": 14.081
+  },
+  {
+    "run": "control-after-quiet",
+    "vm_compile_ms": 1.189,
+    "native_compile_ms": 5.904,
+    "vm_run_ms": 15.699,
+    "native_process_ms": 15.115
+  },
+  {
+    "run": "control-before-repeat",
+    "vm_compile_ms": 1.152,
+    "native_compile_ms": 5.641,
+    "vm_run_ms": 14.391,
+    "native_process_ms": 14.359
+  },
+  {
+    "run": "control-after-repeat",
+    "vm_compile_ms": 1.208,
+    "native_compile_ms": 5.383,
+    "vm_run_ms": 14.881,
+    "native_process_ms": 14.229
+  }
+]

@@ -171,6 +171,12 @@ threads, as in the VM. Many actors share scheduler OS threads; FIFO mailbox rece
 and `await` suspend the current coroutine while preserving its native call stack. Futures are
 still consumed exactly once. Generated basic-block cancellation checks yield periodically so
 CPU-bound actors share workers. Failure, cancellation, and cleanup state is coroutine-local.
+Generated poll branches reuse the cancellation helper's returned failure status, avoiding
+a second failure query while preserving the same live-value cleanup path.
+Post-call failure checks only observe failures already raised by the call. Cancellation
+is discovered at basic-block polls and while waiting for futures, where live values
+have cleanup coverage; a successful owned return cannot be discarded by a racing
+post-call cancellation check.
 The process entry function runs on the main OS thread and can await actors there.
 
 Filesystem and TCP operations use the shared blocking host API. Calls from actors temporarily
@@ -263,6 +269,12 @@ are declared before any is defined, allowing direct recursion and mutual recursi
 
 `SharedProgram::optimized()` is the common semantic pipeline: bounded scalar leaf inlining,
 constant propagation, branch pruning, unreachable-block removal, and dead scalar elimination.
+Shared scalar CSE then reuses dominating expressions with identical SSA operands. Its initial
+whitelist covers scalar constants, integer/byte/code-point comparisons, Boolean equality and
+negation, and byte bitwise operations. Checked arithmetic, shifts, floating point, memory reads,
+calls, and ownership-sensitive values are excluded. Reused results lose unobservable storage
+hints so later writes cannot overwrite them during VM lowering. Cleanup runs again only after
+CSE changes a graph; profiling records the pass as `shared.cse`.
 Transforms invalidate graph-specific evidence, verify the resulting SSA, and rebuild logical flow
 for affected functions. Native specialization, representation inference, and cleanup planning run
 only after this boundary; no semantic transform runs over already planned cleanup sites.

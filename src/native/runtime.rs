@@ -1,6 +1,10 @@
 //! Assemble a reusable platform runtime and a small, program-specific entry shim.
 use super::*;
 
+#[cfg(test)]
+#[path = "runtime_profile.rs"]
+mod profiling;
+
 fn main_source(
     result: NativeType,
     accepts_arguments: bool,
@@ -355,6 +359,76 @@ fn main() {"#)
             );
         }
         source
+    }
+
+    #[test]
+    fn cancellation_polls_reuse_failure_status_and_release_live_frames() {
+        let compilation = crate::compile(include_str!(
+            "../../benchmarks/native_runtime/record_reuse.fos"
+        ))
+        .unwrap();
+        let temporary = TemporaryDirectory::create().unwrap();
+        for optimize in [false, true] {
+            let options = CompileOptions { optimize };
+            let prepared = prepare_with_options(&compilation, options).unwrap();
+            let artifact = prepared.compile_object(options).unwrap();
+            let source = track_allocations(entry_source(
+                artifact.result,
+                artifact.accepts_arguments,
+                &artifact.runtime_strings,
+                artifact.releases_result,
+            ));
+            let source = source
+                .replace("extern \"C\" fn foster_rt_v4_failure_pending() -> u8 {",
+                    "extern \"C\" fn foster_rt_v4_failure_pending() -> u8 { QUERIES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);")
+                .replace("extern \"C\" fn foster_rt_v4_cancellation_point() -> u8 {", r#"
+extern "C" fn foster_rt_v4_cancellation_point() -> u8 {
+    let poll = POLLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+    if poll == 20 && std::env::var_os("FOSTER_TEST_POLL_FAILURE").is_some() {
+        assert!(!LIVE.lock().unwrap().is_empty(), "expected a live record at failure");
+        foster_execution_failure("injected poll failure".into());
+    }
+"#)
+                .replace("let value = unsafe { foster_native_entry() };", r#"
+QUERIES.store(0, std::sync::atomic::Ordering::Relaxed);
+POLLS.store(0, std::sync::atomic::Ordering::Relaxed);
+let value = unsafe { foster_native_entry() };
+let polls = POLLS.load(std::sync::atomic::Ordering::Relaxed);
+assert!(polls >= 20);
+let queries = QUERIES.load(std::sync::atomic::Ordering::Relaxed);
+// Record lifetime operations may query failure separately from loop polls.
+assert!((polls..=polls + 2).contains(&queries),
+    "polls must not duplicate failure queries: {queries} queries, {polls} polls");
+check_reclamation();
+"#);
+            let source = format!(
+                "{source}\nstatic QUERIES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);\nstatic POLLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);\n"
+            );
+            let executable = temporary.path.join(format!(
+                "poll-status-{optimize}{}",
+                std::env::consts::EXE_SUFFIX
+            ));
+            link_source(artifact, &executable, options, &source, None).unwrap();
+            for fail in [false, true] {
+                let mut command = Command::new(&executable);
+                if fail {
+                    command.env("FOSTER_TEST_POLL_FAILURE", "1");
+                }
+                let output = command.output().unwrap();
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                assert_eq!(
+                    output.status.code(),
+                    Some(if fail { 2 } else { 0 }),
+                    "{stderr}"
+                );
+                if fail {
+                    assert!(stderr.contains("injected poll failure"), "{stderr}");
+                    assert!(output.stdout.is_empty());
+                } else {
+                    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "5000050000");
+                }
+            }
+        }
     }
 
     #[test]

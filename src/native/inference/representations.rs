@@ -53,10 +53,10 @@ pub(super) fn join_representation(
             None,
         )?))
     };
-    if let (Some(left), Some(right)) = (callable(left)?, callable(right)?) {
-        if left == right {
-            return Ok(left);
-        }
+    if let (Some(left), Some(right)) = (callable(left)?, callable(right)?)
+        && left == right
+    {
+        return Ok(left);
     }
     Err(native_error(format!(
         "incompatible native representations at SSA join: {left:?} and {right:?}"

@@ -23,6 +23,71 @@ pub struct SharedProgram {
     pub(crate) write_bindings: HashMap<FunctionId, HashMap<ir::Value, ir::Value>>,
 }
 
+impl SharedProgram {
+    pub fn metadata(&self) -> &ProgramMetadata {
+        &self.program.metadata
+    }
+    pub fn functions(&self) -> &HashMap<FunctionId, ir::Function> {
+        &self.program.bodies
+    }
+    pub fn signatures(&self) -> &HashMap<FunctionId, ir::Signature> {
+        &self.signatures
+    }
+    pub fn schemas(&self) -> &HashMap<FunctionId, FunctionSchema> {
+        &self.schemas
+    }
+    pub fn facts(&self, function: FunctionId) -> &FunctionFacts {
+        &self.facts[&function]
+    }
+    #[cfg(test)]
+    pub(crate) fn into_parts(
+        self,
+    ) -> (
+        Arc<Program>,
+        HashMap<FunctionId, Arc<FunctionFacts>>,
+        Registry,
+    ) {
+        (self.program, self.facts, self.layouts)
+    }
+
+    /// All shared semantic passes run here, before either backend lowers SSA.
+    pub fn optimized(self) -> Result<Self, FosterError> {
+        crate::compiler::profile::measure("shared.optimize", || self.optimize_inner())
+    }
+
+    fn optimize_inner(mut self) -> Result<Self, FosterError> {
+        // No pass can observe evidence from the previous graph revision.
+        let mut previous = std::mem::take(&mut self.facts);
+        let program = crate::compiler::profile::measure("shared.mutable_graph", || {
+            Arc::make_mut(&mut self.program)
+        });
+        let changed = super::optimizer::run_shared(program, &mut self.write_bindings)?;
+        // Changed graphs cannot retain instruction-indexed facts. Rebuild only
+        // affected functions, including callers changed by interprocedural passes.
+        let mut changed = changed.into_iter().collect::<Vec<_>>();
+        changed.sort();
+        for id in changed {
+            let function = &self.program.bodies[&id];
+            function
+                .verify(&self.signatures)
+                .map_err(|error| FosterError::runtime(format!("invalid optimized SSA: {error}")))?;
+            previous.remove(&id);
+            let facts = crate::compiler::profile::measure("shared.rebuild_flow", || {
+                super::flow::analyze(
+                    &self.program.metadata,
+                    &self.schemas,
+                    &self.schemas[&id],
+                    function,
+                    &self.write_bindings[&id],
+                )
+            })?;
+            self.facts.insert(id, Arc::new(facts));
+        }
+        self.facts.extend(previous);
+        Ok(self)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,70 +184,5 @@ mod tests {
                 succeeds
             );
         }
-    }
-}
-
-impl SharedProgram {
-    pub fn metadata(&self) -> &ProgramMetadata {
-        &self.program.metadata
-    }
-    pub fn functions(&self) -> &HashMap<FunctionId, ir::Function> {
-        &self.program.bodies
-    }
-    pub fn signatures(&self) -> &HashMap<FunctionId, ir::Signature> {
-        &self.signatures
-    }
-    pub fn schemas(&self) -> &HashMap<FunctionId, FunctionSchema> {
-        &self.schemas
-    }
-    pub fn facts(&self, function: FunctionId) -> &FunctionFacts {
-        &self.facts[&function]
-    }
-    #[cfg(test)]
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        Arc<Program>,
-        HashMap<FunctionId, Arc<FunctionFacts>>,
-        Registry,
-    ) {
-        (self.program, self.facts, self.layouts)
-    }
-
-    /// All shared semantic passes run here, before either backend lowers SSA.
-    pub fn optimized(self) -> Result<Self, FosterError> {
-        crate::compiler::profile::measure("shared.optimize", || self.optimize_inner())
-    }
-
-    fn optimize_inner(mut self) -> Result<Self, FosterError> {
-        // No pass can observe evidence from the previous graph revision.
-        let mut previous = std::mem::take(&mut self.facts);
-        let program = crate::compiler::profile::measure("shared.mutable_graph", || {
-            Arc::make_mut(&mut self.program)
-        });
-        let changed = super::optimizer::run_shared(program, &mut self.write_bindings)?;
-        // Changed graphs cannot retain instruction-indexed facts. Rebuild only
-        // affected functions, including callers changed by interprocedural passes.
-        let mut changed = changed.into_iter().collect::<Vec<_>>();
-        changed.sort();
-        for id in changed {
-            let function = &self.program.bodies[&id];
-            function
-                .verify(&self.signatures)
-                .map_err(|error| FosterError::runtime(format!("invalid optimized SSA: {error}")))?;
-            previous.remove(&id);
-            let facts = crate::compiler::profile::measure("shared.rebuild_flow", || {
-                super::flow::analyze(
-                    &self.program.metadata,
-                    &self.schemas,
-                    &self.schemas[&id],
-                    function,
-                    &self.write_bindings[&id],
-                )
-            })?;
-            self.facts.insert(id, Arc::new(facts));
-        }
-        self.facts.extend(previous);
-        Ok(self)
     }
 }

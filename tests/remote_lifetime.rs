@@ -120,9 +120,28 @@ fn remote_message_arguments_do_not_own_the_receivers_request() {
 
 #[test]
 fn consumed_owner_parameters_cannot_return_pending_futures() {
+    for body in [
+        "worker.work()",
+        "return worker.work()",
+        "let moved = worker\nmoved.work()",
+        "let pending = worker.work()\nreturn pending",
+    ] {
+        let source = format!(
+            "{PRELUDE}\nfunc issue(worker: Remote<Worker>) -> Future<Result<Int, RemoteError>> [consume worker] {{ {body} }}\nfunc main() -> Int {{ 0 }}"
+        );
+        let error = match foster::compile(&source) {
+            Err(error) => error,
+            Ok(_) => panic!("consumed owner outlived its function: {body}"),
+        };
+        assert_eq!(error.code.as_deref(), Some("E0730"), "{body}: {error}");
+        assert!(error.labels.len() >= 2);
+    }
+}
+
+#[test]
+fn consumed_owner_parameters_can_complete_requests_before_returning() {
     let source = format!(
-        "{PRELUDE}\nfunc issue(worker: Remote<Worker>) -> Future<Result<Int, RemoteError>> [consume worker] {{ worker.work() }}\nfunc main() -> Int {{ 0 }}"
+        "{PRELUDE}\nfunc issue(worker: Remote<Worker>) -> Result<Int, RemoteError> [consume worker, suspend] {{ let moved = worker\nawait moved.work() }}\nfunc main() -> Int {{ 0 }}"
     );
-    let error = foster::compile(&source).expect_err("consumed owner outlived its function");
-    assert_eq!(error.code.as_deref(), Some("E0730"));
+    foster::compile(&source).unwrap();
 }

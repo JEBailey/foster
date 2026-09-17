@@ -69,6 +69,10 @@ storage and borrowing contract than the proposed list-backed arena.
 
 ## Complete everyday language facilities
 
+- Evaluate explicit generic type arguments at function and method calls, similar to Rust's
+  turbofish. Leave the spelling open; use cases include result-only type parameters and empty
+  collections whose element types cannot be inferred. Reuse generic substitution and structural
+  constraint checking without introducing overload selection based solely on return types.
 - Add record and list patterns, pattern-branch guards, and more precise exhaustiveness checking for literal
   domains.
 - Design functional record updates.

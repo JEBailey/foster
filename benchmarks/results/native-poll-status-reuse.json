@@ -1,0 +1,254 @@
+[
+  {
+    "workload": "scalar",
+    "iterations": 100000,
+    "result": "4999950000",
+    "before_samples_ns": [
+      22578700,
+      22441900,
+      23839300,
+      22591400,
+      22801400,
+      23159600,
+      22550500
+    ],
+    "after_samples_ns": [
+      12450700,
+      12944600,
+      12271400,
+      12342900,
+      12365300,
+      12691100,
+      12901000
+    ],
+    "before_median_ns": 22591400,
+    "after_median_ns": 12450700,
+    "reduction_percent": 44.88743504165302,
+    "before_executable_sha256": "3740FA87F9CE579A54EB3AEBA2E1CA2E57B57BD6AA7C17127672E0C20849C305",
+    "after_executable_sha256": "174F67678653F0929513649F6DF5E0ADBC110803660BC9A66C544531EB4A51C7"
+  },
+  {
+    "workload": "record_fresh",
+    "iterations": 100000,
+    "result": "5000050000",
+    "before_samples_ns": [
+      38255600,
+      39186000,
+      42224700,
+      42301800,
+      38720400,
+      38465400,
+      37410700
+    ],
+    "after_samples_ns": [
+      24908300,
+      25624200,
+      33487600,
+      25154700,
+      25101500,
+      31327500,
+      30694500
+    ],
+    "before_median_ns": 38720400,
+    "after_median_ns": 25624200,
+    "reduction_percent": 33.82248117271516,
+    "before_executable_sha256": "721768037A6FDBF33996D8F1C660D08DB39A7E575B04D9677CC84A88457D0E05",
+    "after_executable_sha256": "815BED286099D5931F09720774DA52B2C9B789F763A56F1A9132C402D417189B"
+  },
+  {
+    "workload": "record_reuse",
+    "iterations": 100000,
+    "result": "5000050000",
+    "before_samples_ns": [
+      22773500,
+      23375700,
+      22853800,
+      22719700,
+      22711400,
+      23292300,
+      23251500
+    ],
+    "after_samples_ns": [
+      12212500,
+      12529200,
+      12638100,
+      14653400,
+      17571000,
+      12269600,
+      12694800
+    ],
+    "before_median_ns": 22853800,
+    "after_median_ns": 12638100,
+    "reduction_percent": 44.70022490789278,
+    "before_executable_sha256": "9C1AD8490BC9DB2C3EECDC7A298BF595100174DAEAA1025A36BF7387B3D5779B",
+    "after_executable_sha256": "8DDEEEC63D3E3755ADFD1F98426D68D74DC7EB26D2B4C21B459B542C62E03065"
+  },
+  {
+    "workload": "field_read",
+    "iterations": 100000,
+    "result": "1000000",
+    "before_samples_ns": [
+      22973200,
+      23211400,
+      23459800,
+      23016800,
+      23808500,
+      23261000,
+      22974300
+    ],
+    "after_samples_ns": [
+      12478200,
+      12247000,
+      12497600,
+      12284800,
+      12150500,
+      12790000,
+      12841500
+    ],
+    "before_median_ns": 23211400,
+    "after_median_ns": 12478200,
+    "reduction_percent": 46.24107119777351,
+    "before_executable_sha256": "B8125C5003F77D0587D9D17735B27F417134ED4A4EC23E0F4E53ED7217EF16D3",
+    "after_executable_sha256": "B9557B07BE9253CCA69D41A9E81AA0160DB78B99AE7F0B8BCA15476CA598FFF6"
+  },
+  {
+    "workload": "method_read",
+    "iterations": 100000,
+    "result": "1000000",
+    "before_samples_ns": [
+      37703900,
+      37382300,
+      37098200,
+      37283100,
+      37256300,
+      37248100,
+      36908200
+    ],
+    "after_samples_ns": [
+      23577700,
+      24530400,
+      23525600,
+      23325300,
+      23852200,
+      23439600,
+      23615800
+    ],
+    "before_median_ns": 37256300,
+    "after_median_ns": 23577700,
+    "reduction_percent": 36.714864331670086,
+    "before_executable_sha256": "B21810B44E69479B42BA46B55BAAD1B2FE2AD33144EBFF8E2BDD7E66BAE2E043",
+    "after_executable_sha256": "5ED6166E0285ACB4740804DC720B0F018F3924BC7E9371E58D623DA22B354E93"
+  },
+  {
+    "workload": "list_fresh",
+    "iterations": 100000,
+    "result": "4999950000",
+    "before_samples_ns": [
+      42031300,
+      40276400,
+      40630900,
+      40888600,
+      41332800,
+      40705100,
+      41587800
+    ],
+    "after_samples_ns": [
+      29959900,
+      29777000,
+      29748000,
+      30952300,
+      30929300,
+      30224300,
+      29992400
+    ],
+    "before_median_ns": 40888600,
+    "after_median_ns": 29992400,
+    "reduction_percent": 26.648503494861654,
+    "before_executable_sha256": "CACBFECC97194BB6FEE42ECAE10CE80CC4B40E905ACF4397A5CA79314EF76641",
+    "after_executable_sha256": "2FF33EAA6254BB501BE3AA5708B4FCB01FBB6F3CC8C8389F949075B48004AAB0"
+  },
+  {
+    "workload": "list_push",
+    "iterations": 100000,
+    "result": "100001",
+    "before_samples_ns": [
+      23882000,
+      23606500,
+      23857800,
+      23313500,
+      23319100,
+      24177300,
+      23334500
+    ],
+    "after_samples_ns": [
+      13082900,
+      12987700,
+      13197600,
+      12821100,
+      13207000,
+      13094800,
+      12838600
+    ],
+    "before_median_ns": 23606500,
+    "after_median_ns": 13082900,
+    "reduction_percent": 44.579247241225936,
+    "before_executable_sha256": "CF5495257D0AC8E3848C7F64C7A0DC404899DD8C03AA008727CFA3763E37508C",
+    "after_executable_sha256": "0B3B9C9BC0E711F54A8515A05871327D64668B482BD0C0219AC406981EB90A8A"
+  },
+  {
+    "workload": "list_iterator",
+    "iterations": 100000,
+    "result": "4999950000",
+    "before_samples_ns": [
+      180891000,
+      184210100,
+      180693400,
+      179290500,
+      181743800,
+      181598100,
+      181921300
+    ],
+    "after_samples_ns": [
+      136782800,
+      135728300,
+      137601300,
+      137117500,
+      137275300,
+      136986000,
+      137290800
+    ],
+    "before_median_ns": 181598100,
+    "after_median_ns": 137117500,
+    "reduction_percent": 24.493978736561672,
+    "before_executable_sha256": "0B24605AB122D4FD971F5984EEB4015FE6D6CBA1E2635D39F5AA29226C531D03",
+    "after_executable_sha256": "43E702860F5F484308A3AB9C8A523EE4561253106992CC098BA36912962B6EBB"
+  },
+  {
+    "workload": "list_snapshot",
+    "iterations": 100000,
+    "result": "4999950000",
+    "before_samples_ns": [
+      188449200,
+      190450100,
+      190103400,
+      189252500,
+      190181200,
+      189316100,
+      189046000
+    ],
+    "after_samples_ns": [
+      148812100,
+      146104100,
+      148124000,
+      146993000,
+      145687300,
+      146082900,
+      147312500
+    ],
+    "before_median_ns": 189316100,
+    "after_median_ns": 146993000,
+    "reduction_percent": 22.355784848726547,
+    "before_executable_sha256": "9E105AE53F366A4688AA0D430F84F4637AF97DB88EEA176384BEA68CE13C794A",
+    "after_executable_sha256": "CE4B7367862E460FD71E28485079158ABB5526C816BC2EBE7D4511B59FEFD605"
+  }
+]

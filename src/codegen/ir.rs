@@ -1466,7 +1466,9 @@ mod tests {
             value: Constant::Integer(42),
         };
         assert!(SpannedInstruction::try_from_parts(vec![instruction], vec![]).is_err());
-        assert!(SpannedInstruction::try_from_parts(vec![], vec![1..2]).is_err());
+        assert!(
+            SpannedInstruction::try_from_parts(vec![], std::iter::once(1..2).collect()).is_err()
+        );
     }
 
     #[test]

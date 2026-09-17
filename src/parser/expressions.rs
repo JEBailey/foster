@@ -376,10 +376,25 @@ impl Parser {
                 }
             }
             TokenKind::LBracket => {
-                if matches!(
-                    self.peek().kind,
-                    TokenKind::Copy | TokenKind::Move | TokenKind::Ref
-                ) {
+                let copy_capture = matches!(&self.peek().kind, TokenKind::Ident(name) if name == "copy")
+                    && self.peek_n(1).is_some_and(|token| {
+                        matches!(
+                            token.kind,
+                            TokenKind::Ident(_)
+                                | TokenKind::Move
+                                | TokenKind::Ref
+                                | TokenKind::Group
+                                | TokenKind::Read
+                                | TokenKind::Mut
+                                | TokenKind::Reshape
+                                | TokenKind::Consume
+                                | TokenKind::Suspend
+                                | TokenKind::Pub
+                                | TokenKind::Type
+                                | TokenKind::Enum
+                        )
+                    });
+                if copy_capture || matches!(self.peek().kind, TokenKind::Move | TokenKind::Ref) {
                     self.captured_closure()?
                 } else {
                     let mut items = Vec::new();
@@ -470,8 +485,8 @@ impl Parser {
     pub(super) fn captured_closure(&mut self) -> Result<Expr, FosterError> {
         let mut captures = Vec::new();
         loop {
-            let mode = match self.advance().kind {
-                TokenKind::Copy => CaptureMode::Copy,
+            let mode = match &self.advance().kind {
+                TokenKind::Ident(name) if name == "copy" => CaptureMode::Copy,
                 TokenKind::Move => CaptureMode::Move,
                 TokenKind::Ref => CaptureMode::Ref,
                 _ => return Err(self.error("expected `copy`, `move`, or `ref`")),

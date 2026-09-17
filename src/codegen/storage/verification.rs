@@ -665,7 +665,7 @@ pub(crate) fn type_states(
     engine::analyze_function_flow(
         &engine::Program {
             metadata: &program.metadata,
-            functions: &schemas,
+            functions: schemas,
         },
         &body,
     )
@@ -683,7 +683,7 @@ pub(crate) fn slot_instruction(
             constant,
         } => engine::Instruction::LoadConstant {
             destination: Value(u32::from(destination.0)),
-            constant: constant.clone(),
+            constant: *constant,
         },
         crate::codegen::storage::Instruction::Move {
             destination,
@@ -698,7 +698,7 @@ pub(crate) fn slot_instruction(
             operand,
         } => engine::Instruction::Unary {
             destination: Value(u32::from(destination.0)),
-            operator: operator.clone(),
+            operator: *operator,
             operand: Value(u32::from(operand.0)),
         },
         crate::codegen::storage::Instruction::Binary {
@@ -708,7 +708,7 @@ pub(crate) fn slot_instruction(
             right,
         } => engine::Instruction::Binary {
             destination: Value(u32::from(destination.0)),
-            operator: operator.clone(),
+            operator: *operator,
             left: Value(u32::from(left.0)),
             right: Value(u32::from(right.0)),
         },
@@ -737,7 +737,7 @@ pub(crate) fn slot_instruction(
             fields,
         } => engine::Instruction::MakeRecord {
             destination: Value(u32::from(destination.0)),
-            record: record.clone(),
+            record: *record,
             fields: fields
                 .iter()
                 .map(|(a, r)| (a.clone(), Value(u32::from(r.0))))
@@ -750,7 +750,7 @@ pub(crate) fn slot_instruction(
             payload,
         } => engine::Instruction::MakeVariant {
             destination: Value(u32::from(destination.0)),
-            variant: variant.clone(),
+            variant: *variant,
             payload: payload.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
         crate::codegen::storage::Instruction::LoadField {
@@ -761,7 +761,7 @@ pub(crate) fn slot_instruction(
         } => engine::Instruction::LoadField {
             destination: Value(u32::from(destination.0)),
             object: Value(u32::from(object.0)),
-            by_reference: by_reference.clone(),
+            by_reference: *by_reference,
         },
         crate::codegen::storage::Instruction::StoreField {
             object,
@@ -816,7 +816,7 @@ pub(crate) fn slot_instruction(
             destination,
             source,
         } => engine::Instruction::MoveOut {
-            by_reference: by_reference.clone(),
+            by_reference: *by_reference,
             destination: Value(u32::from(destination.0)),
             source: Value(u32::from(source.0)),
         },
@@ -853,7 +853,7 @@ pub(crate) fn slot_instruction(
             arguments,
         } => engine::Instruction::Builtin {
             destination: Value(u32::from(destination.0)),
-            builtin: builtin.clone(),
+            builtin: *builtin,
             arguments: arguments.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
         crate::codegen::storage::Instruction::SpawnRemote { destination, value } => {
@@ -877,10 +877,10 @@ pub(crate) fn slot_instruction(
         } => engine::Instruction::RemoteCall {
             destination: Value(u32::from(destination.0)),
             remote: Value(u32::from(remote.0)),
-            function: function.clone(),
+            function: *function,
             arguments: arguments
                 .iter()
-                .map(|(a, r)| (a.clone(), Value(u32::from(r.0))))
+                .map(|(a, r)| (*a, Value(u32::from(r.0))))
                 .collect(),
         },
         crate::codegen::storage::Instruction::Await {
@@ -901,13 +901,13 @@ pub(crate) fn slot_instruction(
             pattern: pattern.clone(),
             bindings: bindings.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
-        crate::codegen::storage::Instruction::Jump { target } => engine::Instruction::Jump {
-            target: target.clone(),
-        },
+        crate::codegen::storage::Instruction::Jump { target } => {
+            engine::Instruction::Jump { target: *target }
+        }
         crate::codegen::storage::Instruction::JumpIfFalse { condition, target } => {
             engine::Instruction::JumpIfFalse {
                 condition: Value(u32::from(condition.0)),
-                target: target.clone(),
+                target: *target,
             }
         }
         crate::codegen::storage::Instruction::Assert { condition, message } => {
@@ -923,7 +923,7 @@ pub(crate) fn slot_instruction(
             arguments,
         } => engine::Instruction::Call {
             destination: Value(u32::from(destination.0)),
-            function: function.clone(),
+            function: *function,
             specialization: specialization.clone(),
             arguments: arguments.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
@@ -936,7 +936,7 @@ pub(crate) fn slot_instruction(
         } => engine::Instruction::CallMethod {
             destination: Value(u32::from(destination.0)),
             receiver: Value(u32::from(receiver.0)),
-            function: function.clone(),
+            function: *function,
             specialization: specialization.clone(),
             arguments: arguments.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
@@ -950,7 +950,7 @@ pub(crate) fn slot_instruction(
         } => engine::Instruction::CallContractMethod {
             destination: Value(u32::from(destination.0)),
             receiver: Value(u32::from(receiver.0)),
-            slot: slot.clone(),
+            slot: *slot,
             name: name.clone(),
             arguments: arguments.iter().map(|r| Value(u32::from(r.0))).collect(),
             result_type: result_type.clone(),
@@ -962,11 +962,11 @@ pub(crate) fn slot_instruction(
             captures,
         } => engine::Instruction::MakeClosure {
             destination: Value(u32::from(destination.0)),
-            function: function.clone(),
+            function: *function,
             specialization: specialization.clone(),
             captures: captures
                 .iter()
-                .map(|(a, r)| (a.clone(), Value(u32::from(r.0))))
+                .map(|(a, r)| (*a, Value(u32::from(r.0))))
                 .collect(),
         },
         crate::codegen::storage::Instruction::CallValue {
@@ -986,11 +986,11 @@ pub(crate) fn slot_instruction(
             arguments,
         } => engine::Instruction::CallClosure {
             destination: Value(u32::from(destination.0)),
-            function: function.clone(),
+            function: *function,
             specialization: specialization.clone(),
             captures: captures
                 .iter()
-                .map(|(a, r)| (a.clone(), Value(u32::from(r.0))))
+                .map(|(a, r)| (*a, Value(u32::from(r.0))))
                 .collect(),
             arguments: arguments.iter().map(|r| Value(u32::from(r.0))).collect(),
         },
