@@ -27,12 +27,8 @@ impl HashSet {
     /// Creates a set containing each input value once.
     pub func from<T>(values: List<T>, hasher: func(T) -> Int) -> HashSet<T> [consume values, consume hasher] {
         let result = HashSet.empty(move hasher)
-        let iterator = values.iterator()
-        loop {
-            branch iterator.next() {
-                Option.None -> { break }
-                Option.Some(value) -> { result = (move result).insert(move value) }
-            }
+        for value in values {
+            result = (move result).insert(move value)
         }
         result
     }
@@ -61,13 +57,8 @@ impl HashSet {
     /// Creates a snapshot iterator in unspecified order.
     pub func iterator<T>(self: HashSet<T>) -> Iterator<T> {
         let values = []
-        let entries = self.table.iterator()
-        loop {
-            let next = entries.next()
-            branch next {
-                Option.None -> { break }
-                Option.Some(entry) -> values.push(entry.key)
-            }
+        for entry in self.table {
+            values.push(entry.key)
         }
         values.iterator()
     }

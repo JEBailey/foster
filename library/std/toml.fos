@@ -169,16 +169,15 @@ impl Parser {
 
     /// Internal helper for the Foster TOML implementation.
     func parse_statements(self: Parser) -> () [mut self] {
-        return () if self.failed?()
-        return () if self.remaining.empty?
-        branch {
-            self.remaining.starts_with?("[[") -> self.parse_header(true)
-            self.remaining.starts_with?("[") -> self.parse_header(false)
-            _ -> self.parse_key_value()
+        while !self.failed?() && !self.remaining.empty? {
+            branch {
+                self.remaining.starts_with?("[[") -> self.parse_header(true)
+                self.remaining.starts_with?("[") -> self.parse_header(false)
+                _ -> self.parse_key_value()
+            }
+            self.finish_statement()
+            self.skip_document_space()
         }
-        self.finish_statement()
-        self.skip_document_space()
-        self.parse_statements()
     }
 
     /// Internal helper for the Foster TOML implementation.
@@ -246,12 +245,12 @@ impl Parser {
 
     /// Internal helper for the Foster TOML implementation.
     func skip_document_space(self: Parser) -> () [mut self] {
-        return () if self.failed?()
-        self.skip_horizontal_space()
-        self.skip_comment()
-        return () if not self.newline?()
-        self.take_newline()
-        self.skip_document_space()
+        while !self.failed?() {
+            self.skip_horizontal_space()
+            self.skip_comment()
+            break if not self.newline?()
+            self.take_newline()
+        }
     }
 
     /// Internal helper for the Foster TOML implementation.

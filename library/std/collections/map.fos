@@ -68,19 +68,13 @@ impl ListMap {
         return Option.None if index < 0
         let remaining = []
         let removed = Option.None
-        let entries = self.entries.iterator()
         let cursor = 0
-        loop {
-            branch entries.next() {
-                Option.None -> { break }
-                Option.Some(entry) -> {
-                    branch {
-                        cursor == index -> { removed = Option.Some(entry.value) }
-                        _ -> remaining.push(entry)
-                    }
-                    cursor = cursor + 1
-                }
+        for entry in self.entries {
+            branch {
+                cursor == index -> { removed = Option.Some(entry.value) }
+                _ -> remaining.push(entry)
             }
+            cursor = cursor + 1
         }
         self.entries = remaining
         removed
@@ -90,8 +84,7 @@ impl ListMap {
 /// Finds a key without extracting owned entries or growing the call stack.
 func find_index<K, V>(entries: List<Entry<K, V>>, key: K) -> Int {
     let index = 0
-    loop {
-        break if index >= entries.length
+    while index < entries.length {
         return index if entries[index].key == key
         index = index + 1
     }
@@ -137,12 +130,8 @@ impl ListMap {
     /// Consumes the map and returns its keys in storage order.
     pub func keys<K, V>(self: ListMap<K, V>) -> List<K> [consume self] {
         let result = []
-        let entries = self.iterator()
-        loop {
-            branch entries.next() {
-                Option.None -> { break }
-                Option.Some(entry) -> result.push(entry.key)
-            }
+        for entry in self {
+            result.push(entry.key)
         }
         result
     }
@@ -152,12 +141,8 @@ impl ListMap {
     /// Consumes the map and returns its values in storage order.
     pub func values<K, V>(self: ListMap<K, V>) -> List<V> [consume self] {
         let result = []
-        let entries = self.iterator()
-        loop {
-            branch entries.next() {
-                Option.None -> { break }
-                Option.Some(entry) -> result.push(entry.value)
-            }
+        for entry in self {
+            result.push(entry.value)
         }
         result
     }

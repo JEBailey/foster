@@ -116,8 +116,7 @@ impl List {
     /// Returns whether this list contains `expected`.
     pub func contains?<T>(self: List<T>, expected: T) -> Bool {
         let index = 0
-        loop {
-            return false if index >= self.length
+        while index < self.length {
             return true if self[index] == expected
             index = index + 1
         }
@@ -144,8 +143,7 @@ impl List {
     pub func map<T, U>(self: List<T>, transform: func(T) -> U) -> List<U> {
         let result = []
         let index = 0
-        loop {
-            break if index >= self.length
+        while index < self.length {
             result.push(transform(self[index]))
             index = index + 1
         }
@@ -156,8 +154,7 @@ impl List {
     pub func filter<T>(self: List<T>, include: Predicate<T>) -> List<T> {
         let result = []
         let index = 0
-        loop {
-            break if index >= self.length
+        while index < self.length {
             let value = self.read_at(index)
             branch {
                 include(value) -> result.push(value)
@@ -172,8 +169,7 @@ impl List {
     pub func fold<T, U>(self: List<T>, initial: U, combine: func(consume U, consume T) -> U) -> U [consume initial, read self] {
         let result = move initial
         let index = 0
-        loop {
-            break if index >= self.length
+        while index < self.length {
             result = combine(move result, self.read_at(index))
             index = index + 1
         }
@@ -183,8 +179,7 @@ impl List {
     /// Returns the first matching element; stops evaluating the predicate at that element.
     pub func find<T>(self: List<T>, predicate: Predicate<T>) -> Option<T> {
         let index = 0
-        loop {
-            break if index >= self.length
+        while index < self.length {
             let value = self.read_at(index)
             return Option.Some(value) if predicate(value)
             index = index + 1
@@ -196,8 +191,7 @@ impl List {
     /// Returns false for an empty list.
     pub func any?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
         let index = 0
-        loop {
-            return false if index >= self.length
+        while index < self.length {
             return true if predicate(self[index])
             index = index + 1
         }
@@ -208,8 +202,7 @@ impl List {
     /// Returns true for an empty list.
     pub func all?<T>(self: List<T>, predicate: Predicate<T>) -> Bool {
         let index = 0
-        loop {
-            return true if index >= self.length
+        while index < self.length {
             return false if !predicate(self[index])
             index = index + 1
         }
@@ -220,8 +213,7 @@ impl List {
     pub func reverse<T>(self: List<T>) -> List<T> {
         let result = []
         let index = self.length
-        loop {
-            break if index <= 0
+        while index > 0 {
             index = index - 1
             result.push(self.read_at(index))
         }
@@ -232,8 +224,7 @@ impl List {
     pub func concat<T>(self: List<T>, right: List<T>) -> List<T> [consume self, read right] {
         let result = move self
         let index = 0
-        loop {
-            break if index >= right.length
+        while index < right.length {
             result.push(right.read_at(index))
             index = index + 1
         }
@@ -278,8 +269,7 @@ impl List {
         assert(start >= 0 && end >= start && end <= self.length, "list slice is out of bounds")
         let result = []
         let index = start
-        loop {
-            break if index >= end
+        while index < end {
             result.push(self.read_at(index))
             index = index + 1
         }
@@ -308,12 +298,10 @@ impl List {
     pub func flat_map<T, U>(self: List<T>, transform: func(T) -> List<U>) -> List<U> {
         let result = []
         let index = 0
-        loop {
-            break if index >= self.length
+        while index < self.length {
             let mapped = transform(self[index])
             let item = 0
-            loop {
-                break if item >= mapped.length
+            while item < mapped.length {
                 result.push(mapped.read_at(item))
                 item = item + 1
             }
@@ -326,11 +314,9 @@ impl List {
     pub func flatten<T>(self: List<List<T>>) -> List<T> {
         let result = []
         let index = 0
-        loop {
-            break if index >= self.length
+        while index < self.length {
             let item = 0
-            loop {
-                break if item >= self[index].length
+            while item < self[index].length {
                 result.push(self[index].read_at(item))
                 item = item + 1
             }
@@ -343,8 +329,7 @@ impl List {
     pub func count<T>(self: List<T>, predicate: Predicate<T>) -> Int {
         let count = 0
         let index = 0
-        loop {
-            break if index >= self.length
+        while index < self.length {
             branch {
                 predicate(self[index]) -> {
                     count = count + 1
@@ -367,8 +352,7 @@ impl List {
         return Option.None if self.empty?
         let result = self.read_at(0)
         let index = 1
-        loop {
-            break if index >= self.length
+        while index < self.length {
             result = combine(result, self.read_at(index))
             index = index + 1
         }
@@ -379,8 +363,7 @@ impl List {
     pub func join(self: List<String>, separator: String) -> String {
         let output = StringBuilder.empty()
         let index = 0
-        loop {
-            break if index >= self.length
+        while index < self.length {
             branch {
                 index > 0 -> output.append(separator)
                 _ -> ()

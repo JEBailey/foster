@@ -230,8 +230,7 @@ impl String {
     pub func length(self: String) -> Int {
         let source = StringCursor.from(self)
         let count = 0
-        loop {
-            break if source.empty?()
+        while !source.empty?() {
             unicode::grapheme_end(source)
             count = count + 1
         }
@@ -257,13 +256,9 @@ impl String {
 
     /// Materializes the text as complete extended grapheme clusters.
     pub func graphemes(self: String) -> List<String> {
-        let source = GraphemeCursor.from(self)
         let output = []
-        loop {
-            branch source.next() {
-                Option.None -> { break }
-                Option.Some(cluster) -> output.push(cluster)
-            }
+        for cluster in self {
+            output.push(cluster)
         }
         output
     }
@@ -285,8 +280,7 @@ impl String {
     pub func scalar_length(self: String) -> Int {
         let source = cursor(self)
         let count = 0
-        loop {
-            break if source.empty?()
+        while !source.empty?() {
             source.next_scalar()
             count = count + 1
         }
@@ -297,8 +291,7 @@ impl String {
     pub func scalar_take_while(self: String, predicate: Predicate<CodePoint>) -> String {
         let source = cursor(self)
         let end = 0
-        loop {
-            break if source.empty?()
+        while !source.empty?() {
             break if !predicate(source.next_scalar())
             end = source.checkpoint()
         }
@@ -311,8 +304,7 @@ impl String {
         let source = cursor(self)
         let index = 0
         let first = 0
-        loop {
-            break if source.empty?() || index >= end
+        while !source.empty?() && index < end {
             source.next_scalar()
             index = index + 1
             branch { index <= start -> { first = source.checkpoint() } _ -> () }
@@ -416,8 +408,7 @@ impl StringCursor {
             _ -> first - 240
         }
         let index = 1
-        loop {
-            break if index >= width
+        while index < width {
             scalar = scalar * 64 + self.data[self.offset + index].int - 128
             index = index + 1
         }
@@ -436,13 +427,9 @@ impl String {
 
     /// Returns the final grapheme cluster, or `None` for an empty string.
     pub func last(self: String) -> Option<String> {
-        let source = GraphemeCursor.from(self)
         let last = Option.None
-        loop {
-            branch source.next() {
-                Option.None -> { break }
-                Option.Some(cluster) -> { last = Option.Some(cluster) }
-            }
+        for cluster in self {
+            last = Option.Some(cluster)
         }
         last
     }
@@ -452,8 +439,7 @@ impl String {
         let clusters = self.graphemes()
         let output = StringBuilder.empty()
         let index = clusters.length
-        loop {
-            break if index == 0
+        while index != 0 {
             index = index - 1
             output.append(clusters[index])
         }
@@ -465,8 +451,7 @@ impl String {
 func matches_at(data: Bytes, pattern: Bytes, start: Int) -> Bool {
     return false if pattern.length > data.length - start
     let index = 0
-    loop {
-        break if index >= pattern.length
+    while index < pattern.length {
         return false if data[start + index] != pattern[index]
         index = index + 1
     }
@@ -494,8 +479,7 @@ impl String {
         let pattern = fragment.bytes
         return true if pattern.empty?
         let index = 0
-        loop {
-            break if pattern.length > data.length - index
+        while pattern.length <= data.length - index {
             return true if matches_at(data, pattern, index)
             index = index + 1
         }
@@ -506,8 +490,7 @@ impl String {
     pub func trim_start(self: String) -> String [consume self] {
         let source = cursor(self)
         let start = 0
-        loop {
-            break if source.offset >= source.data.length
+        while source.offset < source.data.length {
             break if !source.next_scalar().whitespace?
             start = source.offset
         }
@@ -518,8 +501,7 @@ impl String {
     pub func trim_end(self: String) -> String {
         let source = cursor(self)
         let end = 0
-        loop {
-            break if source.offset >= source.data.length
+        while source.offset < source.data.length {
             branch {
                 !source.next_scalar().whitespace? -> {
                     end = source.offset
@@ -537,8 +519,7 @@ impl String {
         let start = 0
         let end = 0
         let leading = true
-        loop {
-            break if source.offset >= source.data.length
+        while source.offset < source.data.length {
             let whitespace = source.next_scalar().whitespace?
             branch {
                 leading && whitespace -> {
@@ -561,8 +542,7 @@ impl String {
     pub func code_points(self: String) -> List<CodePoint> {
         let source = cursor(self)
         let output = []
-        loop {
-            break if source.offset >= source.data.length
+        while source.offset < source.data.length {
             output.push(source.next_scalar())
         }
         output
@@ -571,11 +551,8 @@ impl String {
     /// Concatenates a sequence of Unicode scalar values using one UTF-8 builder.
     pub func from_code_points(characters: List<CodePoint>) -> String {
         let output = StringBuilder.empty()
-        let index = 0
-        loop {
-            break if index >= characters.length
-            output.push(characters[index])
-            index = index + 1
+        for character in characters {
+            output.push(character)
         }
         (move output).finish()
     }
@@ -584,8 +561,7 @@ impl String {
     pub func from_code_points(characters: Sequence<CodePoint>) -> String {
         let remaining = characters
         let output = StringBuilder.empty()
-        loop {
-            break if remaining.empty?()
+        while !remaining.empty?() {
             output.push(remaining.head())
             remaining = remaining.rest()
         }
@@ -596,16 +572,10 @@ impl String {
     /// Calls the predicate once per inspected cluster, stopping at the first false result.
     /// An empty input or a rejected first cluster returns `""`.
     pub func take_while(self: String, predicate: Predicate<String>) -> String {
-        let source = GraphemeCursor.from(self)
         let output = StringBuilder.empty()
-        loop {
-            branch source.next() {
-                Option.None -> { break }
-                Option.Some(cluster) -> {
-                    break if !predicate(cluster)
-                    output.append(cluster)
-                }
-            }
+        for cluster in self {
+            break if !predicate(cluster)
+            output.append(cluster)
         }
         (move output).finish()
     }
@@ -618,8 +588,7 @@ impl String {
         let source = StringCursor.from(self)
         let index = 0
         let first = 0
-        loop {
-            break if source.empty?() || index >= end
+        while !source.empty?() && index < end {
             unicode::grapheme_end(source)
             index = index + 1
             branch { index <= start -> { first = source.checkpoint() } _ -> () }
@@ -640,8 +609,7 @@ impl String {
         let output = []
         let start = 0
         let index = 0
-        loop {
-            break if index >= data.length
+        while index < data.length {
             branch {
                 matches_at(data, pattern, index) -> {
                     output.push(decode_bytes(data.slice(start, index)))
@@ -687,8 +655,7 @@ func ascii_case(text: String, lower: Bool) -> String {
     let data = text.bytes
     let output = ByteBuffer.empty()
     let index = 0
-    loop {
-        break if index >= data.length
+    while index < data.length {
         let current = data[index].int
         let changed = branch {
             lower && current >= 65 && current <= 90 -> current + 32

@@ -82,19 +82,13 @@ impl HashMap {
             _ -> {
                 let remaining = []
                 let removed = Option.None
-                let entries = self.buckets[bucket].iterator()
                 let cursor = 0
-                loop {
-                    branch entries.next() {
-                        Option.None -> { break }
-                        Option.Some(entry) -> {
-                            branch {
-                                cursor != index -> remaining.push(entry)
-                                _ -> { removed = Option.Some(entry.value) }
-                            }
-                            cursor = cursor + 1
-                        }
+                for entry in self.buckets[bucket] {
+                    branch {
+                        cursor != index -> remaining.push(entry)
+                        _ -> { removed = Option.Some(entry.value) }
                     }
+                    cursor = cursor + 1
                 }
                 self.buckets[bucket] = remaining
                 self.size = self.size - 1
@@ -111,12 +105,8 @@ impl HashMap {
     /// Consumes the table and returns its keys in unspecified order.
     pub func keys<K, V>(self: HashMap<K, V>) -> List<K> [consume self] {
         let result = []
-        let entries = self.iterator()
-        loop {
-            branch entries.next() {
-                Option.None -> { break }
-                Option.Some(entry) -> result.push(entry.key)
-            }
+        for entry in self {
+            result.push(entry.key)
         }
         result
     }
@@ -124,12 +114,8 @@ impl HashMap {
     /// Consumes the table and returns its values in unspecified order.
     pub func values<K, V>(self: HashMap<K, V>) -> List<V> [consume self] {
         let result = []
-        let entries = self.iterator()
-        loop {
-            branch entries.next() {
-                Option.None -> { break }
-                Option.Some(entry) -> result.push(entry.value)
-            }
+        for entry in self {
+            result.push(entry.value)
         }
         result
     }
@@ -162,8 +148,7 @@ impl BucketIterator {
 /// Allocates independent empty collision chains.
 func empty_buckets<K, V>(capacity: Int) -> List<List<Entry<K, V>>> {
     let buckets = []
-    loop {
-        break if buckets.length >= capacity
+    while buckets.length < capacity {
         buckets.push([])
     }
     buckets
@@ -181,8 +166,7 @@ func bucket_index(hash: Int, capacity: Int) -> Int {
 /// Searches only the selected collision chain using key equality.
 func find_index<K, V>(entries: List<Entry<K, V>>, key: K) -> Int {
     let index = 0
-    loop {
-        break if index >= entries.length
+    while index < entries.length {
         return index if entries[index].key == key
         index = index + 1
     }
@@ -193,15 +177,9 @@ func find_index<K, V>(entries: List<Entry<K, V>>, key: K) -> Int {
 func grow<K, V>(table: HashMap<K, V>) -> HashMap<K, V> [consume table] {
     let capacity = table.buckets.length * 2
     let buckets = empty_buckets(capacity)
-    let entries = table.iterator()
-    loop {
-        branch entries.next() {
-            Option.None -> { break }
-            Option.Some(entry) -> {
-                let destination = bucket_index(table.hasher(entry.key), capacity)
-                buckets[destination] = buckets[destination].append(entry)
-            }
-        }
+    for entry in table {
+        let destination = bucket_index(table.hasher(entry.key), capacity)
+        buckets[destination] = buckets[destination].append(entry)
     }
     HashMap { buckets, size: table.size, hasher: table.hasher }
 }
@@ -222,16 +200,14 @@ test "hash maps retain colliding keys through replacement and removal" {
 test "hash maps grow and accept every signed hash" {
     let table = HashMap.empty((key: Int) -> key)
     let index = 0
-    loop {
-        break if index >= 100
+    while index < 100 {
         let next = index + 1
         table = (move table).put(index, index * 2)
         index = next
     }
     assert(table.length() == 100)
     index = 0
-    loop {
-        break if index >= 100
+    while index < 100 {
         assert(table.contains_key?(index))
         index = index + 1
     }

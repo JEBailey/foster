@@ -31,15 +31,12 @@ func rotate(value: Int, divisor: Int) -> Int {
 func and_table() -> List<Int> {
     let table = []
     let a = 0
-    loop {
-        break if a == 16
+    while a != 16 {
         let b = 0
-        loop {
-            break if b == 16
+        while b != 16 {
             let bit = 1
             let value = 0
-            loop {
-                break if bit == 16
+            while bit != 16 {
                 branch {
                     a / bit - a / (bit * 2) * 2 == 1 && b / bit - b / (bit * 2) * 2 == 1 -> { value = value + bit }
                     _ -> ()
@@ -61,8 +58,7 @@ func combine(table: List<Int>, a: Int, b: Int, c: Int, mode: Int) -> Int {
     let right = c
     let output = 0
     let place = 1
-    loop {
-        break if place == MODULUS
+    while place != MODULUS {
         let x = left - left / 16 * 16
         let y = middle - middle / 16 * 16
         let z = right - right / 16 * 16
@@ -89,12 +85,10 @@ func words(text: String) -> List<Int> {
     let encoded = text.bytes
     let result = []
     let index = 0
-    loop {
-        break if index == encoded.length
+    while index != encoded.length {
         let value = 0
         let count = 0
-        loop {
-            break if count == 8
+        while count != 8 {
             let digit = encoded[index].int
             value = value * 16 + branch { digit <= 57 -> digit - 48 _ -> digit - 87 }
             index = index + 1
@@ -112,16 +106,13 @@ pub func digest(input: Bytes) -> String {
     let state = words("6a09e667bb67ae853c6ef372a54ff53a510e527f9b05688c1f83d9ab5be0cd19")
     let padded_length = (input.length + 9 + 63) / 64 * 64
     let offset = 0
-    loop {
-        break if offset == padded_length
+    while offset != padded_length {
         let schedule = []
         let index = 0
-        loop {
-            break if index == 16
+        while index != 16 {
             let value = 0
             let byte_index = 0
-            loop {
-                break if byte_index == 4
+            while byte_index != 4 {
                 let position = offset + index * 4 + byte_index
                 let byte = branch {
                     position < input.length -> input[position].int
@@ -129,8 +120,7 @@ pub func digest(input: Bytes) -> String {
                     position >= padded_length - 8 -> {
                         let divisor = 1
                         let remaining = padded_length - position - 1
-                        loop {
-                            break if remaining == 0
+                        while remaining != 0 {
                             divisor = divisor * 256
                             remaining = remaining - 1
                         }
@@ -145,8 +135,7 @@ pub func digest(input: Bytes) -> String {
             schedule.push(value)
             index = index + 1
         }
-        loop {
-            break if index == 64
+        while index != 64 {
             let x = schedule[index - 15]
             let y = schedule[index - 2]
             let small0 = combine(table, rotate(x, 128), rotate(x, 262144), x / 8, 0)
@@ -163,8 +152,7 @@ pub func digest(input: Bytes) -> String {
         let g = state[6]
         let h = state[7]
         index = 0
-        loop {
-            break if index == 64
+        while index != 64 {
             let big1 = combine(table, rotate(e, 64), rotate(e, 2048), rotate(e, 33554432), 0)
             let first = h + big1 + combine(table, e, f, g, 1) + constants[index] + schedule[index]
             let big0 = combine(table, rotate(a, 4), rotate(a, 8192), rotate(a, 4194304), 0)
@@ -192,11 +180,9 @@ pub func digest(input: Bytes) -> String {
     let output = StringBuilder.empty()
     let digits = "0123456789abcdef".bytes
     let hex_index = 0
-    loop {
-        break if hex_index == 8
+    while hex_index != 8 {
         let hex_divisor = 268435456
-        loop {
-            break if hex_divisor == 0
+        while hex_divisor != 0 {
             let hex_shifted = state[hex_index] / hex_divisor
             output.push(from_code_point(digits[hex_shifted - hex_shifted / 16 * 16].int))
             hex_divisor = hex_divisor / 16

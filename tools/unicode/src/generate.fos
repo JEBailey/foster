@@ -27,7 +27,7 @@ type Database = {
 
 func zeros() -> List<Int> {
     let values = []
-    loop { break if values.length == LIMIT
+    while values.length != LIMIT {
         values.push(0)
     }
     values
@@ -56,13 +56,10 @@ func number(text: String) -> Int {
     let encoded = text.bytes
     assert(encoded.length > 0, "empty hexadecimal field")
     let value = 0
-    let index = 0
-    loop {
-        break if index == encoded.length
-        let digit = encoded[index].int
+    for octet in encoded {
+        let digit = octet.int
         assert((digit >= 48 && digit <= 57) || (digit >= 65 && digit <= 70), "invalid hexadecimal field")
         value = value * 16 + branch { digit <= 57 -> digit - 48 _ -> digit - 55 }
-        index = index + 1
     }
     value
 }
@@ -70,8 +67,7 @@ func number(text: String) -> Int {
 func category_index(name: String) -> Int {
     let names = "Cn Lu Ll Lt Lm Lo Mn Mc Me Nd Nl No Pc Pd Ps Pe Pi Pf Po Sm Sc Sk So Zs Zl Zp Cc Cf Cs Co".split(" ")
     let index = 0
-    loop {
-        break if index == names.length
+    while index != names.length {
         return index if names[index] == name
         index = index + 1
     }
@@ -82,8 +78,7 @@ func category_index(name: String) -> Int {
 /// Replaces existing entries in place, preserving UCD insertion order for fixtures.
 func put(table: List<Mapping>, point: Int, targets: List<Int>) -> List<Mapping> [consume table, consume targets] {
     let index = 0
-    loop {
-        break if index == table.length
+    while index != table.length {
         branch {
             table[index].point == point -> {
                 table[index] = Mapping { point, targets }
@@ -99,13 +94,10 @@ func put(table: List<Mapping>, point: Int, targets: List<Int>) -> List<Mapping> 
 
 func read_unicode(db: Database, text: String) -> Database [consume db, consume text] {
     let lines = (move text).split("\n")
-    let index = 0
     let range_start = -1
     let range_category = -1
-    loop {
-        break if index == lines.length
-        let row = fields(lines[index].copy())
-        index = index + 1
+    for line in lines {
+        let row = fields(line.copy())
         continue if row.empty?
         assert(row.length == 15, "UnicodeData record must have 15 fields")
         let point = number(row[0])
@@ -119,8 +111,7 @@ func read_unicode(db: Database, text: String) -> Database [consume db, consume t
             }
             row[1].ends_with?(", Last>") -> {
                 assert(range_start >= 0 && range_start <= point && range_category == category, "invalid UnicodeData range")
-                loop {
-                    break if range_start > point
+                while range_start <= point {
                     db.categories[range_start] = category
                     range_start = range_start + 1
                 }
@@ -148,11 +139,8 @@ func targets(text: String) -> List<Int> { text.copy().split(" ").filter((part: S
 
 func read_special(db: Database, text: String) -> Database [consume db, consume text] {
     let lines = (move text).split("\n")
-    let index = 0
-    loop {
-        break if index == lines.length
-        let row = fields(lines[index].copy())
-        index = index + 1
+    for line in lines {
+        let row = fields(line.copy())
         continue if row.empty?
         assert(row.length >= 5, "invalid SpecialCasing record")
         branch {
@@ -172,11 +160,8 @@ func read_special(db: Database, text: String) -> Database [consume db, consume t
 
 func read_fold(db: Database, text: String) -> Database [consume db, consume text] {
     let lines = (move text).split("\n")
-    let index = 0
-    loop {
-        break if index == lines.length
-        let row = fields(lines[index].copy())
-        index = index + 1
+    for line in lines {
+        let row = fields(line.copy())
         continue if row.empty?
         assert(row.length >= 3, "invalid CaseFolding record")
         branch { row[1] == "C" || row[1] == "F" -> { db.fold = put(db.fold.slice(0, db.fold.length), number(row[0]), targets(row[2])) } _ -> () }
@@ -200,11 +185,8 @@ func property_mask(name: String) -> Int {
 
 func read_properties(db: Database, text: String) -> Database [consume db, consume text] {
     let lines = (move text).split("\n")
-    let index = 0
-    loop {
-        break if index == lines.length
-        let row = fields(lines[index].copy())
-        index = index + 1
+    for line in lines {
+        let row = fields(line.copy())
         continue if row.empty?
         assert(row.length >= 2, "invalid property record")
         let mask = property_mask(row[1])
@@ -213,8 +195,7 @@ func read_properties(db: Database, text: String) -> Database [consume db, consum
         let point = number(ends[0])
         let last = number(ends[ends.length - 1])
         assert(point <= last && last < LIMIT, "invalid property range")
-        loop {
-            break if point > last
+        while point <= last {
             let old = db.properties[point]
             branch { old / mask - old / (mask * 2) * 2 == 0 -> { db.properties[point] = old + mask } _ -> () }
             point = point + 1
@@ -227,12 +208,12 @@ func append_hex(output: StringBuilder, value: Int, width: Int) -> () {
     let digits = "0123456789ABCDEF".bytes
     let divisor = 1
     let count = 1
-    loop { break if count == width
+    while count != width {
         divisor = divisor * 16
         count = count + 1
     }
     assert(value >= 0 && value / divisor < 16, "hexadecimal field overflow")
-    loop { break if divisor == 0
+    while divisor != 0 {
         let shifted = value / divisor
         output.push(from_code_point(digits[shifted - shifted / 16 * 16].int))
         divisor = divisor / 16
@@ -262,8 +243,7 @@ func append_ranges(output: StringBuilder, name: String, values: List<Int>) -> ()
     output.append("/// Returns " + name + " as start(6), end(6), value(2) hex records.\npub func " + name + "() -> String { \"")
     let start = 0
     let end = 1
-    loop {
-        break if end > values.length
+    while end <= values.length {
         let boundary = branch { end == values.length -> true _ -> values[end] != values[start] }
         branch { boundary -> {
             branch { values[start] != 0 -> {
@@ -281,11 +261,9 @@ func append_ranges(output: StringBuilder, name: String, values: List<Int>) -> ()
 /// Insertion sorting is cheap here: UnicodeData is sorted; only special cases are appended.
 func sort(table: List<Mapping>) -> List<Mapping> [consume table] {
     let index = 1
-    loop {
-        break if index >= table.length
+    while index < table.length {
         let position = index
-        loop {
-            break if position == 0
+        while position != 0 {
             break if table[position - 1].point <= table[position].point
             let previous = table[position - 1].copy()
             table[position - 1] = table[position].copy()
@@ -306,8 +284,7 @@ func append_map(output: StringBuilder, name: String, input: List<Mapping>, simpl
     })
     output.append("pub func " + name + "() -> String { \"")
     let index = 0
-    loop {
-        break if index == table.length
+    while index != table.length {
         let entry = table[index].copy()
         index = index + 1
         continue if entry.targets.length == 1 && entry.targets[0] == entry.point
@@ -318,7 +295,7 @@ func append_map(output: StringBuilder, name: String, input: List<Mapping>, simpl
             _ -> {
                 append_hex(output, entry.targets.length, 1)
                 let target_index = 0
-                loop { break if target_index == 3
+                while target_index != 3 {
                     append_hex(output, branch { target_index < entry.targets.length -> entry.targets[target_index] _ -> 0 }, 6)
                     target_index = target_index + 1
                 }
@@ -332,8 +309,7 @@ func provenance(root: String) -> String {
     let names = ["CaseFolding.txt", "DerivedCoreProperties.txt", "PropList.txt", "SpecialCasing.txt", "UnicodeData.txt", "GraphemeBreakProperty.txt", "emoji-data.txt", "GraphemeBreakTest.txt"]
     let output = StringBuilder.empty()
     let index = 0
-    loop {
-        break if index == names.length
+    while index != names.length {
         let name = names[index].copy()
         println("Hashing " + name)
         let raw = branch fs::read_bytes(root + "/tools/unicode/17.0.0/" + name) {
@@ -353,17 +329,13 @@ func grapheme_values(text: String, kind: Int) -> List<Int> [consume text] {
     let values = zeros()
     let names = "Other CR LF Control Extend ZWJ Regional_Indicator Prepend SpacingMark L V T LV LVT".split(" ")
     let lines = (move text).split("\n")
-    let index = 0
-    loop {
-        break if index == lines.length
-        let row = fields(lines[index].copy())
-        index = index + 1
+    for line in lines {
+        let row = fields(line.copy())
         continue if row.empty?
         let value = 0
         branch {
             kind == 0 -> {
-                loop {
-                    break if value == names.length || names[value] == row[1]
+                while value != names.length && names[value] != row[1] {
                     value = value + 1
                 }
                 assert(value < names.length, "unknown grapheme break property")
@@ -379,8 +351,7 @@ func grapheme_values(text: String, kind: Int) -> List<Int> [consume text] {
         let point = number(ends[0])
         let last = number(ends[ends.length - 1])
         assert(point <= last && last < LIMIT, "invalid grapheme property range")
-        loop {
-            break if point > last
+        while point <= last {
             values[point] = value
             point = point + 1
         }
@@ -410,13 +381,11 @@ func tables(db: Database, hashes: String, root: String) -> String {
 func append_literal(output: StringBuilder, table: List<Mapping>, keys: Bool, separator: Bool) -> () {
     output.append("\"")
     let index = 0
-    loop {
-        break if index == table.length
+    while index != table.length {
         branch { separator && index > 0 -> output.append("|") _ -> () }
         let values = branch { keys -> [table[index].point] _ -> table[index].targets.slice(0, table[index].targets.length) }
         let target_index = 0
-        loop {
-            break if target_index == values.length
+        while target_index != values.length {
             let point = values[target_index]
             branch { point == 34 || point == 92 -> output.append("\\") _ -> () }
             output.push(from_code_point(point))
@@ -477,8 +446,7 @@ pub func run(args: List<String>) -> Int {
     let root = "."
     let check = false
     let index = 0
-    loop {
-        break if index == args.length
+    while index != args.length {
         let argument = args[index].copy()
         branch {
             argument == "--check" -> { check = true }

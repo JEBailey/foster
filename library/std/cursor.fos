@@ -119,8 +119,7 @@ impl BytesCursor {
         return Option.None if start < 0 || end < start || end > self.data.length
         let values = []
         let index = start
-        loop {
-            break if index >= end
+        while index < end {
             values.push(self.data[index])
             index = index + 1
         }

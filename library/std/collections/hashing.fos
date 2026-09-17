@@ -17,12 +17,9 @@ pub func text(value: String) -> Int { bytes(value.bytes) }
 /// This deterministic hash is not cryptographic or randomized against hostile inputs.
 pub func bytes(value: Bytes) -> Int {
     let state = 17
-    let index = 0
-    loop {
-        break if index >= value.length
-        let next = state * 31 + value[index]
+    for octet in value {
+        let next = state * 31 + octet
         state = next - next / 2147483647 * 2147483647
-        index = index + 1
     }
     state
 }
