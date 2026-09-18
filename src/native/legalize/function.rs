@@ -17,7 +17,30 @@ pub(in crate::native) fn lower_shared_to_native_ir(
     environment: NativeIrEnvironment<'_>,
 ) -> Result<(ir::Function, FailureCleanup), FosterError> {
     let remote_calls = verified_remote_calls(shared, source_states, instance, environment)?;
-    let specialized = specialize_type_branches(shared, instance, environment);
+    let mut reachable_shared = shared.clone();
+    for (index, block) in reachable_shared.blocks.iter_mut().enumerate() {
+        let reachable_len = (0..block.instructions.len())
+            .find(|instruction| {
+                !source_states.reachable(crate::codegen::flow::Site {
+                    block: ir::Block(index as u32),
+                    instruction: *instruction,
+                })
+            })
+            .unwrap_or(block.instructions.len());
+        if !source_states.reachable(crate::codegen::flow::Site {
+            block: ir::Block(index as u32),
+            instruction: block.instructions.len(),
+        }) {
+            reachable_shared.entry_seeds.extend(
+                block.instructions[reachable_len..]
+                    .iter()
+                    .flat_map(|entry| entry.destinations()),
+            );
+            block.instructions.truncate(reachable_len);
+            block.terminator = ir::Terminator::Unreachable;
+        }
+    }
+    let specialized = specialize_type_branches(&reachable_shared, instance, environment);
     let shared = &specialized;
     let external_values = shared
         .captures
@@ -207,7 +230,7 @@ pub(in crate::native) fn lower_shared_to_native_ir(
                 clear_transferred(then_arguments);
                 clear_transferred(else_arguments);
             }
-            ir::Terminator::Return(_) => {}
+            ir::Terminator::Unreachable | ir::Terminator::Return(_) => {}
         }
         if let ir::Terminator::Return(returned) = &terminator {
             let mut returned = *returned;
@@ -365,7 +388,7 @@ pub(in crate::native) fn lower_shared_to_native_ir(
                     arguments.clear();
                 }
             }
-            ir::Terminator::Return(_) => {}
+            ir::Terminator::Unreachable | ir::Terminator::Return(_) => {}
         }
         blocks.push(ir::BlockData {
             parameters: block.parameters.clone(),
@@ -634,7 +657,7 @@ fn specialize_type_branches(
                 else_target,
                 ..
             } => pending.extend([*then_target, *else_target]),
-            ir::Terminator::Return(_) => {}
+            ir::Terminator::Unreachable | ir::Terminator::Return(_) => {}
         }
     }
     if reachable.len() == function.blocks.len() {
@@ -690,7 +713,7 @@ fn shift_native_blocks(terminator: &mut ir::Terminator, offset: u32) {
             then_target.0 += offset;
             else_target.0 += offset;
         }
-        ir::Terminator::Return(_) => {}
+        ir::Terminator::Unreachable | ir::Terminator::Return(_) => {}
     }
 }
 

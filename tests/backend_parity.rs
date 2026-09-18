@@ -2495,3 +2495,108 @@ fn type_branch_uniform_structural_conformance() {
         Ok("42"),
     );
 }
+
+#[test]
+fn selected_try_propagates_custom_enum_outcomes() {
+    check(
+        "selected-try",
+        include_str!("fixtures/programs/selected_try.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn selected_try_preserves_owned_failure_cleanup() {
+    check_stdout(
+        "selected-try-cleanup",
+        r#"
+import core.drop
+type Item = & Drop & { id: Int }
+impl Item { func deinit(self) -> () { println(self.id) } }
+enum Input = Match(Int) | Failed(Item)
+enum Output = Done(Int) | Failed(Item)
+func convert(input: Input) -> Output [consume input] {
+    let local = Item { id: 1 }
+    let value = try<Match> move input
+    Output.Done(value)
+}
+func main() -> Int {
+    branch convert(Input.Failed(Item { id: 2 })) {
+        Output.Failed(item) -> { println(item.id + 10)
+            () }
+        Output.Done(_) -> { assert(false)
+            () }
+    }
+    42
+}
+"#,
+        "1\n12\n2\n42",
+    );
+}
+
+#[test]
+fn never_branches_and_calls_preserve_value_results() {
+    check(
+        "never-values",
+        r#"
+func fail() -> Never { panic("unexpected failure") }
+func choose(ok: Bool) -> Int { branch { ok -> 42 _ -> fail() } }
+func early(ok: Bool) -> Int { branch { ok -> { return 42 } _ -> { assert(false, "stop") } } }
+func main() -> Int { assert(choose(true) == 42)
+    early(true) }
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
+fn never_panic_unwinds_owners_and_is_not_caught_by_try() {
+    check_process_output(
+        "never-cleanup",
+        r#"
+import core.drop
+import core.result
+type Item = & Drop & { id: Int }
+impl Item { func deinit(self) -> () { println(self.id) } }
+func fail(item: Item) -> Never [consume item] {
+    let local = Item { id: 2 }
+    panic("deliberate panic")
+}
+func outcome() -> Result<Int, String> { fail(Item { id: 1 }) }
+func main() -> Result<Int, String> {
+    let outer = Item { id: 3 }
+    let value = try outcome()
+    println(99)
+    Result.Ok(value)
+}
+"#,
+        "2\n1\n3",
+        Some("deliberate panic"),
+    );
+}
+
+#[test]
+fn never_panic_cleans_arguments_before_invocation() {
+    check_process_output(
+        "never-staged-cleanup",
+        r#"
+import core.drop
+type Item = & Drop & { id: Int }
+impl Item { func deinit(self) -> () { println(self.id) } }
+func take(item: Item, value: Int) -> Int [consume item] { println(99)
+    value }
+func main() -> Int { take(Item { id: 1 }, panic("argument panic")) }
+"#,
+        "1",
+        Some("argument panic"),
+    );
+}
+
+#[test]
+fn never_entry_reports_failure() {
+    check(
+        "never-entry",
+        "func main() -> Never { panic(\"entry panic\") }",
+        Err("entry panic"),
+    );
+}

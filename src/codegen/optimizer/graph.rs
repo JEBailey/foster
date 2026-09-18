@@ -14,7 +14,7 @@ pub(super) fn edges(terminator: &ir::Terminator) -> impl Iterator<Item = (ir::Bl
             Some((*then_target, then_arguments)),
             Some((*else_target, else_arguments)),
         ],
-        ir::Terminator::Return(_) => [None, None],
+        ir::Terminator::Unreachable | ir::Terminator::Return(_) => [None, None],
     };
     edges.into_iter().flatten()
 }

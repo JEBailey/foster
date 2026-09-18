@@ -90,7 +90,8 @@ fn collect_generic_names(
                 collect_generic_names(information, *member, names);
             }
         }
-        Type::Unit
+        Type::Never
+        | Type::Unit
         | Type::Bool
         | Type::Int
         | Type::RawInt
@@ -717,10 +718,18 @@ impl FunctionCompiler<'_> {
                     }
                 }
                 hir::Stmt::Assert { condition, message } => {
+                    let always_fails =
+                        matches!(self.hir.expressions[*condition], hir::Expr::Bool(false));
                     let condition = self.expression(*condition)?;
                     let message = message
                         .map(|message| self.expression(message))
                         .transpose()?;
+                    // Keep literal failure evidence after potentially effectful message evaluation.
+                    let condition = if always_fails {
+                        self.load_constant(Constant::Bool(false), span.clone())?
+                    } else {
+                        condition
+                    };
                     self.emit(Instruction::Assert { condition, message }, span.clone());
                     *result = self.load_constant(Constant::Unit, span)?;
                 }

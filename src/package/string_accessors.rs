@@ -45,7 +45,8 @@ fn expression(value: &Expr) -> bool {
         | Expr::MoveOut(value)
         | Expr::Remote(value)
         | Expr::Await(value)
-        | Expr::Try(value)
+        | Expr::Panic(value)
+        | Expr::Try { value, .. }
         | Expr::Unary { operand: value, .. }
         | Expr::Qualified {
             namespace: value, ..

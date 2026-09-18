@@ -59,6 +59,21 @@ impl Checker<'_> {
     ) -> Result<(), FosterError> {
         let left = self.resolved(left);
         let right = self.resolved(right);
+        // Bottom coercion applies to an expression, not to mutable container arguments.
+        if right == Ty::Never && !matches!(left, Ty::Variable(_)) {
+            return Ok(());
+        }
+        self.unify_exact(left, right, function)
+    }
+
+    fn unify_exact(
+        &mut self,
+        left: Ty,
+        right: Ty,
+        function: FunctionId,
+    ) -> Result<(), FosterError> {
+        let left = self.resolved(left);
+        let right = self.resolved(right);
         self.check_callable_result_origins(&left, &right, function)?;
         match (left, right) {
             (Ty::Variable(a), Ty::Variable(b)) if a == b => Ok(()),
@@ -70,16 +85,16 @@ impl Checker<'_> {
                 Ok(())
             }
             (Ty::RawList(a), Ty::RawList(b)) | (Ty::Sequence(a), Ty::Sequence(b)) => {
-                self.unify(*a, *b, function)
+                self.unify_exact(*a, *b, function)
             }
             (Ty::Remote(a), Ty::Remote(b)) | (Ty::Future(a), Ty::Future(b)) => {
-                self.unify(*a, *b, function)
+                self.unify_exact(*a, *b, function)
             }
             (Ty::Record(a_record, a_arguments), Ty::Record(b_record, b_arguments))
                 if a_record == b_record =>
             {
                 for (a, b) in a_arguments.into_iter().zip(b_arguments) {
-                    self.unify(a, b, function)?;
+                    self.unify_exact(a, b, function)?;
                 }
                 Ok(())
             }
@@ -98,7 +113,7 @@ impl Checker<'_> {
                 }),
             (Ty::Variant(a, aa), Ty::Variant(b, ba)) if a == b => {
                 for (x, y) in aa.into_iter().zip(ba) {
-                    self.unify(x, y, function)?;
+                    self.unify_exact(x, y, function)?;
                 }
                 Ok(())
             }
@@ -116,7 +131,7 @@ impl Checker<'_> {
                 for (a, b) in a_params.into_iter().zip(b_params) {
                     self.coerce(a, b, function)?;
                 }
-                self.unify(*a_result, *b_result, function)
+                self.unify_exact(*a_result, *b_result, function)
             }
             (
                 Ty::Callable {
@@ -161,9 +176,9 @@ impl Checker<'_> {
                     ));
                 }
                 for (a, b) in a_params.into_iter().zip(b_params) {
-                    self.unify(a.ty, b.ty, function)?;
+                    self.unify_exact(a.ty, b.ty, function)?;
                 }
-                self.unify(*a_result, *b_result, function)
+                self.unify_exact(*a_result, *b_result, function)
             }
             (
                 Ty::Callable {
@@ -179,7 +194,7 @@ impl Checker<'_> {
                 for (a, b) in a_params.into_iter().zip(b_params) {
                     self.coerce(a.ty, b, function)?;
                 }
-                self.unify(*a_result, *b_result, function)
+                self.unify_exact(*a_result, *b_result, function)
             }
             (
                 Ty::Function(a_params, a_result),
@@ -193,9 +208,9 @@ impl Checker<'_> {
                     return Err(self.error(function, "function arity mismatch"));
                 }
                 for (a, b) in a_params.into_iter().zip(b_params) {
-                    self.unify(a, b.ty, function)?;
+                    self.unify_exact(a, b.ty, function)?;
                 }
-                self.unify(*a_result, *b_result, function)
+                self.unify_exact(*a_result, *b_result, function)
             }
             (Ty::Reference(a_group, a), Ty::Reference(b_group, b))
                 if a_group == b_group
@@ -204,7 +219,7 @@ impl Checker<'_> {
                     || a_group == FRAME_GROUP
                     || b_group == FRAME_GROUP =>
             {
-                self.unify(*a, *b, function)
+                self.unify_exact(*a, *b, function)
             }
             (a, b) if a == b => Ok(()),
             (a, b) => Err(self.error(

@@ -500,6 +500,16 @@ impl<'a> Builder<'a> {
                 if let Some(operation) = self.call_failure(*callee) {
                     self.failure_edge(operation, expression);
                 }
+                if self
+                    .types
+                    .expression_type(expression)
+                    .is_some_and(|ty| matches!(self.types.types[ty], crate::types::Type::Never))
+                {
+                    self.emit_active_temporary_destruction(self.span(expression));
+                    self.emit_scope_destruction(self.span(expression));
+                    self.terminate(Terminator::Fail);
+                    self.current = self.block();
+                }
                 let owner_paths = self
                     .types
                     .expression_type(expression)
@@ -612,6 +622,13 @@ impl<'a> Builder<'a> {
                     destination,
                     span: self.span(expression),
                 });
+            }
+            hir::Expr::Panic(message) => {
+                self.expression(*message, Context::Read);
+                self.emit_active_temporary_destruction(self.span(expression));
+                self.emit_scope_destruction(self.span(expression));
+                self.terminate(Terminator::Fail);
+                self.current = self.block();
             }
             hir::Expr::Await(value) => {
                 self.expression(*value, Context::Consume);
@@ -1068,7 +1085,7 @@ impl<'a> Builder<'a> {
             hir::Expr::Remote(value)
             | hir::Expr::Await(value)
             | hir::Expr::Unary { operand: value, .. } => self.borrow_value(*value),
-            hir::Expr::Try { .. } => BorrowValue::Empty,
+            hir::Expr::Try { .. } | hir::Expr::Panic(_) => BorrowValue::Empty,
             hir::Expr::Binary { left, right, .. } => {
                 BorrowValue::Merge(vec![self.borrow_value(*left), self.borrow_value(*right)])
             }

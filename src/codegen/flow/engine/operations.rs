@@ -9,6 +9,7 @@ use crate::intrinsics::Builtin;
 use crate::types::DispatchSlot;
 #[derive(Debug, Clone)]
 pub(crate) enum Instruction {
+    Unreachable,
     /// Releases this frame's ownership of an inline register or promoted slot.
     ///
     /// A promoted register detaches rather than writing through its slot because

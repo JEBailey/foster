@@ -148,6 +148,7 @@ impl<'a> Reader<'a> {
         let nested = |reader: &mut Self| reader.verification_type(depth + 1);
         Ok(match self.u8()? {
             0 => ExecutableType::Unknown,
+            18 => ExecutableType::Never,
             1 => ExecutableType::Unit,
             2 => ExecutableType::Bool,
             3 => ExecutableType::Integer,

@@ -57,8 +57,7 @@ impl ListCursor<T> {
     pub func peek(self) -> Option<T> {
         branch {
             self.offset >= self.values.length -> Option.None
-            _ -> branch self.values.at(self.offset) { Result.Ok(value) -> Option.Some(value) Result.Error(_) -> { assert(false, "cursor elements must support Copy")
-                Option.None } }
+            _ -> branch self.values.at(self.offset) { Result.Ok(value) -> Option.Some(value) Result.Error(_) -> { panic("cursor elements must support Copy") } }
         }
     }
     /// Reads one element and advances, remaining exhausted at the end.

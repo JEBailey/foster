@@ -1053,7 +1053,7 @@ fn pointer_value(
 
 fn value_semantic(registry: &Registry, ty: &ExecutableType) -> ValueSemantic {
     match ty {
-        ExecutableType::Unit => ValueSemantic::Unit,
+        ExecutableType::Never | ExecutableType::Unit => ValueSemantic::Unit,
         ExecutableType::Bool => ValueSemantic::Bool,
         ExecutableType::Integer => ValueSemantic::Integer,
         ExecutableType::Float => ValueSemantic::Float,

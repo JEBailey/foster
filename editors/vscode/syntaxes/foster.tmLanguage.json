@@ -93,14 +93,14 @@
     "keywords": {
       "patterns": [
         { "name": "keyword.operator.logical.foster", "match": "\\bnot\\b" },
-        { "name": "keyword.control.foster", "match": "\\b(?:assert|branch|break|continue|if|is|loop|while|for|in|return|await|try)\\b" },
+        { "name": "keyword.control.foster", "match": "\\b(?:panic|assert|branch|break|continue|if|is|loop|while|for|in|return|await|try)\\b" },
         { "name": "keyword.declaration.foster", "match": "\\b(?:func|impl|type|pub|import|as|let)\\b" },
         { "name": "keyword.other.foster", "match": "\\b(?:move|ref|remote|group|read|mut|reshape|consume|suspend)\\b" }
       ]
     },
     "types": {
       "patterns": [
-        { "name": "support.type.foster", "match": "\\b(?:Bool|Int|Float|String|CodePoint|Symbol|List|Sequence|Remote|Future)\\b" },
+        { "name": "support.type.foster", "match": "\\b(?:Never|Bool|Int|Float|String|CodePoint|Symbol|List|Sequence|Remote|Future)\\b" },
         { "name": "entity.name.type.foster", "match": "\\b[A-Z][A-Za-z0-9_]*\\b" }
       ]
     },

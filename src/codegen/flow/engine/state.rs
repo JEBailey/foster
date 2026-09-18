@@ -8,6 +8,7 @@ use std::collections::{HashMap, HashSet};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct FlowState {
     pub(crate) bindings: Vec<Option<ExecutableType>>,
+    pub(super) boolean_constants: HashMap<Value, bool>,
     pub(super) pending_pattern: Option<PendingPattern>,
     pub(super) excluded_variants: HashMap<Value, HashSet<VariantId>>,
 }
@@ -84,6 +85,7 @@ pub(super) fn take_type(
     if function.storage_policy == StoragePolicy::ImmutableValues {
         return bound_type(function, index, state, register);
     }
+    state.boolean_constants.remove(&register);
     state.excluded_variants.remove(&register);
     state.bindings[register.index()].take().ok_or_else(|| {
         FosterError::runtime(format!(
@@ -113,9 +115,11 @@ pub(super) fn write_type(
     register: Value,
     value: ExecutableType,
 ) -> Result<(), FosterError> {
+    state.boolean_constants.remove(&register);
     state.excluded_variants.remove(&register);
     let previous = assignment_binding(function, state, register).cloned();
     if let Some(ExecutableType::Reference(target)) = previous {
+        state.boolean_constants.clear();
         require_type(function, index, &value, &target, "reference assignment")?;
         state.bindings[register.index()] = Some(ExecutableType::Reference(target));
     } else {
@@ -177,5 +181,10 @@ pub(super) fn merge_state(
             changed = true;
         }
     }
+    let before = current.boolean_constants.len();
+    current
+        .boolean_constants
+        .retain(|value, literal| incoming.boolean_constants.get(value) == Some(literal));
+    changed |= before != current.boolean_constants.len();
     Ok(changed)
 }

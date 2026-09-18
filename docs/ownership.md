@@ -460,9 +460,10 @@ program outside the implemented model. The current status is:
 | 12 | Partial | Loans remain governed by task ownership and effects; crossing-task storage and exclusivity still require a complete specification. |
 | 15 | Unsupported as a general boundary | Host and foreign interfaces must not retain references until retention contracts are implemented. |
 
-A `try` expression consumes its `Result` operand and introduces two control-flow edges. The
-`Result.Ok` edge continues with the success payload. The `Result.Error` edge performs the same
-scope destruction and loan termination as an explicit return before returning that error from the
+A `try` expression consumes its enum operand and introduces success and return control-flow edges.
+Plain `try` selects `Result.Ok`; `try<Case>` selects the named case. The selected edge continues
+with its payload (or unit). Each propagated edge performs the same
+scope destruction and loan termination as an explicit return before returning the propagated case from the
 enclosing function.
 
 Normative reborrow behavior is therefore fixed: loan issuance records all reaching source loans as
@@ -689,3 +690,11 @@ The intended evolution is path-sensitive loan states and precise provenance thro
 callables and future aggregate forms while preserving the source model: ownership transfer stays
 explicit, references name groups, and API effects remain readable contracts rather than inferred
 lifetime syntax.
+
+### Non-returning expressions
+
+`panic(message)` and synchronous calls returning `Never` have no successful continuation.
+Ownership MIR terminates those paths after accounting for owned temporaries and locals.
+Runtime failure cleanup releases callee and caller frames using the same contract as failed
+assertions. `Never` does not permit manufacturing values, bypassing moves, or returning loans
+whose origins have ended. `try` propagates enum outcomes and cannot catch a panic.

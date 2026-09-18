@@ -36,8 +36,7 @@ func zeros() -> List<Int> {
 func read_file(path: String) -> String {
     branch fs::read_text(path) {
         Result.Ok(text) -> text
-        Result.Error(error) -> { assert(false, "cannot read " + path + ": " + error.message)
-            ""
+        Result.Error(error) -> { panic("cannot read " + path + ": " + error.message)
         }
     }
 }
@@ -71,8 +70,7 @@ func category_index(name: String) -> Int {
         return index if names[index] == name
         index = index + 1
     }
-    assert(false, "unknown Unicode category " + name)
-    0
+    panic("unknown Unicode category " + name)
 }
 
 /// Replaces existing entries in place, preserving UCD insertion order for fixtures.
@@ -314,8 +312,7 @@ func provenance(root: String) -> String {
         println("Hashing " + name)
         let raw = branch fs::read_bytes(root + "/tools/unicode/17.0.0/" + name) {
             Result.Ok(contents) -> contents
-            Result.Error(error) -> { assert(false, error.message)
-                Bytes.empty()
+            Result.Error(error) -> { panic(error.message)
             }
         }
         output.append("// " + name + " SHA-256: " + sha256::digest(raw) + "\n")

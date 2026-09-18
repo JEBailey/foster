@@ -87,7 +87,7 @@ fn failed_comparison_keeps_parameter_method_navigation_and_operand_locations() {
     let core = include_str!("../../../library/core/string.fos");
     let line = core
         .lines()
-        .position(|line| line.contains("pub func iterator(self: String)"))
+        .position(|line| line.contains("pub func iterator(self)") && line.trim_end().ends_with("{"))
         .unwrap() as u32;
     assert_eq!(location.range.start, Position::new(line, 13));
 }
@@ -676,6 +676,8 @@ fn completion_uses_scope_and_import_visibility() {
     assert!(items.iter().any(|item| item.label == "branch"));
     assert!(items.iter().any(|item| item.label == "not"));
     assert!(items.iter().any(|item| item.label == "try"));
+    assert!(items.iter().any(|item| item.label == "panic"));
+    assert!(items.iter().any(|item| item.label == "Never"));
 }
 
 #[test]
@@ -1348,7 +1350,7 @@ func main() -> Int {
     let core = include_str!("../../../library/core/int.fos");
     let line = core
         .lines()
-        .position(|line| line.contains("pub func power(self: Int,"))
+        .position(|line| line.contains("pub func power(self,") && line.trim_end().ends_with("{"))
         .unwrap() as u32;
     assert_eq!(location.range.start, Position::new(line, 13));
 }
@@ -1381,7 +1383,7 @@ fn definition_opens_embedded_core_source_when_available() {
     let declaration_line = include_str!("../../../library/core/list.fos")
         .lines()
         .position(|line| {
-            line.trim_start().starts_with("pub func map<") && line.contains("self: List<T>")
+            line.trim_start().starts_with("pub func map<") && line.trim_end().ends_with("{")
         })
         .unwrap() as u32;
     assert_eq!(location.range.start, Position::new(declaration_line, 13));
@@ -1873,4 +1875,20 @@ fn nested_binding_hints_use_names_and_hide_try_temporaries() {
         byte_range_to_lsp(source, end..end).start
     });
     assert_eq!(positions, expected);
+}
+
+#[test]
+fn selected_try_navigates_to_the_operand_enum() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = "enum Outcome = Match(Int) | Failed\nfunc operation() -> Outcome { Outcome.Match(42) }\nfunc main() -> Outcome {\n    let value = try<Match> operation()\n    Outcome.Match(value)\n}\n";
+    workspace.open(uri.clone(), source.into(), 1);
+    let params = TextDocumentPositionParams::new(
+        lsp_types::TextDocumentIdentifier::new(uri.clone()),
+        Position::new(3, 21),
+    );
+    let definition = workspace.definition(&params).unwrap();
+    assert_eq!(definition.uri, uri);
+    assert_eq!(definition.range.start.line, 0);
+    let hover = workspace.hover(&params).unwrap();
+    assert!(format!("{:?}", hover.contents).contains("Outcome"));
 }

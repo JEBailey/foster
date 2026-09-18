@@ -93,6 +93,7 @@ impl Checker<'_> {
                 });
                 DispatchTypeKey::Generic(index)
             }
+            Ty::Never => DispatchTypeKey::Never,
             Ty::Unit => DispatchTypeKey::Unit,
             Ty::Bool => DispatchTypeKey::Bool,
             Ty::Int => DispatchTypeKey::Int,

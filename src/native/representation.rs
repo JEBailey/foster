@@ -105,7 +105,7 @@ pub(super) fn native_type(
         return concrete_native_type(compilation, layouts, concrete, function);
     }
     match compilation.types.types[ty] {
-        Type::Unit => Ok(NativeType::Unit),
+        Type::Never | Type::Unit => Ok(NativeType::Unit),
         Type::Bool => Ok(NativeType::Bool),
         Type::Int | Type::RawInt => Ok(NativeType::Int),
         Type::Float => Ok(NativeType::Float),
@@ -240,7 +240,7 @@ pub(super) fn concrete_native_type(
 ) -> Result<NativeType, FosterError> {
     use crate::codegen::types::ExecutableType;
     match ty {
-        ExecutableType::Unit => Ok(NativeType::Unit),
+        ExecutableType::Never | ExecutableType::Unit => Ok(NativeType::Unit),
         ExecutableType::Bool => Ok(NativeType::Bool),
         ExecutableType::Integer => Ok(NativeType::Int),
         ExecutableType::Float => Ok(NativeType::Float),

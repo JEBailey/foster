@@ -286,6 +286,7 @@ impl<'a> Context<'a> {
     fn ty(&mut self, id: TypeId) -> SymbolType {
         match &self.compilation.types.types[id] {
             Type::Generic(name) => SymbolType::Generic(self.generic(name)),
+            Type::Never => SymbolType::Primitive("never".into()),
             Type::Unit => SymbolType::Primitive("unit".into()),
             Type::Bool => SymbolType::Primitive("bool".into()),
             Type::Int => SymbolType::Primitive("int".into()),
@@ -365,6 +366,7 @@ impl<'a> Context<'a> {
                     .map(|t| self.annotation(t))
                     .collect::<Vec<_>>();
                 let primitive = match name.as_str() {
+                    "Never" => Some("never"),
                     "Bool" => Some("bool"),
                     "Int" => Some("int"),
                     "Float" => Some("float"),

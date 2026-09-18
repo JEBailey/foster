@@ -133,7 +133,7 @@ func main() -> Int {
                 remap(then_target);
                 remap(else_target);
             }
-            ir::Terminator::Return(_) => {}
+            ir::Terminator::Unreachable | ir::Terminator::Return(_) => {}
         }
     }
     assert_eq!(infer(&function), expected);

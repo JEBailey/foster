@@ -360,7 +360,7 @@ func main() -> Int {
                     has_back_edge |= then_target.0 as usize <= block_index
                         || else_target.0 as usize <= block_index;
                 }
-                ir::Terminator::Return(_) => {}
+                ir::Terminator::Unreachable | ir::Terminator::Return(_) => {}
             }
         }
         assert_eq!(definitions.len(), function.values.len());

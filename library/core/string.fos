@@ -184,8 +184,7 @@ func decode_bytes(data: Bytes) -> String {
     branch String.from_utf8(move data) {
         Result.Ok(text) -> text
         Result.Error(_) -> {
-            assert(false, "text construction must preserve valid UTF-8")
-            ""
+            panic("text construction must preserve valid UTF-8")
         }
     }
 }
@@ -241,8 +240,7 @@ impl String {
     pub func head(self) -> String {
         branch GraphemeCursor.from(self).next() {
             Option.Some(cluster) -> cluster
-            Option.None -> { assert(false, "cannot take head of an empty string")
-                ""
+            Option.None -> { panic("cannot take head of an empty string")
             }
         }
     }

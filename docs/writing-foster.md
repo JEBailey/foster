@@ -143,6 +143,30 @@ recovery, and for borrowed results: `try` consumes its operand.
 `assert(condition, "message")` stops execution on failure; it does not produce a
 recoverable error. Generics use `<T>`; group declarations use brackets instead.
 
+## Propagating custom outcomes
+
+Use `try<Case>` to unwrap a selected enum case and return any other case from the
+function. The return enum must accept every other case by name with the same
+payload type. A case without a payload yields `()`. The operand is consumed;
+use `move` for an existing owned binding. Keep branches for recovery or adding
+error context.
+
+```foster
+enum Outcome<T> = Match(T) | Failed(Int)
+
+func doubled(input: Outcome<Int>) -> Outcome<Int> [consume input] {
+    let value = try<Match> move input
+    Outcome.Match(value * 2)
+}
+
+func main() -> Int {
+    branch doubled(Outcome.Match(21)) {
+        Outcome.Match(value) -> value
+        Outcome.Failed(_) -> 0
+    }
+}
+```
+
 ## Ownership, references, and closures
 
 Ordinary call arguments borrow by default. `[consume name]` declares that a
@@ -260,3 +284,23 @@ Resolve errors by checking declarations and the relevant specification first.
 Write public API comments in `.fos` source, including ownership, units, bounds,
 and failure behavior where applicable. Follow the [documentation standard](../library/DOCUMENTATION.md).
 Check the [roadmap](roadmap.md) only to identify proposals, not available features.
+
+## Non-returning paths
+
+Use `panic(message)` for an unrecoverable failure. It has type `Never`, reports a String
+message, and performs ordinary failure cleanup. Neither `try` nor `try<Case>` catches it.
+A `-> Never` function cannot return a value; a branch arm that panics or transfers control
+needs no dummy result.
+
+```foster
+func fail(message: String) -> Never { panic(message) }
+
+func positive(value: Int) -> Int {
+    branch {
+        value > 0 -> value
+        _ -> fail("expected a positive integer")
+    }
+}
+
+func main() -> Int { positive(42) }
+```

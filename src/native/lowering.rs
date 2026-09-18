@@ -239,6 +239,7 @@ pub(super) fn lower_native_ir(
                 operands.extend(else_arguments);
                 operands
             }
+            ir::Terminator::Unreachable => Vec::new(),
             ir::Terminator::Return(value) => vec![*value],
         };
         for operand in operands {

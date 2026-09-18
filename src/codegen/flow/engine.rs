@@ -50,6 +50,7 @@ pub(crate) fn analyze_function_flow(
     let mut entry = FlowState {
         bindings: vec![None; function.value_count],
         pending_pattern: None,
+        boolean_constants: HashMap::new(),
         excluded_variants: HashMap::new(),
     };
     for (index, ty) in function

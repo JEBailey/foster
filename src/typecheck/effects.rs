@@ -401,6 +401,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 self.add(crate::ast::EffectKind::Consume, self.place_group(*place));
             }
             hir::Expr::Remote(value) => self.walk_expr(*value),
+            hir::Expr::Panic(value) => self.walk_expr(*value),
             hir::Expr::Await(value) => {
                 self.suspends = true;
                 self.walk_expr(*value);

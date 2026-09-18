@@ -107,6 +107,7 @@ pub(crate) fn convert<P: Policy>(
             .iter()
             .find_map(|(candidate, ty)| (candidate == name).then(|| ty.clone()))
             .unwrap_or_else(|| V::Generic(name.clone())),
+        Type::Never => V::Never,
         Type::Unit => V::Unit,
         Type::Bool => V::Bool,
         Type::Int | Type::RawInt => V::Integer,

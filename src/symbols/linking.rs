@@ -308,7 +308,8 @@ fn wire_matches(
         }
         (SymbolType::Primitive(name), wire) => matches!(
             (name.as_str(), wire),
-            ("unit", V::Unit)
+            ("never", V::Never)
+                | ("unit", V::Unit)
                 | ("bool", V::Bool)
                 | ("int", V::Integer)
                 | ("float", V::Float)

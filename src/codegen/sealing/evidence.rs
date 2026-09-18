@@ -35,6 +35,7 @@ fn construction_facts(
                             instruction.operands()
                         } else {
                             match &block.terminator {
+                                ir::Terminator::Unreachable => vec![],
                                 ir::Terminator::Return(value) => vec![*value],
                                 ir::Terminator::Jump { arguments, .. } => arguments.clone(),
                                 ir::Terminator::Branch {
@@ -118,6 +119,7 @@ pub(super) fn compare_flow(
             let operands = match instruction {
                 Some(instruction) => instruction.operands(),
                 None => match &block.terminator {
+                    ir::Terminator::Unreachable => vec![],
                     ir::Terminator::Return(value) => vec![*value],
                     ir::Terminator::Branch { condition, .. } => vec![*condition],
                     // Edge arguments may include true-only pattern bindings before the branch.

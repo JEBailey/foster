@@ -58,7 +58,28 @@ pub(super) fn transfer(
     // Preserve the edge fact until the corresponding condition is consumed.
     let pattern = state.pending_pattern.clone();
 
+    // Operations that can mutate aliased storage invalidate literal evidence.
+    if matches!(
+        instruction,
+        Instruction::StoreField { .. }
+            | Instruction::StoreIndex { .. }
+            | Instruction::Builtin { .. }
+            | Instruction::Await { .. }
+            | Instruction::RemoteCall { .. }
+            | Instruction::MakeWholeReference { .. }
+            | Instruction::MakeFieldReference { .. }
+            | Instruction::MakeReference { .. }
+            | Instruction::MoveOut { .. }
+            | Instruction::CopyOnWrite { .. }
+            | Instruction::LoadField {
+                by_reference: true,
+                ..
+            }
+    ) {
+        state.boolean_constants.clear();
+    }
     match instruction {
+        Instruction::Unreachable => return Ok(Vec::new()),
         Instruction::CopyOnWrite {
             destination,
             source,
@@ -69,6 +90,10 @@ pub(super) fn transfer(
             let old = state.clone();
             for (source, destination) in arguments {
                 state.bindings[destination.index()] = old.bindings[source.index()].clone();
+                state.boolean_constants.remove(destination);
+                if let Some(value) = old.boolean_constants.get(source) {
+                    state.boolean_constants.insert(*destination, *value);
+                }
                 state.excluded_variants.remove(destination);
                 if let Some(excluded) = old.excluded_variants.get(source) {
                     state
@@ -119,18 +144,27 @@ pub(super) fn transfer(
             if function.storage_policy == StoragePolicy::ConsumingSlots {
                 state.bindings[register.index()] = None;
             }
+            state.boolean_constants.remove(register);
             state.excluded_variants.remove(register);
         }
         Instruction::LoadConstant {
             destination,
             constant,
-        } => write_type(
-            function,
-            index,
-            &mut state,
-            *destination,
-            constant_type(program, &program.metadata.constants[usize::from(*constant)]),
-        )?,
+        } => {
+            let constant = &program.metadata.constants[usize::from(*constant)];
+            write_type(
+                function,
+                index,
+                &mut state,
+                *destination,
+                constant_type(program, constant),
+            )?;
+            if let crate::codegen::metadata::Constant::Bool(value) = constant {
+                if state.bindings[destination.index()] == Some(ExecutableType::Bool) {
+                    state.boolean_constants.insert(*destination, *value);
+                }
+            }
+        }
         Instruction::Move {
             destination,
             source,
@@ -631,7 +665,8 @@ pub(super) fn transfer(
         } => {
             if let crate::hir::Pattern::IsType { target, .. } = pattern.unspanned() {
                 let supported = match target {
-                    ExecutableType::Unit
+                    ExecutableType::Never
+                    | ExecutableType::Unit
                     | ExecutableType::Bool
                     | ExecutableType::Integer
                     | ExecutableType::Float
@@ -716,6 +751,9 @@ pub(super) fn transfer(
         Instruction::JumpIfFalse { condition, target } => {
             let found = read_type(function, index, &state, *condition)?;
             require_type(function, index, &found, &ExecutableType::Bool, "condition")?;
+            if let Some(value) = state.boolean_constants.get(condition) {
+                return Ok(vec![(if *value { next } else { *target }, state)]);
+            }
             let mut truthy = state.clone();
             state.pending_pattern = None;
             truthy.pending_pattern = None;
@@ -767,6 +805,9 @@ pub(super) fn transfer(
                     .unwrap_or(ExecutableType::Unknown);
                 let found = read_type(function, index, &state, *message)?;
                 require_type(function, index, &found, &expected, "assertion message")?;
+            }
+            if state.boolean_constants.get(condition) == Some(&false) {
+                return Ok(Vec::new());
             }
         }
         Instruction::Call { .. }

@@ -614,6 +614,18 @@ impl FunctionCompiler<'_> {
                 self.emit(Instruction::SpawnRemote { destination, value }, span);
                 Ok(destination)
             }
+            hir::Expr::Panic(message) => {
+                let message = self.expression(*message)?;
+                let condition = self.load_constant(Constant::Bool(false), span.clone())?;
+                self.emit(
+                    Instruction::Assert {
+                        condition,
+                        message: Some(message),
+                    },
+                    span.clone(),
+                );
+                self.load_constant(Constant::Unit, span)
+            }
             hir::Expr::Await(future) => {
                 let future = self.expression(*future)?;
                 let destination = self.allocate();
@@ -626,21 +638,31 @@ impl FunctionCompiler<'_> {
                 );
                 Ok(destination)
             }
-            hir::Expr::Try { value, binding } => {
+            hir::Expr::Try {
+                value,
+                binding,
+                variant,
+            } => {
                 let source = self.expression(*value)?;
-                let result_module = self.hir.module_named("core.result").ok_or_else(|| {
-                    FosterError::runtime("`try` requires the embedded `core.result` module")
-                })?;
-                let result = self
-                    .hir
-                    .variant_type_named(result_module, "Result")
-                    .ok_or_else(|| FosterError::runtime("`try` requires `core.result::Result`"))?;
+                let operand_type = self
+                    .types
+                    .expression_type(*value)
+                    .ok_or_else(|| self.unsupported("try operand type"))?;
+                let crate::types::Type::Variant {
+                    variant: result, ..
+                } = &self.types.types[operand_type]
+                else {
+                    return Err(self.unsupported("try operand enum"));
+                };
+                let result = *result;
+                let selected_name = variant.as_deref().unwrap_or("Ok");
                 let ok = self.hir.variant_types[result]
                     .alternatives
                     .iter()
                     .copied()
-                    .find(|variant| self.hir.variants[*variant].name == "Ok")
-                    .ok_or_else(|| FosterError::runtime("`core.result::Result.Ok` is missing"))?;
+                    .find(|case| self.hir.variants[*case].name == selected_name)
+                    .ok_or_else(|| self.unsupported("try success variant"))?;
+                let has_payload = self.hir.variants[ok].payload.is_some();
                 let unwrapped = self.allocate();
                 self.locals.insert(*binding, unwrapped);
                 let matched = self.allocate();
@@ -650,9 +672,13 @@ impl FunctionCompiler<'_> {
                         subject: source,
                         pattern: hir::Pattern::Variant {
                             variant: ok,
-                            fields: vec![hir::Pattern::Binding(*binding)],
+                            fields: if has_payload {
+                                vec![hir::Pattern::Binding(*binding)]
+                            } else {
+                                vec![]
+                            },
                         },
-                        bindings: vec![unwrapped],
+                        bindings: if has_payload { vec![unwrapped] } else { vec![] },
                     },
                     span.clone(),
                 );
@@ -665,9 +691,90 @@ impl FunctionCompiler<'_> {
                 );
                 let succeeded = self.emit(Instruction::Jump { target: 0 }, span.clone());
                 self.patch_target(failed, self.instructions.len())?;
-                self.emit(Instruction::Return { source }, span.clone());
+                if variant.is_some() {
+                    let return_type = self.types.functions[&self.function].result;
+                    let crate::types::Type::Variant {
+                        variant: output,
+                        arguments,
+                    } = &self.types.types[return_type]
+                    else {
+                        return Err(self.unsupported("try return enum"));
+                    };
+                    let output = *output;
+                    let type_arguments = arguments
+                        .iter()
+                        .map(|ty| verification_type(self.hir, self.types, *ty, 0))
+                        .collect::<Vec<_>>();
+                    for case in self.hir.variant_types[result]
+                        .alternatives
+                        .clone()
+                        .into_iter()
+                        .filter(|case| *case != ok)
+                    {
+                        let definition = &self.hir.variants[case];
+                        let target = self.hir.variant_types[output]
+                            .alternatives
+                            .iter()
+                            .copied()
+                            .find(|target| self.hir.variants[*target].name == definition.name)
+                            .ok_or_else(|| self.unsupported("try propagated variant"))?;
+                        let payload_present = definition.payload.is_some();
+                        let payload = self.allocate();
+                        let matched = self.allocate();
+                        self.emit(
+                            Instruction::MatchPattern {
+                                destination: matched,
+                                subject: source,
+                                pattern: hir::Pattern::Variant {
+                                    variant: case,
+                                    fields: if payload_present {
+                                        vec![hir::Pattern::Binding(*binding)]
+                                    } else {
+                                        vec![]
+                                    },
+                                },
+                                bindings: if payload_present {
+                                    vec![payload]
+                                } else {
+                                    vec![]
+                                },
+                            },
+                            span.clone(),
+                        );
+                        let next = self.emit(
+                            Instruction::JumpIfFalse {
+                                condition: matched,
+                                target: 0,
+                            },
+                            span.clone(),
+                        );
+                        let propagated = self.allocate();
+                        self.emit(
+                            Instruction::MakeVariant {
+                                destination: propagated,
+                                variant: target,
+                                type_arguments: type_arguments.clone(),
+                                payload: if payload_present {
+                                    vec![payload]
+                                } else {
+                                    vec![]
+                                },
+                            },
+                            span.clone(),
+                        );
+                        self.emit(Instruction::Return { source: propagated }, span.clone());
+                        self.patch_target(next, self.instructions.len())?;
+                    }
+                } else {
+                    self.emit(Instruction::Return { source }, span.clone());
+                }
+
                 self.patch_target(succeeded, self.instructions.len())?;
-                Ok(unwrapped)
+                if has_payload {
+                    Ok(unwrapped)
+                } else {
+                    self.load_constant(Constant::Unit, span)
+                }
             }
             hir::Expr::Record { record, fields } => {
                 if Some(*record) == self.types.core.int {

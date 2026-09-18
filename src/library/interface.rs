@@ -280,6 +280,7 @@ fn annotation(
     let nested = |t| annotation(t, generics, modules, lexical);
     Ok(match ty {
         T::Primitive(name) => match name.as_str() {
+            "never" => ast::TypeExpr::Named("Never".into(), vec![]),
             "unit" => ast::TypeExpr::Unit,
             name => ast::TypeExpr::Named(
                 match name {
@@ -629,7 +630,8 @@ fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {
             | E::MoveOut(inner)
             | E::Remote(inner)
             | E::Await(inner)
-            | E::Try(inner)
+            | E::Panic(inner)
+            | E::Try { value: inner, .. }
             | E::Unary { operand: inner, .. }
             | E::Member { object: inner, .. }
             | E::Qualified {

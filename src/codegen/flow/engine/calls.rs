@@ -18,6 +18,7 @@ pub(super) fn transfer(
     mut state: FlowState,
 ) -> Result<Vec<(usize, FlowState)>, FosterError> {
     let next = index + 1;
+    state.boolean_constants.clear();
     match &function.instructions[index] {
         Instruction::Call {
             destination,
@@ -318,6 +319,18 @@ pub(super) fn transfer(
             return Ok(Vec::new());
         }
         _ => unreachable!("non-call operations are handled by transfer"),
+    }
+    let destination = match &function.instructions[index] {
+        Instruction::Call { destination, .. }
+        | Instruction::CallMethod { destination, .. }
+        | Instruction::CallContractMethod { destination, .. }
+        | Instruction::CallValue { destination, .. }
+        | Instruction::CallClosure { destination, .. } => Some(destination),
+        _ => None,
+    };
+    if destination.is_some_and(|value| state.bindings[value.index()] == Some(ExecutableType::Never))
+    {
+        return Ok(Vec::new());
     }
     Ok(vec![(next, state)])
 }

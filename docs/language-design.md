@@ -210,6 +210,28 @@ propagates through ordinary calls; a remote invocation delivers it through its f
 runner marks only the current test as failed before continuing with the remaining tests. Assertions
 are statements rather than recoverable `Result` values and cannot be guarded with postfix `if`.
 
+`panic(message)` is a non-returning expression requiring one `String` argument.
+It reports the message and fails the current invocation using ordinary failure cleanup.
+The CLI reports failure with a nonzero exit status. `try` and `try<Case>` do not catch it.
+
+`Never` is an uninhabited type: no value can be constructed with this type. A function
+annotated `-> Never` must not return normally. Calls to it and `panic(...)` can appear
+where any result type is expected; they contribute no value to a branch join:
+
+```foster
+func require_positive(value: Int) -> Int {
+    branch {
+        value > 0 -> value
+        _ -> panic("expected a positive integer")
+    }
+}
+```
+
+Unguarded `return`, `break`, and `continue`, literal `assert(false, ...)`, and a `loop`
+without a reachable break also end their current path. Their branch arms need no dummy
+final value. A guarded transfer can continue and is not unconditionally non-returning.
+Unreachable source remains subject to name and type checking.
+
 `if` is deliberately not a general conditional statement or expression. It may only follow a
 control-transfer statement, so `write(value) if ready` and `value = next() if ready` are invalid.
 Use `branch` when choosing whether to evaluate a value-producing operation.
@@ -1257,6 +1279,30 @@ The VM host boundary follows the same rule for `std.fs`, `std.path`, `std.env`, 
 wall and monotonic clocks in `std.time`, and operating-system entropy in `std.random`.
 The language does not provide dedicated `throw` or typed error-effect syntax.
 `try` is control-flow sugar over ordinary `Result` values, not an exception mechanism.
+
+`try<Case> operation()` selects a case of the operand's enum explicitly. The case
+name resolves against that enum, without importing its constructors. The selected
+case yields its payload, or `()` when payload-free. Every other case returns from
+the enclosing function: its return enum must declare a case with the same name
+and matching payload type (including the absence of a payload). Case order and
+the two enums' selected/success payload types may differ. Propagation reconstructs
+the destination case; it performs no error conversion. Every nonselected case is
+checked, even when the operand is visibly constructed with the selected case.
+
+Like plain `try`, this form evaluates and consumes its operand exactly once;
+use `try<Case> move value` for an existing owned binding. Plain `try` retains its
+`Result.Ok`/`Result.Error` contract. An inferred function/closure return type uses
+the operand's enum with independently inferred type arguments; propagation to a
+different enum requires a declared return type.
+
+```foster
+enum Outcome<T> = Match(T) | Failed(String)
+func convert(input: Outcome<Int>) -> Outcome<Bool> [consume input] {
+    let value = try<Match> move input
+    Outcome.Match(value > 0)
+}
+```
+
 
 ## Module initialization
 

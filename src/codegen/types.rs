@@ -113,6 +113,7 @@ impl<'a> IntoIterator for &'a Specialization {
 /// Backend-specific conversion/erasure policies decide which information survives lowering.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ExecutableType {
+    Never,
     /// Unavailable or erased shape. This is the bytecode verifier's top type and maps to an
     /// opaque native representation. Availability and ownership checks still apply; this value
     /// does not establish source-level conformance or promise a concrete aggregate layout.

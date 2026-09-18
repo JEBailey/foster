@@ -91,6 +91,7 @@ pub(crate) fn walk_expression<V: Visitor + ?Sized>(
         | Expr::MoveOut(object)
         | Expr::Remote(object)
         | Expr::Await(object)
+        | Expr::Panic(object)
         | Expr::Unary {
             operand: object, ..
         } => visitor.visit_expression(hir, *object),

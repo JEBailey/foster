@@ -133,7 +133,16 @@ impl Checker<'_> {
         }
 
         for (expression, ty) in &self.expressions {
-            let ty = self.require_concrete(ty.clone(), "expression")?;
+            let ty = self
+                .require_concrete(ty.clone(), "expression")
+                .map_err(|error| {
+                    self.error_at_expression(
+                        error,
+                        self.hir.expression_functions[expression],
+                        *expression,
+                        "cannot infer this expression's type",
+                    )
+                })?;
             let id = intern_type(&mut information, &mut interner, ty);
             information.expressions.insert(*expression, id);
         }
@@ -373,6 +382,7 @@ impl Checker<'_> {
         match self.resolved(ty.clone()) {
             Ty::Variable(_) => "unknown".into(),
             Ty::Generic(name) => name,
+            Ty::Never => "Never".into(),
             Ty::Unit => "()".into(),
             Ty::Bool => "Bool".into(),
             Ty::Int => "Int".into(),
@@ -576,6 +586,7 @@ fn intern_type(
     ty: Ty,
 ) -> TypeId {
     let ty = match ty {
+        Ty::Never => Type::Never,
         Ty::Unit => Type::Unit,
         Ty::Generic(name) => Type::Generic(name),
         Ty::Bool => Type::Bool,

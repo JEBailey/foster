@@ -178,7 +178,7 @@ pub(in crate::native) fn native_verification_type(
 ) -> Result<NativeType, FosterError> {
     use crate::codegen::types::ExecutableType;
     match ty {
-        ExecutableType::Unit => Ok(NativeType::Unit),
+        ExecutableType::Never | ExecutableType::Unit => Ok(NativeType::Unit),
         ExecutableType::Bool => Ok(NativeType::Bool),
         ExecutableType::Integer => Ok(NativeType::Int),
         ExecutableType::Float => Ok(NativeType::Float),

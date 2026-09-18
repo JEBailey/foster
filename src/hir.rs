@@ -259,7 +259,9 @@ pub enum Expr {
     MoveOut(ExprId),
     Remote(ExprId),
     Await(ExprId),
+    Panic(ExprId),
     Try {
+        variant: Option<String>,
         value: ExprId,
         binding: LocalId,
     },

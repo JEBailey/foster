@@ -1,7 +1,7 @@
 # Foster semantic specification
 
-Status: **draft normative specification**, revision 6, 2026-09-15.
-Baseline: **language version 10, ownership-model version 3**.
+Status: **draft normative specification**, revision 7, 2026-09-17.
+Baseline: **language version 12, ownership-model version 3**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
@@ -278,11 +278,21 @@ preserves the resulting callable's ownership and effect requirements.
 **S-17 — Recoverable errors.** `Result<T, E>` is ordinary tagged data. `try` evaluates one Result
 operand once: `Ok(value)` yields the payload; `Error(error)` returns an error from the enclosing
 function. That function must return `Result<U, E>` with the same error type. `try` does not catch
-assertions, bounds failures, arithmetic failures, or arbitrary host exceptions.
+panics, assertions, bounds failures, arithmetic failures, or arbitrary host exceptions.
+`try<Case>` generalizes this selection to an enum: it yields that case's payload
+(or unit) and propagates every other case by name into the return enum. All
+propagated payload types must match; no conversion is implicit. The operand is
+consumed once, and only the chosen success path continues execution.
 
-**S-18 — Failure and cleanup.** A failed assertion stops its invocation without executing its
+
+**S-18 — Failure and cleanup.** `panic(message)` and a failed assertion stop their invocation without executing its
 ordinary continuation. Checked arithmetic and bounds failures likewise are language failures,
 not permission for invalid memory access. Exact diagnostic prose is not a portable semantic value.
+`panic` evaluates its String message once and has type `Never`. `Never` has no values;
+a function returning it cannot complete normally. A divergent branch arm contributes no
+result-type constraint. Unguarded transfers, literal false assertions, and loops with no
+reachable break are divergent. Failure propagates through callers with ordinary cleanup;
+it is not a recoverable enum outcome.
 
 Borrowed non-place expressions have full-expression temporary storage. A full expression is the
 principal expression of one source statement: a binding initializer, assignment, expression

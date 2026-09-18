@@ -353,8 +353,9 @@ impl FunctionLowerer<'_> {
                 Expr::MoveOut(self.lower_expression(place)?)
             }
             ast::Expr::Remote(value) => Expr::Remote(self.lower_expression(value)?),
+            ast::Expr::Panic(message) => Expr::Panic(self.lower_expression(message)?),
             ast::Expr::Await(future) => Expr::Await(self.lower_expression(future)?),
-            ast::Expr::Try(value) => {
+            ast::Expr::Try { value, variant } => {
                 let value = self.lower_expression(value)?;
                 let binding = self.hir.locals.alloc(Local {
                     span: self.hir.functions[self.function].span.clone(),
@@ -362,7 +363,11 @@ impl FunctionLowerer<'_> {
                     name: "$try".to_owned(),
                     kind: LocalKind::Binding,
                 });
-                Expr::Try { value, binding }
+                Expr::Try {
+                    value,
+                    binding,
+                    variant: variant.clone(),
+                }
             }
             ast::Expr::Record {
                 constructor,
@@ -609,6 +614,7 @@ impl FunctionLowerer<'_> {
                     );
                 }
                 let scalar = match path.as_str() {
+                    "Never" => Some(E::Never),
                     "Bool" => Some(E::Bool),
                     "Int" => Some(E::Integer),
                     "Float" => Some(E::Float),

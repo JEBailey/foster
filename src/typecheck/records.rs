@@ -10,6 +10,9 @@ impl Checker<'_> {
     ) -> Result<(), FosterError> {
         let expected = self.resolved(expected);
         let actual = self.resolved(actual);
+        if actual == Ty::Never {
+            return self.unify(expected, actual, function);
+        }
         if self.has_type_evidence(expression, &expected) {
             return Ok(());
         }
@@ -68,6 +71,9 @@ impl Checker<'_> {
     ) -> Result<(), FosterError> {
         let expected = self.resolved(expected);
         let actual = self.resolved(actual);
+        if actual == Ty::Never {
+            return self.unify(expected, actual, function);
+        }
         if let (
             Ty::Variant(expected_union, expected_arguments),
             Ty::Variant(actual_union, actual_arguments),

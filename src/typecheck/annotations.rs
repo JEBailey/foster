@@ -40,6 +40,7 @@ impl Checker<'_> {
                     return Ok(generic.clone());
                 }
                 let builtin = match (name.as_str(), arguments.as_slice()) {
+                    ("Never", []) => Some(Ty::Never),
                     ("Bool", []) => Some(Ty::Bool),
                     ("Int", []) => Some(Ty::Int),
                     ("RawInt", []) if self.hir.modules[module].name == "core.int" => {
@@ -79,7 +80,8 @@ impl Checker<'_> {
                     (builtin, _)
                         if matches!(
                             builtin,
-                            "Bool"
+                            "Never"
+                                | "Bool"
                                 | "Int"
                                 | "Float"
                                 | "String"

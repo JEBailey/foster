@@ -498,8 +498,14 @@ impl Workspace {
                     Some(compilation.hir.modules[import.target].name.clone()),
                 );
             }
+            insert_completion(
+                &mut items,
+                "Never",
+                CompletionItemKind::CLASS,
+                Some("Uninhabited return type".into()),
+            );
             for keyword in [
-                "assert", "await", "branch", "break", "continue", "false", "func", "impl",
+                "panic", "assert", "await", "branch", "break", "continue", "false", "func", "impl",
                 "import", "let", "loop", "while", "for", "in", "move", "not", "pub", "ref",
                 "remote", "return", "true", "type", "enum", "try",
             ] {
@@ -779,6 +785,17 @@ fn symbol_at(
                 }
                 if let Some((record, method)) = required_method(compilation, *object, member) {
                     return Some(SymbolIdentity::RequiredMethod(record, method));
+                }
+            }
+            crate::hir::Expr::Try {
+                value,
+                variant: Some(selected),
+                ..
+            } if selected == name => {
+                if let Some(ty) = compilation.types.expression_type(*value)
+                    && let crate::types::Type::Variant { variant, .. } = compilation.types.types[ty]
+                {
+                    return Some(SymbolIdentity::Variant(variant));
                 }
             }
             crate::hir::Expr::Name(resolved) => match *resolved {

@@ -379,9 +379,15 @@ func main() -> Int {
                 destination: Register(0),
                 constant: boolean,
             },
+            // The logical verifier does not evaluate unary operations: both edges remain possible.
+            Instruction::Unary {
+                destination: Register(0),
+                operator: crate::ast::UnaryOp::Not,
+                operand: Register(0),
+            },
             Instruction::JumpIfFalse {
                 condition: Register(0),
-                target: 3,
+                target: 4,
             },
             Instruction::LoadConstant {
                 destination: Register(1),

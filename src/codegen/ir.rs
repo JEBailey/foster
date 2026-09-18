@@ -740,6 +740,8 @@ impl Constant {
 
 #[derive(Debug, Clone)]
 pub enum Terminator {
+    /// Native continuation proven unreachable by shared logical flow.
+    Unreachable,
     Jump {
         target: Block,
         arguments: Vec<Value>,
@@ -1223,6 +1225,7 @@ impl<'a> Verifier<'a> {
                 self.verify_edge(Some(block_id), then_arguments, *then_target, "branch")?;
                 self.verify_edge(Some(block_id), else_arguments, *else_target, "branch")
             }
+            Terminator::Unreachable => Ok(()),
             Terminator::Return(value) => {
                 self.verify_use(*value, block_id, end)?;
                 self.require_type(*value, self.function.signature.result, "return value")
@@ -1269,7 +1272,7 @@ fn terminator_targets(terminator: &Terminator) -> Vec<Block> {
             else_target,
             ..
         } => vec![*then_target, *else_target],
-        Terminator::Return(_) => Vec::new(),
+        Terminator::Unreachable | Terminator::Return(_) => Vec::new(),
     }
 }
 
@@ -1414,6 +1417,7 @@ fn display_terminator(terminator: &Terminator, formatter: &mut fmt::Formatter<'_
             write_values(formatter, else_arguments)?;
             formatter.write_str(")")
         }
+        Terminator::Unreachable => write!(formatter, "unreachable"),
         Terminator::Return(value) => write!(formatter, "return v{}", value.0),
     }
 }

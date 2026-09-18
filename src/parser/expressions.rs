@@ -414,7 +414,25 @@ impl Parser {
             TokenKind::Ref => Expr::Reference(Box::new(self.postfix()?)),
             TokenKind::Remote => Expr::Remote(Box::new(self.postfix()?)),
             TokenKind::Await => Expr::Await(Box::new(self.unary()?)),
-            TokenKind::Try => Expr::Try(Box::new(self.unary()?)),
+            TokenKind::Panic => {
+                self.expect(&TokenKind::LParen, "expected `(` after panic")?;
+                let message = self.delimited_expression()?;
+                self.expect(&TokenKind::RParen, "expected `)` after panic message")?;
+                Expr::Panic(Box::new(message))
+            }
+            TokenKind::Try => {
+                let variant = if self.take(&TokenKind::Less) {
+                    let name = self.expect_ident("expected success variant after `try<`")?;
+                    self.expect(&TokenKind::Greater, "expected `>` after try variant")?;
+                    Some(name)
+                } else {
+                    None
+                };
+                Expr::Try {
+                    value: Box::new(self.unary()?),
+                    variant,
+                }
+            }
             _ => {
                 return Err(FosterError::new(
                     "expected expression",

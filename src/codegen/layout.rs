@@ -429,7 +429,10 @@ impl Registry {
     /// Reduce a verifier type to the scalar-or-pointer contract shared by the VM and Cranelift.
     pub fn legal_type(&self, ty: &ExecutableType) -> LegalType {
         match ty {
-            ExecutableType::Unit | ExecutableType::Bool | ExecutableType::Byte => LegalType::I8,
+            ExecutableType::Never
+            | ExecutableType::Unit
+            | ExecutableType::Bool
+            | ExecutableType::Byte => LegalType::I8,
             ExecutableType::CodePoint => LegalType::I32,
             ExecutableType::Integer => LegalType::I64,
             ExecutableType::Float => LegalType::F64,

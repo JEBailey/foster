@@ -66,6 +66,7 @@ impl Checker<'_> {
     pub(super) fn pattern_type(&self, target: &crate::codegen::types::ExecutableType) -> Ty {
         use crate::codegen::types::ExecutableType as E;
         match target {
+            E::Never => Ty::Never,
             E::Unit => Ty::Unit,
             E::Bool => Ty::Bool,
             E::Integer => Ty::Int,

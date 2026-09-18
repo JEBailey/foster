@@ -10,6 +10,7 @@ pub(super) fn slots(
         let nested = |v| ty(v, names);
         Ok(match value {
             D::Generic(i) => S::Generic(*i),
+            D::Never => S::Primitive("never".into()),
             D::Unit => S::Primitive("unit".into()),
             D::Bool => S::Primitive("bool".into()),
             D::Int => S::Primitive("int".into()),

@@ -238,7 +238,7 @@ fn exposed_homes_with(
                     edge(*then_target, then_arguments);
                     edge(*else_target, else_arguments);
                 }
-                ir::Terminator::Return(_) => {}
+                ir::Terminator::Unreachable | ir::Terminator::Return(_) => {}
             }
         }
         for (source, destination) in function

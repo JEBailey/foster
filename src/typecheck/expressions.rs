@@ -35,14 +35,19 @@ impl Checker<'_> {
         let body = function.body.clone();
         let mut final_value = None;
         let mut final_expression = None;
+        let mut divergent = false;
         for (index, statement) in body.iter().enumerate() {
             final_value = if index + 1 == body.len()
                 && let hir::Stmt::Expr(expression) = statement
+                && (!divergent || !matches!(self.hir.expressions[*expression], hir::Expr::Unit))
             {
                 Some(self.check_expression(function_id, *expression, signature.result.clone())?)
             } else {
                 self.check_statement(function_id, statement)?
             };
+            divergent |= final_value
+                .as_ref()
+                .is_some_and(|ty| self.resolved(ty.clone()) == Ty::Never);
             final_expression = match statement {
                 hir::Stmt::Return { value, .. }
                 | hir::Stmt::Bind { value, .. }
@@ -55,6 +60,11 @@ impl Checker<'_> {
                 }
             };
         }
+        let final_value = if divergent {
+            Some(Ty::Never)
+        } else {
+            final_value
+        };
         if let Some(final_value) = final_value {
             if let Some(final_expression) = final_expression {
                 self.coerce_expression(
@@ -109,7 +119,7 @@ impl Checker<'_> {
                             "returned value has an incompatible type",
                         )
                     })?;
-                Ok(None)
+                Ok(Some(if guard.is_none() { Ty::Never } else { Ty::Unit }))
             }
             hir::Stmt::Assert { condition, message } => {
                 self.check_expression(function, *condition, Ty::Bool)
@@ -132,13 +142,23 @@ impl Checker<'_> {
                             )
                         })?;
                 }
-                Ok(Some(Ty::Unit))
+                Ok(Some(
+                    if matches!(self.hir.expressions[*condition], hir::Expr::Bool(false)) {
+                        Ty::Never
+                    } else {
+                        Ty::Unit
+                    },
+                ))
             }
             hir::Stmt::Loop { body, .. } => {
                 for statement in body {
                     self.check_statement(function, statement)?;
                 }
-                Ok(Some(Ty::Unit))
+                Ok(Some(if self.loop_can_break(body) {
+                    Ty::Unit
+                } else {
+                    Ty::Never
+                }))
             }
             hir::Stmt::Break { guard } | hir::Stmt::Continue { guard } => {
                 if let Some(guard) = guard {
@@ -152,7 +172,7 @@ impl Checker<'_> {
                             )
                         })?;
                 }
-                Ok(None)
+                Ok(Some(if guard.is_none() { Ty::Never } else { Ty::Unit }))
             }
             hir::Stmt::Bind { local, value } => {
                 let value = self.infer_expression(function, *value)?;
@@ -227,22 +247,7 @@ impl Checker<'_> {
                     })?;
                 Ok(Some(value))
             }
-            hir::Stmt::Expr(expression) => {
-                // A discarded branch whose arms all transfer control has no value to infer.
-                // This also occurs in desugared for-loops with an unconditional break,
-                // continue, or return in the body.
-                if let hir::Expr::Branch { arms, .. } = &self.hir.expressions[*expression]
-                    && arms.iter().all(|arm| {
-                        let flow = crate::control_flow::summarize_arm(&arm.body);
-                        !flow.yields_value && !flow.falls_through
-                    })
-                {
-                    self.check_expression(function, *expression, Ty::Unit)?;
-                    Ok(None)
-                } else {
-                    Ok(Some(self.infer_expression(function, *expression)?))
-                }
-            }
+            hir::Stmt::Expr(expression) => Ok(Some(self.infer_expression(function, *expression)?)),
         }
     }
 
@@ -252,36 +257,152 @@ impl Checker<'_> {
         body: &crate::block::Block<hir::Stmt>,
         expected: Option<Ty>,
     ) -> Result<Option<Ty>, FosterError> {
-        let flow = crate::control_flow::summarize_arm(body);
-        let Some(last) = body.last() else {
-            if let Some(expected) = expected {
-                self.unify(expected, Ty::Unit, function)?;
-            }
+        if body.is_empty() {
             return Ok(Some(Ty::Unit));
-        };
-        for statement in body.iter().take(body.len() - 1) {
-            self.check_statement(function, statement)?;
         }
-        match last {
-            hir::Stmt::Expr(expression) if flow.yields_value => {
-                let value = if let Some(expected) = expected {
+        let mut divergent = false;
+        let mut result = None;
+        for (index, statement) in body.iter().enumerate() {
+            let value = if index + 1 == body.len()
+                && let hir::Stmt::Expr(expression) = statement
+                && (!divergent || !matches!(self.hir.expressions[*expression], hir::Expr::Unit))
+            {
+                Some(if let Some(expected) = expected.clone() {
                     self.check_expression(function, *expression, expected)?
                 } else {
                     self.infer_expression(function, *expression)?
-                };
-                Ok(Some(value))
+                })
+            } else {
+                self.check_statement(function, statement)?
+            };
+            if value
+                .as_ref()
+                .is_some_and(|ty| self.resolved(ty.clone()) == Ty::Never)
+            {
+                divergent = true;
             }
-            _ if !flow.falls_through => {
-                self.check_statement(function, last)?;
-                Ok(None)
+            result = value;
+        }
+        if divergent {
+            return Ok(Some(Ty::Never));
+        }
+        if matches!(body.last(), Some(hir::Stmt::Expr(_))) {
+            return Ok(result);
+        }
+        Err(self.error(
+            function,
+            "branch-arm block must end with a value or an unconditional control transfer",
+        ))
+    }
+
+    fn loop_can_break(&self, body: &crate::block::Block<hir::Stmt>) -> bool {
+        for statement in body {
+            let nested_break = match statement {
+                hir::Stmt::Return { value, guard } => {
+                    self.expression_can_break(*value)
+                        || guard.is_some_and(|id| self.expression_can_break(id))
+                }
+                hir::Stmt::Break { guard } | hir::Stmt::Continue { guard } => {
+                    guard.is_some_and(|id| self.expression_can_break(id))
+                }
+                hir::Stmt::Assert { condition, message } => {
+                    self.expression_can_break(*condition)
+                        || message.is_some_and(|id| self.expression_can_break(id))
+                }
+                _ => false,
+            };
+            if nested_break {
+                return true;
             }
-            _ => {
-                self.check_statement(function, last)?;
-                Err(self.error(
-                    function,
-                    "branch-arm block must end with a value or an unconditional control transfer",
-                ))
+            match statement {
+                hir::Stmt::Break { guard } => {
+                    if !guard.is_some_and(|id| {
+                        matches!(self.hir.expressions[id], hir::Expr::Bool(false))
+                    }) {
+                        return true;
+                    }
+                }
+                hir::Stmt::Loop { body } if !self.loop_can_break(body) => break,
+                hir::Stmt::Return { guard: None, .. } | hir::Stmt::Continue { guard: None } => {
+                    break;
+                }
+                hir::Stmt::Assert { condition, .. }
+                    if matches!(self.hir.expressions[*condition], hir::Expr::Bool(false)) =>
+                {
+                    break;
+                }
+                hir::Stmt::Expr(id)
+                | hir::Stmt::Bind { value: id, .. }
+                | hir::Stmt::Assign { value: id, .. }
+                | hir::Stmt::Set { value: id, .. } => {
+                    if self.expression_can_break(*id) {
+                        return true;
+                    }
+                    if self
+                        .expressions
+                        .get(id)
+                        .is_some_and(|ty| self.resolved(ty.clone()) == Ty::Never)
+                    {
+                        break;
+                    }
+                }
+                _ => {}
             }
+        }
+        false
+    }
+
+    fn expression_can_break(&self, id: ExprId) -> bool {
+        match &self.hir.expressions[id] {
+            hir::Expr::Branch { subject, arms } => {
+                if subject.is_some_and(|id| self.expression_can_break(id)) {
+                    return true;
+                }
+                for arm in arms {
+                    if let hir::BranchTest::Condition(id) = arm.test
+                        && self.expression_can_break(id)
+                    {
+                        return true;
+                    }
+                    if let hir::BranchTest::Condition(condition) = arm.test
+                        && matches!(self.hir.expressions[condition], hir::Expr::Bool(false))
+                    {
+                        continue;
+                    }
+                    if self.loop_can_break(&arm.body) {
+                        return true;
+                    }
+                    if matches!(arm.test, hir::BranchTest::Wildcard)
+                        || matches!(arm.test, hir::BranchTest::Condition(id) if matches!(self.hir.expressions[id], hir::Expr::Bool(true)))
+                    {
+                        break;
+                    }
+                }
+                false
+            }
+            hir::Expr::Call { callee, arguments } => {
+                self.expression_can_break(*callee)
+                    || arguments.iter().any(|id| self.expression_can_break(*id))
+            }
+            hir::Expr::List(items) => items.iter().any(|id| self.expression_can_break(*id)),
+            hir::Expr::Record { fields, .. } => {
+                fields.iter().any(|(_, id)| self.expression_can_break(*id))
+            }
+            hir::Expr::Binary { left, right, .. } => {
+                self.expression_can_break(*left) || self.expression_can_break(*right)
+            }
+            hir::Expr::Unary { operand, .. }
+            | hir::Expr::Reference(operand)
+            | hir::Expr::MoveOut(operand)
+            | hir::Expr::Remote(operand)
+            | hir::Expr::Await(operand)
+            | hir::Expr::Panic(operand)
+            | hir::Expr::Try { value: operand, .. } => self.expression_can_break(*operand),
+            hir::Expr::Member { object, .. } => self.expression_can_break(*object),
+            hir::Expr::Index { object, index } => {
+                self.expression_can_break(*object) || self.expression_can_break(*index)
+            }
+            _ => false,
         }
     }
 
@@ -318,6 +439,7 @@ impl Checker<'_> {
             let subject_ty = subject
                 .map(|subject| self.infer_expression(function, subject))
                 .transpose()?;
+            let mut yields = false;
             let mut covered = std::collections::HashSet::new();
             let mut catch_all = false;
             for arm in arms {
@@ -338,7 +460,10 @@ impl Checker<'_> {
                 self.enter_type_pattern(subject, &arm.test);
                 let checked = self.check_branch_body(function, &arm.body, Some(expected.clone()));
                 self.type_facts.truncate(checkpoint);
-                if let Some(value) = checked? {
+                if let Some(value) = checked?
+                    && self.resolved(value.clone()) != Ty::Never
+                {
+                    yields = true;
                     self.unify(expected.clone(), value, function)?;
                 }
             }
@@ -356,13 +481,19 @@ impl Checker<'_> {
             } else if subject.is_some() && !catch_all {
                 return Err(self.error(function, "pattern branch requires `_` for exhaustiveness"));
             }
-            self.expressions.insert(expression_id, expected.clone());
-            return Ok(expected);
+            let result = if yields { expected } else { Ty::Never };
+            self.expressions.insert(expression_id, result.clone());
+            return Ok(result);
         }
 
         let actual = self.infer_expression(function, expression_id)?;
+        let never = self.resolved(actual.clone()) == Ty::Never;
         self.coerce_expression(expected.clone(), actual, function, expression_id)?;
-        Ok(self.resolved(expected))
+        Ok(if never {
+            Ty::Never
+        } else {
+            self.resolved(expected)
+        })
     }
 
     pub(super) fn infer_expression(
@@ -420,7 +551,9 @@ impl Checker<'_> {
                 let element = self.fresh();
                 for item in items {
                     let item = self.infer_expression(function, item)?;
-                    self.unify(element.clone(), item, function)?;
+                    if self.resolved(item.clone()) != Ty::Never {
+                        self.unify(element.clone(), item, function)?;
+                    }
                 }
                 self.list_type(element)
             }
@@ -528,13 +661,112 @@ impl Checker<'_> {
                     }
                 }
             }
+            hir::Expr::Panic(message) => {
+                self.check_expression(function, message, self.string_type())?;
+                Ty::Never
+            }
             hir::Expr::Await(future) => {
                 let result = self.fresh();
                 let future = self.infer_expression(function, future)?;
                 self.unify(future, Ty::Future(Box::new(result.clone())), function)?;
                 result
             }
-            hir::Expr::Try { value, binding } => {
+            hir::Expr::Try {
+                value,
+                binding,
+                variant: Some(variant),
+            } => {
+                let operand = self.infer_expression(function, value)?;
+                let Ty::Variant(parent, arguments) = self.resolved(operand) else {
+                    return Err(self.error(function, "`try<Variant>` requires an enum value"));
+                };
+                let definition = self.hir.variant_types[parent].clone();
+                if definition.kind != crate::ast::VariantKind::Enum {
+                    return Err(self.error(function, "`try<Variant>` requires an enum value"));
+                }
+                let selected = definition
+                    .alternatives
+                    .iter()
+                    .copied()
+                    .find(|id| self.hir.variants[*id].name == variant)
+                    .ok_or_else(|| {
+                        self.error(
+                            function,
+                            format!("enum `{}` has no variant `{variant}`", definition.name),
+                        )
+                    })?;
+                let generics = definition
+                    .parameters
+                    .iter()
+                    .cloned()
+                    .zip(arguments)
+                    .collect::<HashMap<_, _>>();
+                let success = match self.hir.variants[selected].payload.clone() {
+                    Some(annotation) => {
+                        self.annotation_type(definition.module, &annotation, &generics)?
+                    }
+                    None => Ty::Unit,
+                };
+                let mut returned = self.resolved(self.functions[&function].result.clone());
+                if matches!(returned, Ty::Variable(_)) {
+                    let arguments = definition.parameters.iter().map(|_| self.fresh()).collect();
+                    let inferred = Ty::Variant(parent, arguments);
+                    self.unify(returned, inferred.clone(), function)?;
+                    returned = inferred;
+                }
+                let Ty::Variant(output, output_arguments) = returned else {
+                    return Err(self.error(function, "`try<Variant>` requires an enum return type"));
+                };
+                let output_definition = self.hir.variant_types[output].clone();
+                if output_definition.kind != crate::ast::VariantKind::Enum {
+                    return Err(self.error(function, "`try<Variant>` requires an enum return type"));
+                }
+                let output_generics = output_definition
+                    .parameters
+                    .iter()
+                    .cloned()
+                    .zip(output_arguments)
+                    .collect::<HashMap<_, _>>();
+                for other in definition
+                    .alternatives
+                    .iter()
+                    .copied()
+                    .filter(|id| *id != selected)
+                {
+                    let case = self.hir.variants[other].clone();
+                    let target = output_definition
+                        .alternatives
+                        .iter()
+                        .copied()
+                        .find(|id| self.hir.variants[*id].name == case.name)
+                        .ok_or_else(|| {
+                            self.error(
+                                function,
+                                format!(
+                                    "`try<{variant}>` cannot propagate `{}` into `{}`",
+                                    case.name, output_definition.name
+                                ),
+                            )
+                        })?;
+                    match (case.payload, self.hir.variants[target].payload.clone()) {
+                        (Some(source), Some(target)) => {
+                            let source = self.annotation_type(definition.module, &source, &generics)?;
+                            let target = self.annotation_type(output_definition.module, &target, &output_generics)?;
+                            self.unify(source, target, function).map_err(|_| self.error(function,
+                                format!("`try<{variant}>` requires matching payload types for propagated variant `{}`", case.name)))?;
+                        }
+                        (None, None) => {}
+                        _ => return Err(self.error(function, format!("`try<{variant}>` requires matching payloads for propagated variant `{}`", case.name))),
+                    }
+                }
+                self.locals.insert(binding, success.clone());
+                success
+            }
+            hir::Expr::Try {
+                value,
+                binding,
+                variant: None,
+            } => {
                 let result_module = self.hir.module_named("core.result").ok_or_else(|| {
                     FosterError::runtime("`try` requires the embedded `core.result` module")
                 })?;
@@ -621,6 +853,7 @@ impl Checker<'_> {
                 let subject_ty = subject
                     .map(|s| self.infer_expression(function, s))
                     .transpose()?;
+                let mut yields = false;
                 let mut covered = std::collections::HashSet::new();
                 let mut catch_all = false;
                 for arm in arms {
@@ -641,7 +874,10 @@ impl Checker<'_> {
                     self.enter_type_pattern(subject, &arm.test);
                     let checked = self.check_branch_body(function, &arm.body, None);
                     self.type_facts.truncate(checkpoint);
-                    if let Some(value) = checked? {
+                    if let Some(value) = checked?
+                        && self.resolved(value.clone()) != Ty::Never
+                    {
+                        yields = true;
                         self.unify(result.clone(), value, function)?;
                     }
                 }
@@ -661,7 +897,7 @@ impl Checker<'_> {
                         self.error(function, "pattern branch requires `_` for exhaustiveness")
                     );
                 }
-                result
+                if yields { result } else { Ty::Never }
             }
             hir::Expr::Closure {
                 function: closure,
@@ -690,6 +926,36 @@ impl Checker<'_> {
                 }
             }
         };
+        let never = |id: &ExprId| {
+            self.expressions
+                .get(id)
+                .is_some_and(|ty| self.resolved(ty.clone()) == Ty::Never)
+        };
+        let diverges = match &self.hir.expressions[expression_id] {
+            hir::Expr::Call { callee, arguments } => never(callee) || arguments.iter().any(never),
+            hir::Expr::List(items) => items.iter().any(never),
+            hir::Expr::Record { fields, .. } => fields.iter().any(|(_, id)| never(id)),
+            hir::Expr::Binary { left, right, .. }
+            | hir::Expr::Index {
+                object: left,
+                index: right,
+            } => never(left) || never(right),
+            hir::Expr::Unary { operand, .. }
+            | hir::Expr::Reference(operand)
+            | hir::Expr::MoveOut(operand)
+            | hir::Expr::Remote(operand)
+            | hir::Expr::Await(operand)
+            | hir::Expr::Try { value: operand, .. }
+            | hir::Expr::Member {
+                object: operand, ..
+            } => never(operand),
+            hir::Expr::Branch {
+                subject: Some(subject),
+                ..
+            } => never(subject),
+            _ => false,
+        };
+        let ty = if diverges { Ty::Never } else { ty };
         self.expressions.insert(expression_id, ty.clone());
         Ok(ty)
     }
@@ -812,6 +1078,9 @@ impl Checker<'_> {
         let right_expression = right;
         let left = self.infer_expression(function, left)?;
         let right = self.infer_expression(function, right)?;
+        if self.resolved(left.clone()) == Ty::Never || self.resolved(right.clone()) == Ty::Never {
+            return Ok(Ty::Never);
+        }
         match operator {
             BinaryOp::Add => {
                 if self.is_string_type(&left) || self.is_string_type(&right) {

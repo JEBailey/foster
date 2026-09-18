@@ -5,6 +5,7 @@ use super::*;
 pub(super) enum Ty {
     Variable(u32),
     Generic(String),
+    Never,
     Unit,
     Bool,
     Int,

@@ -198,6 +198,11 @@ pub fn lower_function(
                 )?;
                 emissions.push(Emission::Jump(*else_target, block.terminator_span.clone()));
             }
+            ir::Terminator::Unreachable => {
+                return Err(LowerError(
+                    "native-only unreachable terminator in VM lowering".into(),
+                ));
+            }
             ir::Terminator::Return(value) => {
                 emissions.push(Emission::Instruction(
                     vm::Instruction::Return {

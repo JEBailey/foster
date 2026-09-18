@@ -544,7 +544,7 @@ func main() -> Int {
 
 #[test]
 fn ownership_revision_and_diagnostic_catalog_match_current_contract() {
-    assert_eq!(foster::ownership::LANGUAGE_VERSION, 10);
+    assert_eq!(foster::ownership::LANGUAGE_VERSION, 12);
     assert_eq!(foster::ownership::MODEL_VERSION, 3);
     assert_eq!(
         foster::ownership::diagnostics::CATALOG

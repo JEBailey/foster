@@ -140,6 +140,7 @@ impl Writer {
                 self.u8(17);
                 self.string(name)?;
             }
+            ExecutableType::Never => self.u8(18),
             ExecutableType::Unit => self.u8(1),
             ExecutableType::Bool => self.u8(2),
             ExecutableType::Integer => self.u8(3),

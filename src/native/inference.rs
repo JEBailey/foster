@@ -63,7 +63,7 @@ pub(super) fn infer_value_types(
                 (*then_target, then_arguments),
                 (*else_target, else_arguments),
             ],
-            ir::Terminator::Return(_) => Vec::new(),
+            ir::Terminator::Unreachable | ir::Terminator::Return(_) => Vec::new(),
         };
         for (target, arguments) in successors {
             for (argument, parameter) in arguments

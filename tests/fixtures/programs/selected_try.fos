@@ -1,0 +1,31 @@
+enum Outcome<T> = Match(T) | Failed(Int) | End
+enum Answer<T> = Done(T) | End | Failed(Int)
+func source(mode: Int) -> Outcome<Int> {
+    branch {
+        mode == 0 -> Outcome.Match(20)
+        mode == 1 -> Outcome.Failed(7)
+        _ -> Outcome.End
+    }
+}
+func convert(mode: Int) -> Answer<Int> {
+    let value = try<Match> source(mode)
+    Answer.Done(value + 22)
+}
+func generic<T>(input: Outcome<T>) -> Outcome<Int> [consume input] {
+    try<Match> move input
+    Outcome.Match(42)
+}
+func empty(input: Outcome<Int>) -> Outcome<Int> [consume input] {
+    let unit = try<End> move input
+    Outcome.Match(42)
+}
+func main() -> Int {
+    assert(convert(0) == Answer.Done(42))
+    assert(convert(1) == Answer.Failed(7))
+    assert(convert(2) == Answer.End)
+    assert(generic(Outcome.Match(true)) == Outcome.Match(42))
+    assert(generic(source(1)) == Outcome.Failed(7))
+    assert(empty(Outcome.End) == Outcome.Match(42))
+    assert(empty(Outcome.Match(9)) == Outcome.Match(9))
+    42
+}

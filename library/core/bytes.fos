@@ -139,8 +139,7 @@ impl Bytes {
         branch String.from_utf8(Bytes.from(move output)) {
             Result.Ok(text) -> text
             Result.Error(_) -> {
-                assert(false, "hexadecimal output must be valid UTF-8")
-                ""
+                panic("hexadecimal output must be valid UTF-8")
             }
         }
     }

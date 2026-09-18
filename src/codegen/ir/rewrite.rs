@@ -434,6 +434,7 @@ impl Terminator {
                     *value = rewrite(*value);
                 }
             }
+            Self::Unreachable => {}
             Self::Return(value) => *value = rewrite(*value),
         }
     }

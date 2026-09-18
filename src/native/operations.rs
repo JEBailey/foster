@@ -44,6 +44,11 @@ pub(super) fn lower_native_terminator(
                 &arguments(else_arguments),
             );
         }
+        ir::Terminator::Unreachable => {
+            builder
+                .ins()
+                .trap(cranelift_codegen::ir::TrapCode::unwrap_user(1));
+        }
         ir::Terminator::Return(value) => {
             builder.ins().return_(&[values[value]]);
         }

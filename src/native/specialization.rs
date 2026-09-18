@@ -329,6 +329,7 @@ fn collect_nominal_types(
         }
         ExecutableType::Unknown
         | ExecutableType::Generic(_)
+        | ExecutableType::Never
         | ExecutableType::Unit
         | ExecutableType::Bool
         | ExecutableType::Integer

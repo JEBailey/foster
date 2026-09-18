@@ -216,6 +216,7 @@ pub(super) fn run(
                     }
                     block.terminator.rewrite_values(rewrite);
                     match &mut block.terminator {
+                        ir::Terminator::Unreachable => {}
                         ir::Terminator::Jump { target, .. } => target.0 += base,
                         ir::Terminator::Branch {
                             then_target,

@@ -14,6 +14,7 @@ mod parameter_tests;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Type {
+    Never,
     Generic(String),
     Unit,
     Bool,
@@ -102,6 +103,7 @@ pub struct FunctionType {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DispatchTypeKey {
+    Never,
     Generic(u32),
     Unit,
     Bool,
@@ -329,6 +331,7 @@ impl TypeInformation {
                 let next = generics.len() as u32;
                 DispatchTypeKey::Generic(*generics.entry(name.clone()).or_insert(next))
             }
+            Type::Never => DispatchTypeKey::Never,
             Type::Unit => DispatchTypeKey::Unit,
             Type::Bool => DispatchTypeKey::Bool,
             Type::Int => DispatchTypeKey::Int,
@@ -401,6 +404,7 @@ impl TypeInformation {
     pub fn display(&self, ty: TypeId) -> String {
         match &self.types[ty] {
             Type::Generic(name) => name.clone(),
+            Type::Never => "Never".into(),
             Type::Unit => "()".into(),
             Type::Bool => "Bool".into(),
             Type::Int => "Int".into(),

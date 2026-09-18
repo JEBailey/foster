@@ -452,6 +452,7 @@ pub(crate) fn analyze(
         }
         positions.push(instructions.len());
         match &block.terminator {
+            Terminator::Unreachable => instructions.push(Op::Unreachable),
             Terminator::Return(source) => instructions.push(Op::Return { source: *source }),
             Terminator::Jump { target, arguments } => instructions.push(edge(*target, arguments)),
             Terminator::Branch {
@@ -514,6 +515,7 @@ pub(crate) fn analyze(
                         instruction.operands()
                     } else {
                         match &block.terminator {
+                            Terminator::Unreachable => Vec::new(),
                             Terminator::Return(value) => vec![*value],
                             Terminator::Jump { arguments, .. } => arguments.clone(),
                             Terminator::Branch {

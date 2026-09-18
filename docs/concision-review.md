@@ -140,14 +140,11 @@ already an open roadmap item. No spelling is assumed here.
 
 ### 3. Non-returning expressions
 
-`taker::value` ends its failure arm with `assert(false)` followed by a recursive
-dummy value. `current_char`, the Unicode generator, and core string construction
-also manufacture unreachable fallback values to satisfy result typing.
-
-A non-returning operation and proper divergence typing would eliminate these
-dummy results. It must participate in branch joins and normal failure cleanup.
-An `expect` convenience can build on that mechanism; it should not replace typed
-error handling where recovery is intended.
+Implemented: `panic(message)` has type `Never`, and divergent arms no longer need
+fallback values. Taker's `value` and `current_char`, core string construction,
+byte formatting, and cursor invariants now use panic directly. Failure cleanup
+is shared with assertions; `try` does not catch panic. An `expect` convenience
+can build on this mechanism where unrecoverable failure is intended.
 
 ### 4. Consume the remainder of an iterator concisely
 
@@ -235,3 +232,9 @@ example use shorthand. Filesystem, path, TCP, and month-day validation use `try`
 for direct error propagation. Borrowed `Result` methods, error conversion,
 recovery, and custom parser outcomes retain their branches; replacing those
 with consuming `try` expressions would change their contracts.
+
+## Follow-up: selected-case propagation
+
+`try<Case>` implements explicit custom-outcome propagation. Taker's direct parser
+composition and CSV loops use `try<Match>`; recovery and contextual error handling
+retain branches. No propagation protocol or enum declaration annotation is needed.

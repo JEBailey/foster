@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Format version 29; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
+Format version 30; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -117,7 +117,8 @@ Verification type tags are `0 Unknown`, `1 Unit`, `2 Bool`, `3 Integer`, `4 Floa
 `13 Function(vector<ExecutableType>, vector<ParameterMode>, ExecutableType)`,
 `14 Record(RecordId, vector<ExecutableType> arguments)`,
 `15 Variant(VariantTypeId, vector<ExecutableType> arguments)`,
-`16 Alternatives(vector<ExecutableType>)` (formerly named `Union`), and `17 Generic(string identity)`.
+`16 Alternatives(vector<ExecutableType>)` (formerly named `Union`), `17 Generic(string identity)`, and `18 Never`.
+`Never` has no value encoding: a function with this result cannot return normally.
 Alternative members are sorted, unique, flattened, contain at least two types, and exclude `Unknown`
 (which would absorb the alternatives). The tag and encoding are unchanged. Native `Intersection`
 and `AliasArguments` metadata have no bytecode tags and cannot be serialized.
@@ -174,7 +175,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 29 readers accept only version 29 with zero flags. String accessors use Foster
+Version 30 readers accept only version 30 with zero flags. String accessors use Foster
 grapheme algorithms, and strings implement `Sequence<String>`; scalar-based artifacts
 from earlier versions must be rebuilt. The format retains the symbolic module table.
 Contract calls retain their checked
