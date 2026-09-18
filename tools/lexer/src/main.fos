@@ -1,0 +1,9 @@
+//! Bootstrap entry: the first argument is source text, not a filesystem path.
+import core.list
+import lexer
+import std.process
+
+func main(args: Arguments) -> Scan {
+    assert(args.values.length == 1, "usage: lexer <source-text>")
+    lexer::scan(args.values[0])
+}

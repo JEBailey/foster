@@ -11,12 +11,24 @@ pub(super) fn signature(module: &mut ObjectModule, source: &ir::Signature) -> Cl
     signature.params = source
         .parameters
         .iter()
-        .map(|ty| AbiParam::new(cranelift_type(*ty, pointer_type)))
+        .map(|ty| abi_parameter(cranelift_type(*ty, pointer_type)))
         .collect();
     signature
         .returns
-        .push(AbiParam::new(cranelift_type(source.result, pointer_type)));
+        .push(abi_parameter(cranelift_type(source.result, pointer_type)));
     signature
+}
+
+/// Rust's C ABI requires unsigned narrow integers to be zero-extended. Without
+/// this, an optimized callee can observe stale upper bits of an argument register
+/// (for example, testing EDI rather than DIL for a u8 assertion condition).
+pub(super) fn abi_parameter(ty: ClifType) -> AbiParam {
+    let parameter = AbiParam::new(ty);
+    if ty == types::I8 {
+        parameter.uext()
+    } else {
+        parameter
+    }
 }
 
 pub(super) fn cranelift_type(ty: NativeType, pointer_type: ClifType) -> ClifType {

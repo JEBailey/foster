@@ -70,9 +70,9 @@ mod lowering;
 use lowering::{lower_native_ir, native_type_from_value_layout, native_type_semantic};
 mod machine;
 use machine::{
-    cranelift_representation, cranelift_type, load_physical_value, native_field_helper,
-    physical_cranelift_type, reference_load_helper, reference_store_helper, runtime_signature,
-    signature, store_physical_value,
+    abi_parameter, cranelift_representation, cranelift_type, load_physical_value,
+    native_field_helper, physical_cranelift_type, reference_load_helper, reference_store_helper,
+    runtime_signature, signature, store_physical_value,
 };
 mod operations;
 use operations::{

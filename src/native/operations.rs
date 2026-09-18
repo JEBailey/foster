@@ -1,7 +1,7 @@
 //! Control flow, arithmetic, runtime calls, and failure propagation.
 use super::{
-    AbiParam, BinaryOp, ClifBlock, ClifValue, FloatCC, FosterError, FunctionBuilder, HashMap,
-    InstBuilder, IntCC, LayoutKind, LayoutRegistry, Linkage, Module, NativeType, ObjectModule, abi,
+    BinaryOp, ClifBlock, ClifValue, FloatCC, FosterError, FunctionBuilder, HashMap, InstBuilder,
+    IntCC, LayoutKind, LayoutRegistry, Linkage, Module, NativeType, ObjectModule, abi,
     cranelift_representation, ir, native_error, types,
 };
 
@@ -248,14 +248,14 @@ pub(super) fn runtime_call(
     signature
         .params
         .extend(contract.parameters.iter().map(|(wire, _)| {
-            AbiParam::new(cranelift_representation(
+            super::abi_parameter(cranelift_representation(
                 wire.representation(),
                 pointer_type,
             ))
         }));
     signature
         .returns
-        .push(AbiParam::new(cranelift_representation(
+        .push(super::abi_parameter(cranelift_representation(
             contract.result.representation(),
             pointer_type,
         )));

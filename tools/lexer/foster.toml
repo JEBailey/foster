@@ -1,0 +1,3 @@
+[package]
+name = "foster_lexer"
+source = "src"

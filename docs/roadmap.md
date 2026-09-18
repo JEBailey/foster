@@ -33,7 +33,9 @@ work.
 ## Self-hosting preparation
 
 Writing the compiler in Foster is a direction to develop in stages. The Rust compiler remains
-the bootstrap implementation; a self-hosted compiler and the arena API below are not implemented.
+the production and bootstrap implementation, including source scanning. An experimental
+Foster lexer lives in [tools/lexer](../tools/lexer/README.md), separate from the compiler's
+execution path. A fully self-hosted compiler and the arena API below are not implemented.
 
 - Prototype an append-only `Arena<T>` and typed `ArenaId<T>` in Foster using existing list storage.
   The arena owns its nodes; graph edges store IDs. Define insertion, borrowed lookup, replacement,

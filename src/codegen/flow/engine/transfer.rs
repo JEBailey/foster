@@ -197,10 +197,10 @@ pub(super) fn transfer(
                 *destination,
                 constant_type(program, constant),
             )?;
-            if let crate::codegen::metadata::Constant::Bool(value) = constant {
-                if state.bindings[destination.index()] == Some(ExecutableType::Bool) {
-                    state.boolean_constants.insert(*destination, *value);
-                }
+            if let crate::codegen::metadata::Constant::Bool(value) = constant
+                && state.bindings[destination.index()] == Some(ExecutableType::Bool)
+            {
+                state.boolean_constants.insert(*destination, *value);
             }
         }
         Instruction::Move {

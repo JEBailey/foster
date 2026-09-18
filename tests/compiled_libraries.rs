@@ -115,8 +115,7 @@ func main() -> Int {
 }
 "#,
         )
-        .err()
-        .expect("linked borrower retains its owner dependency");
+        .expect_err("linked borrower retains its owner dependency");
     assert_eq!(error.code.as_deref(), Some("E0401"));
 }
 

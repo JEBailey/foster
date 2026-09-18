@@ -1,0 +1,472 @@
+//! Foster source scanner. Offsets are UTF-8 bytes; lines and scalar columns start at one.
+import core.code_point
+import core.list
+import core.string
+
+/// Stable token data exchanged with the bootstrap compiler.
+pub type Token = {
+    pub kind: String
+    pub text: String
+    pub line: Int
+    pub column: Int
+    pub start: Int
+    pub end: Int
+    // Unescaped string payloads borrow this UTF-8 source range; -1 selects text.
+    pub raw_start: Int
+    pub raw_end: Int
+}
+
+/// A scan either contains all tokens (including Eof), or a positioned diagnostic.
+pub type Scan = {
+    pub tokens: List<Token>
+    pub error: String
+    pub line: Int
+    pub column: Int
+}
+
+type Scanner = {
+    chars: List<CodePoint>
+    index: Int
+    offset: Int
+    line: Int
+    column: Int
+    error: String
+    error_line: Int
+    error_column: Int
+    quoted_raw: Bool
+}
+
+func digit(c: CodePoint) -> Bool { c >= '0' && c <= '9' }
+func identifier_start(c: CodePoint) -> Bool {
+    branch {
+        c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' -> true
+        c.as_int() < 128 -> false
+        _ -> c.alphabetic?()
+    }
+}
+func identifier_part(c: CodePoint) -> Bool { identifier_start(c) || digit(c) || c == '?' }
+
+impl Scanner {
+    func peek(self, ahead: Int) -> CodePoint {
+        branch {
+            self.index + ahead < self.chars.length -> self.chars[self.index + ahead]
+            _ -> ' '
+        }
+    }
+    func advance(self) -> CodePoint {
+        let c = self.chars[self.index]
+        self.index = self.index + 1
+        let scalar = c.as_int()
+        self.offset = self.offset + branch {
+            scalar < 128 -> 1
+            scalar < 2048 -> 2
+            scalar < 65536 -> 3
+            _ -> 4
+        }
+        branch {
+            c == '\n' -> { self.line = self.line + 1
+                self.column = 1 }
+            _ -> { self.column = self.column + 1 }
+        }
+        c
+    }
+    func fail(self, message: String, line: Int, column: Int) -> () {
+        self.error = message.copy()
+        self.error_line = line
+        self.error_column = column
+        ()
+    }
+    func text(self, start: Int) -> String {
+        String.from_code_points(self.chars.slice(start, self.index))
+    }
+    func quoted(self, quote: CodePoint, line: Int, column: Int) -> String {
+        self.advance()
+        let content_start = self.index
+        self.quoted_raw = quote == '"'
+        let value = StringBuilder.empty()
+        loop {
+            branch {
+                self.index == self.chars.length -> {
+                    self.fail(branch quote { '"' -> "unterminated string"
+                        _ -> "unterminated code-point literal" }, line, column)
+                    break
+                }
+                quote == '"' && self.peek(0) == '"' -> { self.advance()
+                    break }
+                quote == '"' && self.peek(0) == '\n' -> {
+                    self.fail("unterminated string", line, column)
+                    break
+                }
+                _ -> ()
+            }
+            let c = self.advance()
+            branch c {
+                '\\' -> {
+                    branch {
+                        self.quoted_raw -> {
+                            let prefix = String.from_code_points(self.chars.slice(content_start, self.index - 1))
+                            value.append(prefix)
+                            self.quoted_raw = false
+                        }
+                        _ -> ()
+                    }
+                    branch {
+                        self.index == self.chars.length -> {
+                            self.fail(branch quote { '"' -> "unterminated escape"
+                                _ -> "unterminated code-point escape" }, line, column)
+                            break
+                        }
+                        _ -> ()
+                    }
+                    let escaped = self.advance()
+                    c = branch escaped {
+                        'n' -> '\n'
+                        'r' -> '\r'
+                        't' -> '\t'
+                        '"' -> '"'
+                        '\\' -> '\\'
+                        _ -> escaped
+                    }
+                    branch {
+                        escaped == 'n' || escaped == 'r' || escaped == 't' || escaped == '"' || escaped == '\\' -> ()
+                        escaped == '\'' && quote == '\'' -> ()
+                        _ -> {
+                            let message = "unknown escape `\\" + String.from_code_points([escaped]) + "`"
+                            branch quote {
+                                '"' -> self.fail(message, self.line, self.column)
+                                _ -> self.fail(message, line, column)
+                            }
+                            break
+                        }
+                    }
+                }
+                _ -> ()
+            }
+            branch { !self.quoted_raw -> value.push(c)
+                _ -> () }
+            branch {
+                quote == '\'' -> {
+                    branch {
+                        self.index < self.chars.length && self.peek(0) == '\'' -> self.advance()
+                        _ -> {
+                            self.fail("code-point literal must contain exactly one Unicode scalar value", line, column)
+                            c
+                        }
+                    }
+                    break
+                }
+                _ -> ()
+            }
+        }
+        (move value).finish()
+    }
+}
+
+func normalize_block(text: String) -> String [consume text] {
+    let lines = (move text).split("\n")
+    let out = StringBuilder.empty()
+    let pending = 0
+    let started = false
+    for raw in lines {
+        let line = (move raw).trim_start()
+        branch {
+            line.starts_with?("*") -> { line = (line.scalar_rest()).trim_start() }
+            _ -> ()
+        }
+        line = line.trim_end()
+        branch {
+            line.byte_length() == 0 -> { pending = pending + 1 }
+            _ -> {
+                branch {
+                    started -> {
+                        out.append("\n")
+                        while pending > 0 { out.append("\n")
+                            pending = pending - 1 }
+                    }
+                    _ -> ()
+                }
+                pending = 0
+                out.append(line)
+                started = true
+            }
+        }
+    }
+    (move out).finish()
+}
+
+/// Scans the entire input, preserving documentation tokens and scalar-based positions.
+pub func scan(source: String) -> Scan {
+    let scanner = Scanner { chars: source.code_points(), index: 0, offset: 0, line: 1, column: 1,
+        error: "", error_line: 1, error_column: 1, quoted_raw: false }
+    let tokens = []
+    while scanner.index < scanner.chars.length {
+        let line = scanner.line
+        let column = scanner.column
+        let start = scanner.offset
+        let index = scanner.index
+        let c = scanner.peek(0)
+        let next = scanner.peek(1)
+        let kind = ""
+        let text = ""
+        let raw_start = -1
+        let raw_end = -1
+        branch {
+            c == ' ' || c == '\t' || c == '\r' -> { scanner.advance()
+                continue }
+            c == '/' && next == '/' -> {
+                let doc = scanner.peek(2)
+                scanner.advance()
+                scanner.advance()
+                branch {
+                    doc == '/' || doc == '!' -> {
+                        scanner.advance()
+                        branch scanner.peek(0) { ' ' -> { scanner.advance()
+                            () }
+                            _ -> () }
+                        let content = scanner.index
+                        while scanner.index < scanner.chars.length && scanner.peek(0) != '\n' { scanner.advance() }
+                        text = scanner.text(content).trim_end()
+                        kind = branch doc { '!' -> "ModuleDocComment"
+                            _ -> "DocComment" }
+                    }
+                    _ -> {
+                        while scanner.index < scanner.chars.length && scanner.peek(0) != '\n' { scanner.advance() }
+                        continue
+                    }
+                }
+            }
+            c == '/' && next == '*' -> {
+                scanner.advance()
+                scanner.advance()
+                let documentation = scanner.peek(0) == '*'
+                let depth = 1
+                let content = StringBuilder.empty()
+                while scanner.index < scanner.chars.length && depth > 0 {
+                    branch {
+                        scanner.peek(0) == '/' && scanner.peek(1) == '*' -> {
+                            depth = depth + 1
+                            scanner.advance()
+                            scanner.advance()
+                        }
+                        scanner.peek(0) == '*' && scanner.peek(1) == '/' -> {
+                            depth = depth - 1
+                            scanner.advance()
+                            scanner.advance()
+                        }
+                        _ -> { let character = scanner.advance()
+                            branch { documentation -> content.push(character)
+                                _ -> () }
+                            character }
+                    }
+                }
+                branch {
+                    depth != 0 -> scanner.fail("unterminated block comment", line, column)
+                    documentation -> { kind = "DocComment"
+                        text = normalize_block((move content).finish()) }
+                    _ -> { continue }
+                }
+            }
+            c == '"' || c == '\'' -> {
+                kind = branch c { '"' -> "String"
+                    _ -> "CodePoint" }
+                text = scanner.quoted(c, line, column)
+                branch {
+                    scanner.quoted_raw -> { raw_start = start + 1
+                        raw_end = scanner.offset - 1 }
+                    _ -> ()
+                }
+            }
+            digit(c) -> {
+                kind = "Integer"
+                while digit(scanner.peek(0)) { scanner.advance() }
+                branch {
+                    scanner.peek(0) == '.' && digit(scanner.peek(1)) -> {
+                        kind = "Float"
+                        scanner.advance()
+                        while digit(scanner.peek(0)) { scanner.advance() }
+                    }
+                    _ -> ()
+                }
+                branch {
+                    scanner.peek(0) == 'e' || scanner.peek(0) == 'E' -> {
+                        kind = "Float"
+                        scanner.advance()
+                        branch { scanner.peek(0) == '+' || scanner.peek(0) == '-' -> { scanner.advance()
+                            () }
+                            _ -> () }
+                        branch { !digit(scanner.peek(0)) -> scanner.fail("expected exponent digits", line, column)
+                            _ -> () }
+                        while digit(scanner.peek(0)) { scanner.advance() }
+                    }
+                    _ -> ()
+                }
+                text = scanner.text(index)
+                branch {
+                    kind == "Integer" -> {
+                        let value = 0
+                        let position = index
+                        while position < scanner.index {
+                            let number = scanner.chars[position].as_int() - 48
+                            branch {
+                                value > 922337203685477580 || value == 922337203685477580 && number > 7 -> {
+                                    scanner.fail("integer is out of range", line, column)
+                                    break
+                                }
+                                _ -> { value = value * 10 + number }
+                            }
+                            position = position + 1
+                        }
+                    }
+                    _ -> ()
+                }
+            }
+            identifier_start(c) || c == ':' && identifier_start(next) -> {
+                scanner.advance()
+                while identifier_part(scanner.peek(0)) { scanner.advance() }
+                branch c {
+                    ':' -> { kind = "Symbol"
+                        text = scanner.text(index + 1) }
+                    _ -> { text = scanner.text(index)
+                        kind = keyword(text) }
+                }
+            }
+            _ -> {
+                scanner.advance()
+                kind = punctuation(c)
+                branch {
+                    c == '|' && next == '|' -> { kind = "DoublePipe" }
+                    c == '&' && next == '&' -> { kind = "DoubleAmpersand" }
+                    c == ':' && next == ':' -> { kind = "DoubleColon" }
+                    c == '-' && next == '>' -> { kind = "Arrow" }
+                    c == '=' && next == '=' -> { kind = "EqualEqual" }
+                    c == '!' && next == '=' -> { kind = "BangEqual" }
+                    c == '<' && next == '=' -> { kind = "LessEqual" }
+                    c == '>' && next == '=' -> { kind = "GreaterEqual" }
+                    _ -> ()
+                }
+                branch { kind != punctuation(c) -> { scanner.advance()
+                    () }
+                    _ -> () }
+                branch {
+                    kind == "" -> scanner.fail("unexpected character `" + String.from_code_points([c]) + "`", line, column)
+                    _ -> ()
+                }
+            }
+        }
+        return Scan { tokens: [], error: scanner.error, line: scanner.error_line, column: scanner.error_column } if scanner.error != ""
+        tokens.push(Token { kind, text, line, column, start, end: scanner.offset, raw_start, raw_end })
+    }
+    tokens.push(Token { kind: "Eof", text: "", line: scanner.line, column: scanner.column, start: scanner.offset, end: scanner.offset, raw_start: -1, raw_end: -1 })
+    Scan { tokens, error: "", line: scanner.line, column: scanner.column }
+}
+
+func keyword(name: String) -> String {
+    branch name {
+        "func" -> "Func"
+        "function" -> "Func"
+        "impl" -> "Impl"
+        "test" -> "Test"
+        "const" -> "Const"
+        "let" -> "Let"
+        "pub" -> "Pub"
+        "type" -> "Type"
+        "enum" -> "Enum"
+        "import" -> "Import"
+        "as" -> "As"
+        "return" -> "Return"
+        "assert" -> "Assert"
+        "loop" -> "Loop"
+        "while" -> "While"
+        "for" -> "For"
+        "in" -> "In"
+        "break" -> "Break"
+        "continue" -> "Continue"
+        "if" -> "If"
+        "branch" -> "Branch"
+        "else" -> "Else"
+        "remote" -> "Remote"
+        "await" -> "Await"
+        "try" -> "Try"
+        "panic" -> "Panic"
+        "not" -> "Not"
+        "true" -> "True"
+        "false" -> "False"
+        "move" -> "Move"
+        "ref" -> "Ref"
+        "group" -> "Group"
+        "read" -> "Read"
+        "mut" -> "Mut"
+        "reshape" -> "Reshape"
+        "consume" -> "Consume"
+        "suspend" -> "Suspend"
+        "intrinsic" -> "Intrinsic"
+        _ -> "Ident"
+    }
+}
+
+func punctuation(c: CodePoint) -> String {
+    branch c {
+        '\n' -> "Newline"
+        '(' -> "LParen"
+        ')' -> "RParen"
+        '{' -> "LBrace"
+        '}' -> "RBrace"
+        '[' -> "LBracket"
+        ']' -> "RBracket"
+        '|' -> "Pipe"
+        '&' -> "Ampersand"
+        '^' -> "Caret"
+        '~' -> "Tilde"
+        ',' -> "Comma"
+        ':' -> "Colon"
+        '.' -> "Dot"
+        '+' -> "Plus"
+        '*' -> "Star"
+        '/' -> "Slash"
+        '-' -> "Minus"
+        '=' -> "Equal"
+        '!' -> "Bang"
+        '<' -> "Less"
+        '>' -> "Greater"
+        _ -> ""
+    }
+}
+
+test "positions count bytes and Unicode scalars independently" {
+    let result = scan("copy(:λ)\n\"🙂\"")
+    assert(result.error == "")
+    assert(result.tokens.length == 7)
+    assert(result.tokens[0].kind == "Ident")
+    assert(result.tokens[2].kind == "Symbol")
+    assert(result.tokens[2].text == "λ")
+    assert(result.tokens[2].start == 5)
+    assert(result.tokens[2].end == 8)
+    assert(result.tokens[5].raw_start == 11)
+    assert(result.tokens[5].raw_end == 15)
+    assert(result.tokens[6].line == 2)
+    assert(result.tokens[6].column == 4)
+}
+
+test "errors stop at the first malformed token" {
+    assert(scan("9223372036854775808 @").error == "integer is out of range")
+    assert(scan("12e+").error == "expected exponent digits")
+    assert(scan("/* unfinished").error == "unterminated block comment")
+    assert(scan("'ab'").error == "code-point literal must contain exactly one Unicode scalar value")
+}
+
+test "comments nest and documentation normalizes decoration" {
+    let result = scan("/**\n * a /* hidden */ b\n */\n//! module  \n/// item  ")
+    assert(result.error == "")
+    assert(result.tokens[0].text == "a  hidden  b")
+    assert(result.tokens[2].kind == "ModuleDocComment")
+    assert(result.tokens[2].text == "module")
+    assert(result.tokens[4].text == "item")
+}
+
+test "quoted escapes preserve decoded values" {
+    let result = scan("\"a\\n\\t\\r\\\"\\\\\" '\\n'")
+    assert(result.error == "")
+    assert(result.tokens[0].text == "a\n\t\r\"\\")
+    assert(result.tokens[0].raw_start == -1)
+    assert(result.tokens[1].text == "\n")
+}

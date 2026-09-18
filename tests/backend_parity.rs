@@ -1025,7 +1025,14 @@ impl Worker {{
 func observe() -> Result<String, NetworkError> {{
     let connection = try tcp::connect("127.0.0.1", {port})
     try connection.set_timeout(5000)
-    connection.read_text(16)
+    let response = ""
+    loop {{
+        // TCP reads can split a write; deliberately collect several chunks.
+        let chunk = try connection.read_text(2)
+        break if chunk == ""
+        response = response + chunk
+    }}
+    Result.Ok(response)
 }}
 func main() -> Bool {{
     let mode = 0
@@ -1033,8 +1040,8 @@ func main() -> Bool {{
         break if mode == 4
         let worker = remote Worker {{}}
         let outcome = await worker.execute(mode)
-        assert(outcome.error?() == (mode == 3))
-        assert(observe() == Result.Ok("closed"))
+        assert(outcome.error?() == (mode == 3), "unexpected remote outcome")
+        assert(observe() == Result.Ok("closed"), "connection close was not observed")
         mode = mode + 1
     }}
     true
@@ -1179,7 +1186,10 @@ fn check_compilation(
         let stderr = String::from_utf8_lossy(&output.stderr);
         match expected {
             Ok(value) => {
-                assert!(output.status.success(), "native {name}: {stderr}");
+                assert!(
+                    output.status.success(),
+                    "native {name}, optimize={optimize}: {stderr}"
+                );
                 assert_eq!(
                     String::from_utf8_lossy(&output.stdout).trim(),
                     value,

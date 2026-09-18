@@ -45,9 +45,7 @@ func inspect(values: List<Item>) -> () [read values] {{
 func main() {{ inspect([Item {{ value: 1 }}]) }}
 "#
         );
-        let error = compile(&source)
-            .err()
-            .expect("read effect cannot mutate borrowed storage");
+        let error = compile(&source).expect_err("read effect cannot mutate borrowed storage");
         assert!(error.message.contains("effect"), "{error:?}");
     }
 }
