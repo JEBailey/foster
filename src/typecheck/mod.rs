@@ -84,11 +84,16 @@ fn check_bodies(
                 .map_err(|e| vec![e])?;
             checker.record_effect_summaries();
             let diagnostics = std::mem::take(&mut checker.diagnostics);
-            return Ok((
-                crate::compiler::profile::measure("types.finish", || checker.finish())
-                    .map_err(|e| vec![e])?,
-                diagnostics,
-            ));
+            let types = crate::compiler::profile::measure("types.finish", || checker.finish())
+                .map_err(|e| vec![e])?;
+            // Effect derivation already used the inferred capture types in this fixed
+            // point. Publish modes only after success, never during speculative body
+            // checking or rollback. The pipeline's capture check remains a safety net.
+            crate::compiler::profile::measure("types.capture_modes", || {
+                crate::hir::ownership::infer_capture_modes(hir, &types)
+            })
+            .map_err(|e| vec![e])?;
+            return Ok((types, diagnostics));
         }
         let inferred = std::mem::take(&mut checker.derived_effects);
         // Keep finalization checks on intermediate passes: malformed callable/member uses and

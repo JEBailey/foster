@@ -296,8 +296,25 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
             hir::Expr::Try { value, .. } => self.walk_consumed_expr(*value),
             hir::Expr::Closure { captures, .. } => {
                 for capture in captures {
+                    // Body constraints have settled before effect derivation. Classify
+                    // pending captures from this checker's locals instead of deriving
+                    // effects for a placeholder and restarting the entire typechecker.
+                    let mode = if capture.mode == hir::CaptureMode::Pending {
+                        self.checker
+                            .locals
+                            .get(&capture.local)
+                            .map_or(capture.mode, |ty| {
+                                if self.checker.is_copy_type(ty) {
+                                    hir::CaptureMode::Copy
+                                } else {
+                                    hir::CaptureMode::Move
+                                }
+                            })
+                    } else {
+                        capture.mode
+                    };
                     if let Some(source) = capture.source {
-                        match capture.mode {
+                        match mode {
                             hir::CaptureMode::Move | hir::CaptureMode::Pending => {
                                 self.walk_consumed_expr(source);
                             }
@@ -307,7 +324,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                         }
                         continue;
                     }
-                    match capture.mode {
+                    match mode {
                         hir::CaptureMode::Move => self.add(
                             crate::ast::EffectKind::Consume,
                             self.local_group(capture.local),

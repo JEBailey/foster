@@ -14,6 +14,8 @@ use lsp_types::{
     TextDocumentEdit, TextDocumentPositionParams, TextEdit, Uri, WorkspaceEdit,
 };
 
+mod editing;
+
 use super::snapshot::SemanticSnapshot;
 use super::{byte_range_to_lsp, error_diagnostic, publish};
 
@@ -61,15 +63,12 @@ impl Workspace {
         self.compilations.close(uri, self.documents.keys());
     }
 
-    pub(super) fn invalidate_compilations(&self) {
-        self.compilations.clear();
-    }
-
     pub(super) fn publish_diagnostics(
         &mut self,
         sender: &Sender<Message>,
         expected_generation: u64,
         generation: &std::sync::atomic::AtomicU64,
+        publication: Option<&super::SnapshotMailbox>,
     ) -> Result<(), Box<dyn Error>> {
         let mut next_by_uri = HashMap::<String, (Uri, Vec<Diagnostic>, Option<i32>)>::new();
         for (focus_uri, document) in &self.documents {
@@ -136,6 +135,17 @@ impl Workspace {
             return Ok(());
         }
 
+        // Publish semantics before diagnostics, so a client reacting to diagnostics
+        // can immediately query the corresponding snapshot.
+        if let Some(publication) = publication {
+            let next = std::sync::Arc::new(self.compilations.published());
+            let previous = publication
+                .lock()
+                .unwrap()
+                .replace((expected_generation, next));
+            // Releasing a large retired compilation must not hold the mailbox lock.
+            drop(previous);
+        }
         let next_uris = next
             .iter()
             .map(|(uri, _, _)| uri.as_str().to_owned())
@@ -148,7 +158,11 @@ impl Workspace {
             publish(sender, uri.clone(), Vec::new(), self.version(uri))?;
         }
         for (uri, diagnostics, version) in &next {
-            publish(sender, uri.clone(), diagnostics.clone(), *version)?;
+            let mut diagnostics = diagnostics.clone();
+            for diagnostic in &mut diagnostics {
+                diagnostic.data = Some(serde_json::json!({ "fosterVersion": version }));
+            }
+            publish(sender, uri.clone(), diagnostics, *version)?;
         }
         self.published = next.into_iter().map(|(uri, _, _)| uri).collect();
         Ok(())
@@ -441,10 +455,36 @@ impl Workspace {
     pub(super) fn completion(&self, params: &CompletionParams) -> Option<CompletionResponse> {
         let position = &params.text_document_position;
         let mut items = std::collections::BTreeMap::<String, CompletionItem>::new();
+        let mut current_names = None;
         if let Some(document) = self.documents.get(&position.text_document.uri)
             && let Some(offset) = position_to_offset(&document.text, position.position)
         {
+            if let Some(current) = self
+                .editing_completions(&position.text_document.uri, &document.text, offset)
+                .or_else(|| {
+                    // Lexical damage elsewhere may prevent parsing the buffer. The
+                    // existing mapping proves this entire function is unchanged.
+                    let compilation = self.compilations.available(&position.text_document.uri)?;
+                    let snapshot =
+                        self.semantic_snapshot(&compilation, &position.text_document.uri)?;
+                    let offset = snapshot.current_position_to_semantic_offset(position.position)?;
+                    self.editing_completions(
+                        &position.text_document.uri,
+                        snapshot.semantic_source(),
+                        offset,
+                    )
+                })
+            {
+                current_names = Some(current.keys().cloned().collect::<HashSet<_>>());
+                items.extend(current);
+            } else {
+                return Some(CompletionResponse::Array(Vec::new()));
+            }
             add_arguments_auto_import_completion(&document.text, offset, &mut items);
+            let start = identifier_at(&document.text, offset).map_or(offset, |(_, start)| start);
+            if qualifier_before(&document.text, start).is_none() {
+                add_keyword_completions(&mut items);
+            }
         }
         let compilation = match self.semantic_compilation_for(&position.text_document.uri) {
             Some(compilation) => compilation,
@@ -457,27 +497,63 @@ impl Workspace {
         let module = &compilation.hir.modules[module_id];
         let snapshot = self.semantic_snapshot(&compilation, &position.text_document.uri)?;
         let source = snapshot.semantic_source();
-        let offset = snapshot.current_position_to_semantic_offset(position.position)?;
+        let Some(offset) = snapshot.current_position_to_semantic_offset(position.position) else {
+            return Some(CompletionResponse::Array(items.into_values().collect()));
+        };
         let start = identifier_at(source, offset).map_or(offset, |(_, start)| start);
         let qualifier = qualifier_before(source, start);
 
-        if let Some(qualifier) = qualifier {
+        if let Some(ref qualifier) = qualifier {
             if !add_associated_completions(&compilation, module_id, &qualifier, &mut items)
-                && let Some(target) = module.imports.get(&qualifier)
+                && let Some(target) = module.imports.get(qualifier)
             {
                 add_module_completions(&compilation, *target, true, &mut items);
             }
         } else {
+            add_keyword_completions(&mut items);
             if let Some(function) = function_at(&compilation, module_id, offset) {
+                let mut counts = HashMap::new();
+                for (_, local) in compilation
+                    .hir
+                    .locals
+                    .iter()
+                    .filter(|(_, local)| local.function == function)
+                {
+                    *counts.entry(local.name.as_str()).or_insert(0usize) += 1;
+                }
                 for (local, definition) in compilation.hir.locals.iter().filter(|(_, local)| {
                     local.function == function
                         && local.kind != crate::hir::LocalKind::CapturedValue
                         && !local.name.starts_with('$')
                 }) {
-                    let detail = compilation
-                        .types
-                        .local_type(local)
-                        .map(|ty| compilation.types.display(ty));
+                    if current_names
+                        .as_ref()
+                        .is_some_and(|names| !names.contains(&definition.name))
+                    {
+                        continue;
+                    }
+                    if current_names.is_some()
+                        && items
+                            .get(&definition.name)
+                            .is_some_and(|item| item.kind != Some(CompletionItemKind::VARIABLE))
+                    {
+                        continue;
+                    }
+                    // Without a unique declaration identity, keep the current syntax
+                    // candidate instead of attaching another shadowed local's type.
+                    let detail = (counts[definition.name.as_str()] == 1)
+                        .then(|| {
+                            compilation
+                                .types
+                                .local_type(local)
+                                .map(|ty| compilation.types.display(ty))
+                        })
+                        .flatten();
+                    if let Some(item) = items.get_mut(&definition.name)
+                        && item.detail.is_none()
+                    {
+                        item.detail = detail.clone();
+                    }
                     insert_completion(
                         &mut items,
                         &definition.name,
@@ -504,13 +580,16 @@ impl Workspace {
                 CompletionItemKind::CLASS,
                 Some("Uninhabited return type".into()),
             );
-            for keyword in [
-                "panic", "assert", "await", "branch", "break", "continue", "false", "func", "impl",
-                "import", "let", "loop", "while", "for", "in", "move", "not", "pub", "ref",
-                "remote", "return", "true", "type", "enum", "try",
-            ] {
-                insert_completion(&mut items, keyword, CompletionItemKind::KEYWORD, None);
-            }
+        }
+        if qualifier.is_none()
+            && let Some(names) = current_names
+        {
+            items.retain(|name, item| {
+                names.contains(name)
+                    || item.kind == Some(CompletionItemKind::KEYWORD)
+                    || name == "Never"
+                    || item.additional_text_edits.is_some()
+            });
         }
         Some(CompletionResponse::Array(items.into_values().collect()))
     }
@@ -541,7 +620,12 @@ impl Workspace {
             return None;
         }
         let position = &params.text_document_position;
-        let compilation = self.semantic_compilation_for(&position.text_document.uri)?;
+        let compilation = if self.compilations.snapshot_only {
+            // Edits require a current package, even for a local rename.
+            self.compile_for(&position.text_document.uri).ok()?
+        } else {
+            self.semantic_compilation_for(&position.text_document.uri)?
+        };
         let module = module_for_uri(&compilation, &position.text_document.uri)?;
         let snapshot = self.semantic_snapshot(&compilation, &position.text_document.uri)?;
         let source = snapshot.semantic_source();
@@ -1502,7 +1586,15 @@ fn insert_documented_completion(
     detail: Option<String>,
     documentation: Option<&str>,
 ) {
-    insert_completion(items, label, kind, detail);
+    insert_completion(items, label, kind, detail.clone());
+    if let Some(item) = items.get_mut(label) {
+        if item.kind != Some(kind) {
+            return;
+        }
+        if item.detail.is_none() {
+            item.detail = detail;
+        }
+    }
     if let Some(documentation) = documentation
         && let Some(item) = items.get_mut(label)
     {
@@ -2242,7 +2334,10 @@ pub(super) fn module_for_uri(
     })
 }
 
-fn source_for_uri<'a>(compilation: &'a crate::compiler::Compilation, uri: &Uri) -> Option<&'a str> {
+pub(super) fn source_for_uri<'a>(
+    compilation: &'a crate::compiler::Compilation,
+    uri: &Uri,
+) -> Option<&'a str> {
     let module = module_for_uri(compilation, uri)?;
     compilation
         .package
@@ -2263,14 +2358,26 @@ fn find_name(
 }
 
 fn identifier_at(source: &str, offset: usize) -> Option<(&str, usize)> {
-    let bytes = source.as_bytes();
-    let mut start = offset.min(bytes.len());
-    while start > 0 && is_ident(bytes[start - 1]) {
-        start -= 1;
+    let offset = offset.min(source.len());
+    let identifier = |character: char| {
+        character == '_'
+            || character == '?'
+            || character.is_alphabetic()
+            || character.is_ascii_digit()
+    };
+    let mut start = offset;
+    for (index, character) in source.get(..offset)?.char_indices().rev() {
+        if !identifier(character) {
+            break;
+        }
+        start = index;
     }
-    let mut end = offset.min(bytes.len());
-    while end < bytes.len() && is_ident(bytes[end]) {
-        end += 1;
+    let mut end = offset;
+    for (index, character) in source.get(offset..)?.char_indices() {
+        if !identifier(character) {
+            break;
+        }
+        end = offset + index + character.len_utf8();
     }
     (start < end).then(|| (&source[start..end], start))
 }
@@ -2348,3 +2455,13 @@ fn percent_decode(value: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests;
+
+fn add_keyword_completions(items: &mut std::collections::BTreeMap<String, CompletionItem>) {
+    for keyword in [
+        "panic", "assert", "await", "branch", "break", "continue", "false", "func", "impl",
+        "import", "let", "loop", "while", "for", "in", "move", "not", "pub", "ref", "remote",
+        "return", "true", "type", "enum", "try",
+    ] {
+        insert_completion(items, keyword, CompletionItemKind::KEYWORD, None);
+    }
+}

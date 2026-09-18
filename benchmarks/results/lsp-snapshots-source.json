@@ -1,0 +1,297 @@
+{
+  "executable": "C:\\Users\\jason\\git\\foster\\target\\release\\foster.exe",
+  "executableSha256": "68cc96777503214438eb95a9f77317d2057bc175e850318d2dbe48b8000d6d6b",
+  "document": "C:\\Users\\jason\\git\\foster\\target\\lsp-library-benchmark-1789768034634\\calculator-source\\src\\main.fos",
+  "cpu": "AMD Ryzen 5 4500 6-Core Processor              ",
+  "timestamp": "2026-09-18T22:23:35.496Z",
+  "samples": [
+    {
+      "version": 2,
+      "diagnosticsMs": 1484.0392999999995,
+      "queries": [
+        {
+          "method": "hover",
+          "ms": 1.257900000000518,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 1.5495999999993728,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.7087000000001353,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "hover",
+          "ms": 0.5500000000001819,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 1.2085000000006403,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.7478000000000975,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "hover",
+          "ms": 0.642399999999725,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 1.121700000000601,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.6125000000001819,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "hover",
+          "ms": 0.4848999999994703,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 1.099899999999252,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.6666000000004715,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "hover",
+          "ms": 0.505699999999706,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 1.061800000000403,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.7442000000000917,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        }
+      ]
+    },
+    {
+      "version": 3,
+      "diagnosticsMs": 1700.2801000000009,
+      "queries": [
+        {
+          "method": "hover",
+          "ms": 36.95610000000033,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 1.930000000000291,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.5216000000000349,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "hover",
+          "ms": 0.3186999999998079,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 0.945400000000518,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.5310999999992418,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "hover",
+          "ms": 0.4587999999994281,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 0.9750999999996566,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.5726999999997133,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "hover",
+          "ms": 0.41489999999976135,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 1.0297999999993408,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.7208000000000538,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "hover",
+          "ms": 1.0936000000001513,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 1.6866999999992913,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.6343999999999141,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        }
+      ]
+    },
+    {
+      "version": 4,
+      "diagnosticsMs": 1236.566499999999,
+      "queries": [
+        {
+          "method": "hover",
+          "ms": 33.788399999999456,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 1.1110999999982596,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.5360000000000582,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "hover",
+          "ms": 0.4283999999988737,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 0.9008999999987282,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.3603000000002794,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "hover",
+          "ms": 0.2569000000003143,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 0.743400000001202,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.33629999999902793,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "hover",
+          "ms": 0.2857000000003609,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 0.7329000000008818,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.36160000000018044,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "hover",
+          "ms": 0.3679000000011001,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "completion",
+          "ms": 0.7339999999985594,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        },
+        {
+          "method": "definition",
+          "ms": 0.29210000000057335,
+          "duringCheck": true,
+          "completedDuringCheck": true
+        }
+      ]
+    }
+  ]
+}

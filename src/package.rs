@@ -11,6 +11,35 @@ use crate::intrinsics::Intrinsic;
 
 mod string_accessors;
 
+// Watcher URIs use ordinary paths while resolved artifacts can have Windows'
+// verbatim prefix. Normalize lexically so deletion events work without stat'ing
+// a file that no longer exists, and dependency paths containing `..` still match.
+pub(crate) fn watch_path(path: &Path) -> std::path::PathBuf {
+    #[cfg(windows)]
+    let normalized = {
+        let text = path.to_string_lossy().replace('/', "\\");
+        let text = if let Some(unc) = text.strip_prefix("\\\\?\\UNC\\") {
+            format!("\\\\{unc}")
+        } else {
+            text.strip_prefix("\\\\?\\").unwrap_or(&text).to_owned()
+        };
+        std::path::PathBuf::from(text.to_lowercase())
+    };
+    #[cfg(not(windows))]
+    let normalized = path.to_owned();
+    let mut result = std::path::PathBuf::new();
+    for component in normalized.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                result.pop();
+            }
+            component => result.push(component.as_os_str()),
+        }
+    }
+    result
+}
+
 #[derive(Debug, Clone)]
 struct CachedModule {
     source: String,
@@ -30,14 +59,99 @@ enum ModuleCacheKey {
 #[derive(Debug, Default)]
 pub(crate) struct ModuleCache {
     entries: HashMap<ModuleCacheKey, CachedModule>,
+    disk: HashMap<Utf8PathBuf, (FileStamp, String)>,
+    pub(crate) package_inputs: HashMap<Utf8PathBuf, Vec<std::path::PathBuf>>,
+    libraries: HashMap<std::path::PathBuf, (FileStamp, std::sync::Arc<crate::library::Library>)>,
     #[cfg(test)]
     parse_counts: HashMap<ModuleCacheKey, usize>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FileStamp {
+    modified: std::time::SystemTime,
+    size: u64,
+}
+
+impl FileStamp {
+    fn read(path: &Path) -> Option<Self> {
+        let metadata = fs::metadata(path).ok()?;
+        Some(Self {
+            modified: metadata.modified().ok()?,
+            size: metadata.len(),
+        })
+    }
+}
+
 impl ModuleCache {
+    pub(crate) fn invalidate_paths(&mut self, paths: &[std::path::PathBuf]) {
+        let paths = paths
+            .iter()
+            .map(|path| watch_path(path))
+            .collect::<Vec<_>>();
+        let affected = |path: &Path| {
+            paths
+                .iter()
+                .any(|changed| watch_path(path).starts_with(changed))
+        };
+        self.disk.retain(|path, _| !affected(path.as_std_path()));
+        self.libraries.retain(|path, _| !affected(path));
+        self.entries.retain(|key, _| match key {
+            ModuleCacheKey::Source(path) => !affected(path.as_std_path()),
+            ModuleCacheKey::Embedded(_) => true,
+        });
+    }
+
+    fn read_source(&mut self, path: &Utf8Path) -> Result<String, FosterError> {
+        let stamp = FileStamp::read(path.as_std_path());
+        if let Some((old, source)) = self.disk.get(path)
+            && Some(old) == stamp.as_ref()
+        {
+            crate::compiler::profile::count("source.read_hit");
+            return Ok(source.clone());
+        }
+        crate::compiler::profile::count("source.read_miss");
+        self.disk.remove(path);
+        let source = fs::read_to_string(path)
+            .map_err(|error| FosterError::runtime(format!("cannot read `{path}`: {error}")))?;
+        if let Some(stamp) = stamp
+            && Some(&stamp) == FileStamp::read(path.as_std_path()).as_ref()
+        {
+            self.disk.insert(path.to_owned(), (stamp, source.clone()));
+        }
+        Ok(source)
+    }
+
+    fn read_library(
+        &mut self,
+        path: &Path,
+    ) -> Result<std::sync::Arc<crate::library::Library>, FosterError> {
+        let stamp = FileStamp::read(path);
+        if let Some((old, library)) = self.libraries.get(path)
+            && Some(old) == stamp.as_ref()
+        {
+            crate::compiler::profile::count("library.read_hit");
+            return Ok(std::sync::Arc::clone(library));
+        }
+        crate::compiler::profile::count("library.read_miss");
+        self.libraries.remove(path);
+        let library = std::sync::Arc::new(crate::library::read(path)?);
+        if let Some(stamp) = stamp
+            && Some(&stamp) == FileStamp::read(path).as_ref()
+        {
+            // Bound retained artifacts independently of the editor's source snapshots.
+            if self.libraries.len() >= 16 {
+                self.libraries.clear();
+            }
+            self.libraries
+                .insert(path.to_owned(), (stamp, library.clone()));
+        }
+        Ok(library)
+    }
+
     /// Keep disk-backed parses only while an editor document or snapshot needs them.
     /// Embedded modules are a fixed set and remain reusable across projects.
     pub(crate) fn retain_sources(&mut self, paths: &HashSet<Utf8PathBuf>) {
+        self.disk.retain(|path, _| paths.contains(path));
         self.entries.retain(|key, _| match key {
             ModuleCacheKey::Source(path) => paths.contains(path),
             ModuleCacheKey::Embedded(_) => true,
@@ -430,6 +544,19 @@ impl Package {
         cache: &mut Option<&mut ModuleCache>,
     ) -> Result<Self, FosterError> {
         let root = utf8_source_root(&project.source_root)?;
+        let dependencies = project.resolve_dependencies()?;
+        if let Some(cache) = cache.as_deref_mut() {
+            let mut inputs = vec![project.root.clone(), project.source_root.clone()];
+            for dependency in &dependencies {
+                if let Some(project) = &dependency.project {
+                    inputs.extend([project.root.clone(), project.source_root.clone()]);
+                }
+                if let Some(artifact) = &dependency.artifact {
+                    inputs.push(artifact.clone());
+                }
+            }
+            cache.package_inputs.insert(root.clone(), inputs);
+        }
         let mut package = Self {
             root: root.clone(),
             symbol_modules: BTreeMap::new(),
@@ -443,13 +570,13 @@ impl Package {
                 .symbol_modules
                 .insert(name.clone(), (project.name.clone(), name.clone()));
         }
-        for dependency in project.resolve_dependencies()? {
+        for dependency in dependencies {
             if let Some(artifact) = &dependency.artifact {
-                crate::library::mount(
-                    &mut package,
-                    &dependency.name,
-                    std::sync::Arc::new(crate::library::read(artifact)?),
-                )?;
+                let library = match cache.as_deref_mut() {
+                    Some(cache) => cache.read_library(artifact)?,
+                    None => std::sync::Arc::new(crate::library::read(artifact)?),
+                };
+                crate::library::mount(&mut package, &dependency.name, library)?;
                 continue;
             }
             let dependency_project = dependency.project.as_ref().expect("source dependency");
@@ -899,6 +1026,9 @@ impl Package {
         let name = path.join(".");
         let source = overlays.get(&source_path).cloned().map_or_else(
             || {
+                if let Some(cache) = cache.as_deref_mut() {
+                    return cache.read_source(&source_path);
+                }
                 fs::read_to_string(&source_path).map_err(|error| {
                     FosterError::runtime(format!("cannot read `{source_path}`: {error}"))
                 })
@@ -1147,7 +1277,7 @@ const EMBEDDED_NAMESPACE_OVERVIEWS: &[(&str, &str)] = &[
     ("std", include_str!("../library/std.fos")),
 ];
 
-const EMBEDDED_MODULES: &[(&str, &str)] = &[
+pub(crate) const EMBEDDED_MODULES: &[(&str, &str)] = &[
     (
         "core.functions",
         include_str!("../library/core/functions.fos"),
@@ -1350,5 +1480,95 @@ fn is_ignored_directory(entry: &DirEntry) -> bool {
         Some("target") => true,
         Some("documentation") => entry.depth() == 1,
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+
+    fn directory(label: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "foster-cache-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn disk_cache_keeps_overlays_separate_and_watched_changes_force_reads() {
+        let root = directory("source");
+        let path = Utf8PathBuf::from_path_buf(root.join("main.fos")).unwrap();
+        let original = "func main() -> Int { 1 }";
+        let changed = "func main() -> Int { 2 }";
+        fs::write(&path, original).unwrap();
+        let mut cache = ModuleCache::default();
+        assert_eq!(cache.read_source(&path).unwrap(), original);
+        cache.parse_source(&path, changed).unwrap();
+        assert_eq!(cache.read_source(&path).unwrap(), original);
+        let stamp = fs::metadata(&path).unwrap().modified().unwrap();
+        fs::write(&path, changed).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(stamp)
+            .unwrap();
+        assert_eq!(cache.read_source(&path).unwrap(), original);
+        cache.invalidate_paths(&[path.clone().into_std_path_buf()]);
+        assert_eq!(cache.read_source(&path).unwrap(), changed);
+        fs::write(&path, format!("{changed}\n")).unwrap();
+        assert_eq!(cache.read_source(&path).unwrap(), format!("{changed}\n"));
+        fs::remove_file(&path).unwrap();
+        assert!(cache.read_source(&path).is_err());
+        fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn validated_library_cache_reuses_artifacts_and_rejects_replacements() {
+        let root = directory("library");
+        let path = root.join("sample.flib");
+        let mut package = Package::from_program_with_core(
+            "main",
+            crate::parse("pub func value() -> Int { 42 }").unwrap(),
+        )
+        .unwrap();
+        package
+            .symbol_modules
+            .insert("main".into(), ("sample".into(), "main".into()));
+        let compilation = crate::compiler::check(package).unwrap();
+        let library = crate::library::build(&compilation).unwrap();
+        let bytes = crate::library::encode(&library).unwrap();
+        fs::write(&path, &bytes).unwrap();
+        let resolved = fs::canonicalize(&path).unwrap();
+        let mut cache = ModuleCache::default();
+        let first = cache.read_library(&resolved).unwrap();
+        assert!(std::sync::Arc::ptr_eq(
+            &first,
+            &cache.read_library(&resolved).unwrap()
+        ));
+        let stamp = fs::metadata(&path).unwrap().modified().unwrap();
+        fs::write(&path, vec![0; bytes.len()]).unwrap();
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_modified(stamp)
+            .unwrap();
+        cache.invalidate_paths(std::slice::from_ref(&path));
+        assert!(cache.read_library(&resolved).is_err());
+        fs::write(&path, bytes).unwrap();
+        assert!(!std::sync::Arc::ptr_eq(
+            &first,
+            &cache.read_library(&path).unwrap()
+        ));
+        fs::remove_file(&path).unwrap();
+        assert!(cache.read_library(&path).is_err());
+        fs::remove_dir(root).unwrap();
     }
 }

@@ -8,7 +8,9 @@ const { spawn, spawnSync } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { performance } = require('node:perf_hooks');
 const repo = path.resolve(__dirname, '..');
-const exe = path.join(repo, 'target/release/foster.exe');
+const exe = process.env.FOSTER_BENCH_EXE
+  ? path.resolve(process.env.FOSTER_BENCH_EXE)
+  : path.join(repo, 'target/release/foster.exe');
 const taker = path.resolve(repo, '../taker_foster');
 const output = path.join(repo, 'target', 'lsp-library-benchmark-' + Date.now());
 const repeats = Number(process.argv[2] || 7);

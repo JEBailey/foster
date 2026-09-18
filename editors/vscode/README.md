@@ -13,11 +13,13 @@ and launches the Foster language server. Language features include:
 - call signature help with active-parameter tracking and the resolved overload's signature;
 - inferred local-type and argument-name inlay hints, with clickable parameter hints;
 - scope-aware completion for locals, declarations, imports, qualified modules, and keywords,
-  including `try`, `not`, and automatic `std.process` import when completing `Arguments`;
+  including current parameters and local bindings in unfinished functions, plus automatic
+  `std.process` import when completing `Arguments`;
+- quick fixes for missing imports and spelling mistakes in unresolved names and types;
 - automatic diagnostic refresh when Foster files change on disk;
 - background semantic compilation that keeps the protocol loop responsive, tags work with the
   current document versions and workspace generation, and cooperatively cancels stale work;
-- interactive requests take priority over background diagnostics;
+- interactive requests run on a separate worker using published semantic snapshots;
 - cached package snapshots and parsed modules, so edits reparse changed sources while preserving
   unaffected compilation work;
 - reusable function-body type checks guarded by source, declarations, and callee contracts,
@@ -81,10 +83,16 @@ inspect and navigate the resolved symbol. Signature help appears after `(` and `
 type and parameter hints by default; they can be toggled with **View: Toggle Inlay Hints** or the
 `editor.inlayHints.enabled` setting. When a document does not compile, the server safely reuses
 semantic snapshots only for functions whose complete source is unchanged and remaps them to the
-current buffer. Hover, definition, signature help, completion, references, local rename, document
-symbols, and inlay hints therefore remain available outside the edited function without publishing
-stale positions from the broken function. Package-wide rename remains disabled while an open
-source is stale so it cannot produce an incomplete edit.
+current buffer. Hover, definition, signature help, references, document symbols, and inlay
+hints remain available in unchanged functions. Completion also reads the current parse to
+suggest parameters, preceding local bindings, declarations, and imports inside the function
+being edited, including common unfinished bodies. Inferred types and member suggestions still
+need a usable semantic snapshot. Rename waits for a current package snapshot.
+
+Use **Quick Fix** (`Ctrl+.` on Windows/Linux) on an unresolved name or type to see spelling
+suggestions and available imports. Fixes use versioned edits and are withheld for stale
+diagnostics. Import suggestions cover public library declarations and modules already present
+in a published package snapshot.
 
 Syntax recovery synchronizes at top-level declaration boundaries. A malformed function, constant,
 type, or test is omitted from the current semantic snapshot, while complete declarations after it

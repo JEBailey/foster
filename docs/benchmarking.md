@@ -299,6 +299,19 @@ For edits, cover unchanged contracts, changed effects/signatures, and error repa
 Compare diagnostics and current source ranges against a fresh checked compilation.
 The implementation boundaries are documented in [interactive checking](incremental-checking.md).
 
+To measure semantic requests while checking a real project, run:
+
+```text
+node benchmarks/lsp_snapshots.cjs target/release/foster.exe path/to/src/main.fos target/lsp-snapshots.json
+```
+
+This harness waits for initial diagnostics, edits a separate probe function, then
+sends hover, completion, and definition requests after the diagnostic debounce.
+It validates semantic payloads and records whether each request started and finished
+before the new diagnostics. Use a sufficiently large project to overlap checking.
+Edits stay in editor overlays. Cold snapshot requests may return no semantic data;
+measure initial diagnostics separately from request responsiveness.
+
 ### Source versus compiled library dependencies
 
 With `taker_foster` beside this repository and a current Windows release compiler, run:
@@ -306,6 +319,11 @@ With `taker_foster` beside this repository and a current Windows release compile
 ```text
 node benchmarks/lsp_libraries.cjs 7
 ```
+
+Set `FOSTER_BENCH_EXE` to an alternate compiler executable to compare builds
+against the same current consumer sources without replacing the default compiler.
+The [cache and capture-mode comparison](../benchmarks/results/lsp-cache-capture.md)
+records a same-commit baseline, optimized measurements, and phase profiles.
 
 This builds Taker into a `.flib` and compares its calculator and Unicode consumers using
 source dependencies and that artifact. It creates isolated consumer projects under

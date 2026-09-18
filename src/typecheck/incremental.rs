@@ -1,9 +1,37 @@
 //! Body-result reuse for interactive checking. Declaration changes invalidate the session;
 //! body edits invalidate only their entry and consumers of changed callable contracts.
 use std::cell::RefCell;
+use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use super::*;
+
+// Compare fingerprints first, but retain exact text equality so collisions cannot reuse
+// a different program. Cloning cache guards shares the source rather than copying it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct SourceKey {
+    fingerprint: [u64; 2],
+    text: Rc<str>,
+}
+
+impl SourceKey {
+    fn new(text: &str) -> Self {
+        let fingerprint = [0u64, 1].map(|seed| {
+            let mut hash = std::collections::hash_map::DefaultHasher::new();
+            seed.hash(&mut hash);
+            text.hash(&mut hash);
+            hash.finish()
+        });
+        Self {
+            fingerprint,
+            text: text.into(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
+}
 
 pub(crate) type SharedBodyCache = Rc<RefCell<BodyCache>>;
 
@@ -18,18 +46,18 @@ pub(crate) struct AnalysisStats {
 
 #[derive(Default)]
 pub(crate) struct BodyCache {
-    declarations: String,
+    declarations: SourceKey,
     shapes: HashMap<FunctionId, Shape>,
     entries: HashMap<String, BodyResult>,
     failures: HashMap<String, BodyFailure>,
-    contracts: HashMap<String, (String, Vec<crate::ast::Effect>, bool)>,
+    contracts: HashMap<String, (SourceKey, Vec<crate::ast::Effect>, bool)>,
     pub stats: AnalysisStats,
 }
 
 #[derive(Clone)]
 struct Shape {
     key: String,
-    source: String,
+    source: SourceKey,
     raw_source: String,
     start: usize,
     dependencies: HashSet<FunctionId>,
@@ -48,7 +76,7 @@ struct Contract {
 #[derive(Clone)]
 struct BodyResult {
     effect_summary: Option<effect_worklist::EffectSummary>,
-    source: String,
+    source: SourceKey,
     input: Signature,
     dependencies: Vec<(FunctionId, Contract)>,
     locals: Vec<Option<(Ty, Option<String>)>>,
@@ -77,7 +105,7 @@ impl BodyCache {
         *counts.entry(key).or_default() += 1;
     }
     pub(crate) fn prepare(&mut self, hir: &mut hir::PackageHir, package: &crate::package::Package) {
-        let declarations = declaration_key(hir);
+        let declarations = SourceKey::new(&declaration_key(hir));
         if declarations != self.declarations {
             crate::compiler::profile::count("body_cache.declaration_reset");
             self.entries.clear();
@@ -96,17 +124,7 @@ impl BodyCache {
                 .module(&hir.modules[function.module].name)
                 .and_then(|module| module.source.as_deref())
                 .and_then(|source| source.get(function.span.clone()));
-            let source = raw_source
-                .and_then(|source| crate::lexer::lex(source).ok())
-                .map(|tokens| {
-                    format!(
-                        "{:?}",
-                        tokens
-                            .into_iter()
-                            .map(|token| token.kind)
-                            .collect::<Vec<_>>()
-                    )
-                });
+            let source = raw_source.map(SourceKey::new);
             self.shapes.insert(
                 id,
                 Shape {
@@ -163,6 +181,23 @@ impl BodyCache {
                 .then_some(*id)
             })
             .collect::<HashSet<_>>();
+        let mut named = HashMap::<_, Vec<FunctionId>>::new();
+        let mut members = HashMap::<_, Vec<FunctionId>>::new();
+        for (id, function) in hir.functions.iter() {
+            named
+                .entry((function.module, function.name.as_str()))
+                .or_default()
+                .push(id);
+            let member = function
+                .name
+                .rsplit('.')
+                .next()
+                .unwrap()
+                .split('$')
+                .next()
+                .unwrap();
+            members.entry(member).or_default().push(id);
+        }
         let mut dependencies = HashMap::<FunctionId, HashSet<FunctionId>>::new();
         for (id, expression) in hir.expressions.iter() {
             let Some(owner) = hir.expression_functions.get(&id) else {
@@ -172,20 +207,17 @@ impl BodyCache {
             match expression {
                 hir::Expr::Name(ResolvedName::Function(target)) => {
                     let definition = &hir.functions[*target];
-                    targets.extend(hir.functions.iter().filter_map(|(id, candidate)| {
-                        (candidate.module == definition.module && candidate.name == definition.name)
-                            .then_some(id)
-                    }));
+                    targets.extend(
+                        named[&(definition.module, definition.name.as_str())]
+                            .iter()
+                            .copied(),
+                    );
                 }
                 hir::Expr::Closure { function, .. } => {
                     targets.insert(*function);
                 }
                 hir::Expr::Member { name, .. } => {
-                    targets.extend(hir.functions.iter().filter_map(|(id, function)| {
-                        (function.name.rsplit('.').next().unwrap().split('$').next()
-                            == Some(name.as_str()))
-                        .then_some(id)
-                    }));
+                    targets.extend(members.get(name.as_str()).into_iter().flatten().copied());
                 }
                 _ => {}
             }
@@ -193,15 +225,21 @@ impl BodyCache {
         for (id, targets) in &dependencies {
             self.shapes.get_mut(id).unwrap().dependencies = targets.clone();
         }
-        loop {
-            let before = dirty.len();
-            for (owner, targets) in &dependencies {
-                if targets.iter().any(|target| dirty.contains(target)) {
-                    dirty.insert(*owner);
-                }
+        let mut callers = HashMap::<_, Vec<_>>::new();
+        for (owner, targets) in &dependencies {
+            for target in targets {
+                callers.entry(*target).or_default().push(*owner);
             }
-            if before == dirty.len() {
-                break;
+        }
+        let mut pending = dirty
+            .iter()
+            .copied()
+            .collect::<std::collections::VecDeque<_>>();
+        while let Some(target) = pending.pop_front() {
+            for owner in callers.get(&target).into_iter().flatten() {
+                if dirty.insert(*owner) {
+                    pending.push_back(*owner);
+                }
             }
         }
         for (id, function) in hir.functions.iter_mut() {
@@ -236,31 +274,39 @@ impl BodyCache {
 fn declaration_key(hir: &hir::PackageHir) -> String {
     // Include arena order as well as stable names: cached nominal/callee IDs may be reused only
     // when declarations have the same identities. Spans and documentation are presentation data.
-    let mut parts = Vec::new();
+    struct DeclarationText(String);
+    impl DeclarationText {
+        fn push(&mut self, value: std::fmt::Arguments<'_>) {
+            use std::fmt::Write;
+            self.0.write_fmt(value).unwrap();
+            self.0.push('\n');
+        }
+    }
+    let mut parts = DeclarationText(String::new());
     for (_, module) in hir.modules.iter() {
-        parts.push(format!("{:?}", (&module.name, &module.imports)));
+        parts.push(format_args!("{:?}", (&module.name, &module.imports)));
     }
     for (_, record) in hir.records.iter() {
         let mut value = record.clone();
         value.span = 0..0;
         value.documentation = None;
         clean_methods(&mut value.methods);
-        parts.push(format!("{value:?}"));
+        parts.push(format_args!("{value:?}"));
     }
     for (_, variant) in hir.variant_types.iter() {
         let mut value = variant.clone();
         value.span = 0..0;
         value.documentation = None;
         clean_methods(&mut value.methods);
-        parts.push(format!("{value:?}"));
+        parts.push(format_args!("{value:?}"));
     }
     for (_, variant) in hir.variants.iter() {
         let mut value = variant.clone();
         value.span = 0..0;
-        parts.push(format!("{value:?}"));
+        parts.push(format_args!("{value:?}"));
     }
     for (_, constant) in hir.constants.iter() {
-        parts.push(format!(
+        parts.push(format_args!(
             "{:?}",
             (
                 &constant.name,
@@ -271,7 +317,7 @@ fn declaration_key(hir: &hir::PackageHir) -> String {
         ));
     }
     for (_, function) in hir.functions.iter() {
-        parts.push(format!(
+        parts.push(format_args!(
             "{:?}",
             (
                 &function.name,
@@ -292,10 +338,10 @@ fn declaration_key(hir: &hir::PackageHir) -> String {
             )
         ));
         if function.effects_explicit {
-            parts.push(format!("{:?}", (&function.effects, function.suspends)));
+            parts.push(format_args!("{:?}", (&function.effects, function.suspends)));
         }
     }
-    parts.join("\n")
+    parts.0
 }
 
 fn clean_methods(methods: &mut [crate::ast::MethodRequirement]) {

@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use camino::Utf8PathBuf;
 use lsp_types::Uri;
@@ -16,15 +16,102 @@ const RECENT_DOCUMENT_LIMIT: usize = 8;
 
 #[derive(Default)]
 pub(super) struct CompilationCache {
+    pub(super) snapshot_only: bool,
     recent: RefCell<VecDeque<Uri>>,
-    entries: RefCell<HashMap<Uri, Rc<Compilation>>>,
+    entries: RefCell<HashMap<Uri, Arc<Compilation>>>,
     errors: RefCell<HashMap<Uri, FosterError>>,
-    last_good: RefCell<HashMap<Uri, Rc<Compilation>>>,
+    last_good: RefCell<HashMap<Uri, Arc<Compilation>>>,
     modules: RefCell<crate::package::ModuleCache>,
     bodies: RefCell<HashMap<Utf8PathBuf, crate::typecheck::incremental::SharedBodyCache>>,
 }
 
+// Only immutable checked results cross threads. Parsing and incremental caches stay local.
+#[derive(Clone)]
+pub(super) struct PublishedCompilations {
+    entries: HashMap<Uri, Arc<Compilation>>,
+    last_good: HashMap<Uri, Arc<Compilation>>,
+    inputs: HashMap<Utf8PathBuf, Vec<std::path::PathBuf>>,
+}
+
 impl CompilationCache {
+    pub(super) fn available(&self, uri: &Uri) -> Option<Arc<Compilation>> {
+        self.get(uri).or_else(|| self.last_good(uri))
+    }
+
+    pub(super) fn published(&self) -> PublishedCompilations {
+        PublishedCompilations {
+            entries: self.entries.borrow().clone(),
+            last_good: self.last_good.borrow().clone(),
+            inputs: self.modules.borrow().package_inputs.clone(),
+        }
+    }
+
+    pub(super) fn install(&self, snapshot: &PublishedCompilations, workspace: &Workspace) {
+        *self.entries.borrow_mut() = snapshot.entries.clone();
+        *self.last_good.borrow_mut() = snapshot.last_good.clone();
+        self.modules.borrow_mut().package_inputs = snapshot.inputs.clone();
+        for (uri, document) in &workspace.documents {
+            if self.get(uri).is_some_and(|compilation| {
+                super::workspace::source_for_uri(&compilation, uri) != Some(document.text.as_str())
+            }) {
+                self.invalidate(uri);
+            }
+        }
+        self.prune(workspace.documents.keys());
+    }
+
+    pub(super) fn invalidate_watched(&self, paths: &[std::path::PathBuf]) {
+        let paths = paths
+            .iter()
+            .map(|path| crate::package::watch_path(path))
+            .collect::<Vec<_>>();
+        let mut modules = self.modules.borrow_mut();
+        let affected = |root: &Utf8PathBuf| {
+            paths.iter().any(|path| {
+                let overlaps = |input: &Path| {
+                    let input = crate::package::watch_path(input);
+                    path.starts_with(&input) || input.starts_with(path)
+                };
+                overlaps(root.as_std_path())
+                    || modules
+                        .package_inputs
+                        .get(root)
+                        .is_some_and(|inputs| inputs.iter().any(|input| overlaps(input)))
+            })
+        };
+        let mut roots = std::collections::HashSet::new();
+        for value in self
+            .entries
+            .borrow()
+            .values()
+            .chain(self.last_good.borrow().values())
+        {
+            if affected(&value.package.root)
+                || value.hir.modules.iter().any(|(_, module)| {
+                    module.source_path.as_ref().is_some_and(|source| {
+                        paths.iter().any(|path| {
+                            crate::package::watch_path(source.as_std_path()).starts_with(path)
+                        })
+                    })
+                })
+            {
+                roots.insert(value.package.root.clone());
+            }
+        }
+        self.entries
+            .borrow_mut()
+            .retain(|_, value| !roots.contains(&value.package.root));
+        self.last_good
+            .borrow_mut()
+            .retain(|_, value| !roots.contains(&value.package.root));
+        self.bodies
+            .borrow_mut()
+            .retain(|root, _| !affected(root) && !roots.contains(root));
+        // Failed loads may not have discovered all their dependencies yet.
+        self.errors.borrow_mut().clear();
+        modules.invalidate_paths(&paths);
+    }
+
     pub(super) fn parse_document(
         &self,
         path: &Path,
@@ -35,17 +122,6 @@ impl CompilationCache {
         crate::compiler::profile::request("parse_document", path.as_str(), || {
             self.modules.borrow_mut().parse_source(&path, source)
         })
-    }
-
-    pub(super) fn clear(&self) {
-        // Watched-file changes can remove packages or dependencies. No snapshot or incremental
-        // cache from the old membership may remain available as a semantic fallback.
-        self.entries.borrow_mut().clear();
-        self.errors.borrow_mut().clear();
-        self.last_good.borrow_mut().clear();
-        self.bodies.borrow_mut().clear();
-        self.recent.borrow_mut().clear();
-        *self.modules.borrow_mut() = crate::package::ModuleCache::default();
     }
 
     pub(super) fn close<'a>(&self, uri: &Uri, open: impl Iterator<Item = &'a Uri>) {
@@ -100,6 +176,10 @@ impl CompilationCache {
         self.bodies
             .borrow_mut()
             .retain(|root, _| roots.contains(root));
+        self.modules
+            .borrow_mut()
+            .package_inputs
+            .retain(|root, _| roots.contains(root));
         self.modules.borrow_mut().retain_sources(&paths);
     }
 
@@ -123,12 +203,28 @@ impl CompilationCache {
         self.errors.borrow_mut().clear();
     }
 
-    fn get(&self, uri: &Uri) -> Option<Rc<Compilation>> {
-        self.entries.borrow().get(uri).cloned()
+    fn get(&self, uri: &Uri) -> Option<Arc<Compilation>> {
+        let entries = self.entries.borrow();
+        entries
+            .get(uri)
+            .or_else(|| {
+                self.snapshot_only
+                    .then(|| entries.values().find(|value| contains_document(value, uri)))
+                    .flatten()
+            })
+            .cloned()
     }
 
-    fn last_good(&self, uri: &Uri) -> Option<Rc<Compilation>> {
-        self.last_good.borrow().get(uri).cloned()
+    fn last_good(&self, uri: &Uri) -> Option<Arc<Compilation>> {
+        let entries = self.last_good.borrow();
+        entries
+            .get(uri)
+            .or_else(|| {
+                self.snapshot_only
+                    .then(|| entries.values().find(|value| contains_document(value, uri)))
+                    .flatten()
+            })
+            .cloned()
     }
 
     fn error(&self, uri: &Uri) -> Option<FosterError> {
@@ -139,14 +235,14 @@ impl CompilationCache {
         self.errors.borrow_mut().insert(uri, error);
     }
 
-    fn insert(&self, uri: Uri, compilation: Compilation) -> Rc<Compilation> {
-        let compilation = Rc::new(compilation);
+    fn insert(&self, uri: Uri, compilation: Compilation) -> Arc<Compilation> {
+        let compilation = Arc::new(compilation);
         let mut entries = self.entries.borrow_mut();
         let mut errors = self.errors.borrow_mut();
         let mut last_good = self.last_good.borrow_mut();
-        entries.insert(uri.clone(), Rc::clone(&compilation));
+        entries.insert(uri.clone(), Arc::clone(&compilation));
         errors.remove(&uri);
-        last_good.insert(uri, Rc::clone(&compilation));
+        last_good.insert(uri, Arc::clone(&compilation));
         for (_, module) in compilation.hir.modules.iter() {
             let Some(path) = module.source_path.as_deref() else {
                 continue;
@@ -154,9 +250,9 @@ impl CompilationCache {
             let Some(uri) = path_to_uri(path.as_std_path()) else {
                 continue;
             };
-            entries.insert(uri.clone(), Rc::clone(&compilation));
+            entries.insert(uri.clone(), Arc::clone(&compilation));
             errors.remove(&uri);
-            last_good.insert(uri, Rc::clone(&compilation));
+            last_good.insert(uri, Arc::clone(&compilation));
         }
         compilation
     }
@@ -209,18 +305,21 @@ impl Workspace {
             crate::compiler::check_recovering_cached(package, cache)
         })
     }
-    pub(super) fn compile_for(&self, uri: &Uri) -> Result<Rc<Compilation>, FosterError> {
+    pub(super) fn compile_for(&self, uri: &Uri) -> Result<Arc<Compilation>, FosterError> {
         crate::compiler::profile::request("compile_for", uri.as_str(), || {
             self.compile_profiled(uri)
         })
     }
 
-    fn compile_profiled(&self, uri: &Uri) -> Result<Rc<Compilation>, FosterError> {
+    fn compile_profiled(&self, uri: &Uri) -> Result<Arc<Compilation>, FosterError> {
         crate::compiler::cancellation::check()?;
         self.compilations.touch(uri);
         if let Some(compilation) = self.compilations.get(uri) {
             crate::compiler::profile::count("compilation.hit");
             return Ok(compilation);
+        }
+        if self.compilations.snapshot_only {
+            return Err(FosterError::runtime("semantic snapshot is not ready"));
         }
         if let Some(error) = self.compilations.error(uri) {
             crate::compiler::profile::count("compilation.error_hit");
@@ -247,7 +346,7 @@ impl Workspace {
         }
     }
 
-    pub(super) fn semantic_compilation_for(&self, uri: &Uri) -> Option<Rc<Compilation>> {
+    pub(super) fn semantic_compilation_for(&self, uri: &Uri) -> Option<Arc<Compilation>> {
         self.compile_for(uri)
             .ok()
             .or_else(|| self.compilations.last_good(uri))
@@ -380,6 +479,42 @@ impl Workspace {
 mod tests {
     use super::*;
 
+    #[test]
+    fn watched_dependency_changes_preserve_unrelated_packages() {
+        let cache = CompilationCache::default();
+        let root = std::env::current_dir().unwrap();
+        let dependency = root.join("dependency");
+        let first = root.join("first/main.fos");
+        let second = root.join("second/main.fos");
+        let unrelated = root.join("other/main.fos");
+        for path in [&first, &second, &unrelated] {
+            let uri = path_to_uri(path).unwrap();
+            let compilation = cache.insert(uri, snapshot(path));
+            if path != &unrelated {
+                cache
+                    .modules
+                    .borrow_mut()
+                    .package_inputs
+                    .insert(compilation.package.root.clone(), vec![dependency.clone()]);
+                cache
+                    .bodies
+                    .borrow_mut()
+                    .insert(compilation.package.root.clone(), Default::default());
+            }
+        }
+        let other_uri = path_to_uri(&unrelated).unwrap();
+        let retained = cache.get(&other_uri).unwrap();
+        // A newly created module was not a member of either previous snapshot.
+        cache.invalidate_watched(&[dependency.join("new.fos")]);
+        for path in [&first, &second] {
+            let uri = path_to_uri(path).unwrap();
+            assert!(cache.get(&uri).is_none());
+            assert!(cache.last_good(&uri).is_none());
+        }
+        assert!(cache.bodies.borrow().is_empty());
+        assert!(Arc::ptr_eq(&retained, &cache.get(&other_uri).unwrap()));
+    }
+
     fn snapshot(path: &Path) -> Compilation {
         let mut compilation = crate::compile("func main() -> Int { 1 }").unwrap();
         let path = Utf8PathBuf::from_path_buf(path.to_owned()).unwrap();
@@ -401,9 +536,9 @@ mod tests {
         cache.parse_document(&path, source).unwrap();
         cache.parse_document(&other, source).unwrap();
         let compilation = cache.insert(uri.clone(), snapshot(&path));
-        let released = Rc::downgrade(&compilation);
+        let released = Arc::downgrade(&compilation);
         let body = crate::typecheck::incremental::SharedBodyCache::default();
-        let released_body = Rc::downgrade(&body);
+        let released_body = std::rc::Rc::downgrade(&body);
         cache
             .bodies
             .borrow_mut()
@@ -414,7 +549,7 @@ mod tests {
         cache.close(&uri, [&other_uri].into_iter());
         assert!(released.upgrade().is_none());
         assert!(released_body.upgrade().is_none());
-        assert!(Rc::ptr_eq(&retained, &cache.get(&other_uri).unwrap()));
+        assert!(Arc::ptr_eq(&retained, &cache.get(&other_uri).unwrap()));
         cache.parse_document(&path, source).unwrap();
         cache.parse_document(&other, source).unwrap();
         assert_eq!(cache.module_parse_count(&path), 2);
@@ -429,7 +564,7 @@ mod tests {
         let uri = path_to_uri(&root.join("main.fos")).unwrap();
         let dependency_uri = path_to_uri(&dependency).unwrap();
         let compilation = cache.insert(uri.clone(), snapshot(&dependency));
-        let released = Rc::downgrade(&compilation);
+        let released = Arc::downgrade(&compilation);
         drop(compilation);
         cache.prune([&uri, &dependency_uri].into_iter());
         cache.invalidate(&dependency_uri);
@@ -446,14 +581,14 @@ mod tests {
         let path = std::env::current_dir().unwrap().join("removed.fos");
         let uri = path_to_uri(&path).unwrap();
         let compilation = cache.insert(uri.clone(), snapshot(&path));
-        let released = Rc::downgrade(&compilation);
+        let released = Arc::downgrade(&compilation);
         cache
             .bodies
             .borrow_mut()
             .insert(compilation.package.root.clone(), Default::default());
         drop(compilation);
         cache.insert_error(uri.clone(), FosterError::runtime("missing dependency"));
-        cache.clear();
+        cache.invalidate_watched(&[path]);
         assert!(released.upgrade().is_none());
         assert!(cache.last_good(&uri).is_none());
         assert!(cache.error(&uri).is_none());
@@ -473,7 +608,7 @@ mod tests {
             let uri = path_to_uri(&path).unwrap();
             cache.touch(&uri);
             let compilation = cache.insert(uri.clone(), snapshot(&path));
-            recent.push((uri, Rc::downgrade(&compilation)));
+            recent.push((uri, Arc::downgrade(&compilation)));
             cache.prune([&open_uri].into_iter());
         }
         cache.touch(&recent[0].0);
@@ -486,7 +621,7 @@ mod tests {
         assert!(recent[0].1.upgrade().is_some());
         assert!(recent[1].1.upgrade().is_none());
         assert!(cache.last_good(&recent[1].0).is_none());
-        assert!(Rc::ptr_eq(&retained, &cache.get(&open_uri).unwrap()));
+        assert!(Arc::ptr_eq(&retained, &cache.get(&open_uri).unwrap()));
         assert_eq!(cache.entries.borrow().len(), RECENT_DOCUMENT_LIMIT + 1);
     }
 
@@ -517,6 +652,6 @@ mod tests {
         assert!(cache.get(&first_uri).is_none());
         assert!(cache.get(&second_uri).is_none());
         assert!(cache.get(&shared_uri).is_none());
-        assert!(Rc::ptr_eq(&unrelated, &cache.get(&unrelated_uri).unwrap()));
+        assert!(Arc::ptr_eq(&unrelated, &cache.get(&unrelated_uri).unwrap()));
     }
 }

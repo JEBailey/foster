@@ -145,7 +145,7 @@ fn argument_diagnostics_name_the_callee_and_follow_edited_call_ranges() {
         let source = format!("{prefix}{body}");
         workspace.change(uri.clone(), source.clone(), version);
         workspace
-            .publish_diagnostics(&sender, 0, &generation)
+            .publish_diagnostics(&sender, 0, &generation, None)
             .unwrap();
         let Message::Notification(notification) = receiver.recv().unwrap() else {
             panic!("expected diagnostics");
@@ -223,7 +223,7 @@ fn diagnostic_publication_includes_every_recovered_syntax_error() {
     let generation = std::sync::atomic::AtomicU64::new(0);
 
     workspace
-        .publish_diagnostics(&sender, 0, &generation)
+        .publish_diagnostics(&sender, 0, &generation, None)
         .unwrap();
     let Message::Notification(notification) = receiver.recv().unwrap() else {
         panic!("expected diagnostics notification")
@@ -1538,12 +1538,12 @@ fn compilation_cache_reuses_snapshots_and_invalidates_on_change() {
     let (mut workspace, uri, root) = fixture_workspace();
     let first = workspace.compile_for(&uri).unwrap();
     let second = workspace.compile_for(&uri).unwrap();
-    assert!(std::rc::Rc::ptr_eq(&first, &second));
+    assert!(std::sync::Arc::ptr_eq(&first, &second));
 
     let source = std::fs::read_to_string(root.join("main.fos")).unwrap();
     workspace.change(uri.clone(), source, 2);
     let changed = workspace.compile_for(&uri).unwrap();
-    assert!(!std::rc::Rc::ptr_eq(&first, &changed));
+    assert!(!std::sync::Arc::ptr_eq(&first, &changed));
 }
 
 #[test]
@@ -1576,8 +1576,8 @@ fn compilation_cache_preserves_unrelated_snapshots_on_change() {
 
     let changed = workspace.compile_for(&first_uri).unwrap();
     let unaffected = workspace.compile_for(&second_uri).unwrap();
-    assert!(!std::rc::Rc::ptr_eq(&first, &changed));
-    assert!(std::rc::Rc::ptr_eq(&second, &unaffected));
+    assert!(!std::sync::Arc::ptr_eq(&first, &changed));
+    assert!(std::sync::Arc::ptr_eq(&second, &unaffected));
 
     std::fs::remove_dir_all(root).unwrap();
 }
@@ -1729,7 +1729,7 @@ fn failed_compilations_are_cached_until_the_document_changes() {
     let first_error = workspace.compile_for(&uri).unwrap_err();
     assert!(workspace.compilations.has_cached_error(&uri));
     assert_eq!(workspace.compile_for(&uri).unwrap_err(), first_error);
-    assert!(std::rc::Rc::ptr_eq(
+    assert!(std::sync::Arc::ptr_eq(
         &workspace.semantic_compilation_for(&uri).unwrap(),
         &original
     ));

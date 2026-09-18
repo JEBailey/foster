@@ -30,6 +30,7 @@ use workspace::Workspace;
 
 const DIAGNOSTIC_DEBOUNCE: Duration = Duration::from_millis(150);
 
+#[derive(Clone)]
 enum WorkspaceChange {
     Open(DidOpenTextDocumentParams),
     Change {
@@ -38,10 +39,15 @@ enum WorkspaceChange {
         version: i32,
     },
     Close(DidCloseTextDocumentParams),
-    Invalidate,
+    Invalidate(Vec<std::path::PathBuf>),
 }
 
 enum WorkerMessage {
+    #[cfg(test)]
+    Hold {
+        entered: mpsc::Sender<()>,
+        release: mpsc::Receiver<()>,
+    },
     Change(WorkspaceChange),
     Request {
         tag: WorkTag,
@@ -59,14 +65,15 @@ struct WorkTag {
     documents: Vec<(Uri, i32)>,
 }
 
+// Only the latest publication is retained in the mailbox.
+type SnapshotMailbox = Arc<Mutex<Option<(u64, Arc<compilation::PublishedCompilations>)>>>;
 struct WorkspaceWorker {
     sender: mpsc::Sender<WorkerMessage>,
+    queries: mpsc::Sender<(u64, WorkerMessage)>,
     handle: thread::JoinHandle<()>,
-    interactive_epoch: Arc<AtomicU64>,
-    pending_requests: Arc<AtomicU64>,
+    query_handle: thread::JoinHandle<()>,
     generation: Arc<AtomicU64>,
 }
-
 impl WorkspaceWorker {
     fn start(
         initialize: InitializeParams,
@@ -75,43 +82,40 @@ impl WorkspaceWorker {
         cancelled: Arc<Mutex<HashSet<String>>>,
     ) -> Self {
         let (sender, receiver) = mpsc::channel();
-        let interactive_epoch = Arc::new(AtomicU64::new(0));
-        let worker_epoch = Arc::clone(&interactive_epoch);
-        let pending_requests = Arc::new(AtomicU64::new(0));
-        let worker_pending = Arc::clone(&pending_requests);
-        let worker_generation = Arc::clone(&generation);
-        let handle = thread::spawn(move || {
-            let mut workspace = Workspace::new(&initialize);
-            let mut pending = std::collections::VecDeque::new();
-            let mut diagnostics = None;
-            loop {
-                pending.extend(receiver.try_iter());
-                let message = if let Some(message) = pending.pop_front() {
-                    message
-                } else if let Some(tag) = diagnostics.take() {
-                    // Every already queued edit/request has run before background checking.
-                    WorkerMessage::Diagnostics { tag }
-                } else if let Ok(message) = receiver.recv() {
-                    message
-                } else {
-                    break;
-                };
-                if let WorkerMessage::Diagnostics { tag } = &message {
-                    pending.extend(receiver.try_iter());
-                    if !pending.is_empty() {
-                        if diagnostics
-                            .as_ref()
-                            .is_none_or(|old: &WorkTag| old.generation <= tag.generation)
-                        {
-                            diagnostics = Some(tag.clone());
-                        }
-                        continue;
-                    }
-                }
+        let (queries, query_receiver) = mpsc::channel();
+        let published: SnapshotMailbox = Arc::new(Mutex::new(None));
+        let query_published = Arc::clone(&published);
+        let query_initialize = initialize.clone();
+        let query_generation = Arc::clone(&generation);
+        let query_outgoing = outgoing.clone();
+        let query_handle = thread::spawn(move || {
+            let generation = query_generation;
+            let outgoing = query_outgoing;
+            let mut workspace = Workspace::new(&query_initialize);
+            workspace.compilations.snapshot_only = true;
+            let mut installed = None;
+            let mut publication_floor = 0;
+            while let Ok((change_generation, message)) = query_receiver.recv() {
                 match message {
-                    WorkerMessage::Change(change) => apply_workspace_change(&mut workspace, change),
+                    WorkerMessage::Change(change) => {
+                        // Do not resurrect closed overlays or invalidated dependencies.
+                        if matches!(
+                            &change,
+                            WorkspaceChange::Close(_) | WorkspaceChange::Invalidate(_)
+                        ) {
+                            publication_floor = change_generation;
+                        }
+                        apply_workspace_change(&mut workspace, change);
+                    }
                     WorkerMessage::Request { tag, request } => {
-                        worker_pending.fetch_sub(1, Ordering::AcqRel);
+                        let latest = query_published.lock().unwrap().clone();
+                        if let Some((revision, snapshot)) = latest
+                            && revision >= publication_floor
+                            && installed != Some(revision)
+                        {
+                            workspace.compilations.install(&snapshot, &workspace);
+                            installed = Some(revision);
+                        }
                         let key = request_key(&request.id);
                         let response = if take_cancellation(&cancelled, &key) {
                             cancelled_response(request.id)
@@ -144,60 +148,105 @@ impl WorkspaceWorker {
                             break;
                         }
                     }
+
+                    WorkerMessage::Stop => break,
+                    WorkerMessage::Diagnostics { .. } => unreachable!(),
+                    #[cfg(test)]
+                    WorkerMessage::Hold { .. } => unreachable!(),
+                }
+            }
+        });
+        let worker_generation = Arc::clone(&generation);
+        let handle = thread::spawn(move || {
+            let generation = worker_generation;
+            let mut workspace = Workspace::new(&initialize);
+            let mut pending = std::collections::VecDeque::new();
+            let mut diagnostics = None;
+            loop {
+                pending.extend(receiver.try_iter());
+                let message = if let Some(message) = pending.pop_front() {
+                    message
+                } else if let Some(tag) = diagnostics.take() {
+                    WorkerMessage::Diagnostics { tag }
+                } else if let Ok(message) = receiver.recv() {
+                    message
+                } else {
+                    break;
+                };
+                if let WorkerMessage::Diagnostics { tag } = &message {
+                    pending.extend(receiver.try_iter());
+                    if !pending.is_empty() {
+                        if diagnostics
+                            .as_ref()
+                            .is_none_or(|old: &WorkTag| old.generation <= tag.generation)
+                        {
+                            diagnostics = Some(tag.clone());
+                        }
+                        continue;
+                    }
+                }
+                match message {
+                    WorkerMessage::Change(change) => apply_workspace_change(&mut workspace, change),
                     WorkerMessage::Diagnostics { tag } => {
                         if work_is_current(&workspace, &generation, &tag) {
-                            let expected_epoch = worker_epoch.load(Ordering::Acquire);
-                            let probe_epoch = Arc::clone(&worker_epoch);
-                            let probe_pending = Arc::clone(&worker_pending);
                             let probe_generation = Arc::clone(&generation);
                             let expected = tag.generation;
                             let result = crate::compiler::cancellation::scope(
-                                move || {
-                                    probe_generation.load(Ordering::Acquire) != expected
-                                        || probe_pending.load(Ordering::Acquire) != 0
-                                        || probe_epoch.load(Ordering::Acquire) != expected_epoch
+                                move || probe_generation.load(Ordering::Acquire) != expected,
+                                || {
+                                    workspace.publish_diagnostics(
+                                        &outgoing,
+                                        expected,
+                                        &generation,
+                                        Some(&published),
+                                    )
                                 },
-                                || workspace.publish_diagnostics(&outgoing, expected, &generation),
                             );
                             if let Err(error) = result {
                                 eprintln!("Foster language server diagnostic error: {error}");
                             }
-                            if (worker_epoch.load(Ordering::Acquire) != expected_epoch
-                                || worker_pending.load(Ordering::Acquire) != 0)
-                                && work_is_current(&workspace, &generation, &tag)
-                            {
-                                diagnostics = Some(tag);
-                            }
                         }
                     }
                     WorkerMessage::Stop => break,
+                    WorkerMessage::Request { .. } => unreachable!(),
+                    #[cfg(test)]
+                    WorkerMessage::Hold { entered, release } => {
+                        entered.send(()).unwrap();
+                        release.recv_timeout(Duration::from_secs(30)).unwrap();
+                    }
                 }
             }
         });
         Self {
             sender,
+            queries,
             handle,
-            interactive_epoch,
-            pending_requests,
-            generation: worker_generation,
+            query_handle,
+            generation,
         }
     }
-
     fn send(&self, message: WorkerMessage) -> Result<(), Box<dyn Error>> {
-        if matches!(&message, WorkerMessage::Request { .. }) {
-            self.pending_requests.fetch_add(1, Ordering::AcqRel);
-            self.interactive_epoch.fetch_add(1, Ordering::AcqRel);
+        let generation = self.generation.load(Ordering::Acquire);
+        match message {
+            WorkerMessage::Request { .. } => self.queries.send((generation, message))?,
+            WorkerMessage::Change(change) => {
+                self.queries
+                    .send((generation, WorkerMessage::Change(change.clone())))?;
+                self.sender.send(WorkerMessage::Change(change))?;
+            }
+            _ => self.sender.send(message)?,
         }
-        self.sender.send(message)?;
         Ok(())
     }
-
     fn stop(self) -> Result<(), Box<dyn Error>> {
-        self.generation.fetch_add(1, Ordering::AcqRel);
+        let generation = self.generation.fetch_add(1, Ordering::AcqRel) + 1;
         let _ = self.sender.send(WorkerMessage::Stop);
-        self.handle
-            .join()
-            .map_err(|_| "Foster language server workspace worker panicked".into())
+        let _ = self.queries.send((generation, WorkerMessage::Stop));
+        let checked = self.handle.join();
+        let queried = self.query_handle.join();
+        checked
+            .and(queried)
+            .map_err(|_| "Foster language server worker panicked".into())
     }
 }
 
@@ -237,13 +286,18 @@ fn apply_workspace_change(workspace: &mut Workspace, change: WorkspaceChange) {
         ),
         WorkspaceChange::Change { uri, text, version } => workspace.change(uri, text, version),
         WorkspaceChange::Close(params) => workspace.close(&params.text_document.uri),
-        WorkspaceChange::Invalidate => workspace.invalidate_compilations(),
+        WorkspaceChange::Invalidate(paths) => workspace.compilations.invalidate_watched(&paths),
     }
 }
 
 fn handle_workspace_request(workspace: &Workspace, request: ServerRequest) -> Response {
     let id = request.id;
     match request.method.as_str() {
+        lsp_types::request::CodeActionRequest::METHOD => {
+            respond(id, request.params, |params: lsp_types::CodeActionParams| {
+                workspace.code_actions(&params)
+            })
+        }
         DocumentSymbolRequest::METHOD => {
             respond(id, request.params, |params: DocumentSymbolParams| {
                 workspace.document_symbols(&params.text_document.uri)
@@ -395,6 +449,12 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         inlay_hint_provider: Some(lsp_types::OneOf::Left(true)),
         references_provider: Some(lsp_types::OneOf::Left(true)),
         rename_provider: Some(lsp_types::OneOf::Left(true)),
+        code_action_provider: Some(lsp_types::CodeActionProviderCapability::Options(
+            lsp_types::CodeActionOptions {
+                code_action_kinds: Some(vec![lsp_types::CodeActionKind::QUICKFIX]),
+                ..Default::default()
+            },
+        )),
         ..ServerCapabilities::default()
     };
     connection.initialize_finish(
@@ -525,8 +585,15 @@ pub fn run() -> Result<(), Box<dyn Error>> {
                         diagnostics.postpone(Instant::now());
                     }
                     "workspace/didChangeWatchedFiles" => {
+                        let params: lsp_types::DidChangeWatchedFilesParams =
+                            serde_json::from_value(notification.params)?;
+                        let paths = params
+                            .changes
+                            .iter()
+                            .filter_map(|change| workspace::uri_to_path(&change.uri))
+                            .collect();
                         generation.fetch_add(1, Ordering::AcqRel);
-                        worker.send(WorkerMessage::Change(WorkspaceChange::Invalidate))?;
+                        worker.send(WorkerMessage::Change(WorkspaceChange::Invalidate(paths)))?;
                         diagnostics.postpone(Instant::now());
                     }
                     _ => {}
@@ -610,6 +677,123 @@ mod scheduling_tests {
     }
 
     #[test]
+    fn snapshot_requests_continue_while_checker_is_blocked() {
+        let (outgoing, responses) = crossbeam_channel::unbounded();
+        let generation = Arc::new(AtomicU64::new(1));
+        let worker = WorkspaceWorker::start(
+            InitializeParams::default(),
+            outgoing,
+            Arc::clone(&generation),
+            Arc::new(Mutex::new(HashSet::new())),
+        );
+        let uri = test_uri();
+        let source = "func value(number: Int) -> Int { number }\nfunc main() -> Int { value(1) }\n";
+        worker
+            .send(WorkerMessage::Change(WorkspaceChange::Change {
+                uri: uri.clone(),
+                text: source.into(),
+                version: 1,
+            }))
+            .unwrap();
+        worker
+            .send(WorkerMessage::Diagnostics {
+                tag: WorkTag {
+                    generation: 1,
+                    documents: vec![(uri.clone(), 1)],
+                },
+            })
+            .unwrap();
+        loop {
+            if let Message::Notification(notification) =
+                responses.recv_timeout(Duration::from_secs(60)).unwrap()
+                && notification.method == "textDocument/publishDiagnostics"
+            {
+                break;
+            }
+        }
+        let (entered, ready) = mpsc::channel();
+        let (release, held) = mpsc::channel();
+        worker
+            .send(WorkerMessage::Hold {
+                entered,
+                release: held,
+            })
+            .unwrap();
+        ready.recv_timeout(Duration::from_secs(5)).unwrap();
+        let query = |id: i32, method: &str, version: i32, line: u32, character: u32| {
+            worker.send(WorkerMessage::Request {
+                tag: WorkTag { generation: generation.load(Ordering::Acquire), documents: vec![(uri.clone(), version)] },
+                request: ServerRequest { id: id.into(), method: method.into(), params: serde_json::json!({
+                    "textDocument": { "uri": uri }, "position": { "line": line, "character": character },
+                    "newName": "renamed"
+                }) },
+            }).unwrap();
+            let Message::Response(response) =
+                responses.recv_timeout(Duration::from_secs(5)).unwrap()
+            else {
+                panic!("expected response");
+            };
+            response.response_result.unwrap()
+        };
+        assert!(!query(1, HoverRequest::METHOD, 1, 0, 33).is_null());
+        assert!(!query(2, GotoDefinition::METHOD, 1, 1, 22).is_null());
+        generation.store(2, Ordering::Release);
+        worker
+            .send(WorkerMessage::Change(WorkspaceChange::Change {
+                uri: uri.clone(),
+                text: format!("// shifted\n{source}"),
+                version: 2,
+            }))
+            .unwrap();
+        assert!(!query(3, HoverRequest::METHOD, 2, 1, 33).is_null());
+        assert!(query(4, Rename::METHOD, 2, 1, 33).is_null());
+        generation.store(3, Ordering::Release);
+        worker
+            .send(WorkerMessage::Change(WorkspaceChange::Change {
+                uri: uri.clone(),
+                text: source.replace("{ number }", "{ number + }"),
+                version: 3,
+            }))
+            .unwrap();
+        assert!(query(5, HoverRequest::METHOD, 3, 0, 33).is_null());
+        let completion = query(6, Completion::METHOD, 3, 0, 33);
+        assert!(
+            completion
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|item| item["label"] == "let")
+        );
+        assert!(!query(8, HoverRequest::METHOD, 3, 1, 22).is_null());
+        // Filesystem invalidation must not reinstall an older mailbox publication.
+        generation.store(4, Ordering::Release);
+        worker
+            .send(WorkerMessage::Change(WorkspaceChange::Invalidate(vec![
+                workspace::uri_to_path(&uri).unwrap(),
+            ])))
+            .unwrap();
+        assert!(query(7, HoverRequest::METHOD, 3, 1, 22).is_null());
+        generation.store(5, Ordering::Release);
+        worker
+            .send(WorkerMessage::Change(WorkspaceChange::Close(
+                DidCloseTextDocumentParams {
+                    text_document: lsp_types::TextDocumentIdentifier::new(uri.clone()),
+                },
+            )))
+            .unwrap();
+        worker
+            .send(WorkerMessage::Change(WorkspaceChange::Change {
+                uri: uri.clone(),
+                text: source.into(),
+                version: 4,
+            }))
+            .unwrap();
+        assert!(query(9, HoverRequest::METHOD, 4, 0, 33).is_null());
+        release.send(()).unwrap();
+        worker.stop().unwrap();
+    }
+
+    #[test]
     fn workspace_worker_supersedes_stale_and_cancelled_requests() {
         let (outgoing, responses) = crossbeam_channel::unbounded();
         let generation = Arc::new(AtomicU64::new(2));
@@ -681,7 +865,8 @@ mod scheduling_tests {
         else {
             panic!("expected a response")
         };
-        assert!(response.response_result.is_ok());
+        // A cold semantic request must not invoke checking on the request worker.
+        assert!(response.response_result.unwrap().is_null());
         worker.stop().unwrap();
     }
 }

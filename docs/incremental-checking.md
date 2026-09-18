@@ -24,7 +24,12 @@ then resumes checking. Original diagnostics remain attached to the input source.
 A function is identified by module, qualified name, and overload ordinal. A
 declaration fingerprint guards nominal and function arena identities; declaration,
 import, and overload changes conservatively clear the session. Function source
-tokens, concrete input types, and observed callee contracts guard body results.
+fingerprints, concrete input types, and observed callee contracts guard body results.
+Source guards hash raw text and retain exact equality checks for collision safety;
+comments or whitespace inside a function therefore invalidate that function. Moving
+an unchanged function retains reuse. Declaration guards stream their normalized
+representation into one buffer. Name indexes preserve all overload and member
+candidates, and a reverse-edge queue invalidates dependent effect components.
 Results store expression/local positions within the function, and replay them into
 the new arenas. Moving a function therefore does not reuse obsolete source offsets.
 Dispatch slots are interned again in the current checker.
@@ -52,8 +57,11 @@ Converged summaries and their observed dependencies are stored with eligible bod
 They are reused only when the body cache's source, type, and callee-contract guards pass.
 A recomputed callee whose published contract stays the same leaves cached callers alone.
 Changed or removed effects notify them. A cache miss falls back to derivation. Higher-order
-callable types and capture modes still require the enclosing type/effect convergence loop;
-the work queue does not replace typing with effect-only analysis.
+callable types still require the enclosing type/effect convergence loop; the work queue
+does not replace typing with effect-only analysis. Closure construction effects classify
+pending captures from the checker's inferred local types. Successful checking commits
+those modes to HIR after finalization, so capture resolution does not ordinarily need a
+second pipeline typecheck. Speculative body checks do not mutate shared HIR captures.
 
 Eligible body failures are cached separately, with function-relative labels and
 an exact source-text key. Moving an unchanged failure remaps its labels; editing
@@ -74,14 +82,27 @@ are kept for open documents and at most eight recently requested documents. The 
 set supports navigation into files that are not open. Closing a document evicts it and any
 snapshot containing its editor overlay, so other files cannot fall back to that closed overlay.
 Package body caches and disk-backed parse entries are pruned to the retained snapshots and
-documents; embedded library parses remain reusable. Watched-file changes clear snapshots and
-incremental state because package membership may have changed.
+documents; embedded library parses remain reusable. Disk source reads and validated
+compiled-library artifacts are cached by path, modification time, and size. Editor
+overlays are kept separate from disk text. Metadata is checked before and after
+reading; failed reads and validations do not create cache entries. The artifact
+cache retains at most sixteen libraries.
 
-The worker preserves edit/request order and postpones queued background diagnostics
-until interactive work has run. A new request interrupts active diagnostics; they
-are rescheduled after the request if the document generation is still current.
-Edits interrupt obsolete requests and diagnostics. Explicit request cancellation
-also stops active frontend work, and shutdown interrupts the active generation.
+Watched-file changes force disk and artifact eviction even when file metadata is
+unchanged. They clear snapshots and body state for affected packages, including
+consumers of changed dependencies and new modules under watched source roots.
+Unrelated package snapshots remain available. Failed-compilation entries are
+conservatively cleared because failed loading may not discover every dependency.
+
+The checking worker owns mutable parsing and body caches. It publishes immutable
+`Arc<Compilation>` results through a single-slot, generation-tagged mailbox before
+sending diagnostics. A separate request worker owns current editor overlays and
+reads these snapshots without running the compiler. Requests do not interrupt
+checking. Both workers receive edits in order; new edits cancel obsolete checking
+and request responses, and shutdown interrupts the active generation. Publications
+predating a close or watched-file invalidation cannot restore invalidated state.
+The mailbox retains only its latest publication; the request worker retains its
+current bounded cache until it adopts a newer publication.
 
 A scoped probe checks cancellation at pipeline, function, expression, and fixed-point
 boundaries. Cancellation is not a source diagnostic and is never stored as a failed
@@ -93,8 +114,34 @@ operation or ownership dataflow operation can still delay the next checkpoint.
 
 Document symbols use the current document's cached recovering parse without invoking
 semantic checking. If lexical damage prevents parsing, the existing guarded semantic
-snapshot fallback remains available. Hover and other typed features request semantic
-analysis on demand.
+snapshot fallback remains available. Typed requests use the most recent published
+analysis. While checking an edit, hover, completion, definition, references, signature
+help, and hints use only safely mapped unchanged functions. An edited function gets
+completion from current syntax: parameters, preceding local bindings, destructured
+names, closure and branch bindings, module declarations, imports, and keywords.
+A cursor expression and missing closing delimiters let the parser recover common
+unfinished bodies. Scope follows the parsed blocks, not identifier text search;
+locals from later statements and completed inner scopes are excluded. Library
+export indexes are parsed lazily, without checking. Inferred types and receiver
+member completion still require a usable semantic snapshot. Semantic results may
+be absent on a cold open. Rename requires a
+current snapshot for the package. Navigation can inspect unopened modules already
+present in a published package. Diagnostic latency remains separate from request
+latency; the workers can run concurrently.
+
+## Quick fixes
+
+The server advertises `textDocument/codeAction` with `quickfix` actions. Unknown
+names and types can offer a one-edit spelling correction using visible current
+names, or an import from a public core/library export or a module in a published
+package. Private declarations, existing imports, and conflicting import aliases
+are excluded. Import edits preserve module/declaration documentation and line endings.
+
+Published diagnostics carry the document version. Code actions require that version
+to match the open buffer and locate the named token within the diagnostic range.
+Every fix is a versioned workspace edit, so changes after the response cannot silently
+apply to a different document version. These actions never run the checker or guess
+ownership/effect changes from diagnostic prose.
 
 ## Profiling
 
@@ -122,6 +169,10 @@ Each report has schema version 1 and request-local `analysis` fields:
   Effect propagation adds `effects.derived`, `effects.reused`, `effects.summary_changed`,
   and `effects.caller_enqueued`. `effects.reused` counts bodies not walked in that pass;
   a body revisited by propagation counts again in `effects.derived`.
+  `source.read_hit`/`source.read_miss` and `library.read_hit`/`library.read_miss`
+  distinguish metadata-gated disk reuse from actual source reads and artifact validation.
+  `types.capture_modes` measures capture commitment inside type checking;
+  `types.reused_initial` confirms that the pipeline did not need a second typecheck.
 - `body_hit_rate`: `(body.hit + body.error_hit) / (hits + body.checked)`, or null
   when no nonempty body was attempted. This is reuse across all checking passes,
   including reuse within the same request; it is not a percentage of unique functions.

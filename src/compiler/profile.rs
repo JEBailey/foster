@@ -154,7 +154,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn capture_inference_rechecks_only_when_modes_change() {
+    fn capture_inference_finishes_without_a_second_pipeline_typecheck() {
         let (compilation, report) = collect(|| crate::compile("func main() -> Int { 42 }"));
         compilation.unwrap();
         assert_eq!(report.counters["types.reused_initial"], 1);
@@ -166,11 +166,37 @@ mod tests {
             )
         });
         let compilation = compilation.unwrap();
-        assert_eq!(report.phases["types.final"].calls, 1);
-        assert!(!report.counters.contains_key("types.reused_initial"));
+        assert!(!report.phases.contains_key("types.final"));
+        assert_eq!(report.counters["types.reused_initial"], 1);
         assert_eq!(
             crate::vm::run(&compilation).unwrap(),
             crate::vm::Value::Integer(42)
+        );
+
+        let (compilation, report) =
+            collect(|| crate::compile(include_str!("../../tests/fixtures/programs/closures.fos")));
+        let mut compilation = compilation.unwrap();
+        assert!(!report.phases.contains_key("types.final"));
+        let effects = compilation
+            .hir
+            .functions
+            .iter()
+            .map(|(_, function)| (function.effects.clone(), function.suspends))
+            .collect::<Vec<_>>();
+        // Rechecking finalized Copy/Move HIR must not discover different contracts.
+        crate::typecheck::check(&mut compilation.hir).unwrap();
+        assert_eq!(
+            effects,
+            compilation
+                .hir
+                .functions
+                .iter()
+                .map(|(_, function)| (function.effects.clone(), function.suspends))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(
+            crate::vm::run(&compilation).unwrap(),
+            crate::vm::Value::Integer(36)
         );
     }
 

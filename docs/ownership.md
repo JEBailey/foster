@@ -557,8 +557,8 @@ AST
   → lower to resolved HIR
   → infer effects for reference captures
   → validate group and effect declarations
-  → infer types and derive body effects
-  → resolve pending closure capture modes
+  → infer types and derive body effects using inferred closure capture modes
+  → commit validated closure capture modes
   → lower canonical places into ownership MIR
   → infer and substitute direct-call result provenance to a fixed point
   → run control-flow initialization, move, provenance, required-loan, escape, and invalidation analysis
@@ -577,7 +577,8 @@ The implementation is divided by responsibility:
   stable HIR IDs.
 - `src/semantics.rs` is the authoritative place/value and resolved-member classifier shared by
   type checking, effect inference, ownership lowering, and bytecode lowering.
-- `src/typecheck/effects.rs` derives group access, consume, and suspension requirements.
+- `src/typecheck/effects.rs` derives group access, consume, and suspension requirements,
+  classifying pending captures from inferred local types during convergence.
 - `src/hir/ownership.rs` validates groups, resolves capture modes, and rejects use after a closure
   capture moved its source.
 - `src/hir/queries.rs` contains policy-free structural queries that do not require resolved types.
