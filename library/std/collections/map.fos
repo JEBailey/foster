@@ -58,9 +58,7 @@ impl ListMap<K, V> {
             _ -> Option.Some(ref self.entries[index].value)
         }
     }
-}
 
-impl ListMap<K, V> {
     /// Removes and returns the owned value, preserving the map and remaining insertion order.
     /// An absent key returns None and leaves the map unchanged.
     pub func remove(self, key: K) -> Option<V> {
@@ -79,26 +77,12 @@ impl ListMap<K, V> {
         self.entries = remaining
         removed
     }
-}
 
-/// Finds a key without extracting owned entries or growing the call stack.
-func find_index<K, V>(entries: List<Entry<K, V>>, key: K) -> Int {
-    let index = 0
-    while index < entries.length {
-        return index if entries[index].key == key
-        index = index + 1
-    }
-    -1
-}
-
-impl ListMap<K, V> {
     /// Returns whether the map contains `key` without consuming the map.
     pub func contains_key?(self, key: K) -> Bool {
         find_index(self.entries, key) >= 0
     }
-}
 
-impl ListMap<K, V> {
     /// Returns a map with `key` associated with `value`, replacing an existing entry when present.
     pub func put(self, key: K, value: V) -> ListMap<K, V> [mut self.entries, consume key, consume self, consume value] {
         let index = find_index(self.entries, key)
@@ -108,9 +92,7 @@ impl ListMap<K, V> {
         }
         self
     }
-}
 
-impl ListMap<K, V> {
     /// Returns the number of entries in the map.
     pub func length(self) -> Int {
         self.entries.length
@@ -135,9 +117,7 @@ impl ListMap<K, V> {
         }
         result
     }
-}
 
-impl ListMap<K, V> {
     /// Consumes the map and returns its values in storage order.
     pub func values(self) -> List<V> [consume self] {
         let result = []
@@ -146,6 +126,16 @@ impl ListMap<K, V> {
         }
         result
     }
+}
+
+/// Finds a key without extracting owned entries or growing the call stack.
+func find_index<K, V>(entries: List<Entry<K, V>>, key: K) -> Int {
+    let index = 0
+    while index < entries.length {
+        return index if entries[index].key == key
+        index = index + 1
+    }
+    -1
 }
 
 test "maps replace values without duplicating keys" {

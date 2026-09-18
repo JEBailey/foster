@@ -110,6 +110,14 @@ impl TomlValue {
             TomlValue.Table(entries) -> TomlValue.Table(entries.map((entry: TomlEntry) -> entry.copy()))
         }
     }
+
+    /// Finds a value by key when `value` is a table, returning `None` otherwise.
+    pub func get(self, key: String) -> Option<TomlValue> [consume key, consume self] {
+        branch self {
+            TomlValue.Table(entries) -> find_entry(move entries, move key)
+            _ -> Option.None
+        }
+    }
 }
 
 /// Parses source text into a typed TOML document.
@@ -134,16 +142,6 @@ impl TomlDocument {
     /// Finds a top-level document value by key.
     pub func get(self, key: String) -> Option<TomlValue> [consume key, consume self] {
         find_entry(move self.entries, move key)
-    }
-}
-
-impl TomlValue {
-    /// Finds a value by key when `value` is a table, returning `None` otherwise.
-    pub func get(self, key: String) -> Option<TomlValue> [consume key, consume self] {
-        branch self {
-            TomlValue.Table(entries) -> find_entry(move entries, move key)
-            _ -> Option.None
-        }
     }
 }
 
@@ -192,17 +190,7 @@ impl Parser {
         let path = [].concat(self.context)
         self.insert_value((move path).concat(key_parts(move keys)), move value)
     }
-}
 
-/// Internal helper for the Foster TOML implementation.
-func key_parts(keys: List<String>) -> List<PathPart> {
-    branch {
-        keys.empty? -> []
-        _ -> [PathPart.Key(keys.head)].concat(key_parts(keys.rest))
-    }
-}
-
-impl Parser {
     /// Internal helper for the Foster TOML implementation.
     func parse_header(self, array_header: Bool) -> () [mut self] {
         self.take()
@@ -388,14 +376,7 @@ impl Parser {
         return () if not empty
         self.fail("expected a key")
     }
-}
 
-/// Internal helper for the Foster TOML implementation.
-func bare_key_character?(character: CodePoint) -> Bool {
-    (ascii_letter?(character) || decimal_digit?(character)) || character == '_' || character == '-'
-}
-
-impl Parser {
     /// Internal helper for the Foster TOML implementation.
     func parse_basic_string(self, multiline: Bool) -> String [mut self] {
         self.open_basic_string(multiline)
@@ -561,19 +542,7 @@ impl Parser {
     func escape_fold_start?(self) -> Bool {
         fold_space_then_newline?(self.remaining)
     }
-}
 
-/// Internal helper for the Foster TOML implementation.
-func fold_space_then_newline?(value: String) -> Bool {
-    branch {
-        value.starts_with?("\n") || value.starts_with?("\r\n") -> true
-        value.empty? -> false
-        value.scalar_head() == ' ' || value.scalar_head() == '\t' -> fold_space_then_newline?(value.scalar_rest())
-        _ -> false
-    }
-}
-
-impl Parser {
     /// Internal helper for the Foster TOML implementation.
     func skip_escape_fold(self) -> () [mut self] {
         self.skip_horizontal_space()
@@ -693,49 +662,7 @@ impl Parser {
         self.take()
         self.consume_text(text.scalar_rest())
     }
-}
 
-/// Internal helper for the Foster TOML implementation.
-func forbidden_string_character?(character: CodePoint) -> Bool {
-    let value = character.as_int()
-    branch {
-        value == 9 -> false
-        value < 32 -> true
-        value == 127 -> true
-        _ -> false
-    }
-}
-
-/// Internal helper for the Foster TOML implementation.
-func control_character?(character: CodePoint) -> Bool {
-    let value = character.as_int()
-    return false if value == 9
-    value < 32 || value == 127
-}
-
-/// Internal helper for the Foster TOML implementation.
-func ascii_letter?(character: CodePoint) -> Bool {
-    (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z')
-}
-
-/// Internal helper for the Foster TOML implementation.
-func decimal_digit?(character: CodePoint) -> Bool { character >= '0' && character <= '9' }
-
-/// Internal helper for the Foster TOML implementation.
-func hex_digit?(character: CodePoint) -> Bool {
-    decimal_digit?(character) || (character >= 'A' && character <= 'F') || (character >= 'a' && character <= 'f')
-}
-
-/// Internal helper for the Foster TOML implementation.
-func hex_value(character: CodePoint) -> Int {
-    branch {
-        character <= '9' -> character.as_int() - 48
-        character <= 'F' -> character.as_int() - 55
-        _ -> character.as_int() - 87
-    }
-}
-
-impl Parser {
     /// Internal helper for the Foster TOML implementation.
     func parse_value(self) -> TomlValue [mut self] {
         branch {
@@ -751,8 +678,7 @@ impl Parser {
 
     /// Internal helper for the Foster TOML implementation.
     func parse_array(self) -> TomlValue [mut self] {
-        let start_line = self.line
-        let start_column = self.column
+        let { line: start_line, column: start_column } = self
         self.take()
         self.skip_value_space()
         return self.empty_array() if self.peek?(']')
@@ -923,6 +849,133 @@ impl Parser {
         self.take()
         self.take_bare_value(output + "T")
     }
+
+    /// Internal helper for the Foster TOML implementation.
+    func parse_integer(self, text: String) -> Int [mut self, consume text] {
+        let negative = text.starts_with?("-")
+        let unsigned = drop_sign(move text)
+        branch {
+            unsigned.starts_with?("0x") -> self.accumulate_integer(unsigned.scalar_rest().scalar_rest(), 16, negative, 0)
+            unsigned.starts_with?("0o") -> self.accumulate_integer(unsigned.scalar_rest().scalar_rest(), 8, negative, 0)
+            unsigned.starts_with?("0b") -> self.accumulate_integer(unsigned.scalar_rest().scalar_rest(), 2, negative, 0)
+            _ -> self.accumulate_integer(move unsigned, 10, negative, 0)
+        }
+    }
+
+    /// Internal helper for the Foster TOML implementation.
+    func accumulate_integer(self, text: String, base: Int, negative: Bool, value: Int) -> Int [mut self] {
+        return value if text.empty?
+        return self.accumulate_integer(text.scalar_rest(), base, negative, value) if text.scalar_head() == '_'
+        let digit = hex_value(text.scalar_head())
+        let minimum = -9223372036854775807 - 1
+        let maximum = 9223372036854775807
+        return self.integer_overflow() if negative && value < (minimum + digit) / base
+        return self.accumulate_integer(text.scalar_rest(), base, true, value * base - digit) if negative
+        return self.integer_overflow() if value > (maximum - digit) / base
+        self.accumulate_integer(text.scalar_rest(), base, false, value * base + digit)
+    }
+
+    /// Internal helper for the Foster TOML implementation.
+    func integer_overflow(self) -> Int [consume self.errors, read self(line, column), mut self.errors] {
+        self.fail("integer is outside the signed 64-bit range")
+        0
+    }
+
+    /// Internal helper for the Foster TOML implementation.
+    func insert_value(self, path: List<PathPart>, value: TomlValue) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self.entries, consume path, consume value] {
+        return self.fail("duplicate key or table/value conflict") if path_conflict?(self.entries, path)
+        self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.Value(move value) })
+        ()
+    }
+
+    /// Internal helper for the Foster TOML implementation.
+    func declare_table(self, keys: List<String>) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self(entries, context), consume keys] {
+        let path = resolve_header_path(self.entries, [], move keys)
+        return self.fail("table is already defined") if exact_path?(self.entries, path)
+        return self.fail("table conflicts with an existing value") if scalar_prefix_conflict?(self.entries, path)
+        let context = [].concat(path)
+        self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.TableMarker })
+        self.context = move context
+        ()
+    }
+
+    /// Internal helper for the Foster TOML implementation.
+    func declare_array_table(self, keys: List<String>) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self(entries, context), consume keys] {
+        return self.fail("array-of-tables header requires a key") if keys.empty?
+        let parents = keys.take(keys.length - 1)
+        let name = keys.last().unwrap_or("")
+        let parent = resolve_header_path(self.entries, [], move parents)
+        return self.fail("array of tables conflicts with an existing value") if child_key_conflict?(self.entries, parent, name)
+        let index = next_array_index(self.entries, parent, name)
+        let path = parent.append(PathPart.ArrayItem(PathItem { key: move name, index }))
+        let context = [].concat(path)
+        self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.ArrayTableMarker })
+        self.context = move context
+        ()
+    }
+}
+
+/// Internal helper for the Foster TOML implementation.
+func key_parts(keys: List<String>) -> List<PathPart> {
+    branch {
+        keys.empty? -> []
+        _ -> [PathPart.Key(keys.head)].concat(key_parts(keys.rest))
+    }
+}
+
+/// Internal helper for the Foster TOML implementation.
+func bare_key_character?(character: CodePoint) -> Bool {
+    (ascii_letter?(character) || decimal_digit?(character)) || character == '_' || character == '-'
+}
+
+/// Internal helper for the Foster TOML implementation.
+func fold_space_then_newline?(value: String) -> Bool {
+    branch {
+        value.starts_with?("\n") || value.starts_with?("\r\n") -> true
+        value.empty? -> false
+        value.scalar_head() == ' ' || value.scalar_head() == '\t' -> fold_space_then_newline?(value.scalar_rest())
+        _ -> false
+    }
+}
+
+/// Internal helper for the Foster TOML implementation.
+func forbidden_string_character?(character: CodePoint) -> Bool {
+    let value = character.as_int()
+    branch {
+        value == 9 -> false
+        value < 32 -> true
+        value == 127 -> true
+        _ -> false
+    }
+}
+
+/// Internal helper for the Foster TOML implementation.
+func control_character?(character: CodePoint) -> Bool {
+    let value = character.as_int()
+    return false if value == 9
+    value < 32 || value == 127
+}
+
+/// Internal helper for the Foster TOML implementation.
+func ascii_letter?(character: CodePoint) -> Bool {
+    (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z')
+}
+
+/// Internal helper for the Foster TOML implementation.
+func decimal_digit?(character: CodePoint) -> Bool { character >= '0' && character <= '9' }
+
+/// Internal helper for the Foster TOML implementation.
+func hex_digit?(character: CodePoint) -> Bool {
+    decimal_digit?(character) || (character >= 'A' && character <= 'F') || (character >= 'a' && character <= 'f')
+}
+
+/// Internal helper for the Foster TOML implementation.
+func hex_value(character: CodePoint) -> Int {
+    branch {
+        character <= '9' -> character.as_int() - 48
+        character <= 'F' -> character.as_int() - 55
+        _ -> character.as_int() - 87
+    }
 }
 
 /// Internal helper for the Foster TOML implementation.
@@ -1014,39 +1067,6 @@ func digit_for_base?(character: CodePoint, base: Int) -> Bool {
     }
 }
 
-impl Parser {
-    /// Internal helper for the Foster TOML implementation.
-    func parse_integer(self, text: String) -> Int [mut self, consume text] {
-        let negative = text.starts_with?("-")
-        let unsigned = drop_sign(move text)
-        branch {
-            unsigned.starts_with?("0x") -> self.accumulate_integer(unsigned.scalar_rest().scalar_rest(), 16, negative, 0)
-            unsigned.starts_with?("0o") -> self.accumulate_integer(unsigned.scalar_rest().scalar_rest(), 8, negative, 0)
-            unsigned.starts_with?("0b") -> self.accumulate_integer(unsigned.scalar_rest().scalar_rest(), 2, negative, 0)
-            _ -> self.accumulate_integer(move unsigned, 10, negative, 0)
-        }
-    }
-
-    /// Internal helper for the Foster TOML implementation.
-    func accumulate_integer(self, text: String, base: Int, negative: Bool, value: Int) -> Int [mut self] {
-        return value if text.empty?
-        return self.accumulate_integer(text.scalar_rest(), base, negative, value) if text.scalar_head() == '_'
-        let digit = hex_value(text.scalar_head())
-        let minimum = -9223372036854775807 - 1
-        let maximum = 9223372036854775807
-        return self.integer_overflow() if negative && value < (minimum + digit) / base
-        return self.accumulate_integer(text.scalar_rest(), base, true, value * base - digit) if negative
-        return self.integer_overflow() if value > (maximum - digit) / base
-        self.accumulate_integer(text.scalar_rest(), base, false, value * base + digit)
-    }
-
-    /// Internal helper for the Foster TOML implementation.
-    func integer_overflow(self) -> Int [consume self.errors, read self(line, column), mut self.errors] {
-        self.fail("integer is outside the signed 64-bit range")
-        0
-    }
-}
-
 /// Internal helper for the Foster TOML implementation.
 func float_text?(value: String) -> Bool {
     let unsigned = drop_sign(value)
@@ -1110,41 +1130,6 @@ func exponent?(value: String) -> Bool {
 
 /// Internal helper for the Foster TOML implementation.
 func decimal_component?(value: String) -> Bool { based_digits?(value, 10) }
-
-impl Parser {
-    /// Internal helper for the Foster TOML implementation.
-    func insert_value(self, path: List<PathPart>, value: TomlValue) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self.entries, consume path, consume value] {
-        return self.fail("duplicate key or table/value conflict") if path_conflict?(self.entries, path)
-        self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.Value(move value) })
-        ()
-    }
-
-    /// Internal helper for the Foster TOML implementation.
-    func declare_table(self, keys: List<String>) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self(entries, context), consume keys] {
-        let path = resolve_header_path(self.entries, [], move keys)
-        return self.fail("table is already defined") if exact_path?(self.entries, path)
-        return self.fail("table conflicts with an existing value") if scalar_prefix_conflict?(self.entries, path)
-        let context = [].concat(path)
-        self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.TableMarker })
-        self.context = move context
-        ()
-    }
-
-    /// Internal helper for the Foster TOML implementation.
-    func declare_array_table(self, keys: List<String>) -> () [consume self.errors, read self(line, column), mut self.errors, consume self.entries, mut self(entries, context), consume keys] {
-        return self.fail("array-of-tables header requires a key") if keys.empty?
-        let parents = keys.take(keys.length - 1)
-        let name = keys.last().unwrap_or("")
-        let parent = resolve_header_path(self.entries, [], move parents)
-        return self.fail("array of tables conflicts with an existing value") if child_key_conflict?(self.entries, parent, name)
-        let index = next_array_index(self.entries, parent, name)
-        let path = parent.append(PathPart.ArrayItem(PathItem { key: move name, index }))
-        let context = [].concat(path)
-        self.entries = self.entries.append(FlatEntry { path: move path, value: FlatValue.ArrayTableMarker })
-        self.context = move context
-        ()
-    }
-}
 
 /// Internal helper for the Foster TOML implementation.
 func resolve_header_path(entries: List<FlatEntry>, prefix: List<PathPart>, keys: List<String>) -> List<PathPart> [consume prefix, consume keys] {

@@ -7,7 +7,7 @@ enum ScoreResult = Ok(Score)
 
 func describe(result: ScoreResult) -> Int {
     branch result {
-        Ok(score) -> describe_score(score.name, score.value)
+        Ok({ name, value }) -> describe_score(name, value)
         Error(message) -> describe_error(message)
     }
 }

@@ -205,6 +205,14 @@ impl Listener {
         let endpoint = TcpEndpoint.at(self.location.address(), self.location.port())
         wrap_connection(move endpoint, TcpHost.accept(self.handle))
     }
+
+    /// Closes a listening socket.
+    pub func close(self) -> Result<(), NetworkError> [consume self] {
+        let owned = move self
+        let handle = owned.handle
+        owned.handle = 0
+        TcpHost.close_listener(handle)
+    }
 }
 
 /// Converts a successful connection handle into an opaque `Connection`.
@@ -253,19 +261,7 @@ impl Connection {
     pub func set_timeout(self, milliseconds: Int) -> Result<(), NetworkError> [read self.handle] {
         TcpHost.set_timeout(self.handle, milliseconds)
     }
-}
 
-impl Listener {
-    /// Closes a listening socket.
-    pub func close(self) -> Result<(), NetworkError> [consume self] {
-        let owned = move self
-        let handle = owned.handle
-        owned.handle = 0
-        TcpHost.close_listener(handle)
-    }
-}
-
-impl Connection {
     /// Waits for data, EOF, or an I/O error; false means timeout. Zero polls immediately.
     pub func wait_readable(self, milliseconds: Int) -> Result<Bool, NetworkError> [read self.handle] {
         TcpHost.wait_readable(self.handle, milliseconds)

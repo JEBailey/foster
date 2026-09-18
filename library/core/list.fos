@@ -309,26 +309,7 @@ impl List<T> {
         }
         result
     }
-}
 
-impl List {
-    /// Concatenates nested lists in source order without constructing intermediate tails.
-    pub func flatten<T>(self: List<List<T>>) -> List<T> {
-        let result = []
-        let index = 0
-        while index < self.length {
-            let item = 0
-            while item < self[index].length {
-                result.push(self[index].read_at(item))
-                item = item + 1
-            }
-            index = index + 1
-        }
-        result
-    }
-}
-
-impl List<T> {
     /// Counts the elements satisfying `predicate`.
     pub func count(self, predicate: Predicate<T>) -> Int {
         let count = 0
@@ -365,6 +346,21 @@ impl List<T> {
 }
 
 impl List {
+    /// Concatenates nested lists in source order without constructing intermediate tails.
+    pub func flatten<T>(self: List<List<T>>) -> List<T> {
+        let result = []
+        let index = 0
+        while index < self.length {
+            let item = 0
+            while item < self[index].length {
+                result.push(self[index].read_at(item))
+                item = item + 1
+            }
+            index = index + 1
+        }
+        result
+    }
+
     /// Joins strings into one byte builder, inserting separators only between elements.
     pub func join(self: List<String>, separator: String) -> String {
         let output = StringBuilder.empty()

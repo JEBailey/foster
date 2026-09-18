@@ -124,107 +124,7 @@ impl String {
             _ -> Result.Error(Utf8Error { offset: -1, message: "Bytes are not valid UTF-8" })
         }
     }
-}
 
-/// A Foster text builder that encodes code points and appends UTF-8 without prefix concatenation.
-pub type StringBuilder = {
-    value: ByteBuffer
-
-    // Required public operations; implementations live in impl blocks.
-    /// Appends validated text to this builder.
-    pub func append(self, text: String) -> () [reshape self.value.value.items]
-    /// Encodes one Unicode scalar into UTF-8; encoding policy stays in Foster.
-    pub func push(self, character: CodePoint) -> () [reshape self.value.value.items]
-    /// Consumes the builder and constructs one validated immutable String.
-    pub func finish(self) -> String [consume self]
-}
-
-impl StringBuilder {
-    /// Creates an empty text builder.
-    pub func empty() -> StringBuilder {
-        StringBuilder { value: ByteBuffer.empty() }
-    }
-
-    /// Appends validated text to this builder.
-    pub func append(self, text: String) -> () [reshape self.value.value.items] {
-        self.value.extend(text.bytes)
-    }
-
-    /// Encodes one Unicode scalar into UTF-8; encoding policy stays in Foster.
-    pub func push(self, character: CodePoint) -> () [reshape self.value.value.items] {
-        let scalar = character.as_int()
-        branch {
-            scalar < 128 -> self.value.push(Byte.unchecked(scalar))
-            scalar < 2048 -> {
-                self.value.push(Byte.unchecked(192 + scalar / 64))
-                self.value.push(Byte.unchecked(128 + scalar - scalar / 64 * 64))
-            }
-            scalar < 65536 -> {
-                self.value.push(Byte.unchecked(224 + scalar / 4096))
-                self.value.push(Byte.unchecked(128 + scalar / 64 - scalar / 4096 * 64))
-                self.value.push(Byte.unchecked(128 + scalar - scalar / 64 * 64))
-            }
-            _ -> {
-                self.value.push(Byte.unchecked(240 + scalar / 262144))
-                self.value.push(Byte.unchecked(128 + scalar / 4096 - scalar / 262144 * 64))
-                self.value.push(Byte.unchecked(128 + scalar / 64 - scalar / 4096 * 64))
-                self.value.push(Byte.unchecked(128 + scalar - scalar / 64 * 64))
-            }
-        }
-    }
-
-    /// Consumes the builder and constructs one validated immutable String.
-    pub func finish(self) -> String [consume self] {
-        decode_bytes((move self.value).freeze())
-    }
-}
-
-/// Decodes bytes produced by the text algorithms, retaining a checked construction boundary.
-func decode_bytes(data: Bytes) -> String {
-    branch String.from_utf8(move data) {
-        Result.Ok(text) -> text
-        Result.Error(_) -> {
-            panic("text construction must preserve valid UTF-8")
-        }
-    }
-}
-
-/// A cursor over one stable UTF-8 byte snapshot, never over copied suffix strings.
-pub type StringCursor = & Cursor<CodePoint> & {
-    data: Bytes
-    offset: Int
-
-    /// Copies text between scalar-aligned byte offsets without moving the cursor.
-    pub func text_span(self, start: Int, end: Int) -> Option<String> [read self]
-    /// Copies the text from the current position to the end.
-    pub func remaining(self) -> String [read self]
-    /// Reports whether the reader has reached the end.
-    pub func empty?(self) -> Bool [read self]
-}
-
-/// A forward iterator over extended grapheme clusters in a stable UTF-8 snapshot.
-/// Each item is a String containing one cluster; byte offsets remain internal.
-pub type GraphemeCursor = & Iterator<String> & {
-    source: StringCursor
-}
-
-impl GraphemeCursor {
-    /// Creates an independent grapheme iterator using Unicode 17.0.0 boundaries.
-    pub func from(text: String) -> GraphemeCursor {
-        GraphemeCursor { source: StringCursor.from(text) }
-    }
-
-    /// Returns the next complete cluster, or None at the end of the text.
-    pub func next(self) -> Option<String> {
-        return Option.None if self.source.empty?()
-        let start = self.source.checkpoint()
-        let end = unicode::grapheme_end(self.source)
-        self.source.restore(end)
-        self.source.text_span(start, end)
-    }
-}
-
-impl String {
     /// Counts Unicode 17.0.0 extended grapheme clusters without normalization.
     pub func length(self) -> Int {
         let source = StringCursor.from(self)
@@ -312,109 +212,12 @@ impl String {
             Option.None -> ""
         }
     }
-}
 
-/// Creates a byte cursor over validated text.
-func cursor(text: String) -> StringCursor {
-    StringCursor { data: text.bytes, offset: 0 }
-}
-
-impl String {
     /// Creates an independent iterator yielding whole grapheme clusters as strings.
     pub func iterator(self) -> Iterator<String> [read self] {
         GraphemeCursor.from(self)
     }
-}
 
-impl StringCursor {
-    /// Creates an independent reader at UTF-8 byte offset zero.
-    /// Preserves `text`; subsequent reads advance only the new cursor.
-    pub func from(text: String) -> StringCursor { cursor(text) }
-    /// Returns the current UTF-8 byte offset.
-    pub func checkpoint(self) -> Int { self.offset }
-    /// Reads the next scalar without changing the position.
-    pub func peek(self) -> Option<CodePoint> {
-        branch { self.offset >= self.data.length -> Option.None _ -> Option.Some(self.scalar()) }
-    }
-    /// Moves to a scalar-aligned UTF-8 byte offset in `[0, byte_length]`.
-    /// Returns false for an invalid boundary or out-of-range offset without moving.
-    /// Offsets do not encode source identity; use checkpoints from this snapshot.
-    pub func restore(self, position: Int) -> Bool {
-        return false if !self.boundary?(position)
-        self.offset = position
-        true
-    }
-    /// Copies scalars between two valid byte checkpoints into an item list.
-    pub func span(self, start: Int, end: Int) -> Option<List<CodePoint>> {
-        branch self.text_span(start, end) {
-            Option.None -> Option.None
-            Option.Some(text) -> Option.Some(text.code_points())
-        }
-    }
-    /// Copies text between scalar-aligned byte offsets `[start, end)` without moving.
-    /// Returns `None` for reversed bounds, out-of-range offsets, or split UTF-8 scalars.
-    pub func text_span(self, start: Int, end: Int) -> Option<String> {
-        return Option.None if end < start || !self.boundary?(start) || !self.boundary?(end)
-        Option.Some(decode_bytes(self.data.slice(start, end)))
-    }
-    /// Copies the text from the current position to the end.
-    pub func remaining(self) -> String { decode_bytes(self.data.slice(self.offset, self.data.length)) }
-    /// Reports whether the reader has reached the end.
-    pub func empty?(self) -> Bool { self.offset == self.data.length }
-    /// Checks that an offset does not split a UTF-8 encoding.
-    func boundary?(self, position: Int) -> Bool {
-        return false if position < 0 || position > self.data.length
-        return true if position == self.data.length
-        let first = self.data[position].int
-        first < 128 || first >= 192
-    }
-}
-/// Returns the encoded width of a valid UTF-8 leading byte.
-func scalar_width(first: Int) -> Int {
-    branch {
-        first < 128 -> 1
-        first < 224 -> 2
-        first < 240 -> 3
-        _ -> 4
-    }
-}
-
-impl StringCursor {
-    /// Returns the next complete Unicode scalar, or None after exhaustion.
-    pub func next(self) -> Option<CodePoint> {
-        branch {
-            self.offset >= self.data.length -> Option.None
-            _ -> Option.Some(self.next_scalar())
-        }
-    }
-
-    /// Reads one scalar and advances the byte offset; callers ensure the cursor is nonempty.
-    func next_scalar(self) -> CodePoint {
-        let value = self.scalar()
-        self.offset = self.offset + scalar_width(self.data[self.offset].int)
-        value
-    }
-
-    /// Decodes the scalar at the current nonempty position without advancing.
-    func scalar(self) -> CodePoint {
-        let first = self.data[self.offset].int
-        let width = scalar_width(first)
-        let scalar = branch {
-            width == 1 -> first
-            width == 2 -> first - 192
-            width == 3 -> first - 224
-            _ -> first - 240
-        }
-        let index = 1
-        while index < width {
-            scalar = scalar * 64 + self.data[self.offset + index].int - 128
-            index = index + 1
-        }
-        from_code_point(scalar)
-    }
-}
-
-impl String {
     /// Returns the first grapheme cluster, or `None` when the string is empty.
     pub func first(self) -> Option<String> {
         branch {
@@ -443,20 +246,7 @@ impl String {
         }
         (move output).finish()
     }
-}
 
-/// Compares a candidate byte range with a complete validated UTF-8 pattern.
-func matches_at(data: Bytes, pattern: Bytes, start: Int) -> Bool {
-    return false if pattern.length > data.length - start
-    let index = 0
-    while index < pattern.length {
-        return false if data[start + index] != pattern[index]
-        index = index + 1
-    }
-    true
-}
-
-impl String {
     /// Returns whether the text begins with `prefix`; an empty prefix always matches.
     pub func starts_with?(self, prefix: String) -> Bool {
         matches_at(self.bytes, prefix.bytes, 0)
@@ -646,6 +436,211 @@ impl String {
     pub func upper(self) -> String {
         unicode::change_case(self, 1)
     }
+
+    /// Returns the number of bytes required by the UTF-8 encoding.
+    pub func byte_length(self) -> Int {
+        self.value.length
+    }
+}
+
+/// A Foster text builder that encodes code points and appends UTF-8 without prefix concatenation.
+pub type StringBuilder = {
+    value: ByteBuffer
+
+    // Required public operations; implementations live in impl blocks.
+    /// Appends validated text to this builder.
+    pub func append(self, text: String) -> () [reshape self.value.value.items]
+    /// Encodes one Unicode scalar into UTF-8; encoding policy stays in Foster.
+    pub func push(self, character: CodePoint) -> () [reshape self.value.value.items]
+    /// Consumes the builder and constructs one validated immutable String.
+    pub func finish(self) -> String [consume self]
+}
+
+impl StringBuilder {
+    /// Creates an empty text builder.
+    pub func empty() -> StringBuilder {
+        StringBuilder { value: ByteBuffer.empty() }
+    }
+
+    /// Appends validated text to this builder.
+    pub func append(self, text: String) -> () [reshape self.value.value.items] {
+        self.value.extend(text.bytes)
+    }
+
+    /// Encodes one Unicode scalar into UTF-8; encoding policy stays in Foster.
+    pub func push(self, character: CodePoint) -> () [reshape self.value.value.items] {
+        let scalar = character.as_int()
+        branch {
+            scalar < 128 -> self.value.push(Byte.unchecked(scalar))
+            scalar < 2048 -> {
+                self.value.push(Byte.unchecked(192 + scalar / 64))
+                self.value.push(Byte.unchecked(128 + scalar - scalar / 64 * 64))
+            }
+            scalar < 65536 -> {
+                self.value.push(Byte.unchecked(224 + scalar / 4096))
+                self.value.push(Byte.unchecked(128 + scalar / 64 - scalar / 4096 * 64))
+                self.value.push(Byte.unchecked(128 + scalar - scalar / 64 * 64))
+            }
+            _ -> {
+                self.value.push(Byte.unchecked(240 + scalar / 262144))
+                self.value.push(Byte.unchecked(128 + scalar / 4096 - scalar / 262144 * 64))
+                self.value.push(Byte.unchecked(128 + scalar / 64 - scalar / 4096 * 64))
+                self.value.push(Byte.unchecked(128 + scalar - scalar / 64 * 64))
+            }
+        }
+    }
+
+    /// Consumes the builder and constructs one validated immutable String.
+    pub func finish(self) -> String [consume self] {
+        decode_bytes((move self.value).freeze())
+    }
+}
+
+/// Decodes bytes produced by the text algorithms, retaining a checked construction boundary.
+func decode_bytes(data: Bytes) -> String {
+    branch String.from_utf8(move data) {
+        Result.Ok(text) -> text
+        Result.Error(_) -> {
+            panic("text construction must preserve valid UTF-8")
+        }
+    }
+}
+
+/// A cursor over one stable UTF-8 byte snapshot, never over copied suffix strings.
+pub type StringCursor = & Cursor<CodePoint> & {
+    data: Bytes
+    offset: Int
+
+    /// Copies text between scalar-aligned byte offsets without moving the cursor.
+    pub func text_span(self, start: Int, end: Int) -> Option<String> [read self]
+    /// Copies the text from the current position to the end.
+    pub func remaining(self) -> String [read self]
+    /// Reports whether the reader has reached the end.
+    pub func empty?(self) -> Bool [read self]
+}
+
+/// A forward iterator over extended grapheme clusters in a stable UTF-8 snapshot.
+/// Each item is a String containing one cluster; byte offsets remain internal.
+pub type GraphemeCursor = & Iterator<String> & {
+    source: StringCursor
+}
+
+impl GraphemeCursor {
+    /// Creates an independent grapheme iterator using Unicode 17.0.0 boundaries.
+    pub func from(text: String) -> GraphemeCursor {
+        GraphemeCursor { source: StringCursor.from(text) }
+    }
+
+    /// Returns the next complete cluster, or None at the end of the text.
+    pub func next(self) -> Option<String> {
+        return Option.None if self.source.empty?()
+        let start = self.source.checkpoint()
+        let end = unicode::grapheme_end(self.source)
+        self.source.restore(end)
+        self.source.text_span(start, end)
+    }
+}
+
+/// Creates a byte cursor over validated text.
+func cursor(text: String) -> StringCursor {
+    StringCursor { data: text.bytes, offset: 0 }
+}
+
+impl StringCursor {
+    /// Creates an independent reader at UTF-8 byte offset zero.
+    /// Preserves `text`; subsequent reads advance only the new cursor.
+    pub func from(text: String) -> StringCursor { cursor(text) }
+    /// Returns the current UTF-8 byte offset.
+    pub func checkpoint(self) -> Int { self.offset }
+    /// Reads the next scalar without changing the position.
+    pub func peek(self) -> Option<CodePoint> {
+        branch { self.offset >= self.data.length -> Option.None _ -> Option.Some(self.scalar()) }
+    }
+    /// Moves to a scalar-aligned UTF-8 byte offset in `[0, byte_length]`.
+    /// Returns false for an invalid boundary or out-of-range offset without moving.
+    /// Offsets do not encode source identity; use checkpoints from this snapshot.
+    pub func restore(self, position: Int) -> Bool {
+        return false if !self.boundary?(position)
+        self.offset = position
+        true
+    }
+    /// Copies scalars between two valid byte checkpoints into an item list.
+    pub func span(self, start: Int, end: Int) -> Option<List<CodePoint>> {
+        branch self.text_span(start, end) {
+            Option.None -> Option.None
+            Option.Some(text) -> Option.Some(text.code_points())
+        }
+    }
+    /// Copies text between scalar-aligned byte offsets `[start, end)` without moving.
+    /// Returns `None` for reversed bounds, out-of-range offsets, or split UTF-8 scalars.
+    pub func text_span(self, start: Int, end: Int) -> Option<String> {
+        return Option.None if end < start || !self.boundary?(start) || !self.boundary?(end)
+        Option.Some(decode_bytes(self.data.slice(start, end)))
+    }
+    /// Copies the text from the current position to the end.
+    pub func remaining(self) -> String { decode_bytes(self.data.slice(self.offset, self.data.length)) }
+    /// Reports whether the reader has reached the end.
+    pub func empty?(self) -> Bool { self.offset == self.data.length }
+    /// Checks that an offset does not split a UTF-8 encoding.
+    func boundary?(self, position: Int) -> Bool {
+        return false if position < 0 || position > self.data.length
+        return true if position == self.data.length
+        let first = self.data[position].int
+        first < 128 || first >= 192
+    }
+
+    /// Returns the next complete Unicode scalar, or None after exhaustion.
+    pub func next(self) -> Option<CodePoint> {
+        branch {
+            self.offset >= self.data.length -> Option.None
+            _ -> Option.Some(self.next_scalar())
+        }
+    }
+
+    /// Reads one scalar and advances the byte offset; callers ensure the cursor is nonempty.
+    func next_scalar(self) -> CodePoint {
+        let value = self.scalar()
+        self.offset = self.offset + scalar_width(self.data[self.offset].int)
+        value
+    }
+
+    /// Decodes the scalar at the current nonempty position without advancing.
+    func scalar(self) -> CodePoint {
+        let first = self.data[self.offset].int
+        let width = scalar_width(first)
+        let scalar = branch {
+            width == 1 -> first
+            width == 2 -> first - 192
+            width == 3 -> first - 224
+            _ -> first - 240
+        }
+        let index = 1
+        while index < width {
+            scalar = scalar * 64 + self.data[self.offset + index].int - 128
+            index = index + 1
+        }
+        from_code_point(scalar)
+    }
+}
+/// Returns the encoded width of a valid UTF-8 leading byte.
+func scalar_width(first: Int) -> Int {
+    branch {
+        first < 128 -> 1
+        first < 224 -> 2
+        first < 240 -> 3
+        _ -> 4
+    }
+}
+
+/// Compares a candidate byte range with a complete validated UTF-8 pattern.
+func matches_at(data: Bytes, pattern: Bytes, start: Int) -> Bool {
+    return false if pattern.length > data.length - start
+    let index = 0
+    while index < pattern.length {
+        return false if data[start + index] != pattern[index]
+        index = index + 1
+    }
+    true
 }
 
 /// Changes ASCII letters in one byte scan; multibyte UTF-8 scalars are copied unchanged.
@@ -664,13 +659,6 @@ func ascii_case(text: String, lower: Bool) -> String {
         index = index + 1
     }
     decode_bytes((move output).freeze())
-}
-
-impl String {
-    /// Returns the number of bytes required by the UTF-8 encoding.
-    pub func byte_length(self) -> Int {
-        self.value.length
-    }
 }
 
 /// Returns whether a cluster consists of one ASCII decimal digit.

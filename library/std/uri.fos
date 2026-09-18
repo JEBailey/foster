@@ -42,15 +42,7 @@ impl Uri {
             _ -> begin_scheme(move value)
         }
     }
-}
 
-/// Begins scanning after the already validated first scheme character.
-func begin_scheme(value: String) -> Result<Uri, UriError> [consume value] {
-    let remaining = value.scalar_rest()
-    parse_scheme(move value, remaining, 1)
-}
-
-impl Uri {
     /// Builds a URI from an already separated scheme and resource path.
     pub func from_parts(scheme: String, path: String) -> Result<Uri, UriError> {
         Uri.parse(scheme + ":" + path)
@@ -67,6 +59,12 @@ impl Uri {
 
     /// Returns the resource portion following the URI scheme separator.
     pub func path(self) -> String { self.path_value.scalar_slice(0, self.path_value.scalar_length()) }
+}
+
+/// Begins scanning after the already validated first scheme character.
+func begin_scheme(value: String) -> Result<Uri, UriError> [consume value] {
+    let remaining = value.scalar_rest()
+    parse_scheme(move value, remaining, 1)
 }
 
 /// Scans the URI scheme until its separator.
@@ -126,9 +124,9 @@ test "URIs parse schemes paths and invalid inputs" {
         }
     }
     branch Uri.parse("1invalid") {
-        Result.Error(error) -> {
-            assert(error.value == "1invalid")
-            assert(not error.message.empty?)
+        Result.Error({ value, message }) -> {
+            assert(value == "1invalid")
+            assert(not message.empty?)
             ()
         }
         Result.Ok(_) -> {

@@ -135,7 +135,7 @@ func parse_number_fraction(whole: ScannedNumber) -> ParseResult<Parsed<Json>> {
 func parse_number_exponent(number: ScannedNumber) -> ParseResult<Parsed<Json>> {
     branch scan_exponent(move number.rest, move number.token) {
         ParseError(error) -> ParseError(error)
-        ParseOk(exponent) -> ParseOk(Parsed { value: Json.Number(parse_float(exponent.token)), rest: exponent.rest })
+        ParseOk({ token, rest }) -> ParseOk(Parsed { value: Json.Number(parse_float(token)), rest })
     }
 }
 
@@ -196,10 +196,10 @@ func parse_low_surrogate(high: Parsed<Int>) -> ParseResult<Parsed<String>> {
 func combine_surrogates(high: Int, low_result: ParseResult<Parsed<Int>>) -> ParseResult<Parsed<String>> {
     branch low_result {
         ParseError(error) -> ParseError(error)
-        ParseOk(low) -> branch {
-            low.value < 56320 -> fail("invalid low surrogate")
-            low.value > 57343 -> fail("invalid low surrogate")
-            _ -> ParseOk(Parsed { value: from_code_point(65536 + (high - 55296) * 1024 + low.value - 56320).string, rest: low.rest })
+        ParseOk({ value: low, rest }) -> branch {
+            low < 56320 -> fail("invalid low surrogate")
+            low > 57343 -> fail("invalid low surrogate")
+            _ -> ParseOk(Parsed { value: from_code_point(65536 + (high - 55296) * 1024 + low - 56320).string, rest })
         }
     }
 }
@@ -217,7 +217,7 @@ func parse_string_characters(characters: String, result: String) -> ParseResult<
 func append_escape(characters: String, result: String) -> ParseResult<Parsed<String>> {
     branch parse_escape(move characters) {
         ParseError(error) -> ParseError(error)
-        ParseOk(parsed) -> parse_string_characters(move parsed.rest, result + parsed.value)
+        ParseOk({ value, rest }) -> parse_string_characters(move rest, result + value)
     }
 }
 
@@ -253,7 +253,7 @@ func parse_array_items(characters: String, items: List<Json>) -> ParseResult<Par
 func append_array_value(parsed: ParseResult<Parsed<Json>>, items: List<Json>) -> ParseResult<Parsed<Json>> {
     branch parsed {
         ParseError(error) -> ParseError(error)
-        ParseOk(value) -> array_separator(move value.rest, items.append(value.value))
+        ParseOk({ value, rest }) -> array_separator(move rest, items.append(value))
     }
 }
 
@@ -297,7 +297,7 @@ func require_object_colon(key: Parsed<String>, members: List<JsonMember>) -> Par
 func parse_object_value(parsed: ParseResult<Parsed<Json>>, key: String, members: List<JsonMember>) -> ParseResult<Parsed<Json>> {
     branch parsed {
         ParseError(error) -> ParseError(error)
-        ParseOk(value) -> object_separator(move value.rest, members.append(JsonMember { key, value: value.value }))
+        ParseOk({ value, rest }) -> object_separator(move rest, members.append(JsonMember { key, value }))
     }
 }
 
@@ -333,7 +333,7 @@ func parse_value(characters: String) -> ParseResult<Parsed<Json>> {
 func string_json(parsed: ParseResult<Parsed<String>>) -> ParseResult<Parsed<Json>> {
     branch parsed {
         ParseError(error) -> ParseError(error)
-        ParseOk(value) -> ParseOk(Parsed { value: Json.JsonString(value.value), rest: value.rest })
+        ParseOk({ value, rest }) -> ParseOk(Parsed { value: Json.JsonString(value), rest })
     }
 }
 
