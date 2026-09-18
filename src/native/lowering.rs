@@ -184,6 +184,15 @@ pub(super) fn lower_native_ir(
                 }
                 values.insert(*destination, matched);
                 for (binding, value) in bindings.iter().zip(lowered_bindings) {
+                    // Bindings are only initialized on a successful match. Cleanup on
+                    // the false edge must never release an unretained payload pointer.
+                    let ty = builder.func.dfg.value_type(value);
+                    let zero = if ty == types::F64 {
+                        builder.ins().f64const(0.0)
+                    } else {
+                        builder.ins().iconst(ty, 0)
+                    };
+                    let value = builder.ins().select(matched, value, zero);
                     if let Some(layout) = backend
                         .objects
                         .layouts
@@ -533,6 +542,55 @@ fn lower_native_pattern(
             )?;
             objects.release(builder, module, expected, layouts.string_layout())?;
             Ok((matched, Vec::new()))
+        }
+        Pattern::Record { fields } => {
+            let (value, ty) = super::native_reference_receiver(
+                builder,
+                module,
+                subject.value,
+                subject.ty,
+                backend,
+            )?;
+            let subject = PatternSubject { value, ty };
+            let NativeType::Object(layout) = subject.ty else {
+                return Err(native_error("record pattern requires a native record"));
+            };
+            let LayoutKind::Record {
+                fields: layout_fields,
+                ..
+            } = &layouts.logical.get(layout).kind
+            else {
+                return Err(native_error("record pattern has a non-record subject"));
+            };
+            let mut matched = true_value(builder);
+            let mut bindings = Vec::new();
+            for (name, pattern) in fields {
+                let slot = layout_fields
+                    .iter()
+                    .find(|field| &field.name == name)
+                    .ok_or_else(|| native_error("record pattern has no matching field"))?;
+                let field = layouts
+                    .physical
+                    .record_field(layout, slot.index)
+                    .ok_or_else(|| native_error("record pattern has no physical field"))?;
+                let value =
+                    load_physical_value(builder, module, subject.value, field.offset, field.value);
+                let (field_matched, mut field_bindings) = lower_native_pattern(
+                    builder,
+                    module,
+                    PatternSubject {
+                        value,
+                        ty: native_type_from_value_layout(field.value),
+                    },
+                    pattern,
+                    objects,
+                    runtime_literal_indices,
+                    backend,
+                )?;
+                matched = builder.ins().band(matched, field_matched);
+                bindings.append(&mut field_bindings);
+            }
+            Ok((matched, bindings))
         }
         Pattern::Variant { variant, fields } => {
             let NativeType::Object(layout) = subject.ty else {

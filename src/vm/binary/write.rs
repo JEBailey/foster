@@ -689,6 +689,14 @@ impl Writer {
                 self.u8(8);
                 self.string(v)?;
             }
+            Pattern::Record { fields } => {
+                self.u8(11);
+                self.u32(fields.len())?;
+                for (name, field) in fields {
+                    self.string(name)?;
+                    self.pattern(field)?;
+                }
+            }
             Pattern::Variant { variant, fields } => {
                 self.u8(9);
                 self.id(*variant);

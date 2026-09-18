@@ -1,0 +1,29 @@
+type Box<T> = { value: T, ignored: Int }
+type Pair = { first: Int, second: Int }
+type Counter = { calls: Int }
+enum Outcome = Match(Box<Pair>) | Failed
+
+func make[g: group Counter](counter: ref[g] Counter) -> Box<Pair> [mut g] {
+    counter.calls = counter.calls + 1
+    Box { value: Pair { first: 20, second: 22 }, ignored: 0 }
+}
+
+func main() -> Int {
+    let counter = Counter { calls: 0 }
+    let { value: { first, second: rest } } = make(ref counter)
+    assert(counter.calls == 1)
+    let reference = Box { value: ref counter, ignored: 0 }
+    let { value: { calls } } = reference
+    assert(calls == 1)
+    let checked = branch reference {
+        { value: { calls: 0 } } -> false
+        { value: { calls: count } } -> count == 1
+    }
+    assert(checked)
+    let result = Outcome.Match(Box { value: Pair { first, second: rest }, ignored: 7 })
+    branch result {
+        Outcome.Match({ value: { first: 0 } }) -> 0
+        Outcome.Match({ value: { first: left, second: right } }) -> left + right
+        Outcome.Failed -> 0
+    }
+}

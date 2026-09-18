@@ -52,6 +52,19 @@ pub(crate) fn walk_statement<V: Visitor + ?Sized>(
                 visitor.visit_expression(hir, *guard);
             }
         }
+        Stmt::Destructure {
+            pattern,
+            value,
+            owner,
+        } => {
+            visitor.visit_expression(hir, *value);
+            visitor.visit_local_definition(*owner);
+            let mut locals = Vec::new();
+            pattern.binding_locals(&mut locals);
+            for local in locals {
+                visitor.visit_local_definition(local);
+            }
+        }
         Stmt::Bind { local, value } => {
             visitor.visit_expression(hir, *value);
             visitor.visit_local_definition(*local);

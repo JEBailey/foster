@@ -192,6 +192,10 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                         self.walk_expr(*guard);
                     }
                 }
+                hir::Stmt::Destructure { pattern, value, .. } => {
+                    self.walk_expr(*value);
+                    self.bind_record_pattern(pattern, self.place_group(*value), true);
+                }
                 hir::Stmt::Bind { local, value } => {
                     self.walk_consumed_expr(*value);
                     let group = self.borrowed_result_group(*value).unwrap_or_else(|| {
@@ -692,6 +696,32 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
         }
     }
 
+    fn bind_record_pattern(
+        &mut self,
+        pattern: &hir::Pattern,
+        group: crate::ast::GroupPath,
+        consuming: bool,
+    ) {
+        match pattern.unspanned() {
+            hir::Pattern::Binding(local) => {
+                let ty = self.checker.locals.get(local);
+                if consuming && ty.is_some_and(|ty| !self.checker.is_copy_type(ty)) {
+                    self.add(crate::ast::EffectKind::Consume, group.clone());
+                }
+                let owner = ty
+                    .and_then(|ty| reference_group(&self.checker.resolved(ty.clone())))
+                    .map(crate::ast::GroupPath::root)
+                    .unwrap_or_else(|| crate::ast::GroupPath::root(FRAME_GROUP));
+                self.owners.insert(*local, owner);
+            }
+            hir::Pattern::Record { fields } => {
+                for (name, field) in fields {
+                    self.bind_record_pattern(field, group.clone().child(name), consuming);
+                }
+            }
+            _ => {}
+        }
+    }
     fn bind_borrowed_pattern(&mut self, pattern: &hir::Pattern, subject: ExprId) {
         match pattern.unspanned() {
             hir::Pattern::Binding(local)
@@ -702,6 +732,9 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 if let Some(group) = self.borrowed_result_group(subject) {
                     self.owners.insert(*local, group);
                 }
+            }
+            hir::Pattern::Record { .. } => {
+                self.bind_record_pattern(pattern, self.place_group(subject), false)
             }
             hir::Pattern::Variant { fields, .. } => {
                 for field in fields {

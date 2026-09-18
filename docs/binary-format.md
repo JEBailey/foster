@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Format version 30; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
+Format version 31; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -90,8 +90,11 @@ String(string)`, `5 CodePoint(u32 scalar)`, `6 Symbol(string)`.
 
 Pattern tags: `0 Spanned(Pattern, Span)`, `1 Wildcard`, `2 Binding(LocalId)`, `3 Bool(bool)`, `4
 Integer(u64 bits)`, `5 Float(u64 bits)`, `6 String(string)`, `7 CodePoint(string)`, `8 Symbol(string)`,
-`9 Variant(VariantId, vector<Pattern>)`, and
-`10 IsType(ExecutableType target, ExecutableType source, vector<ExecutableType> conforming, optional<LocalId> binding)`.
+`9 Variant(VariantId, vector<Pattern>)`,
+`10 IsType(ExecutableType target, ExecutableType source, vector<ExecutableType> conforming, optional<LocalId> binding)`,
+and `11 Record(vector<(string field_name, Pattern)>)`.
+Record fields are selected by name, including nested record and enum patterns.
+Verification rejects duplicate field names and nonexistent fields on known record subjects.
 Source typing preserves semantic distinctions such as String versus Symbol during
 native specialization. Conformance witnesses use the structural type checker;
 linking refreshes library witnesses to include client-defined types.
@@ -175,7 +178,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 30 readers accept only version 30 with zero flags. String accessors use Foster
+Version 31 readers accept only version 31 with zero flags. String accessors use Foster
 grapheme algorithms, and strings implement `Sequence<String>`; scalar-based artifacts
 from earlier versions must be rebuilt. The format retains the symbolic module table.
 Contract calls retain their checked

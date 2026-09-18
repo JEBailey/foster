@@ -590,6 +590,35 @@ impl Parser {
         let token = self.advance().clone();
         let start = token.range.start;
         let pattern = match token.kind {
+            TokenKind::LBrace => {
+                let mut fields = Vec::new();
+                let mut seen = std::collections::HashSet::new();
+                self.newlines();
+                while !self.at(&TokenKind::RBrace) && !self.at(&TokenKind::Eof) {
+                    let field_start = self.peek().range.start;
+                    let name = self.expect_ident("expected a record field name")?;
+                    if !seen.insert(name.clone()) {
+                        return Err(self.error(&format!("duplicate record field `{name}`")));
+                    }
+                    let pattern = if self.take(&TokenKind::Colon) {
+                        self.newlines();
+                        self.pattern()?
+                    } else {
+                        self.spanned_pattern(field_start, Pattern::Binding(name.clone()))
+                    };
+                    fields.push((name, pattern));
+                    self.newlines();
+                    if !self.take(&TokenKind::Comma) {
+                        break;
+                    }
+                    self.newlines();
+                }
+                self.expect(&TokenKind::RBrace, "expected `}` after record pattern")?;
+                if fields.is_empty() {
+                    return Err(self.error("a record pattern must select at least one field"));
+                }
+                Pattern::Record { fields }
+            }
             TokenKind::Ident(name) if name == "is" => Pattern::Is(self.type_expr()?),
             TokenKind::Ident(name) if name == "_" => Pattern::Wildcard,
             TokenKind::True => Pattern::Bool(true),

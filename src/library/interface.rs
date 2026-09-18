@@ -608,7 +608,8 @@ fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {
                         expression(guard, names);
                     }
                 }
-                ast::Stmt::Bind { value, .. }
+                ast::Stmt::Destructure { value, .. }
+                | ast::Stmt::Bind { value, .. }
                 | ast::Stmt::Assign { value, .. }
                 | ast::Stmt::Expr(value) => expression(value, names),
                 ast::Stmt::Set { place, value } => {

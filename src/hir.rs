@@ -184,6 +184,11 @@ pub enum LocalKind {
 
 #[derive(Debug, Clone)]
 pub enum Stmt {
+    Destructure {
+        pattern: Pattern,
+        value: ExprId,
+        owner: LocalId,
+    },
     Return {
         value: ExprId,
         guard: Option<ExprId>,
@@ -332,6 +337,9 @@ pub enum BranchTest {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Pattern {
+    Record {
+        fields: Vec<(String, Pattern)>,
+    },
     IsType {
         target: crate::codegen::types::ExecutableType,
         source: crate::codegen::types::ExecutableType,
@@ -357,6 +365,27 @@ pub enum Pattern {
 }
 
 impl Pattern {
+    pub(crate) fn binding_locals(&self, result: &mut Vec<LocalId>) {
+        match self.unspanned() {
+            Self::Binding(local)
+            | Self::IsType {
+                binding: Some(local),
+                ..
+            } => result.push(*local),
+            Self::Record { fields } => {
+                for (_, pattern) in fields {
+                    pattern.binding_locals(result);
+                }
+            }
+            Self::Variant { fields, .. } => {
+                for pattern in fields {
+                    pattern.binding_locals(result);
+                }
+            }
+            _ => {}
+        }
+    }
+
     pub fn unspanned(&self) -> &Self {
         match self {
             Self::Spanned { pattern, .. } => pattern.unspanned(),

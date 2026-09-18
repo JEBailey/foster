@@ -49,7 +49,8 @@ impl Checker<'_> {
                 .as_ref()
                 .is_some_and(|ty| self.resolved(ty.clone()) == Ty::Never);
             final_expression = match statement {
-                hir::Stmt::Return { value, .. }
+                hir::Stmt::Destructure { value, .. }
+                | hir::Stmt::Return { value, .. }
                 | hir::Stmt::Bind { value, .. }
                 | hir::Stmt::Assign { value, .. }
                 | hir::Stmt::Set { value, .. }
@@ -94,6 +95,23 @@ impl Checker<'_> {
         statement: &hir::Stmt,
     ) -> Result<Option<Ty>, FosterError> {
         match statement {
+            hir::Stmt::Destructure {
+                pattern,
+                value,
+                owner,
+            } => {
+                let ty = self.infer_expression(function, *value)?;
+                self.locals.insert(*owner, ty.clone());
+                self.check_pattern(
+                    function,
+                    pattern,
+                    ty,
+                    &mut Default::default(),
+                    &mut false,
+                    true,
+                )?;
+                Ok(Some(Ty::Unit))
+            }
             hir::Stmt::Return {
                 value: value_expression,
                 guard,
@@ -332,6 +350,7 @@ impl Checker<'_> {
                     break;
                 }
                 hir::Stmt::Expr(id)
+                | hir::Stmt::Destructure { value: id, .. }
                 | hir::Stmt::Bind { value: id, .. }
                 | hir::Stmt::Assign { value: id, .. }
                 | hir::Stmt::Set { value: id, .. } => {
@@ -998,7 +1017,8 @@ impl Checker<'_> {
             .iter()
             .filter_map(|statement| {
                 let expression = match statement {
-                    hir::Stmt::Return { value, .. }
+                    hir::Stmt::Destructure { value, .. }
+                    | hir::Stmt::Return { value, .. }
                     | hir::Stmt::Bind { value, .. }
                     | hir::Stmt::Assign { value, .. }
                     | hir::Stmt::Set { value, .. }

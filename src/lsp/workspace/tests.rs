@@ -1892,3 +1892,96 @@ fn selected_try_navigates_to_the_operand_enum() {
     let hover = workspace.hover(&params).unwrap();
     assert!(format!("{:?}", hover.contents).contains("Outcome"));
 }
+
+#[test]
+fn record_destructuring_bindings_have_navigation_and_precise_hints() {
+    let (mut workspace, uri, _) = fixture_workspace();
+    let source = "type Pair = { first: Int, second: Int }\nfunc main() -> Int {\n    let { first, second: answer } = Pair { first: 20, second: 22 }\n    first + answer\n}\n";
+    workspace.open(uri.clone(), source.into(), 1);
+    assert!(workspace.compile_for(&uri).unwrap().diagnostics.is_empty());
+    for name in ["first", "answer"] {
+        let use_start = source.rfind(name).unwrap();
+        let position = byte_range_to_lsp(source, use_start..use_start).start;
+        let definition = workspace
+            .definition(&TextDocumentPositionParams::new(
+                lsp_types::TextDocumentIdentifier::new(uri.clone()),
+                position,
+            ))
+            .unwrap();
+        let binding_start = source
+            .find(if name == "first" {
+                "{ first,"
+            } else {
+                ": answer"
+            })
+            .unwrap()
+            + 2;
+        assert_eq!(
+            definition.range,
+            byte_range_to_lsp(source, binding_start..binding_start + name.len())
+        );
+    }
+    let hints = workspace
+        .inlay_hints(&InlayHintParams {
+            work_done_progress_params: Default::default(),
+            text_document: lsp_types::TextDocumentIdentifier::new(uri),
+            range: byte_range_to_lsp(source, 0..source.len() - 1),
+        })
+        .unwrap();
+    let positions = hints
+        .iter()
+        .filter(|hint| hint.kind == Some(lsp_types::InlayHintKind::TYPE))
+        .map(|hint| hint.position)
+        .collect::<Vec<_>>();
+    let expected = ["let { first", ": answer"].map(|text| {
+        let end = source.find(text).unwrap() + text.len();
+        byte_range_to_lsp(source, end..end).start
+    });
+    assert_eq!(positions, expected);
+}
+
+#[test]
+fn renaming_record_shorthand_keeps_the_field_name() {
+    for source in [
+        "type P = { value: Int }\nfunc main() -> Int { let { value } = P { value: 42 }\nP { value }.value }",
+        "type P = { value: Int }\nfunc main() -> Int { let record = P { value: 42 }\nbranch record { { value } -> value } }",
+    ] {
+        crate::compile(source).unwrap();
+        let (mut workspace, uri, _) = fixture_workspace();
+        workspace.open(uri.clone(), source.into(), 1);
+        let offset = source.find("{ value }").unwrap() + 2;
+        let edit = workspace
+            .rename(&RenameParams {
+                text_document_position: TextDocumentPositionParams::new(
+                    lsp_types::TextDocumentIdentifier::new(uri),
+                    byte_range_to_lsp(source, offset..offset).start,
+                ),
+                new_name: "answer".into(),
+                work_done_progress_params: Default::default(),
+            })
+            .unwrap_or_else(|| panic!("no rename for {source}"));
+        let Some(DocumentChanges::Edits(documents)) = edit.document_changes else {
+            panic!("expected edits")
+        };
+        let mut edits = documents
+            .into_iter()
+            .flat_map(|document| document.edits)
+            .map(|edit| match edit {
+                OneOf::Left(edit) => edit,
+                OneOf::Right(edit) => edit.text_edit,
+            })
+            .collect::<Vec<_>>();
+        edits.sort_by_key(|edit| std::cmp::Reverse(edit.range.start));
+        let mut renamed = source.to_owned();
+        for edit in edits {
+            let start = position_to_offset(source, edit.range.start).unwrap();
+            let end = position_to_offset(source, edit.range.end).unwrap();
+            renamed.replace_range(start..end, &edit.new_text);
+        }
+        assert!(renamed.contains("{ value: answer }"), "{renamed}");
+        assert_eq!(
+            crate::run(&renamed).unwrap_or_else(|error| panic!("{renamed}: {error}")),
+            crate::vm::Value::Integer(42)
+        );
+    }
+}

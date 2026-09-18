@@ -1,7 +1,7 @@
 # Foster semantic specification
 
-Status: **draft normative specification**, revision 7, 2026-09-17.
-Baseline: **language version 12, ownership-model version 3**.
+Status: **draft normative specification**, revision 8, 2026-09-18.
+Baseline: **language version 13, ownership-model version 3**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
@@ -186,9 +186,19 @@ functions. Assertions and completed loops yield `()`. A guarded return's fallthr
 `()` when no subsequent statement supplies a result. Unconditional control transfers leave the
 body instead of manufacturing a result.
 
+Local record destructuring evaluates its source once and applies ordinary
+field-binding ownership in pattern order. Scalar fields copy, managed fields move,
+and omitted fields remain in the source. Computed sources live until scope exit;
+unselected fields are destroyed with that hidden owner. Field privacy and the
+prohibition on partial moves from a `deinit` owner apply normally.
+
 **S-10 — Selection and repetition.** A subject branch evaluates its subject once. Branch arms
 are considered in source order; the first matching arm executes and does not fall through.
 Enum coverage must account for refutable payload patterns, not merely mention each case name.
+Record branch patterns test accessible stored fields and bind only on success;
+failed nested patterns expose none of their tentative bindings. A record pattern
+with only irrefutable field patterns covers its record type, including when nested
+inside an enum payload.
 A branch-arm block that completes without a final value expression produces `()`.
 
 `is Type` checks type conformance, including accessible structural fields,
@@ -386,6 +396,10 @@ or completion. A category may be omitted only when it cannot apply to the rule, 
 ownership rejection for a purely lexical rule. A known backend violation must be recorded
 explicitly rather than hidden by weakening an assertion. See [testing](testing.md) and
 [ownership verification](ownership-verification.md) for execution commands and test organization.
+
+Record destructuring witnesses are in [record tests](../tests/record_destructuring.rs),
+[the portable fixture](../tests/fixtures/programs/record_destructuring.fos), and
+[backend parity tests](../tests/backend_parity.rs).
 
 ## 12. Open decisions and implementation gaps
 

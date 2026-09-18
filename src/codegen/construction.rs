@@ -447,17 +447,19 @@ impl Compiler<'_> {
                     .parameters
                     .iter()
                     .enumerate()
-                    .map(|(index, _)| {
+                    .map(|(index, parameter)| {
                         let Some(signature) = self.types.function_type(function_id) else {
                             return false;
                         };
                         if signature.parameters[index].mode != crate::ast::ParameterMode::Borrow {
                             return false;
                         }
-                        let crate::types::Type::Reference { group, .. } =
-                            &self.types.types[signature.parameters[index].ty]
-                        else {
-                            return false;
+                        let group = match &self.types.types[signature.parameters[index].ty] {
+                            crate::types::Type::Reference { group, .. } => group,
+                            _ if !self.types.is_copy(signature.parameters[index].ty) => {
+                                &self.hir.locals[parameter.local].name
+                            }
+                            _ => return false,
                         };
                         function.effects.iter().any(|effect| {
                             matches!(
@@ -694,6 +696,46 @@ impl FunctionCompiler<'_> {
                 statement_span.clone()
             };
             match statement {
+                hir::Stmt::Destructure {
+                    pattern,
+                    value,
+                    owner,
+                } => {
+                    let source = if crate::semantics::expression_place(
+                        self.hir,
+                        &self.types.member_kinds,
+                        *value,
+                    )
+                    .is_some_and(|place| !place.projections.is_empty())
+                    {
+                        self.reference_expression(*value, span.clone())?
+                    } else {
+                        self.expression(*value)?
+                    };
+                    self.locals.insert(*owner, source);
+                    if crate::semantics::expression_place(
+                        self.hir,
+                        &self.types.member_kinds,
+                        *value,
+                    )
+                    .is_none()
+                    {
+                        self.scopes.last_mut().unwrap().push(source);
+                        // Transfer the temporary's cleanup to the enclosing scope.
+                        self.temporary_scopes
+                            .last_mut()
+                            .unwrap()
+                            .retain(|slot| *slot != source);
+                    }
+                    let ty = verification_type(
+                        self.hir,
+                        self.types,
+                        self.types.expression_type(*value).unwrap(),
+                        0,
+                    );
+                    self.destructure_fields(pattern, source, &ty, span.clone())?;
+                    *result = self.load_constant(Constant::Unit, span)?;
+                }
                 hir::Stmt::Return { value, guard } => {
                     if let Some(guard) = guard {
                         let condition = self.expression(*guard)?;
@@ -922,6 +964,11 @@ impl FunctionCompiler<'_> {
                                 .any(|(other, found)| other != local && found == register)
                         {
                             registers.push(*register);
+                        }
+                    }
+                    hir::Pattern::Record { fields } => {
+                        for (_, field) in fields {
+                            collect(field, locals, registers);
                         }
                     }
                     hir::Pattern::Variant { fields, .. } => {

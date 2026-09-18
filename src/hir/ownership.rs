@@ -330,7 +330,8 @@ fn statement_expressions(statement: &Stmt) -> Vec<ExprId> {
         }
         Stmt::Loop { .. } => Vec::new(),
         Stmt::Break { guard } | Stmt::Continue { guard } => guard.iter().copied().collect(),
-        Stmt::Bind { value, .. }
+        Stmt::Destructure { value, .. }
+        | Stmt::Bind { value, .. }
         | Stmt::Assign { value, .. }
         | Stmt::Set { value, .. }
         | Stmt::Expr(value) => vec![*value],

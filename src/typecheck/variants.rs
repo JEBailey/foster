@@ -109,6 +109,35 @@ impl Checker<'_> {
                     self.locals.insert(*local, ty);
                 }
             }
+            hir::Pattern::Record { fields } => {
+                let mut expected = self.resolved(expected);
+                if let Ty::Reference(_, value) = expected {
+                    expected = *value;
+                }
+                let Ty::Record(record, arguments) = expected else {
+                    return Err(
+                        self.error(function, "record destructuring requires a record value")
+                    );
+                };
+                for (name, pattern) in fields {
+                    let ty = self
+                        .record_field_type(function, record, &arguments, name)
+                        .map_err(|error| {
+                            if let Some(span) = pattern.span() {
+                                error.with_primary_label(
+                                    span,
+                                    format!("cannot destructure field `{name}`"),
+                                )
+                            } else {
+                                error
+                            }
+                        })?;
+                    self.check_pattern(function, pattern, ty, covered, catch_all, false)?;
+                }
+                if top_level && fields.iter().all(|(_, p)| pattern_is_irrefutable(p)) {
+                    *catch_all = true;
+                }
+            }
             hir::Pattern::Wildcard => {
                 if top_level {
                     *catch_all = true;

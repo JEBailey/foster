@@ -555,18 +555,37 @@ impl Workspace {
         {
             return None;
         }
+        let shorthand = match symbol {
+            SymbolIdentity::Local(local) => record_shorthand_spans(&compilation, local),
+            _ => Vec::new(),
+        };
         let mut grouped = std::collections::BTreeMap::<String, (Uri, Vec<TextEdit>)>::new();
-        for location in symbol_locations(&compilation, symbol)
-            .into_iter()
-            .filter_map(|location| self.remap_semantic_location(&compilation, location))
-        {
+        for semantic_location in symbol_locations(&compilation, symbol) {
+            let new_text = if shorthand
+                .iter()
+                .any(|range| byte_range_to_lsp(source, range.clone()) == semantic_location.range)
+            {
+                let SymbolIdentity::Local(local) = symbol else {
+                    unreachable!()
+                };
+                format!(
+                    "{}: {}",
+                    compilation.hir.locals[local].name, params.new_name
+                )
+            } else {
+                params.new_name.clone()
+            };
+            let Some(location) = self.remap_semantic_location(&compilation, semantic_location)
+            else {
+                continue;
+            };
             grouped
                 .entry(location.uri.as_str().to_owned())
                 .or_insert_with(|| (location.uri.clone(), Vec::new()))
                 .1
                 .push(TextEdit {
                     range: location.range,
-                    new_text: params.new_name.clone(),
+                    new_text,
                 });
         }
         let edits = grouped
@@ -621,6 +640,105 @@ impl Workspace {
             source_for_uri(compilation, uri).is_none_or(|source| source == document.text)
         })
     }
+}
+
+// A renamed shorthand local must retain the stored field's name.
+fn record_shorthand_spans(
+    compilation: &crate::compiler::Compilation,
+    local: crate::hir::LocalId,
+) -> Vec<std::ops::Range<usize>> {
+    use crate::hir::{self, visit::Visitor};
+    struct Find {
+        local: hir::LocalId,
+        spans: Vec<std::ops::Range<usize>>,
+    }
+    impl Find {
+        fn pattern(&mut self, hir: &hir::PackageHir, pattern: &hir::Pattern) {
+            match pattern.unspanned() {
+                hir::Pattern::Record { fields } => {
+                    for (name, pattern) in fields {
+                        if matches!(pattern.unspanned(), hir::Pattern::Binding(local) if *local == self.local)
+                            && name == &hir.locals[self.local].name
+                            && let Some(span) = pattern.span()
+                        {
+                            self.spans.push(span);
+                        }
+                        self.pattern(hir, pattern);
+                    }
+                }
+                hir::Pattern::Variant { fields, .. } => {
+                    for pattern in fields {
+                        self.pattern(hir, pattern);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    impl Visitor for Find {
+        fn visit_statement(&mut self, hir: &hir::PackageHir, statement: &hir::Stmt) {
+            if let hir::Stmt::Destructure { pattern, .. } = statement {
+                self.pattern(hir, pattern);
+            }
+            hir::visit::walk_statement(self, hir, statement);
+        }
+        fn visit_expression(&mut self, hir: &hir::PackageHir, expression: hir::ExprId) {
+            match &hir.expressions[expression] {
+                hir::Expr::Branch { arms, .. } => {
+                    for arm in arms {
+                        if let hir::BranchTest::Pattern(pattern) = &arm.test {
+                            self.pattern(hir, pattern);
+                        }
+                    }
+                }
+                hir::Expr::Record { fields, .. } => {
+                    for (name, value) in fields {
+                        if matches!(hir.expressions[*value], hir::Expr::Name(hir::ResolvedName::Local(local)) if local == self.local)
+                            && name == &hir.locals[self.local].name
+                            && let Some(span) = hir.expression_spans.get(value)
+                        {
+                            self.spans.push(span.clone());
+                        }
+                    }
+                }
+                _ => {}
+            }
+            hir::visit::walk_expression(self, hir, expression);
+        }
+    }
+    let function = &compilation.hir.functions[compilation.hir.locals[local].function];
+    let mut find = Find {
+        local,
+        spans: Vec::new(),
+    };
+    find.visit_block(&compilation.hir, &function.body);
+    let Some(source) = compilation
+        .package
+        .module(&compilation.hir.modules[function.module].name)
+        .and_then(|module| module.source.as_deref())
+    else {
+        return Vec::new();
+    };
+    let Ok(tokens) = crate::lexer::lex(source) else {
+        return Vec::new();
+    };
+    find.spans.retain(|span| {
+        source.get(span.clone()) == Some(compilation.hir.locals[local].name.as_str())
+            && tokens
+                .iter()
+                .rev()
+                .find(|token| {
+                    token.range.end <= span.start
+                        && !matches!(token.kind, crate::lexer::TokenKind::Newline)
+                })
+                .is_some_and(|token| {
+                    matches!(
+                        token.kind,
+                        crate::lexer::TokenKind::LBrace | crate::lexer::TokenKind::Comma
+                    )
+                })
+    });
+    find.spans
 }
 
 fn add_arguments_auto_import_completion(
@@ -786,6 +904,8 @@ fn symbol_at(
                 if let Some((record, method)) = required_method(compilation, *object, member) {
                     return Some(SymbolIdentity::RequiredMethod(record, method));
                 }
+                // A stored member name is not a same-named local binding.
+                return None;
             }
             crate::hir::Expr::Try {
                 value,
@@ -842,12 +962,25 @@ fn symbol_at(
     }
     if qualifier.is_none()
         && let Some(function) = function_at(compilation, module_id, offset)
-        && let Some((local, _)) = compilation
+        && let Some((local, definition)) = compilation
             .hir
             .locals
             .iter()
             .find(|(_, local)| local.function == function && local.name == name)
     {
+        // Explicit record labels share their spelling with locals but are not uses.
+        if !definition.span.contains(&start)
+            && crate::lexer::lex(&source[start + name.len()..])
+                .ok()
+                .and_then(|tokens| {
+                    tokens
+                        .into_iter()
+                        .find(|token| !matches!(token.kind, crate::lexer::TokenKind::Newline))
+                })
+                .is_some_and(|token| matches!(token.kind, crate::lexer::TokenKind::Colon))
+        {
+            return None;
+        }
         return Some(SymbolIdentity::Local(local));
     }
     let target = qualifier

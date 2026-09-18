@@ -84,6 +84,46 @@ impl FunctionLowerer<'_> {
 
     fn lower_statement(&mut self, statement: &ast::Stmt) -> Result<Stmt, FosterError> {
         match statement {
+            ast::Stmt::Destructure { pattern, value } => {
+                fn names(pattern: &ast::Pattern, result: &mut Vec<String>) {
+                    match pattern.unspanned() {
+                        ast::Pattern::Binding(name) => result.push(name.clone()),
+                        ast::Pattern::Record { fields } => {
+                            for (_, pattern) in fields {
+                                names(pattern, result);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                let mut bindings = Vec::new();
+                names(pattern, &mut bindings);
+                for name in bindings {
+                    if self.locals.contains_key(&name)
+                        || self.hir.constant_named(self.module, &name).is_some()
+                    {
+                        return Err(self.error(format!("local `{name}` is already declared")));
+                    }
+                }
+                let value = self.lower_expression(value)?;
+                let owner = self.hir.locals.alloc(Local {
+                    span: self
+                        .hir
+                        .expression_spans
+                        .get(&value)
+                        .cloned()
+                        .unwrap_or_default(),
+                    function: self.function,
+                    name: format!("$destructure{}", self.hir.locals.len()),
+                    kind: LocalKind::Binding,
+                });
+                let pattern = self.lower_pattern_checked(pattern)?;
+                Ok(Stmt::Destructure {
+                    pattern,
+                    value,
+                    owner,
+                })
+            }
             ast::Stmt::Return { value, guard } => Ok(Stmt::Return {
                 value: self.lower_expression(value)?,
                 guard: guard
@@ -450,7 +490,7 @@ impl FunctionLowerer<'_> {
                         }
                         ast::BranchTest::Wildcard => BranchTest::Wildcard,
                         ast::BranchTest::Pattern(p) => {
-                            let mut pattern = self.lower_pattern(p)?;
+                            let mut pattern = self.lower_pattern_checked(p)?;
                             let inner = match &mut pattern {
                                 Pattern::Spanned { pattern, .. } => pattern.as_mut(),
                                 pattern => pattern,
@@ -580,6 +620,26 @@ impl FunctionLowerer<'_> {
         self.hir.expression_spans.insert(id, span);
         self.hir.expression_functions.insert(id, self.function);
         id
+    }
+
+    fn lower_pattern_checked(&mut self, pattern: &ast::Pattern) -> Result<Pattern, FosterError> {
+        fn check(
+            pattern: &ast::Pattern,
+            names: &mut std::collections::HashSet<String>,
+        ) -> Option<String> {
+            match pattern.unspanned() {
+                ast::Pattern::Binding(name) if !names.insert(name.clone()) => Some(name.clone()),
+                ast::Pattern::Record { fields } => fields.iter().find_map(|(_, p)| check(p, names)),
+                ast::Pattern::Variant { fields, .. } => fields.iter().find_map(|p| check(p, names)),
+                _ => None,
+            }
+        }
+        if let Some(name) = check(pattern, &mut Default::default()) {
+            return Err(self.error(format!(
+                "binding `{name}` appears more than once in this pattern"
+            )));
+        }
+        self.lower_pattern(pattern)
     }
 
     fn lower_pattern(&mut self, pattern: &ast::Pattern) -> Result<Pattern, FosterError> {
@@ -715,6 +775,12 @@ impl FunctionLowerer<'_> {
                     binding: None,
                 }
             }
+            ast::Pattern::Record { fields } => Pattern::Record {
+                fields: fields
+                    .iter()
+                    .map(|(name, pattern)| Ok((name.clone(), self.lower_pattern(pattern)?)))
+                    .collect::<Result<_, FosterError>>()?,
+            },
             ast::Pattern::Wildcard => Pattern::Wildcard,
             ast::Pattern::Binding(name) => {
                 let local = self.hir.locals.alloc(Local {

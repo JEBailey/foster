@@ -310,10 +310,13 @@ pub(super) fn intrinsic_verification_type(program: &Program, ty: IntrinsicType) 
 }
 
 pub(super) fn pattern_irrefutable(pattern: &crate::hir::Pattern) -> bool {
-    matches!(
-        pattern.unspanned(),
-        crate::hir::Pattern::Wildcard | crate::hir::Pattern::Binding(_)
-    )
+    match pattern.unspanned() {
+        crate::hir::Pattern::Wildcard | crate::hir::Pattern::Binding(_) => true,
+        crate::hir::Pattern::Record { fields } => fields
+            .iter()
+            .all(|(_, pattern)| pattern_irrefutable(pattern)),
+        _ => false,
+    }
 }
 
 pub(super) fn fully_covered_variant(pattern: &crate::hir::Pattern) -> Option<VariantId> {

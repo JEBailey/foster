@@ -1085,6 +1085,26 @@ impl Parser {
             });
         }
         if self.take(&TokenKind::Let) {
+            if self.at(&TokenKind::LBrace) {
+                let pattern = self.pattern()?;
+                fn irrefutable(pattern: &Pattern) -> bool {
+                    match pattern.unspanned() {
+                        Pattern::Binding(_) | Pattern::Wildcard => true,
+                        Pattern::Record { fields } => {
+                            fields.iter().all(|(_, field)| irrefutable(field))
+                        }
+                        _ => false,
+                    }
+                }
+                if !irrefutable(&pattern) {
+                    return Err(self.error("a destructuring binding requires field bindings, not a conditional pattern"));
+                }
+                self.expect(&TokenKind::Equal, "expected `=` after record bindings")?;
+                return Ok(Stmt::Destructure {
+                    pattern,
+                    value: self.expression()?,
+                });
+            }
             let name = self.expect_ident("expected local name after `let`")?;
             self.expect(&TokenKind::Equal, "expected `=` after local name")?;
             let value = self.expression()?;

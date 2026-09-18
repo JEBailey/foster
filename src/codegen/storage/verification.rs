@@ -628,6 +628,9 @@ fn pattern_binding_count(pattern: &crate::hir::Pattern) -> usize {
         | crate::hir::Pattern::IsType {
             binding: Some(_), ..
         } => 1,
+        crate::hir::Pattern::Record { fields } => {
+            fields.iter().map(|(_, p)| pattern_binding_count(p)).sum()
+        }
         crate::hir::Pattern::Variant { fields, .. } => {
             fields.iter().map(pattern_binding_count).sum()
         }
@@ -733,11 +736,12 @@ pub(crate) fn slot_instruction(
         crate::codegen::storage::Instruction::MakeRecord {
             destination,
             record,
-            type_arguments: _,
+            type_arguments,
             fields,
         } => engine::Instruction::MakeRecord {
             destination: Value(u32::from(destination.0)),
             record: *record,
+            type_arguments: type_arguments.clone(),
             fields: fields
                 .iter()
                 .map(|(a, r)| (a.clone(), Value(u32::from(r.0))))

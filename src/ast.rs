@@ -283,6 +283,10 @@ pub enum EffectKind {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum Stmt {
+    Destructure {
+        pattern: Pattern,
+        value: Expr,
+    },
     Return {
         value: Expr,
         guard: Option<Expr>,
@@ -450,6 +454,9 @@ pub enum BranchTest {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum Pattern {
+    Record {
+        fields: Vec<(String, Pattern)>,
+    },
     Is(TypeExpr),
     Spanned {
         pattern: Box<Pattern>,

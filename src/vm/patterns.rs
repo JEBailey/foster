@@ -8,8 +8,13 @@ pub(super) fn matches(
     pattern: &Pattern,
     value: &Value,
     bindings: &mut Vec<Value>,
-) -> bool {
-    match (pattern.unspanned(), value) {
+) -> Result<bool, crate::error::RuntimeError> {
+    if matches!(pattern.unspanned(), Pattern::Record { .. })
+        && let Value::Reference(reference) = value
+    {
+        return matches(program, pattern, &reference.read()?, bindings);
+    }
+    Ok(match (pattern.unspanned(), value) {
         (
             Pattern::IsType {
                 conforming,
@@ -53,6 +58,20 @@ pub(super) fn matches(
             }
             matched
         }
+        (Pattern::Record { fields: patterns }, Value::Record { fields, .. }) => {
+            let checkpoint = bindings.len();
+            for (name, pattern) in patterns {
+                let Some(value) = fields.get(name) else {
+                    bindings.truncate(checkpoint);
+                    return Ok(false);
+                };
+                if !matches(program, pattern, value, bindings)? {
+                    bindings.truncate(checkpoint);
+                    return Ok(false);
+                }
+            }
+            true
+        }
         (Pattern::Wildcard, _) => true,
         (Pattern::Binding(_), value) => {
             bindings.push(value.clone());
@@ -82,17 +101,17 @@ pub(super) fn matches(
                 || alternative != &expected.alternative
                 || fields.len() != payload.len()
             {
-                return false;
+                return Ok(false);
             }
             let checkpoint = bindings.len();
             for (field, value) in fields.iter().zip(payload) {
-                if !matches(program, field, value, bindings) {
+                if !matches(program, field, value, bindings)? {
                     bindings.truncate(checkpoint);
-                    return false;
+                    return Ok(false);
                 }
             }
             true
         }
         _ => false,
-    }
+    })
 }

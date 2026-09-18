@@ -385,6 +385,11 @@ impl Mapping {
                     self.ty(ty);
                 }
             }
+            hir::Pattern::Record { fields } => {
+                for (_, pattern) in fields {
+                    self.pattern(pattern);
+                }
+            }
             hir::Pattern::Variant { variant, fields } => {
                 *variant = id(self.cases[&raw(*variant)]);
                 for p in fields {

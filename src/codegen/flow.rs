@@ -151,11 +151,12 @@ pub(crate) fn ssa_instruction(
         crate::codegen::ir::PortableInstruction::MakeRecord {
             destination,
             record,
-            type_arguments: _,
+            type_arguments,
             fields,
         } => engine::Instruction::MakeRecord {
             destination: *destination,
             record: *record,
+            type_arguments: type_arguments.clone(),
             fields: fields.clone(),
         },
         crate::codegen::ir::PortableInstruction::MakeVariant {

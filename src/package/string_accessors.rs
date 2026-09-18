@@ -25,9 +25,10 @@ fn block(body: &Block<Stmt>) -> bool {
         }
         Stmt::Loop { body } => block(body),
         Stmt::Break { guard } | Stmt::Continue { guard } => guard.as_ref().is_some_and(expression),
-        Stmt::Bind { value, .. } | Stmt::Assign { value, .. } | Stmt::Expr(value) => {
-            expression(value)
-        }
+        Stmt::Destructure { value, .. }
+        | Stmt::Bind { value, .. }
+        | Stmt::Assign { value, .. }
+        | Stmt::Expr(value) => expression(value),
         Stmt::Function(function) => block(&function.body),
         Stmt::Set { place, value } => expression(place) || expression(value),
     })

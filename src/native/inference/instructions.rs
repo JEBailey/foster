@@ -559,6 +559,43 @@ fn native_pattern_binding_types(
             }
         }
         Pattern::Binding(_) => bindings.push(subject),
+        Pattern::Record { fields } => {
+            let mut subject = subject;
+            while let NativeType::Object(layout) = subject {
+                let LayoutKind::Pointer { pointee, .. } = &layouts.get(layout).kind else {
+                    break;
+                };
+                subject = native_verification_type(program, layouts, pointee, None)?;
+            }
+            let NativeType::Object(layout) = subject else {
+                return Err(native_error("record pattern requires a record layout"));
+            };
+            let LayoutKind::Record {
+                fields: layout_fields,
+                ..
+            } = &layouts.get(layout).kind
+            else {
+                return Err(native_error("record pattern requires a record layout"));
+            };
+            for (name, pattern) in fields {
+                let slot = layout_fields
+                    .iter()
+                    .find(|field| &field.name == name)
+                    .ok_or_else(|| native_error("record pattern has no matching field"))?;
+                let field = physical_layouts
+                    .record_field(layout, slot.index)
+                    .ok_or_else(|| native_error("record pattern has no physical field"))?;
+                let ty = native_verification_type(program, layouts, &slot.ty, field.value.pointee)?;
+                native_pattern_binding_types(
+                    program,
+                    layouts,
+                    physical_layouts,
+                    pattern,
+                    ty,
+                    bindings,
+                )?;
+            }
+        }
         Pattern::Variant { variant, fields } => {
             let parent = program.variants[variant].parent;
             let NativeType::Object(layout) = subject else {

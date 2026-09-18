@@ -2600,3 +2600,100 @@ fn never_entry_reports_failure() {
         Err("entry panic"),
     );
 }
+
+#[test]
+fn record_destructuring_matches_on_both_backends() {
+    check(
+        "record-destructuring",
+        include_str!("fixtures/programs/record_destructuring.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn record_destructuring_transfers_cleanup_once() {
+    check_stdout(
+        "record-destructuring-cleanup",
+        r#"
+import core.drop
+type Item = { value: Int }
+impl Item {
+    func deinit(self) -> () { println(self.value) }
+}
+type Pair = { first: Item, second: Item }
+func make() -> Pair { Pair { first: Item { value: 1 }, second: Item { value: 2 } } }
+func main() -> Int {
+    let { first } = make()
+    println(first.value + 10)
+    42
+}
+"#,
+        "11\n1\n2\n42",
+    );
+}
+
+#[test]
+fn record_destructuring_from_a_projected_source_cleans_up_once() {
+    check_stdout(
+        "record-destructuring-projection",
+        r#"
+import core.drop
+type Item = { value: Int }
+impl Item { func deinit(self) -> () { println(self.value) } }
+type Pair = { first: Item, second: Item }
+type Outer = { pair: Pair }
+func main() -> Int {
+    let outer = Outer { pair: Pair { first: Item { value: 1 }, second: Item { value: 2 } } }
+    let { first } = outer.pair
+    println(first.value + outer.pair.second.value)
+    42
+}
+"#,
+        "3\n1\n2\n42",
+    );
+}
+
+#[test]
+fn record_branch_bindings_do_not_duplicate_cleanup() {
+    check_stdout(
+        "record-pattern-cleanup",
+        r#"
+import core.drop
+type Item = { value: Int }
+impl Item { func deinit(self) -> () { println(9) } }
+type Pair = { first: Item, second: Item }
+func main() -> Int {
+    let pair = Pair { first: Item { value: 1 }, second: Item { value: 2 } }
+    let answer = branch pair {
+        { first: item, second: { value: 0 } } -> item.value
+        { first, second } -> first.value + second.value
+    }
+    println(answer)
+    42
+}
+"#,
+        "3\n9\n9\n42",
+    );
+}
+
+#[test]
+fn record_destructuring_preserves_ordinary_parameter_mutation() {
+    check(
+        "record-destructuring-call",
+        r#"
+type Counter = { value: Int }
+type Pair = { first: Int, second: Int }
+func make(counter: Counter) -> Pair [mut counter] {
+    counter.value = counter.value + 1
+    Pair { first: 20, second: 22 }
+}
+func main() -> Int {
+    let counter = Counter { value: 0 }
+    let { first, second } = make(counter)
+    assert(counter.value == 1)
+    first + second
+}
+"#,
+        Ok("42"),
+    );
+}

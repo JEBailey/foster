@@ -444,6 +444,24 @@ constructed inside its defining module. Field mutation is controlled by ownershi
 not by a `var` marker on the field. Generic records such as `Parsed<T>` participate in ordinary
 constraint inference.
 
+Record destructuring selects stored fields by name:
+
+```foster
+let { value, input } = parsed
+let { value: answer, input: rest } = parsed
+let { position: { line, column } } = token
+```
+
+Omitted fields need no `..`. The source is evaluated once, and bindings follow
+ordinary `let local = source.field` ownership rules: built-in copy fields copy,
+managed fields move, and unselected fields remain usable. Moving a field from a
+record with `deinit` is rejected. A computed source remains owned until the
+containing scope exits; its unselected fields are cleaned up then. Field visibility
+is checked normally. Duplicate fields or binding names are errors. The pattern
+must select at least one field. Destructuring is available in local bindings and
+branch patterns, not parameter declarations. `let` patterns must be irrefutable:
+field bindings, `_`, or nested record patterns.
+
 Methods and associated functions are declared inside `impl Type { ... }` blocks. The block
 supplies the owning type; member names are unqualified. A first `self` parameter makes a member
 an instance method. Its type may be omitted when the block supplies the complete receiver type.
@@ -586,11 +604,15 @@ branch result {
 }
 ```
 
-The implemented patterns include enum-case patterns, nested payload patterns,
+The implemented patterns include enum-case patterns, record patterns, nested payload patterns,
 bindings, `_`, and Bool, Int, Float, String, and Symbol literals. Branches over enum types are
 checked for exhaustiveness. An enum case is covered only when all of its nested patterns are
-irrefutable bindings or `_`; for example, `Some(value)` covers `Some(T)`, while `Some(0)` does not.
-A top-level binding or `_` is a catch-all.
+irrefutable bindings, `_`, or records containing only irrefutable field patterns; for example, `Some(value)` covers `Some(T)`, while `Some(0)` does not.
+A top-level binding, `_`, or irrefutable record pattern is a catch-all.
+For example, `Match({ value, input: rest })` binds selected fields of an enum payload.
+`{ value: 0 }` tests a field and needs a later covering arm. Record branch bindings
+follow existing enum-pattern binding rules; testing the pattern does not consume
+the subject.
 
 An arm may use a statement block after `->`. The block's final expression supplies the arm value:
 

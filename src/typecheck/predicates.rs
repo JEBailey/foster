@@ -40,10 +40,13 @@ pub(super) fn remote_transferable(ty: &Ty) -> bool {
 }
 
 pub(super) fn pattern_is_irrefutable(pattern: &hir::Pattern) -> bool {
-    matches!(
-        pattern.unspanned(),
-        hir::Pattern::Wildcard | hir::Pattern::Binding(_)
-    )
+    match pattern.unspanned() {
+        hir::Pattern::Wildcard | hir::Pattern::Binding(_) => true,
+        hir::Pattern::Record { fields } => fields
+            .iter()
+            .all(|(_, pattern)| pattern_is_irrefutable(pattern)),
+        _ => false,
+    }
 }
 
 pub(super) const FRAME_GROUP: &str = "<frame>";

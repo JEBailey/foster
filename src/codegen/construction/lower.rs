@@ -2,6 +2,81 @@ use super::*;
 use crate::intrinsics::{Builtin, Intrinsic, IntrinsicReceiverMode};
 
 impl FunctionCompiler<'_> {
+    pub(super) fn destructure_fields(
+        &mut self,
+        pattern: &hir::Pattern,
+        source: Slot,
+        source_type: &ExecutableType,
+        span: std::ops::Range<usize>,
+    ) -> Result<(), FosterError> {
+        let hir::Pattern::Record { fields } = pattern.unspanned() else {
+            unreachable!("checked record binding")
+        };
+        for (name, pattern) in fields {
+            let ty = projected_field_verification_type(self.hir, self.types, source_type, name)
+                .ok_or_else(|| self.unsupported("record field type"))?;
+            let span = pattern.span().unwrap_or_else(|| span.clone());
+            match pattern.unspanned() {
+                hir::Pattern::Wildcard => {}
+                hir::Pattern::Binding(local) => {
+                    let destination = self.allocate();
+                    self.locals.insert(*local, destination);
+                    if self.observable_cleanup
+                        && self
+                            .types
+                            .local_type(*local)
+                            .is_some_and(|ty| self.types.has_cleanup(ty))
+                    {
+                        let field = self.allocate();
+                        self.emit(
+                            Instruction::MakeFieldReference {
+                                destination: field,
+                                pointee_type: ty,
+                                object: source,
+                                field: name.clone(),
+                            },
+                            span.clone(),
+                        );
+                        self.emit(
+                            Instruction::MoveOut {
+                                destination,
+                                source: field,
+                                by_reference: true,
+                            },
+                            span,
+                        );
+                        self.scopes.last_mut().unwrap().push(destination);
+                    } else {
+                        self.emit(
+                            Instruction::LoadField {
+                                destination,
+                                object: source,
+                                field: name.clone(),
+                                by_reference: false,
+                            },
+                            span,
+                        );
+                    }
+                }
+                hir::Pattern::Record { .. } => {
+                    let field = self.allocate();
+                    self.emit(
+                        Instruction::MakeFieldReference {
+                            destination: field,
+                            pointee_type: ty.clone(),
+                            object: source,
+                            field: name.clone(),
+                        },
+                        span.clone(),
+                    );
+                    self.destructure_fields(pattern, field, &ty, span)?;
+                }
+                _ => unreachable!("irrefutable record binding"),
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn expression(&mut self, id: ExprId) -> Result<Slot, FosterError> {
         let source = self.expression_unwrapped(id)?;
         if self.observable_cleanup
@@ -1425,7 +1500,11 @@ impl FunctionCompiler<'_> {
         }
     }
 
-    fn allocate_pattern_bindings(&mut self, pattern: &hir::Pattern, bindings: &mut Vec<Slot>) {
+    pub(super) fn allocate_pattern_bindings(
+        &mut self,
+        pattern: &hir::Pattern,
+        bindings: &mut Vec<Slot>,
+    ) {
         match pattern.unspanned() {
             hir::Pattern::Binding(local)
             | hir::Pattern::IsType {
@@ -1435,6 +1514,11 @@ impl FunctionCompiler<'_> {
                 let register = self.allocate();
                 self.locals.insert(*local, register);
                 bindings.push(register);
+            }
+            hir::Pattern::Record { fields } => {
+                for (_, field) in fields {
+                    self.allocate_pattern_bindings(field, bindings);
+                }
             }
             hir::Pattern::Variant { fields, .. } => {
                 for field in fields {

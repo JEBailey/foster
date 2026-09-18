@@ -49,6 +49,7 @@ pub(crate) enum Instruction {
     MakeRecord {
         destination: Value,
         record: RecordId,
+        type_arguments: Vec<ExecutableType>,
         fields: Vec<(String, Value)>,
     },
     MakeVariant {

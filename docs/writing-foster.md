@@ -24,6 +24,34 @@ impl Box<T & Copy> {
 func main() -> Int { Box { value: 42 }.copied() }
 ```
 
+## Record destructuring
+
+Select fields by name, use `field: local` to rename a binding, and omit fields you
+do not need. Nested record patterns work in both `let` bindings and enum branches.
+The source expression is evaluated once. A `let` destructuring binding follows
+ordinary field-binding ownership: scalar fields copy and managed fields move;
+omitted fields remain available. It does not call `copy()` implicitly.
+
+```foster
+type Parsed = { value: Int, input: Int, ignored: Int }
+enum Outcome = Match(Parsed) | Failed
+
+func main() -> Int {
+    let parsed = Parsed { value: 20, input: 22, ignored: 0 }
+    let { value, input: rest } = parsed
+    let result = Outcome.Match(Parsed { value, input: rest, ignored: 1 })
+    branch result {
+        Outcome.Match({ value: answer, input }) -> answer + input
+        Outcome.Failed -> 0
+    }
+}
+```
+
+Binding patterns accept field bindings, `_`, and nested records. Literal and enum
+case tests belong in `branch` patterns. Field privacy still applies; destructuring
+selects stored fields, not methods or computed properties. Function parameters
+continue to use ordinary named parameters.
+
 ## Find library declarations
 
 Read the [library guide](../library/README.md) to choose a module. Search its `.fos`

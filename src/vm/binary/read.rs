@@ -462,6 +462,9 @@ impl<'a> Reader<'a> {
                 variant: self.id::<Variant>()?,
                 fields: self.vec(|r| r.pattern())?,
             },
+            11 => Pattern::Record {
+                fields: self.vec(|r| Ok((r.string()?, r.pattern()?)))?,
+            },
             10 => Pattern::IsType {
                 target: self.verification_type(0)?,
                 source: self.verification_type(0)?,

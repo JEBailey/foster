@@ -1,6 +1,6 @@
 # Foster Ownership and Borrowing
 
-Language version 10, ownership-model version 3.
+Language version 13, ownership-model version 3.
 
 This document describes Foster's ownership model, its source-level behavior, and how the compiler
 implements it today. It is intentionally separate from
@@ -55,6 +55,20 @@ text.bytes         // computed Bytes value, not a place
 Ownership operations apply to the root and, where supported, its projection. This distinction is
 important: reading `people[index]` reads a value, while `ref people[index]` creates a loan into the
 storage owned by `people`.
+
+## Record destructuring
+
+`let { field, other: local } = source` applies ordinary field-binding ownership to
+each selected field, in pattern order, after evaluating the source once. Built-in
+copy values copy; managed fields move and invalidate their source projections.
+Omitted fields stay in the source. Destructuring does not implicitly invoke
+`copy()`, and it cannot move fields out of a record with `deinit`.
+
+A computed source receives a hidden owner lasting until scope exit. Selected
+managed fields transfer their cleanup obligations to the new bindings, while
+unselected fields remain owned by the hidden source. Record branch patterns use
+the same binding and borrower propagation rules as enum payload patterns; a test
+itself does not transfer ownership of its subject.
 
 ## Copy and move
 

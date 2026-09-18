@@ -70,6 +70,11 @@ pub(super) fn runtime_strings(
 fn collect_pattern_literals(pattern: &Pattern, visit: &mut impl FnMut(&str)) {
     match pattern.unspanned() {
         Pattern::String(value) | Pattern::Symbol(value) => visit(value),
+        Pattern::Record { fields } => {
+            for (_, field) in fields {
+                collect_pattern_literals(field, visit);
+            }
+        }
         Pattern::Variant { fields, .. } => {
             for field in fields {
                 collect_pattern_literals(field, visit);

@@ -20,15 +20,47 @@ fn pattern_binding_types(
     pattern: &crate::hir::Pattern,
     subject: &ExecutableType,
     bindings: &mut Vec<ExecutableType>,
-) {
+) -> Result<(), FosterError> {
     use crate::hir::Pattern;
     match pattern.unspanned() {
         Pattern::Binding(_) => bindings.push(subject.clone()),
         Pattern::IsType {
             binding: Some(_), ..
         } => bindings.push(ExecutableType::Unknown),
+        Pattern::Record { fields } => {
+            let subject = match subject {
+                ExecutableType::Reference(value) => value.as_ref(),
+                value => value,
+            };
+            if !matches!(
+                subject,
+                ExecutableType::Record { .. } | ExecutableType::Unknown
+            ) {
+                return Err(FosterError::runtime(
+                    "record pattern requires a record subject",
+                ));
+            }
+            let mut names = std::collections::HashSet::new();
+            for (name, field) in fields {
+                if !names.insert(name) {
+                    return Err(FosterError::runtime("duplicate field in record pattern"));
+                }
+                let ty = verification_field_type(program, subject, name).ok_or_else(|| {
+                    FosterError::runtime(format!("record pattern selects missing field `{name}`"))
+                })?;
+                pattern_binding_types(program, field, &ty, bindings)?;
+            }
+        }
         Pattern::Variant { variant, fields } => {
-            let metadata = &program.metadata.variants[variant];
+            let metadata =
+                program.metadata.variants.get(variant).ok_or_else(|| {
+                    FosterError::runtime("pattern references a missing enum case")
+                })?;
+            if fields.len() != metadata.payload.len() {
+                return Err(FosterError::runtime(
+                    "pattern has the wrong number of enum payload fields",
+                ));
+            }
             let substitutions = match subject {
                 ExecutableType::Variant { arguments, .. } => metadata
                     .parameters
@@ -39,11 +71,17 @@ fn pattern_binding_types(
                 _ => std::collections::HashMap::new(),
             };
             for (field, schema) in fields.iter().zip(&metadata.payload) {
-                pattern_binding_types(program, field, &schema.substitute(&substitutions), bindings);
+                pattern_binding_types(
+                    program,
+                    field,
+                    &schema.substitute(&substitutions),
+                    bindings,
+                )?;
             }
         }
         _ => {}
     }
+    Ok(())
 }
 
 pub(super) fn transfer(
@@ -246,7 +284,7 @@ pub(super) fn transfer(
             destination,
             record,
             fields,
-            ..
+            type_arguments,
         } => {
             for (_, register) in fields {
                 read_type(function, index, &state, *register)?;
@@ -256,7 +294,13 @@ pub(super) fn transfer(
                 index,
                 &mut state,
                 *destination,
-                record_type(program, *record),
+                match record_type(program, *record) {
+                    ExecutableType::Record { record, .. } => ExecutableType::Record {
+                        record,
+                        arguments: type_arguments.clone(),
+                    },
+                    ty => ty,
+                },
             )?;
         }
         Instruction::MakeVariant {
@@ -731,7 +775,7 @@ pub(super) fn transfer(
                 ExecutableType::Bool,
             )?;
             let mut binding_types = Vec::new();
-            pattern_binding_types(program, pattern, &subject_type, &mut binding_types);
+            pattern_binding_types(program, pattern, &subject_type, &mut binding_types)?;
             state.pending_pattern = Some(PendingPattern {
                 conditions: vec![*destination],
                 refined_subject: match pattern.unspanned() {

@@ -168,8 +168,36 @@ impl<'a> Builder<'a> {
         }
     }
 
+    fn statement_locals(statement: &hir::Stmt) -> Vec<hir::LocalId> {
+        match statement {
+            hir::Stmt::Bind { local, .. } => vec![*local],
+            hir::Stmt::Destructure { owner, pattern, .. } => {
+                let mut locals = vec![*owner];
+                pattern.binding_locals(&mut locals);
+                locals
+            }
+            _ => Vec::new(),
+        }
+    }
+
     fn statement(&mut self, statement: &hir::Stmt, is_last: bool) {
         match statement {
+            hir::Stmt::Destructure {
+                pattern,
+                value,
+                owner,
+            } => {
+                self.begin_full_expression();
+                let source = if let Some(place) = self.owned_place(*value) {
+                    self.assignment_place_address(*value);
+                    place
+                } else {
+                    self.local_value(*owner, *value);
+                    Self::local_place(*owner)
+                };
+                self.initialize_record_binding(pattern, &source, self.span(*value));
+                self.end_full_expression(self.span(*value));
+            }
             hir::Stmt::Return { value, guard } => {
                 if let Some(guard) = guard {
                     let returned = self.block();
@@ -229,14 +257,8 @@ impl<'a> Builder<'a> {
                     continue_to: blocks[cfg.header.0],
                     break_to: blocks[cfg.exit.0],
                 });
-                self.remote_scopes.push(
-                    body.iter()
-                        .filter_map(|statement| match statement {
-                            hir::Stmt::Bind { local, .. } => Some(*local),
-                            _ => None,
-                        })
-                        .collect(),
-                );
+                self.remote_scopes
+                    .push(body.iter().flat_map(Self::statement_locals).collect());
                 for statement in body {
                     self.statement(statement, false);
                 }
@@ -750,15 +772,8 @@ impl<'a> Builder<'a> {
         let Some(last) = arm.body.last() else {
             return;
         };
-        self.remote_scopes.push(
-            arm.body
-                .iter()
-                .filter_map(|statement| match statement {
-                    hir::Stmt::Bind { local, .. } => Some(*local),
-                    _ => None,
-                })
-                .collect(),
-        );
+        self.remote_scopes
+            .push(arm.body.iter().flat_map(Self::statement_locals).collect());
         for statement in arm.body.iter().take(arm.body.len() - 1) {
             self.statement(statement, false);
         }
@@ -1782,8 +1797,51 @@ impl<'a> Builder<'a> {
             | hir::Pattern::IsType {
                 binding: Some(_), ..
             } => true,
+            hir::Pattern::Record { fields } => {
+                fields.iter().any(|(_, p)| Self::pattern_has_bindings(p))
+            }
             hir::Pattern::Variant { fields, .. } => fields.iter().any(Self::pattern_has_bindings),
             _ => false,
+        }
+    }
+
+    fn initialize_record_binding(
+        &mut self,
+        pattern: &hir::Pattern,
+        source: &Place,
+        span: std::ops::Range<usize>,
+    ) {
+        let span = pattern.span().unwrap_or(span);
+        match pattern.unspanned() {
+            hir::Pattern::Binding(local) => {
+                let copy = self
+                    .types
+                    .local_type(*local)
+                    .is_some_and(|ty| self.types.is_copy(ty));
+                self.emit(Operation::Use {
+                    place: source.clone(),
+                    mode: if copy { UseMode::Copy } else { UseMode::Move },
+                    span: span.clone(),
+                });
+                self.emit(Operation::StoreBorrower {
+                    destination: Self::local_place(*local),
+                    value: if copy {
+                        BorrowValue::Empty
+                    } else {
+                        BorrowValue::MovePlace(source.clone())
+                    },
+                    span: span.clone(),
+                });
+                self.initialize(*local, span);
+            }
+            hir::Pattern::Record { fields } => {
+                for (name, pattern) in fields {
+                    let mut field = source.clone();
+                    field.projections.push(hir::Projection::Field(name.clone()));
+                    self.initialize_record_binding(pattern, &field, span.clone());
+                }
+            }
+            _ => {}
         }
     }
 
@@ -1808,6 +1866,21 @@ impl<'a> Builder<'a> {
                         value: BorrowValue::Place(source.clone()),
                         span,
                     });
+                }
+            }
+            hir::Pattern::Record { fields } => {
+                for (name, field) in fields {
+                    let projected = source.map(|source| {
+                        let mut place = source.clone();
+                        place.projections.push(hir::Projection::Field(name.clone()));
+                        place
+                    });
+                    self.initialize_pattern(
+                        field,
+                        projected.as_ref(),
+                        source_expression,
+                        span.clone(),
+                    );
                 }
             }
             hir::Pattern::Variant { fields, .. } => {
