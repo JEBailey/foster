@@ -143,6 +143,24 @@ Every fix is a versioned workspace edit, so changes after the response cannot si
 apply to a different document version. These actions never run the checker or guess
 ownership/effect changes from diagnostic prose.
 
+## Formatting and workspace symbol indexing
+
+Document formatting runs the canonical formatter on the current editor text without
+compiling. It returns UTF-16-safe edits and rejects malformed input without edits.
+
+The checking worker maintains a syntax-only index of `.fos` files across workspace
+folders, including unopened files. It reuses entries by modification time and size;
+watched-file notifications evict affected entries. Scans skip `.git`, `.codex`,
+`node_modules`, `target`, and `dist` subdirectories. Cancellation prevents publication
+of an incomplete scan. The index is published before semantic checking and again
+with the completed compilation snapshot; the query worker adopts each distinct
+publication even within the same document generation.
+
+Workspace symbol queries never walk the filesystem or compile. They combine the
+published disk index with declarations parsed from unsaved documents, replacing each
+open file's disk entries. Matching ranks exact names, prefixes, substrings, and
+subsequences case-insensitively, returning at most 256 deterministic results.
+
 ## Profiling
 
 Set `FOSTER_LSP_PROFILE=1` in the server's environment to emit one

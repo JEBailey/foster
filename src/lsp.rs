@@ -25,6 +25,7 @@ mod builtins;
 mod compilation;
 mod hints;
 mod snapshot;
+mod symbols;
 mod workspace;
 use workspace::Workspace;
 
@@ -93,7 +94,7 @@ impl WorkspaceWorker {
             let outgoing = query_outgoing;
             let mut workspace = Workspace::new(&query_initialize);
             workspace.compilations.snapshot_only = true;
-            let mut installed = None;
+            let mut installed: Option<std::sync::Weak<compilation::PublishedCompilations>> = None;
             let mut publication_floor = 0;
             while let Ok((change_generation, message)) = query_receiver.recv() {
                 match message {
@@ -111,10 +112,13 @@ impl WorkspaceWorker {
                         let latest = query_published.lock().unwrap().clone();
                         if let Some((revision, snapshot)) = latest
                             && revision >= publication_floor
-                            && installed != Some(revision)
+                            && installed
+                                .as_ref()
+                                .and_then(std::sync::Weak::upgrade)
+                                .is_none_or(|previous| !Arc::ptr_eq(&previous, &snapshot))
                         {
                             workspace.compilations.install(&snapshot, &workspace);
-                            installed = Some(revision);
+                            installed = Some(Arc::downgrade(&snapshot));
                         }
                         let key = request_key(&request.id);
                         let response = if take_cancellation(&cancelled, &key) {
@@ -293,6 +297,20 @@ fn apply_workspace_change(workspace: &mut Workspace, change: WorkspaceChange) {
 fn handle_workspace_request(workspace: &Workspace, request: ServerRequest) -> Response {
     let id = request.id;
     match request.method.as_str() {
+        lsp_types::request::Formatting::METHOD => respond_result(
+            id,
+            request.params,
+            |params: lsp_types::DocumentFormattingParams| {
+                workspace
+                    .formatting(&params)
+                    .map_err(|error| error.to_string())
+            },
+        ),
+        lsp_types::request::WorkspaceSymbolRequest::METHOD => respond(
+            id,
+            request.params,
+            |params: lsp_types::WorkspaceSymbolParams| workspace.workspace_symbols(&params.query),
+        ),
         lsp_types::request::CodeActionRequest::METHOD => {
             respond(id, request.params, |params: lsp_types::CodeActionParams| {
                 workspace.code_actions(&params)
@@ -345,6 +363,28 @@ where
 {
     match serde_json::from_value(params) {
         Ok(params) => Response::new_ok(id, handler(params)),
+        Err(error) => Response::new_err(
+            id,
+            ErrorCode::InvalidParams as i32,
+            format!("invalid request parameters: {error}"),
+        ),
+    }
+}
+
+fn respond_result<P, R>(
+    id: lsp_server::RequestId,
+    params: serde_json::Value,
+    handler: impl FnOnce(P) -> Result<R, String>,
+) -> Response
+where
+    P: serde::de::DeserializeOwned,
+    R: serde::Serialize,
+{
+    match serde_json::from_value(params) {
+        Ok(params) => match handler(params) {
+            Ok(result) => Response::new_ok(id, result),
+            Err(error) => Response::new_err(id, ErrorCode::RequestFailed as i32, error),
+        },
         Err(error) => Response::new_err(
             id,
             ErrorCode::InvalidParams as i32,
@@ -434,6 +474,8 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     let initialize_params: InitializeParams = serde_json::from_value(initialize_params)?;
     let capabilities = ServerCapabilities {
         text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+        document_formatting_provider: Some(lsp_types::OneOf::Left(true)),
+        workspace_symbol_provider: Some(lsp_types::OneOf::Left(true)),
         document_symbol_provider: Some(lsp_types::OneOf::Left(true)),
         definition_provider: Some(lsp_types::OneOf::Left(true)),
         hover_provider: Some(lsp_types::HoverProviderCapability::Simple(true)),
@@ -477,6 +519,7 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     );
 
     let mut diagnostics = DiagnosticSchedule::default();
+    diagnostics.postpone(Instant::now());
     let mut shutdown = ShutdownState::default();
     let mut document_versions = HashMap::<String, (Uri, i32)>::new();
     loop {
@@ -922,46 +965,22 @@ fn diagnostics(source: &str) -> Vec<Diagnostic> {
                 }
             })
             .collect(),
-        Err(error) => vec![error_diagnostic(source, error)],
+        Err(error) => vec![error_diagnostic(
+            source,
+            &"file:///main.fos".parse().unwrap(),
+            error,
+        )],
     }
 }
 
-pub(super) fn error_diagnostic(source: &str, error: crate::error::FosterError) -> Diagnostic {
+pub(super) fn error_diagnostic(
+    source: &str,
+    uri: &lsp_types::Uri,
+    error: crate::error::FosterError,
+) -> Diagnostic {
     let compiler = crate::diagnostic::Diagnostic::from_source_error(source, &error);
     if !compiler.labels.is_empty() || compiler.code.is_some() {
-        let range = compiler
-            .labels
-            .iter()
-            .find(|label| label.primary)
-            .or_else(|| compiler.labels.first())
-            .map_or_else(
-                || Range::new(Position::new(0, 0), Position::new(0, 1)),
-                |label| byte_range_to_lsp(source, label.range.clone()),
-            );
-        let mut message = compiler.message;
-        for label in compiler.labels.iter().filter(|label| !label.primary) {
-            message.push('\n');
-            message.push_str(&label.message);
-        }
-        for note in compiler.notes {
-            message.push_str("\nnote: ");
-            message.push_str(&note);
-        }
-        if let Some(help) = compiler.help {
-            message.push_str("\nhelp: ");
-            message.push_str(&help);
-        }
-        return Diagnostic {
-            range,
-            severity: Some(DiagnosticSeverity::ERROR),
-            code: compiler.code.map(lsp_types::NumberOrString::String),
-            code_description: None,
-            source: Some("foster".into()),
-            message,
-            related_information: None,
-            tags: None,
-            data: None,
-        };
+        return workspace::compiler_diagnostic(source, uri, &compiler);
     }
     let position = if error.line == 0 {
         Position::new(0, 0)
@@ -1017,6 +1036,66 @@ fn utf16_column(source: &str, line: usize, column: usize) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn error_secondary_labels_become_clickable_utf16_locations() {
+        let source = "😀 origin\r\nuse";
+        let uri: lsp_types::Uri = "file:///workspace/dependency.fos".parse().unwrap();
+        let error = crate::error::FosterError::new("invalid use", 0, 0)
+            .with_code("E_TEST")
+            .with_primary_label(13..16, "used here")
+            .with_label(5..11, "origin here")
+            .with_label(0..4, "earlier value")
+            .with_note("context")
+            .with_help("suggestion");
+        let diagnostic = error_diagnostic(source, &uri, error);
+        assert_eq!(
+            diagnostic.range,
+            Range::new(Position::new(1, 0), Position::new(1, 3))
+        );
+        assert_eq!(
+            diagnostic.code,
+            Some(lsp_types::NumberOrString::String("E_TEST".into()))
+        );
+        assert!(
+            diagnostic
+                .message
+                .contains("note: context\nhelp: suggestion")
+        );
+        let wire = serde_json::to_value(&diagnostic).unwrap();
+        assert_eq!(
+            wire["relatedInformation"][0]["location"]["uri"],
+            uri.as_str()
+        );
+        let related = diagnostic.related_information.unwrap();
+        assert_eq!(related.len(), 2);
+        assert_eq!(related[0].message, "origin here");
+        assert_eq!(related[0].location.uri, uri);
+        assert_eq!(
+            related[0].location.range,
+            Range::new(Position::new(0, 3), Position::new(0, 9))
+        );
+        assert_eq!(
+            related[1].location.range,
+            Range::new(Position::new(0, 0), Position::new(0, 2))
+        );
+    }
+
+    #[test]
+    fn errors_without_secondary_labels_have_no_related_locations() {
+        let uri = "file:///workspace/main.fos".parse().unwrap();
+        for error in [
+            crate::error::FosterError::new("failure", 0, 0),
+            crate::error::FosterError::new("failure", 1, 1),
+            crate::error::FosterError::new("failure", 0, 0).with_primary_label(0..1, "here"),
+        ] {
+            assert!(
+                error_diagnostic("x", &uri, error)
+                    .related_information
+                    .is_none()
+            );
+        }
+    }
 
     #[test]
     fn produces_zero_based_utf16_diagnostics() {

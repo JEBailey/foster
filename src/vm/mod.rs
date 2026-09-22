@@ -6,6 +6,7 @@
 mod binary;
 pub(crate) mod builtins;
 mod compiler;
+pub(crate) mod debug;
 mod entropy;
 mod host;
 

@@ -15,6 +15,7 @@ use lsp_types::{
 };
 
 mod editing;
+mod navigation;
 
 use super::snapshot::SemanticSnapshot;
 use super::{byte_range_to_lsp, error_diagnostic, publish};
@@ -41,11 +42,13 @@ impl Workspace {
             .and_then(|folders| folders.first())
             .and_then(|folder| uri_to_path(&folder.uri))
             .or_else(|| params.root_uri.as_ref().and_then(uri_to_path));
+        let compilations = super::compilation::CompilationCache::default();
+        compilations.symbol_index.borrow_mut().configure(params);
         Self {
             root,
             documents: HashMap::new(),
             published: HashSet::new(),
-            compilations: super::compilation::CompilationCache::default(),
+            compilations,
         }
     }
 
@@ -70,6 +73,15 @@ impl Workspace {
         generation: &std::sync::atomic::AtomicU64,
         publication: Option<&super::SnapshotMailbox>,
     ) -> Result<(), Box<dyn Error>> {
+        let Some(symbols) = self.compilations.symbol_index.borrow_mut().refresh() else {
+            return Ok(());
+        };
+        *self.compilations.symbol_files.borrow_mut() = std::sync::Arc::new(symbols);
+        if generation.load(std::sync::atomic::Ordering::Acquire) != expected_generation {
+            return Ok(());
+        }
+        // Search results become available before semantic checking finishes.
+        self.publish_snapshot(publication, expected_generation);
         let mut next_by_uri = HashMap::<String, (Uri, Vec<Diagnostic>, Option<i32>)>::new();
         for (focus_uri, document) in &self.documents {
             if crate::compiler::cancellation::is_cancelled() {
@@ -104,7 +116,7 @@ impl Workspace {
                             self.compilations
                                 .parse_diagnostics(path.as_std_path())
                                 .into_iter()
-                                .map(|error| error_diagnostic(source, error)),
+                                .map(|error| error_diagnostic(source, &uri, error)),
                         );
                         next_by_uri.insert(
                             uri.as_str().to_owned(),
@@ -117,9 +129,9 @@ impl Workspace {
                         .map(|path| self.compilations.parse_diagnostics(&path))
                         .unwrap_or_default()
                         .into_iter()
-                        .map(|error| error_diagnostic(&document.text, error))
+                        .map(|error| error_diagnostic(&document.text, focus_uri, error))
                         .collect::<Vec<_>>();
-                    diagnostics.push(error_diagnostic(&document.text, error));
+                    diagnostics.push(error_diagnostic(&document.text, focus_uri, error));
                     next_by_uri.insert(
                         focus_uri.as_str().to_owned(),
                         (focus_uri.clone(), diagnostics, Some(document.version)),
@@ -137,15 +149,7 @@ impl Workspace {
 
         // Publish semantics before diagnostics, so a client reacting to diagnostics
         // can immediately query the corresponding snapshot.
-        if let Some(publication) = publication {
-            let next = std::sync::Arc::new(self.compilations.published());
-            let previous = publication
-                .lock()
-                .unwrap()
-                .replace((expected_generation, next));
-            // Releasing a large retired compilation must not hold the mailbox lock.
-            drop(previous);
-        }
+        self.publish_snapshot(publication, expected_generation);
         let next_uris = next
             .iter()
             .map(|(uri, _, _)| uri.as_str().to_owned())
@@ -166,6 +170,22 @@ impl Workspace {
         }
         self.published = next.into_iter().map(|(uri, _, _)| uri).collect();
         Ok(())
+    }
+
+    fn publish_snapshot(
+        &self,
+        publication: Option<&super::SnapshotMailbox>,
+        expected_generation: u64,
+    ) {
+        if let Some(publication) = publication {
+            let next = std::sync::Arc::new(self.compilations.published());
+            let previous = publication
+                .lock()
+                .unwrap()
+                .replace((expected_generation, next));
+            // Releasing a large retired compilation must not hold the mailbox lock.
+            drop(previous);
+        }
     }
 
     fn should_publish_diagnostics_for(&self, path: &Path) -> bool {
@@ -2169,7 +2189,7 @@ fn documented_hover(signature: String, documentation: Option<&str>) -> String {
     hover
 }
 
-fn compiler_diagnostic(
+pub(super) fn compiler_diagnostic(
     source: &str,
     uri: &Uri,
     diagnostic: &crate::diagnostic::Diagnostic,

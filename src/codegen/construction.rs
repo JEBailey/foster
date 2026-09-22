@@ -161,6 +161,13 @@ fn match_generic_types(
 }
 
 pub(crate) fn compile(compilation: &Compilation) -> Result<Program, FosterError> {
+    compile_with_locals(compilation, None)
+}
+
+pub(crate) fn compile_with_locals(
+    compilation: &Compilation,
+    mut debug_locals: Option<&mut HashMap<FunctionId, HashMap<LocalId, Slot>>>,
+) -> Result<Program, FosterError> {
     let closure_captures = compilation
         .hir
         .expressions
@@ -177,7 +184,10 @@ pub(crate) fn compile(compilation: &Compilation) -> Result<Program, FosterError>
         closure_captures,
     };
     for (function, _) in compilation.hir.functions.iter() {
-        compiler.compile_function(function)?;
+        let locals = compiler.compile_function(function)?;
+        if let Some(debug_locals) = debug_locals.as_mut() {
+            debug_locals.insert(function, locals);
+        }
     }
     compiler.program.metadata.records = compilation
         .hir
@@ -308,7 +318,10 @@ struct LoopContext {
 }
 
 impl Compiler<'_> {
-    fn compile_function(&mut self, function_id: FunctionId) -> Result<(), FosterError> {
+    fn compile_function(
+        &mut self,
+        function_id: FunctionId,
+    ) -> Result<HashMap<LocalId, Slot>, FosterError> {
         let function = &self.hir.functions[function_id];
         let mut lower = FunctionCompiler {
             hir: self.hir,
@@ -490,7 +503,7 @@ impl Compiler<'_> {
                 instruction_spans: lower.spans,
             },
         );
-        Ok(())
+        Ok(lower.locals)
     }
 }
 

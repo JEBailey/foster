@@ -17,6 +17,8 @@ const RECENT_DOCUMENT_LIMIT: usize = 8;
 #[derive(Default)]
 pub(super) struct CompilationCache {
     pub(super) snapshot_only: bool,
+    pub(super) symbol_index: RefCell<super::symbols::SymbolIndex>,
+    pub(super) symbol_files: RefCell<Arc<super::symbols::SymbolFiles>>,
     recent: RefCell<VecDeque<Uri>>,
     entries: RefCell<HashMap<Uri, Arc<Compilation>>>,
     errors: RefCell<HashMap<Uri, FosterError>>,
@@ -28,6 +30,7 @@ pub(super) struct CompilationCache {
 // Only immutable checked results cross threads. Parsing and incremental caches stay local.
 #[derive(Clone)]
 pub(super) struct PublishedCompilations {
+    symbols: Arc<super::symbols::SymbolFiles>,
     entries: HashMap<Uri, Arc<Compilation>>,
     last_good: HashMap<Uri, Arc<Compilation>>,
     inputs: HashMap<Utf8PathBuf, Vec<std::path::PathBuf>>,
@@ -40,6 +43,7 @@ impl CompilationCache {
 
     pub(super) fn published(&self) -> PublishedCompilations {
         PublishedCompilations {
+            symbols: Arc::clone(&self.symbol_files.borrow()),
             entries: self.entries.borrow().clone(),
             last_good: self.last_good.borrow().clone(),
             inputs: self.modules.borrow().package_inputs.clone(),
@@ -47,6 +51,7 @@ impl CompilationCache {
     }
 
     pub(super) fn install(&self, snapshot: &PublishedCompilations, workspace: &Workspace) {
+        *self.symbol_files.borrow_mut() = Arc::clone(&snapshot.symbols);
         *self.entries.borrow_mut() = snapshot.entries.clone();
         *self.last_good.borrow_mut() = snapshot.last_good.clone();
         self.modules.borrow_mut().package_inputs = snapshot.inputs.clone();
@@ -61,6 +66,10 @@ impl CompilationCache {
     }
 
     pub(super) fn invalidate_watched(&self, paths: &[std::path::PathBuf]) {
+        self.symbol_index.borrow_mut().invalidate(paths);
+        Arc::make_mut(&mut self.symbol_files.borrow_mut()).retain(|uri, _| {
+            uri_to_path(uri).is_none_or(|path| !super::symbols::affected(&path, paths))
+        });
         let paths = paths
             .iter()
             .map(|path| crate::package::watch_path(path))

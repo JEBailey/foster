@@ -28,7 +28,8 @@ impl TakeIterator<T> {
 }
 
 impl Iterator<T> {
-    /// Lazily yields at most `amount` remaining elements.
+    /// Consumes this iterator and lazily yields at most `amount` remaining elements.
+    /// Nonpositive amounts never pull the source; reaching the limit makes no extra source call.
     pub func take(self, amount: Int) -> Iterator<T> [consume self] {
         TakeIterator { source: move self, remaining: amount }
     }

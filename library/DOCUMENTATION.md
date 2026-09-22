@@ -48,6 +48,20 @@ When a method has both a contract declaration and a separate implementation,
 document both consistently: generated lookup and hover may encounter either.
 Do not hide public preconditions in a private helper's comment.
 
+## Internal explanations
+
+Use internal comments to explain invariants, preconditions, ownership-sensitive
+ordering, units, and algorithm choices that are not evident from the code.
+Describe what the caller has already validated and what state a helper changes.
+For parsers, explain cursor units, error propagation, and whether partial results
+can escape. For arithmetic, explain how boundary cases avoid overflow.
+
+Give private helper documentation a concrete purpose. Do not use placeholder
+sentences such as “Internal helper for this module.” Keep straightforward helpers
+to one sentence; document shared state invariants once beside its declaration.
+Use ordinary `//` comments for local implementation reasoning and `///` for the
+contract attached to a declaration. Keep examples focused on public operations.
+
 ## Wording and accuracy
 
 Use parameter names exactly as declared, including `self`; remove stale `value`,

@@ -34,7 +34,10 @@ pub type Uri = & ResourceIdentifier & {
 }
 
 impl Uri {
-    /// Parses an absolute URI with a non-empty RFC-style scheme.
+    /// Validates an ASCII scheme followed by `:` and retains the remaining text verbatim.
+    /// The scheme starts with a letter and then permits letters, digits, `+`, `-`, and `.`.
+    /// Returns `UriError` for missing or invalid schemes; it does not validate percent escapes,
+    /// authorities, paths, queries, or fragments. Scheme spelling is not normalized.
     pub func parse(value: String) -> Result<Uri, UriError> {
         branch {
             value.empty? -> invalid_uri(move value, "URI must not be empty")

@@ -22,7 +22,8 @@ impl MapIterator<T, U> {
 }
 
 impl Iterator<T> {
-    /// Lazily transforms this iterator's remaining elements.
+    /// Consumes this iterator and `transform`; calls the transform once per yielded source item.
+    /// Each input is transferred to the callback. Construction does not evaluate the callback.
     pub func map<U>(self, transform: func(consume T) -> U) -> Iterator<U> [consume self, consume transform] {
         MapIterator { source: move self, transform: move transform }
     }

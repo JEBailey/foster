@@ -1,8 +1,8 @@
-//! `Option`al values and transformations that preserve absence.
+//! Optional values and transformations that preserve absence.
 //!
 //! `Some` carries a value; `None` represents absence without an error explanation.
-//! map and and_then invoke their callback only for `Some`. unwrap_or receives an
-//! already evaluated fallback; unwrap_or_else computes one only for `None`.
+//! `map` and `and_then` invoke their callback only for `Some`. `unwrap_or` receives an
+//! already evaluated fallback; `unwrap_or_else` computes one only for `None`.
 
 import core.functions
 

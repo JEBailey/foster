@@ -29,7 +29,8 @@ impl FilterIterator<T> {
 }
 
 impl Iterator<T> {
-    /// Lazily retains this iterator's remaining elements that satisfy `predicate`.
+    /// Consumes this iterator and `predicate`, retaining items that satisfy the predicate.
+    /// Each inspected item is tested once; one pull may discard several items before yielding.
     pub func filter(self, predicate: Predicate<T>) -> Iterator<T> [consume self, consume predicate] {
         FilterIterator { source: move self, predicate: move predicate }
     }

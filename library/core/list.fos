@@ -1,4 +1,4 @@
-//! `Ordered` homogeneous collections and eager collection algorithms.
+//! Ordered homogeneous collections and eager collection algorithms.
 //!
 //! Indexes are zero-based. at distinguishes out-of-bounds access from an element
 //! that cannot be copied; first and last collapse both cases to `None`.

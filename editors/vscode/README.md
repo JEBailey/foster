@@ -4,6 +4,7 @@ This extension registers `.fos` files, provides Foster syntax highlighting and e
 and launches the Foster language server. Language features include:
 
 - package-wide compiler errors and warnings with open-buffer overlays;
+- clickable related locations for secondary compiler diagnostic labels, including error fallback paths;
 - document symbols from the current parse, without waiting for semantic checking;
 - go-to-definition across imported modules, selected function and concrete method overloads,
   instance methods, and repository core-library source;
@@ -49,9 +50,68 @@ Open a saved `.fos` file and use one of these commands from the Command Palette:
   nearest directory containing `foster.toml` and executes that project. Packages without a
   manifest continue to fall back to the nearest directory containing `main.fos`.
 
-The ▶ button in the editor title runs the current file. Foster saves a modified file before
-starting it and shows compiler output in the shared Foster task terminal. Use the package command
-when the program imports sibling filesystem modules.
+The ▶ button in the editor title runs the current file. Foster saves modified Foster files and
+manifests before launching and shows compiler output in the shared Foster task terminal. Use the
+package command when the program imports sibling filesystem modules. Configure `foster.run.args`,
+`foster.run.cwd`, and `foster.run.env` for these Run commands.
+
+The extension contributes **Run**, **Check**, **Build**, and **Test** tasks for workspace folders
+containing a Foster project. **Tasks: Run Build Task** and **Tasks: Run Test Task** use the build
+and test groups. Custom `.vscode/tasks.json` entries can use `"type": "foster"`, for example:
+
+```json
+{
+  "version": "2.0.0",
+  "tasks": [{
+    "type": "foster",
+    "label": "Check Foster",
+    "command": "check",
+    "program": "${workspaceFolder}",
+    "group": "build",
+    "problemMatcher": []
+  }]
+}
+```
+
+Task commands accept `program`, `cwd`, and `env`. Run tasks also accept an `args` array;
+Run and Build accept `optimize: false`. Arguments are passed directly to the process.
+
+## Debugging Foster
+
+Press **F5** to debug the active Foster package (or standalone file when no package is found).
+Use **Ctrl+F5** to run the selected launch configuration without debugging. The editor's debug
+button and **Foster: Debug Current File/Package** commands provide explicit targets.
+
+Set breakpoints in the gutter, then use Continue, Pause, Step Over, Step Into, and Step Out.
+The Call Stack and Locals views show the paused program. Hover and Watch support visible local
+and parameter names. Values are read-only; values released by normal lifetime handling appear as
+`<unavailable>`. Output appears in the Debug Console. Stop terminates the launched process.
+
+To persist arguments and environment settings, add a Foster configuration to `.vscode/launch.json`:
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [{
+    "type": "foster",
+    "request": "launch",
+    "name": "Debug Foster package",
+    "program": "${workspaceFolder}",
+    "cwd": "${workspaceFolder}",
+    "args": [],
+    "env": {},
+    "stopOnEntry": true
+  }]
+}
+```
+
+Use `"program": "${file}"` for a standalone file. Debugging runs checked bytecode with optimization
+disabled. It currently observes the main VM thread: remote workers and cleanup callbacks are not
+stepped or paused. Source locations require source files; precompiled library bodies without
+source metadata remain executable but cannot be stepped through. Compound values have bounded
+text previews. Expression evaluation, variable mutation, conditional breakpoints, logpoints,
+exception breakpoints, native executable debugging, and attach are not implemented. Pause takes
+effect at the next executable source location, so blocking host calls must return first.
 
 ## Development
 
@@ -98,6 +158,19 @@ Syntax recovery synchronizes at top-level declaration boundaries. A malformed fu
 type, or test is omitted from the current semantic snapshot, while complete declarations after it
 continue to provide symbols, navigation, hover, completion, and type checking. All independently
 recoverable syntax errors are published in the same diagnostic pass.
+
+## Formatting and workspace symbols
+
+Use **Format Document** (`Shift+Alt+F` on Windows) to apply the same formatting as
+`foster fmt`. Foster uses four-space indentation and LF line endings. Formatting
+uses unsaved editor text, preserves unchanged text where possible, and reports
+syntax errors without applying a partial result. VS Code's `editor.formatOnSave`
+setting can enable this automatically for Foster files.
+
+Use **Go to Symbol in Workspace** (`Ctrl+T` on Windows) to find functions, types,
+constants, methods, and enum cases. Unopened `.fos` files in every workspace folder
+are indexed in the background. Search supports case-insensitive prefixes,
+substrings, and subsequences; unsaved editor declarations override disk entries.
 
 ## Packaging
 

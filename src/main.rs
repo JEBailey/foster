@@ -34,6 +34,7 @@ fn execute() -> Result<(), Box<dyn Error>> {
     let matches = cli().get_matches();
     match matches.subcommand() {
         Some(("init", arguments)) => init(arguments)?,
+        Some(("debug", arguments)) => debug(arguments)?,
         Some(("lsp", _)) => return foster::lsp::run(),
         Some(("check", arguments)) => check(arguments)?,
         Some(("build", arguments)) => build(arguments)?,
@@ -103,6 +104,14 @@ fn cli() -> Command {
                         .value_name("NAME")
                         .help("Package name (defaults to the project directory name)"),
                 ),
+        )
+        .subcommand(
+            Command::new("debug")
+                .about("Launch the Foster source debugger for an editor")
+                .arg(path())
+                .arg(Arg::new("port").long("port").required(true).value_parser(value_parser!(u16)).help("Loopback debug adapter port"))
+                .arg(Arg::new("token").long("token").required(true).help("Debug adapter connection token"))
+                .arg(Arg::new("command-arguments").last(true).num_args(0..).allow_hyphen_values(true)),
         )
         .subcommand(
             Command::new("run")
@@ -525,6 +534,47 @@ fn pack(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
     foster::archive::write_package(&output, &bytecode, resources.as_deref())?;
     println!("packed {}", output.display());
     Ok(())
+}
+
+fn debug(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
+    let stream = foster::debugger::connect(
+        *arguments.get_one::<u16>("port").unwrap(),
+        arguments.get_one::<String>("token").unwrap(),
+    )?;
+    let target = source_target(arguments)?;
+    let source = target
+        .source
+        .is_file()
+        .then(|| fs::read_to_string(&target.source))
+        .transpose()?;
+    let mut compilation = if let Some(source) = &source {
+        compile_single_file(&target.source, source, parse_file(&target.source, source)?)?
+    } else {
+        compile_target(&target)?
+    };
+    // Keep the source map tied to the exact text that was checked, even if the file changes.
+    if let Some(source) = source {
+        if let Some(module) = compilation.package.modules.get_mut("main") {
+            module.source = Some(source);
+            module.source_path = Some(
+                camino::Utf8PathBuf::from_path_buf(fs::canonicalize(&target.source)?)
+                    .map_err(|_| "debug source path must be UTF-8")?,
+            );
+        }
+    }
+    let command_arguments = foster::entry::CommandArguments::new(
+        target.artifact_base().to_string_lossy(),
+        arguments
+            .get_many::<String>("command-arguments")
+            .into_iter()
+            .flatten()
+            .cloned(),
+    );
+    if foster::debugger::run(&compilation, &command_arguments, stream)? == 0 {
+        Ok(())
+    } else {
+        Err(Box::new(Reported))
+    }
 }
 
 fn run(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {

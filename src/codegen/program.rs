@@ -76,9 +76,18 @@ impl Program {
 pub fn compile(
     compilation: &crate::compiler::Compilation,
 ) -> Result<super::shared::SharedProgram, crate::error::FosterError> {
+    compile_with_locals(compilation, None)
+}
+
+pub(crate) fn compile_with_locals(
+    compilation: &crate::compiler::Compilation,
+    locals: Option<
+        &mut HashMap<crate::hir::FunctionId, HashMap<crate::hir::LocalId, super::storage::Slot>>,
+    >,
+) -> Result<super::shared::SharedProgram, crate::error::FosterError> {
     use crate::compiler::profile::measure;
     let mut program = measure("shared.construction", || {
-        super::construction::compile(compilation)
+        super::construction::compile_with_locals(compilation, locals)
     })?;
 
     // Shared lifetime lowering emits ownership releases over logical slots.

@@ -1,6 +1,6 @@
 //! Binary and text stream contracts with complete-transfer helpers.
 //!
-//! `Reader`s report EOF with an empty value. `Writer`s may make partial progress.
+//! Readers report EOF with an empty value. Writers may make partial progress.
 //! read_all, write_all, and copy propagate the first error without rolling back
 //! earlier I/O. write_all and copy flush on success. Implementations must honor
 //! the progress requirements in `Reader` and `Writer` to avoid nonterminating retries.

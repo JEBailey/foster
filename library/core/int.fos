@@ -1,6 +1,6 @@
 //! Signed integer helpers, decimal formatting, and eager ranges.
 //!
-//! `Range`s materialize a `List<Int>` and exclude the upper endpoint. Arithmetic uses
+//! Ranges materialize a `List<Int>` and exclude the upper endpoint. Arithmetic uses
 //! Foster's `Int` operations; these helpers do not provide arbitrary-precision results.
 //! See individual methods for nonpositive exponents and division preconditions.
 //!

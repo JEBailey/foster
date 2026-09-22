@@ -20,14 +20,18 @@
   },
   "categories": [
     "Programming Languages",
-    "Linters"
+    "Linters",
+    "Debuggers"
   ],
   "activationEvents": [
     "onLanguage:foster",
+    "workspaceContains:**/*.fos",
     "onCommand:foster.restartLanguageServer",
     "onCommand:foster.showLanguageServerOutput",
     "onCommand:foster.runCurrentFile",
-    "onCommand:foster.runCurrentPackage"
+    "onCommand:foster.runCurrentPackage",
+    "onTaskType:foster",
+    "onDebug:foster"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -68,6 +72,15 @@
       {
         "command": "foster.runCurrentPackage",
         "title": "Foster: Run Current Package"
+      },
+      {
+        "command": "foster.debugCurrentFile",
+        "title": "Foster: Debug Current File",
+        "icon": "$(debug-alt)"
+      },
+      {
+        "command": "foster.debugCurrentPackage",
+        "title": "Foster: Debug Current Package"
       }
     ],
     "menus": {
@@ -76,6 +89,11 @@
           "command": "foster.runCurrentFile",
           "when": "resourceLangId == foster",
           "group": "navigation@1"
+        },
+        {
+          "command": "foster.debugCurrentFile",
+          "when": "resourceLangId == foster",
+          "group": "navigation@2"
         }
       ]
     },
@@ -98,9 +116,171 @@
           "default": "off",
           "scope": "window",
           "description": "Trace communication between VS Code and the Foster language server."
+        },
+        "foster.run.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "description": "Program arguments for Run Current File/Package."
+        },
+        "foster.run.cwd": {
+          "type": "string",
+          "default": "",
+          "scope": "resource",
+          "description": "Working directory for Run commands. Relative paths use the workspace folder; empty uses the program directory."
+        },
+        "foster.run.env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "scope": "resource",
+          "description": "Environment overrides for Run commands."
         }
       }
-    }
+    },
+    "taskDefinitions": [
+      {
+        "type": "foster",
+        "required": [
+          "command",
+          "program"
+        ],
+        "properties": {
+          "command": {
+            "type": "string",
+            "enum": [
+              "run",
+              "check",
+              "build",
+              "test"
+            ],
+            "description": "Foster command to execute."
+          },
+          "program": {
+            "type": "string",
+            "description": "Source file, package directory, or foster.toml."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Working directory; defaults to the program directory."
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Program arguments passed after -- (run only)."
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Environment overrides for the task."
+          },
+          "optimize": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable bytecode optimization for run/build."
+          }
+        }
+      }
+    ],
+    "breakpoints": [
+      {
+        "language": "foster"
+      }
+    ],
+    "debuggers": [
+      {
+        "type": "foster",
+        "label": "Foster",
+        "languages": [
+          "foster"
+        ],
+        "configurationAttributes": {
+          "launch": {
+            "required": [
+              "program"
+            ],
+            "properties": {
+              "program": {
+                "type": "string",
+                "description": "Foster source file, package directory, or foster.toml."
+              },
+              "cwd": {
+                "type": "string",
+                "description": "Working directory; defaults to the program directory."
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "default": [],
+                "description": "Arguments passed to main."
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "default": {},
+                "description": "Environment overrides."
+              },
+              "stopOnEntry": {
+                "type": "boolean",
+                "default": true,
+                "description": "Pause at the first executable source line."
+              },
+              "optimize": {
+                "type": "boolean",
+                "default": true,
+                "description": "Optimization for Run Without Debugging; debugging always disables optimization."
+              }
+            }
+          }
+        },
+        "initialConfigurations": [
+          {
+            "type": "foster",
+            "request": "launch",
+            "name": "Debug Foster package",
+            "program": "${workspaceFolder}",
+            "stopOnEntry": true
+          }
+        ],
+        "configurationSnippets": [
+          {
+            "label": "Foster: Debug package",
+            "body": {
+              "type": "foster",
+              "request": "launch",
+              "name": "Debug Foster package",
+              "program": "${workspaceFolder}",
+              "args": [],
+              "stopOnEntry": true
+            }
+          },
+          {
+            "label": "Foster: Debug current file",
+            "body": {
+              "type": "foster",
+              "request": "launch",
+              "name": "Debug Foster file",
+              "program": "${file}",
+              "args": [],
+              "stopOnEntry": true
+            }
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "check-types": "tsc -p ./ --noEmit",
@@ -109,7 +289,8 @@
     "check": "npm run check-types && node scripts/test-grammar.cjs",
     "package": "npm run check && node esbuild.js --production",
     "stage": "node scripts/stage-server.cjs",
-    "vscode:prepublish": "npm run stage && npm run package"
+    "vscode:prepublish": "npm run stage && npm run package",
+    "test:run-debug": "tsc -p ./ --outDir ../../target/vscode-test-out && node --test scripts/test-run-debug.cjs"
   },
   "dependencies": {
     "vscode-languageclient": "^10.1.0"
@@ -120,5 +301,11 @@
     "@vscode/vsce": "^3.6.2",
     "esbuild": "^0.25.0",
     "typescript": "^7.0.2"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Foster tasks and debugging execute workspace code."
+    }
   }
 }

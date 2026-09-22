@@ -1,6 +1,6 @@
 //! Hash-based key-value storage with caller-supplied hashing.
 //!
-//! `Equal` keys must have equal hashes, and hash results must remain stable while
+//! Equal keys must have equal hashes, and hash results must remain stable while
 //! keys are stored. Queries have expected constant-time bucket lookup and linear
 //! worst-case lookup. Iteration order is unspecified. borrow returns a reference; remove
 //! returns the owned value and preserves the table and its other entries.
@@ -39,7 +39,7 @@ impl HashMap<K, V> {
         find_index(self.buckets[bucket], key) >= 0
     }
 
-    /// Borrows the stored value; absent keys return None. No Copy is required.
+    /// Borrows the stored value; absent keys return `None`. No `Copy` is required.
     /// The reference permits mutation and cannot outlive or survive reshaping the map.
     pub func borrow(self, key: K) -> Option<ref[self] V> [read self.buckets, read key] {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
@@ -73,7 +73,7 @@ impl HashMap<K, V> {
     }
 
     /// Removes and returns the owned value, leaving other colliding entries and the hasher intact.
-    /// An absent key returns None and leaves the map unchanged. Values need not support Copy.
+    /// An absent key returns `None` and leaves the map unchanged. Values need not support `Copy`.
     pub func remove(self, key: K) -> Option<V> {
         let bucket = bucket_index(self.hasher(key), self.buckets.length)
         let index = find_index(self.buckets[bucket], key)
@@ -156,6 +156,7 @@ func empty_buckets<K, V>(capacity: Int) -> List<List<Entry<K, V>>> {
 
 /// Normalizes a signed hash without negating Int's minimum value.
 func bucket_index(hash: Int, capacity: Int) -> Int {
+    // Capacity is positive. Taking the remainder first avoids abs(Int minimum).
     let remainder = hash - hash / capacity * capacity
     branch {
         remainder < 0 -> remainder + capacity

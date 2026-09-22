@@ -28,7 +28,8 @@ impl SkipIterator<T> {
 }
 
 impl Iterator<T> {
-    /// Lazily discards the first `amount` remaining elements.
+    /// Consumes this iterator and discards up to `amount` elements on the first pull.
+    /// Nonpositive amounts discard nothing; construction does not advance the source.
     pub func skip(self, amount: Int) -> Iterator<T> [consume self] {
         SkipIterator { source: move self, remaining: amount }
     }

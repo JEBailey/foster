@@ -1,8 +1,8 @@
 //! Success and failure values with explicit recovery.
 //!
-//! `Ok` carries a result and `Error` carries its error value. `Map`ping a success leaves
-//! errors untouched; error mapping leaves successes untouched. Use and_then to
-//! chain fallible operations, or try when forwarding the same error type.
+//! `Ok` carries a result and `Error` carries its error value. Mapping a success leaves
+//! errors untouched; error mapping leaves successes untouched. Use `and_then` to
+//! chain fallible operations, or `try` when forwarding the same error type.
 
 /// A value that is either a successful `Ok(T)` or a failed `Error(E)`.
 pub enum Result<T, E> = Ok(T)
@@ -19,9 +19,10 @@ pub enum Result<T, E> = Ok(T)
         pub func success?(self) -> Bool [read self]
         /// Returns whether the result contains an error.
         pub func error?(self) -> Bool [read self]
-        /// Returns the successful value, or a fallback when the result contains an error.
+        /// Returns the successful value, or `fallback` for an error.
+        /// The fallback is evaluated before the call even for `Ok`; use `unwrap_or_else` to defer it.
         pub func unwrap_or(self, fallback: T) -> T [consume fallback, read self]
-        /// Returns the successful value, or computes a fallback from the error.
+        /// Returns the successful value, or calls `fallback` exactly once with the error.
         pub func unwrap_or_else(self, fallback: func(E) -> T) -> T [read fallback, read self]
         /// Preserves a successful value, or recovers by transforming the error into another result.
         pub func or_else<F>(self, recover: func(E) -> Result<T, F>) -> Result<T, F> [read recover, read self]
@@ -68,7 +69,8 @@ impl Result<T, E> {
         }
     }
 
-    /// Returns the successful value, or a fallback when the result contains an error.
+    /// Returns the successful value, or `fallback` for an error.
+    /// The fallback is evaluated before the call even for `Ok`; use `unwrap_or_else` to defer it.
     pub func unwrap_or(self, fallback: T) -> T [consume fallback, read self] {
         branch self {
             Result.Ok(value) -> value
@@ -76,7 +78,7 @@ impl Result<T, E> {
         }
     }
 
-    /// Returns the successful value, or computes a fallback from the error.
+    /// Returns the successful value, or calls `fallback` exactly once with the error.
     pub func unwrap_or_else(self, fallback: func(E) -> T) -> T {
         branch self {
             Result.Ok(value) -> value

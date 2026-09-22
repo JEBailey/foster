@@ -14,9 +14,11 @@ use super::value::{
 use super::{Capture, Instruction, Program, Register, Value};
 
 struct Frame<'program> {
+    function_id: FunctionId,
     /// Resolved once when the frame is created; the dispatch loop never hashes the function ID.
     function: &'program super::BytecodeFunction,
     registers: Vec<RegisterCell>,
+    debug_live: Option<Vec<bool>>,
     instruction: usize,
     return_destination: Option<Register>,
     shared_commit: Option<SharedCommit>,
@@ -169,6 +171,7 @@ struct SharedCommit {
 }
 
 pub struct Machine {
+    debugger: Option<Arc<dyn super::debug::Observer>>,
     cancellation: Option<Arc<crate::remote::Control>>,
     program: Arc<Program>,
     host: Arc<super::host::HostContext>,
@@ -247,6 +250,7 @@ impl Cleanup {
             program: self.program,
             host: self.host,
             cancellation: None,
+            debugger: None,
         };
         let original = CLEANUP_FAILURE.with(|failure| failure.borrow_mut().take());
         let result = machine.execute(
@@ -306,7 +310,13 @@ impl Machine {
             program: Arc::new(program.clone()),
             host: host.into(),
             cancellation: None,
+            debugger: None,
         }
+    }
+
+    pub(crate) fn with_debugger(mut self, debugger: Arc<dyn super::debug::Observer>) -> Self {
+        self.debugger = Some(debugger);
+        self
     }
 
     pub fn host_context(&self) -> &super::host::HostContext {
@@ -416,6 +426,43 @@ impl Machine {
             }
             if let Some(error) = CLEANUP_FAILURE.with(|failure| failure.borrow_mut().take()) {
                 return Err(error);
+            }
+            if let Some(debugger) = &self.debugger {
+                let top = frames.last().expect("the VM retains its entry frame");
+                if debugger.should_stop(top.function_id, top.instruction, frames.len())? {
+                    let snapshots = frames
+                        .iter()
+                        .map(|frame| super::debug::Frame {
+                            function: frame.function_id,
+                            name: frame.function.name.clone(),
+                            instruction: if std::ptr::eq(frame, top) {
+                                frame.instruction
+                            } else {
+                                frame.instruction.saturating_sub(1)
+                            },
+                            registers: debugger
+                                .registers(frame.function_id)
+                                .into_iter()
+                                .filter_map(|index| {
+                                    let cell = frame.registers.get(index)?;
+                                    let value = if frame
+                                        .debug_live
+                                        .as_ref()
+                                        .is_some_and(|live| !live[index])
+                                    {
+                                        "<unavailable>".into()
+                                    } else {
+                                        cell.read()
+                                            .map(|value| super::debug::render(&value))
+                                            .unwrap_or_else(|_| "<unavailable>".into())
+                                    };
+                                    Some((index, value))
+                                })
+                                .collect(),
+                        })
+                        .collect();
+                    debugger.stopped(snapshots)?;
+                }
             }
             let frame = frames.last_mut().expect("the VM retains its entry frame");
             let function = frame.function;
@@ -768,6 +815,9 @@ impl Machine {
                     destination,
                     source,
                 } => {
+                    if let Some(live) = &mut frame.debug_live {
+                        live[source.0 as usize] = false;
+                    }
                     let value = if by_reference {
                         let source = place(frame, source);
                         let value = source.read()?;
@@ -859,6 +909,9 @@ impl Machine {
                                 .copied()
                                 .map(|argument| read(frame, argument))
                                 .collect::<Result<Vec<_>, _>>()?;
+                            if let Some(live) = &mut frame.debug_live {
+                                live[receiver.0 as usize] = false;
+                            }
                             let receiver =
                                 frame.registers[receiver.0 as usize].replace(Value::Unit);
                             handler(receiver, &arguments, self.program.metadata.string_record)?
@@ -1219,6 +1272,7 @@ impl Machine {
                             program,
                             host,
                             cancellation: Some(worker_control.clone()),
+                            debugger: None,
                         };
                         let mut state = state;
                         while let Ok(message) = inbox.recv() {
@@ -1291,6 +1345,7 @@ impl Machine {
                             program,
                             host,
                             cancellation: Some(worker_control.clone()),
+                            debugger: None,
                         };
                         while let Ok(message) = inbox.recv() {
                             if worker_control.error().is_some() {
@@ -1522,8 +1577,14 @@ impl Machine {
             registers[offset + index] = RegisterCell::Inline(argument);
         }
         Ok(Frame {
+            function_id: function,
             function: bytecode,
             registers,
+            debug_live: self.debugger.as_ref().map(|_| {
+                (0..bytecode.registers)
+                    .map(|register| register < bytecode.captures + bytecode.parameters)
+                    .collect()
+            }),
             instruction: 0,
             return_destination,
             shared_commit: None,
@@ -1608,6 +1669,9 @@ impl Machine {
 }
 
 fn drop_register(frame: &mut Frame<'_>, register: Register) {
+    if let Some(live) = &mut frame.debug_live {
+        live[register.0 as usize] = false;
+    }
     frame.registers[register.0 as usize].detach();
 }
 
@@ -1655,7 +1719,11 @@ fn bind(frame: &Frame<'_>, register: Register) -> Value {
 }
 
 fn write(frame: &mut Frame<'_>, register: Register, value: Value) -> Result<(), RuntimeError> {
-    frame.registers[register.0 as usize].write(value)
+    frame.registers[register.0 as usize].write(value)?;
+    if let Some(live) = &mut frame.debug_live {
+        live[register.0 as usize] = true;
+    }
+    Ok(())
 }
 
 fn place(frame: &mut Frame<'_>, register: Register) -> Rc<Slot> {
@@ -1663,6 +1731,9 @@ fn place(frame: &mut Frame<'_>, register: Register) -> Rc<Slot> {
 }
 
 fn take(frame: &mut Frame<'_>, register: Register) -> Value {
+    if let Some(live) = &mut frame.debug_live {
+        live[register.0 as usize] = false;
+    }
     frame.registers[register.0 as usize].take()
 }
 

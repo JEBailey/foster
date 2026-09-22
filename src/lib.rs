@@ -7,6 +7,7 @@ pub mod block;
 pub mod codegen;
 pub mod compiler;
 mod control_flow;
+pub mod debugger;
 pub mod diagnostic;
 mod dispatch;
 pub mod documentation;

@@ -1,7 +1,7 @@
 //! Immutable binary data, hexadecimal encoding, and UTF-8 validation.
 //!
 //! Lengths, indexes, and slice bounds are measured in bytes. `Bytes` may contain any
-//! octets; use `String`.from_utf8 to validate and decode text. Slices are checked,
+//! octets; use `String.from_utf8` to validate and decode text. Slices are checked,
 //! half-open ranges and materialize a new byte value. Hex decoding returns `HexError`.
 
 import core.copy
