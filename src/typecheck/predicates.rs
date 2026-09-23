@@ -1,5 +1,83 @@
 use super::*;
 
+impl Checker<'_> {
+    /// Foreign resources are thread-bound even when hidden in a private field,
+    /// a generic collection, or an enum payload.
+    pub(super) fn contains_c_resource(&mut self, ty: &Ty) -> Result<bool, FosterError> {
+        if self.hir.module_named("std.ffi").is_none() {
+            return Ok(false);
+        }
+        self.contains_c_resource_inner(ty, &mut std::collections::HashSet::new())
+    }
+
+    fn contains_c_resource_inner(
+        &mut self,
+        ty: &Ty,
+        seen: &mut std::collections::HashSet<Ty>,
+    ) -> Result<bool, FosterError> {
+        let ty = self.resolved(ty.clone());
+        if !seen.insert(ty.clone()) {
+            return Ok(false);
+        }
+        match ty {
+            Ty::Record(record, arguments) => {
+                let definition = &self.hir.records[record];
+                if definition.name == "CResource"
+                    && self.hir.modules[definition.module].name == "std.ffi"
+                {
+                    return Ok(true);
+                }
+                for argument in &arguments {
+                    if self.contains_c_resource_inner(argument, seen)? {
+                        return Ok(true);
+                    }
+                }
+                for field in self.effective_record_fields(record, &arguments)? {
+                    if self.contains_c_resource_inner(&field.ty, seen)? {
+                        return Ok(true);
+                    }
+                }
+            }
+            Ty::Variant(variant, arguments) => {
+                for argument in &arguments {
+                    if self.contains_c_resource_inner(argument, seen)? {
+                        return Ok(true);
+                    }
+                }
+                let definition = self.hir.variant_types[variant].clone();
+                let generics = definition
+                    .parameters
+                    .iter()
+                    .cloned()
+                    .zip(arguments)
+                    .collect();
+                for alternative in definition.alternatives {
+                    let alternative = self.hir.variants[alternative].clone();
+                    for annotation in alternative.payload.iter().chain(alternative.member.iter()) {
+                        let ty = self.annotation_type(definition.module, annotation, &generics)?;
+                        if self.contains_c_resource_inner(&ty, seen)? {
+                            return Ok(true);
+                        }
+                    }
+                }
+            }
+            Ty::Reference(_, inner)
+            | Ty::RawList(inner)
+            | Ty::Sequence(inner)
+            | Ty::Future(inner) => return self.contains_c_resource_inner(&inner, seen),
+            Ty::Intersection(members) => {
+                for member in members {
+                    if self.contains_c_resource_inner(&member, seen)? {
+                        return Ok(true);
+                    }
+                }
+            }
+            _ => {}
+        }
+        Ok(false)
+    }
+}
+
 pub(super) fn contains_variable(ty: &Ty) -> bool {
     match ty {
         Ty::Variable(_) => true,

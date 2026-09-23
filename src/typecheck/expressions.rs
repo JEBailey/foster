@@ -664,6 +664,12 @@ impl Checker<'_> {
             hir::Expr::MoveOut(place) => self.infer_expression(function, place)?,
             hir::Expr::Remote(value) => {
                 let value = self.infer_expression(function, value)?;
+                if self.contains_c_resource(&value)? {
+                    return Err(self.error(
+                        function,
+                        "C resources cannot cross a remote-object boundary",
+                    ));
+                }
                 match self.resolved(value) {
                     record @ Ty::Record(_, _) => Ty::Remote(Box::new(record)),
                     Ty::Reference(group, value) if matches!(*value, Ty::Record(_, _)) => {

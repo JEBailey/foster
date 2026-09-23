@@ -16,6 +16,18 @@ pub(super) struct BuiltinInfo {
 
 pub(super) fn info(id: Builtin) -> BuiltinInfo {
     match id {
+        Builtin::CExchange
+        | Builtin::CClose
+        | Builtin::CRelease
+        | Builtin::CEncodeInt
+        | Builtin::CEncodeFloat
+        | Builtin::CDecodeInt
+        | Builtin::CDecodeFloat => builtin(
+            "C bridge",
+            "private C bridge intrinsic",
+            &[],
+            "Internal versioned C bridge operation; use std.ffi wrappers.",
+        ),
         Builtin::Print => builtin(
             "print",
             "print(values...) -> ()",

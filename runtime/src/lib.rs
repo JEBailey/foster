@@ -11,6 +11,10 @@ pub const FOSTER_RUNTIME_ABI_VERSION: u16 = ABI_VERSION;
 mod remote_lifecycle;
 pub use foster_host as services;
 
+#[path = "../../src/foreign/runtime.rs"]
+mod c_bridge;
+include!("foreign.rs");
+
 static FOSTER_CONSTANTS: OnceLock<&'static [&'static str]> = OnceLock::new();
 
 #[inline(never)]
@@ -95,6 +99,7 @@ unsafe extern "C" {
     fn foster_native_string(data: usize, length: i64) -> usize;
     fn foster_native_string_data(value: usize) -> usize;
     fn foster_native_string_length(value: usize) -> i64;
+    fn foster_native_string_share(value: usize) -> usize;
 }
 
 pub fn owned_string(text: &str) -> usize {
@@ -386,6 +391,16 @@ extern "C" fn foster_rt_v4_string_whitespace(value: usize) -> u8 {
 
 #[unsafe(no_mangle)]
 extern "C" fn foster_rt_v4_string_concat(left: usize, right: usize) -> usize {
+    let left_length = unsafe { foster_native_string_length(left) } as usize;
+    let right_length = unsafe { foster_native_string_length(right) } as usize;
+    // A no-op concatenation shares the other operand's managed storage instead
+    // of allocating and copying the whole buffer.
+    if right_length == 0 {
+        return unsafe { foster_native_string_share(left) };
+    }
+    if left_length == 0 {
+        return unsafe { foster_native_string_share(right) };
+    }
     let mut result = unsafe { string_value(left).to_owned() };
     result.push_str(unsafe { string_value(right) });
     owned_string(&result)

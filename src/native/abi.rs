@@ -29,6 +29,13 @@ pub const CODE_POINT_WHITESPACE: &str = "foster_rt_v4_code_point_whitespace";
 pub const CODE_POINT_STRING: &str = "foster_rt_v4_code_point_string";
 pub const PARSE_FLOAT: &str = "foster_rt_v4_parse_float";
 pub const FORMAT_FLOAT: &str = "foster_rt_v4_format_float";
+pub const C_EXCHANGE: &str = "foster_rt_v4_c_exchange";
+pub const C_CLOSE: &str = "foster_rt_v4_c_close";
+pub const C_RELEASE: &str = "foster_rt_v4_c_release";
+pub const C_ENCODE_INT: &str = "foster_rt_v4_c_encode_int";
+pub const C_ENCODE_FLOAT: &str = "foster_rt_v4_c_encode_float";
+pub const C_DECODE_INT: &str = "foster_rt_v4_c_decode_int";
+pub const C_DECODE_FLOAT: &str = "foster_rt_v4_c_decode_float";
 
 // Platform services use a small family of argument-shape entry points. Every call returns an
 // opaque temporary response; generated code copies its contents into descriptor-backed Foster
@@ -207,6 +214,13 @@ runtime_functions! {
     STRING_EQUAL: (Pointer Borrowed, Pointer Borrowed) -> U8 Scalar;
     PARSE_FLOAT: (Pointer Borrowed) -> F64 Scalar;
     FORMAT_FLOAT: (F64 Value) -> Pointer Owned;
+    C_EXCHANGE: (Pointer Borrowed, Pointer Borrowed, I64 Value, I64 Value, U8 Value, Pointer Borrowed) -> Pointer Owned;
+    C_CLOSE: (I64 Value) -> Pointer Owned;
+    C_RELEASE: (I64 Value) -> U8 Scalar;
+    C_ENCODE_INT: (I64 Value) -> Pointer Owned;
+    C_ENCODE_FLOAT: (F64 Value) -> Pointer Owned;
+    C_DECODE_INT: (Pointer Borrowed) -> I64 Scalar;
+    C_DECODE_FLOAT: (Pointer Borrowed) -> F64 Scalar;
     REF_LOAD_I8: (Pointer Borrowed) -> U8 Scalar;
     REF_LOAD_I32: (Pointer Borrowed) -> U32 Scalar;
     REF_LOAD_I64: (Pointer Borrowed) -> I64 Scalar;

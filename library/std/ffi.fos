@@ -1,0 +1,154 @@
+//! Synchronous calls through explicitly compiled C bridges on Windows x86-64.
+//!
+//! Binding manifests and native libraries are trusted code. Build them with
+//! `foster bridge`; loading never compiles sources. Arguments and results are
+//! copied. C cannot retain input pointers or call back into Foster. Resources
+//! have one owner, close on scope exit, and cannot cross a remote boundary.
+
+import core.byte
+import core.bytes
+import core.int
+import core.result
+import core.string
+
+/// Private access to the shared VM/native bridge runtime.
+type CHost = {}
+impl CHost {
+    /// Executes a validated operation; resource construction is a separate mode.
+    func exchange(path: String, schema: String, operation: Int, token: Int, create: Bool, payload: String) -> String = intrinsic("c.exchange")
+    /// Returns the consumed flag and native close status.
+    func close(token: Int) -> String = intrinsic("c.close")
+    /// Performs unconditional cleanup of a still-owned resource.
+    func release(token: Int) -> () = intrinsic("c.release")
+    /// Encodes a signed integer's exact eight bytes.
+    func encode_int(value: Int) -> String = intrinsic("c.encode_int")
+    /// Encodes IEEE binary64 bytes without decimal conversion.
+    func encode_float(value: Float) -> String = intrinsic("c.encode_float")
+    /// Decodes a checked eight-byte integer payload.
+    func decode_int(value: String) -> Int = intrinsic("c.decode_int")
+    /// Decodes a checked eight-byte float payload.
+    func decode_float(value: String) -> Float = intrinsic("c.decode_float")
+}
+
+/// A bridge or C operation failure. Native close codes appear in `status`;
+/// validation/loading failures use zero and explain the failure in `message`.
+pub type CError = { pub message: String, pub status: Int }
+
+/// Copied wire arguments. Integer slots contain all 64 bits; unsigned C values
+/// use the same bits. Narrow integer parameters are range checked by the bridge.
+pub type CArguments = { payload: String }
+impl CArguments {
+    /// Starts an empty argument list.
+    pub func empty() -> CArguments { CArguments { payload: "" } }
+    /// Appends one exact integer slot. U64 interprets its bits as unsigned.
+    pub func integer(self, value: Int) -> () [mut self.payload] {
+        self.payload = self.payload + CHost.encode_int(value)
+        ()
+    }
+    /// Appends one binary64 slot. C float narrows with an overflow check.
+    pub func floating(self, value: Float) -> () [mut self.payload] {
+        self.payload = self.payload + CHost.encode_float(value)
+        ()
+    }
+    /// Copies a length-delimited buffer, including embedded zero bytes.
+    pub func bytes(self, value: Bytes) -> () [mut self.payload] {
+        self.payload = self.payload + CHost.encode_int(value.length) + value.hex()
+        ()
+    }
+    /// Copies UTF-8 and appends one NUL terminator. The bridge rejects interior
+    /// NUL bytes before calling C; C must not retain this temporary pointer.
+    pub func c_string(self, value: String) -> () [mut self.payload] {
+        self.payload = self.payload + CHost.encode_int(value.bytes.length + 1) + value.bytes.hex() + "00"
+        ()
+    }
+}
+
+/// A copied result. Scalar conversions check the exact payload length.
+pub type CValue = { data: Bytes }
+impl CValue {
+    /// Reads a signed integer; U64 results preserve their bits in an Int.
+    pub func integer(self) -> Result<Int, CError> {
+        return Result.Error(CError { message: "C integer requires eight bytes", status: 0 }) if self.data.length != 8
+        Result.Ok(CHost.decode_int(self.data.hex()))
+    }
+    /// Reads a binary64 result, including widened C float results.
+    pub func floating(self) -> Result<Float, CError> {
+        return Result.Error(CError { message: "C float requires eight bytes", status: 0 }) if self.data.length != 8
+        Result.Ok(CHost.decode_float(self.data.hex()))
+    }
+    /// Returns an independent buffer copy.
+    pub func bytes(self) -> Bytes { self.data.copy() }
+    /// Validates copied UTF-8; embedded NUL bytes remain ordinary text content.
+    pub func text(self) -> Result<String, CError> {
+        branch String.from_utf8(self.data.copy()) {
+            Result.Ok(value) -> Result.Ok(value)
+            Result.Error(_) -> Result.Error(CError { message: "C result is not UTF-8", status: 0 })
+        }
+    }
+}
+
+/// A path to an explicitly built bridge. Operations use manifest order, starting
+/// at zero. The path must be absolute; dependent DLLs resolve beside the bridge
+/// or in System32. Opening stores the path; first use validates the library ABI.
+pub type CBridge = { path: String, schema: String }
+impl CBridge {
+    /// Selects a reviewed native bridge by absolute path and the schema identifier
+    /// emitted by `foster bridge`. A mismatched schema fails before calling C.
+    pub func at(path: String, schema: String) -> CBridge [consume path, consume schema] { CBridge { path: move path, schema: move schema } }
+    /// Calls a scalar, void or copied-buffer operation. Rejects constructors.
+    pub func call(self, operation: Int, arguments: CArguments) -> Result<CValue, CError> {
+        decode_response(CHost.exchange(self.path, self.schema, operation, 0, false, arguments.payload))
+    }
+    /// Adopts exactly one non-null C allocation, or returns an error without
+    /// leaking a partial result. Only constructor operations are accepted.
+    pub func create(self, operation: Int, arguments: CArguments) -> Result<CResource, CError> {
+        let value = try decode_response(CHost.exchange(self.path, self.schema, operation, 0, true, arguments.payload))
+        let token = try value.integer()
+        Result.Ok(CResource { token })
+    }
+}
+
+/// An opaque, non-copyable owner. Private fields prevent fabrication or extracting
+/// a C pointer. Receiver calls mutate conservatively. Close errors can retain the
+/// resource; deinit always destroys a remaining owner using its cleanup function.
+pub type CResource = { token: Int }
+impl CResource {
+    /// Calls an operation for this resource type. Errors leave ownership intact.
+    pub func call(self, operation: Int, arguments: CArguments) -> Result<CValue, CError> [mut self.token] {
+        return Result.Error(CError { message: "C resource is closed", status: 0 }) if self.token == 0
+        // Native state changes must participate in the slot's mutation effect.
+        self.token = self.token
+        decode_response(CHost.exchange("", "", operation, self.token, false, arguments.payload))
+    }
+    /// Attempts close. Success destroys the owner; an error preserves or clears
+    /// it according to the reviewed native close contract. Repeated close succeeds.
+    pub func close(self) -> Result<(), CError> [mut self.token] {
+        return Result.Ok(()) if self.token == 0
+        let response = try decode_response(CHost.close(self.token))
+        branch {
+            response.data[0] != Byte.unchecked(0) -> { self.token = 0 }
+            _ -> ()
+        }
+        let status = CHost.decode_int(response.data.slice(1, 9).hex())
+        branch {
+            status == 0 -> Result.Ok(())
+            _ -> Result.Error(CError { message: "C close failed", status })
+        }
+    }
+    /// Unconditionally destroys any remaining allocation on ownership cleanup.
+    func deinit(self) -> () { CHost.release(self.token) }
+}
+
+/// Validates the private response envelope and exposes only copied bytes.
+func decode_response(response: String) -> Result<CValue, CError> {
+    let octets = branch Bytes.from_hex(response) {
+        Result.Ok(value) -> value
+        Result.Error(_) -> { return Result.Error(CError { message: "invalid C response", status: 0 }) }
+    }
+    return Result.Error(CError { message: "empty C response", status: 0 }) if octets.length == 0
+    let payload = octets.slice(1, octets.length)
+    branch {
+        octets[0] == Byte.unchecked(0) -> Result.Ok(CValue { data: move payload })
+        _ -> Result.Error(CError { message: String.from_utf8(move payload).unwrap_or("C bridge failure"), status: 0 })
+    }
+}

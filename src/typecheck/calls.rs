@@ -320,6 +320,16 @@ impl Checker<'_> {
                 ),
             ));
         }
+        if remote_call {
+            for argument in &argument_types {
+                if self.contains_c_resource(argument)? {
+                    return Err(self.error(
+                        function,
+                        "C resources cannot cross a remote-object boundary",
+                    ));
+                }
+            }
+        }
         let result = self.fresh();
         self.unify_call(
             function,
@@ -429,6 +439,22 @@ impl Checker<'_> {
         let string = self.string_type();
         let bytes = self.bytes_type();
         Ok(match builtin {
+            Builtin::CExchange => (
+                vec![
+                    string.clone(),
+                    string.clone(),
+                    Ty::Int,
+                    Ty::Int,
+                    Ty::Bool,
+                    string.clone(),
+                ],
+                string.clone(),
+            ),
+            Builtin::CClose | Builtin::CEncodeInt => (vec![Ty::Int], string.clone()),
+            Builtin::CRelease => (vec![Ty::Int], Ty::Unit),
+            Builtin::CEncodeFloat => (vec![Ty::Float], string.clone()),
+            Builtin::CDecodeInt => (vec![string.clone()], Ty::Int),
+            Builtin::CDecodeFloat => (vec![string.clone()], Ty::Float),
             Builtin::FromCodePoint => (vec![Ty::Int], Ty::CodePoint),
             Builtin::ParseFloat => (vec![string.clone()], Ty::Float),
             Builtin::FormatFloat => (vec![Ty::Float], string.clone()),
@@ -1238,7 +1264,10 @@ impl Checker<'_> {
         self.unify(receiver_type, Ty::Record(record, arguments), caller)?;
         self.check_constraints_with_bindings(caller, method, &generics)?;
         let result = self.instantiate(signature.result, &mut generics);
-        if remote && !remote_transferable(&self.resolved(result.clone())) {
+        if remote
+            && (!remote_transferable(&self.resolved(result.clone()))
+                || self.contains_c_resource(&result)?)
+        {
             return Err(self.error(
                 caller,
                 format!(

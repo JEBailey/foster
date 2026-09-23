@@ -1396,6 +1396,7 @@ pub(crate) const EMBEDDED_MODULES: &[(&str, &str)] = &[
         include_str!("../library/std/time/format.fos"),
     ),
     ("std.random", include_str!("../library/std/random.fos")),
+    ("std.ffi", include_str!("../library/std/ffi.fos")),
     (
         "std.random.generator",
         include_str!("../library/std/random/generator.fos"),

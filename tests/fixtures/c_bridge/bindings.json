@@ -1,0 +1,23 @@
+{
+  "abi": 1,
+  "headers": ["fixture.h"],
+  "sources": ["fixture.c"],
+  "resources": [
+    {"name": "Counter", "c_type": "Counter", "destroy": "fixture_destroy", "close": "fixture_close", "close_consumes_on_error": false},
+    {"name": "ConsumedCounter", "c_type": "Counter", "destroy": "fixture_destroy", "close": "fixture_close_consumed", "close_consumes_on_error": true}
+  ],
+  "operations": [
+    {"name": "add", "symbol": "fixture_add", "parameters": ["i32", "i32"], "result": "i32"},
+    {"name": "create", "symbol": "fixture_create", "parameters": ["i64"], "result": "void", "creates": "Counter"},
+    {"name": "get", "symbol": "fixture_get", "result": "i64", "receiver": "Counter"},
+    {"name": "set", "symbol": "fixture_set", "parameters": ["i64"], "result": "void", "receiver": "Counter"},
+    {"name": "live", "symbol": "fixture_live", "result": "i64"},
+    {"name": "copy", "symbol": "fixture_copy", "parameters": ["bytes"], "result": "bytes", "release": "fixture_free"},
+    {"name": "float", "symbol": "fixture_float", "parameters": ["f64"], "result": "f64"},
+    {"name": "unsigned", "symbol": "fixture_unsigned", "parameters": ["u64"], "result": "u64"},
+    {"name": "create_consumed", "symbol": "fixture_create", "parameters": ["i64"], "result": "void", "creates": "ConsumedCounter"},
+    {"name": "string_length", "symbol": "fixture_string_length", "parameters": ["c_string"], "result": "i64"},
+    {"name": "byte", "symbol": "fixture_byte", "parameters": ["u8"], "result": "u8"},
+    {"name": "float32", "symbol": "fixture_float32", "parameters": ["f32"], "result": "f32"}
+  ]
+}

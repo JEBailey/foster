@@ -34,6 +34,12 @@ unsafe extern "C" fn foster_native_string_data(value: usize) -> usize {
 unsafe extern "C" fn foster_native_string_length(value: usize) -> i64 {
     unsafe { (&*(value as *const String)).len() as i64 }
 }
+#[unsafe(no_mangle)]
+unsafe extern "C" fn foster_native_string_share(value: usize) -> usize {
+    // The test stub has no managed storage to share; a clone is equivalent.
+    let text = unsafe { &*(value as *const String) };
+    Box::into_raw(Box::new(text.clone())) as usize
+}
 
 #[test]
 fn text_adapter_preserves_utf8_through_program_hooks() {

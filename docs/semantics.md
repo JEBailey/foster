@@ -368,6 +368,11 @@ grant access. Host operations execute through the supplied host context and capa
 Recoverable host errors use the documented typed results. Host adapters must preserve the ownership
 and lifetime contract of every argument and result.
 
+Reviewed [C bridges](c-integration.md) form a separate native-code boundary. Their
+temporary argument pointers must not be retained by C, and owning resource tokens cannot cross
+remote boundaries. The declared close contract determines whether failure leaves
+an owner live; automatic cleanup destroys every remaining owner.
+
 Collection algorithms, text encoding/validation policy, and other library decisions remain Foster
 code. Low-level allocation, checked storage access, scalar/representation operations, and host
 operations may be primitives. Primitive replacement or inlining must preserve the same values,

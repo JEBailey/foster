@@ -1,0 +1,138 @@
+import core.bytes
+import core.result
+import core.string
+import core.list
+import std.ffi
+import std.process
+
+func create(bridge: CBridge, value: Int) -> Result<CResource, CError> {
+    let parameters = CArguments.empty()
+    parameters.integer(value)
+    bridge.create(1, parameters)
+}
+
+func live(bridge: CBridge) -> Result<Int, CError> {
+    let value = try bridge.call(4, CArguments.empty())
+    value.integer()
+}
+
+func early(bridge: CBridge) -> Result<(), CError> {
+    let resource = try create(bridge, 10)
+    return Result.Ok(())
+}
+
+func failing(bridge: CBridge) -> Result<(), CError> {
+    let resource = try create(bridge, 10)
+    let invalid = try create(bridge, -1)
+    Result.Ok(())
+}
+
+func main(arguments: Arguments) -> Result<Int, CError> {
+    let bridge = CBridge.at(arguments.values[0].copy(), arguments.values[1].copy())
+    let parameters = CArguments.empty()
+    parameters.integer(20)
+    parameters.integer(22)
+    let sum = try bridge.call(0, parameters)
+    assert((try sum.integer()) == 42, "C fixture line 36")
+    assert(bridge.call(1, parameters).error?(), "C fixture line 37")
+    assert(bridge.create(0, parameters).error?(), "C fixture line 38")
+    :ownership {
+        let resource = try create(bridge, 41)
+        let initial = try resource.call(2, CArguments.empty())
+        assert((try initial.integer()) == 41, "C fixture line 42")
+        let next = CArguments.empty()
+        next.integer(42)
+        try resource.call(3, next)
+        assert((try live(bridge)) == 1, "C fixture line 46")
+        let updated = try resource.call(2, CArguments.empty())
+        assert((try updated.integer()) == 42, "C fixture line 48")
+    }
+    assert((try live(bridge)) == 0, "C fixture line 50")
+    try early(bridge)
+    assert((try live(bridge)) == 0, "C fixture line 52")
+    :loop_cleanup {
+        let iterations = 0
+        loop {
+            let resource = try create(bridge, 1)
+            iterations = iterations + 1
+            continue if iterations == 1
+            break
+        }
+    }
+    assert((try live(bridge)) == 0, "C fixture line 62")
+    assert(failing(bridge).error?(), "C fixture line 63")
+    assert((try live(bridge)) == 0, "C fixture line 64")
+    :close_failure {
+        let resource = try create(bridge, -2)
+        assert(resource.close().error?(), "C fixture line 67")
+        assert((try live(bridge)) == 1, "C fixture line 68")
+        let next = CArguments.empty()
+        next.integer(7)
+        try resource.call(3, next)
+        try resource.close()
+        try resource.close()
+        assert(resource.call(2, CArguments.empty()).error?(), "C fixture line 74")
+    }
+    assert((try live(bridge)) == 0, "C fixture line 76")
+    :retained_close_failure {
+        let resource = try create(bridge, -2)
+        assert(resource.close().error?(), "close retains a live owner")
+    }
+    assert((try live(bridge)) == 0, "deinit cleans up after retained close failure")
+    :copied_data {
+        let empty = CArguments.empty()
+        empty.bytes(Bytes.empty())
+        let empty_copy = try bridge.call(5, empty)
+        assert(empty_copy.bytes().length == 0, "empty C buffer")
+        let input = Bytes.from_hex("0061ff").unwrap_or(Bytes.empty())
+        let data = CArguments.empty()
+        data.bytes(input)
+        let copied = try bridge.call(5, data)
+        assert(copied.bytes() == input, "C fixture line 82")
+        assert(copied.text().error?(), "C fixture line 83")
+    }
+    :consumed_close_failure {
+        let data = CArguments.empty()
+        data.integer(-2)
+        let resource = try bridge.create(8, data)
+        assert(resource.call(2, CArguments.empty()).error?(), "C fixture line 89")
+        assert(resource.close().error?(), "C fixture line 90")
+        assert((try live(bridge)) == 0, "C fixture line 91")
+        try resource.close()
+    }
+    :unsigned_bits {
+        let data = CArguments.empty()
+        data.integer(-1)
+        let unsigned = try bridge.call(7, data)
+        assert((try unsigned.integer()) == -1, "C fixture line 98")
+    }
+    :floating {
+        let data = CArguments.empty()
+        data.floating(1.25)
+        let doubled = try bridge.call(6, data)
+        assert((try doubled.floating()) == 2.5, "C fixture line 104")
+    }
+    :c_strings {
+        let data = CArguments.empty()
+        data.c_string("λ")
+        let length = try bridge.call(9, data)
+        assert((try length.integer()) == 2, "C fixture line 110")
+        let invalid = CArguments.empty()
+        invalid.bytes(Bytes.from_hex("61006200").unwrap_or(Bytes.empty()))
+        assert(bridge.call(9, invalid).error?(), "C fixture line 113")
+    }
+    :narrowing {
+        let valid = CArguments.empty()
+        valid.integer(255)
+        let byte_value = try bridge.call(10, valid)
+        assert((try byte_value.integer()) == 255, "C fixture line 119")
+        let invalid = CArguments.empty()
+        invalid.integer(256)
+        assert(bridge.call(10, invalid).error?(), "C fixture line 122")
+        let narrow = CArguments.empty()
+        narrow.floating(1.25)
+        let exact = try bridge.call(11, narrow)
+        assert((try exact.floating()) == 1.25, "C fixture line 126")
+    }
+    Result.Ok(42)
+}

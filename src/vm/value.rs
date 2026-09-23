@@ -1154,6 +1154,27 @@ impl Value {
     }
 
     pub(crate) fn into_wire(self) -> Result<WireValue, RuntimeError> {
+        fn contains_c_resource(value: &Value) -> bool {
+            match value {
+                Value::Record { fields, .. } => {
+                    fields
+                        .values
+                        .cleanup
+                        .borrow()
+                        .as_ref()
+                        .is_some_and(super::machine::Cleanup::is_c_resource)
+                        || fields.values.iter().any(contains_c_resource)
+                }
+                Value::Variant { payload, .. } => payload.iter().any(contains_c_resource),
+                Value::RawList(values) => values.iter().any(contains_c_resource),
+                _ => false,
+            }
+        }
+        if contains_c_resource(&self) {
+            return Err(RuntimeError::runtime(
+                "C resources cannot cross a remote-object boundary",
+            ));
+        }
         let cleanup = match &self {
             Self::Record { fields, .. } => fields.take_cleanup(),
             Self::Variant { payload, .. } => payload.take_cleanup(),

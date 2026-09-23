@@ -206,6 +206,10 @@ impl std::fmt::Debug for Cleanup {
 }
 
 impl Cleanup {
+    pub(super) fn is_c_resource(&self) -> bool {
+        self.record
+            .is_some_and(|record| self.program.metadata.is_c_resource(record))
+    }
     pub(super) fn with_proxy(mut self, proxy: Arc<super::value::WireOwned>) -> Self {
         self.proxy = Some(proxy);
         self

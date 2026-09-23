@@ -172,6 +172,27 @@ macro_rules! builtin_descriptors {
 }
 
 macro_rules! native_builtin {
+    (CExchange) => {
+        NativeIntrinsic::Runtime(crate::native::abi::C_EXCHANGE)
+    };
+    (CClose) => {
+        NativeIntrinsic::Runtime(crate::native::abi::C_CLOSE)
+    };
+    (CRelease) => {
+        NativeIntrinsic::Runtime(crate::native::abi::C_RELEASE)
+    };
+    (CEncodeInt) => {
+        NativeIntrinsic::Runtime(crate::native::abi::C_ENCODE_INT)
+    };
+    (CEncodeFloat) => {
+        NativeIntrinsic::Runtime(crate::native::abi::C_ENCODE_FLOAT)
+    };
+    (CDecodeInt) => {
+        NativeIntrinsic::Runtime(crate::native::abi::C_DECODE_INT)
+    };
+    (CDecodeFloat) => {
+        NativeIntrinsic::Runtime(crate::native::abi::C_DECODE_FLOAT)
+    };
     (Print) => {
         NativeIntrinsic::Print { newline: false }
     };
@@ -343,6 +364,20 @@ macro_rules! builtin_handler {
 }
 
 builtin_descriptors! {
+    CExchange = 65, source: None, intrinsic: Some("c.exchange") => Some("std.ffi"),
+        execution: Direct, signature: [Read String, Read String, Read Integer, Read Integer, Read Bool, Read String] -> String;
+    CClose = 66, source: None, intrinsic: Some("c.close") => Some("std.ffi"),
+        execution: Direct, signature: [Read Integer] -> String;
+    CRelease = 67, source: None, intrinsic: Some("c.release") => Some("std.ffi"),
+        execution: Direct, signature: [Read Integer] -> Unit;
+    CEncodeInt = 68, source: None, intrinsic: Some("c.encode_int") => Some("std.ffi"),
+        execution: Direct, signature: [Read Integer] -> String;
+    CEncodeFloat = 69, source: None, intrinsic: Some("c.encode_float") => Some("std.ffi"),
+        execution: Direct, signature: [Read Float] -> String;
+    CDecodeInt = 70, source: None, intrinsic: Some("c.decode_int") => Some("std.ffi"),
+        execution: Direct, signature: [Read String] -> Integer;
+    CDecodeFloat = 71, source: None, intrinsic: Some("c.decode_float") => Some("std.ffi"),
+        execution: Direct, signature: [Read String] -> Float;
     Print = 0, source: Some("print"), intrinsic: None => None,
         execution: Direct, signature: (variadic Read Any) -> Unit;
     Println = 1, source: Some("println"), intrinsic: None => None,

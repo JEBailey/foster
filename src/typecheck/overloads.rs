@@ -576,7 +576,9 @@ impl Checker<'_> {
                 ));
             }
         }
-        if !remote_transferable(&self.resolved((*result).clone())) {
+        if !remote_transferable(&self.resolved((*result).clone()))
+            || self.contains_c_resource(&result)?
+        {
             return Err(self.error(
                 caller,
                 format!(

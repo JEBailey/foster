@@ -20,6 +20,17 @@ pub(super) fn lower_native_spawn_remote(
         return Err(native_error("native Remote<T> has a non-object layout"));
     };
     let source_type = context.function.value_type(source);
+    if context.backend.ir.program.metadata.contains_c_resource(
+        &super::specialization::executable_type_for_native(
+            source_type,
+            context.backend.ir.program,
+            context.backend.ir.layouts,
+        ),
+    ) {
+        return Err(native_error(
+            "C resources cannot cross a remote-object boundary",
+        ));
+    }
     if borrowed && !matches!(source_type, NativeType::Object(_)) {
         return Err(native_error(
             "borrowed native remote state must be an object",
@@ -67,6 +78,23 @@ pub(super) fn lower_native_remote_call(
     context: NativeLowering<'_, '_>,
 ) -> Result<ClifValue, FosterError> {
     let target_signature = &context.backend.ir.function_types[&target];
+    for ty in arguments
+        .iter()
+        .map(|(_, value)| context.function.value_type(*value))
+        .chain(std::iter::once(target_signature.result))
+    {
+        if context.backend.ir.program.metadata.contains_c_resource(
+            &super::specialization::executable_type_for_native(
+                ty,
+                context.backend.ir.program,
+                context.backend.ir.layouts,
+            ),
+        ) {
+            return Err(native_error(
+                "C resources cannot cross a remote-object boundary",
+            ));
+        }
+    }
     if target_signature.parameters.len() != arguments.len() + 1 {
         return Err(native_error(
             "native remote call has the wrong argument arity",

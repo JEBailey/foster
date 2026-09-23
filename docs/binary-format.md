@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Format version 31; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
+Format version 32; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -103,7 +103,8 @@ Capture modes: `0 Copy`, `1 Move`, `2 Ref`. Parameter modes: `0 Borrow`, `1 Cons
 operators: `0 Negate`, `1 Not`, `2 BitNot`. Binary tags in order are Add, Subtract, Multiply,
 Divide, BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight, Equal, NotEqual, Less, LessEqual, Greater,
 GreaterEqual. Builtin tags use the explicit stable values in the intrinsic registry, from `Print = 0` through
-`TcpWaitAccept = 64`. Readiness tags are `TcpWaitReadable = 62`, `TcpWaitWritable = 63`,
+`CDecodeFloat = 71`. The C bridge intrinsics occupy tags 65 through 71.
+Readiness tags are `TcpWaitReadable = 62`, `TcpWaitWritable = 63`,
 and `TcpWaitAccept = 64`. Other host-service tags include `IoReadRange = 56`, `IoAppendBytes = 57`,
 `IoFileLength = 58`, `TimeWallNow = 59`, `TimeMonotonicNow = 60`, and `RandomBytes = 61`.
 

@@ -34,6 +34,15 @@ fn execute() -> Result<(), Box<dyn Error>> {
     let matches = cli().get_matches();
     match matches.subcommand() {
         Some(("init", arguments)) => init(arguments)?,
+        Some(("bridge", arguments)) => {
+            let output = foster::foreign::build(
+                arguments.get_one::<PathBuf>("manifest").unwrap(),
+                arguments.get_one::<PathBuf>("output").unwrap(),
+                arguments.get_one::<PathBuf>("cc").unwrap(),
+            )
+            .map_err(std::io::Error::other)?;
+            println!("{}", output.display());
+        }
         Some(("debug", arguments)) => debug(arguments)?,
         Some(("lsp", _)) => return foster::lsp::run(),
         Some(("check", arguments)) => check(arguments)?,
@@ -89,6 +98,11 @@ fn cli() -> Command {
         .about("The Foster compiler and development tools")
         .subcommand_required(true)
         .arg_required_else_help(true)
+        .subcommand(Command::new("bridge")
+            .about("Compile a reviewed C binding manifest into a Windows x64 bridge")
+            .arg(Arg::new("manifest").required(true).value_parser(value_parser!(PathBuf)))
+            .arg(Arg::new("output").long("output").required(true).value_parser(value_parser!(PathBuf)))
+            .arg(Arg::new("cc").long("cc").default_value("clang").value_parser(value_parser!(PathBuf))))
         .subcommand(
             Command::new("init")
                 .about("Create a Foster project with foster.toml and src/main.fos")

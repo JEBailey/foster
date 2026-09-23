@@ -1,6 +1,9 @@
 # C integration implementation plan
 
-Status: proposed work, not implemented language syntax or an available FFI.
+Status: the Windows x86-64 bridge and owning-resource foundation is implemented;
+see [C integration](c-integration.md) for the supported contract and limitations.
+The milestones below remain the broader roadmap. Borrowed views, callbacks,
+general ownership-transfer parameters, and package bundling are not implemented.
 
 ## Objective and existing foundation
 

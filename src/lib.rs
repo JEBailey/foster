@@ -13,6 +13,7 @@ mod dispatch;
 pub mod documentation;
 pub mod entry;
 pub mod error;
+pub mod foreign;
 pub mod formatter;
 pub mod hir;
 pub mod intrinsics;

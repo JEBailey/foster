@@ -43,6 +43,61 @@ pub struct ProgramMetadata {
     pub variants: HashMap<VariantId, RuntimeVariant>,
 }
 
+impl ProgramMetadata {
+    pub(crate) fn is_c_resource(&self, record: RecordId) -> bool {
+        self.symbols.modules.iter().any(|module| {
+            module.name.path == "std.ffi"
+                && module.types.iter().any(|binding| {
+                    !binding.variant
+                        && binding.name.name == "CResource"
+                        && binding.id == u32::from(record.into_raw())
+                })
+        })
+    }
+
+    /// Recheck concrete specializations: a generic remote function may hide a
+    /// resource type from the source-level checker until its call is specialized.
+    pub(crate) fn contains_c_resource(&self, ty: &ExecutableType) -> bool {
+        fn visit(
+            metadata: &ProgramMetadata,
+            ty: &ExecutableType,
+            seen: &mut std::collections::HashSet<ExecutableType>,
+        ) -> bool {
+            if !seen.insert(ty.clone()) {
+                return false;
+            }
+            match ty {
+                ExecutableType::Record { record, arguments } => {
+                    metadata.is_c_resource(*record)
+                        || arguments.iter().any(|ty| visit(metadata, ty, seen))
+                        || metadata.records.get(record).is_some_and(|record| {
+                            record
+                                .fields()
+                                .iter()
+                                .any(|field| visit(metadata, &field.ty, seen))
+                        })
+                }
+                ExecutableType::Variant { variant, arguments } => {
+                    arguments.iter().any(|ty| visit(metadata, ty, seen))
+                        || metadata
+                            .variants
+                            .values()
+                            .filter(|value| value.parent == *variant)
+                            .any(|value| value.payload.iter().any(|ty| visit(metadata, ty, seen)))
+                }
+                ExecutableType::Reference(value)
+                | ExecutableType::List(value)
+                | ExecutableType::Future(value) => visit(metadata, value, seen),
+                ExecutableType::Intersection(members) => {
+                    members.iter().any(|ty| visit(metadata, ty, seen))
+                }
+                _ => false,
+            }
+        }
+        visit(self, ty, &mut std::collections::HashSet::new())
+    }
+}
+
 /// Field names and types stay paired; the lookup layout is derived at construction.
 ///
 /// ```compile_fail

@@ -208,7 +208,13 @@ pub(crate) fn liveness_with_write_bindings(
             reads.extend(exit_uses);
         }
         let writes = definitions(instruction);
-        if !matches!(instruction, Instruction::Drop { .. }) {
+        // An assignment may write through a previously bound reference. A
+        // pattern match declares a fresh binding instead: reading its previous
+        // value here carries obsolete owners around loop backedges.
+        if !matches!(
+            instruction,
+            Instruction::Drop { .. } | Instruction::MatchPattern { .. }
+        ) {
             reads.extend(
                 writes
                     .iter()

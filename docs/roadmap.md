@@ -92,11 +92,12 @@ storage and borrowing contract than the proposed list-backed arena.
 
 ## Runtime and platform
 
-- Implement [C integration](c-integration-plan.md) in stages: a shared foreign-call
-  descriptor and generated bridges, safe opaque-resource wrappers, foreign borrow
-  domains, a focused SQLite package, and then callbacks. Preserve single ownership,
-  checked effects, named lexical scopes, and VM/native parity. This is proposed work;
-  the existing host-provider and runtime ABI boundaries are not a general C FFI.
+- Extend [C integration](c-integration.md) beyond the Windows x86-64 generated
+  bridges and owning-resource wrappers: general ownership-transfer parameters,
+  relocatable package dependencies, foreign borrow domains, a focused SQLite
+  package, and then callbacks. The [integration plan](c-integration-plan.md)
+  describes these stages. Preserve single ownership, checked effects, named
+  lexical scopes, and VM/native parity.
 
 - Build reusable in-memory and policy-restricted providers on the shared `HostProvider` boundary.
   Filesystem, network, wall-clock, and monotonic-clock operations now support embedding-provider

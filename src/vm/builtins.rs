@@ -39,6 +39,13 @@ macro_rules! direct_builtin_handlers {
 }
 
 direct_builtin_handlers!(
+    CExchange,
+    CClose,
+    CRelease,
+    CEncodeInt,
+    CEncodeFloat,
+    CDecodeInt,
+    CDecodeFloat,
     Print,
     Println,
     FromCodePoint,
@@ -170,6 +177,60 @@ fn dispatch_core(
     string_record: Option<crate::hir::RecordId>,
 ) -> Result<Value, RuntimeError> {
     match (builtin, arguments) {
+        (
+            Builtin::CExchange,
+            [
+                path,
+                schema,
+                Value::Integer(operation),
+                Value::Integer(token),
+                Value::Bool(create),
+                payload,
+            ],
+        ) => {
+            if may::coroutine::is_coroutine() {
+                return Ok(Value::string(
+                    string_record,
+                    crate::foreign::runtime::remote_error(),
+                ));
+            }
+            Ok(Value::string(
+                string_record,
+                crate::foreign::runtime::exchange(
+                    &path.string_text()?,
+                    &schema.string_text()?,
+                    *operation,
+                    *token,
+                    *create,
+                    &payload.string_text()?,
+                ),
+            ))
+        }
+        (Builtin::CClose, [Value::Integer(token)]) => Ok(Value::string(
+            string_record,
+            crate::foreign::runtime::close(*token),
+        )),
+        (Builtin::CRelease, [Value::Integer(token)]) => {
+            crate::foreign::runtime::release(*token).map_err(RuntimeError::runtime)?;
+            Ok(Value::Unit)
+        }
+        (Builtin::CEncodeInt, [Value::Integer(value)]) => Ok(Value::string(
+            string_record,
+            crate::foreign::runtime::encode(&value.to_le_bytes()),
+        )),
+        (Builtin::CEncodeFloat, [Value::Float(value)]) => Ok(Value::string(
+            string_record,
+            crate::foreign::runtime::encode(&value.to_le_bytes()),
+        )),
+        (Builtin::CDecodeInt | Builtin::CDecodeFloat, [value]) => {
+            let bits = crate::foreign::runtime::int(&value.string_text()?)
+                .map_err(RuntimeError::runtime)?;
+            Ok(if builtin == Builtin::CDecodeInt {
+                Value::Integer(bits)
+            } else {
+                Value::Float(f64::from_bits(bits as u64))
+            })
+        }
         (Builtin::Print | Builtin::Println, arguments) => {
             let rendered = arguments
                 .iter()

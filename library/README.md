@@ -8,6 +8,10 @@ that imports their declarations for you.
 Start with the [core overview](core.fos) for foundational values and contracts,
 or the [standard overview](std.fos) for collections, algorithms, and host services.
 
+For C libraries, use generated bindings backed by `std.ffi`; the
+[C integration guide](../docs/c-integration.md) describes bridge builds, supported
+wire types, and owning resource wrappers on Windows x86-64.
+
 The `.fos` files here are the authoritative implementation and API documentation.
 Their Markdown comments appear in generated pages and LSP hovers. Installed
 compilers embed the library, so consumers do not need a checkout.

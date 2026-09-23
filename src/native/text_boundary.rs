@@ -39,6 +39,11 @@ pub(super) fn define(
             vec![NativeType::String],
             NativeType::Int,
         ),
+        (
+            "foster_native_string_share",
+            vec![NativeType::String],
+            NativeType::String,
+        ),
     ] {
         let mut context = module.make_context();
         context.func.signature = signature(module, &ir::Signature { parameters, result });
@@ -55,6 +60,18 @@ pub(super) fn define(
             let (storage, data) =
                 allocate_native_bytes(&mut builder, module, objects, bytes, input[1])?;
             copy_native_bytes(&mut builder, module, data, input[0], input[1])?;
+            let text = objects.allocate(&mut builder, module, string)?;
+            store_physical_value(&mut builder, text, field.offset, storage);
+            text
+        } else if name == "foster_native_string_share" {
+            // Wraps the existing managed storage in a fresh String object so a
+            // no-op copy (`text + ""`) shares bytes instead of allocating.
+            let word = module.target_config().pointer_type();
+            let storage =
+                builder
+                    .ins()
+                    .load(word, MemFlagsData::trusted(), input[0], field.offset as i32);
+            objects.retain(&mut builder, storage, bytes);
             let text = objects.allocate(&mut builder, module, string)?;
             store_physical_value(&mut builder, text, field.offset, storage);
             text
