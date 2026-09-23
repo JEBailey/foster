@@ -64,6 +64,7 @@ fn expression(value: &Expr) -> bool {
         Expr::Binary { left, right, .. } | Expr::Logical { left, right, .. } => {
             expression(left) || expression(right)
         }
+        Expr::NamedScope { body, .. } => block(body),
         Expr::Branch { subject, arms } => {
             subject.as_deref().is_some_and(expression)
                 || arms.iter().any(|arm| {

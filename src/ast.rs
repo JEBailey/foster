@@ -334,6 +334,11 @@ pub enum Expr {
     CodePoint(String),
     Symbol(String),
     Name(String),
+    /// A named lexical scope, with the same result and cleanup rules as an arm block.
+    NamedScope {
+        name: String,
+        body: crate::block::Block<Stmt>,
+    },
     List(Vec<Expr>),
     Call {
         callee: Box<Expr>,

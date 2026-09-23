@@ -1016,6 +1016,29 @@ impl Value {
         }
     }
 
+    /// Wraps already-shared immutable byte storage in a fresh `Bytes` value.
+    pub(crate) fn bytes_shared(value: Arc<Vec<u8>>) -> Self {
+        Self::Record {
+            record: None,
+            name: "Bytes".into(),
+            fields: value_fields(Self::RawBytes(value)),
+        }
+    }
+
+    /// Returns a fresh `String` value that shares this value's immutable byte storage.
+    pub(crate) fn string_shared(&self) -> Option<Self> {
+        let record = match self {
+            Self::Record { record, .. } => *record,
+            _ => None,
+        };
+        let storage = self.string_storage()?;
+        Some(Self::Record {
+            record,
+            name: "String".into(),
+            fields: value_fields(Self::bytes_shared(storage)),
+        })
+    }
+
     pub(crate) fn bytes_value(&self) -> Option<&[u8]> {
         match self.record_field_named("Bytes", "value") {
             Some(Self::RawBytes(value)) => Some(value.as_slice()),
@@ -1096,6 +1119,17 @@ impl Value {
 
     pub(crate) fn string_bytes(&self) -> Option<&[u8]> {
         self.record_field_named("String", "value")?.bytes_value()
+    }
+
+    /// Returns the immutable UTF-8 storage of this Foster `String` value, shared rather than copied.
+    pub(crate) fn string_storage(&self) -> Option<Arc<Vec<u8>>> {
+        match self.record_field_named("String", "value") {
+            Some(inner) => match inner.record_field_named("Bytes", "value") {
+                Some(Self::RawBytes(value)) => Some(Arc::clone(value)),
+                _ => None,
+            },
+            None => None,
+        }
     }
 
     pub(crate) fn symbol(

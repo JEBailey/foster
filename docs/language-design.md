@@ -142,6 +142,31 @@ func double(value: Int) -> Int {
 }
 ```
 
+### Named scopes
+
+`:name { ... }` evaluates a named lexical scope once. The opening brace follows the
+symbol-shaped label on the same line:
+
+```foster
+let text = :prepare {
+    let temporary = "ready"
+    move temporary
+}
+```
+
+The final expression supplies the result. An empty scope, or one ending with a
+binding, assignment, or other non-expression statement, yields `()`, as a branch-arm
+block does. Local declarations are visible only inside the scope. Remaining owners
+are cleaned up in reverse binding order when it exits, including control transfers
+and ordinary language failures. Moving a value out transfers its cleanup obligation;
+references and captured borrows must not outlive their origins.
+
+The label documents the lifetime boundary. It does not declare a variable, a runtime
+owner, or a borrowing group, and labels may repeat or nest. `return` still exits the
+function; `break` and `continue` still target the nearest loop. A bare `:name` remains
+a symbol value. In a `branch`, `while`, or `for` header, parenthesize a named scope
+expression to distinguish its braces from the construct's body.
+
 ### Function and method overloads
 
 Functions, associated functions, and instance methods may share a name when their parameter

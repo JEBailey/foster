@@ -1,6 +1,6 @@
 # Foster Ownership and Borrowing
 
-Language version 13, ownership-model version 3.
+Language version 14, ownership-model version 3.
 
 This document describes Foster's ownership model, its source-level behavior, and how the compiler
 implements it today. It is intentionally separate from
@@ -55,6 +55,21 @@ text.bytes         // computed Bytes value, not a place
 Ownership operations apply to the root and, where supported, its projection. This distinction is
 important: reading `people[index]` reads a value, while `ref people[index]` creates a loan into the
 storage owned by `people`.
+
+## Named lexical scopes
+
+`:request { ... }` names a lexical ownership boundary. Locals declared inside it
+are inaccessible outside it; remaining owned locals are destroyed in reverse binding
+order at exit. Early return, loop transfers, and language failures perform ordinary
+cleanup. A final expression can transfer an owned result out of the scope, including
+an explicit `move` of a local. Borrowers of outer storage may leave while that storage
+remains live, but references or closures borrowing a scope-local owner cannot be used
+after the scope ends. These checks also apply when a borrower is assigned to an outer
+binding rather than yielded as the scope's result.
+
+The scope name is descriptive, not a first-class resource container or a group
+parameter. Helper calls keep their ordinary ownership and cleanup rules; resources
+do not implicitly attach to a caller's named scope.
 
 ## Record destructuring
 

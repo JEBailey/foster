@@ -476,6 +476,17 @@ impl FunctionLowerer<'_> {
                 operator,
                 right,
             } => self.lower_logical(left, *operator, right)?,
+            ast::Expr::NamedScope { body, .. } => {
+                // An unconditional arm already supplies lexical name isolation, result
+                // provenance, and cleanup on normal and abrupt exits on both backends.
+                return self.lower_expression(&ast::Expr::Branch {
+                    subject: None,
+                    arms: vec![ast::BranchArm {
+                        test: ast::BranchTest::Wildcard,
+                        body: body.clone(),
+                    }],
+                });
+            }
             ast::Expr::Branch { subject, arms } => {
                 let subject = subject
                     .as_ref()

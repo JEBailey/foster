@@ -86,6 +86,17 @@ pub(super) fn binary(
         (Multiply, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a * b)),
         (Divide, Value::Float(a), Value::Float(b)) => Ok(Value::Float(a / b)),
         (Add, a, b) if a.string_bytes().is_some() && b.string_bytes().is_some() => {
+            // A no-op concatenation shares storage instead of copying the whole
+            // buffer: `text + ""` and `"" + text` are identical to the other operand.
+            if b.string_bytes().unwrap().is_empty() {
+                if let Some(shared) = a.string_shared() {
+                    return Ok(shared);
+                }
+            } else if a.string_bytes().unwrap().is_empty() {
+                if let Some(shared) = b.string_shared() {
+                    return Ok(shared);
+                }
+            }
             let mut value = a.string_bytes().unwrap().to_vec();
             value.extend_from_slice(b.string_bytes().unwrap());
             let record = match a {

@@ -127,6 +127,29 @@ for guarded transfers. Do not write `if condition { ... }`, `else`, or a postfix
 guard on an assignment. In loop headers, parenthesize a direct record literal
 to distinguish its braces from the body.
 
+## Named ownership scopes
+
+Use a symbol-shaped label followed by braces to make a resource lifetime visible.
+The final expression supplies the result; an empty scope or a final non-expression
+statement supplies `()`. Locals stay inside the scope, and remaining owners are
+cleaned up on exit. Moving an owned result out transfers its cleanup obligation.
+The label is descriptive; it does not declare a variable or a borrowing group.
+
+```foster
+func main() -> Int {
+    let answer = :calculation {
+        let base = 40
+        :finish { base + 2 }
+    }
+    answer
+}
+```
+
+Keep the label and opening brace on the same line. Parenthesize a named scope used
+in a `branch`, `while`, or `for` header. References and borrowed closures cannot be
+used after their originating scope-local owners are destroyed. `return`, `break`,
+and `continue` keep their ordinary function and loop targets.
+
 ## Optional results, errors, and generic functions
 
 Enums use `enum Name = Case | Other(Payload)`. A case carries at most one payload

@@ -14,6 +14,18 @@ func take(value: String) -> () [consume value] {
     ()
 }
 
+test "named scopes transfer results and retain outer borrows" {
+    let owner = Pair { left: "hello", right: "world" }
+    let borrowed = :view { ref owner }
+    let result = :build {
+        let temporary = :nested { "ready" }
+        move temporary
+    }
+    assert(borrowed.left == "hello")
+    assert(result == "ready")
+    assert(:empty {} == ())
+}
+
 func remaining(pair: Pair) -> String [consume pair] {
     take(move pair.left)
     pair.right

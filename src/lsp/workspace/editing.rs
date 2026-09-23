@@ -144,6 +144,7 @@ fn expression(value: &Expr, scope: &Items, marker: &str) -> Option<Items> {
                 ClosureBody::Block(body) => block(body, &nested, marker),
             }
         }
+        Expr::NamedScope { body, .. } => block(body, scope, marker),
         Expr::Branch { subject, arms } => {
             subject.as_ref().and_then(|value| visit(value)).or_else(|| {
                 arms.iter().find_map(|arm| {
@@ -466,6 +467,17 @@ mod tests {
         assert_eq!(items["input"].detail.as_deref(), Some("String"));
         assert!(items.contains_key("nested"));
         assert!(!items.contains_key("action"));
+    }
+
+    #[test]
+    fn completion_respects_named_scopes() {
+        let items = complete("func edit(outer: Int) {\n:request {\nlet inside = 1\nins|\n}\n}");
+        assert!(items.contains_key("inside"));
+        assert!(items.contains_key("outer"));
+        assert!(!items.contains_key("request"));
+        let items = complete("func edit(outer: Int) {\n:request { let inside = 1 }\nout|\n}");
+        assert!(items.contains_key("outer"));
+        assert!(!items.contains_key("inside"));
     }
 
     #[test]

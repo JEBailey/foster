@@ -361,6 +361,14 @@ impl Parser {
             TokenKind::Float(value) => Expr::Float(value),
             TokenKind::String(value) => Expr::String(value),
             TokenKind::CodePoint(value) => Expr::CodePoint(value),
+            TokenKind::Symbol(name)
+                if !self.suppress_record_literal && self.at(&TokenKind::LBrace) =>
+            {
+                Expr::NamedScope {
+                    name,
+                    body: self.block()?,
+                }
+            }
             TokenKind::Symbol(value) => Expr::Symbol(value),
             TokenKind::Ident(name) if name == "_" => Expr::Placeholder,
             TokenKind::Ident(name) => Expr::Name(name),

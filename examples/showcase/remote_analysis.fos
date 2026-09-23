@@ -66,14 +66,17 @@ func combine(left: Analysis, right: Analysis) -> Analysis {
 }
 
 func main() -> Result<Int, RemoteError> {
-    let first = remote SourceWorker { source: "import core.list\nfunc scan() { 1 }\n// TODO\n" }
-    let second = remote SourceWorker { source: "func render() { 2 }\n" }
-    let first_future = first.analyze()
-    let second_future = second.analyze()
-    // Finish both requests before either error can leave the owners' scope.
-    let first_result = await first_future
-    let second_result = await second_future
-    let summary = combine(try first_result, try second_result)
+    let summary = Analysis { files: 0, lines: 0, todos: 0, functions: 0, imports: 0 }
+    :analysis {
+        let first = remote SourceWorker { source: "import core.list\nfunc scan() { 1 }\n// TODO\n" }
+        let second = remote SourceWorker { source: "func render() { 2 }\n" }
+        let first_future = first.analyze()
+        let second_future = second.analyze()
+        // Finish both requests before either error can leave the owners' scope.
+        let first_result = await first_future
+        let second_result = await second_future
+        summary = combine(try first_result, try second_result)
+    }
     println("Foster repository analysis", summary.files, summary.lines, summary.todos)
     Result.Ok(summary.files * 10000 + summary.lines * 1000 + summary.todos * 100 + summary.functions * 10 + summary.imports)
 }

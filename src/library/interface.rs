@@ -667,6 +667,7 @@ fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {
                     expression(&mut field.value, names);
                 }
             }
+            E::NamedScope { body, .. } => block(body, names),
             E::Branch { subject, arms } => {
                 if let Some(subject) = subject {
                     expression(subject, names);

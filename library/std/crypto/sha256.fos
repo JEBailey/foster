@@ -108,73 +108,77 @@ pub func digest(input: Bytes) -> String {
     let offset = 0
     while offset != padded_length {
         let schedule = []
-        let index = 0
-        while index != 16 {
-            let value = 0
-            let byte_index = 0
-            while byte_index != 4 {
-                let position = offset + index * 4 + byte_index
-                let byte = branch {
-                    position < input.length -> input[position].int
-                    position == input.length -> 128
-                    position >= padded_length - 8 -> {
-                        let divisor = 1
-                        let remaining = padded_length - position - 1
-                        while remaining != 0 {
-                            divisor = divisor * 256
-                            remaining = remaining - 1
+        :message_schedule {
+            let index = 0
+            while index != 16 {
+                let value = 0
+                let byte_index = 0
+                while byte_index != 4 {
+                    let position = offset + index * 4 + byte_index
+                    let byte = branch {
+                        position < input.length -> input[position].int
+                        position == input.length -> 128
+                        position >= padded_length - 8 -> {
+                            let divisor = 1
+                            let remaining = padded_length - position - 1
+                            while remaining != 0 {
+                                divisor = divisor * 256
+                                remaining = remaining - 1
+                            }
+                            let shifted = input.length * 8 / divisor
+                            shifted - shifted / 256 * 256
                         }
-                        let shifted = input.length * 8 / divisor
-                        shifted - shifted / 256 * 256
+                        _ -> 0
                     }
-                    _ -> 0
+                    value = value * 256 + byte
+                    byte_index = byte_index + 1
                 }
-                value = value * 256 + byte
-                byte_index = byte_index + 1
+                schedule.push(value)
+                index = index + 1
             }
-            schedule.push(value)
-            index = index + 1
+            while index != 64 {
+                let x = schedule[index - 15]
+                let y = schedule[index - 2]
+                let small0 = combine(table, rotate(x, 128), rotate(x, 262144), x / 8, 0)
+                let small1 = combine(table, rotate(y, 131072), rotate(y, 524288), y / 1024, 0)
+                schedule.push(word(schedule[index - 16] + small0 + schedule[index - 7] + small1))
+                index = index + 1
+            }
         }
-        while index != 64 {
-            let x = schedule[index - 15]
-            let y = schedule[index - 2]
-            let small0 = combine(table, rotate(x, 128), rotate(x, 262144), x / 8, 0)
-            let small1 = combine(table, rotate(y, 131072), rotate(y, 524288), y / 1024, 0)
-            schedule.push(word(schedule[index - 16] + small0 + schedule[index - 7] + small1))
-            index = index + 1
+        :compression {
+            let a = state[0]
+            let b = state[1]
+            let c = state[2]
+            let d = state[3]
+            let e = state[4]
+            let f = state[5]
+            let g = state[6]
+            let h = state[7]
+            let index = 0
+            while index != 64 {
+                let big1 = combine(table, rotate(e, 64), rotate(e, 2048), rotate(e, 33554432), 0)
+                let first = h + big1 + combine(table, e, f, g, 1) + constants[index] + schedule[index]
+                let big0 = combine(table, rotate(a, 4), rotate(a, 8192), rotate(a, 4194304), 0)
+                let second = big0 + combine(table, a, b, c, 2)
+                h = g
+                g = f
+                f = e
+                e = word(d + first)
+                d = c
+                c = b
+                b = a
+                a = word(first + second)
+                index = index + 1
+            }
+            state[0] = word(state[0] + a)
+            state[1] = word(state[1] + b)
+            state[2] = word(state[2] + c)
+            state[3] = word(state[3] + d)
+            state[4] = word(state[4] + e)
+            state[5] = word(state[5] + f)
+            state[6] = word(state[6] + g)
+            state[7] = word(state[7] + h)
         }
-        let a = state[0]
-        let b = state[1]
-        let c = state[2]
-        let d = state[3]
-        let e = state[4]
-        let f = state[5]
-        let g = state[6]
-        let h = state[7]
-        index = 0
-        while index != 64 {
-            let big1 = combine(table, rotate(e, 64), rotate(e, 2048), rotate(e, 33554432), 0)
-            let first = h + big1 + combine(table, e, f, g, 1) + constants[index] + schedule[index]
-            let big0 = combine(table, rotate(a, 4), rotate(a, 8192), rotate(a, 4194304), 0)
-            let second = big0 + combine(table, a, b, c, 2)
-            h = g
-            g = f
-            f = e
-            e = word(d + first)
-            d = c
-            c = b
-            b = a
-            a = word(first + second)
-            index = index + 1
-        }
-        state[0] = word(state[0] + a)
-        state[1] = word(state[1] + b)
-        state[2] = word(state[2] + c)
-        state[3] = word(state[3] + d)
-        state[4] = word(state[4] + e)
-        state[5] = word(state[5] + f)
-        state[6] = word(state[6] + g)
-        state[7] = word(state[7] + h)
         offset = offset + 64
     }
     let output = StringBuilder.empty()

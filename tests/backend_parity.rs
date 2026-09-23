@@ -2,6 +2,36 @@
 use foster::{native, vm};
 
 #[test]
+fn named_scopes_cleanup_and_transfer_on_both_backends() {
+    check_stdout(
+        "named-scopes",
+        include_str!("fixtures/programs/named_scopes.fos"),
+        "3\n2\n4\n1\n6\n7\n8\n9\n5\n42",
+    );
+}
+
+#[test]
+fn named_scopes_cleanup_on_failure_on_both_backends() {
+    check_process_output(
+        "named-scopes-failure",
+        r#"
+import core.drop
+type Resource = & Drop & { id: Int }
+impl Resource { func deinit(self) -> () { println(self.id) } }
+func main() {
+    let outer = Resource { id: 1 }
+    :request {
+        let inner = Resource { id: 2 }
+        panic("scope failed")
+    }
+}
+"#,
+        "2\n1",
+        Some("scope failed"),
+    );
+}
+
+#[test]
 fn shared_cse_preserves_loop_results_on_both_backends() {
     let source = include_str!("../benchmarks/scalar_cse.fos")
         .replace("200000", "2000")

@@ -1750,13 +1750,13 @@ fn member(
     field: &str,
     string_record: Option<crate::hir::RecordId>,
 ) -> Result<Value, RuntimeError> {
-    if let Some(bytes) = value.string_bytes() {
-        let text = std::str::from_utf8(bytes)
+    if let Some(storage) = value.string_storage() {
+        let text = std::str::from_utf8(&storage)
             .map_err(|_| RuntimeError::runtime("Foster String contains invalid UTF-8"))?;
         return match field {
-            "empty?" => Ok(Value::Bool(bytes.is_empty())),
+            "empty?" => Ok(Value::Bool(storage.is_empty())),
             "whitespace?" => Ok(Value::Bool(text.chars().all(char::is_whitespace))),
-            "bytes" | "value" => Ok(Value::bytes(bytes.to_vec())),
+            "bytes" | "value" => Ok(Value::bytes_shared(storage)),
             _ => Err(RuntimeError::runtime(format!(
                 "value has no field `{field}`"
             ))),

@@ -1,7 +1,7 @@
 # Foster semantic specification
 
 Status: **draft normative specification**, revision 8, 2026-09-18.
-Baseline: **language version 13, ownership-model version 3**.
+Baseline: **language version 14, ownership-model version 3**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
@@ -200,6 +200,13 @@ failed nested patterns expose none of their tentative bindings. A record pattern
 with only irrefutable field patterns covers its record type, including when nested
 inside an enum payload.
 A branch-arm block that completes without a final value expression produces `()`.
+
+A named scope `:name { ... }` executes its block once and has the same result rules
+as a branch-arm block. Its local declarations do not escape. Remaining owned locals
+are cleaned up at scope exit, invalidating loans into their storage. Owned results
+may transfer out; borrowers remain subject to S-13. The descriptive label binds no
+value or group and introduces no control-transfer target. Nested scopes and repeated
+labels are permitted.
 
 `is Type` checks type conformance, including accessible structural fields,
 method signatures, receiver results, and effects. The matching arm retains the

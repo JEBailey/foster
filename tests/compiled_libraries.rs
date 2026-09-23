@@ -281,6 +281,33 @@ func main() -> Int {
 }
 
 #[test]
+fn named_scopes_survive_compiled_default_templates() {
+    let w = Workspace::new();
+    w.library(
+        r#"
+pub type Sized = { pub func length(self) -> Int }
+func adjustment(value: Int) -> Int { value + 2 }
+impl Sized {
+    pub func score(self) -> Int {
+        :calculation { adjustment(self.length()) }
+    }
+}
+"#,
+    );
+    let app = w
+        .consumer(
+            r#"
+import api
+pub type Local = & Sized & { count: Int }
+impl Local { pub func length(self) -> Int { self.count } }
+func main() -> Int { Local { count: 40 }.score() }
+"#,
+        )
+        .unwrap();
+    assert_eq!(run(&app), Value::Integer(42));
+}
+
+#[test]
 fn consumers_inherit_compiled_defaults_for_new_receivers() {
     let w = Workspace::new();
     w.library(

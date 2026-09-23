@@ -62,7 +62,7 @@ struct Builder<'a> {
     result_provenance: &'a std::collections::HashMap<FunctionId, super::ResultProvenance>,
     loans: Vec<LoanDefinition>,
     loops: Vec<LoopTargets>,
-    remote_scopes: Vec<Vec<hir::LocalId>>,
+    lexical_scopes: Vec<Vec<hir::LocalId>>,
     next_temporary: usize,
     temporary_scopes: Vec<Vec<(ExprId, Place)>>,
     active_temporaries: std::collections::HashMap<ExprId, Place>,
@@ -94,7 +94,7 @@ impl<'a> Builder<'a> {
             result_provenance,
             loans: Vec::new(),
             loops: Vec::new(),
-            remote_scopes: Vec::new(),
+            lexical_scopes: Vec::new(),
             next_temporary: 0,
             temporary_scopes: Vec::new(),
             active_temporaries: std::collections::HashMap::new(),
@@ -253,20 +253,20 @@ impl<'a> Builder<'a> {
                 self.terminate(Terminator::Goto(blocks[cfg.body.0]));
                 self.current = blocks[cfg.body.0];
                 self.loops.push(LoopTargets {
-                    scope_depth: self.remote_scopes.len(),
+                    scope_depth: self.lexical_scopes.len(),
                     continue_to: blocks[cfg.header.0],
                     break_to: blocks[cfg.exit.0],
                 });
-                self.remote_scopes
+                self.lexical_scopes
                     .push(body.iter().flat_map(Self::statement_locals).collect());
                 for statement in body {
                     self.statement(statement, false);
                 }
-                self.end_remote_scopes(
-                    self.remote_scopes.len() - 1,
+                self.end_lexical_scopes(
+                    self.lexical_scopes.len() - 1,
                     self.hir.functions[self.function].span.clone(),
                 );
-                self.remote_scopes.pop();
+                self.lexical_scopes.pop();
                 if matches!(
                     self.blocks[self.current].terminator,
                     Terminator::Unreachable
@@ -362,13 +362,13 @@ impl<'a> Builder<'a> {
             let continued = self.block();
             self.full_expression_condition(guard, [transferred, continued]);
             self.current = transferred;
-            self.end_remote_scopes(self.loops.last().unwrap().scope_depth, self.span(guard));
+            self.end_lexical_scopes(self.loops.last().unwrap().scope_depth, self.span(guard));
             self.emit_active_temporary_destruction(self.span(guard));
             self.terminate(Terminator::Goto(target));
             self.current = continued;
         } else {
             let span = self.hir.functions[self.function].span.clone();
-            self.end_remote_scopes(self.loops.last().unwrap().scope_depth, span.clone());
+            self.end_lexical_scopes(self.loops.last().unwrap().scope_depth, span.clone());
             self.emit_active_temporary_destruction(span);
             self.terminate(Terminator::Goto(target));
             self.current = self.block();
@@ -772,7 +772,7 @@ impl<'a> Builder<'a> {
         let Some(last) = arm.body.last() else {
             return;
         };
-        self.remote_scopes
+        self.lexical_scopes
             .push(arm.body.iter().flat_map(Self::statement_locals).collect());
         for statement in arm.body.iter().take(arm.body.len() - 1) {
             self.statement(statement, false);
@@ -786,21 +786,35 @@ impl<'a> Builder<'a> {
         } else {
             self.statement(last, false);
         }
-        self.end_remote_scopes(
-            self.remote_scopes.len() - 1,
-            self.hir.functions[self.function].span.clone(),
+        self.end_lexical_scopes(
+            self.lexical_scopes.len() - 1,
+            arm.body.last_span().map_or_else(
+                || self.hir.functions[self.function].span.clone(),
+                |span| span.end..span.end,
+            ),
         );
-        self.remote_scopes.pop();
+        self.lexical_scopes.pop();
     }
 
-    fn end_remote_scopes(&mut self, depth: usize, span: std::ops::Range<usize>) {
-        let places = self.remote_scopes[depth..]
+    fn end_lexical_scopes(&mut self, depth: usize, span: std::ops::Range<usize>) {
+        let places: Vec<_> = self.lexical_scopes[depth..]
             .iter()
             .rev()
             .flat_map(|scope| scope.iter().rev())
             .map(|local| Place::local(*local))
             .collect();
-        self.emit(Operation::RemoteScopeEnd { places, span });
+        self.emit(Operation::RemoteScopeEnd {
+            places: places.clone(),
+            span: span.clone(),
+        });
+        // Runtime block cleanup ends ordinary loans too, including references
+        // retained by closures or assigned into an enclosing local.
+        for place in places {
+            self.emit(Operation::Destroy {
+                place,
+                span: span.clone(),
+            });
+        }
     }
 
     fn lower_branch_expression(
