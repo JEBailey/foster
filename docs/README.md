@@ -13,6 +13,7 @@ references describe implemented behavior; the roadmap describes proposed work.
 | Work with specialized library APIs | [Time](time.md), [randomness](random.md), [hash collections](hash-collections.md) | [Host providers](host-providers.md) |
 | Understand text and Unicode data | [Unicode text](unicode.md) | [Unicode table maintenance](../tools/unicode/README.md) |
 | Build or distribute a program | [Native backend](native.md), [packages](package-format.md) | [Compiled libraries](compiled-libraries.md) |
+| Plan C library integration | [C integration plan](c-integration-plan.md) | Proposed work; [host providers](host-providers.md) describe the existing boundary |
 | Contribute to Foster | [Development policy](development-policy.md), [testing](testing.md) | [Documentation standard](../library/DOCUMENTATION.md), [roadmap](roadmap.md) |
 | Investigate compiler behavior | [Diagnostics](diagnostics.md), [VM](vm.md) | [Incremental checking](incremental-checking.md), [ownership verification](ownership-verification.md), [benchmarking](benchmarking.md), [LSP performance](lsp-performance.md) |
 

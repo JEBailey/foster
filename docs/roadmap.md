@@ -92,6 +92,12 @@ storage and borrowing contract than the proposed list-backed arena.
 
 ## Runtime and platform
 
+- Implement [C integration](c-integration-plan.md) in stages: a shared foreign-call
+  descriptor and generated bridges, safe opaque-resource wrappers, foreign borrow
+  domains, a focused SQLite package, and then callbacks. Preserve single ownership,
+  checked effects, named lexical scopes, and VM/native parity. This is proposed work;
+  the existing host-provider and runtime ABI boundaries are not a general C FFI.
+
 - Build reusable in-memory and policy-restricted providers on the shared `HostProvider` boundary.
   Filesystem, network, wall-clock, and monotonic-clock operations now support embedding-provider
   injection in the VM and native runtime. Foster applications can pass `FileProvider<F>`,
