@@ -744,6 +744,20 @@ let unavailable = not available
 `&&` binds more tightly than `||`, and both bind less tightly than equality, comparison, bitwise,
 shift, and arithmetic operators. Parentheses can make a different grouping explicit.
 
+## Futures and subprocesses
+
+`Future<T>` names the structural contract in `core.future`: a public, consuming
+`resolve(self) -> T [consume self, suspend]` method. Compose it using
+`type Task = & Future<Int> & { ... }`, accept `Future<Int>` as a parameter, or use
+it as a generic constraint. `await task` consumes the receiver and calls its
+`resolve()` implementation. An immediately ready implementation may omit `suspend`.
+
+Remote requests and subprocess handles both satisfy this contract. `std.process`
+provides `spawn(executable, arguments)` and `spawn_with(executable, arguments, options)`.
+A successful launch returns an owned `Process`, exposing `pid()`, `poll()`, and
+`terminate()`. Await returns `Result<ProcessOutput, ProcessError>` with exit status
+and captured stdout/stderr bytes. See [processes](processes.md) for a complete example.
+
 ## Remote objects and virtual threads
 
 The section below describes the current executable interface. Both runtimes implement the
@@ -754,7 +768,7 @@ unproven completion at owner destruction with `E0730`; the
 
 `remote` transfers a record into an isolated virtual thread. An owner-qualified function whose
 first parameter is the semantic `self` receiver is an instance method. Calling that method through a
-`Remote<T>` handle sends a FIFO mailbox message and returns `Future<Result<R, RemoteError>>`; `await` parks the current
+`Remote<T>` handle sends a FIFO mailbox message and returns `RemoteFuture<Result<R, RemoteError>>`, satisfying `Future<Result<R, RemoteError>>`; `await` parks the current
 virtual thread until the reply arrives. `Result.Ok` contains the method result, while
 `Result.Error(RemoteError.Failed(message))` describes an execution failure. Import `core.result`
 and `core.remote_error` to name these variants. Domain Result errors remain inside the outer Ok.
@@ -772,8 +786,8 @@ let updated = await counter.increment(1)
 ```
 
 The remote object retains mutations to `self` between calls. Values crossing the mailbox boundary
-must be owned message values; references, closures, and futures cannot be transferred. Remote
-handles can be transferred. Futures are single-consumption values and may be awaited once.
+must be owned message values; references, closures, and runtime remote-request handles cannot be transferred. Remote
+handles can be transferred. Await consumes its future, so an owned binding may be awaited once.
 
 `remote ref value` creates a remote read-only loan instead of transferring ownership. The handle
 retains a live view of the owner's record, so later owner mutations are visible to subsequent

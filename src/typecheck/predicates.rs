@@ -100,19 +100,22 @@ pub(super) fn contains_variable(ty: &Ty) -> bool {
     }
 }
 
-pub(super) fn remote_transferable(ty: &Ty) -> bool {
+pub(super) fn remote_transferable(ty: &Ty, hir: &hir::PackageHir) -> bool {
     match ty {
         Ty::Reference(_, _)
         | Ty::Function(_, _)
         | Ty::Callable { .. }
         | Ty::Future(_)
         | Ty::Module(_) => false,
-        Ty::RawList(value) | Ty::Sequence(value) => remote_transferable(value),
+        Ty::RawList(value) | Ty::Sequence(value) => remote_transferable(value, hir),
         Ty::Remote(_) => true,
-        Ty::Record(_, arguments) | Ty::Variant(_, arguments) => {
-            arguments.iter().all(remote_transferable)
+        Ty::Record(record, _) if hir.modules[hir.records[*record].module].name == "core.future" => {
+            false
         }
-        Ty::Intersection(members) => members.iter().all(remote_transferable),
+        Ty::Record(_, arguments) | Ty::Variant(_, arguments) => arguments
+            .iter()
+            .all(|value| remote_transferable(value, hir)),
+        Ty::Intersection(members) => members.iter().all(|value| remote_transferable(value, hir)),
         _ => true,
     }
 }

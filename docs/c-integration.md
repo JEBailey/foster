@@ -5,8 +5,15 @@ bridge DLL and resource runtime serve VM bytecode and native executables.
 `foster bridge` generates a C adapter and ordinary Foster bindings; no new Foster
 declaration syntax is needed.
 
+The generator is written in [Foster](../tools/cbind/src/bridge.fos): it validates
+the manifest, computes its schema identifier, and emits both source files.
+The Rust command embeds and executes this tool and supplies JSON decoding,
+filesystem operations, and Clang invocation. Native DLL loading, calls, and
+resource storage remain in the Rust runtime. JSON decoding rejects duplicate
+object keys; the Foster validator rejects unknown fields and invalid contracts.
+
 For existing headers, [tools/cbind](../tools/cbind/README.md) uses Clang and a
-Foster generator to import supported scalar functions and build the `.fos` module
+Foster generator to import supported scalar and value-struct functions and build the `.fos` module
 and bridge in one command. It reports declarations that require explicit pointer
 or resource contracts rather than inferring ownership from C types.
 
@@ -111,6 +118,7 @@ depends on live children need a more specific ownership adapter.
 | `i8`, `i16`, `i32`, `i64` | `Int` | Exact-width signed C integers; narrow inputs are range checked. |
 | `u8`, `u16`, `u32`, `u64` | `Int` | Exact-width unsigned C integers; narrow inputs are range checked. U64 preserves all bits, so values above INT64_MAX appear negative in Foster. |
 | `f32`, `f64` | `Float` | C float/double. Float32 narrows with a finite-overflow check and widens on return. |
+| `{"record":"Color"}` | `CColor` | Struct by value, copied field by field. Nested scalar-only structs are supported. |
 | `bytes` parameter | `Bytes` | Two C parameters: `const uint8_t *`, `size_t`. Input is copied and valid only during the call. |
 | `c_string` parameter | `String` | One `const char *`. Copied, NUL-terminated UTF-8; interior NUL and invalid encoding are rejected before C runs. |
 | `bytes` result | `Bytes` | C returns `uint8_t *` and accepts a final `size_t *` output-length parameter. Required `release` names its deallocator. Foster copies the bytes, then releases the C allocation. |
@@ -128,6 +136,28 @@ Scalar slots are eight little-endian bytes. Signed integers use two's-complement
 bits, floats use binary64 bits, and input buffers have an eight-byte length prefix.
 C-string lengths include their terminating NUL. No native struct layout is shared.
 
+An optional `records` array declares value structs, for example:
+
+```json
+{"name":"Color", "c_type":"struct Color", "fields":[
+  {"name":"r", "type":"u8"}, {"name":"g", "type":"u8"},
+  {"name":"b", "type":"u8"}, {"name":"a", "type":"u8"}
+]}
+```
+
+Operation parameters/results refer to these with `{"record":"Color"}`. Record
+`c_type` accepts a typedef or `struct Tag`. Each field must be a supported scalar
+or another value record; pointer fields, unions, bitfields, and arrays are not
+imported. Generated C checks field types and uses the C compiler's native ABI,
+including packed structs. Generated Foster records expose copied fields and
+`copy()`. Keyword fields and fields starting `c_` gain a `c_` prefix. Nesting is
+limited to 32 records and a flattened record to 8191 scalar slots (65528 bytes).
+Metadata bits 16..31 carry the fixed result byte count, so small returned structs
+do not allocate the 16 MiB buffer used for variable-length byte results.
+
+The [raylib example](../examples/raylib/README.md) exercises these bindings in a
+graphics UI with a click counter, color slider, and animated rectangle.
+
 Foster's private runtime intrinsics transport these packets as hexadecimal text
 using the existing managed-string ABI. The C-facing ABI uses byte pointers and
 lengths. This prioritizes one verified implementation for both backends over
@@ -140,6 +170,11 @@ stale binding contracts; it is not an authenticity signature. Tokens are unique
 within the process, never reused, and checked against resource kind and owning
 thread. Internal runtime value sharing does not create another native owner.
 
+Schema IDs use FNV-1a over the decoded JSON tree with sorted object keys and
+ordered arrays. Whitespace and object-key order do not affect the ID. Explicit
+optional fields remain part of the contract, so adding a default-valued field
+can change it. Regenerate the bridge and bindings together after contract edits.
+
 ## Scope and limitations
 
 Use generated bindings for ordinary application code. `std.ffi.CBridge`,
@@ -151,11 +186,13 @@ transfers are rejected by the type checker; VM transfer checks and native
 specialization checks also cover resources hidden behind generic wrappers.
 
 This implementation does not support borrowed foreign memory, parent/child
-resource dependencies, callbacks, variadic functions, C structs/unions by value,
+resource dependencies, callbacks, variadic functions, unions, bitfields or arrays,
 multiple resource arguments, transferring resource ownership to arbitrary C
-operations, automatic header importing, cross compilation, relocatable package
+operations, unrestricted header importing, cross compilation, relocatable package
 bundling, or Linux/macOS. These require additional contracts, rather than exposing
 unchecked pointers through the initial API.
 
 The executable fixture and VM/native parity tests live in
-`tests/fixtures/c_bridge` and `tests/c_integration.rs`.
+`tests/fixtures/c_bridge` and `tests/c_integration.rs`. Struct import, nested and
+packed layouts, range checks, and both native optimization modes are covered by
+`tests/c_header_tool.rs`.

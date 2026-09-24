@@ -1,0 +1,34 @@
+import core.future
+import core.result
+import core.remote_error
+
+pub type Named = { pub func name(self) -> Int [read self] }
+pub type Ready = & Future<Int> & Named & { value: Int }
+impl Ready {
+    pub func name(self) -> Int [read self.value] { self.value }
+    pub func resolve(self) -> Int [consume self] { self.value }
+}
+
+func finish(value: Future<Int>) -> Int [consume value, suspend] { await value }
+func named(value: Future<Int> & Named) -> Int [consume value, suspend] {
+    assert(value.name() == 20)
+    await value
+}
+type Box<T> = { value: T }
+impl Box<T & Future<Int>> {
+    func finish(self) -> Int [consume self, suspend] { await self.value }
+}
+type Worker = {}
+impl Worker { func answer(self) -> Int { 2 } }
+
+func request(worker: Remote<Worker>) -> Future<Result<Int, RemoteError>> { worker.answer() }
+func main() -> Int {
+    let first = Ready { value: 20 }
+    assert(first.name() == 20)
+    let worker = remote Worker {}
+    let pending = request(worker)
+    let answer = (await pending).unwrap_or(0)
+    assert(named(Ready { value: 20 }) == 20)
+    assert(Box { value: Ready { value: 20 } }.finish() == 20)
+    (await first) + finish(Ready { value: 20 }) + answer
+}

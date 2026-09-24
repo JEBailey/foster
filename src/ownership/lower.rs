@@ -15,6 +15,8 @@ enum Context {
     Call,
 }
 
+use super::future::returns_remote_request;
+
 pub(super) fn lower(
     hir: &hir::PackageHir,
     types: &TypeInformation,
@@ -553,7 +555,21 @@ impl<'a> Builder<'a> {
                 if self
                     .types
                     .expression_type(expression)
-                    .is_some_and(|ty| matches!(self.types.types[ty], crate::types::Type::Future(_)))
+                    .is_some_and(|ty| self.types.is_future(ty))
+                    && (matches!(
+                        self.types.resolved_call(*callee),
+                        Some(crate::types::ResolvedCall::Method { remote: true, .. })
+                    ) || self
+                        .types
+                        .resolved_function_for_callee(*callee)
+                        .is_some_and(|function| {
+                            returns_remote_request(
+                                self.hir,
+                                self.types,
+                                function,
+                                &mut std::collections::HashSet::new(),
+                            )
+                        }))
                 {
                     let mut origins = if matches!(
                         self.types.resolved_call(*callee),
@@ -580,6 +596,20 @@ impl<'a> Builder<'a> {
                     self.emit(Operation::RemoteRequest {
                         destination,
                         owner: BorrowValue::Merge(origins),
+                        span: self.span(expression),
+                    });
+                }
+                if let hir::Expr::Member { object, name } = &self.hir.expressions[*callee]
+                    && name == "resolve"
+                    && arguments.is_empty()
+                    && self
+                        .types
+                        .expression_type(*object)
+                        .is_some_and(|ty| self.types.is_future(ty))
+                {
+                    let future = self.borrow_value(*object);
+                    self.emit(Operation::RemoteComplete {
+                        future,
                         span: self.span(expression),
                     });
                 }
@@ -654,11 +684,17 @@ impl<'a> Builder<'a> {
             }
             hir::Expr::Await(value) => {
                 self.expression(*value, Context::Consume);
-                let future = self.borrow_value(*value);
-                self.emit(Operation::RemoteComplete {
-                    future,
-                    span: self.span(expression),
-                });
+                if self
+                    .types
+                    .expression_type(*value)
+                    .is_some_and(|ty| self.types.is_future(ty))
+                {
+                    let future = self.borrow_value(*value);
+                    self.emit(Operation::RemoteComplete {
+                        future,
+                        span: self.span(expression),
+                    });
+                }
                 self.emit(Operation::Suspend {
                     span: self.span(expression),
                 });

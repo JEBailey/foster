@@ -172,6 +172,18 @@ macro_rules! builtin_descriptors {
 }
 
 macro_rules! native_builtin {
+    (ProcessReserve) => {
+        NativeIntrinsic::Runtime(crate::native::abi::PROCESS_RESERVE)
+    };
+    (ProcessExchange) => {
+        NativeIntrinsic::Runtime(crate::native::abi::PROCESS_EXCHANGE)
+    };
+    (ProcessRelease) => {
+        NativeIntrinsic::Runtime(crate::native::abi::PROCESS_RELEASE)
+    };
+    (ProcessWait) => {
+        NativeIntrinsic::Runtime(crate::native::abi::PROCESS_WAIT)
+    };
     (CExchange) => {
         NativeIntrinsic::Runtime(crate::native::abi::C_EXCHANGE)
     };
@@ -364,6 +376,14 @@ macro_rules! builtin_handler {
 }
 
 builtin_descriptors! {
+    ProcessReserve = 75, source: None, intrinsic: Some("process.reserve") => Some("std.process"),
+        execution: Direct, signature: [] -> Integer;
+    ProcessExchange = 72, source: None, intrinsic: Some("process.exchange") => Some("std.process"),
+        execution: Direct, signature: [Read Integer, Read Integer, Read String, Read String, Read String, Read Integer] -> String;
+    ProcessRelease = 73, source: None, intrinsic: Some("process.release") => Some("std.process"),
+        execution: Direct, signature: [Read Integer] -> Unit;
+    ProcessWait = 74, source: None, intrinsic: Some("process.wait") => Some("std.process"),
+        execution: Direct, signature: [Read Integer] -> String;
     CExchange = 65, source: None, intrinsic: Some("c.exchange") => Some("std.ffi"),
         execution: Direct, signature: [Read String, Read String, Read Integer, Read Integer, Read Bool, Read String] -> String;
     CClose = 66, source: None, intrinsic: Some("c.close") => Some("std.ffi"),

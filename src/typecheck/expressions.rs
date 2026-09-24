@@ -664,6 +664,13 @@ impl Checker<'_> {
             hir::Expr::MoveOut(place) => self.infer_expression(function, place)?,
             hir::Expr::Remote(value) => {
                 let value = self.infer_expression(function, value)?;
+                let transferred = match &value {
+                    Ty::Reference(_, inner) => inner.as_ref(),
+                    value => value,
+                };
+                if !remote_transferable(&self.resolved(transferred.clone()), self.hir) {
+                    return Err(self.error(function, "value cannot cross a remote-object boundary"));
+                }
                 if self.contains_c_resource(&value)? {
                     return Err(self.error(
                         function,
@@ -691,10 +698,56 @@ impl Checker<'_> {
                 Ty::Never
             }
             hir::Expr::Await(future) => {
-                let result = self.fresh();
                 let future = self.infer_expression(function, future)?;
-                self.unify(future, Ty::Future(Box::new(result.clone())), function)?;
-                result
+                let future = self.constraint_view(function, future)?;
+                if let Ty::Future(result) = self.resolved(future.clone()) {
+                    *result
+                } else {
+                    let Some(Ty::Callable {
+                        parameters,
+                        result,
+                        effects,
+                        ..
+                    }) = self.contract_method_type(function, future.clone(), "resolve", None)?
+                    else {
+                        return Err(self.error(
+                            function,
+                            "await requires a Future with a consuming resolve() method",
+                        ));
+                    };
+                    if !parameters.is_empty()
+                        || !effects.iter().any(|effect| {
+                            effect.kind == crate::ast::EffectKind::Consume
+                                && effect.target.root == "self"
+                                && effect.target.children.is_empty()
+                        })
+                    {
+                        return Err(self.error(
+                            function,
+                            "Future.resolve must take no arguments and consume self",
+                        ));
+                    }
+                    let methods = self.inherent_method_overloads(
+                        function,
+                        &self.resolved(future.clone()),
+                        "resolve",
+                    );
+                    let dispatch = if let [method] = methods.as_slice() {
+                        ResolvedCall::Method {
+                            function: *method,
+                            remote: false,
+                        }
+                    } else {
+                        let key = self.method_key("resolve", &parameters);
+                        ResolvedCall::ContractMethod {
+                            slot: self.dispatch_slot(key),
+                            name: "resolve".into(),
+                            requirement: self.contract_method_requirement(future, "resolve"),
+                        }
+                    };
+                    self.resolved_calls.insert(expression_id, dispatch);
+                    *result
+                }
             }
             hir::Expr::Try {
                 value,

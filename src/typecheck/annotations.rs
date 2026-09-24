@@ -74,9 +74,27 @@ impl Checker<'_> {
                     ("Remote", [value]) => Some(Ty::Remote(Box::new(
                         self.annotation_type(module, value, generics)?,
                     ))),
-                    ("Future", [value]) => Some(Ty::Future(Box::new(
-                        self.annotation_type(module, value, generics)?,
-                    ))),
+                    ("RawFuture", [value]) if self.hir.modules[module].name == "core.future" => {
+                        Some(Ty::Future(Box::new(
+                            self.annotation_type(module, value, generics)?,
+                        )))
+                    }
+                    ("Future", [value]) => {
+                        let future_module = self
+                            .hir
+                            .module_named("core.future")
+                            .ok_or_else(|| FosterError::runtime("Future requires core.future"))?;
+                        let record =
+                            self.hir
+                                .record_named(future_module, "Future")
+                                .ok_or_else(|| {
+                                    FosterError::runtime("Future requires core.future.Future")
+                                })?;
+                        Some(Ty::Record(
+                            record,
+                            vec![self.annotation_type(module, value, generics)?],
+                        ))
+                    }
                     (builtin, _)
                         if matches!(
                             builtin,

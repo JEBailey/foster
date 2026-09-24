@@ -2,9 +2,16 @@
 //!
 //! Accept `Arguments` as main's parameter to read process inputs. The executable
 //! name is separate from values, which contains the user arguments in order.
-//! This module does not launch subprocesses.
+//! `spawn` starts a direct child immediately, without invoking a shell. Await its
+//! owned handle for captured output. Dropping the handle kills and reaps the child.
 
 import core.list
+import core.future
+import core.result
+import core.option
+import core.string
+import core.bytes
+import core.byte
 
 /// The command line passed to `main`.
 ///
@@ -14,4 +21,126 @@ import core.list
 pub type Arguments = {
     pub executable: String
     pub values: List<String>
+}
+
+/// An operating-system or output-capture failure.
+pub type ProcessError = { pub message: String }
+
+/// A child's termination result. Signals may terminate it without an exit code.
+pub type ExitStatus = { pub success: Bool, pub code: Option<Int> }
+
+/// The direct child is running or has exited; capture may still be draining.
+pub enum ProcessStatus = Running | Exited(ExitStatus)
+
+/// Completed binary-safe output. A nonzero exit code is a normal completion.
+pub type ProcessOutput = { pub status: ExitStatus, pub stdout: Bytes, pub stderr: Bytes }
+
+/// Launch settings. An empty directory inherits the current directory.
+/// The output limit applies separately to stdout and stderr; excess is drained
+/// and reported as an error on await. Valid limits are 1 through 67108864 bytes.
+pub type SpawnOptions = { pub directory: String, pub output_limit: Int }
+
+impl SpawnOptions {
+    /// Inherits the directory and captures up to 16 MiB per output stream.
+    pub func defaults() -> SpawnOptions { SpawnOptions { directory: "", output_limit: 16777216 } }
+}
+
+/// An owned direct child and its completion future. Cannot be copied or fabricated.
+/// Standard input is closed; environment variables are inherited. Cleanup manages
+/// the direct child only. Descendants holding output pipes can delay await.
+pub type Process = & Future<Result<ProcessOutput, ProcessError>> & { token: Int, identifier: Int }
+
+impl Process {
+    /// Returns the OS process identifier. The handle retains its own distinct identity.
+    pub func pid(self) -> Int [read self.identifier] { self.identifier }
+
+    /// Checks the direct child's state without waiting for completion.
+    pub func poll(self) -> Result<ProcessStatus, ProcessError> [mut self.token] {
+        self.token = self.token
+        let fields = try response(ProcessHost.exchange(1, self.token, "", "", "", 0))
+        branch fields[0] {
+            "R" -> Result.Ok(ProcessStatus.Running)
+            _ -> Result.Ok(ProcessStatus.Exited(decode_status(fields)))
+        }
+    }
+
+    /// Requests immediate termination of a running direct child. Await still collects
+    /// its exit status and captured output. An already exited child is unchanged.
+    pub func terminate(self) -> Result<(), ProcessError> [mut self.token] {
+        self.token = self.token
+        let fields = try response(ProcessHost.exchange(3, self.token, "", "", "", 0))
+        Result.Ok(())
+    }
+
+    /// Consumes the handle, waits for exit and both output streams, and reaps the child.
+    pub func resolve(self) -> Result<ProcessOutput, ProcessError> [consume self, suspend] {
+        loop {
+            let fields = try response(ProcessHost.wait_step(self.token))
+            continue if fields[0] == "R"
+            return Result.Ok(ProcessOutput {
+                status: decode_status(fields)
+                stdout: Bytes.from_hex(ProcessHost.exchange(4, self.token, "", "", "", 0)).unwrap_or(Bytes.empty())
+                stderr: Bytes.from_hex(ProcessHost.exchange(5, self.token, "", "", "", 0)).unwrap_or(Bytes.empty())
+            })
+        }
+    }
+
+    /// Kills and reaps a remaining direct child, including on unwinding.
+    func deinit(self) -> () { ProcessHost.release(self.token) }
+}
+
+/// Starts an executable with separate arguments, inherited directory/environment,
+/// closed stdin, and a 16 MiB limit per captured stream. Does not interpret a shell.
+pub func spawn(executable: String, arguments: List<String>) -> Result<Process, ProcessError> {
+    spawn_with(executable, arguments, SpawnOptions.defaults())
+}
+
+/// Starts a direct child with explicit directory and capture settings.
+/// Arguments preserve empty strings, whitespace, quotes, and Unicode verbatim.
+pub func spawn_with(executable: String, arguments: List<String>, options: SpawnOptions) -> Result<Process, ProcessError> {
+    let encoded = ""
+    for argument in arguments { encoded = encoded + argument.bytes.hex() + "\n" }
+    // Install ownership before any child exists, so cancellation while launching
+    // or decoding the response cannot strand a native process.
+    let child = Process { token: ProcessHost.reserve(), identifier: 0 }
+    let fields = try response(ProcessHost.exchange(0, child.token, executable, encoded, options.directory, options.output_limit))
+    child.identifier = decimal(fields[1])
+    Result.Ok(move child)
+}
+
+type ProcessHost = {}
+impl ProcessHost {
+    /// Reserves a unique identity without acquiring an operating-system resource.
+    func reserve() -> Int = intrinsic("process.reserve")
+    /// Exchanges private process-control messages with the operating system.
+    func exchange(operation: Int, token: Int, executable: String, arguments: String, directory: String, limit: Int) -> String = intrinsic("process.exchange")
+    /// Releases and reaps a direct child; repeated release is harmless.
+    func release(token: Int) -> () = intrinsic("process.release")
+    /// Waits briefly for completion, allowing cancellation between calls.
+    func wait_step(token: Int) -> String [read token, suspend] = intrinsic("process.wait")
+}
+
+/// Decodes a trusted runtime envelope, preserving operating-system error text.
+func response(value: String) -> Result<List<String>, ProcessError> {
+    return Result.Error(ProcessError { message: value.slice(2, value.length) }) if value.slice(0, 1) == "E"
+    Result.Ok((move value).split("\n"))
+}
+
+/// Decodes the fixed exit-status fields shared by poll and completion.
+func decode_status(fields: List<String>) -> ExitStatus {
+    let code = branch { fields[2] == "" -> Option.None _ -> Option.Some(decimal(fields[2])) }
+    ExitStatus { success: fields[1] == "1", code: move code }
+}
+
+/// Parses a trusted signed decimal runtime field, including the minimum Int.
+func decimal(value: String) -> Int {
+    let number = 0
+    let negative = false
+    for octet in value.bytes {
+        branch {
+            octet.int == 45 -> { negative = true }
+            _ -> { number = number * 10 - (octet.int - 48) }
+        }
+    }
+    branch { negative -> number _ -> -number }
 }

@@ -1,17 +1,18 @@
-//! Conservative Windows x64 scalar bindings. Ownership cannot be inferred from C types.
+//! Windows x64 scalar and value-record bindings. Ownership is an explicit contract.
 import core.list
 import core.string
 
 pub type Generated = { pub manifest: String, pub report: String }
 
 // The adapter supplies tab-separated T(alias, type), F(name, result, parameters),
-// and R(name, reason) records. Clang, rather than this tool, parses and preprocesses C.
+// S(name, C type, field/type pairs), and R(name, reason) records. Clang parses C.
 func scalar(spelling: String, declarations: List<String>) -> String {
     let name = spelling.copy().trim()
     let depth = 0
     while depth < 32 {
         let mapped = branch name {
             "void" -> "void"
+            "@cstring" -> "c_string"
             "_Bool" -> "bool"
             "bool" -> "bool"
             "signed char" -> "i8"
@@ -46,6 +47,30 @@ func scalar(spelling: String, declarations: List<String>) -> String {
     ""
 }
 
+// Returns a complete JSON type, resolving aliases before matching record tags.
+func binding_type(spelling: String, declarations: List<String>, accepted: List<String>) -> String {
+    let primitive = scalar(spelling, declarations)
+    return quoted(primitive) if !primitive.empty?
+    let name = spelling.copy()
+    let depth = 0
+    while depth < 32 {
+        let alias = ""
+        for row in declarations {
+            let fields = row.copy().split("\t")
+            continue if fields.length < 3
+            return "{\"record\": " + quoted(fields[1]) + "}" if fields[0] == "S" && (fields[2] == name || fields[1] == name) && accepted.contains?(fields[1])
+            branch {
+                fields[0] == "T" && fields[1] == name -> { alias = fields[2].copy() }
+                _ -> ()
+            }
+        }
+        return "" if alias.empty? || alias == name
+        name = move alias
+        depth = depth + 1
+    }
+    ""
+}
+
 // Preserve paths and diagnostic characters as JSON text, never source fragments.
 func quoted(text: String) -> String {
     let output = "\""
@@ -62,22 +87,53 @@ func quoted(text: String) -> String {
     output + "\""
 }
 
-/// Produces a scalar manifest and a report of every rejected declaration.
-/// Pointer, aggregate, and unknown types require an explicitly reviewed manifest.
+/// Produces a manifest and diagnostics for rejected functions. Value records are
+/// accepted only when every field resolves to a scalar or an accepted value record.
 pub func generate(input: String, header: String) -> Generated {
     let declarations = input.copy().split("\n")
     let operations = ""
     let report = ""
     let names = []
+    let accepted = []
+    let records = ""
+    let pass = 0
+    while pass < 32 {
+        let previous = accepted.length
+        for row in declarations {
+            let fields = row.copy().split("\t")
+            continue if fields.length < 5 || fields[0] != "S" || accepted.contains?(fields[1])
+            let members = ""
+            let valid = true
+            let index = 3
+            while index + 1 < fields.length {
+                let kind = binding_type(fields[index + 1], declarations, accepted)
+                branch {
+                    kind.empty? || kind == "\"void\"" || kind == "\"c_string\"" -> { valid = false }
+                    _ -> ()
+                }
+                members = members + branch { index == 3 -> "" _ -> ", " } + "{\"name\": " + quoted(fields[index]) + ", \"type\": " + kind + "}"
+                index = index + 2
+            }
+            branch {
+                valid -> {
+                    records = records + branch { records.empty? -> "" _ -> ",\n" } + "    {\"name\": " + quoted(fields[1]) + ", \"c_type\": " + quoted(fields[2]) + ", \"fields\": [" + members + "]}"
+                    accepted.push(fields[1].copy())
+                }
+                _ -> ()
+            }
+        }
+        break if previous == accepted.length
+        pass = pass + 1
+    }
     for row in declarations {
         let fields = row.copy().trim().split("\t")
-        continue if fields.length < 3 || fields[0] == "T"
+        continue if fields.length < 3 || fields[0] == "T" || fields[0] == "S"
         branch {
             fields[0] == "R" -> { report = report + fields[1] + ": " + fields[2] + "\n" }
             fields[0] == "F" -> {
                 let name = fields[1].copy()
                 continue if names.contains?(name)
-                let returns = scalar(fields[2], declarations)
+                let returns = binding_type(fields[2], declarations, accepted)
                 let reason = ""
                 branch {
                     returns.empty? -> { reason = "unsupported result type: " + fields[2] }
@@ -86,18 +142,18 @@ pub func generate(input: String, header: String) -> Generated {
                 let parameters = ""
                 let index = 3
                 while index < fields.length {
-                    let kind = scalar(fields[index], declarations)
+                    let kind = binding_type(fields[index], declarations, accepted)
                     branch {
-                        kind.empty? || kind == "void" -> { reason = "unsupported parameter type: " + fields[index] }
+                        kind.empty? || kind == "\"void\"" -> { reason = "unsupported parameter type: " + fields[index] }
                         _ -> ()
                     }
-                    parameters = parameters + branch { index == 3 -> "" _ -> ", " } + quoted(kind)
+                    parameters = parameters + branch { index == 3 -> "" _ -> ", " } + kind
                     index = index + 1
                 }
                 branch {
                     reason.empty? -> {
                         operations = operations + branch { operations.empty? -> "" _ -> ",\n" }
-                        operations = operations + "    {\"name\": " + quoted(name) + ", \"symbol\": " + quoted(name) + ", \"parameters\": [" + parameters + "], \"result\": " + quoted(returns) + "}"
+                        operations = operations + "    {\"name\": " + quoted(name) + ", \"symbol\": " + quoted(name) + ", \"parameters\": [" + parameters + "], \"result\": " + returns + "}"
                         names.push(name)
                     }
                     _ -> { report = report + name + ": " + reason + "; provide a reviewed binding contract\n" }
@@ -107,9 +163,23 @@ pub func generate(input: String, header: String) -> Generated {
         }
     }
     Generated {
-        manifest: "{\n  \"abi\": 1,\n  \"headers\": [" + quoted(header) + "],\n  \"operations\": [\n" + operations + "\n  ]\n}\n"
+        manifest: "{\n  \"abi\": 1,\n  \"headers\": [" + quoted(header) + "],\n  \"records\": [\n" + records + "\n  ],\n  \"operations\": [\n" + operations + "\n  ]\n}\n"
         report
     }
+}
+
+test "nested records and aliases resolve independent of declaration order" {
+    let generated = generate("S\tBox\tstruct Box\tpoint\tPoint\nS\tPoint\tstruct Point\tx\tfloat\ty\tfloat\nT\tPoint\tstruct Point\nT\tBox\tstruct Box\nF\tshift\tBox\tBox\n", "sample.h")
+    assert(generated.report.empty?)
+    assert(generated.manifest.contains?("\"record\": \"Point\""))
+    assert(generated.manifest.contains?("\"result\": {\"record\": \"Box\"}"))
+}
+
+test "pointer array and cyclic record fields reject dependent functions" {
+    let generated = generate("S\tOwner\tstruct Owner\tdata\tvoid *\nS\tArray\tstruct Array\tdata\tint[4]\nS\tCycle\tstruct Cycle\tself\tstruct Cycle\nF\ta\tOwner\nF\tb\tArray\nF\tc\tCycle\n", "sample.h")
+    assert(generated.report.contains?("a: unsupported result"))
+    assert(generated.report.contains?("b: unsupported result"))
+    assert(generated.report.contains?("c: unsupported result"))
 }
 
 test "scalar declarations resolve typedef chains and preserve operation order" {

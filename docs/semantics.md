@@ -1,7 +1,7 @@
 # Foster semantic specification
 
 Status: **draft normative specification**, revision 8, 2026-09-18.
-Baseline: **language version 14, ownership-model version 3**.
+Baseline: **language version 15, ownership-model version 3**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
@@ -336,6 +336,22 @@ reclamation timing are not specified.
 
 ## 9. Remote execution
 
+`core.future.Future<T>` is a structural contract requiring a zero-argument
+`resolve(self) -> T [consume self, suspend]` method. It composes with other
+contracts and supports generic constraints. `await value` consumes the value and
+dispatches `resolve()`; implementations that complete immediately may omit the
+`suspend` effect. Await remains a suspension boundary for ownership checking.
+The contract itself imposes no scheduler or error type. Remote calls produce
+`RemoteFuture<Result<T, RemoteError>>`, which satisfies this contract and wraps
+the private runtime request handle.
+
+`std.process.spawn` starts an OS child immediately and returns
+`Result<Process, ProcessError>`. `Process` satisfies
+`Future<Result<ProcessOutput, ProcessError>>`; its completion includes exit status,
+stdout, and stderr bytes. Executable and arguments are passed separately without
+shell interpretation. Dropping a process handle kills and reaps its direct child.
+See [process semantics and examples](processes.md) for capture and cleanup limits.
+
 **S-19 — Messages and outcomes.** An owned remote receiver retains its state between invocations.
 Messages to one worker execute in FIFO mailbox order; this is not a total order across workers
 or a scheduling guarantee among concurrent producers. A remote call returns a future without
@@ -349,7 +365,7 @@ with errors. The awaited outcome is `Result<T, RemoteError>` in both backends, i
 when the method returns a domain Result. Owner cancellation and conservative lifetime checks enforce this boundary.
 
 **S-20 — Remote loans.** Owned messages transfer only supported transferable values. Ordinary
-explicit references, closures, and futures cannot be transferred as owned mailbox arguments in
+explicit references, closures, and runtime remote-request handles cannot be transferred as owned mailbox arguments in
 this baseline. Borrow-mode arguments instead use call-scoped read-only capabilities. Queued work
 retains the capability; shared access covers the invocation and ends when the invocation returns,
 not when its future is awaited. Borrowed arguments cannot be mutated or retained as owned actor data.

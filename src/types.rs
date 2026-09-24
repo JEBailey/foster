@@ -178,6 +178,8 @@ pub struct CoreRecords {
     pub bytes: Option<RecordId>,
     pub list: Option<RecordId>,
     pub byte_buffer: Option<RecordId>,
+    pub future: Option<RecordId>,
+    pub remote_future: Option<RecordId>,
 }
 impl CoreRecords {
     pub(crate) fn resolve(hir: &crate::hir::PackageHir) -> Self {
@@ -186,6 +188,8 @@ impl CoreRecords {
                 .and_then(|id| hir.record_named(id, name))
         };
         Self {
+            future: find("core.future", "Future"),
+            remote_future: find("core.future", "RemoteFuture"),
             int: find("core.int", "Int"),
             string: find("core.string", "String"),
             symbol: find("core.symbol", "Symbol"),
@@ -227,6 +231,17 @@ pub struct TypeInformation {
 }
 
 impl TypeInformation {
+    /// Awaitable contracts preserve remote request provenance through helper calls.
+    pub(crate) fn is_future(&self, ty: TypeId) -> bool {
+        match &self.types[ty] {
+            Type::Future(_) => true,
+            Type::Record { record, .. } => {
+                Some(*record) == self.core.future || Some(*record) == self.core.remote_future
+            }
+            Type::Intersection(members) => members.iter().any(|member| self.is_future(*member)),
+            _ => false,
+        }
+    }
     /// Whether retaining an internal alias could postpone observable resource cleanup.
     pub(crate) fn has_cleanup(&self, ty: TypeId) -> bool {
         fn visit(types: &TypeInformation, ty: TypeId, seen: &mut HashSet<TypeId>) -> bool {
@@ -235,6 +250,7 @@ impl TypeInformation {
             }
             match &types.types[ty] {
                 Type::Generic(_) | Type::Function(_) | Type::Remote(_) | Type::Future(_) => true,
+                Type::Record { record, .. } if Some(*record) == types.core.future => true,
                 Type::Record { record, arguments } if Some(*record) == types.core.list => {
                     arguments.iter().any(|ty| visit(types, *ty, seen))
                 }

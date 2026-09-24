@@ -6,6 +6,24 @@ use crate::intrinsics::{Builtin, BuiltinHandler};
 use super::Value;
 use super::value::RecordFields;
 
+fn process_blocking<T: Send + 'static>(
+    operation: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, RuntimeError> {
+    if !may::coroutine::is_coroutine() {
+        return Ok(operation());
+    }
+    let (sender, receiver) = may::sync::mpsc::channel();
+    std::thread::Builder::new()
+        .name("foster-process".into())
+        .spawn(move || {
+            let _ = sender.send(operation());
+        })
+        .map_err(|error| RuntimeError::runtime(error.to_string()))?;
+    receiver
+        .recv()
+        .map_err(|_| RuntimeError::runtime("process operation terminated before replying"))
+}
+
 pub(super) fn dispatch(
     host: &dyn HostServices,
     builtin: Builtin,
@@ -39,6 +57,10 @@ macro_rules! direct_builtin_handlers {
 }
 
 direct_builtin_handlers!(
+    ProcessExchange,
+    ProcessRelease,
+    ProcessWait,
+    ProcessReserve,
     CExchange,
     CClose,
     CRelease,
@@ -177,6 +199,40 @@ fn dispatch_core(
     string_record: Option<crate::hir::RecordId>,
 ) -> Result<Value, RuntimeError> {
     match (builtin, arguments) {
+        (Builtin::ProcessReserve, []) => Ok(Value::Integer(crate::process::reserve())),
+        (Builtin::ProcessWait, [Value::Integer(token)]) => {
+            let token = *token;
+            let response =
+                process_blocking(move || crate::process::exchange(2, token, "", "", "", 0))?;
+            Ok(Value::string(string_record, response))
+        }
+        (
+            Builtin::ProcessExchange,
+            [
+                Value::Integer(operation),
+                Value::Integer(token),
+                executable,
+                args,
+                directory,
+                Value::Integer(limit),
+            ],
+        ) => {
+            let (operation, token, limit) = (*operation, *token, *limit);
+            let (executable, args, directory) = (
+                executable.string_text()?.to_owned(),
+                args.string_text()?.to_owned(),
+                directory.string_text()?.to_owned(),
+            );
+            let response = process_blocking(move || {
+                crate::process::exchange(operation, token, &executable, &args, &directory, limit)
+            })?;
+            Ok(Value::string(string_record, response))
+        }
+        (Builtin::ProcessRelease, [Value::Integer(token)]) => {
+            let token = *token;
+            process_blocking(move || crate::process::release(token))?;
+            Ok(Value::Unit)
+        }
         (
             Builtin::CExchange,
             [

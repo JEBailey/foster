@@ -24,10 +24,21 @@ impl Checker<'_> {
             .ok_or_else(|| {
                 self.error(caller, "remote calls require core.remote_error.RemoteError")
             })?;
-        Ok(Ty::Future(Box::new(Ty::Variant(
-            result_type,
-            vec![result, Ty::Variant(error_type, vec![])],
-        ))))
+        let future_module = self
+            .hir
+            .module_named("core.future")
+            .ok_or_else(|| self.error(caller, "remote calls require core.future"))?;
+        let record = self
+            .hir
+            .record_named(future_module, "RemoteFuture")
+            .ok_or_else(|| self.error(caller, "remote calls require RemoteFuture"))?;
+        Ok(Ty::Record(
+            record,
+            vec![Ty::Variant(
+                result_type,
+                vec![result, Ty::Variant(error_type, vec![])],
+            )],
+        ))
     }
 
     pub(super) fn infer_call(
@@ -308,9 +319,9 @@ impl Checker<'_> {
                 false
             };
         if remote_call
-            && let Some(unsafe_type) = argument_types
-                .iter()
-                .find(|argument| !remote_transferable(&self.resolved((*argument).clone())))
+            && let Some(unsafe_type) = argument_types.iter().find(|argument| {
+                !remote_transferable(&self.resolved((*argument).clone()), self.hir)
+            })
         {
             return Err(self.error(
                 function,
@@ -439,6 +450,20 @@ impl Checker<'_> {
         let string = self.string_type();
         let bytes = self.bytes_type();
         Ok(match builtin {
+            Builtin::ProcessReserve => (vec![], Ty::Int),
+            Builtin::ProcessExchange => (
+                vec![
+                    Ty::Int,
+                    Ty::Int,
+                    string.clone(),
+                    string.clone(),
+                    string.clone(),
+                    Ty::Int,
+                ],
+                string.clone(),
+            ),
+            Builtin::ProcessRelease => (vec![Ty::Int], Ty::Unit),
+            Builtin::ProcessWait => (vec![Ty::Int], string.clone()),
             Builtin::CExchange => (
                 vec![
                     string.clone(),
@@ -971,7 +996,7 @@ impl Checker<'_> {
         );
     }
 
-    fn contract_method_type(
+    pub(super) fn contract_method_type(
         &mut self,
         function: FunctionId,
         object: Ty,
@@ -1027,7 +1052,11 @@ impl Checker<'_> {
         }
     }
 
-    fn contract_method_requirement(&self, object: Ty, name: &str) -> Option<(RecordId, usize)> {
+    pub(super) fn contract_method_requirement(
+        &self,
+        object: Ty,
+        name: &str,
+    ) -> Option<(RecordId, usize)> {
         match self.resolved(object) {
             Ty::Record(record, _) => self.hir.records[record]
                 .methods
@@ -1265,7 +1294,7 @@ impl Checker<'_> {
         self.check_constraints_with_bindings(caller, method, &generics)?;
         let result = self.instantiate(signature.result, &mut generics);
         if remote
-            && (!remote_transferable(&self.resolved(result.clone()))
+            && (!remote_transferable(&self.resolved(result.clone()), self.hir)
                 || self.contains_c_resource(&result)?)
         {
             return Err(self.error(

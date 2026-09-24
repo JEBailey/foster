@@ -79,7 +79,7 @@ share a navigation entry but retain separate signatures and descriptions.
 | Files and resource locations | [std.fs](std/fs.fos), [std.path](std/path.fos), [std.uri](std/uri.fos), [std.resource](std/resource.fos) |
 | Streams and TCP | [std.io](std/io.fos), [std.net.tcp](std/net/tcp.fos) |
 | Application-supplied file and network providers | [std.host](std/host.fos), [provider guide](../docs/host-providers.md) |
-| Process inputs | [std.process](std/process.fos), [std.env](std/env.fos) |
+| Futures, subprocesses, and process inputs | [core.future](core/future.fos), [std.process](std/process.fos), [std.env](std/env.fos) |
 | Time and calendars | [std.time](std/time.fos), [civil](std/time/civil.fos), [zone](std/time/zone.fos), [format](std/time/format.fos) |
 | Random values | [std.random](std/random.fos), [generator](std/random/generator.fos), [distribution](std/random/distribution.fos), [secure](std/random/secure.fos), [sequence](std/random/sequence.fos) |
 | Configuration | [std.toml](std/toml.fos) |

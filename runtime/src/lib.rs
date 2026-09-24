@@ -13,6 +13,9 @@ pub use foster_host as services;
 
 #[path = "../../src/foreign/runtime.rs"]
 mod c_bridge;
+#[path = "../../src/process.rs"]
+mod process_runtime;
+include!("process.rs");
 include!("foreign.rs");
 
 static FOSTER_CONSTANTS: OnceLock<&'static [&'static str]> = OnceLock::new();

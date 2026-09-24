@@ -60,7 +60,8 @@ not established by this decision.
 ## Typed outcomes
 
 **R-06 — One outcome type.** Success and remote failure must be expressible through one static
-result contract. A remote call returns `Future<Result<T, RemoteError>>`; its awaited value is
+result contract. A remote call returns `RemoteFuture<Result<T, RemoteError>>`, which satisfies
+the composable `core.future.Future<Result<T, RemoteError>>` contract; its awaited value is
 `Result<T, RemoteError>`, where `T` is the method's declared result type. `RemoteError.Failed(String)` describes an execution failure. `RemoteError` is declared in
 `core.remote_error`; `Result` is declared in `core.result`. `RemoteError.Shutdown` is
 the distinct owner-cancellation outcome.
@@ -157,6 +158,11 @@ a plain record type does not encode the needed interprocedural ownership relatio
 requests before that transfer. Awaiting through arbitrary helpers, indirect call provenance,
 dynamically sized owner collections returned by opaque calls, and richer loop proofs are not
 currently completion proofs. Runtime shutdown remains the backstop for unmodeled dynamic cases.
+
+Calling a remote future's consuming `resolve()` directly is also a completion witness.
+Awaiting a custom future containing a pending request does not, by itself, prove that
+the request field completed. Await the request field while its owner is live; arbitrary
+user-defined completion helpers remain subject to the conservative limits above.
 
 Branch states remain separate so that an owner from one path cannot satisfy another path's
 obligation. Repeated request sites are conservative; the analysis bounds distinct states at a CFG

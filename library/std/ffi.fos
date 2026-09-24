@@ -8,6 +8,7 @@
 import core.byte
 import core.bytes
 import core.int
+import core.list
 import core.result
 import core.string
 
@@ -66,6 +67,19 @@ impl CArguments {
 /// A copied result. Scalar conversions check the exact payload length.
 pub type CValue = { data: Bytes }
 impl CValue {
+    /// Checks the exact number of eight-byte scalar slots in a copied record.
+    /// Counts outside 0..8191 fail without arithmetic overflow.
+    pub func check_slots(self, count: Int) -> Result<(), CError> {
+        return Result.Error(CError { message: "invalid C record slot count", status: 0 }) if count < 0 || count > 8191
+        return Result.Error(CError { message: "C record payload size mismatch", status: 0 }) if self.data.length != count * 8
+        Result.Ok(())
+    }
+    /// Copies one eight-byte scalar slot from a record. The index is zero-based;
+    /// negative/out-of-range indexes and partial-slot payloads return an error.
+    pub func slot(self, index: Int) -> Result<CValue, CError> {
+        return Result.Error(CError { message: "invalid C record slot", status: 0 }) if index < 0 || self.data.length / 8 * 8 != self.data.length || index >= self.data.length / 8
+        Result.Ok(CValue { data: self.data.slice(index * 8, index * 8 + 8) })
+    }
     /// Reads a signed integer; U64 results preserve their bits in an Int.
     pub func integer(self) -> Result<Int, CError> {
         return Result.Error(CError { message: "C integer requires eight bytes", status: 0 }) if self.data.length != 8
@@ -95,7 +109,7 @@ impl CBridge {
     /// Selects a reviewed native bridge by absolute path and the schema identifier
     /// emitted by `foster bridge`. A mismatched schema fails before calling C.
     pub func at(path: String, schema: String) -> CBridge [consume path, consume schema] { CBridge { path: move path, schema: move schema } }
-    /// Calls a scalar, void or copied-buffer operation. Rejects constructors.
+    /// Calls a scalar, value-record, void or copied-buffer operation. Rejects constructors.
     pub func call(self, operation: Int, arguments: CArguments) -> Result<CValue, CError> {
         decode_response(CHost.exchange(self.path, self.schema, operation, 0, false, arguments.payload))
     }
@@ -151,4 +165,19 @@ func decode_response(response: String) -> Result<CValue, CError> {
         octets[0] == Byte.unchecked(0) -> Result.Ok(CValue { data: move payload })
         _ -> Result.Error(CError { message: String.from_utf8(move payload).unwrap_or("C bridge failure"), status: 0 })
     }
+}
+
+test "record slots reject partial payloads and overflowing indexes" {
+    let value = CValue { data: Bytes.from_hex("01000000000000000200000000000000").unwrap_or(Bytes.empty()) }
+    branch value.check_slots(2) { Result.Ok(_) -> () Result.Error(_) -> panic("valid record rejected") }
+    let first = branch value.slot(0) { Result.Ok(slot) -> slot Result.Error(_) -> panic("valid slot rejected") }
+    assert(first.integer().unwrap_or(0) == 1)
+    for index in [-1, 2, 9223372036854775807] {
+        branch value.slot(index) { Result.Error(_) -> () Result.Ok(_) -> panic("invalid slot accepted") }
+    }
+    for count in [-1, 1, 8192, 9223372036854775807] {
+        branch value.check_slots(count) { Result.Error(_) -> () Result.Ok(_) -> panic("invalid size accepted") }
+    }
+    let partial = CValue { data: Bytes.from_hex("00").unwrap_or(Bytes.empty()) }
+    branch partial.slot(0) { Result.Error(_) -> () Result.Ok(_) -> panic("partial slot accepted") }
 }

@@ -649,6 +649,10 @@ impl Package {
             ),
             cache,
         )?;
+        self.install_bootstrap(
+            BootstrapModule::full("core.future", include_str!("../library/core/future.fos")),
+            cache,
+        )?;
         self.validate()
             .map_err(|error| self.locate_compiler_error(error))
     }
@@ -1085,6 +1089,7 @@ impl Package {
                         (module.name.as_str(), record.name.as_str()),
                         ("core.bytes", "RawBytes")
                             | ("core.list", "RawList")
+                            | ("core.future", "RawFuture")
                             | ("core.int", "RawInt")
                     )
                 {
@@ -1316,6 +1321,7 @@ pub(crate) const EMBEDDED_MODULES: &[(&str, &str)] = &[
         include_str!("../library/core/remote_error.fos"),
     ),
     ("core.result", include_str!("../library/core/result.fos")),
+    ("core.future", include_str!("../library/core/future.fos")),
     ("core.copy", include_str!("../library/core/copy.fos")),
     ("core.drop", include_str!("../library/core/drop.fos")),
     (

@@ -84,6 +84,17 @@ fn runtime_source() -> String {
     let source = include_str!("../../runtime/src/lib.rs")
         .replace("\r\n", "\n")
         .replace(
+            "#[path = \"../../src/process.rs\"]\nmod process_runtime;",
+            &format!(
+                "mod process_runtime {{\n{}\n}}",
+                include_str!("../process.rs")
+            ),
+        )
+        .replace(
+            "include!(\"process.rs\");",
+            include_str!("../../runtime/src/process.rs"),
+        )
+        .replace(
             "#[path = \"../../src/foreign/runtime.rs\"]\nmod c_bridge;",
             &format!(
                 "mod c_bridge {{\n{}\n}}",

@@ -242,7 +242,11 @@ pub(super) fn check_function(
                     owner,
                     span,
                 } => {
-                    let identities = state.identities(owner);
+                    let values = state.value(owner);
+                    let identities = values
+                        .iter()
+                        .flat_map(|(_, identities)| identities.iter().copied())
+                        .collect::<BTreeSet<_>>();
                     state.remove(destination);
                     let owners = identities
                         .iter()
@@ -276,16 +280,24 @@ pub(super) fn check_function(
                             .insert(Identity::Request(point));
                     } else {
                         // A future-returning forwarding helper may return an existing request.
-                        state
-                            .contents
-                            .entry(destination.clone())
-                            .or_default()
-                            .extend(identities);
+                        for (path, identities) in values {
+                            let mut place = destination.clone();
+                            place.projections.extend(path);
+                            state.contents.entry(place).or_default().extend(identities);
+                        }
                     }
                     None
                 }
                 Operation::RemoteComplete { future, .. } => {
-                    let identities = state.identities(future);
+                    // A custom Future can contain a request without completing it.
+                    // Only a request at the awaited place itself is a completion
+                    // witness; awaiting a containing record cannot erase its fields.
+                    let identities = state
+                        .value(future)
+                        .into_iter()
+                        .filter(|(path, _)| path.is_empty())
+                        .flat_map(|(_, identities)| identities)
+                        .collect::<BTreeSet<_>>();
                     let requests = identities
                         .iter()
                         .filter_map(|identity| match identity {
@@ -353,9 +365,9 @@ pub(super) fn check_function(
         }
         if matches!(block.terminator, Terminator::Return) {
             for (id, request) in &state.pending {
-                let direct_future = types.function_type(function).is_some_and(|signature| {
-                    matches!(types.types[signature.result], crate::types::Type::Future(_))
-                });
+                let direct_future = types
+                    .function_type(function)
+                    .is_some_and(|signature| types.is_future(signature.result));
                 // Returning pending work is supported only as a direct future tied to
                 // a borrowed owner parameter. Pending aggregate/owner transfers need
                 // a richer interprocedural relationship than a plain record type.

@@ -1,0 +1,19 @@
+//! Values whose result is obtained by consuming them with `await`.
+
+/// A consuming, potentially suspending computation. Composes with other contracts.
+pub type Future<T> = {
+    /// Consumes this computation and returns its completed result.
+    pub func resolve(self) -> T [consume self, suspend]
+}
+
+intrinsic type RawFuture<T>
+
+/// An outstanding remote request. Its remote owner must outlive completion.
+pub type RemoteFuture<T> = & Future<T> & { value: RawFuture<T> }
+
+impl RemoteFuture<T> {
+    /// Waits for the remote request, consuming its single completion handle.
+    pub func resolve(self) -> T [consume self, suspend] {
+        await self.value
+    }
+}

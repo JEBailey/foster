@@ -16,7 +16,11 @@ pub(super) struct BuiltinInfo {
 
 pub(super) fn info(id: Builtin) -> BuiltinInfo {
     match id {
-        Builtin::CExchange
+        Builtin::ProcessExchange
+        | Builtin::ProcessRelease
+        | Builtin::ProcessWait
+        | Builtin::ProcessReserve
+        | Builtin::CExchange
         | Builtin::CClose
         | Builtin::CRelease
         | Builtin::CEncodeInt

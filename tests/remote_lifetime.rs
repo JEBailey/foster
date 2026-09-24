@@ -6,6 +6,55 @@ impl Worker { func work(self) -> Int { 42 } }
 "#;
 
 #[test]
+fn custom_future_cannot_hide_an_uncompleted_request_field() {
+    let source = format!(
+        "{PRELUDE}\n{}",
+        r#"
+type Discard = & Future<Int> & { pending: Future<Result<Int, RemoteError>> }
+impl Discard { func resolve(self) -> Int [consume self] { 0 } }
+func identity(value: Discard) -> Discard [consume value] { move value }
+func main() -> Int {
+    let worker = remote Worker {}
+    let pending = worker.work()
+    let discarded = identity(Discard { pending: move pending })
+    await discarded
+}
+"#
+    );
+    let error = foster::compile(&source).expect_err("custom await hid an outstanding request");
+    assert_eq!(error.code.as_deref(), Some("E0730"), "{error:?}");
+}
+
+#[test]
+fn explicit_remote_resolve_is_a_completion_witness() {
+    let source = format!(
+        "{PRELUDE}\nfunc main() -> Int {{ let worker = remote Worker {{}}\nlet pending = worker.work()\n(move pending).resolve().unwrap_or(0) }}"
+    );
+    let compilation = foster::compile(&source).unwrap();
+    assert_eq!(foster::vm::run(&compilation).unwrap().to_string(), "42");
+}
+
+#[test]
+fn ready_future_helper_cannot_prove_remote_fifo_completion() {
+    let source = format!(
+        "{PRELUDE}\n{}",
+        r#"
+type Ready = & Future<Int> & {}
+impl Ready { func resolve(self) -> Int [consume self] { 0 } }
+func ready(worker: Remote<Worker>) -> Future<Int> { Ready {} }
+func main() -> Int {
+    let worker = remote Worker {}
+    worker.work()
+    await ready(worker)
+}
+"#
+    );
+    let error =
+        foster::compile(&source).expect_err("ready future fabricated a FIFO completion witness");
+    assert_eq!(error.code.as_deref(), Some("E0730"), "{error:?}");
+}
+
+#[test]
 fn pending_requests_are_not_discharged_by_discard_moves_or_partial_awaits() {
     for body in [
         "let worker = remote Worker {}\nworker.work()\n0",

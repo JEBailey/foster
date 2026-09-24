@@ -512,7 +512,27 @@ impl FunctionCompiler<'_> {
                                 arguments,
                             }
                         };
-                        self.emit(instruction, span);
+                        self.emit(instruction, span.clone());
+                        if remote {
+                            let Some(crate::types::Type::Record { record, .. }) = self
+                                .types
+                                .expression_type(id)
+                                .map(|ty| &self.types.types[ty])
+                            else {
+                                return Err(self.unsupported("remote future wrapper"));
+                            };
+                            let wrapped = self.allocate();
+                            self.emit(
+                                Instruction::MakeRecord {
+                                    destination: wrapped,
+                                    record: *record,
+                                    type_arguments: self.nominal_type_arguments(id),
+                                    fields: vec![("value".into(), destination)],
+                                },
+                                span,
+                            );
+                            return Ok(wrapped);
+                        }
                         return Ok(destination);
                     }
                     if let Some(crate::types::ResolvedCall::ContractMethod { slot, name, .. }) =
@@ -702,15 +722,40 @@ impl FunctionCompiler<'_> {
                 self.load_constant(Constant::Unit, span)
             }
             hir::Expr::Await(future) => {
-                let future = self.expression(*future)?;
+                let operand = *future;
+                let future = self.expression(operand)?;
                 let destination = self.allocate();
-                self.emit(
-                    Instruction::Await {
+                let instruction = match self.types.resolved_call(id) {
+                    Some(crate::types::ResolvedCall::Method { function, .. }) => {
+                        Instruction::CallMethod {
+                            destination,
+                            receiver: future,
+                            function: *function,
+                            specialization: self.specialization(*function, &[operand], id),
+                            arguments: vec![],
+                        }
+                    }
+                    Some(crate::types::ResolvedCall::ContractMethod { slot, name, .. }) => {
+                        Instruction::CallContractMethod {
+                            destination,
+                            receiver: future,
+                            slot: *slot,
+                            name: name.clone(),
+                            arguments: vec![],
+                            result_type: verification_type(
+                                self.hir,
+                                self.types,
+                                self.types.expression_type(id).expect("typed await"),
+                                0,
+                            ),
+                        }
+                    }
+                    _ => Instruction::Await {
                         destination,
                         future,
                     },
-                    span,
-                );
+                };
+                self.emit(instruction, span);
                 Ok(destination)
             }
             hir::Expr::Try {

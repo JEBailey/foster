@@ -144,7 +144,16 @@ pub fn exchange(
                 }
                 _ => return Err("unknown C operation or incompatible resource receiver".into()),
             };
-            let mut output = vec![0u8; if metadata & 256 != 0 { LIMIT } else { 8 }];
+            // Bits 16..31 describe a fixed copied-record result; byte buffers use bit 8.
+            let fixed_size = ((metadata >> 16) & 0xffff) as usize;
+            let mut output = vec![
+                0u8;
+                if metadata & 256 != 0 {
+                    LIMIT
+                } else {
+                    fixed_size.max(8)
+                }
+            ];
             let mut length = 0;
             let mut created = std::ptr::null_mut();
             let status = unsafe {
@@ -269,7 +278,10 @@ impl Module {
         if path.contains('\0') {
             return Err("C bridge path contains NUL".into());
         }
-        let wide: Vec<_> = path.encode_utf16().chain(Some(0)).collect();
+        // LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR needs native separators when deriving
+        // the directory for dependencies. Generated Foster paths use forward slashes.
+        let native_path = path.replace('/', "\\");
+        let wide: Vec<_> = native_path.encode_utf16().chain(Some(0)).collect();
         // Search dependencies only beside the bridge and in System32, never cwd.
         let module = unsafe { LoadLibraryExW(wide.as_ptr(), std::ptr::null_mut(), 0x100 | 0x800) };
         if module.is_null() {

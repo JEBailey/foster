@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Format version 32; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
+Format version 33; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and

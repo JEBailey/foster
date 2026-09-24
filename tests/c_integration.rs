@@ -1,5 +1,46 @@
 use foster::foreign::{Manifest, runtime};
 
+#[cfg(all(windows, target_arch = "x86_64"))]
+#[test]
+fn bridge_dependencies_resolve_beside_forward_slash_paths() {
+    let directory =
+        std::env::temp_dir().join(format!("foster bridge dependencies {}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let source = directory.join("dependency.c");
+    std::fs::write(
+        &source,
+        "__declspec(dllexport) int linked_value(void) { return 42; }\n",
+    )
+    .unwrap();
+    std::fs::write(directory.join("dependency.h"), "int linked_value(void);\n").unwrap();
+    let compiled = std::process::Command::new("clang")
+        .args(["--target=x86_64-pc-windows-msvc", "-shared", "-o"])
+        .arg(directory.join("foster_test_dependency.dll"))
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let contract = r#"{"abi":1,"headers":["dependency.h"],"libraries":["foster_test_dependency.lib"],"operations":[{"name":"value","symbol":"linked_value","result":"i32"}]}"#;
+    let manifest_path = directory.join("bindings.json");
+    std::fs::write(&manifest_path, contract).unwrap();
+    let library = foster::foreign::build(
+        &manifest_path,
+        &directory.join("bridge.dll"),
+        std::path::Path::new("clang"),
+    )
+    .unwrap();
+    let schema = Manifest::parse(contract).unwrap().identity();
+    let forward = library.to_str().unwrap().replace('\\', "/");
+    assert_eq!(
+        runtime::exchange(&forward, &schema, 0, 0, false, ""),
+        format!("00{}", runtime::encode(&42i64.to_le_bytes()))
+    );
+}
+
 #[test]
 fn c_resources_are_private_and_cannot_cross_remote_boundaries() {
     for source in [

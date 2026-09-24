@@ -1,0 +1,113 @@
+//! Raylib UI with generated Color, Rectangle, and Vector2 bindings.
+import core.float
+import core.int
+import core.list
+import core.result
+import core.string
+import std.ffi
+import std.process
+import raylib
+
+const MOUSE_LEFT = 0
+
+// These local owners pair raylib's global window/frame API on every exit path.
+type Window = { active: Bool }
+impl Window {
+    func deinit(self) {
+        raylib::c_CloseWindow()
+        ()
+    }
+}
+type Frame = { active: Bool }
+impl Frame {
+    func deinit(self) {
+        raylib::c_EndDrawing()
+        ()
+    }
+}
+
+func color(r: Int, g: Int, b: Int) -> CColor { CColor { r, g, b, a: 255 } }
+func rectangle(x: Float, y: Float, width: Float, height: Float) -> CRectangle { CRectangle { x, y, width, height } }
+
+func demo(smoke: Bool) -> Result<Int, CError> {
+    let frames = 0
+    :window {
+        try raylib::c_DemoInitWindow(900, 600)
+        let window = Window { active: true }
+        assert(try raylib::c_IsWindowReady(), "raylib could not initialize the graphics window")
+        try raylib::c_SetTargetFPS(60)
+        let clicks = 0
+        let hue = 190.0
+        let position = 480.0
+        let direction = 1.0
+        let button = rectangle(60.0, 158.0, 260.0, 64.0)
+        let slider = rectangle(60.0, 442.0, 780.0, 32.0)
+        while !(try raylib::c_WindowShouldClose()) {
+            let mouse = try raylib::c_GetMousePosition()
+            let hovered = try raylib::c_CheckCollisionPointRec(mouse, button)
+            let pressed = try raylib::c_IsMouseButtonPressed(MOUSE_LEFT)
+            let down = try raylib::c_IsMouseButtonDown(MOUSE_LEFT)
+            let over_slider = try raylib::c_CheckCollisionPointRec(mouse, slider)
+            branch {
+                hovered && pressed -> { clicks = clicks + 1 }
+                _ -> ()
+            }
+            branch {
+                down && over_slider -> {
+                    hue = ((mouse.x - slider.x) / slider.width * 360.0).clamp(0.0, 360.0)
+                }
+                _ -> ()
+            }
+            let accent = try raylib::c_ColorFromHSV(hue, 0.75, 0.95)
+            let delta = (try raylib::c_GetFrameTime()).clamp(0.0, 0.05)
+            position = position + direction * delta * 150.0
+            branch {
+                position >= 744.0 -> { position = 744.0
+                    direction = -1.0 }
+                position <= 430.0 -> { position = 430.0
+                    direction = 1.0 }
+                _ -> ()
+            }
+            :frame {
+                try raylib::c_BeginDrawing()
+                let frame = Frame { active: true }
+                try raylib::c_ClearBackground(color(17, 23, 35))
+                try raylib::c_DrawText("FOSTER + RAYLIB", 60, 44, 34, color(235, 241, 250))
+                try raylib::c_DrawText("Real C structs. Generated bindings. Foster application logic.", 60, 91, 18, color(154, 172, 193))
+                try raylib::c_DrawRectangleRec(rectangle(40.0, 136.0, 310.0, 246.0), color(27, 37, 53))
+                try raylib::c_DrawRectangleRec(button, branch { hovered -> accent.copy() _ -> color(40, 65, 88) })
+                try raylib::c_DrawText("CLICK ME", 127, 178, 24, color(240, 246, 255))
+                try raylib::c_DrawText("Clicks: " + clicks.as_string(), 76, 251, 30, accent)
+                try raylib::c_DrawText("Mouse -> Vector2", 76, 318, 18, color(154, 172, 193))
+                try raylib::c_DrawRectangleRec(rectangle(390.0, 136.0, 470.0, 246.0), color(27, 37, 53))
+                try raylib::c_DrawText("Rectangle + Color", 420, 161, 24, color(235, 241, 250))
+                try raylib::c_DrawRectangleRec(rectangle(position, 232.0, 76.0, 76.0), accent)
+                try raylib::c_DrawText("Animation driven by Foster", 420, 341, 18, color(154, 172, 193))
+                try raylib::c_DrawText("DRAG TO CHANGE COLOR", 60, 407, 20, color(235, 241, 250))
+                try raylib::c_DrawRectangleRec(rectangle(60.0, 452.0, 780.0, 12.0), color(40, 55, 74))
+                try raylib::c_DrawRectangleRec(rectangle(60.0, 452.0, hue / 360.0 * 780.0, 12.0), accent)
+                try raylib::c_DrawRectangleRec(rectangle(54.0 + hue / 360.0 * 780.0, 442.0, 12.0, 32.0), color(240, 246, 255))
+                try raylib::c_DrawText("Color returned by C | structs passed by value | scope cleanup", 60, 523, 18, color(154, 172, 193))
+                try raylib::c_DrawText("ESC to close", 60, 555, 16, color(103, 125, 151))
+            }
+            frames = frames + 1
+            branch {
+                smoke && frames == 90 -> {
+                    try raylib::c_TakeScreenshot("target/raylib-demo/smoke.png")
+                    break
+                }
+                _ -> ()
+            }
+        }
+    }
+    assert(!(try raylib::c_IsWindowReady()), "window scope must close raylib")
+    Result.Ok(frames)
+}
+
+func main(args: Arguments) -> Int {
+    branch demo(args.values.contains?("--smoke")) {
+        Result.Ok(frames) -> { println("Rendered frames:", frames)
+            0 }
+        Result.Error(error) -> panic(error.message)
+    }
+}

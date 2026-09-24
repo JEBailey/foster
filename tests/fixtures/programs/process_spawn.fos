@@ -1,0 +1,83 @@
+import std.process
+import std.fs
+import core.result
+import core.option
+import core.bytes
+import core.string
+
+func finish(value: Future<Result<ProcessOutput, ProcessError>>) -> Result<ProcessOutput, ProcessError> [consume value, suspend] { await value }
+
+type Worker = { executable: String }
+impl Worker {
+    func run(self) -> Int {
+        let child = branch process::spawn(self.executable, ["ok"]) {
+            Result.Ok(value) -> value
+            Result.Error(_) -> { return -1 }
+        }
+        branch await child {
+            Result.Ok(output) -> branch { output.status.success -> 42 _ -> -2 }
+            Result.Error(_) -> -3
+        }
+    }
+}
+
+func main(arguments: Arguments) -> Result<Int, ProcessError> {
+    let executable = arguments.values[0].copy()
+    let directory = arguments.values[1].copy()
+    let child = try process::spawn_with(executable, ["arguments", "", "two words", "a\"b\\c", "λ\nvalue"], SpawnOptions { directory: directory.copy(), output_limit: 1024 })
+    assert(child.pid() > 0)
+    let output = try finish(move child)
+    assert(!output.status.success)
+    assert(output.status.code.unwrap_or(0) == 7)
+    assert(output.stdout.hex() == "00ff0a")
+    assert(String.from_utf8(move output.stderr).unwrap_or("") == "diagnostic")
+
+    let pipes = try process::spawn(executable, ["pipes"])
+    let captured = try await pipes
+    assert(captured.status.success)
+    assert(captured.stdout.length == 131072)
+    assert(captured.stderr.length == 131072)
+
+    let limited = try process::spawn_with(executable, ["pipes"], SpawnOptions { directory: "", output_limit: 32 })
+    branch await limited { Result.Error(_) -> () Result.Ok(_) -> panic("capture limit ignored") }
+    branch process::spawn("foster-nonexistent-executable-932857", []) { Result.Error(_) -> () Result.Ok(_) -> panic("missing executable launched") }
+    for limit in [0, 67108865] {
+        branch process::spawn_with(executable, ["ok"], SpawnOptions { directory: "", output_limit: limit }) {
+            Result.Error(_) -> ()
+            Result.Ok(_) -> panic("invalid capture limit accepted")
+        }
+    }
+
+    let fast = try process::spawn(executable, ["ok"])
+    loop {
+        branch try fast.poll() {
+            ProcessStatus.Running -> ()
+            ProcessStatus.Exited(status) -> {
+                assert(status.success)
+                break
+            }
+        }
+    }
+    let completed = try await fast
+    assert(completed.stdout.empty?)
+
+    let ready = directory + "/ready"
+    let survived = directory + "/survived"
+    let sleeper = try process::spawn(executable, ["sleep", ready.copy(), survived.copy()])
+    loop { break if fs::exists?(ready) }
+    branch try sleeper.poll() { ProcessStatus.Running -> () _ -> panic("child exited early") }
+    try sleeper.terminate()
+    let terminated = try await sleeper
+    assert(!terminated.status.success)
+
+    :cleanup {
+        let dropped = try process::spawn(executable, ["sleep", directory + "/drop-ready", directory + "/drop-survived"])
+        loop { break if fs::exists?(directory + "/drop-ready") }
+        assert(dropped.pid() > 0)
+    }
+
+    let worker = remote Worker { executable: executable.copy() }
+    let remote_result = await worker.run()
+    assert(remote_result.unwrap_or(-1) == 42)
+    Result.Ok(42)
+}

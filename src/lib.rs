@@ -24,6 +24,7 @@ pub mod native;
 pub mod ownership;
 pub mod package;
 pub mod parser;
+pub(crate) mod process;
 pub mod project;
 pub mod remote;
 pub mod semantics;
