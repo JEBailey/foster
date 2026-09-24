@@ -5,6 +5,11 @@ bridge DLL and resource runtime serve VM bytecode and native executables.
 `foster bridge` generates a C adapter and ordinary Foster bindings; no new Foster
 declaration syntax is needed.
 
+For existing headers, [tools/cbind](../tools/cbind/README.md) uses Clang and a
+Foster generator to import supported scalar functions and build the `.fos` module
+and bridge in one command. It reports declarations that require explicit pointer
+or resource contracts rather than inferring ownership from C types.
+
 Binding manifests, C sources, headers, and DLLs are trusted native code. The
 manifest author must accurately describe allocation, cleanup, and pointer
 contracts. Normal Foster callers never receive a pointer or an editable resource

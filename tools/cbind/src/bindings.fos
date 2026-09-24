@@ -1,0 +1,136 @@
+//! Conservative Windows x64 scalar bindings. Ownership cannot be inferred from C types.
+import core.list
+import core.string
+
+pub type Generated = { pub manifest: String, pub report: String }
+
+// The adapter supplies tab-separated T(alias, type), F(name, result, parameters),
+// and R(name, reason) records. Clang, rather than this tool, parses and preprocesses C.
+func scalar(spelling: String, declarations: List<String>) -> String {
+    let name = spelling.copy().trim()
+    let depth = 0
+    while depth < 32 {
+        let mapped = branch name {
+            "void" -> "void"
+            "_Bool" -> "bool"
+            "bool" -> "bool"
+            "signed char" -> "i8"
+            "unsigned char" -> "u8"
+            "short" -> "i16"
+            "short int" -> "i16"
+            "unsigned short" -> "u16"
+            "unsigned short int" -> "u16"
+            "int" -> "i32"
+            "unsigned int" -> "u32"
+            "long long" -> "i64"
+            "long long int" -> "i64"
+            "unsigned long long" -> "u64"
+            "unsigned long long int" -> "u64"
+            "float" -> "f32"
+            "double" -> "f64"
+            _ -> ""
+        }
+        return mapped if !mapped.empty?
+        let alias = ""
+        for row in declarations {
+            let fields = row.copy().split("\t")
+            branch {
+                fields.length == 3 && fields[0] == "T" && fields[1] == name -> { alias = fields[2].copy() }
+                _ -> ()
+            }
+        }
+        return "" if alias.empty? || alias == name
+        name = move alias
+        depth = depth + 1
+    }
+    ""
+}
+
+// Preserve paths and diagnostic characters as JSON text, never source fragments.
+func quoted(text: String) -> String {
+    let output = "\""
+    for character in text {
+        output = output + branch character {
+            "\"" -> "\\\""
+            "\\" -> "\\\\"
+            "\n" -> "\\n"
+            "\r" -> "\\r"
+            "\t" -> "\\t"
+            _ -> character.copy()
+        }
+    }
+    output + "\""
+}
+
+/// Produces a scalar manifest and a report of every rejected declaration.
+/// Pointer, aggregate, and unknown types require an explicitly reviewed manifest.
+pub func generate(input: String, header: String) -> Generated {
+    let declarations = input.copy().split("\n")
+    let operations = ""
+    let report = ""
+    let names = []
+    for row in declarations {
+        let fields = row.copy().trim().split("\t")
+        continue if fields.length < 3 || fields[0] == "T"
+        branch {
+            fields[0] == "R" -> { report = report + fields[1] + ": " + fields[2] + "\n" }
+            fields[0] == "F" -> {
+                let name = fields[1].copy()
+                continue if names.contains?(name)
+                let returns = scalar(fields[2], declarations)
+                let reason = ""
+                branch {
+                    returns.empty? -> { reason = "unsupported result type: " + fields[2] }
+                    _ -> ()
+                }
+                let parameters = ""
+                let index = 3
+                while index < fields.length {
+                    let kind = scalar(fields[index], declarations)
+                    branch {
+                        kind.empty? || kind == "void" -> { reason = "unsupported parameter type: " + fields[index] }
+                        _ -> ()
+                    }
+                    parameters = parameters + branch { index == 3 -> "" _ -> ", " } + quoted(kind)
+                    index = index + 1
+                }
+                branch {
+                    reason.empty? -> {
+                        operations = operations + branch { operations.empty? -> "" _ -> ",\n" }
+                        operations = operations + "    {\"name\": " + quoted(name) + ", \"symbol\": " + quoted(name) + ", \"parameters\": [" + parameters + "], \"result\": " + quoted(returns) + "}"
+                        names.push(name)
+                    }
+                    _ -> { report = report + name + ": " + reason + "; provide a reviewed binding contract\n" }
+                }
+            }
+            _ -> panic("invalid declaration record")
+        }
+    }
+    Generated {
+        manifest: "{\n  \"abi\": 1,\n  \"headers\": [" + quoted(header) + "],\n  \"operations\": [\n" + operations + "\n  ]\n}\n"
+        report
+    }
+}
+
+test "scalar declarations resolve typedef chains and preserve operation order" {
+    let generated = generate("T\tint32_t\tint\nT\tCount\tint32_t\nF\tadd\tCount\tCount\tint\nF\treset\tvoid\nF\tadd\tCount\tCount\tint\n", "sample.h")
+    assert(generated.report.empty?)
+    assert(generated.manifest.contains?("\"parameters\": [\"i32\", \"i32\"], \"result\": \"i32\""))
+    assert(generated.manifest.contains?("\"parameters\": [], \"result\": \"void\""))
+    assert(generated.manifest.copy().split("\"name\": \"add\"").length == 2)
+}
+
+test "pointer ownership and ABI-incompatible scalar types are never guessed" {
+    let generated = generate("F\topen\tHandle *\nF\ttext\tint\tconst char *\nF\twide\tlong\nF\tcharacter\tchar\nR\tprintf\tvariadic function\n", "sample.h")
+    assert(!generated.manifest.contains?("\"name\""))
+    assert(generated.report.contains?("open: unsupported result"))
+    assert(generated.report.contains?("text: unsupported parameter"))
+    assert(generated.report.contains?("wide: unsupported result"))
+    assert(generated.report.contains?("printf: variadic function"))
+}
+
+test "alias cycles terminate and JSON paths are escaped" {
+    let generated = generate("T\tA\tB\nT\tB\tA\nF\tcycle\tA\n", "C:\\a\"b.h")
+    assert(generated.report.contains?("cycle:"))
+    assert(generated.manifest.contains?("C:\\\\a\\\"b.h"))
+}

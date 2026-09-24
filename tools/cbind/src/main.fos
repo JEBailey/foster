@@ -1,0 +1,29 @@
+//! Maps Clang declarations to a bridge manifest; cbind.ps1 supplies host processes.
+import core.list
+import core.result
+import core.string
+import std.fs
+import std.process
+import bindings
+
+func read_file(path: String) -> String {
+    branch fs::read_text(path) {
+        Result.Ok(text) -> text
+        Result.Error(error) -> panic(error.message)
+    }
+}
+
+func write_file(path: String, text: String) {
+    branch fs::write_text(path, text) {
+        Result.Ok(_) -> ()
+        Result.Error(error) -> panic(error.message)
+    }
+}
+
+func main(args: Arguments) -> Int {
+    assert(args.values.length == 4, "usage: cbind <declarations> <header> <manifest> <report>")
+    let generated = bindings::generate(read_file(args.values[0]), args.values[1])
+    write_file(args.values[2], generated.manifest)
+    write_file(args.values[3], generated.report)
+    0
+}
