@@ -25,12 +25,16 @@ $functions = @('DemoInitWindow', 'CloseWindow', 'IsWindowReady', 'SetTargetFPS',
     'GetMousePosition', 'CheckCollisionPointRec', 'IsMouseButtonPressed', 'IsMouseButtonDown',
     'ColorFromHSV', 'GetFrameTime', 'BeginDrawing', 'EndDrawing', 'ClearBackground',
     'DrawRectangleRec', 'DrawText', 'TakeScreenshot')
-& (Join-Path $root 'tools/cbind/cbind.ps1') -Header (Join-Path $Raylib 'include/raylib.h') `
-    -AdditionalHeaders (Join-Path $PSScriptRoot 'window.h') -Sources (Join-Path $PSScriptRoot 'window.c') `
-    -IncludeDirectories (Join-Path $Raylib 'include') `
-    -Libraries (Join-Path $Raylib 'lib/raylibdll.lib') -Functions $functions `
-    -CStringParameters @('DrawText:0', 'TakeScreenshot:0') `
-    -Output (Join-Path $outputDirectory 'raylib_bridge.dll') -Foster $Foster
+$cbind = Join-Path $outputDirectory 'cbind.exe'
+& $Foster build (Join-Path $root 'tools/cbind') --native --output $cbind
+if ($LASTEXITCODE -ne 0) { throw 'cbind compilation failed' }
+$bindingArguments = @('--header', (Join-Path $Raylib 'include/raylib.h'),
+    '--header', (Join-Path $PSScriptRoot 'window.h'), '--source', (Join-Path $PSScriptRoot 'window.c'),
+    '--include', (Join-Path $Raylib 'include'), '--library', (Join-Path $Raylib 'lib/raylibdll.lib'),
+    '--c-string', 'DrawText:0', '--c-string', 'TakeScreenshot:0',
+    '--output', (Join-Path $outputDirectory 'raylib_bridge.dll'))
+foreach ($function in $functions) { $bindingArguments += @('--function', $function) }
+& $cbind @bindingArguments
 if ($LASTEXITCODE -ne 0) { throw 'raylib binding generation failed' }
 Copy-Item -LiteralPath (Join-Path $Raylib 'lib/raylib.dll') -Destination (Join-Path $outputDirectory 'raylib.dll') -Force
 Copy-Item -LiteralPath (Join-Path $outputDirectory 'raylib_bridge.fos') -Destination (Join-Path $PSScriptRoot 'src/raylib.fos') -Force

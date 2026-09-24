@@ -19,6 +19,26 @@ impl fmt::Display for Reported {
 impl Error for Reported {}
 
 fn main() -> ExitCode {
+    // Recursive source and analysis structures can exceed the Windows main
+    // thread's small default stack when checking a substantial Foster tool.
+    // Give compiler commands a predictable stack on every host.
+    match std::thread::Builder::new()
+        .name("foster-command".into())
+        .stack_size(16 * 1024 * 1024)
+        .spawn(run_command)
+    {
+        Ok(worker) => match worker.join() {
+            Ok(code) => code,
+            Err(panic) => std::panic::resume_unwind(panic),
+        },
+        Err(error) => {
+            eprintln!("error: cannot start compiler command: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn run_command() -> ExitCode {
     match execute() {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {

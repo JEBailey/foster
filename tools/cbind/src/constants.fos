@@ -1,0 +1,237 @@
+//! Discovers selected-header macros and evaluates constant expressions with Clang.
+//! Static initializers exclude runtime calls. No C expression is translated into Foster.
+import core.list
+import core.string
+import core.int
+import core.result
+import core.future
+import std.process
+import bridge
+import bindings
+
+pub type Extracted = { pub values: String, pub report: String }
+type Context = { shim: String, output: String, compiler: String, includes: List<String>, rows: List<String>, records: Contract, accepted: List<String>, doc_names: List<String>, doc_texts: List<String> }
+
+func text(tree: Contract, node: Int, key: String) -> String {
+    let field = tree.member(node, key)
+    branch { field < 0 -> "" _ -> tree.nodes[field].text.copy() }
+}
+func arguments(context: Context) -> List<String> {
+    let args = ["--target=x86_64-pc-windows-msvc", "-x", "c", "-std=c11"]
+    for include in context.includes { args.push("-I")
+        args.push(include.copy()) }
+    move args
+}
+func attempt(context: Context, args: List<String>) -> ProcessOutput {
+    let child = branch process::spawn_with(context.compiler, args, SpawnOptions { directory: "", output_limit: 67108864 }) {
+        Result.Ok(child) -> move child
+        Result.Error(error) -> panic(error.message)
+    }
+    branch await child { Result.Ok(output) -> move output Result.Error(error) -> panic(error.message) }
+}
+// Only literal string decay/parentheses are safe to copy without pointer contracts.
+func literal_string(tree: Contract, node: Int) -> Bool {
+    let kind = text(tree, node, "kind")
+    return text(tree, tree.member(node, "type"), "qualType").starts_with?("char[") if kind == "StringLiteral"
+    return false if !["VarDecl", "ImplicitCastExpr", "ParenExpr"].contains?(kind)
+    let children = tree.array(node, "inner", false)
+    children.length == 1 && literal_string(tree, children[0])
+}
+func type_json(tree: Contract, node: Int) -> String {
+    return bindings::quoted(tree.nodes[node].text) if tree.nodes[node].kind == "string"
+    branch { tree.member(node, "array") >= 0 -> {
+        return "{\"array\":" + type_json(tree, tree.member(node, "array")) + ",\"length\":" + tree.nodes[tree.member(node, "length")].text + "}"
+    } _ -> () }
+    let key = branch { tree.member(node, "enum") >= 0 -> "enum" _ -> "record" }
+    "{" + bindings::quoted(key) + ":" + bindings::quoted(tree.string(node, key, true)) + "}"
+}
+func print_value(context: Context, ty: String, place: String) -> String {
+    branch {
+        ty.starts_with?("{") -> {
+            let record_type = bridge::decode_json(ty)
+            branch { record_type.member(0, "enum") >= 0 -> { return "printf(\"%lld\", (long long)(" + place + "));\n" } _ -> () }
+            branch { record_type.member(0, "array") >= 0 -> {
+                let element = type_json(record_type, record_type.member(0, "array"))
+                let length = 0
+                for character in record_type.nodes[record_type.member(0, "length")].text { length = length * 10 + character.bytes[0].int - 48 }
+                let output = "putchar('[');\n"
+                for index in 0.range(length) {
+                    branch { index > 0 -> { output = output + "putchar(',');\n" } _ -> () }
+                    output = output + print_value(context, element, place + "[" + index.as_string() + "]")
+                }
+                return output + "putchar(']');\n"
+            } _ -> () }
+            let name = record_type.string(0, "record", true)
+            let output = "putchar('{');\n"
+            for record in context.records.array(0, "records", false) {
+                continue if context.records.string(record, "name", true) != name
+                let separator = ""
+                for field in context.records.array(record, "fields", true) {
+                    let field_name = context.records.string(field, "name", true)
+                    let field_type = context.records.member(field, "type")
+                    let kind = type_json(context.records, field_type)
+                    output = output + "fputs(" + bindings::quoted(separator + bindings::quoted(field_name) + ":") + ", stdout);\n"
+                    output = output + print_value(context, kind, place + "." + field_name)
+                    separator = ","
+                }
+            }
+            output + "putchar('}');\n"
+        }
+        ty == "\"string\"" -> "json_string((const unsigned char*)" + place + ", sizeof(" + place + ") - 1);\n"
+        ty == "\"f32\"" || ty == "\"f64\"" -> "if (isfinite((double)(" + place + "))) printf(\"%.17g\", (double)(" + place + ")); else fputs(\"null\", stdout);\n"
+        ty == "\"bool\"" -> "fputs((" + place + ") ? \"true\" : \"false\", stdout);\n"
+        ty == "\"char\"" -> "printf(\"%u\", (unsigned int)(unsigned char)(" + place + "));\n"
+        _ -> "printf(\"%lld\", (long long)(" + place + "));\n"
+    }
+}
+// A failed batch is bisected so one declaration-shaped macro cannot hide valid constants.
+func probe(context: Context, names: List<String>, values: List<String>, reports: List<String>) {
+    return () if names.empty?
+    let file = bridge::artifact(context.output, ".constants.c")
+    let prefix = "#include " + bindings::quoted(context.shim) + "\n"
+    let source = prefix + "void foster_cbind_constants(void) {\n"
+    for name in names { source = source + "static const __auto_type foster_cbind_" + name + " = " + name + ";\n" }
+    source = source + "}\n"
+    bridge::write_file(file, source)
+    let args = arguments(context)
+    for arg in ["-fsyntax-only", "-Werror", "-Xclang", "-ast-dump=json", "-Xclang", "-ast-dump-filter=foster_cbind_constants", file.copy()] { args.push(arg.copy()) }
+    let completed = attempt(context, args)
+    branch { !completed.status.success -> {
+        branch { names.length == 1 -> reports.push(names[0] + ": macro is not a supported C static constant expression\n")
+            _ -> {
+                let middle = names.length / 2
+                probe(context, names.slice(0, middle), values, reports)
+                probe(context, names.slice(middle, names.length), values, reports)
+            } }
+        return ()
+    } _ -> () }
+    let tree = bridge::decode_json(String.from_utf8(move completed.stdout).unwrap_or(""))
+    let kinds = []
+    let accepted_names = []
+    for body in tree.array(0, "inner", false) {
+        for statement in tree.array(body, "inner", false) {
+            for variable in tree.array(statement, "inner", false) {
+                continue if text(tree, variable, "kind") != "VarDecl"
+                let name = text(tree, variable, "name").slice(13, text(tree, variable, "name").length)
+                let node = tree.member(variable, "type")
+                let spelling = text(tree, node, "desugaredQualType")
+                branch { spelling.empty? -> { spelling = text(tree, node, "qualType") } _ -> () }
+                branch { spelling.starts_with?("const ") -> { spelling = spelling.slice(6, spelling.length) } _ -> () }
+                let kind = bindings::binding_type(spelling, context.rows, context.accepted)
+                branch {
+                    literal_string(tree, variable) -> { kind = "\"string\"" }
+                    ["long", "long int", "unsigned long", "unsigned long int", "char"].contains?(spelling) || spelling.starts_with?("enum ") -> { kind = "\"i64\"" }
+                    _ -> ()
+                }
+                branch { kind.empty? || kind == "\"void\"" -> reports.push(name + ": unsupported constant type " + spelling + "\n")
+                    _ -> { kinds.push(kind.copy())
+                        accepted_names.push(name.copy()) } }
+            }
+        }
+    }
+    return () if accepted_names.empty?
+    source = prefix + PRINTER + "\nint main(void) {\n"
+    let index = 0
+    for name in accepted_names {
+        source = source + print_value(context, kinds[index], "(" + name + ")") + "putchar('\\n');\n"
+        index = index + 1
+    }
+    source = source + "return 0; }\n"
+    bridge::write_file(file, source)
+    let executable = bridge::artifact(context.output, ".constants.exe")
+    args = arguments(context)
+    for arg in [file.copy(), "-o", executable.copy()] { args.push(arg.copy()) }
+    bridge::execute(context.compiler, args, "")
+    let output = bridge::execute(executable, [], "")
+    let lines = output.copy().split("\n")
+    index = 0
+    for name in accepted_names {
+        let value = lines[index].copy().trim()
+        let decoded = bridge::decode_json(value)
+        let finite = true
+        for node in decoded.nodes { branch { node.kind == "null" -> { finite = false } _ -> () } }
+        branch { !finite -> reports.push(name + ": non-finite constant is not representable\n")
+            _ -> {
+                let docs = ""
+                let position = 0
+                while position < context.doc_names.length {
+                    branch { context.doc_names[position] == name -> { docs = ",\"documentation\":" + context.doc_texts[position] } _ -> () }
+                    position = position + 1
+                }
+                values.push("{\"name\":" + bindings::quoted(name) + ",\"type\":" + kinds[index] + ",\"value\":" + value + docs + "}")
+            } }
+        index = index + 1
+    }
+}
+
+/// Extracts active object macros and enum values from selected headers. Unsupported
+/// macros are reported; empty preprocessing markers do not declare values.
+pub func discover(rows: String, manifest: String, shim: String, output: String, compiler: String, headers: List<String>, includes: List<String>) -> Extracted {
+    let records = bridge::decode_json(manifest)
+    let accepted = []
+    for node in records.array(0, "records", false) { accepted.push(records.string(node, "name", true)) }
+    let types = []
+    let enumerators = []
+    let doc_names = []
+    let doc_texts = []
+    for row in rows.copy().split("\n") {
+        let fields = row.copy().split("\t")
+        continue if fields.length < 2
+        branch {
+            fields[0] == "T" || fields[0] == "S" || fields[0] == "N" -> types.push(row.copy())
+            fields[0] == "E" -> enumerators.push(fields[1].copy())
+            fields[0] == "D" && fields.length == 3 && fields[1].starts_with?("K.") -> {
+                doc_names.push(fields[1].slice(2, fields[1].length))
+                doc_texts.push(fields[2].copy())
+            }
+            _ -> ()
+        }
+    }
+    let context = Context { shim: shim.copy(), output: output.copy(), compiler: compiler.copy(), includes: includes.slice(0, includes.length), rows: move types, records: move records, accepted: move accepted, doc_names: move doc_names, doc_texts: move doc_texts }
+    let args = arguments(context)
+    for arg in ["-E", "-dD", shim.copy()] { args.push(arg.copy()) }
+    let preprocessed = bridge::execute(compiler, args, "")
+    bridge::write_file(bridge::artifact(output, ".preprocessed.h"), preprocessed)
+    let names = []
+    let reports = []
+    let macros = []
+    let definitions = []
+    let selected = false
+    for line in preprocessed.copy().split("\n") {
+        let parts = line.copy().split("\"")
+        branch { line.starts_with?("# ") && parts.length >= 3 -> {
+            selected = false
+            let file = parts[1].copy().split("\\\\").join("\\")
+            branch { !file.starts_with?("<") -> { selected = headers.contains?(bridge::canonical(file)) } _ -> () }
+            continue
+        } _ -> () }
+        continue if !line.starts_with?("#define ") && !line.starts_with?("#undef ")
+        let define = line.starts_with?("#define ")
+        let rest = line.slice(branch { define -> 8 _ -> 7 }, line.length).trim()
+        let pieces = rest.copy().split(" ")
+        let token = pieces[0].copy()
+        let name = token.copy().split("(")[0].copy()
+        let index = 0
+        for prior in macros {
+            branch { prior == name -> { definitions[index] = "" } _ -> () }
+            index = index + 1
+        }
+        continue if !define || !selected
+        macros.push(name.copy())
+        definitions.push(branch { rest == token -> "" _ -> rest.copy() })
+    }
+    let index = 0
+    for name in macros {
+        let definition = definitions[index].copy()
+        index = index + 1
+        continue if definition.empty?
+        branch { definition.starts_with?(name + "(") -> reports.push(name + ": function-like macro requires a C adapter\n")
+            _ -> names.push(name.copy()) }
+    }
+    for name in enumerators { branch { !names.contains?(name) -> names.push(name.copy()) _ -> () } }
+    let values = []
+    probe(context, names, values, reports)
+    Extracted { values: "[" + values.join(",\n") + "]", report: reports.join("") }
+}
+
+const PRINTER = "#include <stdio.h>\n#include <math.h>\nstatic void json_string(const unsigned char *s, size_t n) { putchar('\"'); for(size_t i=0;i<n;i++) { unsigned c=s[i]; if(c=='\"'||c=='\\\\') { putchar('\\\\'); putchar(c); } else if(c<32) printf(\"\\\\u%04x\",c); else putchar(c); } putchar('\"'); }\n"

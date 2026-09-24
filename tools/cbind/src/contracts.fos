@@ -1,0 +1,101 @@
+//! Explicit ownership and pointer contracts layered over discovered declarations.
+import core.list
+import core.string
+import bridge
+import bindings
+
+func mentions(tree: Contract, node: Int, names: List<String>) -> Bool {
+    return false if node < 0
+    let record = tree.member(node, "record")
+    return true if record >= 0 && names.contains?(tree.nodes[record].text)
+    for child in tree.children(node) { return true if mentions(tree, child, names) }
+    false
+}
+
+/// Merges reviewed operations and owners; unreviewed operations involving owned
+/// value types are removed instead of exposing a second, copyable ownership API.
+pub func apply(manifest: String, report: String, declarations: String, source: String) -> Generated {
+    let base = bridge::decode_json(manifest)
+    let contracts = bridge::decode_json(source)
+    assert(contracts.nodes[0].kind == "object", "contracts must be an object")
+    for member in contracts.children(0) {
+        assert(["operations", "resources", "exclude"].contains?(contracts.nodes[member].key), "unknown contracts field " + contracts.nodes[member].key)
+    }
+    let declared = []
+    for row in declarations.copy().split("\n") {
+        let fields = row.copy().split("\t")
+        branch { fields.length >= 3 && ["F", "R"].contains?(fields[0]) -> declared.push(fields[1].copy()) _ -> () }
+    }
+    let reviewed = []
+    let replaced = []
+    for operation in contracts.array(0, "operations", false) {
+        let name = contracts.string(operation, "name", true)
+        let symbol = contracts.string(operation, "symbol", true)
+        assert(declared.contains?(symbol), "contract symbol was not discovered in the selected header: " + symbol)
+        assert(!replaced.contains?(name), "duplicate reviewed operation " + name)
+        replaced.push(name.copy())
+        replaced.push(symbol.copy())
+        reviewed.push(contracts.json(operation))
+    }
+    let excluded = []
+    for name in contracts.array(0, "exclude", false) {
+        assert(contracts.nodes[name].kind == "string" && declared.contains?(contracts.nodes[name].text), "excluded function was not discovered")
+        excluded.push(contracts.nodes[name].text.copy())
+    }
+    let blocked = []
+    let resources = []
+    for resource in contracts.array(0, "resources", false) {
+        resources.push(contracts.json(resource))
+        blocked.push(contracts.string(resource, "c_type", true))
+        for key in ["destroy", "close", "valid"] {
+            let symbol = contracts.string(resource, key, key == "destroy")
+            branch { !symbol.empty? -> {
+                assert(declared.contains?(symbol), "resource function was not discovered: " + symbol)
+                excluded.push(symbol.copy())
+            } _ -> () }
+        }
+    }
+    let changed = true
+    while changed {
+        changed = false
+        for record in base.array(0, "records", false) {
+            let name = base.string(record, "name", true)
+            continue if blocked.contains?(name)
+            branch { mentions(base, base.member(record, "fields"), blocked) -> {
+                blocked.push(name.copy())
+                changed = true
+            } _ -> () }
+        }
+    }
+    let records = []
+    for record in base.array(0, "records", false) {
+        branch { !blocked.contains?(base.string(record, "name", true)) -> records.push(base.json(record)) _ -> () }
+    }
+    let operations = []
+    let extra_report = ""
+    for operation in base.array(0, "operations", true) {
+        let name = base.string(operation, "name", true)
+        continue if replaced.contains?(name) || excluded.contains?(name)
+        branch { mentions(base, operation, blocked) -> {
+            extra_report = extra_report + name + ": native resource use requires a reviewed operation contract\n"
+        } _ -> operations.push(base.json(operation)) }
+    }
+    for operation in reviewed { operations.push(operation.copy()) }
+    let members = []
+    for member in base.children(0) {
+        let key = base.nodes[member].key.copy()
+        continue if ["operations", "records", "resources"].contains?(key)
+        members.push(bindings::quoted(key) + ":" + base.json(member))
+    }
+    members.push("\"operations\":[" + operations.join(",") + "]")
+    members.push("\"records\":[" + records.join(",") + "]")
+    members.push("\"resources\":[" + resources.join(",") + "]")
+    let remaining = ""
+    for line in report.copy().split("\n") {
+        continue if line.empty?
+        let name = line.copy().split(":")[0]
+        continue if replaced.contains?(name) || excluded.contains?(name) || blocked.contains?(name)
+        remaining = remaining + line + "\n"
+    }
+    Generated { manifest: "{" + members.join(",") + "}", report: remaining + extra_report }
+}

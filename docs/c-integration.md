@@ -7,9 +7,10 @@ declaration syntax is needed.
 
 The generator is written in [Foster](../tools/cbind/src/bridge.fos): it validates
 the manifest, computes its schema identifier, and emits both source files.
-The Rust command embeds and executes this tool and supplies JSON decoding,
-filesystem operations, and Clang invocation. Native DLL loading, calls, and
-resource storage remain in the Rust runtime. JSON decoding rejects duplicate
+JSON decoding, filesystem operations, and Clang invocation are also Foster code.
+The Rust compiler command only embeds and invokes that program. A separately
+compiled `cbind.exe` runs without the Foster compiler. Native DLL loading, calls,
+and resource storage remain in the runtime. JSON decoding rejects duplicate
 object keys; the Foster validator rejects unknown fields and invalid contracts.
 
 For existing headers, [tools/cbind](../tools/cbind/README.md) uses Clang and a
@@ -62,6 +63,22 @@ The JSON manifest has `abi: 1`, `headers`, and `operations`. Optional `sources`,
 manifest directory. Libraries are explicit linker input files, such as `.lib`
 files. Optional `resources` declares opaque owning pointer types. Unknown fields,
 duplicate names, invalid identifiers, and unsupported contracts are errors.
+
+Operations optionally carry `parameter_names`, an array matching `parameters`
+(empty strings retain generated names). Operations, records, fields, and constants
+may carry a `documentation` string. The generated source preserves documentation
+and disambiguates parameter names without changing the C call signature.
+
+The optional `constants` array contains `{ "name", "type", "value" }` entries.
+Types use the scalar/record/array/enum notation below, plus `"string"` for literal strings.
+Values are JSON numbers, booleans, strings, or objects matching the record's
+fields. Primitive entries generate `pub const C_NAME`; record entries generate
+`pub func C_NAME() -> CRecord` factories. Enum members use integer values so aliases
+and flags remain usable. Constants are captured during header conversion and
+embedded in the Foster module, with no DLL call on access. Full header discovery
+also builds and executes a Clang constant exporter, including in manifest-only mode.
+The minimum Int value is emitted as a factory as well, because Foster's literal
+grammar cannot represent its positive magnitude in a constant initializer.
 
 ```json
 {
@@ -118,7 +135,10 @@ depends on live children need a more specific ownership adapter.
 | `i8`, `i16`, `i32`, `i64` | `Int` | Exact-width signed C integers; narrow inputs are range checked. |
 | `u8`, `u16`, `u32`, `u64` | `Int` | Exact-width unsigned C integers; narrow inputs are range checked. U64 preserves all bits, so values above INT64_MAX appear negative in Foster. |
 | `f32`, `f64` | `Float` | C float/double. Float32 narrows with a finite-overflow check and widens on return. |
-| `{"record":"Color"}` | `CColor` | Struct by value, copied field by field. Nested scalar-only structs are supported. |
+| `{"record":"Color"}` | `CColor` | Struct by value, copied field by field. Nested value records are supported. |
+| `{"array":"f32","length":4}` | `List<Float>` | Fixed-size record field; exact length checked before C runs. May nest arrays or contain value records. |
+| `{"enum":"Mode"}` | `CMode` (alias of `Int`) | Named C enum, preserving its C type and checking its integer range. |
+| `char` | `Int` | Plain C char storage as a byte value 0–255, used for character array fields. |
 | `bytes` parameter | `Bytes` | Two C parameters: `const uint8_t *`, `size_t`. Input is copied and valid only during the call. |
 | `c_string` parameter | `String` | One `const char *`. Copied, NUL-terminated UTF-8; interior NUL and invalid encoding are rejected before C runs. |
 | `bytes` result | `Bytes` | C returns `uint8_t *` and accepts a final `size_t *` output-length parameter. Required `release` names its deallocator. Foster copies the bytes, then releases the C allocation. |
@@ -147,13 +167,23 @@ An optional `records` array declares value structs, for example:
 
 Operation parameters/results refer to these with `{"record":"Color"}`. Record
 `c_type` accepts a typedef or `struct Tag`. Each field must be a supported scalar
-or another value record; pointer fields, unions, bitfields, and arrays are not
-imported. Generated C checks field types and uses the C compiler's native ABI,
+or another value record, a named enum, or a fixed-size array. Pointer fields,
+unions, and bitfields are not imported. Generated C checks field types and uses the C compiler's native ABI,
 including packed structs. Generated Foster records expose copied fields and
 `copy()`. Keyword fields and fields starting `c_` gain a `c_` prefix. Nesting is
-limited to 32 records and a flattened record to 8191 scalar slots (65528 bytes).
+limited to 32 record/array levels and a flattened record to 8191 scalar slots (65528 bytes).
 Metadata bits 16..31 carry the fixed result byte count, so small returned structs
 do not allocate the 16 MiB buffer used for variable-length byte results.
+
+An optional `enums` array declares `{ "name":"Mode", "c_type":"enum Mode" }`;
+`c_type` may also name an enum typedef. These produce transparent Foster aliases,
+allowing flag combinations and unnamed values within the C representation's range.
+Array dimensions must be positive integers. Every dimension contributes to the
+nesting and slot limits. Array fields use owned lists and are deeply copied by
+record `copy()` methods; character arrays preserve bytes, including embedded NULs.
+Arrays are not valid top-level operation parameters or results: C array parameters
+decay to pointers and require explicit buffer contracts. Constant record values may
+contain JSON arrays matching the declared dimensions.
 
 The [raylib example](../examples/raylib/README.md) exercises these bindings in a
 graphics UI with a click counter, color slider, and animated rectangle.
@@ -186,7 +216,7 @@ transfers are rejected by the type checker; VM transfer checks and native
 specialization checks also cover resources hidden behind generic wrappers.
 
 This implementation does not support borrowed foreign memory, parent/child
-resource dependencies, callbacks, variadic functions, unions, bitfields or arrays,
+resource dependencies, callbacks, variadic functions, unions, bitfields or pointer buffers,
 multiple resource arguments, transferring resource ownership to arbitrary C
 operations, unrestricted header importing, cross compilation, relocatable package
 bundling, or Linux/macOS. These require additional contracts, rather than exposing

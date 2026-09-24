@@ -1,56 +1,100 @@
-# C header importer
+# Standalone C header importer
 
-`cbind` reads a C header and produces typed Foster functions using the Windows x64
-C bridge. Header mapping and manifest generation live in `src/bindings.fos`.
-`src/bridge.fos` owns reviewed-manifest validation, schema IDs, struct handling,
-and generation of both C adapters and Foster wrappers. `foster bridge` embeds
-and runs that Foster source, so the command works without a tools checkout.
-Its Rust host only decodes JSON, runs the generator, writes artifacts, and invokes
-Clang. JSON objects are passed as a schema-neutral tree with hex-encoded UTF-8
-keys and values; contract rules are checked in Foster. Duplicate JSON keys are
-rejected during decoding rather than silently overwriting ownership declarations.
-The host compiles the embedded generator to bytecode once per process and runs it
-in the Foster VM. Compilation and generation add build-time overhead; application
-calls use the compiled C bridge directly.
-Clang handles preprocessing and C parsing. `cbind.ps1` runs Clang, passes its
-declarations to Foster, and invokes `foster bridge`. The launcher still uses
-PowerShell; `std.process.spawn` now provides the subprocess support needed for a
-Foster launcher.
+`cbind` is a Foster program. It invokes Clang, parses Clang's JSON AST with
+`std.json`, maps C declarations, validates reviewed contracts, and generates and
+builds C adapters and Foster bindings. Its native executable needs Clang and a
+Windows x64 C linking toolchain at runtime; it needs neither PowerShell nor an
+installed Foster compiler or Rust toolchain.
 
-From the repository root, with Clang installed:
+Build once from the repository root:
 
 ```powershell
-cargo build --bin foster
-./tools/cbind/cbind.ps1 -Header ./tests/fixtures/c_bridge/fixture.h `
-  -Sources ./tests/fixtures/c_bridge/fixture.c -Functions fixture_add,fixture_float `
-  -Output ./target/imported/fixture.dll -Foster ./target/debug/foster.exe
+cargo run --bin foster -- build tools/cbind --native --output target/cbind.exe
 ```
 
-This writes `fixture.fos`, `fixture.dll`, `fixture.schema`, and `fixture.bridge.c`.
-The generated public functions in this example are `c_fixture_add` and
-`c_fixture_float`; they return `Result<..., CError>`. Import the generated `.fos`
-module in your project. Bindings contain the absolute DLL path, as other bridge
-bindings do; regenerate them when relocating the DLL.
+Then run the executable from any directory:
 
-The intermediate `.bindings.json`, `.import.h`, `.declarations.tsv`, `.ast.json`,
-and `.unsupported.txt` files make the conversion inspectable. These are generated
-files and are replaced on each run, so use a dedicated output basename. Keep the
-import shim alongside the manifest for subsequent bridge builds.
+```powershell
+./target/cbind.exe --header ./tests/fixtures/c_bridge/fixture.h `
+  --source ./tests/fixtures/c_bridge/fixture.c `
+  --function fixture_add --function fixture_float `
+  --output ./target/imported/fixture.dll
+```
+
+For development, the same program runs with `foster run tools/cbind -- ...`.
+`cbind --help` prints the command syntax. Options taking lists are repeated,
+so paths containing spaces stay single arguments; comma-separated lists are not
+interpreted.
+
+The output includes `.fos`, `.dll`, `.schema`, and `.bridge.c` files. The
+`.bindings.json`, `.import.h`, `.declarations.tsv`, `.ast.json`, and
+`.unsupported.txt` intermediates make conversion inspectable. Use a dedicated
+output basename: these generated files are replaced. Bindings contain the
+absolute DLL path; regenerate them when relocating the DLL.
+Use a distinct bridge basename such as `raylib_bridge.dll`; dependent DLLs must
+retain their original names beside the bridge.
+
+Without `--function`, the tool attempts the entire selected header: functions,
+value records, enum values, and active object-like macro constants. The report
+also accounts for unsupported type declarations, global variables, and macros.
+`--function` requests a focused function import and omits constant discovery.
+It remains an error to silently deliver an incomplete library: use
+`--skip-unsupported` explicitly while working through the report.
+
+Enum members, including aliases and flags, become integer constants such as
+`C_KEY_SPACE`. Primitive macro values become `pub const` declarations, for example
+`C_RAYLIB_VERSION` and `C_PI`. Value-record macros become factories such as
+`C_RED() -> CColor`, since Foster constant initializers do not support records.
+The factories construct Foster values and do not call the DLL. Unsigned 64-bit
+values use Foster's signed Int bit representation, as do bridge scalar slots.
+The minimum Int value also uses a factory: Foster cannot spell its magnitude
+as an integer literal in a constant initializer.
+
+Clang evaluates C expressions in their actual target types; the tool does not
+translate C expression syntax into Foster. It discovers active macros through
+preprocessing, probes static initializers, and builds and runs a small native
+constant exporter. This also happens with `--manifest-only`, which skips the
+library build, not constant extraction. The `.preprocessed.h`, `.constants.c`,
+and `.constants.exe` files expose this stage (the last successful batch when
+unsupported macros require splitting). Function-like macros, nonconstant
+expressions, non-finite numbers, and unsupported constant types are reported.
+Empty preprocessing markers, including header guards, do not declare values.
+
+Parameter names and Clang-associated documentation comments are retained in the
+manifest and generated Foster source. Names that collide with Foster keywords,
+imported modules, or generated locals are disambiguated. Record field comments
+appear in the record documentation, because Foster does not accept field doc
+comments. These comments are descriptive; ownership contracts remain explicit.
 
 Options:
 
-- `-AdditionalHeaders`: explicitly include more headers in declaration selection,
-  for example a small ownership adapter alongside the original library header.
-- `-Sources` and `-Libraries`: C sources or linkable library files to link.
-- `-IncludeDirectories`: additional header search directories.
-- `-Functions`: exact C function names to import; missing names are errors.
-- `-CStringParameters`: explicit borrowed-string contracts such as
-  `DrawText:0` (zero-based argument index). Each must identify a
-  selected `const char *` parameter. This promises UTF-8 with no pointer retention;
-  the importer never assumes that contract merely from the C spelling.
-- `-SkipUnsupported`: explicitly allow a partial import, retaining diagnostics.
-- `-ManifestOnly`: write the manifest without compiling a DLL.
-- `-Foster` and `-Clang`: executable paths; default to commands on PATH.
+- `--header FILE`: a header to import; repeat to include ownership adapters.
+- `--source FILE`, `--library FILE`, `--include DIRECTORY`: sources, linkable
+  libraries, and header search paths. Repeat for multiple values.
+- `--function NAME`: select an exact C function; missing names are errors.
+- `--c-string NAME:INDEX`: explicitly promise a selected `const char *` parameter
+  is borrowed UTF-8 without retention. Indexes are zero-based.
+- `--skip-unsupported`: allow a partial import and retain its diagnostics.
+- `--manifest-only`: write the draft manifest without compiling a DLL.
+- `--clang EXE`: compiler executable; defaults to `clang` on PATH.
+- `--output FILE.dll`: required output basename.
+
+Build a reviewed manifest without rediscovering headers:
+
+```powershell
+./target/cbind.exe --manifest ./tests/fixtures/c_bridge/bindings.json `
+  --output ./target/imported/reviewed.dll
+```
+
+Paths inside reviewed manifests resolve relative to the manifest's directory.
+`foster bridge` remains a compiler command that dispatches to the same Foster
+implementation; its Rust adapter only embeds and invokes the Foster program.
+No C binding policy, JSON decoder, artifact writing, or Clang orchestration is
+implemented in that adapter.
+
+The tool captures up to 64 MiB per subprocess output stream and accepts JSON
+nesting up to 256 containers. Exceeding either limit is an error. It launches
+executables directly with separate arguments, without a command shell.
 
 Only external function declarations belonging to the explicitly requested headers are selected.
 Included headers contribute typedef definitions, not additional functions. Macros
@@ -69,11 +113,25 @@ bridges copy each field through checked scalar slots, never reinterpret Foster
 memory as a C struct. C compile-time checks verify each declared field type.
 Records are limited to 32 nesting levels and 8191 scalar slots.
 
-`long` and plain `char` are intentionally rejected: their C types do not match the
-bridge's exact fixed-width function-pointer signatures even when widths agree.
+Fixed-size array fields become `List<T>`, including nested arrays and arrays of
+value records. Each dimension must have exactly its declared length when passed
+to C; mismatches return `CError` before invoking the C function. Returned arrays
+are owned copies, and record `copy()` methods copy every element. Plain `char`
+array elements use byte values 0–255, preserving embedded NULs without assuming
+text encoding. C compile-time checks verify element types and every dimension.
 
-Unannotated pointers, arrays, unions, bitfields, callbacks, variadics,
-static/inline functions, old-style prototypes, and unknown types are reported.
+Named enums and enum typedefs generate transparent aliases such as
+`pub type CKeyboardKey = Int`. Enum values remain `C_KEY_*` constants. Enum
+parameters and fields preserve the actual C enum type in the bridge and reject
+values outside its integer representation. Unnamed numeric values and combined
+flags are allowed; the binding does not invent a closed Foster enum.
+
+Standalone `long` and plain `char` declarations are intentionally rejected: their
+C types do not match the bridge's exact fixed-width function-pointer signatures
+even when widths agree.
+
+Unannotated pointers, flexible or zero-length arrays, unions, bitfields, callbacks,
+variadics, static/inline functions, old-style prototypes, and unknown types are reported.
 By default any unsupported declaration stops the build after writing the report
 and draft manifest. Header types cannot establish retention, ownership, destructor,
 or error-handling contracts. To add resources or buffers, copy the generated

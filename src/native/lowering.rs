@@ -207,6 +207,14 @@ pub(super) fn lower_native_ir(
                         builder.switch_to_block(finish);
                     }
                     values.insert(*binding, value);
+                    // Pattern bindings can be address-taken too (for example a
+                    // list payload passed to List.borrow). Initialize their
+                    // homes before later instructions reload those operands.
+                    if let Some(home) = function.values.hint(binding.0 as usize) {
+                        builder
+                            .ins()
+                            .stack_store(pointer_type, value, homes[&home], 0);
+                    }
                 }
                 continue;
             }

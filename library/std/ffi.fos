@@ -67,6 +67,30 @@ impl CArguments {
 /// A copied result. Scalar conversions check the exact payload length.
 pub type CValue = { data: Bytes }
 impl CValue {
+    /// Copies one length-prefixed component of a compound result. Every frame
+    /// is validated, including frames after the requested index. Native pointers
+    /// never escape through this interface; lengths are bounded by the packet.
+    pub func part(self, index: Int) -> Result<CValue, CError> {
+        return Result.Error(CError { message: "negative C result component", status: 0 }) if index < 0
+        let offset = 0
+        let current = 0
+        let selected = Bytes.empty()
+        let found = false
+        while offset < self.data.length {
+            return Result.Error(CError { message: "truncated C result frame", status: 0 }) if self.data.length - offset < 8
+            let length = CHost.decode_int(self.data.slice(offset, offset + 8).hex())
+            offset = offset + 8
+            return Result.Error(CError { message: "invalid C result frame length", status: 0 }) if length < 0 || length > self.data.length - offset
+            branch { current == index -> {
+                selected = self.data.slice(offset, offset + length)
+                found = true
+            } _ -> () }
+            offset = offset + length
+            current = current + 1
+        }
+        return Result.Error(CError { message: "missing C result component", status: 0 }) if !found
+        Result.Ok(CValue { data: move selected })
+    }
     /// Checks the exact number of eight-byte scalar slots in a copied record.
     /// Counts outside 0..8191 fail without arithmetic overflow.
     pub func check_slots(self, count: Int) -> Result<(), CError> {

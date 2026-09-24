@@ -19,6 +19,7 @@
 //! | Generate random values | [Random sources](std-random.html#module-overview), [seeded generators](std-random-generator.html#module-overview), [distributions](std-random-distribution.html#module-overview), [secure randomness](std-random-secure.html#module-overview), [random selection and shuffling](std-random-sequence.html#module-overview) |
 //! | Read application inputs | [Command arguments](std-process.html#module-overview), [environment](std-env.html#module-overview), [TOML configuration](std-toml.html#module-overview) |
 //! | Compute a content digest | [SHA-256](std-crypto-sha256.html#module-overview) |
+//! | Parse or serialize JSON | [JSON trees and exact numbers](std-json.html#module-overview) |
 //!
 //! ## Choosing an API
 //!

@@ -1387,6 +1387,7 @@ pub(crate) const EMBEDDED_MODULES: &[(&str, &str)] = &[
     ("std.env", include_str!("../library/std/env.fos")),
     ("std.process", include_str!("../library/std/process.fos")),
     ("std.toml", include_str!("../library/std/toml.fos")),
+    ("std.json", include_str!("../library/std/json.fos")),
     ("std.net.tcp", include_str!("../library/std/net/tcp.fos")),
     ("std.time", include_str!("../library/std/time.fos")),
     (

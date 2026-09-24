@@ -1,162 +1,59 @@
-//! Host services for the Foster-written bridge generator.
-//! JSON syntax decoding is deliberately independent of the C manifest schema.
-use serde_json::Value;
-use std::fmt::Write;
+//! Compiler command adapter for the Foster-written C binding tool.
+//! JSON, validation, generation, file I/O, and Clang invocation live in bridge.fos.
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::sync::OnceLock;
 
-// serde_json::Value normally overwrites duplicate keys. Reject them at every
-// depth so a repeated ownership field cannot silently replace an earlier one.
-struct Json(Value);
-impl<'de> serde::Deserialize<'de> for Json {
-    fn deserialize<D: serde::Deserializer<'de>>(decoder: D) -> Result<Self, D::Error> {
-        struct Visitor;
-        impl<'de> serde::de::Visitor<'de> for Visitor {
-            type Value = Json;
-            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-                f.write_str("JSON with unique object keys")
-            }
-            fn visit_unit<E: serde::de::Error>(self) -> Result<Json, E> {
-                Ok(Json(Value::Null))
-            }
-            fn visit_bool<E: serde::de::Error>(self, v: bool) -> Result<Json, E> {
-                Ok(Json(v.into()))
-            }
-            fn visit_i64<E: serde::de::Error>(self, v: i64) -> Result<Json, E> {
-                Ok(Json(v.into()))
-            }
-            fn visit_u64<E: serde::de::Error>(self, v: u64) -> Result<Json, E> {
-                Ok(Json(v.into()))
-            }
-            fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Json, E> {
-                serde_json::Number::from_f64(v)
-                    .map(|v| Json(Value::Number(v)))
-                    .ok_or_else(|| E::custom("nonfinite JSON number"))
-            }
-            fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Json, E> {
-                Ok(Json(v.into()))
-            }
-            fn visit_string<E: serde::de::Error>(self, v: String) -> Result<Json, E> {
-                Ok(Json(v.into()))
-            }
-            fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Json, A::Error> {
-                let mut values = Vec::new();
-                while let Some(Json(value)) = seq.next_element()? {
-                    values.push(value);
-                }
-                Ok(Json(Value::Array(values)))
-            }
-            fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Json, A::Error> {
-                let mut values = serde_json::Map::new();
-                while let Some((key, Json(value))) = map.next_entry::<String, Json>()? {
-                    if values.insert(key.clone(), value).is_some() {
-                        return Err(serde::de::Error::custom(format!(
-                            "duplicate JSON field `{key}`"
-                        )));
-                    }
-                }
-                Ok(Json(Value::Object(values)))
-            }
-        }
-        decoder.deserialize_any(Visitor)
-    }
-}
-
-/// A contract validated by tools/cbind/src/bridge.fos, with generated artifacts.
 pub struct Manifest {
-    document: Value,
-    tree: String,
+    source: String,
     schema: String,
     c_source: String,
-    foster_source: String,
 }
-
-// Hex preserves arbitrary UTF-8 and delimiters without injecting Foster source.
-// Object keys have deterministic order; array order remains significant.
-fn flatten(value: &Value, parent: i64, key: &str, next: &mut i64, out: &mut String) {
-    let id = *next;
-    *next += 1;
-    let (kind, text) = match value {
-        Value::Null => ("null", String::new()),
-        Value::Bool(value) => ("bool", value.to_string()),
-        Value::Number(value) => ("number", value.to_string()),
-        Value::String(value) => ("string", value.clone()),
-        Value::Array(_) => ("array", String::new()),
-        Value::Object(_) => ("object", String::new()),
-    };
-    writeln!(
-        out,
-        "{parent}\t{}\t{kind}\t{}",
-        super::runtime::encode(key.as_bytes()),
-        super::runtime::encode(text.as_bytes())
-    )
-    .unwrap();
-    match value {
-        Value::Array(values) => {
-            for value in values {
-                flatten(value, id, "", next, out);
-            }
-        }
-        Value::Object(values) => {
-            for (key, value) in values {
-                flatten(value, id, key, next, out);
-            }
-        }
-        _ => {}
-    }
-}
-
 fn generator() -> Result<&'static crate::vm::Program, String> {
     static PROGRAM: OnceLock<Result<crate::vm::Program, String>> = OnceLock::new();
     PROGRAM.get_or_init(|| {
         let source = concat!(
             include_str!("../../tools/cbind/src/bridge.fos"),
-            "\nfunc main(args: Arguments) -> List<String> { generate_bridge(args.values[0], args.values[1]) }\n"
+            "\nfunc main(args: Arguments) -> List<String> {\nbranch args.values[0] {\n\"build\" -> [build(args.values[1], args.values[2], args.values[3])]\n_ -> generate_bridge(args.values[1], args.values[2])\n}\n}\n"
         );
         let compilation = crate::compile(source).map_err(|e| e.to_string())?;
         crate::vm::compile(&compilation).map_err(|e| e.to_string())
     }).as_ref().map_err(Clone::clone)
 }
-
-fn generate(tree: &str, path: &Path) -> Result<(String, String, String), String> {
-    let args = crate::entry::CommandArguments::new(
-        "foster bridge",
-        [tree.to_owned(), path.to_string_lossy().replace('\\', "/")],
-    );
+fn invoke(arguments: Vec<String>) -> Result<Vec<String>, String> {
+    let args = crate::entry::CommandArguments::new("foster bridge", arguments);
     let value = crate::vm::Machine::new(generator()?)
         .run_main_with_arguments(&args)
         .map_err(|e| e.to_string())?;
-    let parts = value
+    value
         .as_list()
-        .ok_or("bridge generator returned a non-list")?;
+        .ok_or("bridge generator returned a non-list")?
+        .iter()
+        .map(|value| {
+            value
+                .as_string()
+                .map(str::to_owned)
+                .ok_or_else(|| "bridge generator returned a non-string artifact".to_owned())
+        })
+        .collect()
+}
+fn generate(source: &str, path: &Path) -> Result<Vec<String>, String> {
+    let parts = invoke(vec![
+        "generate".into(),
+        source.into(),
+        path.to_string_lossy().replace('\\', "/"),
+    ])?;
     if parts.len() != 3 {
         return Err("invalid bridge generator response".into());
     }
-    let text = |index: usize| {
-        parts[index]
-            .as_string()
-            .map(str::to_owned)
-            .ok_or_else(|| "bridge generator returned a non-string artifact".to_owned())
-    };
-    Ok((text(0)?, text(1)?, text(2)?))
+    Ok(parts)
 }
-
 impl Manifest {
     pub fn parse(source: &str) -> Result<Self, String> {
-        Self::for_library(source, Path::new(""))
-    }
-    fn for_library(source: &str, path: &Path) -> Result<Self, String> {
-        let Json(document) = serde_json::from_str(source).map_err(|e| e.to_string())?;
-        let mut tree = String::new();
-        flatten(&document, -1, "", &mut 0, &mut tree);
-        let (schema, c_source, foster_source) = generate(&tree, path)?;
+        let parts = generate(source, Path::new(""))?;
         Ok(Self {
-            document,
-            tree,
-            schema,
-            c_source,
-            foster_source,
+            source: source.into(),
+            schema: parts[0].clone(),
+            c_source: parts[1].clone(),
         })
     }
     /// Deterministic contract identity, computed in Foster; not a security signature.
@@ -167,78 +64,60 @@ impl Manifest {
         Ok(self.c_source.clone())
     }
     pub fn foster_source(&self, path: &Path) -> Result<String, String> {
-        Ok(generate(&self.tree, path)?.2)
-    }
-    // Only used after Foster has checked the entire contract, including build paths.
-    fn paths(&self, key: &str) -> impl Iterator<Item = &str> {
-        self.document
-            .get(key)
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .map(|value| value.as_str().expect("Foster validated build path"))
+        Ok(generate(&self.source, path)?[2].clone())
     }
 }
-
-/// Rebuild explicitly; loading an artifact never invokes a compiler or generator.
+/// Dispatch the existing compiler command to the same Foster implementation as cbind.
 pub fn build(manifest_path: &Path, output: &Path, compiler: &Path) -> Result<PathBuf, String> {
     if !cfg!(all(windows, target_arch = "x86_64")) {
         return Err("C bridges currently require Windows x86-64".into());
     }
-    let manifest_path = manifest_path.canonicalize().map_err(|e| e.to_string())?;
-    let root = manifest_path.parent().unwrap();
-    let output = std::path::absolute(output).map_err(|e| e.to_string())?;
-    if output.extension().and_then(|value| value.to_str()) != Some("dll") {
-        return Err("C bridge output must have a .dll extension".into());
+    let parts = invoke(vec![
+        "build".into(),
+        manifest_path.to_string_lossy().into_owned(),
+        output.to_string_lossy().into_owned(),
+        compiler.to_string_lossy().into_owned(),
+    ])?;
+    if parts.len() != 1 {
+        return Err("invalid bridge build response".into());
     }
-    let manifest = Manifest::for_library(
-        &std::fs::read_to_string(&manifest_path).map_err(|e| e.to_string())?,
-        &output,
-    )?;
-    std::fs::create_dir_all(output.parent().unwrap()).map_err(|e| e.to_string())?;
-    let source = output.with_extension("bridge.c");
-    std::fs::write(&source, &manifest.c_source).map_err(|e| e.to_string())?;
-    let mut command = Command::new(compiler);
-    command
-        .current_dir(root)
-        .args([
-            "--target=x86_64-pc-windows-msvc",
-            "-std=c11",
-            "-shared",
-            "-Werror=implicit-function-declaration",
-            "-Werror=incompatible-pointer-types",
-            "-Werror=incompatible-function-pointer-types",
-            "-o",
-        ])
-        .arg(&output)
-        .arg(&source)
-        .arg("-I")
-        .arg(root);
-    for include in manifest.paths("include_directories") {
-        command.arg("-I").arg(root.join(include));
-    }
-    for path in manifest.paths("sources").chain(manifest.paths("libraries")) {
-        command.arg(root.join(path));
-    }
-    let result = command
-        .output()
-        .map_err(|e| format!("cannot run C compiler `{}`: {e}", compiler.display()))?;
-    if !result.status.success() {
-        return Err(format!(
-            "C bridge compilation failed:\n{}\n{}",
-            String::from_utf8_lossy(&result.stdout),
-            String::from_utf8_lossy(&result.stderr)
-        ));
-    }
-    std::fs::write(output.with_extension("fos"), &manifest.foster_source)
-        .map_err(|e| e.to_string())?;
-    std::fs::write(output.with_extension("schema"), manifest.identity())
-        .map_err(|e| e.to_string())?;
-    Ok(output)
+    Ok(PathBuf::from(&parts[0]))
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn large_array_results_decode_in_separate_statements() {
+        let manifest = Manifest::parse(r#"{"abi":1,"headers":[],"records":[{"name":"Large","c_type":"Large","fields":[{"name":"items","type":{"array":"f32","length":80}}]}],"operations":[{"name":"large","symbol":"large","parameters":["i32"],"parameter_names":["slot0"],"result":{"record":"Large"}}]}"#).unwrap();
+        let source = manifest.foster_source(Path::new("large.dll")).unwrap();
+        assert!(source.contains("c_large(slot0_: Int)"));
+        assert!(source.contains("let slot79 = (try (try value.slot(79)).floating())"));
+        assert!(source.contains("Result.Ok(CLarge { items: [slot0, slot1"));
+        crate::compile(&(source + "\nfunc main() -> Int { 42 }")).unwrap();
+    }
+    #[test]
+    fn fixed_arrays_and_enum_aliases_generate_checked_value_bindings() {
+        let manifest = Manifest::parse(r#"{"abi":1,"headers":[],"enums":[{"name":"Mode","c_type":"enum Mode"}],"records":[{"name":"Array","c_type":"Array","fields":[{"name":"grid","type":{"array":{"array":"f32","length":2},"length":2}},{"name":"mode","type":{"enum":"Mode"}}]}],"operations":[{"name":"roundtrip","symbol":"roundtrip","parameters":[{"record":"Array"}],"result":{"record":"Array"}}]}"#).unwrap();
+        let source = manifest.foster_source(Path::new("sample.dll")).unwrap();
+        let compiled = crate::compile(&(source.clone() + "\nfunc main() -> Int { let a = CArray { grid: [[1.0,2.0],[3.0,4.0]], mode: 3 }\nlet b = a.copy()\nassert(b.grid[1][0] == 3.0)\n42 }")).unwrap();
+        assert_eq!(crate::vm::run(&compiled).unwrap().to_string(), "42");
+        assert!(source.contains("pub type CMode = Int"));
+        assert!(source.contains("C array length mismatch"));
+        assert!(manifest.generate().unwrap().contains("float (*)[2][2]"));
+        for ty in [
+            r#"{"array":"i32","length":0}"#,
+            r#"{"array":"i32","length":-1}"#,
+            r#"{"array":"i32","length":8192}"#,
+            r#"{"array":"void","length":2}"#,
+            r#"{"array":{"array":"i32","length":100},"length":100}"#,
+            r#"{"enum":"Missing"}"#,
+        ] {
+            let input = format!(
+                r#"{{"abi":1,"headers":[],"records":[{{"name":"A","c_type":"A","fields":[{{"name":"x","type":{ty}}}]}}],"operations":[]}}"#
+            );
+            assert!(Manifest::parse(&input).is_err(), "{ty}");
+        }
+    }
     #[test]
     fn json_adapter_preserves_contract_data_and_rejects_duplicate_keys() {
         for source in [
@@ -246,7 +125,7 @@ mod tests {
             r#"{"operations":[{"name":"a","name":"b"}]}"#,
         ] {
             let error = Manifest::parse(source).err().expect("duplicate JSON key");
-            assert!(error.contains("duplicate JSON field"), "{error}");
+            assert!(error.contains("duplicate object key"), "{error}");
         }
         let first = Manifest::parse(r#"{"abi":1,"headers":[],"operations":[]}"#).unwrap();
         let reordered =
@@ -301,6 +180,40 @@ mod tests {
         let manifest = Manifest::parse(r#"{"abi":1,"headers":[],"operations":[{"name":"toggle","symbol":"toggle","parameters":["bool"],"result":"bool"}]}"#).unwrap();
         let source = manifest.foster_source(Path::new("C:/fixture.dll")).unwrap();
         crate::compile(&(source + "\nfunc main() -> Int { 42 }\n")).unwrap();
+    }
+    #[test]
+    fn constants_and_parameter_metadata_generate_valid_foster() {
+        let manifest = Manifest::parse(r#"{
+            "abi":1,"headers":[],
+            "records":[{"name":"Point","c_type":"Point","documentation":"A point.","fields":[{"name":"x","type":"f64","documentation":"Horizontal coordinate."}]}],
+            "constants":[
+                {"name":"ORIGIN","type":{"record":"Point"},"value":{"x":0}},
+                {"name":"ANSWER","type":"i64","value":42},
+                {"name":"TEXT","type":"string","value":"quote \" and newline\n"}
+            ],
+            "operations":[{"name":"names","symbol":"names","parameters":["i32","i32","i32","i32","i32"],"parameter_names":["arguments","value","result","type","c_type"],"result":"void","documentation":"First line.\nSecond line."}]
+        }"#).unwrap();
+        let source = manifest.foster_source(Path::new("unused.dll")).unwrap();
+        assert!(
+            source
+                .contains("arguments_: Int, value_: Int, result_: Int, c_type: Int, c_c_type: Int")
+        );
+        assert!(source.contains("/// First line.\n/// Second line."));
+        let program = crate::compile(
+            &(source + "\nfunc main() -> Int { assert(C_ORIGIN().x == 0.0)\nC_ANSWER }\n"),
+        )
+        .unwrap();
+        assert_eq!(crate::vm::run(&program).unwrap().to_string(), "42");
+        for extra in [
+            r#""constants":[{"name":"N","type":"i64","value":1.5}]"#,
+            r#""constants":[{"name":"N","type":"i64","value":"42"}]"#,
+            r#""constants":[{"name":"N","type":"bytes","value":42}]"#,
+            r#""constants":[{"name":"N","type":"i64","value":42,"documentation":0}]"#,
+        ] {
+            let input = format!(r#"{{"abi":1,"headers":[],"operations":[],{extra}}}"#);
+            assert!(Manifest::parse(&input).is_err(), "{input}");
+        }
+        assert!(Manifest::parse(r#"{"abi":1,"headers":[],"operations":[{"name":"x","symbol":"x","parameters":["i32"],"parameter_names":["x","y"],"result":"void"}]}"#).is_err());
     }
     #[test]
     fn validates_contract_before_generating_code() {

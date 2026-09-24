@@ -764,7 +764,9 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
 
     fn argument_group(&self, expression: ExprId) -> Option<crate::ast::GroupPath> {
         match self.checker.hir.expressions[expression] {
-            hir::Expr::Reference(place) => Some(self.place_group(place)),
+            hir::Expr::Reference(place) | hir::Expr::MoveOut(place) => {
+                Some(self.place_group(place))
+            }
             hir::Expr::Name(ResolvedName::Local(local)) => Some(self.local_group(local)),
             _ => self
                 .checker

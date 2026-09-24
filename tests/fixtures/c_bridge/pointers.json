@@ -1,0 +1,30 @@
+{
+  "abi": 1,
+  "headers": ["pointers.h"],
+  "sources": ["pointers.c"],
+  "records": [{"name":"Pair","c_type":"Pair","fields":[{"name":"x","type":"i32"},{"name":"y","type":"i32"}]}],
+  "resources": [{"name":"Value","c_type":"OwnedValue","destroy":"destroy_value","by_value":true,"valid":"valid_value"}],
+  "operations": [
+    {"name":"fill_bytes","symbol":"fill_bytes","parameters":[{"buffer":"u8","length":"i32","output":true}],"result":"void"},
+    {"name":"sum_pairs","symbol":"sum_pairs","parameters":[{"buffer":{"record":"Pair"},"length":"i32"}],"result":"i32"},
+    {"name":"mutate_pairs","symbol":"mutate_pairs","parameters":[{"buffer":{"record":"Pair"},"length":"i32","mutable":true}],"result":"void"},
+    {"name":"fill_pairs","symbol":"fill_pairs","parameters":[{"buffer":{"record":"Pair"},"length":"i32","output":true}],"result":"void"},
+    {"name":"set_value","symbol":"set_value","receiver":"Value","receiver_pointer":true,"parameters":["i32"],"result":"void"},
+    {"name":"borrowed_text","symbol":"borrowed_text","result":"c_string","borrowed_result":true,"max_length":64},
+    {"name":"null_text","symbol":"null_text","result":"c_string","borrowed_result":true,"max_length":64},
+    {"name":"unterminated_text","symbol":"unterminated_text","result":"c_string","borrowed_result":true,"max_length":4},
+    {"name":"owned_text","symbol":"owned_text","result":"c_string","release":"release_text","max_length":64},
+    {"name":"owned_bytes","symbol":"owned_bytes","result":"bytes","length_type":"i32","release":"release_bytes"},
+    {"name":"bad_bytes","symbol":"bad_bytes","result":"bytes","length_type":"i32","release":"release_bytes"},
+    {"name":"sum_bytes","symbol":"sum_bytes","parameters":[{"buffer":"u8","length":"i32"}],"result":"i32"},
+    {"name":"mutate_bytes","symbol":"mutate_bytes","parameters":[{"buffer":"u8","length":"i32","mutable":true}],"result":"i32"},
+    {"name":"parse_outputs","symbol":"parse_outputs","parameters":["c_string",{"out":"i32"},{"out":{"record":"Pair"}}],"result":"i32"},
+    {"name":"update_pair","symbol":"update_pair","parameters":[{"inout":{"record":"Pair"}}],"result":"void"},
+    {"name":"single_output","symbol":"single_output","parameters":[{"out":"i32"}],"result":"void"},
+    {"name":"create_value","symbol":"create_value","parameters":["i32"],"result":"void","creates":"Value"},
+    {"name":"value_from_bytes","symbol":"value_from_bytes","parameters":[{"buffer":"u8","length":"i32"}],"result":"void","creates":"Value"},
+    {"name":"read_value","symbol":"read_value","receiver":"Value","result":"i32"},
+    {"name":"live_values","symbol":"live_values","result":"i32"},
+    {"name":"released_buffers","symbol":"released_buffers","result":"i32"}
+  ]
+}

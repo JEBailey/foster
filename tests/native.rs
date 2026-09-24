@@ -310,6 +310,51 @@ func main() -> Int {
 }
 
 #[test]
+fn initializes_address_taken_pattern_binding_homes() {
+    let compilation = foster::compile(
+        r#"
+import core.list
+import core.option
+enum Tree = Empty | Array(List<Int>)
+func total(tree: Tree) -> Int {
+    branch tree {
+        Tree.Empty -> 0
+        Tree.Array(values) -> {
+            let result = 0
+            let index = 0
+            while index < values.length {
+                branch values.borrow(index) {
+                    Option.Some(value) -> { result = result + value }
+                    Option.None -> panic("missing element")
+                }
+                index = index + 1
+            }
+            result
+        }
+    }
+}
+func main() -> Int { total(Tree.Array([])) + total(Tree.Array([20, 22])) }
+"#,
+    )
+    .unwrap();
+    let executable = std::env::temp_dir().join(format!(
+        "foster-native-pattern-home-{}{}",
+        std::process::id(),
+        std::env::consts::EXE_SUFFIX
+    ));
+    build_executable(&compilation, &executable, CompileOptions::default()).unwrap();
+    let output = std::process::Command::new(&executable).output().unwrap();
+    let _ = std::fs::remove_file(&executable);
+    assert!(
+        output.status.success(),
+        "{:?}: {}",
+        output.status,
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), "42");
+}
+
+#[test]
 fn lowers_enum_alternatives_with_owned_payloads() {
     let compilation = foster::compile(
         r#"

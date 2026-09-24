@@ -1,0 +1,36 @@
+func main() -> Result<Int, CError> {
+    assert((try c_borrowed_text()) == "café")
+    assert((try c_owned_text()) == "ok")
+    assert((try c_owned_bytes()).hex() == "002aff")
+    branch c_null_text() { Result.Error(_) -> () Result.Ok(_) -> panic("null string accepted") }
+    branch c_unterminated_text() { Result.Error(_) -> () Result.Ok(_) -> panic("unbounded string scan") }
+    branch c_bad_bytes() { Result.Error(_) -> () Result.Ok(_) -> panic("negative output length accepted") }
+    assert((try c_released_buffers()) == 3)
+    let data = Bytes.from_hex("002aff").unwrap_or(Bytes.empty())
+    assert((try c_sum_bytes(data)) == 297)
+    assert((try c_sum_bytes(Bytes.empty())) == 0)
+    let changed = try c_mutate_bytes(data)
+    assert(changed.result == 3 && changed.out0.hex() == "ffd500")
+    assert(data.hex() == "002aff")
+    let outputs = try c_parse_outputs("abc")
+    assert(outputs.result == 7 && outputs.out1 == 3 && outputs.out2.x + outputs.out2.y == 42)
+    let pair = CPair { x: 20, y: 11 }
+    let updated = try c_update_pair(pair)
+    assert(updated.x == 22 && updated.y == 22 && pair.x == 20)
+    assert((try c_single_output()) == 42)
+    assert((try c_live_values()) == 0)
+    :owned {
+        let value = try c_create_value(42)
+        assert((try c_live_values()) == 1 && (try c_read_value(value)) == 42)
+        try value.close()
+        try value.close()
+        branch c_read_value(value) { Result.Error(_) -> () Result.Ok(_) -> panic("closed owner accepted") }
+    }
+    :borrowed_buffer {
+        let value = try c_value_from_bytes(data)
+        assert((try c_read_value(value)) == 297)
+    }
+    branch c_create_value(-1) { Result.Error(_) -> () Result.Ok(_) -> panic("invalid value resource accepted") }
+    assert((try c_live_values()) == 0)
+    Result.Ok(42)
+}

@@ -83,6 +83,7 @@ share a navigation entry but retain separate signatures and descriptions.
 | Time and calendars | [std.time](std/time.fos), [civil](std/time/civil.fos), [zone](std/time/zone.fos), [format](std/time/format.fos) |
 | Random values | [std.random](std/random.fos), [generator](std/random/generator.fos), [distribution](std/random/distribution.fos), [secure](std/random/secure.fos), [sequence](std/random/sequence.fos) |
 | Configuration | [std.toml](std/toml.fos) |
+| JSON trees, parsing, and serialization | [std.json](std/json.fos), [usage guide](../docs/json.md) |
 | SHA-256 digests | [std.crypto.sha256](std/crypto/sha256.fos) |
 
 [core.unicode](core/unicode.fos) and its generated tables support the public text
