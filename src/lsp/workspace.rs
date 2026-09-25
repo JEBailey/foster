@@ -1897,21 +1897,9 @@ pub(super) fn function_signature(
             })
             .collect::<Vec<_>>(),
     );
-    let group_entries = function
-        .groups
-        .iter()
-        .map(|group| {
-            format!(
-                "{}: group {}",
-                group.name,
-                display_type_expr(&group.element)
-            )
-        })
-        .collect::<Vec<_>>();
-    let groups = square_parameters(&group_entries);
     let name = function.name.rsplit('.').next().unwrap_or(&function.name);
     let signature = format!(
-        "{}func {name}{generics}{groups}({parameters}) -> {result}{effects}",
+        "{}func {name}{generics}({parameters}) -> {result}{effects}",
         if function.public { "pub " } else { "" },
     );
     match &function.owner {
@@ -2095,14 +2083,6 @@ fn angle_parameters(parameters: &[String]) -> String {
         String::new()
     } else {
         format!("<{}>", parameters.join(", "))
-    }
-}
-
-fn square_parameters(parameters: &[String]) -> String {
-    if parameters.is_empty() {
-        String::new()
-    } else {
-        format!("[{}]", parameters.join(", "))
     }
 }
 

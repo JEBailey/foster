@@ -57,6 +57,9 @@ macro_rules! direct_builtin_handlers {
 }
 
 direct_builtin_handlers!(
+    CCallbackRelease,
+    CCallbackPoll,
+    CCallbackError,
     ProcessExchange,
     ProcessRelease,
     ProcessWait,
@@ -88,6 +91,17 @@ direct_builtin_handlers!(
     ByteBufferWithCapacity,
     ByteBufferSnapshot,
 );
+
+#[allow(non_snake_case)]
+pub(crate) fn CCallbackNew(
+    _receiver: Value,
+    _arguments: &[Value],
+    _string_record: Option<crate::hir::RecordId>,
+) -> Result<Value, RuntimeError> {
+    Err(RuntimeError::runtime(
+        "callback creation requires a VM execution context",
+    ))
+}
 
 #[allow(non_snake_case)]
 pub(crate) fn ByteBufferPush(
@@ -199,6 +213,21 @@ fn dispatch_core(
     string_record: Option<crate::hir::RecordId>,
 ) -> Result<Value, RuntimeError> {
     match (builtin, arguments) {
+        (Builtin::CCallbackRelease, [Value::Integer(token)]) => {
+            crate::foreign::runtime::callbacks::release(*token).map_err(RuntimeError::runtime)?;
+            Ok(Value::Unit)
+        }
+        (Builtin::CCallbackPoll | Builtin::CCallbackError, [Value::Integer(token)]) => {
+            let result = if builtin == Builtin::CCallbackPoll {
+                crate::foreign::runtime::callbacks::poll(*token)
+            } else {
+                crate::foreign::runtime::callbacks::take_error(*token)
+            };
+            Ok(Value::string(
+                string_record,
+                crate::foreign::runtime::response(result.map(|()| vec![])),
+            ))
+        }
         (Builtin::ProcessReserve, []) => Ok(Value::Integer(crate::process::reserve())),
         (Builtin::ProcessWait, [Value::Integer(token)]) => {
             let token = *token;

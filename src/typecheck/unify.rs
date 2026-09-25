@@ -75,6 +75,17 @@ impl Checker<'_> {
         let left = self.resolved(left);
         let right = self.resolved(right);
         self.check_callable_result_origins(&left, &right, function)?;
+        // Callable storage names are bound by their parameter positions, not by
+        // the spelling chosen in another function's signature.
+        let groups = left
+            .parameter_types()
+            .zip(right.parameter_types())
+            .filter_map(|(expected, actual)| match (expected, actual) {
+                (Ty::Reference(a, _), Ty::Reference(b, _)) => Some((b.clone(), a.clone())),
+                _ => None,
+            })
+            .collect::<HashMap<_, _>>();
+        let right = super::calls::substitute_groups(right, &groups);
         match (left, right) {
             (Ty::Variable(a), Ty::Variable(b)) if a == b => Ok(()),
             (Ty::Variable(variable), ty) | (ty, Ty::Variable(variable)) => {

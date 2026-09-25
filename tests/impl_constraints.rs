@@ -1,5 +1,29 @@
 //! Implementation bounds use ordinary structural member conformance.
 
+#[test]
+fn function_bounds_preserve_concrete_handler_types() {
+    runs(
+        r#"
+pub type Handler = { pub func event(self, n: Int) -> Int [mut self] }
+pub type Counter = { count: Int }
+impl Counter { pub func event(self, n: Int) -> Int [mut self.count] { self.count = self.count + n
+    self.count } }
+func invoke<H & Handler>(handler: H, n: Int) -> Int [mut handler] { handler.event(n) }
+func main() -> Int { let handler = Counter { count: 20 }
+    invoke(handler, 22) }
+"#,
+        42,
+    );
+    let invalid = foster::compile(
+        "type Handler = { pub func event(self) -> Int }\nfunc invoke<H & Handler>(handler: H) -> Int { handler.event() }\nfunc main() -> Int { invoke(42) }",
+    );
+    assert!(invalid.is_err());
+    assert!(
+        foster::compile("type A = {}\nimpl A { func f<T & A>(self, value: T) {} }\nfunc main() {}")
+            .is_err()
+    );
+}
+
 fn runs(source: &str, expected: i64) {
     let compilation = foster::compile(source).unwrap();
     assert_eq!(
@@ -46,7 +70,7 @@ impl Box<T & Copy> {
         duplicate(self.value)
     }
 }
-func inspect[g: group Box<Int>](value: ref[g] Box<Int>) -> Int [read g] { value.copied() }
+func inspect(value: ref[value] Box<Int>) -> Int [read value] { value.copied() }
 func main() -> Int {
     let container = Box { value: 42 }
     inspect(ref container)

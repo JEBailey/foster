@@ -344,10 +344,12 @@ impl<'a> Checker<'a> {
                         .map(|(index, name)| (name.as_str(), index))
                         .collect::<HashMap<_, _>>();
                     let groups = definition
-                        .groups
+                        .parameters
                         .iter()
                         .enumerate()
-                        .map(|(index, group)| (group.name.as_str(), index))
+                        .map(|(index, parameter)| {
+                            (self.hir.locals[parameter.local].name.as_str(), index)
+                        })
                         .collect::<HashMap<_, _>>();
                     let signature = definition
                         .parameters
@@ -653,13 +655,30 @@ impl<'a> Checker<'a> {
                     function.name
                 )));
             }
+            let modes = function_parameter_modes(self.hir, function_id);
+            let parameters = parameters
+                .into_iter()
+                .zip(&function.parameters)
+                .zip(&modes)
+                .map(|((ty, parameter), mode)| {
+                    let name = &self.hir.locals[parameter.local].name;
+                    if *mode == crate::ast::ParameterMode::Borrow
+                        && crate::hir::queries::type_exposes_group(
+                            function.return_type.as_ref(),
+                            name,
+                        )
+                        && !matches!(ty, Ty::Reference(..))
+                    {
+                        Ty::Reference(name.clone(), Box::new(ty))
+                    } else {
+                        ty
+                    }
+                })
+                .collect();
             self.functions.insert(
                 function_id,
                 Signature {
-                    parameters: crate::types::Parameter::from_parts(
-                        parameters,
-                        function_parameter_modes(self.hir, function_id),
-                    ),
+                    parameters: crate::types::Parameter::from_parts(parameters, modes),
                     result,
                 },
             );

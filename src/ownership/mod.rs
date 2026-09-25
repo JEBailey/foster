@@ -19,10 +19,10 @@ pub use mir::{
 };
 
 /// Current source-language revision; does not select older semantics.
-pub const LANGUAGE_VERSION: u16 = 15;
+pub const LANGUAGE_VERSION: u16 = 17;
 
 /// Current ownership-contract revision; does not select older semantics.
-pub const MODEL_VERSION: u16 = 3;
+pub const MODEL_VERSION: u16 = 5;
 
 use crate::error::FosterError;
 use crate::hir::PackageHir;

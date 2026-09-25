@@ -74,6 +74,8 @@ Options:
 - `--function NAME`: select an exact C function; missing names are errors.
 - `--c-string NAME:INDEX`: explicitly promise a selected `const char *` parameter
   is borrowed UTF-8 without retention. Indexes are zero-based.
+- `--contracts FILE.json`: merge reviewed `operations`, `resources`, and `exclude`
+  lists into header discovery. Referenced functions must exist in the selection.
 - `--skip-unsupported`: allow a partial import and retain its diagnostics.
 - `--manifest-only`: write the draft manifest without compiling a DLL.
 - `--clang EXE`: compiler executable; defaults to `clang` on PATH.
@@ -100,7 +102,8 @@ Only external function declarations belonging to the explicitly requested header
 Included headers contribute typedef definitions, not additional functions. Macros
 and conditional declarations use Clang's preprocessing results. Duplicate function
 declarations produce one binding. Typedef chains resolve to supported scalar types:
-`_Bool`, signed/unsigned char, short, int, long long, float, double, and void results.
+`_Bool`, plain char, signed/unsigned char, short, int, long, long long, float,
+double, and void results (including unsigned integer variants).
 Complete structs containing supported scalars or other supported structs are
 imported automatically, including typedef aliases, anonymous typedef structs,
 and packed structs. Both arguments and results are supported. A C `Color`
@@ -126,18 +129,41 @@ parameters and fields preserve the actual C enum type in the bridge and reject
 values outside its integer representation. Unnamed numeric values and combined
 flags are allowed; the binding does not invent a closed Foster enum.
 
-Standalone `long` and plain `char` declarations are intentionally rejected: their
-C types do not match the bridge's exact fixed-width function-pointer signatures
-even when widths agree.
+Plain `char`, `long`, and `unsigned long` retain their exact C types in bridge
+signatures and fields, rather than substituting same-width integer types. All
+three use Foster `Int`: char preserves byte values 0–255, and long inputs are
+checked against the C target's limits (32-bit long on Windows x64). The same
+rules apply to constants, array fields, reviewed output/buffer parameters, and
+callbacks. No additional Foster primitive types are needed. Extended types such
+as `long double`, complex numbers, and 128-bit integers remain unsupported.
 
-Unannotated pointers, flexible or zero-length arrays, unions, bitfields, callbacks,
+Unannotated pointers, flexible or zero-length arrays, unions, bitfields, unreviewed callbacks,
 variadics, static/inline functions, old-style prototypes, and unknown types are reported.
 By default any unsupported declaration stops the build after writing the report
 and draft manifest. Header types cannot establish retention, ownership, destructor,
-or error-handling contracts. To add resources or buffers, copy the generated
-manifest to a maintained file and supply reviewed operations/resources following
-[C integration](../../docs/c-integration.md), then run `foster bridge` on that file.
+or error-handling contracts. Add reviewed operations/resources/callbacks with `--contracts`
+following [C integration](../../docs/c-integration.md), or build a maintained
+manifest directly. Resource contracts remove their copyable value records,
+dependent records, and unreviewed operations using those records. Destructors and
+validity functions are handled by the owner rather than exposed as raw operations.
+The [raylib contracts](../../examples/raylib/contracts.json) cover file strings,
+binary data, and owned Images, including pointer-based image mutation.
 The importer does not guess these contracts or modify an existing Foster module.
+
+Callback/context pairs can be reviewed with `callbacks` definitions and callback
+operation parameters. Add `c_type` for named callback typedefs so their report
+entries are resolved after C type validation. For a complete executable fixture:
+
+```powershell
+./target/cbind.exe --header ./tests/fixtures/c_bridge/callbacks.h `
+  --source ./tests/fixtures/c_bridge/callbacks.c `
+  --contracts ./tests/fixtures/c_bridge/callbacks.contracts.json `
+  --output ./target/imported/callbacks.dll
+```
+
+The generated methods support borrowed synchronous handlers, owned registrations,
+and explicitly polled background notifications; see
+[callback contracts](../../docs/c-integration.md#callbacks) for lifetime and signature limits.
 
 See the [raylib example](../../examples/raylib/README.md) for a working graphics
 UI built from the real raylib header, including returned `Color`/`Vector2` values

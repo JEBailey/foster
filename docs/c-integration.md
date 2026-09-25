@@ -21,8 +21,8 @@ or resource contracts rather than inferring ownership from C types.
 Binding manifests, C sources, headers, and DLLs are trusted native code. The
 manifest author must accurately describe allocation, cleanup, and pointer
 contracts. Normal Foster callers never receive a pointer or an editable resource
-token. C functions must not unwind, use `longjmp` across Foster frames, call back
-into Foster, or retain temporary input pointers.
+token. C functions must not unwind, use `longjmp` across Foster frames, invoke
+unregistered callbacks, or retain temporary input pointers.
 
 ## Build and use
 
@@ -138,7 +138,8 @@ depends on live children need a more specific ownership adapter.
 | `{"record":"Color"}` | `CColor` | Struct by value, copied field by field. Nested value records are supported. |
 | `{"array":"f32","length":4}` | `List<Float>` | Fixed-size record field; exact length checked before C runs. May nest arrays or contain value records. |
 | `{"enum":"Mode"}` | `CMode` (alias of `Int`) | Named C enum, preserving its C type and checking its integer range. |
-| `char` | `Int` | Plain C char storage as a byte value 0–255, used for character array fields. |
+| `char` | `Int` | Plain C char storage as a byte value 0–255, including standalone parameters/results and array fields. |
+| `long`, `ulong` | `Int` | Exact C `long` / `unsigned long`, range checked using C target limits; 32-bit on Windows x64. |
 | `bytes` parameter | `Bytes` | Two C parameters: `const uint8_t *`, `size_t`. Input is copied and valid only during the call. |
 | `c_string` parameter | `String` | One `const char *`. Copied, NUL-terminated UTF-8; interior NUL and invalid encoding are rejected before C runs. |
 | `bytes` result | `Bytes` | C returns `uint8_t *` and accepts a final `size_t *` output-length parameter. Required `release` names its deallocator. Foster copies the bytes, then releases the C allocation. |
@@ -205,6 +206,121 @@ ordered arrays. Whitespace and object-key order do not affect the ID. Explicit
 optional fields remain part of the contract, so adding a default-valued field
 can change it. Regenerate the bridge and bindings together after contract edits.
 
+## Reviewed pointer and resource contracts
+
+Header imports accept `--contracts FILE.json`. The file contains `operations`,
+`resources`, optional `callbacks`, and an optional `exclude` array of function names. Operations use the
+same schema as a manifest and replace discovered operations by name/symbol.
+Ownership and retention must be reviewed; the importer cannot infer them from a
+pointer type. All pointer parameters below are valid only during the C call and
+must not be retained by C.
+
+| Contract | Foster interface | C interface |
+| --- | --- | --- |
+| `{"out":"i32"}` | No input; returned output value | Zero-initialized `int32_t *` |
+| `{"inout":{"record":"Point"}}` | Copied `CPoint` input and updated output | `Point *` to a temporary copy |
+| `{"buffer":"u8","length":"i32"}` | `Bytes` input | `const uint8_t *`, `int32_t` element count |
+| `{"buffer":"f32","length":"size"}` | `List<Float>` input | `const float *`, `size_t` element count |
+| Buffer with `"mutable":true` | Input copy plus updated output | Writable temporary buffer |
+| Buffer with `"output":true` | `Int` capacity input plus output | Zero-initialized writable buffer |
+
+Buffer length types are `i32`, `u32`, or `size`. Byte, char, and void buffers use
+`Bytes`; other supported scalar, enum, and value-record elements use `List<T>`.
+Output-only buffers return the full capacity, including untouched zeroed elements;
+use an explicit output parameter for a library's actual written count. Negative,
+oversized, or unrepresentable inputs fail before calling C. All temporary native
+allocations are freed on success and failure. Mutating a copy leaves the caller's
+original Foster value unchanged. Array elements must be wrapped in a value record.
+
+One output is returned directly. Multiple outputs produce `CResult_<name>` with
+`result` for a non-void C return and `outN` for each output parameter, where N is
+its zero-based logical manifest parameter index. Components are copied and framed
+with checked lengths; no native pointer is exposed.
+
+A `c_string` result requires `max_length` (1 through 16777216, including the
+terminator) and exactly one of `borrowed_result:true` or `release:"deallocator"`.
+It copies through the first NUL within that bound, then validates UTF-8. Null and
+unterminated strings are errors. Owned strings are released even on failure.
+The bound limits scanning; the reviewed C contract must guarantee readable memory
+through a terminator or that bound. A `bytes` result can select `length_type` for
+its final output-length pointer and can declare `borrowed_result:true` instead of
+a deallocator. Output allocation sizes remain bounded by the bridge packet limit.
+
+Resource declarations can set `by_value:true` for owning C structs such as raylib
+`Image`. The bridge boxes the returned struct and calls its by-value `destroy`
+function exactly once before freeing the box. An optional `valid` predicate
+rejects invalid constructors after calling their destructor. Such a destructor
+must accept invalid/empty values. These owners cannot also specify a custom
+fallible `close` contract. Operations normally pass the boxed value by value;
+`receiver_pointer:true` passes its address for native mutation. Pointer owners
+continue to pass their native pointer. Owners support explicit idempotent close
+and scope cleanup through `CResource`; copying a value record never creates an owner.
+
+See `examples/raylib/contracts.json` and `examples/raylib/resources.fos` for an
+Image creation, resize, PNG export/import, and cleanup example.
+
+## Callbacks
+
+A reviewed `callbacks` entry describes copied argument values, the handler method,
+and delivery. Each corresponding operation parameter consumes two adjacent C
+parameters: the function pointer and `void *context`. The callback itself takes
+that context as its last parameter. For example:
+
+```json
+"callbacks": [
+  {"name":"Visitor", "method":"visit", "parameters":["i32"],
+   "result":"i32", "delivery":"direct", "failure":"zero"}
+]
+```
+
+When importing a named C callback typedef, add `"c_type":"Visitor"` to its
+callback definition. The importer verifies that the typedef was discovered and
+the generated C checks its complete function-pointer type. This resolves the
+typedef's unsupported-report entry as well as reviewed operations using it.
+
+An operation parameter `{"callback":"Visitor"}` generates a generic Foster
+handler parameter. The handler supplies `visit(self, value: Int) -> Int`; it can
+mutate its own state. The wrapper borrows it until the C call returns. C must not
+retain either the callback or its context after that call.
+
+`{"callback":"Visitor", "retained":true}` requires an operation with `creates`
+and an owning resource contract. Call the generated constructor with
+`move handler`. The returned resource owns the handler, rejects borrowed captures,
+and cannot cross a remote boundary. Its destructor must unregister and quiesce
+native callbacks before returning. Explicit close and scope cleanup destroy the
+native registration first, then release the handler. Failed registration releases
+the handler too.
+
+`"delivery":"direct"` invokes Foster only on the registering thread. Wrong-thread
+and recursive calls fail without executing the handler. A non-void result requires
+`"failure":"zero"`: C receives an all-zero value if the handler fails; the enclosing
+wrapper or `check_callbacks()` reports the failure as `CError`. Foster failures do
+not unwind across the C boundary.
+
+`"delivery":"queued"` requires a retained, void-returning callback. C threads copy
+events into a bounded queue (4096 events, 16 MiB total). Call
+`registration.poll_callbacks()` on the owner thread to deliver the snapshot pending
+at entry. Handler failures are reported after processing that snapshot; later events
+remain for the next poll. Queue overflow is reported and the overflowing event is
+not enqueued. This is explicit polling, not an implicit event loop.
+
+Callbacks currently accept scalars, enums, and copied value records (including
+array fields). Pointer arguments, borrowed callback buffers, context-free callbacks,
+multiple callback pairs in one operation, and nested callable fields in retained
+handlers are not supported. In particular, raylib's context-free audio callbacks
+need an additional adapter contract; importing their declaration alone does not
+make them safe to retain.
+
+Generated DLLs export `foster_c_callbacks_init` only when needed. Runtime callback
+ABI version 1 installs a packet dispatcher; opaque monotonic tokens identify
+handlers. Neither a Foster object address nor a C function address enters Foster
+source. Stale tokens fail instead of dereferencing released handler memory.
+
+The complete handler and registration example is in
+[`tests/fixtures/c_bridge/callbacks.fos`](../tests/fixtures/c_bridge/callbacks.fos),
+with its matching header and manifest alongside it. `tests/c_callbacks.rs` runs
+it on the VM and both native optimization modes.
+
 ## Scope and limitations
 
 Use generated bindings for ordinary application code. `std.ffi.CBridge`,
@@ -216,7 +332,7 @@ transfers are rejected by the type checker; VM transfer checks and native
 specialization checks also cover resources hidden behind generic wrappers.
 
 This implementation does not support borrowed foreign memory, parent/child
-resource dependencies, callbacks, variadic functions, unions, bitfields or pointer buffers,
+resource dependencies, arbitrary callback signatures, variadic functions, unions, bitfields or buffers of pointers,
 multiple resource arguments, transferring resource ownership to arbitrary C
 operations, unrestricted header importing, cross compilation, relocatable package
 bundling, or Linux/macOS. These require additional contracts, rather than exposing

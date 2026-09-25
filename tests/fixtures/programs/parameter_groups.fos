@@ -1,0 +1,32 @@
+import core.list
+import core.option
+
+type Person = { value: Int }
+func borrow(person: Person) -> ref[person] Person { ref person }
+func relay(other: Person) -> ref[other] Person { borrow(other) }
+func selected(person: Person) -> ref[person] Person { ref person }
+func selected(number: Int) -> ref[number] Int { ref number }
+func element(list_people: List<Person>) -> Option<ref[list_people] Person> {
+    list_people.borrow(0)
+}
+type Reader = {}
+impl Reader {
+    func from_argument(self, person: Person) -> ref[person] Person { ref person }
+}
+func main() -> Int {
+    let person = Person { value: 20 }
+    let reader = Reader {}
+    let callbacks = [borrow, relay]
+    assert(callbacks[1](person).value == 20)
+    assert(selected(person).value == 20)
+    let number = 21
+    assert(selected(number).copy() == 21)
+    let borrowed = :outer { :inner { relay(person) } }
+    let passed = reader.from_argument(person)
+    passed.value = 21
+    let people = [Person { value: 21 }]
+    branch element(people) {
+        Option.Some(found) -> borrowed.value + found.value
+        Option.None -> 0
+    }
+}

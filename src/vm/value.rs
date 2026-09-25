@@ -104,6 +104,7 @@ impl VariantPayload {
 #[derive(Debug)]
 struct OwnedFields {
     values: Vec<Value>,
+    missing: std::collections::BTreeSet<usize>,
     cleanup: RefCell<Option<super::machine::Cleanup>>,
 }
 
@@ -111,6 +112,7 @@ impl OwnedFields {
     fn new(values: Vec<Value>) -> Self {
         Self {
             values,
+            missing: Default::default(),
             cleanup: RefCell::new(None),
         }
     }
@@ -124,6 +126,7 @@ impl Clone for OwnedFields {
     fn clone(&self) -> Self {
         Self {
             values: self.values.clone(),
+            missing: self.missing.clone(),
             cleanup: RefCell::new(
                 self.cleanup
                     .borrow_mut()
@@ -155,7 +158,12 @@ impl std::ops::DerefMut for OwnedFields {
 
 impl Drop for OwnedFields {
     fn drop(&mut self) {
-        if let Some(cleanup) = self.cleanup.get_mut().take() {
+        if let Some(cleanup) = self
+            .cleanup
+            .get_mut()
+            .take()
+            .filter(|_| self.missing.is_empty())
+        {
             cleanup.run(std::mem::take(&mut self.values));
         }
         while self.values.pop().is_some() {}
@@ -163,6 +171,44 @@ impl Drop for OwnedFields {
 }
 
 impl RecordFields {
+    pub(crate) fn partial(
+        layout: Arc<RecordLayout>,
+        supplied: Vec<(String, Value)>,
+    ) -> Result<Self, RuntimeError> {
+        // Ordinary complete constructors keep their indexed-storage fast path.
+        if supplied.len() == layout.names().len()
+            && supplied
+                .iter()
+                .map(|(name, _)| name)
+                .eq(layout.names().iter())
+        {
+            return Self::new(
+                layout,
+                supplied.into_iter().map(|(_, value)| value).collect(),
+            );
+        }
+        let mut supplied = supplied.into_iter().collect::<BTreeMap<_, _>>();
+        let mut missing = std::collections::BTreeSet::new();
+        let values = layout
+            .names()
+            .iter()
+            .enumerate()
+            .map(|(index, name)| {
+                supplied.remove(name).unwrap_or_else(|| {
+                    missing.insert(index);
+                    Value::Unit
+                })
+            })
+            .collect();
+        if !supplied.is_empty() {
+            return Err(RuntimeError::runtime(
+                "record construction contains unknown fields",
+            ));
+        }
+        let mut result = Self::new(layout, values)?;
+        Rc::make_mut(&mut result.values).missing = missing;
+        Ok(result)
+    }
     pub(crate) fn new(layout: Arc<RecordLayout>, values: Vec<Value>) -> Result<Self, RuntimeError> {
         if layout.names().len() != values.len() {
             return Err(RuntimeError::runtime(
@@ -184,7 +230,9 @@ impl RecordFields {
     }
 
     pub fn get(&self, name: &str) -> Option<&Value> {
-        self.index(name).and_then(|index| self.values.get(index))
+        self.index(name)
+            .filter(|index| !self.values.missing.contains(index))
+            .and_then(|index| self.values.get(index))
     }
 
     pub(super) fn set_cleanup(&self, cleanup: super::machine::Cleanup) {
@@ -201,7 +249,9 @@ impl RecordFields {
 
     pub(crate) fn get_mut(&mut self, name: &str) -> Option<&mut Value> {
         let index = self.index(name)?;
-        Rc::make_mut(&mut self.values).get_mut(index)
+        let values = Rc::make_mut(&mut self.values);
+        values.missing.remove(&index);
+        values.get_mut(index)
     }
 
     pub(crate) fn contains_key(&self, name: &str) -> bool {

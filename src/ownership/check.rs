@@ -12,6 +12,7 @@ struct State {
     initialized: HashSet<PlaceRoot>,
     moved: HashMap<Place, Range<usize>>,
     last_move: HashMap<PlaceRoot, Range<usize>>,
+    deferred: HashMap<Place, Range<usize>>,
 }
 
 pub(super) fn check(
@@ -31,11 +32,13 @@ pub(super) fn check_function(
     function: crate::hir::FunctionId,
     mir: &Function,
 ) -> Result<(), FosterError> {
+    validate_deferred_construction(hir, function)?;
     let mut entries = vec![None::<State>; mir.blocks.len()];
     entries[mir.entry] = Some(State {
         initialized: HashSet::new(),
         moved: HashMap::new(),
         last_move: HashMap::new(),
+        deferred: HashMap::new(),
     });
     let mut work = VecDeque::from([mir.entry]);
 
@@ -45,7 +48,43 @@ pub(super) fn check_function(
         };
         for operation in &mir.blocks[block_id].operations {
             match operation {
+                Operation::DeferField { place, span } => {
+                    state.deferred.insert(place.clone(), span.clone());
+                }
                 Operation::Use { place, mode, span } => {
+                    let unavailable = state.deferred.iter().find(|(missing, _)| {
+                        if *mode == UseMode::Write {
+                            super::mir::place_contains(missing, place) && *missing != place
+                        } else {
+                            places_overlap(missing, place)
+                        }
+                    });
+                    if let Some((missing, declared)) = unavailable {
+                        return Err(FosterError::runtime(format!(
+                            "deferred field `{}` must be initialized before this use",
+                            missing
+                                .projections
+                                .iter()
+                                .filter_map(|p| match p {
+                                    crate::hir::Projection::Field(name) => Some(name.as_str()),
+                                    _ => None,
+                                })
+                                .collect::<Vec<_>>()
+                                .join(".")
+                        ))
+                        .with_code(super::diagnostics::USE_AFTER_MOVE)
+                        .with_source_module(
+                            hir.modules[hir.functions[function].module].name.clone(),
+                        )
+                        .with_primary_label(
+                            span.clone(),
+                            "incomplete record cannot be read, borrowed, moved, or exposed",
+                        )
+                        .with_label(declared.clone(), "field is deferred here")
+                        .with_help(
+                            "initialize this field on every control-flow path before using it",
+                        ));
+                    }
                     if !place_is_usable(&state, place) {
                         let definition = &hir.functions[function];
                         let (name, declared_at) = match place.root {
@@ -81,6 +120,11 @@ pub(super) fn check_function(
                             ));
                         }
                         return Err(error);
+                    }
+                    if *mode == UseMode::Write {
+                        state
+                            .deferred
+                            .retain(|missing, _| !super::mir::place_contains(place, missing));
                     }
                     if *mode == UseMode::Move {
                         if moves_out_of_drop(types, place) {
@@ -118,6 +162,9 @@ pub(super) fn check_function(
                     }
                 }
                 Operation::Initialize { place, .. } => {
+                    state
+                        .deferred
+                        .retain(|missing, _| missing.root != place.root);
                     state.initialized.insert(place.root);
                     state.moved.retain(|moved, _| moved.root != place.root);
                     state.last_move.remove(&place.root);
@@ -134,6 +181,9 @@ pub(super) fn check_function(
                 | Operation::RemoteComplete { .. }
                 | Operation::Suspend { .. } => {}
                 Operation::Destroy { place, .. } => {
+                    state
+                        .deferred
+                        .retain(|missing, _| missing.root != place.root);
                     state.initialized.remove(&place.root);
                     state.moved.retain(|moved, _| moved.root != place.root);
                     state.last_move.remove(&place.root);
@@ -158,18 +208,26 @@ pub(super) fn check_function(
                         moved.entry(place.clone()).or_insert_with(|| span.clone());
                     }
                     let mut last_move = existing.last_move.clone();
+                    let mut deferred = existing.deferred.clone();
+                    for (place, span) in &state.deferred {
+                        deferred
+                            .entry(place.clone())
+                            .or_insert_with(|| span.clone());
+                    }
                     for (local, span) in &state.last_move {
                         last_move.entry(*local).or_insert_with(|| span.clone());
                     }
                     if merged == existing.initialized
                         && moved == existing.moved
                         && last_move == existing.last_move
+                        && deferred == existing.deferred
                     {
                         false
                     } else {
                         existing.initialized = merged;
                         existing.moved = moved;
                         existing.last_move = last_move;
+                        existing.deferred = deferred;
                         true
                     }
                 }
@@ -221,6 +279,59 @@ fn moves_out_of_drop(types: &TypeInformation, place: &Place) -> bool {
         ty = next;
     }
     false
+}
+
+/// Keep incomplete records in a directly named local until their fields are ready.
+/// This prevents holes from being hidden in aggregates, call results, or captures.
+fn validate_deferred_construction(
+    hir: &PackageHir,
+    function: crate::hir::FunctionId,
+) -> Result<(), FosterError> {
+    use crate::hir::{
+        Expr, ExprId, Stmt,
+        visit::{self, Visitor},
+    };
+    #[derive(Default)]
+    struct Construction {
+        locals: HashSet<ExprId>,
+        deferred: Vec<ExprId>,
+    }
+    impl Visitor for Construction {
+        fn visit_statement(&mut self, hir: &PackageHir, statement: &Stmt) {
+            if let Stmt::Bind { value, .. } | Stmt::Assign { value, .. } = statement {
+                self.locals.insert(*value);
+            }
+            visit::walk_statement(self, hir, statement);
+        }
+        fn visit_expression(&mut self, hir: &PackageHir, expression: ExprId) {
+            if let Expr::Record { fields, .. } = &hir.expressions[expression]
+                && fields
+                    .iter()
+                    .any(|(_, value)| matches!(hir.expressions[*value], Expr::Deferred))
+            {
+                self.deferred.push(expression);
+            }
+            visit::walk_expression(self, hir, expression);
+        }
+    }
+    let mut construction = Construction::default();
+    construction.visit_block(hir, &hir.functions[function].body);
+    for expression in construction.deferred {
+        if !construction.locals.contains(&expression) {
+            return Err(FosterError::runtime(
+                "a record with deferred fields must be assigned directly to a local before use",
+            )
+            .with_source_module(hir.modules[hir.functions[function].module].name.clone())
+            .with_primary_label(
+                hir.expression_spans
+                    .get(&expression)
+                    .cloned()
+                    .unwrap_or_else(|| hir.functions[function].span.clone()),
+                "incomplete construction cannot escape into an expression",
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn parameter_can_be_consumed(

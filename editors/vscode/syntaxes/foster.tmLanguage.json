@@ -95,7 +95,7 @@
         { "name": "keyword.operator.logical.foster", "match": "\\bnot\\b" },
         { "name": "keyword.control.foster", "match": "\\b(?:panic|assert|branch|break|continue|if|is|loop|while|for|in|return|await|try)\\b" },
         { "name": "keyword.declaration.foster", "match": "\\b(?:func|impl|type|pub|import|as|let)\\b" },
-        { "name": "keyword.other.foster", "match": "\\b(?:move|ref|remote|group|read|mut|reshape|consume|suspend)\\b" }
+        { "name": "keyword.other.foster", "match": "\\b(?:move|ref|remote|read|mut|reshape|consume|suspend)\\b" }
       ]
     },
     "types": {
@@ -106,6 +106,7 @@
     },
     "operators": {
       "patterns": [
+        { "name": "constant.language.deferred.foster", "match": "\\?\\?" },
         { "name": "keyword.operator.logical.foster", "match": "&&|\\|\\||!" },
         { "name": "keyword.operator.qualification.foster", "match": "::" },
         { "name": "keyword.operator.type.intersection.foster", "match": "&" },

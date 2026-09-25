@@ -138,7 +138,7 @@ func main() -> Int {
 type Boxed<T> = { value: T }
 type Outer<T> = { inner: Boxed<T> }
 
-func increment[g: group Int](value: ref[g] Int, amount: Int) -> Int [mut g] {
+func increment(value: ref[value] Int, amount: Int) -> Int [mut value] {
     value = value + amount
     value
 }

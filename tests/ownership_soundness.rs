@@ -170,7 +170,7 @@ func main() -> Int {
             "mutable-ref-parameter-writes-through-to-caller",
             r#"
 type Person = { name: Int }
-func rename[people: group Person](person: ref[people] Person, name: Int) -> () [mut people.name] {
+func rename(person: ref[person] Person, name: Int) -> () [mut person.name] {
     person.name = name
     ()
 }
@@ -248,8 +248,8 @@ func main() -> Int {
         (
             "replace-invalidates-captured-call-effect",
             r#"
-func make[state: group Int](value: ref[state] Int) -> func() -> Int [read state] {
-    [ref value] () -> [read state] { value }
+func make(value: ref[value] Int) -> func() -> Int [read value] {
+    [ref value] () -> [read value] { value }
 }
 func main() -> Int {
     let values = [1]
@@ -262,7 +262,7 @@ func main() -> Int {
         (
             "replace-through-parameter-invalidates-derived-loan",
             r#"
-func replace[g: group Int](value: ref[g] Int) -> Int [mut g] {
+func replace(value: ref[value] Int) -> Int [mut value] {
     let first = ref value
     value = 42
     first
@@ -403,7 +403,7 @@ func main() -> Int {
 fn mutable_ref_parameter_runtime_witness_updates_the_caller() {
     let source = r#"
 type Person = { name: Int }
-func rename[people: group Person](person: ref[people] Person, name: Int) -> () [mut people.name] {
+func rename(person: ref[person] Person, name: Int) -> () [mut person.name] {
     person.name = name
     ()
 }
@@ -427,7 +427,7 @@ func main() -> Int {
 fn whole_place_mutable_ref_parameter_survives_optimization() {
     let source = r#"
 type Vals = { value: Int }
-func set[g: group Vals](box: ref[g] Vals) -> Int [mut g] {
+func set(box: ref[box] Vals) -> Int [mut box] {
     box = Vals { value: 7 }
     box.value
 }
@@ -512,7 +512,7 @@ fn bounded_compiler_input_fuzzing_never_panics() {
 #[test]
 fn ownership_dump_and_diagnostics_are_deterministic() {
     let source = r#"
-func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int { ref value }
+func preserve(value: ref[value] Int) -> ref[value] Int { ref value }
 func main() { 0 }
 "#;
     let first = foster::compile(source).unwrap();
@@ -544,8 +544,8 @@ func main() -> Int {
 
 #[test]
 fn ownership_revision_and_diagnostic_catalog_match_current_contract() {
-    assert_eq!(foster::ownership::LANGUAGE_VERSION, 14);
-    assert_eq!(foster::ownership::MODEL_VERSION, 3);
+    assert_eq!(foster::ownership::LANGUAGE_VERSION, 17);
+    assert_eq!(foster::ownership::MODEL_VERSION, 5);
     assert_eq!(
         foster::ownership::diagnostics::CATALOG
             .iter()
@@ -560,14 +560,14 @@ fn ownership_revision_and_diagnostic_catalog_match_current_contract() {
 #[test]
 fn expression_temporaries_live_through_the_borrowing_call() {
     let scoped = r#"
-func observe[value: group Int](item: ref[value] Int) -> Int { item }
+func observe(item: ref[item] Int) -> Int { item }
 func make() -> Int { 42 }
 func main() -> Int { observe(ref (make())) }
 "#;
     assert_eq!(foster::run(scoped).unwrap(), foster::vm::Value::Integer(42));
 
     let escaped = r#"
-func preserve[value: group Int](item: ref[value] Int) -> ref[value] Int { ref item }
+func preserve(item: ref[item] Int) -> ref[item] Int { ref item }
 func make() -> Int { 42 }
 func main() -> Int {
     let item = preserve(ref (make()))

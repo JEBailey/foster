@@ -22,7 +22,7 @@ impl Checker<'_> {
         match ty {
             Ty::Record(record, arguments) => {
                 let definition = &self.hir.records[record];
-                if definition.name == "CResource"
+                if ["CResource", "CCallbackLease"].contains(&definition.name.as_str())
                     && self.hir.modules[definition.module].name == "std.ffi"
                 {
                     return Ok(true);

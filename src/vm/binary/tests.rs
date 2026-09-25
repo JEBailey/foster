@@ -261,7 +261,7 @@ fn round_trips_and_executes_compiled_program() {
 #[test]
 fn round_trips_a_reference_to_an_expression_temporary() {
     let source = r#"
-func observe[value: group Int](item: ref[value] Int) -> Int { item }
+func observe(item: ref[item] Int) -> Int { item }
 func make() -> Int { 42 }
 func main() -> Int { observe(ref (make())) }
 "#;

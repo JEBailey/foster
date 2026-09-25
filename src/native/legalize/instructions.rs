@@ -66,8 +66,10 @@ pub(super) fn lower_shared_instruction(
                         fields: expected, ..
                     } = &environment.physical_layouts.get(layout).kind
                 {
-                    for ((_, source), field) in fields.iter_mut().zip(expected) {
-                        sources.push((source, field.value.pointee));
+                    for (name, source) in fields.iter_mut() {
+                        if let Some(field) = expected.iter().find(|field| field.name == *name) {
+                            sources.push((source, field.value.pointee));
+                        }
                     }
                 }
             }
@@ -865,6 +867,11 @@ pub(super) fn lower_shared_instruction(
             arguments,
         } => {
             values[destination.0 as usize] = native_intrinsic_result_type(*builtin, environment)?;
+            if *builtin == crate::intrinsics::Builtin::CCallbackNew {
+                // The registry owns the adapter until unregister. Transfer this
+                // reference so ordinary frame cleanup cannot release it early.
+                return Ok(vec![(instruction.clone(), vec![arguments[0]])]);
+            }
             if matches!(
                 builtin.descriptor().native,
                 crate::intrinsics::NativeIntrinsic::Print { .. }

@@ -70,7 +70,7 @@ fn branch_loop_alias_and_reference_evidence_agrees_with_construction() {
         "func main() -> Int { let x = 21\nlet y = x\nx + y }",
         "func main() -> Int { let x = 0\nwhile x < 3 { x = x + 1 }\nx }",
         "enum Choice = First(Int) | Second\nfunc choose(x: Choice) -> Int { branch x { Choice.First(value) -> value\nChoice.Second -> 0 } }\nfunc main() -> Int { choose(Choice.First(42)) }",
-        "func set[state: group Int](value: ref[state] Int, next: Int) -> Int [mut state] { value = next\nvalue + 1 }\nfunc main() -> Int { let values = [10, 20]\nlet selected = ref values[0]\nset(ref selected, 41) }",
+        "func set(value: ref[value] Int, next: Int) -> Int [mut value] { value = next\nvalue + 1 }\nfunc main() -> Int { let values = [10, 20]\nlet selected = ref values[0]\nset(ref selected, 41) }",
     ] {
         let compilation = crate::compile(source).unwrap();
         vm::compile_shared(&compilation).unwrap();

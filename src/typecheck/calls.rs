@@ -61,7 +61,10 @@ impl Checker<'_> {
         }
 
         if let hir::Expr::Name(ResolvedName::Builtin(builtin)) = self.hir.expressions[callee] {
-            let (parameters, result) = self.builtin_signature(builtin)?;
+            let (mut parameters, result) = self.builtin_signature(builtin)?;
+            if builtin == Builtin::CCallbackNew && !arguments.is_empty() {
+                parameters[0] = self.infer_expression(function, arguments[0])?;
+            }
             if arguments.len() != parameters.len() {
                 return Err(self.error(function, "builtin argument count mismatch"));
             }
@@ -309,7 +312,12 @@ impl Checker<'_> {
         for (expected, actual) in callee_type.parameter_types().zip(&argument_types) {
             self.check_callable_result_origins(expected, actual, function)?;
         }
-        let callee_type = instantiate_call_groups(callee_type, &argument_types);
+        self.borrow_argument_types(&callee_type, arguments, &mut argument_types);
+        let callee_type = instantiate_call_groups(
+            callee_type,
+            &argument_types,
+            self.call_receiver_group(callee),
+        );
         self.check_argument_modes(function, &callee_type, arguments, &argument_types)?;
         let remote_call =
             if let hir::Expr::Member { object, .. } = self.hir.expressions[callee].clone() {
@@ -350,11 +358,41 @@ impl Checker<'_> {
             argument_types,
             result.clone(),
         )?;
-        if let hir::Expr::Member { object, .. } = self.hir.expressions[callee] {
-            let groups = HashMap::from([("self".to_owned(), self.expression_group(object))]);
-            return Ok(substitute_groups(self.resolved(result), &groups));
-        }
         Ok(result)
+    }
+
+    pub(super) fn borrow_argument_types(
+        &self,
+        callee: &Ty,
+        arguments: &[ExprId],
+        actuals: &mut [Ty],
+    ) {
+        for (index, ((expected, actual), argument)) in callee
+            .parameter_types()
+            .zip(actuals)
+            .zip(arguments)
+            .enumerate()
+        {
+            let borrowed = match callee {
+                Ty::Callable { parameters, .. } => {
+                    parameters[index].mode == crate::ast::ParameterMode::Borrow
+                }
+                _ => true,
+            };
+            if borrowed
+                && matches!(expected, Ty::Reference(..))
+                && !matches!(actual, Ty::Reference(..))
+            {
+                *actual = Ty::Reference(self.expression_group(*argument), Box::new(actual.clone()));
+            }
+        }
+    }
+
+    pub(super) fn call_receiver_group(&self, callee: ExprId) -> Option<String> {
+        match self.hir.expressions[callee] {
+            hir::Expr::Member { object, .. } => Some(self.expression_group(object)),
+            _ => None,
+        }
     }
 
     pub(super) fn unify_call(
@@ -450,6 +488,12 @@ impl Checker<'_> {
         let string = self.string_type();
         let bytes = self.bytes_type();
         Ok(match builtin {
+            Builtin::CCallbackNew => (
+                vec![Ty::Generic("F".into()), string.clone(), Ty::Int],
+                string.clone(),
+            ),
+            Builtin::CCallbackRelease => (vec![Ty::Int], Ty::Unit),
+            Builtin::CCallbackPoll | Builtin::CCallbackError => (vec![Ty::Int], string.clone()),
             Builtin::ProcessReserve => (vec![], Ty::Int),
             Builtin::ProcessExchange => (
                 vec![
@@ -1444,7 +1488,11 @@ fn receiver_heads_match(expected: &Ty, actual: &Ty) -> bool {
     }
 }
 
-pub(super) fn instantiate_call_groups(callee: Ty, arguments: &[Ty]) -> Ty {
+pub(super) fn instantiate_call_groups(
+    callee: Ty,
+    arguments: &[Ty],
+    receiver: Option<String>,
+) -> Ty {
     let Ty::Callable {
         parameters,
         result,
@@ -1455,7 +1503,7 @@ pub(super) fn instantiate_call_groups(callee: Ty, arguments: &[Ty]) -> Ty {
     else {
         return callee;
     };
-    let substitutions = parameters
+    let mut substitutions = parameters
         .iter()
         .zip(arguments)
         .filter_map(|(parameter, argument)| match (&parameter.ty, argument) {
@@ -1465,6 +1513,11 @@ pub(super) fn instantiate_call_groups(callee: Ty, arguments: &[Ty]) -> Ty {
             _ => None,
         })
         .collect::<HashMap<_, _>>();
+    if let Some(group) = receiver {
+        substitutions.insert("self".into(), group);
+    }
+    // Substitute all formal origins simultaneously; actual names may equal
+    // other formals and must never be substituted a second time.
     Ty::Callable {
         parameters: parameters
             .into_iter()
@@ -1477,7 +1530,7 @@ pub(super) fn instantiate_call_groups(callee: Ty, arguments: &[Ty]) -> Ty {
     }
 }
 
-fn substitute_groups(ty: Ty, substitutions: &HashMap<String, String>) -> Ty {
+pub(super) fn substitute_groups(ty: Ty, substitutions: &HashMap<String, String>) -> Ty {
     match ty {
         Ty::Reference(group, value) => Ty::Reference(
             substitutions.get(&group).cloned().unwrap_or(group),
@@ -1507,7 +1560,15 @@ fn substitute_groups(ty: Ty, substitutions: &HashMap<String, String>) -> Ty {
                 .collect(),
             result: Box::new(substitute_groups(*result, substitutions)),
             erased,
-            effects,
+            effects: effects
+                .into_iter()
+                .map(|mut effect| {
+                    if let Some(group) = substitutions.get(&effect.target.root) {
+                        effect.target.root = group.clone();
+                    }
+                    effect
+                })
+                .collect(),
             suspends,
         },
         Ty::Record(record, arguments) => Ty::Record(

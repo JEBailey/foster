@@ -5,7 +5,7 @@ use std::path::Path;
 fn grouped_effect_paths_match_expanded_contracts() {
     let source = r#"
 type Pair = { left: Int, right: Int }
-func update[g: group Pair](pair: ref[g] Pair) -> () [mut g(left, right)] {
+func update(pair: ref[pair] Pair) -> () [mut pair(left, right)] {
     pair.left = 3
     pair.right = 4
     ()
@@ -18,7 +18,8 @@ func main() -> Int {
 "#;
     let grouped = foster::compile(source).unwrap();
     let expanded =
-        foster::compile(&source.replace("mut g(left, right)", "mut g.left, mut g.right")).unwrap();
+        foster::compile(&source.replace("mut pair(left, right)", "mut pair.left, mut pair.right"))
+            .unwrap();
     let module = grouped.hir.module_named("main").unwrap();
     let id = grouped.hir.function_named(module, "update").unwrap();
     assert_eq!(
@@ -26,7 +27,7 @@ func main() -> Int {
         expanded.hir.functions[id].effects
     );
     assert_eq!(foster::run(source).unwrap(), Value::Integer(7));
-    let narrower = source.replace("mut g(left, right)", "mut g(left)");
+    let narrower = source.replace("mut pair(left, right)", "mut pair(left)");
     assert!(
         foster::compile(&narrower)
             .unwrap_err()
@@ -34,12 +35,10 @@ func main() -> Int {
             .contains("undeclared effect")
     );
     for kind in ["read", "mut", "reshape", "consume"] {
-        let text = format!(
-            "func f[g: group Pair](p: ref[g] Pair) -> () [{kind} g(left, nested.right,)] {{ () }}"
-        );
+        let text = format!("func f(p: ref[p] Pair) -> () [{kind} p(left, nested.right,)] {{ () }}");
         foster::parse(&text).unwrap();
     }
-    assert!(foster::parse(&source.replace("mut g(left, right)", "mut g()")).is_err());
+    assert!(foster::parse(&source.replace("mut pair(left, right)", "mut pair()")).is_err());
 }
 
 #[test]
@@ -47,7 +46,7 @@ fn mutable_defaults_preserve_checked_effects_and_explicit_transfers() {
     let source = r#"
 type Item = { value: Int }
 func inspect(item: Item) -> Int { item.value }
-func update[g: group Item](item: ref[g] Item) -> () {
+func update(item: ref[item] Item) -> () {
     item.value = item.value + 1
     ()
 }
@@ -98,8 +97,8 @@ func main() -> Int {
             .contains("moved")
     );
     let invalid_bound = source.replace(
-        "func update[g: group Item](item: ref[g] Item) -> ()",
-        "func update[g: group Item](item: ref[g] Item) -> () [read g]",
+        "func update(item: ref[item] Item) -> ()",
+        "func update(item: ref[item] Item) -> () [read item]",
     );
     assert!(
         foster::compile(&invalid_bound)
@@ -420,7 +419,7 @@ fn remote_calls_reject_borrowed_messages() {
 type Box = { value: Int }
 
 impl Box {
-    func read[g: group Int](self: Box, value: ref[g] Int) -> Int {
+    func read(self: Box, value: ref[value] Int) -> Int {
         value
     }
 }
@@ -465,7 +464,7 @@ func main() {
 #[test]
 fn derives_and_checks_group_mutation_effects() {
     let source = r#"
-func replace[g: group Int](value: ref[g] Int) -> Int {
+func replace(value: ref[value] Int) -> Int {
     value = 2
     value
 }
@@ -485,11 +484,11 @@ func main() { 0 }
 #[test]
 fn propagates_declared_effects_through_calls() {
     let source = r#"
-func replace[g: group Int](value: ref[g] Int) -> Int [mut g] {
+func replace(value: ref[value] Int) -> Int [mut value] {
     value = 2
     value
 }
-func wrapper[g: group Int](value: ref[g] Int) -> Int {
+func wrapper(value: ref[value] Int) -> Int {
     replace(ref value)
 }
 func main() { 0 }
@@ -547,7 +546,7 @@ fn supports_dotted_effects_and_rejects_non_method_self_effects() {
     foster::compile(
         r#"
 type Box = { value: Int }
-func update[g: group Box](box: ref[g] Box) -> Int [mut g.value] {
+func update(box: ref[box] Box) -> Int [mut box.value] {
     box.value = box.value + 1
     box.value
 }
@@ -567,28 +566,28 @@ func main() { 0 }
 #[test]
 fn instantiates_multiple_groups_independently() {
     let source = r#"
-func transfer[source: group Int, destination: group Int](from: ref[source] Int, to: ref[destination] Int) -> Int [read source, mut destination] {
+func transfer(from: ref[from] Int, to: ref[to] Int) -> Int [read from, mut to] {
     to = from
     to
 }
 
-func wrapper[left: group Int, right: group Int](from: ref[left] Int, to: ref[right] Int) -> Int [read left, mut right] {
+func wrapper(from: ref[from] Int, to: ref[to] Int) -> Int [read from, mut to] {
     transfer(ref from, ref to)
 }
 func main() { 0 }
 "#;
     foster::compile(source).unwrap();
 
-    let missing = source.replace("[read left, mut right]", "[read left]");
+    let missing = source.replace("[read from, mut to]", "[read from]");
     let error = foster::compile(&missing).unwrap_err();
-    assert!(error.message.contains("mut right"));
+    assert!(error.message.contains("mut to"));
 }
 
 #[test]
 fn supports_explicit_closure_effect_contracts() {
     let source = r#"
-func make[g: group Int](value: ref[g] Int) -> func() -> Int [mut g] {
-    [ref value] () -> [mut g] {
+func make(value: ref[value] Int) -> func() -> Int [mut value] {
+    [ref value] () -> [mut value] {
         value = value + 1
         value
     }
@@ -597,16 +596,16 @@ func main() { 0 }
 "#;
     foster::compile(source).unwrap();
 
-    let too_narrow = source.replace("-> [mut g] {", "-> [read g] {");
+    let too_narrow = source.replace("-> [mut value] {", "-> [read value] {");
     let error = foster::compile(&too_narrow).unwrap_err();
-    assert!(error.message.contains("mut g"));
+    assert!(error.message.contains("mut value"));
 }
 
 #[test]
 fn returned_ref_capture_uses_the_original_projected_place() {
     let source = r#"
-func incrementer[g: group Int](value: ref[g] Int) -> func() -> Int [mut g] {
-    [ref value] () -> [mut g] {
+func incrementer(value: ref[value] Int) -> func() -> Int [mut value] {
+    [ref value] () -> [mut value] {
         value = value + 1
         value
     }
@@ -633,7 +632,7 @@ func main() -> Int {
 #[test]
 fn derives_consume_from_move_out() {
     let missing = r#"
-func take[g: group Int](value: ref[g] Int) -> Int { move value }
+func take(value: ref[value] Int) -> Int { move value }
 func main() { 0 }
 "#;
     let compilation = foster::compile(missing).unwrap();
@@ -644,11 +643,11 @@ func main() { 0 }
         foster::ast::ParameterMode::Consume
     );
 
-    let declared = missing.replace("-> Int { move", "-> Int [consume g] { move");
+    let declared = missing.replace("-> Int { move", "-> Int [consume value] { move");
     foster::compile(&declared).unwrap();
 
     let reused = r#"
-func take[g: group Int](value: ref[g] Int) -> Int [read g, consume g] {
+func take(value: ref[value] Int) -> Int [read value, consume value] {
     let result = move value
     value
 }
@@ -778,8 +777,8 @@ func main() { 0 }
 fn discovers_implicit_and_companion_modules() {
     let compilation = foster::check_package(Path::new("tests/fixtures/modules")).unwrap();
     let package = &compilation.package;
-    assert_eq!(package.modules.len(), 17);
-    assert_eq!(package.explicit_module_count(), 14);
+    assert_eq!(package.modules.len(), 18);
+    assert_eq!(package.explicit_module_count(), 15);
     assert_eq!(package.implicit_module_count(), 3);
     assert_eq!(package.input_module_count(), 6);
     assert_eq!(package.input_explicit_module_count(), 4);
@@ -1193,7 +1192,7 @@ func main() -> Int {
 
     let borrowed = foster::compile(
         r#"
-func observe[value: group Int](item: ref[value] Int, extra: Int) -> Int { item + extra }
+func observe(item: ref[item] Int, extra: Int) -> Int { item + extra }
 func main() -> Int {
     let value = 1
     let add_value = observe(ref value, _)
@@ -1212,7 +1211,7 @@ func main() -> Int {
     let temporary = foster::compile(
         r#"
 func make() -> Int { 1 }
-func observe[value: group Int](item: ref[value] Int, extra: Int) -> Int { item + extra }
+func observe(item: ref[item] Int, extra: Int) -> Int { item + extra }
 func main() -> Int {
     let add_value = observe(ref (make()), _)
     add_value(3)
@@ -1271,10 +1270,10 @@ fn preserves_group_effects_when_callable_representation_is_inferred() {
     use foster::types::Type;
 
     let source = r#"
-func make[people: group Int](person: ref[people] Int)
-    -> func(Int) -> Int [mut people]
+func make(person: ref[person] Int)
+    -> func(Int) -> Int [mut person]
 {
-    [ref person] (value: Int) -> [mut people] {
+    [ref person] (value: Int) -> [mut person] {
         person = value
         person
     }
@@ -1289,13 +1288,13 @@ func make[people: group Int](person: ref[people] Int)
     };
     assert!(callable.erased);
     assert_eq!(callable.effects.len(), 1);
-    assert_eq!(callable.effects[0].target, "people");
+    assert_eq!(callable.effects[0].target, "person");
     assert!(compilation.hir.functions.iter().any(|(_, function)| {
         function.name.contains("closure")
             && function
                 .effects
                 .iter()
-                .any(|effect| effect.target == "people")
+                .any(|effect| effect.target == "person")
     }));
 }
 
@@ -1341,7 +1340,7 @@ func main() -> Int {
 #[test]
 fn binding_a_projected_reference_preserves_its_live_place() {
     let source = r#"
-func set[state: group Int](value: ref[state] Int, next: Int) -> Int [mut state] {
+func set(value: ref[value] Int, next: Int) -> Int [mut value] {
     value = next
 }
 
@@ -1901,7 +1900,7 @@ func main() -> Int {
 #[test]
 fn ownership_mir_records_result_provenance_summaries() {
     let source = r#"
-func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
+func preserve(value: ref[value] Int) -> ref[value] Int {
     ref value
 }
 
@@ -2001,7 +2000,7 @@ func main() -> Int {
 #[test]
 fn ownership_mir_records_reborrow_parent_relationships() {
     let source = r#"
-func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
+func preserve(value: ref[value] Int) -> ref[value] Int {
     ref value
 }
 
@@ -2022,7 +2021,7 @@ func main() { 0 }
 #[test]
 fn nested_reborrow_of_parameter_is_not_a_local_escape() {
     let source = r#"
-func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
+func preserve(value: ref[value] Int) -> ref[value] Int {
     let first = ref value
     ref first
 }
@@ -2111,7 +2110,7 @@ type Pair = {
     right: List<Int>
 }
 
-func grow[g: group Pair](pair: ref[g] Pair) -> () [reshape g.left.items] {
+func grow(pair: ref[pair] Pair) -> () [reshape pair.left.items] {
     pair.left.push(30)
 }
 
@@ -2212,7 +2211,7 @@ func main() -> Int {
 #[test]
 fn direct_borrowed_call_results_substitute_parameter_provenance() {
     let source = r#"
-func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
+func preserve(value: ref[value] Int) -> ref[value] Int {
     ref value
 }
 
@@ -2410,8 +2409,8 @@ func invalid() {
 #[test]
 fn checks_callable_effect_bounds() {
     let source = r#"
-func invalid[state: group Int](value: ref[state] Int)
-    -> func(Int) -> Int [read state]
+func invalid(value: ref[value] Int)
+    -> func(Int) -> Int [read value]
 {
     [ref value] (next: Int) -> {
         value = next
@@ -2426,7 +2425,7 @@ func invalid[state: group Int](value: ref[state] Int)
 #[test]
 fn passes_projected_references_to_group_parameterized_functions() {
     let source = r#"
-func set[state: group Int](value: ref[state] Int, next: Int) -> Int [mut state] {
+func set(value: ref[value] Int, next: Int) -> Int [mut value] {
     value = next
     value
 }
@@ -2444,10 +2443,10 @@ func main() -> Int {
 #[test]
 fn result_provenance_is_inferred_from_reachable_mir_returns() {
     let source = r#"
-func first[a: group Int, b: group Int](left: ref[a] Int, right: ref[b] Int)
-    -> func() -> Int [read a, read b]
+func first(left: ref[left] Int, right: ref[right] Int)
+    -> func() -> Int [read left, read right]
 {
-    [ref left] () -> [read a] { left }
+    [ref left] () -> [read from] { left }
 }
 
 func main() { 0 }
@@ -2466,11 +2465,11 @@ func main() { 0 }
 #[test]
 fn direct_calls_propagate_inferred_result_provenance_to_a_fixpoint() {
     let source = r#"
-func constant[g: group Int](value: ref[g] Int) -> func() -> Int [read g] {
+func constant(value: ref[value] Int) -> func() -> Int [read value] {
     () -> 1
 }
 
-func relay[g: group Int](value: ref[g] Int) -> func() -> Int [read g] {
+func relay(value: ref[value] Int) -> func() -> Int [read value] {
     constant(ref value)
 }
 
@@ -2605,7 +2604,7 @@ func main() -> Int {
 #[test]
 fn full_expression_temporaries_span_all_arguments_and_destroy_in_reverse() {
     let source = r#"
-func combine[left: group Int, right: group Int](first: ref[left] Int, second: ref[right] Int) -> Int {
+func combine(first: ref[first] Int, second: ref[second] Int) -> Int {
     first * 10 + second
 }
 func make(value: Int) -> Int { value }
@@ -2663,7 +2662,7 @@ fn expression_temporaries_are_destroyed_on_try_return_paths() {
     let source = r#"
 import core.result
 
-func combine[value: group Int](item: ref[value] Int, other: Int) -> Int { other }
+func combine(item: ref[item] Int, other: Int) -> Int { other }
 func make() -> Int { 42 }
 func operation() -> Result<Int, String> { Result.Error("stop") }
 
@@ -2701,7 +2700,7 @@ func main() -> Int { 0 }
 #[test]
 fn expression_temporaries_are_destroyed_on_loop_transfer_paths() {
     let source = r#"
-func combine[value: group Int](item: ref[value] Int, other: Int) -> Int { other }
+func combine(item: ref[item] Int, other: Int) -> Int { other }
 func make() -> Int { 42 }
 
 func transfer() -> Int {
@@ -2743,7 +2742,7 @@ func main() -> Int { transfer() }
 #[test]
 fn rejects_a_borrow_that_escapes_its_expression_temporary() {
     let source = r#"
-func keep[value: group Int](item: ref[value] Int) -> ref[value] Int { ref item }
+func keep(item: ref[item] Int) -> ref[item] Int { ref item }
 func make() -> Int { 42 }
 
 func main() -> Int {

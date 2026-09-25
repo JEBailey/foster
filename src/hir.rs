@@ -153,7 +153,6 @@ pub struct Function {
     pub intrinsic: Option<String>,
     pub type_parameters: Vec<String>,
     pub constraints: Vec<ast::TypeConstraint>,
-    pub groups: Vec<ast::GroupParameter>,
     pub parameters: Vec<Parameter>,
     pub return_type: Option<ast::TypeExpr>,
     pub effects_explicit: bool,
@@ -239,6 +238,7 @@ pub enum Projection {
 
 #[derive(Debug, Clone)]
 pub enum Expr {
+    Deferred,
     Unit,
     Bool(bool),
     Integer(i64),

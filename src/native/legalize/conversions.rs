@@ -281,6 +281,27 @@ pub(super) fn shared_capture_arguments(
     let mut consumed = Vec::new();
     for ((mode, value), expected) in captures.iter().zip(expected_types) {
         let ty = values[value.0 as usize];
+        // A borrowed capture is a reference to the source slot, even when the
+        // slot contains an erased value. Unboxing first mistakes that value
+        // for a reference handle and produces an invalid callback environment.
+        if *mode == crate::hir::CaptureMode::Ref {
+            let NativeType::Object(layout) = expected else {
+                return Err(native_error(format!(
+                    "native closure `{function}` has a non-reference capture ABI"
+                )));
+            };
+            let reference = allocate_shared_value(values, NativeType::Object(*layout));
+            instructions.push((
+                ir::Instruction::Portable(ir::PortableInstruction::MakeWholeReference {
+                    destination: reference,
+                    pointee_type: crate::codegen::types::ExecutableType::Unknown,
+                    object: *value,
+                }),
+                Vec::new(),
+            ));
+            lowered.push(reference);
+            continue;
+        }
         if callable_conversion(ty, *expected, layouts) {
             let callable = allocate_shared_value(values, *expected);
             instructions.push((
@@ -343,23 +364,7 @@ pub(super) fn shared_capture_arguments(
                     lowered.push(*value);
                 }
             }
-            crate::hir::CaptureMode::Ref => {
-                let NativeType::Object(layout) = expected else {
-                    return Err(native_error(format!(
-                        "native closure `{function}` has a non-reference capture ABI"
-                    )));
-                };
-                let reference = allocate_shared_value(values, NativeType::Object(*layout));
-                instructions.push((
-                    ir::Instruction::Portable(ir::PortableInstruction::MakeWholeReference {
-                        destination: reference,
-                        pointee_type: crate::codegen::types::ExecutableType::Unknown,
-                        object: *value,
-                    }),
-                    Vec::new(),
-                ));
-                lowered.push(reference);
-            }
+            crate::hir::CaptureMode::Ref => unreachable!("borrowed captures were handled above"),
             crate::hir::CaptureMode::Pending => {
                 return Err(native_error(format!(
                     "native closure `{function}` has an unresolved capture mode"

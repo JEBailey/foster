@@ -2,6 +2,64 @@
 use foster::{native, vm};
 
 #[test]
+fn deferred_initialization_cleanup_on_both_backends() {
+    check_stdout(
+        "deferred-initialization",
+        include_str!("fixtures/programs/deferred_initialization.fos"),
+        "9\n9\n4\n10\n1\n1\n5\n20\n6\n6\n42",
+    );
+}
+
+#[test]
+fn deferred_initialization_failure_cleanup_on_both_backends() {
+    check_process_output(
+        "deferred-initialization-failure",
+        r#"
+import core.drop
+type Resource = & Drop & { id: Int }
+impl Resource { func deinit(self) -> () { println(self.id) } }
+type Pair = & Drop & { first: Resource, second: Resource }
+impl Pair { func deinit(self) -> () { println(99) } }
+func fail() -> Resource { panic("unfinished") }
+func main() {
+    let pair = Pair { first: Resource { id: 8 }, second: ?? }
+    pair.second = fail()
+}
+
+"#,
+        "8",
+        Some("unfinished"),
+    );
+}
+
+#[test]
+fn deferred_generic_and_scalar_fields_on_both_backends() {
+    check(
+        "deferred-generic",
+        r#"
+type Item<T> = { value: T, ready: Bool, ratio: Float }
+func build(flag: Bool) -> Item<Int> {
+    let item = Item { value: ??, ready: ??, ratio: ?? }
+    branch {
+        flag -> { item.value = 42 }
+        _ -> { item.value = 40 }
+    }
+    item.ready = true
+    item.ratio = 1.5
+    item
+}
+func main() -> Int {
+    let item = build(true)
+    assert(item.ready)
+    assert(item.ratio == 1.5)
+    item.value
+}
+"#,
+        Ok("42"),
+    );
+}
+
+#[test]
 fn named_scopes_cleanup_and_transfer_on_both_backends() {
     check_stdout(
         "named-scopes",
@@ -182,7 +240,7 @@ fn scalar_optimization_preserves_mutation_and_reference_aliases() {
     check(
         "scalar-barriers",
         r#"
-func update[g: group Int](value: ref[g] Int) -> Int [mut g] {
+func update(value: ref[value] Int) -> Int [mut value] {
     let before = 20 + 22
     value = value + 1
     let after = 3 * 4
@@ -324,8 +382,8 @@ fn dynamic_callable_selection_preserves_shared_reference_results() {
     check_stdout(
         "dynamic-callable-selection",
         r#"
-func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref left }
-func also_first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref left }
+func first(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int { ref left }
+func also_first(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int { ref left }
 func choose(index: Int, flag: Bool) -> Int {
     let left = [21]
     let right = [99]
@@ -391,7 +449,7 @@ import core.int
 type Pair = { left: Int, right: Int }
 func identity<T>(value: T) -> T [consume value] { value }
 func copied(value: int::Int) -> int::Int { value.copy() }
-func update[g: group Int](value: ref[g] Int) -> () [mut g] { value = value.copy() + 1
+func update(value: ref[value] Int) -> () [mut value] { value = value.copy() + 1
     () }
 func main() -> Int {
     let minimum = -9223372036854775807 - 1
@@ -426,8 +484,8 @@ fn constant_index_callable_selection_preserves_reference_results() {
     check_stdout(
         "constant-callable-index",
         r#"
-func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref left }
-func second[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref right }
+func first(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int { ref left }
+func second(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int { ref right }
 func choose_first() -> () {
     let left = [10]
     let right = [32]
@@ -467,7 +525,7 @@ func choose(ready: Bool, allowed: Bool) -> Int {
     branch { not ready || not allowed -> selected
         _ -> 0 }
 }
-func tick[g: group Int](count: ref[g] Int) -> Bool [mut g] {
+func tick(count: ref[count] Int) -> Bool [mut count] {
     count = count + 1
     true
 }
@@ -1655,7 +1713,7 @@ fn borrowed_temporaries_share_the_complete_full_expression() {
         r#"
 func make(value: Int) -> Int { value }
 
-func combine[left: group Int, right: group Int](first: ref[left] Int, second: ref[right] Int) -> Int {
+func combine(first: ref[first] Int, second: ref[second] Int) -> Int {
     first * 10 + second
 }
 
@@ -1699,7 +1757,7 @@ impl Counter {
         self.value
     }
 }
-func set[g: group Int](value: ref[g] Int, replacement: Int) -> Int [mut g] {
+func set(value: ref[value] Int, replacement: Int) -> Int [mut value] {
     value = replacement
 }
 func take(value: String) -> () [consume value] { () }
@@ -2191,7 +2249,7 @@ type Holder<T> = { callback: T }
 func describe(value: Int) -> String { "number" }
 func make() -> func(Int) -> String { describe }
 func invoke(callback: func(Int) -> String, value: Int) -> String { callback(value) }
-func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref left }
+func first(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int { ref left }
 func main() -> Int {
     let values = [10]
     let selected = ref values[0]
@@ -2236,7 +2294,7 @@ func choose(a: Bool, b: Bool) -> Int {
     branch { not a || not b -> selected
  _ -> 0 }
 }
-func bump[g: group Int](count: ref[g] Int) -> Bool [mut g] {
+func bump(count: ref[count] Int) -> Bool [mut count] {
     count = count + 1
     true
 }
@@ -2294,7 +2352,7 @@ import core.option
 import core.string
 type Item = { text: String, number: Int }
 impl Item { func copy(self) -> self { Item { text: self.text.copy(), number: self.number } } }
-func rename[g: group List<Item>](items: ref[g] List<Item>) -> () [mut g] {
+func rename(items: ref[items] List<Item>) -> () [mut items] {
     items[0].text = "after"
     ()
 }
@@ -2388,7 +2446,7 @@ fn nested_indexed_writes_support_generic_and_callable_fields() {
         "nested-index-generic",
         r#"
 type Box<T> = { value: T }
-func set<T>[g: group List<Box<T>>](items: ref[g] List<Box<T>>, value: T) -> () [mut g, consume value] { items[0].value = value
+func set<T>(items: ref[items] List<Box<T>>, value: T) -> () [mut items, consume value] { items[0].value = value
 () }
 func first(value: Int) -> Int { value }
 func second(value: Int) -> Int { value + 1 }
@@ -2734,6 +2792,15 @@ func main() -> Int {
     first + second
 }
 "#,
+        Ok("42"),
+    );
+}
+
+#[test]
+fn parameter_storage_groups_on_both_backends() {
+    check(
+        "parameter-groups",
+        include_str!("fixtures/programs/parameter_groups.fos"),
         Ok("42"),
     );
 }

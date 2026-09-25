@@ -318,6 +318,7 @@ impl Checker<'_> {
             ));
         }
         let raw_signature = self.functions[&function].clone();
+        let required = self.align_required_groups(required, &raw_signature, function)?;
         let mut generics = HashMap::new();
         let signature = Signature {
             parameters: raw_signature
@@ -335,7 +336,10 @@ impl Checker<'_> {
         }
         self.unify(
             Ty::Variant(owner, arguments.to_vec()),
-            signature.parameters[0].ty.clone(),
+            match signature.parameters[0].ty.clone() {
+                Ty::Reference(_, value) => *value,
+                value => value,
+            },
             function,
         )?;
         self.check_unconditional_constraints(function, &generics)?;
@@ -640,12 +644,6 @@ impl Checker<'_> {
         record_generics: &HashMap<String, Ty>,
         origin: Option<(RecordId, usize)>,
     ) -> Result<EffectiveMethod, FosterError> {
-        if !requirement.groups.is_empty() {
-            return Err(FosterError::runtime(format!(
-                "required method `{}.{}` cannot yet declare method-level group parameters",
-                owner_name, requirement.name
-            )));
-        }
         let mut generics = record_generics.clone();
         let mut type_parameters = Vec::new();
         let mut occupied = HashMap::new();
@@ -702,6 +700,17 @@ impl Checker<'_> {
                 } else {
                     crate::ast::ParameterMode::Borrow
                 };
+                let ty = if mode == crate::ast::ParameterMode::Borrow
+                    && crate::hir::queries::type_exposes_group(
+                        requirement.return_type.as_ref(),
+                        &parameter.name,
+                    )
+                    && !matches!(ty, Ty::Reference(..))
+                {
+                    Ty::Reference(parameter.name.clone(), Box::new(ty))
+                } else {
+                    ty
+                };
                 Ok(crate::types::Parameter { ty, mode })
             })
             .collect::<Result<Vec<_>, FosterError>>()?;
@@ -733,6 +742,48 @@ impl Checker<'_> {
             suspends: requirement.suspends,
             requirement: origin,
         })
+    }
+
+    fn align_required_groups(
+        &self,
+        required: &EffectiveMethod,
+        actual: &Signature,
+        function: FunctionId,
+    ) -> Result<EffectiveMethod, FosterError> {
+        let expected_callable = Ty::Function(
+            required.parameters.iter().map(|p| p.ty.clone()).collect(),
+            Box::new(required.result.clone()),
+        );
+        let actual_callable = Ty::Function(
+            actual
+                .parameters
+                .iter()
+                .skip(1)
+                .map(|p| p.ty.clone())
+                .collect(),
+            Box::new(actual.result.clone()),
+        );
+        self.check_callable_result_origins(&expected_callable, &actual_callable, function)?;
+        let groups = required
+            .parameters
+            .iter()
+            .zip(actual.parameters.iter().skip(1))
+            .filter_map(|(expected, actual)| match (&expected.ty, &actual.ty) {
+                (Ty::Reference(a, _), Ty::Reference(b, _)) => Some((a.clone(), b.clone())),
+                _ => None,
+            })
+            .collect::<HashMap<_, _>>();
+        let mut required = required.clone();
+        for parameter in &mut required.parameters {
+            parameter.ty = super::calls::substitute_groups(parameter.ty.clone(), &groups);
+        }
+        required.result = super::calls::substitute_groups(required.result, &groups);
+        for effect in &mut required.effects {
+            if let Some(group) = groups.get(&effect.target.root) {
+                effect.target.root = group.clone();
+            }
+        }
+        Ok(required)
     }
 
     pub(super) fn instantiate_required_method(
@@ -847,6 +898,7 @@ impl Checker<'_> {
         let implementation_effects = implementation.effects.clone();
         let implementation_suspends = implementation.suspends;
         let raw_signature = self.functions[&function].clone();
+        let required = self.align_required_groups(required, &raw_signature, function)?;
         let cache_key = cache_key.filter(|_| {
             raw_signature
                 .parameters
@@ -1046,7 +1098,10 @@ impl Checker<'_> {
             let compatible_receiver = self
                 .unify(
                     receiver.clone(),
-                    signature.parameters[0].ty.clone(),
+                    match signature.parameters[0].ty.clone() {
+                        Ty::Reference(_, value) => *value,
+                        value => value,
+                    },
                     *function,
                 )
                 .is_ok();
@@ -1056,7 +1111,16 @@ impl Checker<'_> {
                     .cloned()
                     .zip(signature.parameters.iter().skip(1).cloned())
                     .all(|(expected, actual)| {
-                        self.unify(expected.ty, actual.ty, *function).is_ok()
+                        let expected = match (&expected.ty, &actual.ty) {
+                            (Ty::Reference(a, _), Ty::Reference(b, _)) => {
+                                super::calls::substitute_groups(
+                                    expected.ty.clone(),
+                                    &HashMap::from([(a.clone(), b.clone())]),
+                                )
+                            }
+                            _ => expected.ty,
+                        };
+                        self.unify(expected, actual.ty, *function).is_ok()
                     });
             if compatible_parameters
                 && self

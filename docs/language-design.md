@@ -162,7 +162,7 @@ and ordinary language failures. Moving a value out transfers its cleanup obligat
 references and captured borrows must not outlive their origins.
 
 The label documents the lifetime boundary. It does not declare a variable, a runtime
-owner, or a borrowing group, and labels may repeat or nest. `return` still exits the
+owner. It names a lexical storage group, and labels may repeat or nest. `return` still exits the
 function; `break` and `continue` still target the nearest loop. A bare `:name` remains
 a symbol value. In a `branch`, `while`, or `for` header, parenthesize a named scope
 expression to distinguish its braces from the construct's body.
@@ -445,8 +445,8 @@ type Transform<T> = {
 
 An implementation must satisfy this requirement for every `U`; a function specialized to one
 result type is insufficient. Each call instantiates method type parameters independently. Required
-method type parameters must not shadow the enclosing type's parameters. Method-level ownership
-group parameters are not supported yet.
+method type parameters must not shadow the enclosing type's parameters. Storage groups
+are named by parameters, including `self`.
 
 ## Records
 
@@ -464,7 +464,19 @@ pub type Person = {
 let person = Person { name age internal_id }
 ```
 
-Construction initializes every field exactly once. A record with any private field can only be
+Construction names every field exactly once. `field: ??` explicitly defers a required field's
+initialization; omitted fields are still errors. A constructor containing `??` must be assigned
+directly to a local binding. Assign its deferred fields before reading them, borrowing or moving
+the whole record, passing it to a call, capturing it, or storing it in another value. Initialization
+must hold on every control-flow path reaching a use. Already initialized fields remain accessible.
+`??` is only a record-field initializer, not an expression value, `None`, or a default value.
+Generic fields retain their declared types and participate in normal inference.
+
+Abandoning or replacing an incomplete record cleans up its initialized fields. Its own `deinit`
+runs only if all fields have been initialized. This applies to failure and scope-exit cleanup too.
+Deferred initialization does not extend reference lifetimes or introduce collective ownership.
+
+A record with any private field can only be
 constructed inside its defining module. Field mutation is controlled by ownership and group access,
 not by a `var` marker on the field. Generic records such as `Parsed<T>` participate in ordinary
 constraint inference.
@@ -865,10 +877,15 @@ and asks for an annotation.
 
 This is not Hindley–Milner generalization: an unannotated function receives one inferred type within
 a compilation rather than becoming implicitly polymorphic. Polymorphism is always explicit.
-Type parameters use angle brackets and group parameters use a following square-bracketed section:
-`func map<T, U>(...)` declares types, while `func inspect[items: group T](...)` declares a group.
-Functions needing both use `func inspect<T>[items: group T](...)`. A function may not declare
-either category twice or reuse one name across both categories.
+Type parameters use angle brackets: `func map<T, U>(...)`. Duplicate type parameters
+are invalid. Free functions can use the same structural bounds as implementations:
+`func invoke<H & Handler>(handler: H) -> Int { handler.event() }`. Bounds retain
+the concrete argument type and are checked at each call. Method bounds belong on
+implementation parameters; required methods cannot introduce additional bounds.
+Storage groups need no separate declaration: each parameter name, including
+`self`, is available in `ref[name]` types and effect paths. Named lexical scopes
+`:label { ... }` define groups for local storage; incoming parameter groups retain
+the caller's storage origins.
 
 ## Standard library — explicit imports
 
@@ -1188,18 +1205,22 @@ A reference is parameterized by a group describing its possible target locations
 ref[people] Person
 ```
 
-An instance method may return `ref[self] T`, including within `Option`, using its implicit
-receiver group. The returned reference borrows receiver storage and supports mutation under
-the usual effect rules. Collection `borrow` methods use this contract; `remove` returns an
-owned value instead.
+Lexical scopes define groups for local storage. A function signature names incoming groups
+using its parameter names. For example, a parameter `people: List<Person>` can supply a result
+of type `Option<ref[people] Person>`. There are no separate group-parameter declarations.
+
+`self` is a method parameter and follows the same rule: `ref[self] T`, including within
+`Option`, borrows from the argument passed as `self`. The usual lifetime, invalidation, and
+effect rules apply. Collection `borrow` methods use this contract; `remove` returns an owned
+value instead.
 
 Reference types do not contain mutability. Mutation is an effect performed by a function:
 
 ```foster
-func rename[people: group Person](
-    person: ref[people] Person,
+func rename(
+    person: ref[person] Person,
     name: String,
-) -> () [mut people] {
+) -> () [mut person] {
     person.name = name
 }
 ```

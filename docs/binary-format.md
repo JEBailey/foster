@@ -1,6 +1,6 @@
 # Foster compiled bytecode format
 
-Format version 33; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
+Format version 35; encoding and decoding use `foster::vm::{encode_program, decode_program}`.
 
 The Foster bytecode format (`.fbc`) is a deterministic, portable representation of the register
 VM `Program` produced after shared-SSA sealing, de-SSA lowering, optimization, drop insertion, and
@@ -137,6 +137,13 @@ These construction checks do not change the wire format or version.
 
 ## Instructions
 
+`MakeRecord` supplies a sorted, duplicate-free subset of the declared fields. Missing entries
+represent explicitly deferred initialization. The VM tracks these holes separately from field
+values; field stores initialize them. Incomplete records skip their own Drop implementation while
+releasing initialized fields. Source ownership checking prevents incomplete records from escaping
+or being read as complete values. Native record layouts reserve initialization bytes before their
+payload and apply the same cleanup rule.
+
 Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a register vector.
 
 | Op | Instruction | Operands in encoded order |
@@ -179,7 +186,7 @@ Each starts with its opcode. `R` is a register, `F` a function ID, and `regs` a 
 
 ## Compatibility and canonical form
 
-Version 31 readers accept only version 31 with zero flags. String accessors use Foster
+Version 35 readers accept only version 35 with zero flags. String accessors use Foster
 grapheme algorithms, and strings implement `Sequence<String>`; scalar-based artifacts
 from earlier versions must be rebuilt. The format retains the symbolic module table.
 Contract calls retain their checked

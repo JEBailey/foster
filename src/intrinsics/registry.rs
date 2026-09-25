@@ -79,6 +79,7 @@ pub enum NativeIntrinsic {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NativeInlineIntrinsic {
+    CCallbackNew,
     IntegerToCodePoint,
     ByteIsValid,
     IntegerToByte,
@@ -172,6 +173,18 @@ macro_rules! builtin_descriptors {
 }
 
 macro_rules! native_builtin {
+    (CCallbackNew) => {
+        NativeIntrinsic::Inline(NativeInlineIntrinsic::CCallbackNew)
+    };
+    (CCallbackRelease) => {
+        NativeIntrinsic::Runtime(crate::native::abi::C_CALLBACK_RELEASE)
+    };
+    (CCallbackPoll) => {
+        NativeIntrinsic::Runtime(crate::native::abi::C_CALLBACK_POLL)
+    };
+    (CCallbackError) => {
+        NativeIntrinsic::Runtime(crate::native::abi::C_CALLBACK_ERROR)
+    };
     (ProcessReserve) => {
         NativeIntrinsic::Runtime(crate::native::abi::PROCESS_RESERVE)
     };
@@ -376,6 +389,14 @@ macro_rules! builtin_handler {
 }
 
 builtin_descriptors! {
+    CCallbackNew = 76, source: None, intrinsic: Some("c.callback_new") => Some("std.ffi"),
+        execution: ConsumeFirst, signature: [Consume Any, Read String, Read Integer] -> String;
+    CCallbackRelease = 77, source: None, intrinsic: Some("c.callback_release") => Some("std.ffi"),
+        execution: Direct, signature: [Read Integer] -> Unit;
+    CCallbackPoll = 78, source: None, intrinsic: Some("c.callback_poll") => Some("std.ffi"),
+        execution: Direct, signature: [Read Integer] -> String;
+    CCallbackError = 79, source: None, intrinsic: Some("c.callback_error") => Some("std.ffi"),
+        execution: Direct, signature: [Read Integer] -> String;
     ProcessReserve = 75, source: None, intrinsic: Some("process.reserve") => Some("std.process"),
         execution: Direct, signature: [] -> Integer;
     ProcessExchange = 72, source: None, intrinsic: Some("process.exchange") => Some("std.process"),

@@ -21,7 +21,7 @@ impl Checker<'_> {
                 if function.receiver == Some(local.local) {
                     "self".to_owned()
                 } else {
-                    FRAME_GROUP.to_owned()
+                    self.hir.locals[local.local].name.clone()
                 }
             });
             self.local_groups.insert(local.local, group);
@@ -560,6 +560,7 @@ impl Checker<'_> {
         let expression = self.hir.expressions[expression_id].clone();
         let ty = match expression {
             hir::Expr::Unit => Ty::Unit,
+            hir::Expr::Deferred => self.fresh(),
             hir::Expr::Bool(_) => Ty::Bool,
             hir::Expr::Integer(_) => Ty::Int,
             hir::Expr::Float(_) => Ty::Float,

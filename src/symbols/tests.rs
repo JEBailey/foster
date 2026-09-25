@@ -68,19 +68,13 @@ fn symbolic_identity_survives_arena_parameter_and_generic_renaming() {
 #[test]
 fn groups_and_reference_result_dependencies_are_retained() {
     let first = compile(
-        "pub func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref left }",
+        "pub func first(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int { ref left }",
     );
-    let renamed = compile(
-        "pub func first[h: group Int](a: ref[h] Int, b: ref[h] Int) -> ref[h] Int { ref a }",
-    );
+    let renamed = compile("pub func first(a: ref[a] Int, b: ref[a] Int) -> ref[a] Int { ref a }");
     let descriptor = &definition(&first, "first").descriptor;
     assert_eq!(descriptor, &definition(&renamed, "first").descriptor);
     assert_eq!(descriptor.result_dependencies, vec![0]);
     assert!(!descriptor.fresh_result);
-    assert_eq!(
-        descriptor.groups,
-        vec![("g0".into(), SymbolType::Primitive("int".into()))]
-    );
 }
 
 #[test]

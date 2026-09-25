@@ -134,11 +134,10 @@ impl<'a> Builder<'a> {
                 });
             }
             if matches!(parameter.ty, Some(crate::ast::TypeExpr::Reference { .. }))
-                || (definition.receiver == Some(parameter.local)
-                    && crate::hir::queries::type_exposes_group(
-                        definition.return_type.as_ref(),
-                        "self",
-                    ))
+                || (crate::hir::queries::type_exposes_group(
+                    definition.return_type.as_ref(),
+                    &self.hir.locals[parameter.local].name,
+                ))
             {
                 let destination = Self::local_place(parameter.local);
                 let value = self.issue_reborrow(destination.clone(), definition.span.clone());
@@ -788,7 +787,8 @@ impl<'a> Builder<'a> {
                     });
                 }
             }
-            hir::Expr::Unit
+            hir::Expr::Deferred
+            | hir::Expr::Unit
             | hir::Expr::Bool(_)
             | hir::Expr::Integer(_)
             | hir::Expr::Float(_)
@@ -1227,7 +1227,41 @@ impl<'a> Builder<'a> {
     }
 
     fn call_result_borrow_value(&mut self, callee: ExprId, arguments: &[ExprId]) -> BorrowValue {
-        let contents = self.call_result_contents(callee, arguments);
+        let mut contents = self.call_result_contents(callee, arguments);
+        if let Some(target) = self.types.resolved_function_for_callee(callee) {
+            let offset = usize::from(matches!(
+                self.hir.expressions[callee],
+                hir::Expr::Member { .. }
+            ));
+            let signature = self.types.function_type(target);
+            let storage_arguments = self.result_provenance[&target]
+                .parameters
+                .iter()
+                .filter(|index| {
+                    signature.is_some_and(|signature| {
+                        signature.parameters.get(**index).is_some_and(|p| {
+                            matches!(self.types.types[p.ty], crate::types::Type::Reference { .. })
+                        })
+                    })
+                })
+                .filter_map(|index| index.checked_sub(offset))
+                .filter_map(|index| arguments.get(index))
+                .copied()
+                .filter(|argument| {
+                    !matches!(self.hir.expressions[*argument], hir::Expr::Reference(_))
+                })
+                .collect::<Vec<_>>();
+            for argument in storage_arguments {
+                if let Some(origin) = self
+                    .owned_place(argument)
+                    .or_else(|| self.active_temporaries.get(&argument).cloned())
+                {
+                    let loan = self.issue_reborrow(origin, self.span(callee));
+                    self.loans.last_mut().unwrap().may_target_descendants = true;
+                    contents = BorrowValue::Merge(vec![contents, loan]);
+                }
+            }
+        }
         if let hir::Expr::Member { object, .. } = self.hir.expressions[callee]
             && self.types.expression_type(callee).is_some_and(|ty| {
                 matches!(&self.types.types[ty], crate::types::Type::Function(signature)
@@ -1284,7 +1318,28 @@ impl<'a> Builder<'a> {
                 callee: Box::new(self.borrow_value(callee)),
                 arguments: arguments
                     .iter()
-                    .map(|argument| self.borrow_value(*argument))
+                    .enumerate()
+                    .map(|(index, argument)| {
+                        let contents = self.borrow_value(*argument);
+                        if signature.is_some_and(|signature| {
+                            signature.parameters.get(index).is_some_and(|p| {
+                                matches!(
+                                    self.types.types[p.ty],
+                                    crate::types::Type::Reference { .. }
+                                )
+                            })
+                        }) && !matches!(self.hir.expressions[*argument], hir::Expr::Reference(_))
+                            && let Some(origin) = self
+                                .owned_place(*argument)
+                                .or_else(|| self.active_temporaries.get(argument).cloned())
+                        {
+                            let loan = self.issue_reborrow(origin, self.span(callee));
+                            self.loans.last_mut().unwrap().may_target_descendants = true;
+                            BorrowValue::Merge(vec![contents, loan])
+                        } else {
+                            contents
+                        }
+                    })
                     .collect(),
                 fallback_parameters,
             };
@@ -1428,6 +1483,18 @@ impl<'a> Builder<'a> {
         if !self.saved_boolean(value, &mut 64) {
             self.expression_into(value, Context::Consume, Some(Self::local_place(local)));
             self.initialize(local, self.span(value));
+            if let hir::Expr::Record { fields, .. } = &self.hir.expressions[value] {
+                for (name, initializer) in fields {
+                    if matches!(self.hir.expressions[*initializer], hir::Expr::Deferred) {
+                        let mut place = Self::local_place(local);
+                        place.projections.push(hir::Projection::Field(name.clone()));
+                        self.emit(Operation::DeferField {
+                            place,
+                            span: self.span(*initializer),
+                        });
+                    }
+                }
+            }
             return;
         }
         let paths = [self.block(), self.block()];

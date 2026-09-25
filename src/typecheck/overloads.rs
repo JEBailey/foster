@@ -152,6 +152,12 @@ impl Checker<'_> {
             }
             let widening =
                 expected_resolved == Ty::Int && matches!(actual_resolved, Ty::CodePoint | Ty::Byte);
+            let expected = match (&expected, &actual) {
+                (Ty::Reference(_, value), actual) if !matches!(actual, Ty::Reference(..)) => {
+                    (**value).clone()
+                }
+                _ => expected,
+            };
             if !widening && self.coerce(expected, actual, caller).is_err() {
                 return None;
             }
@@ -202,7 +208,7 @@ impl Checker<'_> {
         name: &str,
         overloads: &[EffectiveMethod],
     ) -> Result<Ty, FosterError> {
-        let argument_types = arguments
+        let mut argument_types = arguments
             .iter()
             .map(|argument| self.infer_expression(function, *argument))
             .collect::<Result<Vec<_>, _>>()?;
@@ -279,6 +285,9 @@ impl Checker<'_> {
                 requirement,
             },
         );
+        self.borrow_argument_types(&callable, arguments, &mut argument_types);
+        let callable =
+            instantiate_call_groups(callable, &argument_types, self.call_receiver_group(callee));
         self.check_argument_modes(function, &callable, arguments, &argument_types)?;
         let result = self.fresh();
         self.unify_call(
@@ -385,7 +394,7 @@ impl Checker<'_> {
             Ty::Reference(_, value) => (*value, false, false),
             value => (value, false, false),
         };
-        let argument_types = arguments
+        let mut argument_types = arguments
             .iter()
             .map(|argument| self.infer_expression(function, *argument))
             .collect::<Result<Vec<_>, _>>()?;
@@ -427,7 +436,14 @@ impl Checker<'_> {
             };
             let expected_receiver = parameters.remove(0);
             if self
-                .coerce(expected_receiver.ty, receiver.clone(), function)
+                .coerce(
+                    match expected_receiver.ty {
+                        Ty::Reference(_, value) => *value,
+                        value => value,
+                    },
+                    receiver.clone(),
+                    function,
+                )
                 .is_err()
             {
                 continue;
@@ -513,7 +529,9 @@ impl Checker<'_> {
             },
         );
         self.dispatch_composed_default(callee, &callable);
-        let callable = instantiate_call_groups(callable, &argument_types);
+        self.borrow_argument_types(&callable, arguments, &mut argument_types);
+        let callable =
+            instantiate_call_groups(callable, &argument_types, self.call_receiver_group(callee));
         self.check_argument_modes(function, &callable, arguments, &argument_types)?;
         let result = self.fresh();
         self.unify_call(
@@ -605,7 +623,7 @@ impl Checker<'_> {
         name: &str,
         overloads: &[FunctionId],
     ) -> Result<Ty, FosterError> {
-        let argument_types = arguments
+        let mut argument_types = arguments
             .iter()
             .map(|argument| self.infer_expression(function, *argument))
             .collect::<Result<Vec<_>, _>>()?;
@@ -714,7 +732,9 @@ impl Checker<'_> {
         self.expressions.insert(callee, callable.clone());
         self.resolved_calls
             .insert(callee, ResolvedCall::Function(selected));
-        let callable = instantiate_call_groups(callable, &argument_types);
+        self.borrow_argument_types(&callable, arguments, &mut argument_types);
+        let callable =
+            instantiate_call_groups(callable, &argument_types, self.call_receiver_group(callee));
         self.check_argument_modes(function, &callable, arguments, &argument_types)?;
         let result = self.fresh();
         self.unify_call(

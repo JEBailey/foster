@@ -76,6 +76,35 @@ fn check_closure_statement_block(
 }
 
 pub(crate) fn validate_groups_and_effects(hir: &PackageHir) -> Result<(), FosterError> {
+    // Required methods have the same parameter-named groups as implementations.
+    for (module, methods) in hir
+        .records
+        .iter()
+        .map(|(_, r)| (r.module, &r.methods))
+        .chain(
+            hir.variant_types
+                .iter()
+                .map(|(_, v)| (v.module, &v.methods)),
+        )
+    {
+        for method in methods {
+            let declared = method.parameters.iter().map(|p| p.name.as_str()).collect();
+            for ty in method
+                .parameters
+                .iter()
+                .filter_map(|p| p.ty.as_ref())
+                .chain(method.return_type.as_ref())
+            {
+                validate_type_groups(ty, &declared, &method.name).map_err(|error| {
+                    error.with_fallback_location(
+                        hir.modules[module].name.clone(),
+                        method.span.clone(),
+                        "this method contract uses an invalid group",
+                    )
+                })?;
+            }
+        }
+    }
     for (_, function) in hir.functions.iter() {
         let is_method = function.receiver.is_some();
         let parameter_names = function
@@ -97,33 +126,9 @@ pub(crate) fn validate_groups_and_effects(hir: &PackageHir) -> Result<(), Foster
                 ));
             }
         }
-        let mut declared = std::collections::HashSet::new();
+        let mut declared = parameter_names.clone();
         if is_method {
             declared.insert("self");
-        }
-        for group in &function.groups {
-            if type_parameters.contains(group.name.as_str()) {
-                return Err(FosterError::runtime(format!(
-                    "function `{}` uses `{}` as both a type parameter and a group parameter",
-                    function.name, group.name
-                ))
-                .with_fallback_location(
-                    hir.modules[function.module].name.clone(),
-                    function.span.clone(),
-                    "this function reuses a type parameter as a group parameter",
-                ));
-            }
-            if !declared.insert(group.name.as_str()) {
-                return Err(FosterError::runtime(format!(
-                    "function `{}` declares group `{}` more than once",
-                    function.name, group.name
-                ))
-                .with_fallback_location(
-                    hir.modules[function.module].name.clone(),
-                    function.span.clone(),
-                    "this function has duplicate group parameters",
-                ));
-            }
         }
         for parameter in &function.parameters {
             if let Some(annotation) = &parameter.ty {

@@ -76,7 +76,8 @@ fn expression(value: &Expr) -> bool {
             ClosureBody::Expression(value) => expression(value),
             ClosureBody::Block(body) => block(body),
         },
-        Expr::Unit
+        Expr::Deferred
+        | Expr::Unit
         | Expr::Bool(_)
         | Expr::Integer(_)
         | Expr::Float(_)

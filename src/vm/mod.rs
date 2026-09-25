@@ -86,11 +86,11 @@ mod tests {
     #[test]
     fn returned_references_preserve_their_live_origin() {
         let source = r#"
-func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int {
+func preserve(value: ref[value] Int) -> ref[value] Int {
     ref value
 }
 
-func set[g: group Int](value: ref[g] Int, replacement: Int) -> Int [mut g] {
+func set(value: ref[value] Int, replacement: Int) -> Int [mut value] {
     value = replacement
 }
 

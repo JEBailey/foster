@@ -212,15 +212,15 @@ mod tests {
     #[test]
     fn recursive_effects_grow_shrink_and_report_bounds_like_synchronous_inference() {
         let base = r#"
-func first[g: group Int](value: ref[g] Int, stop: Bool) -> Int {
+func first(value: ref[value] Int, stop: Bool) -> Int {
     return value if stop
     second(ref value, true)
 }
-func second[g: group Int](value: ref[g] Int, stop: Bool) -> Int {
+func second(value: ref[value] Int, stop: Bool) -> Int {
     BODY
     first(ref value, stop)
 }
-func caller[g: group Int](value: ref[g] Int) -> Int [read g] { first(ref value, true) }
+func caller(value: ref[value] Int) -> Int [read value] { first(ref value, true) }
 "#;
         let cache = Default::default();
         for body in ["()", "value = value + 1", "()"] {
@@ -231,8 +231,8 @@ func caller[g: group Int](value: ref[g] Int) -> Int [read g] { first(ref value, 
     #[test]
     fn captured_callable_effects_match_synchronous_inference() {
         let base = r#"
-func make[g: group Int](value: ref[g] Int) -> func() -> Int [mut g] {
-    [ref value] () -> [mut g] {
+func make(value: ref[value] Int) -> func() -> Int [mut value] {
+    [ref value] () -> [mut value] {
         BODY
         value
     }

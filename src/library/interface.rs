@@ -152,16 +152,6 @@ pub(super) fn build(
                     })
                 })
                 .collect::<Result<Vec<_>, FosterError>>()?;
-            let groups = descriptor
-                .groups
-                .iter()
-                .map(|(name, ty)| {
-                    Ok(ast::GroupParameter {
-                        name: name.clone(),
-                        element: annotation(ty)?,
-                    })
-                })
-                .collect::<Result<Vec<_>, FosterError>>()?;
             let mut effects = effects(&descriptor.effects)?;
             // Parameter ownership is expressed by consume effects in declarations.
             for (i, p) in descriptor.parameters.iter().enumerate() {
@@ -200,7 +190,6 @@ pub(super) fn build(
                         })
                     })
                     .collect::<Result<Vec<_>, FosterError>>()?,
-                groups,
                 parameters,
                 return_type: Some(annotation(&descriptor.result)?),
                 effects_explicit: true,
@@ -564,9 +553,6 @@ fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {
         if let Some(t) = &mut m.return_type {
             ty(t, names);
         }
-        for g in &mut m.groups {
-            ty(&mut g.element, names);
-        }
     }
     fn function(f: &mut ast::Function, names: &BTreeMap<String, String>) {
         for constraint in &mut f.constraints {
@@ -579,9 +565,6 @@ fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {
         }
         if let Some(t) = &mut f.return_type {
             ty(t, names);
-        }
-        for g in &mut f.groups {
-            ty(&mut g.element, names);
         }
         block(&mut f.body, names);
     }
@@ -692,7 +675,8 @@ fn rewrite(program: &mut ast::Program, names: &BTreeMap<String, String>) {
                     ast::ClosureBody::Block(body) => block(body, names),
                 }
             }
-            E::Unit
+            E::Deferred
+            | E::Unit
             | E::Bool(_)
             | E::Integer(_)
             | E::Float(_)
@@ -800,16 +784,8 @@ pub(super) fn validate_function(
             .iter()
             .zip(parameters)
             .any(|(a, (name, ty))| a.name != name || a.ty.as_ref() != Some(&ty))
-        || declaration.groups.len() != descriptor.groups.len()
     {
         return Err(error("declaration does not match its symbolic descriptor"));
-    }
-    for (a, (name, t)) in declaration.groups.iter().zip(&descriptor.groups) {
-        if &a.name != name || a.element != annotation(t)? {
-            return Err(error(
-                "group declaration does not match its symbolic descriptor",
-            ));
-        }
     }
     Ok(())
 }

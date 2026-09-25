@@ -1,7 +1,7 @@
 import std.iter
 
 type Counter = { calls: Int }
-func values[g: group Counter](counter: ref[g] Counter) -> List<Int> {
+func values(counter: ref[counter] Counter) -> List<Int> {
     counter.calls = counter.calls + 1
     [1, 2, 3]
 }

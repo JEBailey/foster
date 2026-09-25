@@ -2,7 +2,7 @@
 
 type Counters = { accepted: Int, rejected: Int, limit: Int }
 
-func record_batch[g: group Counters](counts: ref[g] Counters) -> () [mut g(accepted, rejected)] {
+func record_batch(counts: ref[counts] Counters) -> () [mut counts(accepted, rejected)] {
     counts.accepted = counts.accepted + 2
     counts.rejected = counts.rejected + 1
     ()
@@ -16,19 +16,19 @@ test "grouped effects mutate named fields and preserve other fields" {
     assert(counts.limit == 10)
 }
 
-func replace[g: group Int](value: ref[g] Int) -> Int [mut g] {
+func replace(value: ref[value] Int) -> Int [mut value] {
     value = 2
     value
 }
 
-func incrementer[g: group Int](value: ref[g] Int) -> func() -> Int [mut g] {
-    [ref value] () -> [mut g] {
+func incrementer(value: ref[value] Int) -> func() -> Int [mut value] {
+    [ref value] () -> [mut value] {
         value = value + 1
         value
     }
 }
 
-func transfer[source: group Int, destination: group Int](from: ref[source] Int, to: ref[destination] Int) -> Int [read source, mut destination] {
+func transfer(from: ref[from] Int, to: ref[to] Int) -> Int [read from, mut to] {
     to = from
     to
 }

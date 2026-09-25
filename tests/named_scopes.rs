@@ -69,7 +69,7 @@ func main() -> Int {
 fn named_scopes_keep_effects_and_symbol_headers() {
     let source = r#"
 type Box = { value: Int }
-func update[g: group Box](value: ref[g] Box) -> () [mut g.value] {
+func update(value: ref[value] Box) -> () [mut value.value] {
     :work { value.value = 42 }
 }
 func main() -> Int {
@@ -83,7 +83,7 @@ func main() -> Int {
 }
 "#;
     assert_eq!(foster::run(source).unwrap(), Value::Integer(42));
-    assert!(foster::compile(&source.replace("[mut g.value]", "[read g.value]")).is_err());
+    assert!(foster::compile(&source.replace("[mut value.value]", "[read value.value]")).is_err());
 }
 
 #[test]

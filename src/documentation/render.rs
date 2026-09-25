@@ -789,18 +789,6 @@ fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
     } else {
         format!("&lt;{}&gt;", generic_entries.join(", "))
     };
-    let group_entries = function
-        .groups
-        .iter()
-        .map(|group| {
-            format!(
-                "{}: group {}",
-                escape(&group.name),
-                links.source(&group.element)
-            )
-        })
-        .collect::<Vec<_>>();
-    let groups = squared(&group_entries);
     let parameters = function
         .parameters
         .iter()
@@ -826,7 +814,7 @@ fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
     });
     let name = function.name.rsplit('.').next().unwrap_or(&function.name);
     format!(
-        "{}func {name}{generics}{groups}({parameters}) -&gt; {result}{effects}",
+        "{}func {name}{generics}({parameters}) -&gt; {result}{effects}",
         if function.public { "pub " } else { "" },
     )
 }
@@ -980,14 +968,6 @@ fn angled(values: &[String]) -> String {
         String::new()
     } else {
         format!("<{}>", values.join(", "))
-    }
-}
-
-fn squared(values: &[String]) -> String {
-    if values.is_empty() {
-        String::new()
-    } else {
-        format!("[{}]", values.join(", "))
     }
 }
 

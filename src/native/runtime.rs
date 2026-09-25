@@ -99,6 +99,14 @@ fn runtime_source() -> String {
             &format!(
                 "mod c_bridge {{\n{}\n}}",
                 include_str!("../foreign/runtime.rs")
+                    .replace("\r\n", "\n")
+                    .replace(
+                        "#[path = \"callbacks.rs\"]\npub mod callbacks;",
+                        &format!(
+                            "pub mod callbacks {{\n{}\n}}",
+                            include_str!("../foreign/callbacks.rs")
+                        ),
+                    )
             ),
         )
         .replace(
@@ -553,10 +561,10 @@ func crash(kind: String, text: String) -> String {
         }
     }
 }
-func reference[g: group Box](box: ref[g] Box, kind: String) -> String {
+func reference(box: ref[box] Box, kind: String) -> String {
     crash(kind, box.text)
 }
-func nested[g: group List<Box>](items: ref[g] List<Box>, text: String) -> String [mut g] {
+func nested(items: ref[items] List<Box>, text: String) -> String [mut items] {
     items[0].text = text + "replacement"
     crash("assert", text)
 }

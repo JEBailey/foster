@@ -607,14 +607,14 @@ fn ownership_and_effect_contracts_survive_import() {
     let w = Workspace::new();
     w.library(
         r#"
-pub func preserve[g: group Int](value: ref[g] Int) -> ref[g] Int { ref value }
-pub func observe[g: group Int](value: ref[g] Int) -> Int { value }
+pub func preserve(value: Int) -> ref[value] Int { ref value }
+pub func observe(value: ref[value] Int) -> Int { value }
 pub func append(values: List<Int>) -> () { values.push(30) }
 "#,
     );
-    let valid=w.consumer("import api\nfunc main() -> Int { let values = [42]\nlet selected = preserve(ref values[0])\nobserve(selected) }").unwrap();
+    let valid=w.consumer("import api\nfunc main() -> Int { let values = [42]\nlet selected = preserve(values[0])\nobserve(selected) }").unwrap();
     assert_eq!(run(&valid), Value::Integer(42));
-    let invalid=w.consumer("import api\nfunc main() -> Int { let values = [42]\nlet selected = preserve(ref values[0])\nappend(values)\nobserve(selected) }");
+    let invalid=w.consumer("import api\nfunc main() -> Int { let values = [42]\nlet selected = preserve(values[0])\nappend(values)\nobserve(selected) }");
     assert_eq!(
         invalid.unwrap_err().code.as_deref(),
         Some(foster::ownership::diagnostics::INVALIDATED_LOAN)

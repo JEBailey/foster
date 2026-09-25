@@ -328,7 +328,6 @@ fn declaration_key(hir: &hir::PackageHir) -> String {
                 &function.intrinsic,
                 &function.type_parameters,
                 &function.constraints,
-                &function.groups,
                 function
                     .parameters
                     .iter()

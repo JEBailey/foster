@@ -1196,7 +1196,7 @@ mod tests {
             "func main(value: Int) {}",
             "func broken<T, T>(value: T) { value }",
             "type Pair = { left: Int, left: Int }",
-            "func main[g: group Int](value: ref[missing] Int) { value }",
+            "func main(value: ref[missing] Int) { value }",
         ];
 
         for source in sources {

@@ -52,3 +52,18 @@ path to resolve:
 
 The screenshot shows rendering; interactive mouse behavior can be exercised by
 running without `--smoke`. Press Escape or close the window to exit.
+
+The separate headless resource example uses `contracts.json` to import owned
+`Image` values, file strings, and binary buffers. With the SDK installed by the
+setup above, run:
+
+```powershell
+./examples/raylib/setup-resources.ps1
+```
+
+It builds the Foster cbind tool, generates reviewed bindings under
+`target/raylib-resources`, and runs `resources.fos` as a module importing those bindings.
+The example reads UTF-8 text and bytes, creates and resizes an image, exports PNG bytes, reloads them, checks
+the pixels, and exercises explicit close and scope cleanup. It needs no window or
+graphics context. Pass `-Cbind ./target/cbind.exe` to reuse a current tool build.
+Callbacks are not included in these contracts.

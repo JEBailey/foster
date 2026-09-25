@@ -16,7 +16,7 @@ use crate::{
     types::{Type, TypeId},
 };
 
-pub const FORMAT_VERSION: u16 = 2;
+pub const FORMAT_VERSION: u16 = 3;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -72,7 +72,7 @@ pub struct Parameter {
 #[serde(deny_unknown_fields)]
 pub struct Effect {
     pub kind: String,
-    /// Parameter roots are positional (`p0`); explicit groups are alpha-renamed (`g0`).
+    /// Parameter storage groups are positional (`p0`), including the receiver.
     pub root: String,
     pub path: Vec<String>,
 }
@@ -86,7 +86,6 @@ pub struct Descriptor {
     pub receiver: bool,
     pub parameters: Vec<Parameter>,
     pub result: SymbolType,
-    pub groups: Vec<(String, SymbolType)>,
     pub effects: Vec<Effect>,
     pub suspends: bool,
     /// Positional input dependencies proved by ownership MIR. Receiver, when present, is p0.
@@ -115,7 +114,6 @@ impl Descriptor {
             && self.receiver == implementation.receiver
             && self.parameters == implementation.parameters
             && self.result == implementation.result
-            && self.groups == implementation.groups
             && (!implementation.suspends || self.suspends)
             && implementation.effects.iter().all(|effect| {
                 self.effects.iter().any(|allowed| {
@@ -149,7 +147,6 @@ impl SymbolType {
                 let mut signature = (**signature).clone();
                 signature.parameters = signature.overload();
                 signature.result = signature.result.lookup_type();
-                signature.groups.clear();
                 signature.effects.clear();
                 signature.suspends = false;
                 signature.result_dependencies.clear();

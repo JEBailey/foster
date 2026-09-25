@@ -240,7 +240,18 @@ pub(super) fn define_layout_destructors(
                     object,
                     layout.header.flags_offset as i32,
                 );
-                let active = builder.ins().icmp_imm_s(IntCC::Equal, flags, 0);
+                let mut active = builder.ins().icmp_imm_s(IntCC::Equal, flags, 0);
+                if let PhysicalKind::Record { fields, .. } = &layout.kind {
+                    for index in 0..fields.len() {
+                        let initialized = builder.ins().load(
+                            types::I8,
+                            MemFlagsData::trusted(),
+                            object,
+                            (layout.header.size + index as u32) as i32,
+                        );
+                        active = builder.ins().band(active, initialized);
+                    }
+                }
                 let call = builder.create_block();
                 let fields = builder.create_block();
                 builder.ins().brif(active, call, &[], fields, &[]);
@@ -714,6 +725,17 @@ pub(super) fn allocate_object(
         object,
         physical.header.flags_offset as i32,
     );
+    if let PhysicalKind::Record { fields, .. } = &physical.kind {
+        let initialized = builder.ins().iconst(types::I8, 1);
+        for index in 0..fields.len() {
+            store_physical_value(
+                builder,
+                object,
+                physical.header.size + index as u32,
+                initialized,
+            );
+        }
+    }
     Ok(object)
 }
 

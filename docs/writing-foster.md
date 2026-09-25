@@ -24,6 +24,16 @@ impl Box<T & Copy> {
 func main() -> Int { Box { value: 42 }.copied() }
 ```
 
+Generic functions can also declare structural bounds while retaining the concrete
+argument type:
+
+```foster
+import core.copy
+
+func duplicate<T & Copy>(value: T) -> T [read value] { value.copy() }
+func main() -> Int { duplicate(42) }
+```
+
 ## Record destructuring
 
 Select fields by name, use `field: local` to rename a binding, and omit fields you
@@ -127,13 +137,35 @@ for guarded transfers. Do not write `if condition { ... }`, `else`, or a postfix
 guard on an assignment. In loop headers, parenthesize a direct record literal
 to distinguish its braces from the body.
 
+## Deferred record fields
+
+Use `field: ??` to explicitly leave a required field uninitialized while constructing a record.
+Bind that constructor directly to a local, then assign the field before reading it or using the
+whole record. Omitted required fields are still errors. `??` is not a value or an `Option` case.
+Initialization is checked on every control-flow path. Incomplete records cannot be passed to
+ordinary functions, captured, moved, borrowed as a whole, or placed in containers.
+
+```foster
+type Answer = { base: Int, extra: Int }
+
+func main() -> Int {
+    let answer = Answer { base: 40, extra: ?? }
+    answer.extra = 2
+    answer.base + answer.extra
+}
+```
+
+Already initialized fields can be used before the remaining fields are assigned. If construction
+is abandoned, initialized fields are cleaned up, but the incomplete record's own `deinit` is not
+called. This is general field initialization; it does not create an owning group or permit cycles.
+
 ## Named ownership scopes
 
 Use a symbol-shaped label followed by braces to make a resource lifetime visible.
 The final expression supplies the result; an empty scope or a final non-expression
 statement supplies `()`. Locals stay inside the scope, and remaining owners are
 cleaned up on exit. Moving an owned result out transfers its cleanup obligation.
-The label is descriptive; it does not declare a variable or a borrowing group.
+The label names the lexical storage group; it does not declare a variable.
 
 ```foster
 func main() -> Int {
@@ -192,7 +224,7 @@ enclosing function must return a compatible `Result` with the same error type.
 Prefer it for direct error propagation. Keep `branch` for error conversion or
 recovery, and for borrowed results: `try` consumes its operand.
 `assert(condition, "message")` stops execution on failure; it does not produce a
-recoverable error. Generics use `<T>`; group declarations use brackets instead.
+recoverable error. Generics use `<T>`; storage groups are named by parameters or lexical scope labels.
 
 ## Propagating custom outcomes
 
@@ -237,7 +269,7 @@ import core.string
 
 type Counter = { value: Int }
 
-func bump[g: group Counter](counter: ref[g] Counter) -> () [mut g] {
+func bump(counter: ref[counter] Counter) -> () [mut counter] {
     counter.value = counter.value + 1
     ()
 }
@@ -259,7 +291,7 @@ func main() -> Int {
 }
 ```
 
-`ref[g] T` describes a reference associated with a named group; `ref value`
+`ref[name] T` describes a reference associated with a parameter storage group; `ref value`
 borrows a place. This is not Rust's `&mut T` or lifetime syntax. Closure syntax is
 `(argument: Type) -> expression` or `-> { statements }`; explicit captures include
 `[copy name]`, `[move name]`, and `[ref name]`. Captures and call arguments have
@@ -354,4 +386,24 @@ func positive(value: Int) -> Int {
 }
 
 func main() -> Int { positive(42) }
+```
+
+## Parameter storage groups
+
+Every parameter name is available in `ref[name]`; `self` follows the same rule.
+A returned borrow can name an ordinary argument without a separate group declaration.
+Named blocks define lexical groups for local storage. Incoming parameters retain dependencies
+on caller storage; their borrows cannot outlive its owner. An inner block does not
+change an outer borrow's origin.
+
+```foster
+type Item = { value: Int }
+
+func borrow(item: Item) -> ref[item] Item { ref item }
+
+func main() -> Int {
+    let item = Item { value: 42 }
+    let borrowed = :request { :inspect { borrow(item) } }
+    borrowed.value
+}
 ```

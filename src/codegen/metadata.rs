@@ -49,7 +49,7 @@ impl ProgramMetadata {
             module.name.path == "std.ffi"
                 && module.types.iter().any(|binding| {
                     !binding.variant
-                        && binding.name.name == "CResource"
+                        && ["CResource", "CCallbackLease"].contains(&binding.name.name.as_str())
                         && binding.id == u32::from(record.into_raw())
                 })
         })

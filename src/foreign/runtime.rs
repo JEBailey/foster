@@ -5,6 +5,9 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
+#[path = "callbacks.rs"]
+pub mod callbacks;
+
 pub const ABI: u64 = 1;
 pub const LIMIT: usize = 16 * 1024 * 1024;
 type Describe = unsafe extern "C" fn(u32) -> u64;
@@ -36,7 +39,7 @@ impl Drop for Resource {
 #[derive(Default)]
 struct State {
     libraries: HashMap<String, Rc<Library>>,
-    resources: HashMap<i64, Resource>,
+    resources: HashMap<i64, Rc<RefCell<Resource>>>,
 }
 thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
 // Tokens are never reused, even between threads or successive VM executions.
@@ -90,7 +93,7 @@ pub fn int(text: &str) -> Result<i64, String> {
     }
     Ok(i64::from_le_bytes(bytes))
 }
-fn response(result: Result<Vec<u8>, String>) -> String {
+pub(crate) fn response(result: Result<Vec<u8>, String>) -> String {
     match result {
         Ok(bytes) => encode_prefixed("00", &bytes),
         Err(error) => encode_prefixed("01", error.as_bytes()),
@@ -115,10 +118,10 @@ pub fn exchange(
     response((|| {
         let input = decode(payload)?;
         let operation = u32::try_from(operation).map_err(|_| "C operation is outside u32")?;
-        STATE.with(|state| {
+        let (library, resource) = STATE.with(|state| {
             let mut state = state
                 .try_borrow_mut()
-                .map_err(|_| "C callbacks/reentrant calls are unsupported")?;
+                .map_err(|_| "C bridge registry is already in use")?;
             let library = if token == 0 {
                 if !Path::new(path).is_absolute() {
                     return Err("C bridge path must be absolute".into());
@@ -135,123 +138,142 @@ pub fn exchange(
                     .resources
                     .get(&token)
                     .ok_or("C resource is closed or belongs to another thread")?
+                    .try_borrow()
+                    .map_err(|_| "C resource is already in use")?
                     .library
                     .clone()
             };
-            if token == 0 && schema != library.schema {
-                return Err(
-                    "C bridge binding schema mismatch; rebuild the bindings and program together"
-                        .into(),
-                );
-            }
-            let metadata = unsafe { (library.describe)(operation) };
-            let mode = metadata as u32 & 255;
-            let kind = (metadata >> 32) as u32;
-            if (mode == 2) != create {
-                return Err("C constructor requires an owning resource result".into());
-            }
-            let pointer = match (mode, token) {
-                (1 | 2, 0) => std::ptr::null_mut(),
-                (3, _) if token != 0 => {
-                    let resource = &state.resources[&token];
-                    if resource.kind != kind {
-                        return Err("C operation requires a different resource type".into());
-                    }
-                    resource.pointer
+            Ok::<_, String>((library, state.resources.get(&token).cloned()))
+        })?;
+        // Never hold the registry across C: a callback may call another bridge.
+        // A receiver remains exclusively leased until its native call returns.
+        let resource_lease = resource
+            .as_ref()
+            .map(|resource| {
+                resource
+                    .try_borrow_mut()
+                    .map_err(|_| "C resource is already in use")
+            })
+            .transpose()?;
+        if token == 0 && schema != library.schema {
+            return Err(
+                "C bridge binding schema mismatch; rebuild the bindings and program together"
+                    .into(),
+            );
+        }
+        let metadata = unsafe { (library.describe)(operation) };
+        let mode = metadata as u32 & 255;
+        let kind = (metadata >> 32) as u32;
+        if (mode == 2) != create {
+            return Err("C constructor requires an owning resource result".into());
+        }
+        let pointer = match (mode, token) {
+            (1 | 2, 0) => std::ptr::null_mut(),
+            (3, _) if token != 0 => {
+                let resource = resource_lease.as_ref().ok_or("C resource is closed")?;
+                if resource.kind != kind {
+                    return Err("C operation requires a different resource type".into());
                 }
-                _ => return Err("unknown C operation or incompatible resource receiver".into()),
-            };
-            // Bits 16..31 describe a fixed copied-record result; byte buffers use bit 8.
-            let fixed_size = ((metadata >> 16) & 0xffff) as usize;
-            let mut output = vec![
-                0u8;
-                if metadata & 256 != 0 {
-                    LIMIT
-                } else {
-                    fixed_size.max(8)
-                }
-            ];
-            let mut length = 0;
-            let mut created = std::ptr::null_mut();
-            let status = unsafe {
-                (library.call)(
-                    operation,
-                    pointer,
-                    input.as_ptr(),
-                    input.len() as u64,
-                    output.as_mut_ptr(),
-                    output.len() as u64,
-                    &mut length,
-                    &mut created,
-                )
-            };
-            // Adopt immediately so every subsequent failure destroys the result.
-            let resource = if mode == 2 && !created.is_null() {
-                Some(Resource {
-                    library: library.clone(),
-                    kind,
-                    pointer: created,
-                })
+                resource.pointer
+            }
+            _ => return Err("unknown C operation or incompatible resource receiver".into()),
+        };
+        // Bits 16..31 describe a fixed copied-record result; byte buffers use bit 8.
+        let fixed_size = ((metadata >> 16) & 0xffff) as usize;
+        let mut output = vec![
+            0u8;
+            if metadata & 256 != 0 {
+                LIMIT
             } else {
-                None
-            };
-            if status != 0 {
-                return Err(format!("C bridge operation {operation} failed ({status})"));
+                fixed_size.max(8)
             }
-            if length > output.len() as u64 {
-                return Err("C bridge returned an invalid output length".into());
-            }
-            if mode == 2 {
-                let resource = resource.ok_or("C constructor returned null")?;
-                let token = NEXT_TOKEN
-                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
-                    .map_err(|_| "C resource token space exhausted")?;
-                state.resources.insert(token, resource);
-                Ok(token.to_le_bytes().to_vec())
-            } else {
-                output.truncate(length as usize);
-                Ok(output)
-            }
-        })
+        ];
+        let mut length = 0;
+        let mut created = std::ptr::null_mut();
+        let status = unsafe {
+            (library.call)(
+                operation,
+                pointer,
+                input.as_ptr(),
+                input.len() as u64,
+                output.as_mut_ptr(),
+                output.len() as u64,
+                &mut length,
+                &mut created,
+            )
+        };
+        // Adopt immediately so every subsequent failure destroys the result.
+        let resource = if mode == 2 && !created.is_null() {
+            Some(Resource {
+                library: library.clone(),
+                kind,
+                pointer: created,
+            })
+        } else {
+            None
+        };
+        if status != 0 {
+            return Err(format!("C bridge operation {operation} failed ({status})"));
+        }
+        if length > output.len() as u64 {
+            return Err("C bridge returned an invalid output length".into());
+        }
+        if mode == 2 {
+            let resource = resource.ok_or("C constructor returned null")?;
+            let token = NEXT_TOKEN
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_add(1))
+                .map_err(|_| "C resource token space exhausted")?;
+            STATE.with(|state| {
+                state
+                    .borrow_mut()
+                    .resources
+                    .insert(token, Rc::new(RefCell::new(resource)))
+            });
+            Ok(token.to_le_bytes().to_vec())
+        } else {
+            output.truncate(length as usize);
+            Ok(output)
+        }
     })())
 }
 
 /// Returns [consumed byte, signed little-endian status]. A failed close may
 /// retain ownership; the descriptor's close contract decides this, not its sign.
 pub fn close(token: i64) -> String {
-    response(STATE.with(|state| {
-        let mut state = state
-            .try_borrow_mut()
-            .map_err(|_| "C callbacks/reentrant calls are unsupported")?;
-        let resource = state
-            .resources
-            .get_mut(&token)
+    response((|| {
+        let resource = STATE
+            .with(|state| state.borrow().resources.get(&token).cloned())
             .ok_or("C resource is closed or belongs to another thread")?;
+        let mut resource = resource
+            .try_borrow_mut()
+            .map_err(|_| "C resource is already in use")?;
         let mut consumed = 0;
         let status =
             unsafe { (resource.library.close)(resource.kind, resource.pointer, &mut consumed) };
         if consumed != 0 {
             resource.pointer = std::ptr::null_mut();
-            state.resources.remove(&token);
+            STATE.with(|state| state.borrow_mut().resources.remove(&token));
         }
         let mut result = vec![u8::from(consumed != 0)];
         result.extend_from_slice(&status.to_le_bytes());
         Ok(result)
-    }))
+    })())
 }
 pub fn release(token: i64) -> Result<(), String> {
     if token == 0 {
         return Ok(());
     }
-    STATE.with(|state| {
-        let resource = state
+    let resource = STATE
+        .with(|state| state.borrow().resources.get(&token).cloned())
+        .ok_or("C resource is closed or belongs to another thread")?;
+    drop(
+        resource
             .try_borrow_mut()
-            .map_err(|_| "C callbacks/reentrant calls are unsupported")?
-            .resources
-            .remove(&token);
-        drop(resource.ok_or("C resource is closed or belongs to another thread")?);
-        Ok(())
-    })
+            .map_err(|_| "C resource is already in use")?,
+    );
+    STATE.with(|state| state.borrow_mut().resources.remove(&token));
+    drop(resource);
+    Ok(())
 }
 
 impl Library {
@@ -262,6 +284,15 @@ impl Library {
                 std::mem::transmute(module.symbol(b"foster_c_abi\0")?);
             if version() != ABI {
                 return Err("C bridge ABI version mismatch".into());
+            }
+            if let Ok(initialize) = module.symbol(b"foster_c_callbacks_init\0") {
+                type Invoke =
+                    unsafe extern "C" fn(i64, u64, *const u8, u64, *mut u8, u64, *mut u64) -> i32;
+                let initialize: unsafe extern "C" fn(u64, Invoke) -> i32 =
+                    std::mem::transmute(initialize);
+                if initialize(1, callbacks::invoke) != 0 {
+                    return Err("C callback ABI mismatch".into());
+                }
             }
             let schema: unsafe extern "C" fn() -> u64 =
                 std::mem::transmute(module.symbol(b"foster_c_schema\0")?);

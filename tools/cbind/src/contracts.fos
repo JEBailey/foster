@@ -19,12 +19,14 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
     let contracts = bridge::decode_json(source)
     assert(contracts.nodes[0].kind == "object", "contracts must be an object")
     for member in contracts.children(0) {
-        assert(["operations", "resources", "exclude"].contains?(contracts.nodes[member].key), "unknown contracts field " + contracts.nodes[member].key)
+        assert(["operations", "resources", "exclude", "callbacks"].contains?(contracts.nodes[member].key), "unknown contracts field " + contracts.nodes[member].key)
     }
     let declared = []
+    let declared_types = []
     for row in declarations.copy().split("\n") {
         let fields = row.copy().split("\t")
         branch { fields.length >= 3 && ["F", "R"].contains?(fields[0]) -> declared.push(fields[1].copy()) _ -> () }
+        branch { fields.length >= 3 && fields[0] == "T" -> declared_types.push(fields[1].copy()) _ -> () }
     }
     let reviewed = []
     let replaced = []
@@ -46,7 +48,23 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
     let resources = []
     for resource in contracts.array(0, "resources", false) {
         resources.push(contracts.json(resource))
-        blocked.push(contracts.string(resource, "c_type", true))
+        let native = contracts.string(resource, "c_type", true)
+        blocked.push(native.copy())
+        // A resource may use a typedef such as Texture2D while discovery names
+        // its value record Texture. Suppress that underlying record as well.
+        for pass in 0.range(32) {
+            let previous = native.copy()
+            for row in declarations.copy().split("\n") {
+                let fields = row.copy().split("\t")
+                branch { fields.length >= 3 && fields[0] == "T" && fields[1] == native -> {
+                    native = fields[2].copy()
+                    break
+                } _ -> () }
+            }
+            break if native == previous
+        }
+        branch { native.starts_with?("struct ") -> { native = native.slice(7, native.length) } _ -> () }
+        blocked.push(native.copy())
         for key in ["destroy", "close", "valid"] {
             let symbol = contracts.string(resource, key, key == "destroy")
             branch { !symbol.empty? -> {
@@ -84,18 +102,42 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
     let members = []
     for member in base.children(0) {
         let key = base.nodes[member].key.copy()
-        continue if ["operations", "records", "resources"].contains?(key)
+        continue if ["operations", "records", "resources", "callbacks"].contains?(key)
         members.push(bindings::quoted(key) + ":" + base.json(member))
     }
     members.push("\"operations\":[" + operations.join(",") + "]")
     members.push("\"records\":[" + records.join(",") + "]")
     members.push("\"resources\":[" + resources.join(",") + "]")
+    let callbacks = []
+    let callback_types = []
+    for callback in base.array(0, "callbacks", false) { callbacks.push(base.json(callback)) }
+    for callback in contracts.array(0, "callbacks", false) {
+        callbacks.push(contracts.json(callback))
+        let native = contracts.string(callback, "c_type", false)
+        branch { !native.empty? -> {
+            assert(declared_types.contains?(native), "callback typedef was not discovered: " + native)
+            callback_types.push(native.copy())
+        } _ -> () }
+    }
+    members.push("\"callbacks\":[" + callbacks.join(",") + "]")
     let remaining = ""
     for line in report.copy().split("\n") {
         continue if line.empty?
         let name = line.copy().split(":")[0]
-        continue if replaced.contains?(name) || excluded.contains?(name) || blocked.contains?(name)
+        continue if replaced.contains?(name) || excluded.contains?(name) || blocked.contains?(name) || callback_types.contains?(name)
         remaining = remaining + line + "\n"
     }
     Generated { manifest: "{" + members.join(",") + "}", report: remaining + extra_report }
+}
+
+test "reviewed owners suppress copyable records and raw cleanup paths" {
+    let base = "{\"abi\":1,\"headers\":[],\"records\":[{\"name\":\"Handle\",\"c_type\":\"Handle\",\"fields\":[]},{\"name\":\"Container\",\"c_type\":\"Container\",\"fields\":[{\"name\":\"item\",\"type\":{\"record\":\"Handle\"}}]}],\"operations\":[{\"name\":\"open\",\"symbol\":\"open\",\"result\":{\"record\":\"Handle\"}},{\"name\":\"read\",\"symbol\":\"read\",\"parameters\":[{\"record\":\"Container\"}],\"result\":\"i32\"},{\"name\":\"destroy\",\"symbol\":\"destroy\",\"result\":\"void\"}]}"
+    let reviewed = "{\"resources\":[{\"name\":\"Handle\",\"c_type\":\"HandleAlias\",\"destroy\":\"destroy\",\"by_value\":true}],\"operations\":[{\"name\":\"open\",\"symbol\":\"open\",\"result\":\"void\",\"creates\":\"Handle\"}]}"
+    let result = apply(base, "open: unsupported\nother: unsupported\n", "T\tHandleAlias\tstruct Handle\nF\topen\tx\nF\tdestroy\tx\nF\tread\tx\n", reviewed)
+    let tree = bridge::decode_json(result.manifest)
+    assert(tree.array(0, "records", true).length == 0)
+    assert(tree.array(0, "resources", true).length == 1)
+    assert(tree.array(0, "operations", true).length == 1)
+    assert(result.report.contains?("other: unsupported") && result.report.contains?("read: native resource"))
+    assert(!result.report.contains?("open: unsupported"))
 }

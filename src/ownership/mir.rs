@@ -357,6 +357,10 @@ pub struct BasicBlock {
 
 #[derive(Debug, Clone)]
 pub enum Operation {
+    DeferField {
+        place: Place,
+        span: Range<usize>,
+    },
     /// Effectful calls can replace callable values through aliases.
     ForgetCallableTargets,
     /// A call may mutate predicate operands through effects or captured aliases.

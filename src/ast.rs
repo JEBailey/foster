@@ -114,7 +114,6 @@ pub struct MethodRequirement {
     pub receiver: bool,
     pub public: bool,
     pub type_parameters: Vec<String>,
-    pub groups: Vec<GroupParameter>,
     pub parameters: Vec<Parameter>,
     pub return_type: Option<TypeExpr>,
     pub effects: Vec<Effect>,
@@ -141,7 +140,6 @@ pub struct Function {
     pub intrinsic: Option<String>,
     pub type_parameters: Vec<String>,
     pub constraints: Vec<TypeConstraint>,
-    pub groups: Vec<GroupParameter>,
     pub parameters: Vec<Parameter>,
     pub return_type: Option<TypeExpr>,
     pub effects_explicit: bool,
@@ -150,12 +148,6 @@ pub struct Function {
     pub suspends: bool,
     pub suspend_span: Option<std::ops::Range<usize>>,
     pub body: crate::block::Block<Stmt>,
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct GroupParameter {
-    pub name: String,
-    pub element: TypeExpr,
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
@@ -322,6 +314,8 @@ pub enum Stmt {
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 pub enum Expr {
+    /// Explicit deferred record-field initializer; never a first-class value.
+    Deferred,
     Spanned {
         expression: Box<Expr>,
         span: std::ops::Range<usize>,

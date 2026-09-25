@@ -1,6 +1,6 @@
 //! Ownership groups, references, closure captures, and partial application.
 
-func set[state: group Int](value: ref[state] Int, next: Int) -> Int {
+func set(value: ref[value] Int, next: Int) -> Int {
     value = next
     value
 }

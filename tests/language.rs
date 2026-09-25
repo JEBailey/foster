@@ -1480,18 +1480,7 @@ func main() { 0 }
             .contains("declares type parameter `T` more than once")
     );
 
-    let collision = foster::compile(
-        r#"
-func invalid<T>[T: group Int](value: T) -> T { value }
-func main() { 0 }
-"#,
-    )
-    .unwrap_err();
-    assert!(
-        collision
-            .message
-            .contains("uses `T` as both a type parameter and a group parameter")
-    );
+    assert!(foster::parse("func invalid<T>[T: group Int](value: T) -> T { value }").is_err());
 }
 
 #[test]
@@ -2377,7 +2366,7 @@ func main() -> Int {
 
     let borrowed_temporary = foster::run(
         r#"
-func length[value: group Bytes](value: ref[value] Bytes) -> Int { value.length }
+func length(value: ref[value] Bytes) -> Int { value.length }
 func main() -> Int {
     let text = "λ"
     length(ref text.bytes)

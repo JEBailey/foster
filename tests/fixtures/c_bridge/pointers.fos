@@ -18,10 +18,20 @@ func main() -> Result<Int, CError> {
     let updated = try c_update_pair(pair)
     assert(updated.x == 22 && updated.y == 22 && pair.x == 20)
     assert((try c_single_output()) == 42)
+    assert((try c_fill_bytes(3)).hex() == "2a0000")
+    branch c_fill_bytes(-1) { Result.Error(_) -> () Result.Ok(_) -> panic("negative capacity accepted") }
+    let pairs = [CPair { x: 20, y: 22 }, CPair { x: 1, y: 2 }]
+    assert((try c_sum_pairs(pairs)) == 45)
+    let changed_pairs = try c_mutate_pairs(pairs)
+    assert(changed_pairs[0].x == 21 && changed_pairs[1].x == 2 && pairs[0].x == 20)
+    let filled = try c_fill_pairs(2)
+    assert(filled[0].x + filled[0].y == 42 && filled[1].x == 0)
     assert((try c_live_values()) == 0)
     :owned {
         let value = try c_create_value(42)
         assert((try c_live_values()) == 1 && (try c_read_value(value)) == 42)
+        try c_set_value(value, 43)
+        assert((try c_read_value(value)) == 43)
         try value.close()
         try value.close()
         branch c_read_value(value) { Result.Error(_) -> () Result.Ok(_) -> panic("closed owner accepted") }

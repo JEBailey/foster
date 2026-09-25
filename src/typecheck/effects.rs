@@ -17,9 +17,9 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
     pub(super) fn new(checker: &'a Checker<'hir>, function: FunctionId) -> Self {
         let definition = &checker.hir.functions[function];
         let mut contract = definition
-            .groups
+            .parameters
             .iter()
-            .map(|group| group.name.clone())
+            .map(|p| checker.hir.locals[p.local].name.clone())
             .collect::<HashSet<_>>();
         if !definition.effects_explicit {
             contract.extend(
@@ -462,6 +462,7 @@ impl<'a, 'hir> EffectDerivation<'a, 'hir> {
                 }
             }
             hir::Expr::Closure { .. }
+            | hir::Expr::Deferred
             | hir::Expr::Unit
             | hir::Expr::Bool(_)
             | hir::Expr::Integer(_)
@@ -844,8 +845,8 @@ mod tests {
     #[test]
     fn referenced_outer_groups_match_eager_derivation() {
         let source = r#"
-func make[g: group Int](value: ref[g] Int) -> func() -> Int [mut g] {
-    [ref value] () -> [mut g] {
+func make(value: ref[value] Int) -> func() -> Int [mut value] {
+    [ref value] () -> [mut value] {
         value = value + 1
         value
     }

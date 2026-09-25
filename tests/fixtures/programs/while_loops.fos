@@ -1,5 +1,5 @@
 type Counter = { value: Int }
-func next[g: group Counter](counter: ref[g] Counter) -> Bool {
+func next(counter: ref[counter] Counter) -> Bool {
     counter.value = counter.value + 1
     counter.value <= 3
 }

@@ -48,7 +48,6 @@ pub enum TokenKind {
     False,
     Move,
     Ref,
-    Group,
     Read,
     Mut,
     Reshape,
@@ -86,6 +85,7 @@ pub enum TokenKind {
     Greater,
     GreaterEqual,
     Newline,
+    Deferred,
     Eof,
 }
 
@@ -152,6 +152,16 @@ impl<'a> Lexer<'a> {
                 '\'' => out.push(self.code_point()?),
                 ':' if self.peek_next().is_some_and(is_ident_start) => out.push(self.symbol()),
                 c if is_ident_start(c) => out.push(self.identifier()),
+                '?' if self.peek_next() == Some('?') => {
+                    self.advance();
+                    self.advance();
+                    out.push(tok(
+                        TokenKind::Deferred,
+                        line,
+                        column,
+                        offset..self.byte_index,
+                    ));
+                }
                 '(' => {
                     self.advance();
                     out.push(tok(
@@ -607,7 +617,6 @@ impl<'a> Lexer<'a> {
             "false" => TokenKind::False,
             "move" => TokenKind::Move,
             "ref" => TokenKind::Ref,
-            "group" => TokenKind::Group,
             "read" => TokenKind::Read,
             "mut" => TokenKind::Mut,
             "reshape" => TokenKind::Reshape,

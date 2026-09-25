@@ -141,7 +141,8 @@ pub(crate) fn walk_expression<V: Visitor + ?Sized>(
                 }
             }
         }
-        Expr::Unit
+        Expr::Deferred
+        | Expr::Unit
         | Expr::Bool(_)
         | Expr::Integer(_)
         | Expr::Float(_)

@@ -113,6 +113,27 @@ impl FunctionCompiler<'_> {
         Ok(destination)
     }
 
+    // Escaping borrows pass the caller's place for every parameter, including self.
+    fn parameter_argument(
+        &mut self,
+        function: FunctionId,
+        index: usize,
+        argument: ExprId,
+        span: std::ops::Range<usize>,
+    ) -> Result<Slot, FosterError> {
+        if self.types.function_type(function).is_some_and(|signature| {
+            matches!(
+                self.types.types[signature.parameters[index].ty],
+                crate::types::Type::Reference { .. }
+            )
+        }) && !matches!(self.hir.expressions[argument], hir::Expr::Reference(_))
+        {
+            self.reference_expression(argument, span)
+        } else {
+            self.expression(argument)
+        }
+    }
+
     pub(super) fn reference_expression(
         &mut self,
         place: ExprId,
@@ -243,6 +264,9 @@ impl FunctionCompiler<'_> {
             .unwrap_or_else(|| self.hir.functions[self.function].span.clone());
         match &self.hir.expressions[id] {
             hir::Expr::Unit => self.load_constant(Constant::Unit, span),
+            hir::Expr::Deferred => {
+                Err(self.unsupported("deferred initializer outside record construction"))
+            }
             hir::Expr::Bool(value) => self.load_constant(Constant::Bool(*value), span),
             hir::Expr::Integer(value) => self.load_constant(Constant::Integer(*value), span),
             hir::Expr::Float(value) => self.load_constant(Constant::Float(*value), span),
@@ -462,7 +486,15 @@ impl FunctionCompiler<'_> {
                             self.specialization(function, &specialization_arguments, id);
                         let mut arguments = arguments
                             .iter()
-                            .map(|argument| self.expression(*argument))
+                            .enumerate()
+                            .map(|(index, argument)| {
+                                self.parameter_argument(
+                                    function,
+                                    index + 1,
+                                    *argument,
+                                    span.clone(),
+                                )
+                            })
                             .collect::<Result<Vec<_>, _>>()?;
                         let destination = self.allocate();
                         if self.lower_list_intrinsic(
@@ -577,8 +609,19 @@ impl FunctionCompiler<'_> {
                 };
                 let argument_expressions = arguments.clone();
                 let arguments = arguments
-                    .iter()
-                    .map(|argument| self.expression(*argument))
+                    .iter().enumerate()
+                    .map(|(index, argument)| match resolved_function {
+                        Some(function) => self.parameter_argument(function, index, *argument, span.clone()),
+                        None => {
+                            let expects_place = self.types.expression_type(*callee).is_some_and(|ty| {
+                                matches!(&self.types.types[ty], crate::types::Type::Function(signature)
+                                    if signature.parameters.get(index).is_some_and(|p| matches!(self.types.types[p.ty], crate::types::Type::Reference { .. })))
+                            });
+                            if expects_place && !matches!(self.hir.expressions[*argument], hir::Expr::Reference(_)) {
+                                self.reference_expression(*argument, span.clone())
+                            } else { self.expression(*argument) }
+                        },
+                    })
                     .collect::<Result<Vec<_>, _>>()?;
                 let destination = self.allocate();
                 if let Some(function) = resolved_function {
@@ -904,6 +947,9 @@ impl FunctionCompiler<'_> {
                 // physical field order selected for the record layout.
                 let values = fields
                     .iter()
+                    .filter(|(_, value)| {
+                        !matches!(self.hir.expressions[*value], hir::Expr::Deferred)
+                    })
                     .map(|(name, value)| Ok((name.clone(), self.owned_expression(*value)?)))
                     .collect::<Result<HashMap<_, _>, FosterError>>()?;
                 let mut layout = self.types.record_fields[record]
@@ -913,13 +959,8 @@ impl FunctionCompiler<'_> {
                 layout.sort();
                 let fields = layout
                     .iter()
-                    .map(|name| {
-                        let value = values
-                            .get(name)
-                            .ok_or_else(|| self.unsupported("record field layout"))?;
-                        Ok((name.clone(), *value))
-                    })
-                    .collect::<Result<Vec<_>, FosterError>>()?;
+                    .filter_map(|name| values.get(name).map(|value| (name.clone(), *value)))
+                    .collect();
                 let destination = self.allocate();
                 self.emit(
                     Instruction::MakeRecord {

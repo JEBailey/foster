@@ -12,9 +12,9 @@ fn dynamic_source(setup: &str, call: &str, changed: &str) -> String {
     format!(
         r#"
 type Holder<T> = {{ value: T }}
-func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}
-func also_first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}
-func second[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref right }}
+func first(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int {{ ref left }}
+func also_first(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int {{ ref left }}
+func second(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int {{ ref right }}
 func choose(index: Int, flag: Bool) -> Int {{
     let left = [10]
     let right = [32]
@@ -95,7 +95,7 @@ fn dynamic_target_unions_keep_all_origins_and_forget_mutated_lists() {
 fn dynamic_target_limits_and_unknown_entries_use_the_full_contract() {
     for count in [8, 9] {
         let functions = (0..count).map(|index| format!(
-            "func target{index}[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}\n"
+            "func target{index}(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int {{ ref left }}\n"
         )).collect::<String>();
         let names = (0..count)
             .map(|index| format!("target{index}"))
@@ -117,7 +117,7 @@ fn dynamic_target_limits_and_unknown_entries_use_the_full_contract() {
         }
     }
     let source = dynamic_source("let callbacks = [unknown, first]", "callbacks[index]", "right.push(99)")
-        .replace("func choose(index: Int, flag: Bool)", "func choose[g: group Int](unknown: func(ref[g] Int, ref[g] Int) -> ref[g] Int, index: Int, flag: Bool)")
+        .replace("func choose(index: Int, flag: Bool)", "func choose(unknown: func(ref[unknown] Int, ref[unknown] Int) -> ref[unknown] Int, index: Int, flag: Bool)")
         .replace("choose(0, true) + choose(1, false)", "choose(second, 0, true)");
     foster::compile(&source.replace("right.push(99)", "()")).unwrap();
     assert_eq!(
@@ -199,8 +199,8 @@ fn known_callable_results_keep_only_the_used_reference_parameter() {
         let source = format!(
             r#"
 type Holder<T> = {{ value: T }}
-func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}
-func second[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref right }}
+func first(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int {{ ref left }}
+func second(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int {{ ref right }}
 func check(flag: Bool) -> Int {{
     let left = [10]
     let right = [20]
@@ -232,8 +232,8 @@ fn constant_index_selection_preserves_each_slots_reference_summary() {
     ] {
         let source = format!(
             r#"
-func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}
-func second[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref right }}
+func first(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int {{ ref left }}
+func second(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int {{ ref right }}
 func main() -> Int {{
     let left = [10]
     let right = [32]
@@ -261,8 +261,8 @@ fn constant_index_selection_does_not_reuse_replaced_or_dynamic_targets() {
     for (setup, index) in [("callbacks[0] = second", "0"), ("", "index")] {
         let source = format!(
             r#"
-func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}
-func second[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref right }}
+func first(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int {{ ref left }}
+func second(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int {{ ref right }}
 func choose(index: Int) -> Int {{
     let left = [10]
     let right = [32]
@@ -287,8 +287,8 @@ func main() -> Int {{ choose(1) }}
 #[test]
 fn unknown_and_mixed_targets_keep_possible_reference_origins() {
     let source = r#"
-func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref left }
-func second[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int { ref right }
+func first(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int { ref left }
+func second(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int { ref right }
 func check(flag: Bool) -> Int {
     let left = [10]
     let right = [20]
@@ -310,7 +310,7 @@ func main() -> Int { check(false) }
 #[test]
 fn returned_closures_keep_captured_parameter_origins() {
     let source = r#"
-func make[g: group Int](selected: ref[g] Int) -> func() -> Int [read g] {
+func make(selected: ref[selected] Int) -> func() -> Int [read selected] {
     [ref selected] () -> selected
 }
 func main() -> Int {
@@ -333,8 +333,8 @@ fn unknown_callable_parameters_use_reference_group_contracts() {
     for (mutation, valid) in [("right.push(30)", true), ("left.push(30)", false)] {
         let source = format!(
             r#"
-func first[a: group Int, b: group Int](left: ref[a] Int, right: ref[b] Int) -> ref[a] Int {{ ref left }}
-func invoke[a: group Int, b: group Int](callback: func(ref[a] Int, ref[b] Int) -> ref[a] Int, left: ref[a] Int, right: ref[b] Int) -> ref[a] Int {{
+func first(left: ref[left] Int, right: ref[right] Int) -> ref[left] Int {{ ref left }}
+func invoke(callback: func(ref[left] Int, ref[right] Int) -> ref[left] Int, left: ref[left] Int, right: ref[right] Int) -> ref[left] Int {{
     callback(ref left, ref right)
 }}
 func main() -> Int {{
@@ -364,9 +364,9 @@ fn callable_target_replacement_and_unknown_joins_do_not_keep_stale_summaries() {
         let source = format!(
             r#"
 type Holder<T> = {{ value: T }}
-func first[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref left }}
-func second[g: group Int](left: ref[g] Int, right: ref[g] Int) -> ref[g] Int {{ ref right }}
-func check[g: group Int](unknown: func(ref[g] Int, ref[g] Int) -> ref[g] Int, flag: Bool) -> Int {{
+func first(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int {{ ref left }}
+func second(left: ref[left] Int, right: ref[left] Int) -> ref[left] Int {{ ref right }}
+func check(unknown: func(ref[unknown] Int, ref[unknown] Int) -> ref[unknown] Int, flag: Bool) -> Int {{
     let left = [10]
     let right = [20]
     {setup}
@@ -409,7 +409,7 @@ func main() -> Int {
     assert_eq!(foster::run(source).unwrap(), Value::Integer(6));
     let borrowed = r#"
 type Box<T> = { value: T }
-func make[g: group Int](selected: ref[g] Int) -> Box<func() -> Int [read g]> {
+func make(selected: ref[selected] Int) -> Box<func() -> Int [read selected]> {
     Box { value: [ref selected] () -> selected }
 }
 func main() -> Int {
@@ -430,7 +430,7 @@ func main() -> Int {
 #[test]
 fn recursive_target_summaries_preserve_reborrow_ancestry() {
     let source = r#"
-func follow[g: group Int](value: ref[g] Int, count: Int) -> func() -> Int [read g] {
+func follow(value: ref[value] Int, count: Int) -> func() -> Int [read value] {
     branch {
         count == 0 -> () -> 1
         _ -> follow(ref value, count - 1)
@@ -457,8 +457,8 @@ func main() -> Int {
 #[test]
 fn callable_adaptation_cannot_omit_a_result_group() {
     let source = r#"
-func wrong[a: group Int, b: group Int](left: ref[a] Int, right: ref[b] Int) -> ref[b] Int { ref right }
-func invoke[a: group Int, b: group Int](callback: func(ref[a] Int, ref[b] Int) -> ref[a] Int, left: ref[a] Int, right: ref[b] Int) -> ref[a] Int {
+func wrong(left: ref[left] Int, right: ref[right] Int) -> ref[right] Int { ref right }
+func invoke(callback: func(ref[left] Int, ref[right] Int) -> ref[left] Int, left: ref[left] Int, right: ref[right] Int) -> ref[left] Int {
     callback(ref left, ref right)
 }
 func main() -> Int {

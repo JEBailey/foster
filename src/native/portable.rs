@@ -14,6 +14,145 @@ use super::{
     write_native_separator, write_native_value, zero_i64,
 };
 
+fn callback_owned_type(
+    ty: &crate::codegen::types::ExecutableType,
+    layouts: &crate::codegen::layout::Registry,
+    seen: &mut std::collections::HashSet<crate::codegen::types::ExecutableType>,
+) -> bool {
+    use crate::codegen::types::ExecutableType as T;
+    if !seen.insert(ty.clone()) {
+        return true;
+    }
+    match ty {
+        T::Reference(_) | T::Function { .. } | T::Unknown | T::Generic(_) | T::Intersection(_) | T::AliasArguments { .. } => false,
+        T::List(element) | T::Remote(element) | T::Future(element) => callback_owned_type(element, layouts, seen),
+        T::Alternatives(elements) => elements.iter().all(|element| callback_owned_type(element, layouts, seen)),
+        T::Record { record, arguments } => layouts.record_instance(*record, arguments).is_some_and(|id| {
+            matches!(&layouts.get(id).kind, LayoutKind::Record { fields, .. } if fields.iter().all(|field| callback_owned_type(&field.ty, layouts, seen)))
+        }),
+        T::Variant { variant, arguments } => layouts.variant_instance(*variant, arguments).is_some_and(|id| {
+            matches!(&layouts.get(id).kind, LayoutKind::Variant { alternatives, .. } if alternatives.iter().all(|alt| alt.payload.iter().all(|ty| callback_owned_type(ty, layouts, seen))))
+        }),
+        _ => true,
+    }
+}
+
+fn callback_owned_layout(
+    layout: &crate::codegen::layout::Layout,
+    layouts: &crate::codegen::layout::Registry,
+) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    match &layout.kind {
+        LayoutKind::Record { fields, .. } => fields
+            .iter()
+            .all(|field| callback_owned_type(&field.ty, layouts, &mut seen)),
+        LayoutKind::Variant { alternatives, .. } => alternatives.iter().all(|alt| {
+            alt.payload
+                .iter()
+                .all(|ty| callback_owned_type(ty, layouts, &mut seen))
+        }),
+        LayoutKind::Builtin { ty } => callback_owned_type(ty, layouts, &mut seen),
+        _ => false,
+    }
+}
+
+fn callback_environment_safe(
+    builder: &mut FunctionBuilder<'_>,
+    module: &mut ObjectModule,
+    backend: &super::NativeBackend<'_>,
+    layout: crate::codegen::layout::LayoutId,
+    environment: ClifValue,
+) -> ClifValue {
+    let objects = backend.objects;
+    let LayoutKind::Closure {
+        captures: logical, ..
+    } = &objects.layouts.logical.get(layout).kind
+    else {
+        unreachable!()
+    };
+    let PhysicalKind::Closure { captures, .. } = &objects.layouts.physical.get(layout).kind else {
+        unreachable!()
+    };
+    let word = module.target_config().pointer_type();
+    let mut safe = builder.ins().iconst(types::I8, 1);
+    for (slot, field) in logical.iter().zip(captures) {
+        let opaque =
+            field
+                .value
+                .pointee
+                .and_then(|id| match objects.layouts.physical.get(id).kind {
+                    PhysicalKind::Opaque {
+                        value_offset,
+                        semantic_offset,
+                        ..
+                    } => Some((value_offset, semantic_offset)),
+                    _ => None,
+                });
+        let checked =
+            if let Some((value_offset, semantic_offset)) = opaque {
+                let boxed =
+                    load_physical_value(builder, module, environment, field.offset, field.value);
+                let semantic = builder.ins().load(
+                    types::I8,
+                    MemFlagsData::trusted(),
+                    boxed,
+                    semantic_offset as i32,
+                );
+                let scalar = builder.ins().icmp_imm_u(
+                    IntCC::UnsignedLessThanOrEqual,
+                    semantic,
+                    ValueSemantic::Symbol as i64,
+                );
+                let is_object =
+                    builder
+                        .ins()
+                        .icmp_imm_s(IntCC::Equal, semantic, ValueSemantic::Object as i64);
+                let object_block = builder.create_block();
+                let other = builder.create_block();
+                let join = builder.create_block();
+                builder.append_block_param(join, types::I8);
+                builder.ins().brif(is_object, object_block, &[], other, &[]);
+                builder.switch_to_block(other);
+                builder.ins().jump(join, &[scalar.into()]);
+                builder.switch_to_block(object_block);
+                let value =
+                    builder
+                        .ins()
+                        .load(word, MemFlagsData::trusted(), boxed, value_offset as i32);
+                let descriptor = builder.ins().load(
+                    word,
+                    MemFlagsData::trusted(),
+                    value,
+                    objects.layouts.physical.header().descriptor_offset as i32,
+                );
+                let mut owned = builder.ins().iconst(types::I8, 0);
+                for candidate in
+                    objects.layouts.logical.layouts().iter().filter(|l| {
+                        l.materialized && callback_owned_layout(l, objects.layouts.logical)
+                    })
+                {
+                    let expected = module
+                        .declare_data_in_func(objects.descriptors[&candidate.id], builder.func);
+                    let expected = builder.ins().symbol_value(word, expected);
+                    let matches = builder.ins().icmp(IntCC::Equal, descriptor, expected);
+                    owned = builder.ins().bor(owned, matches);
+                }
+                builder.ins().jump(join, &[owned.into()]);
+                builder.switch_to_block(join);
+                builder.block_params(join)[0]
+            } else {
+                let owned = callback_owned_type(
+                    &slot.ty,
+                    objects.layouts.logical,
+                    &mut std::collections::HashSet::new(),
+                );
+                builder.ins().iconst(types::I8, i64::from(owned))
+            };
+        safe = builder.ins().band(safe, checked);
+    }
+    safe
+}
+
 pub(super) fn lower_portable_native(
     builder: &mut FunctionBuilder<'_>,
     module: &mut ObjectModule,
@@ -499,12 +638,31 @@ pub(super) fn lower_portable_native(
                 return Err(native_error("record has a non-record physical layout"));
             };
             let object = objects.allocate(builder, module, layout)?;
-            for ((name, source), field) in values_to_store.iter().zip(fields) {
-                if name != &field.name {
-                    return Err(native_error(
-                        "logical and physical record field order disagree",
-                    ));
-                }
+            for (index, field) in fields.iter().enumerate() {
+                let Some((_, source)) =
+                    values_to_store.iter().find(|(name, _)| name == &field.name)
+                else {
+                    let zero = if field.value.kind == ScalarKind::F64 {
+                        builder.ins().f64const(0.0)
+                    } else {
+                        builder.ins().iconst(
+                            physical_cranelift_type(
+                                field.value.kind,
+                                module.target_config().pointer_type(),
+                            ),
+                            0,
+                        )
+                    };
+                    store_physical_value(builder, object, field.offset, zero);
+                    let absent = builder.ins().iconst(types::I8, 0);
+                    store_physical_value(
+                        builder,
+                        object,
+                        physical.header.size + index as u32,
+                        absent,
+                    );
+                    continue;
+                };
                 let value = get(source);
                 if let Some(pointee) = objects.layouts.managed_layout(function.value_type(*source))
                 {
@@ -827,6 +985,13 @@ pub(super) fn lower_portable_native(
                 objects.retain(builder, source_value, pointee);
             }
             store_physical_value(builder, receiver, physical.offset, source_value);
+            let initialized = builder.ins().iconst(types::I8, 1);
+            store_physical_value(
+                builder,
+                receiver,
+                objects.layouts.physical.get(layout).header.size + slot.index as u32,
+                initialized,
+            );
             Ok(None)
         }
         ir::PortableInstruction::Builtin {
@@ -837,6 +1002,175 @@ pub(super) fn lower_portable_native(
             use crate::intrinsics::{NativeInlineIntrinsic, NativeIntrinsic};
             let lowered = arguments.iter().map(get).collect::<Vec<_>>();
             let result = match builtin.descriptor().native {
+                NativeIntrinsic::Inline(NativeInlineIntrinsic::CCallbackNew) => {
+                    let NativeType::Object(layout) = function.value_type(arguments[0]) else {
+                        return Err(native_error("callback requires a concrete closure"));
+                    };
+                    let word = module.target_config().pointer_type();
+                    let (code, environment, safe) = match &objects.layouts.logical.get(layout).kind
+                    {
+                        LayoutKind::Closure {
+                            function: target,
+                            specialization,
+                            captures,
+                        } => {
+                            let target = backend.ir.instances[&SpecializationKey {
+                                function: *target,
+                                substitutions: specialization.clone(),
+                            }];
+                            let target_signature = &backend.ir.function_types[&target];
+                            if target_signature.parameters[captures.len()..] != [NativeType::String]
+                                || target_signature.result != NativeType::String
+                            {
+                                return Err(native_error(
+                                    "callback adapter must accept and return String packets",
+                                ));
+                            }
+                            let safe = callback_environment_safe(
+                                builder, module, backend, layout, lowered[0],
+                            );
+                            let code = module.declare_func_in_func(
+                                backend.callable_thunks[&layout],
+                                builder.func,
+                            );
+                            (builder.ins().func_addr(word, code), lowered[0], safe)
+                        }
+                        LayoutKind::Builtin {
+                            ty:
+                                crate::codegen::types::ExecutableType::Function {
+                                    parameters,
+                                    result,
+                                    ..
+                                },
+                        } => {
+                            let parameter_types = parameters
+                                .iter()
+                                .map(|p| {
+                                    native_verification_type(
+                                        objects.layouts.metadata,
+                                        objects.layouts.logical,
+                                        &p.ty,
+                                        None,
+                                    )
+                                })
+                                .collect::<Result<Vec<_>, _>>()?;
+                            let result_type = native_verification_type(
+                                objects.layouts.metadata,
+                                objects.layouts.logical,
+                                result,
+                                None,
+                            )?;
+                            if parameter_types != [NativeType::String]
+                                || result_type != NativeType::String
+                            {
+                                return Err(native_error(
+                                    "callback adapter must accept and return String packets",
+                                ));
+                            }
+                            let PhysicalKind::Callable {
+                                code_offset,
+                                environment_offset,
+                                ..
+                            } = objects.layouts.physical.get(layout).kind
+                            else {
+                                unreachable!()
+                            };
+                            let code = builder.ins().load(
+                                word,
+                                MemFlagsData::trusted(),
+                                lowered[0],
+                                code_offset as i32,
+                            );
+                            let environment = builder.ins().load(
+                                word,
+                                MemFlagsData::trusted(),
+                                lowered[0],
+                                environment_offset as i32,
+                            );
+                            let descriptor = builder.ins().load(
+                                word,
+                                MemFlagsData::trusted(),
+                                environment,
+                                objects.layouts.physical.header().descriptor_offset as i32,
+                            );
+                            let join = builder.create_block();
+                            builder.append_block_param(join, types::I8);
+                            for candidate in objects
+                                .layouts
+                                .logical
+                                .layouts()
+                                .iter()
+                                .filter(|l| l.materialized)
+                            {
+                                let LayoutKind::Closure { .. } = &candidate.kind else {
+                                    continue;
+                                };
+                                let expected = module.declare_data_in_func(
+                                    objects.descriptors[&candidate.id],
+                                    builder.func,
+                                );
+                                let expected = builder.ins().symbol_value(word, expected);
+                                let matches =
+                                    builder.ins().icmp(IntCC::Equal, descriptor, expected);
+                                let selected = builder.create_block();
+                                let next = builder.create_block();
+                                builder.ins().brif(matches, selected, &[], next, &[]);
+                                builder.switch_to_block(selected);
+                                let safe = callback_environment_safe(
+                                    builder,
+                                    module,
+                                    backend,
+                                    candidate.id,
+                                    environment,
+                                );
+                                builder.ins().jump(join, &[safe.into()]);
+                                builder.switch_to_block(next);
+                            }
+                            let invalid = builder.ins().iconst(types::I8, 0);
+                            builder.ins().jump(join, &[invalid.into()]);
+                            builder.switch_to_block(join);
+                            let safe = builder.block_params(join)[0];
+                            (code, environment, safe)
+                        }
+                        _ => return Err(native_error("callback requires a closure adapter")),
+                    };
+                    let release =
+                        module.declare_func_in_func(backend.release_thunks[&layout], builder.func);
+                    let release = builder.ins().func_addr(word, release);
+                    let text_release = module.declare_func_in_func(
+                        backend.release_thunks[&objects.layouts.string_layout()],
+                        builder.func,
+                    );
+                    let text_release = builder.ins().func_addr(word, text_release);
+                    runtime_call(
+                        builder,
+                        module,
+                        abi::C_CALLBACK_NEW,
+                        &ir::Signature {
+                            parameters: vec![
+                                NativeType::Opaque,
+                                NativeType::Opaque,
+                                function.value_type(arguments[0]),
+                                NativeType::Opaque,
+                                NativeType::Opaque,
+                                NativeType::String,
+                                NativeType::Int,
+                                NativeType::Bool,
+                            ],
+                            result: NativeType::String,
+                        },
+                        &[
+                            code,
+                            environment,
+                            lowered[0],
+                            release,
+                            text_release,
+                            lowered[1],
+                            lowered[2],
+                            safe,
+                        ],
+                    )?
+                }
                 NativeIntrinsic::Print { newline } => {
                     for (index, (argument, value)) in
                         arguments.iter().zip(lowered.iter().copied()).enumerate()

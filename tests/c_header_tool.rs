@@ -42,6 +42,9 @@ typedef int32_t Count;
 #define FRACTION (1.0 / 4.0)
 #define WIDE_BITS 0xffffffffffffffffULL
 #define MINIMUM (-9223372036854775807LL - 1LL)
+#define LONG_MINIMUM (-2147483647L - 1L)
+#define ULONG_MAXIMUM 4294967295UL
+#define CHAR_BYTE ((char)255)
 #define GONE 3
 #undef GONE
 #define CHANGED 1
@@ -60,6 +63,12 @@ int header_text(const char *text);
 void *header_open(void);
 int header_log(const char *, ...);
 long header_long(long);
+typedef unsigned long NativeFlags;
+NativeFlags header_ulong(NativeFlags value);
+char header_char(char value);
+long double unsupported_precision(long double value);
+typedef struct Scalars { long count; NativeFlags flags; char byte; long history[2]; } Scalars;
+Scalars header_scalars(Scalars value);
 typedef struct Vec { float x, y; } Vec;
 typedef struct Color { uint8_t r, g, b, a; } Color;
 #define RED ((Color){ .r = 230, .g = 41, .b = 55, .a = 255 })
@@ -96,6 +105,10 @@ Union bad_union(Union value);
     fs::write(&source, r#"
 #include "sample header.h"
 static int calls;
+long header_long(long value) { calls++; return value; }
+NativeFlags header_ulong(NativeFlags value) { calls++; return value; }
+char header_char(char value) { calls++; return value; }
+Scalars header_scalars(Scalars value) { calls++; return value; }
 Count header_add(Count a, Count b) { return a+b; }
 int header_zero(void) { return 0; }
 int header_text(const char *text) { return text ? 42 : 0; }
@@ -135,7 +148,7 @@ ModeAlias header_mode(ModeAlias value) { return value; }
         "header_open",
         "header_text",
         "header_log",
-        "header_long",
+        "unsupported_precision",
         "bad_pointer",
         "Flexible",
         "bad_bits",
@@ -150,6 +163,14 @@ ModeAlias header_mode(ModeAlias value) { return value; }
         !report.contains("dependency_only"),
         "included headers must not be imported"
     );
+    for symbol in [
+        "header_long",
+        "header_ulong",
+        "header_char",
+        "header_scalars",
+    ] {
+        assert!(!report.contains(symbol), "{report}");
+    }
     let selected = invoke(&[
         "--function",
         "header_add",
@@ -189,7 +210,7 @@ ModeAlias header_mode(ModeAlias value) { return value; }
     let manifest_text = fs::read_to_string(output.with_extension("bindings.json")).unwrap();
     let manifest = foster::foreign::Manifest::parse(&manifest_text).unwrap();
     let document: serde_json::Value = serde_json::from_str(&manifest_text).unwrap();
-    assert_eq!(document["operations"].as_array().unwrap().len(), 7);
+    assert_eq!(document["operations"].as_array().unwrap().len(), 11);
     let constants = document["constants"].as_array().unwrap();
     let constant = |name: &str| constants.iter().find(|c| c["name"] == name).unwrap();
     assert_eq!(constant("MODE_NEXT")["value"], -2);
@@ -197,6 +218,9 @@ ModeAlias header_mode(ModeAlias value) { return value; }
     assert_eq!(constant("MASK_ALIAS")["value"], 35);
     assert_eq!(constant("CHANGED")["value"], 42);
     assert_eq!(constant("RED")["value"]["g"], 41);
+    assert_eq!(constant("LONG_MINIMUM")["type"], "long");
+    assert_eq!(constant("ULONG_MAXIMUM")["type"], "ulong");
+    assert_eq!(constant("CHAR_BYTE")["type"], "char");
     assert!(
         !constants
             .iter()
@@ -235,6 +259,30 @@ ModeAlias header_mode(ModeAlias value) { return value; }
     generated.push_str(
         r#"
 func main() -> Result<Int, CError> {
+    assert(C_LONG_MINIMUM == -2147483648 && C_ULONG_MAXIMUM == 4294967295 && C_CHAR_BYTE == 255)
+    let scalar_before = try c_header_calls()
+    assert((try c_header_long(-2147483648)) == -2147483648)
+    assert((try c_header_long(2147483647)) == 2147483647)
+    assert((try c_header_ulong(4294967295)) == 4294967295)
+    assert((try c_header_ulong(0)) == 0)
+    assert((try c_header_char(255)) == 255)
+    assert((try c_header_char(0)) == 0)
+    for invalid in [-2147483649, 2147483648] {
+        branch c_header_long(invalid) { Result.Ok(_) -> panic("long overflow reached C") Result.Error(_) -> () }
+    }
+    for invalid in [-1, 4294967296] {
+        branch c_header_ulong(invalid) { Result.Ok(_) -> panic("unsigned long overflow reached C") Result.Error(_) -> () }
+    }
+    for invalid in [-1, 256] {
+        branch c_header_char(invalid) { Result.Ok(_) -> panic("char overflow reached C") Result.Error(_) -> () }
+    }
+    let scalars = CScalars { count: -2147483648, flags: 4294967295, byte: 255, history: [-2147483648, 2147483647] }
+    let returned_scalars = try c_header_scalars(scalars)
+    assert(returned_scalars.count == scalars.count && returned_scalars.flags == scalars.flags)
+    assert(returned_scalars.byte == 255 && returned_scalars.history == scalars.history)
+    scalars.history = [0, 2147483648]
+    branch c_header_scalars(scalars) { Result.Ok(_) -> panic("long array overflow reached C") Result.Error(_) -> () }
+    assert((try c_header_calls()) == scalar_before + 7)
     assert(C_MASK == 35 && C_MASK_ALIAS == 35)
     assert(C_MODE_NEGATIVE == -3 && C_MODE_NEXT == -2 && C_MODE_ALIAS == 128)
     assert(C_FRACTION == 0.25 && C_WIDE_BITS == -1 && C_CHANGED == 42)

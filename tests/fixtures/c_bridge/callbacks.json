@@ -1,0 +1,22 @@
+{
+  "abi":1,"headers":["callbacks.h"],"sources":["callbacks.c"],
+  "records":[{"name":"Packet","c_type":"Packet","fields":[{"name":"arguments","type":"i32"}]}],
+  "callbacks":[
+    {"name":"Visitor","method":"visit","parameters":["i32"],"result":"i32","delivery":"direct","failure":"zero"},
+    {"name":"Event","method":"event","parameters":["i32"],"result":"void","delivery":"queued"}
+  ],
+  "resources":[{"name":"Subscription","c_type":"Subscription","destroy":"unsubscribe"}],
+  "operations":[
+    {"name":"visit","symbol":"visit","parameters":[{"callback":"Visitor"},"i32"],"result":"i32"},
+    {"name":"subscribe","symbol":"subscribe","parameters":[{"callback":"Visitor","retained":true}],"result":"void","creates":"Subscription"},
+    {"name":"subscribe_fail","symbol":"subscribe_fail","parameters":[{"callback":"Visitor","retained":true}],"result":"void","creates":"Subscription"},
+    {"name":"subscribe_events","symbol":"subscribe_events","parameters":[{"callback":"Event","retained":true}],"result":"void","creates":"Subscription"},
+    {"name":"emit","symbol":"emit","receiver":"Subscription","parameters":["i32"],"result":"i32"},
+    {"name":"background","symbol":"background","receiver":"Subscription","parameters":["i32"],"result":"void"},
+    {"name":"live","symbol":"live_subscriptions","result":"i32"},
+    {"name":"note_drop","symbol":"note_drop","parameters":["i32"],"result":"void"},
+    {"name":"dropped","symbol":"dropped_handlers","result":"i32"},
+    {"name":"visit_packet","symbol":"visit_packet","parameters":[{"record":"Packet"},{"callback":"Visitor"}],"result":"i32"},
+    {"name":"subscribe_close","symbol":"subscribe_close","parameters":[{"callback":"Visitor","retained":true}],"result":"void","creates":"Subscription"}
+  ]
+}

@@ -1,7 +1,7 @@
 # Foster semantic specification
 
-Status: **draft normative specification**, revision 8, 2026-09-18.
-Baseline: **language version 15, ownership-model version 3**.
+Status: **draft normative specification**, revision 10, 2026-09-25.
+Baseline: **language version 17, ownership-model version 5**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
@@ -23,7 +23,10 @@ treating documentation alone as an implementation change.
 **S-02 — Semantic entities.** A *value* is typed data. A *place* is storage that may contain a
 value: a local, a field, an indexed element, or a place reached through a reference. An *owner*
 controls an ownership-bearing value. A *loan* permits access to an originating place without
-owning it. A *group* describes possible origins and access permissions, not a runtime owner.
+owning it. A *group* is a lexical storage context, not a runtime owner. Named scopes label local
+groups; parameters expose incoming storage groups under their own names, including `self`.
+Incoming groups retain caller origins and may overlap when arguments alias. Reference types
+and effects name these groups to describe storage dependencies and access permissions.
 An *effect* describes an operation a callable may perform. An *invocation* is one execution of a
 function, including its parameters, locals, temporaries, and control position.
 
@@ -204,8 +207,8 @@ A branch-arm block that completes without a final value expression produces `()`
 A named scope `:name { ... }` executes its block once and has the same result rules
 as a branch-arm block. Its local declarations do not escape. Remaining owned locals
 are cleaned up at scope exit, invalidating loans into their storage. Owned results
-may transfer out; borrowers remain subject to S-13. The descriptive label binds no
-value or group and introduces no control-transfer target. Nested scopes and repeated
+may transfer out; borrowers remain subject to S-13. The label names the lexical storage group, binds no
+runtime value, and introduces no control-transfer target. Nested scopes and repeated
 labels are permitted.
 
 `is Type` checks type conformance, including accessible structural fields,
@@ -244,6 +247,16 @@ consumes its underlying value, including ownership not exposed by the narrower c
 
 Callable types preserve consumption positionally, for example `func(consume String) -> ()`.
 Direct calls, methods, closures, and indirect calls must respect the same parameter contract.
+
+**S-12a — Deferred construction.** A record initializer may mark a required field with `??`.
+The constructor must be bound directly to a local. The marker creates no language-level value;
+omitting a required field remains an error. Field assignment initializes that field. A read must
+have initialized storage on every control-flow path reaching it. Whole-record borrowing, moving,
+calls, captures, and embedding into other values require complete initialization. Other initialized
+fields may be accessed individually. An abandoned incomplete record releases initialized fields
+without invoking its own `deinit`; fully initialized records use ordinary cleanup. These rules
+apply on normal scope exit, replacement, and failure. Deferred construction does not alter loans'
+origins or permit references to escape their owners.
 
 ## 6. Loans, groups, and invalidation
 

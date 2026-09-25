@@ -193,7 +193,7 @@ read < mut < reshape
 `consume` is tracked separately because consuming a value is not simply stronger mutation.
 
 Concrete closure types retain their exact captures and effects. Erased function types retain the
-group parameters and an upper bound on effects.
+parameter storage groups and an upper bound on effects.
 
 ## Mutable aliasing
 
@@ -251,8 +251,8 @@ A call may have both kinds of effect.
 A borrowed closure can escape only if its group relationship appears in the result type:
 
 ```foster
-func make_renamer[people: group Person](person: ref[people] Person)
-    -> func(String) -> () [mut people]
+func make_renamer(person: ref[person] Person)
+    -> func(String) -> () [mut person]
 {
     [ref person] (name: String) -> {
         person.name = name
@@ -417,7 +417,7 @@ The exact `Send`, `Share`, task, and synchronization model is deferred to the co
 3. Capture mode is independent of escape: implicit captures copy built-in copy values and move
    ownership-bearing values; borrowing requires explicit `ref`.
 4. One surface function type with latent effects rather than `Fn`/`FnMut`/`FnOnce` traits.
-5. Safe mutable aliasing between closures through shared group parameters.
+5. Safe mutable aliasing between closures through overlapping parameter storage groups.
 6. Structural mutation invalidates affected captured references instead of being prohibited.
 7. Inline concrete environments; boxing only for erasure or layout requirements.
 8. Partial application as closure sugar.

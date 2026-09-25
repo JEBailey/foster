@@ -397,7 +397,8 @@ impl Machine {
         receiver: Option<Rc<Slot>>,
         argument_leases: Vec<AccessLease>,
     ) -> Result<(Value, Option<Value>), RuntimeError> {
-        let result = self.execute_frames(entry, captures, arguments, receiver, argument_leases);
+        let result =
+            self.execute_frames(entry, captures, arguments, receiver, argument_leases, None);
         let cleanup_error = CLEANUP_FAILURE.with(|failure| failure.borrow_mut().take());
         match (result, cleanup_error) {
             (Err(error), _) | (_, Some(error)) => Err(error),
@@ -412,12 +413,20 @@ impl Machine {
         arguments: Vec<Value>,
         receiver: Option<Rc<Slot>>,
         argument_leases: Vec<AccessLease>,
+        callback_slots: Option<&[Option<Rc<Slot>>]>,
     ) -> Result<(Value, Option<Value>), RuntimeError> {
         let mut frames = FrameStack(vec![if let Some(receiver) = receiver.clone() {
             self.method_frame(entry, receiver, arguments, None)?
         } else {
             self.frame(entry, captures, arguments, None)?
         }]);
+        if let Some(slots) = callback_slots {
+            for (index, slot) in slots.iter().enumerate() {
+                if let Some(slot) = slot {
+                    frames.0[0].registers[index] = RegisterCell::Place(slot.clone());
+                }
+            }
+        }
         frames[0].argument_leases = argument_leases;
 
         loop {
@@ -594,10 +603,12 @@ impl Machine {
                 } => {
                     let values = fields
                         .iter()
-                        .map(|(_, register)| read(frame, *register))
+                        .map(|(name, register)| {
+                            read(frame, *register).map(|value| (name.clone(), value))
+                        })
                         .collect::<Result<Vec<_>, RuntimeError>>()?;
                     let metadata = &self.program.metadata.records[record];
-                    let fields = RecordFields::new(metadata.layout().clone(), values)?;
+                    let fields = RecordFields::partial(metadata.layout().clone(), values)?;
                     if let Some(function) = self
                         .program
                         .metadata
@@ -893,6 +904,25 @@ impl Machine {
                     builtin,
                     arguments,
                 } => {
+                    if *builtin == crate::intrinsics::Builtin::CCallbackNew {
+                        let callback = take(frame, arguments[0]);
+                        let signature = read(frame, arguments[1])?.string_text()?.to_owned();
+                        let Value::Integer(mode) = read(frame, arguments[2])? else {
+                            return Err(RuntimeError::runtime("invalid callback mode"));
+                        };
+                        let result = self.register_callback(callback, &signature, mode);
+                        write(
+                            frame,
+                            *destination,
+                            Value::string(
+                                self.program.metadata.string_record,
+                                crate::foreign::runtime::response(
+                                    result.map(|token| token.to_le_bytes().to_vec()),
+                                ),
+                            ),
+                        )?;
+                        continue;
+                    }
                     let value = match builtin.descriptor().handler {
                         Some(BuiltinHandler::Direct(handler)) => {
                             let arguments = arguments
@@ -1545,6 +1575,92 @@ impl Machine {
                 }
             }
         }
+    }
+
+    fn register_callback(
+        &self,
+        callback: Value,
+        signature: &str,
+        mode: i64,
+    ) -> Result<i64, String> {
+        if may::coroutine::is_coroutine() {
+            return Err("C callbacks cannot be registered in remote tasks".into());
+        }
+        if !(0..=2).contains(&mode) {
+            return Err("invalid callback mode".into());
+        }
+        fn owned(value: &Value) -> bool {
+            match value {
+                Value::Reference(_) => false,
+                Value::VmClosure { .. } => false,
+                Value::Record { fields, .. } => fields.iter().all(|(_, value)| owned(value)),
+                Value::Variant { payload, .. } => payload.iter().all(owned),
+                Value::RawList(values) => values.iter().all(owned),
+                _ => true,
+            }
+        }
+        let Value::VmClosure { function, captures } = callback else {
+            return Err("callback requires a closure".into());
+        };
+        if mode != 0
+            && !captures
+                .iter()
+                .all(|capture| matches!(capture, Capture::Value(value) if owned(value)))
+        {
+            return Err("retained callbacks require owned data without borrowed references or nested callables".into());
+        }
+        if self.program.functions[&function].parameters != 1 {
+            return Err("callback adapter requires one packet argument".into());
+        }
+        let mut slots = Vec::new();
+        let captures = captures
+            .into_iter()
+            .map(|capture| match capture {
+                Capture::Value(value) => {
+                    slots.push(Some(Slot::new(value)));
+                    Capture::Value(Value::Unit)
+                }
+                capture => {
+                    slots.push(None);
+                    capture
+                }
+            })
+            .collect::<Vec<_>>();
+        let machine = Machine {
+            program: self.program.clone(),
+            host: self.host.clone(),
+            cancellation: None,
+            debugger: None,
+        };
+        crate::foreign::runtime::callbacks::register(
+            signature,
+            mode == 2,
+            Box::new(move |payload| {
+                let arguments = vec![Value::string(
+                    machine.program.metadata.string_record,
+                    payload,
+                )];
+                let previous = CLEANUP_FAILURE.with(|failure| failure.borrow_mut().take());
+                let result = machine.execute_frames(
+                    function,
+                    captures.clone(),
+                    arguments,
+                    None,
+                    vec![],
+                    Some(&slots),
+                );
+                let cleanup = CLEANUP_FAILURE.with(|failure| failure.replace(previous));
+                if let Some(error) = cleanup {
+                    return Err(error.to_string());
+                }
+                result
+                    .map_err(|error| error.to_string())?
+                    .0
+                    .string_text()
+                    .map(str::to_owned)
+                    .map_err(|error| error.to_string())
+            }),
+        )
     }
 
     fn frame<'program>(

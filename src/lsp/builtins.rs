@@ -21,6 +21,10 @@ pub(super) fn info(id: Builtin) -> BuiltinInfo {
         | Builtin::ProcessWait
         | Builtin::ProcessReserve
         | Builtin::CExchange
+        | Builtin::CCallbackNew
+        | Builtin::CCallbackRelease
+        | Builtin::CCallbackPoll
+        | Builtin::CCallbackError
         | Builtin::CClose
         | Builtin::CRelease
         | Builtin::CEncodeInt

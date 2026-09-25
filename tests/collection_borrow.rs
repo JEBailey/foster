@@ -96,7 +96,7 @@ fn collection_borrow_can_forward_an_exposed_input_group() {
     let source = r#"
 import core.option
 import core.list
-func selected[g: group List<Int>](values: ref[g] List<Int>) -> Option<ref[g] Int> {
+func selected(values: ref[values] List<Int>) -> Option<ref[values] Int> {
     values.borrow(0)
 }
 

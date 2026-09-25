@@ -5,7 +5,7 @@ the compiler derives their contract from typed HIR and stores it on the function
 are useful for callable contracts and for APIs that intentionally publish an upper bound.
 
 ```foster
-func set[state: group Int](value: ref[state] Int, next: Int) -> Int [mut state] {
+func set(value: ref[value] Int, next: Int) -> Int [mut value] {
     value = next
     value
 }
@@ -18,7 +18,7 @@ func(Event) -> () [mut application, suspend]
 ```
 
 Effect clauses follow the result type or, for an anonymous closure, the arrow. They are bracketed
-and comma-separated. Loose suffixes such as `-> Int mut state` are not valid Foster syntax.
+and comma-separated. Loose suffixes such as `-> Int mut value` are not valid Foster syntax.
 
 ## Effect model
 
@@ -93,8 +93,8 @@ The type checker tracks an owner group for each relevant local:
 
 - a `ref[g] T` parameter belongs to `g`;
 - a local initialized from a reference retains that reference group;
-- a method receiver belongs to the reserved `self` group;
-- owned locals belong to the internal frame group.
+- ordinary parameters expose their incoming storage under their parameter names, including `self`;
+- owned locals belong to their lexical group; internal frame effects stay out of public contracts.
 
 Frame-local effects are implementation details and are filtered from public contracts. This is why
 ordinary mutation of a local record does not force a source annotation.
@@ -139,7 +139,7 @@ scattered name checks.
 Direct functions, instance methods, closures, erased callable values, and partial applications all
 retain the same effect and suspension information.
 
-At a call site, every callee group parameter is independently substituted from the corresponding
+At a call site, every callee parameter storage group is independently substituted from the corresponding
 `ref[formal]` parameter and actual argument. Child path components survive substitution. A method's
 `self` effect is instantiated according to its receiver:
 
@@ -156,7 +156,7 @@ arguments are call-scoped read-only loans whose read effects map back to the cal
 
 ## Closure effects
 
-Lowered closures inherit the enclosing function's group parameters. Capture seeding records the
+Lowered closures retain the storage origins of their captures. Capture seeding records the
 provenance of captured `LocalId`s before walking the closure body. `[ref value]` captures contribute
 their external group; owned environment mutation remains frame-internal.
 
@@ -184,7 +184,7 @@ The relevant implementation is split by responsibility:
 - `src/typecheck/effects.rs` walks typed HIR, derives structured group paths, delegates calls, and
   records suspension.
 - `src/typecheck/predicates.rs` defines effect subset/coverage and callable contract helpers.
-- `src/hir/ownership.rs` validates declared groups and seeds reference-capture effects.
+- `src/hir/ownership.rs` validates parameter names used in group contracts and seeds reference-capture effects.
 - `src/ownership/` validates positional consume modes, moves, initialization, and partial moves on
   control-flow basic blocks.
 - `src/diagnostic.rs` carries over-declaration warnings and their source spans.

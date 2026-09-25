@@ -1,0 +1,27 @@
+//! Headless strings, buffers, and Image ownership smoke test.
+import core.bytes
+import core.list
+import core.result
+import core.string
+import std.ffi
+import std.process
+import raylib
+
+func main(args: Arguments) -> Result<Int, CError> {
+    assert(args.values.length == 1, "pass the UTF-8 fixture file path")
+    let text = try c_LoadFileText(args.values[0])
+    let data = try c_LoadFileData(args.values[0])
+    assert(text == "Foster café\n" && data.hex() == text.bytes.hex())
+    let image = try c_GenImageColor(4, 4, CColor { r: 20, g: 42, b: 80, a: 255 })
+    try c_ImageResize(image, 8, 8)
+    let color = try c_GetImageColor(image, 7, 7)
+    assert(color.r == 20 && color.g == 42 && color.b == 80 && color.a == 255)
+    let encoded = try c_ExportImageToMemory(image, ".png")
+    assert(encoded.length > 0)
+    let decoded = try c_LoadImageFromMemory(".png", encoded)
+    let pixel = try c_GetImageColor(decoded, 7, 7)
+    assert(pixel.r == color.r && pixel.g == color.g && pixel.b == color.b)
+    try image.close()
+    try image.close()
+    Result.Ok(42)
+}

@@ -60,8 +60,7 @@ fn saved_boolean_truth_tables_match_feasible_conflicts() {
 
 #[test]
 fn saved_boolean_relations_forget_mutated_inputs_and_destinations() {
-    let prelude =
-        "func clear[g: group Bool](value: ref[g] Bool) -> Bool [mut g] { value = false }\n";
+    let prelude = "func clear(value: ref[value] Bool) -> Bool [mut value] { value = false }\n";
     for between in [
         "a = false",
         "let alias = ref a\nalias = false",
@@ -242,7 +241,7 @@ fn computed_comparisons_forget_every_changed_input() {
         "other = 100",
     ] {
         let source = format!(
-            "func clear[g: group Int](value: ref[g] Int) -> Int [mut g] {{ value = 0 }}\n{}",
+            "func clear(value: ref[value] Int) -> Int [mut value] {{ value = 0 }}\n{}",
             integer_program("saved", "a + 1 >= other * 2", between)
                 .replace("let values =", "let other = 1\nlet alias = ref a\nlet change = [ref a] () -> { a = 0 }\nlet saved = a + 1 < other * 2\nlet values =")
         );
@@ -324,8 +323,7 @@ func main() -> Int { choose(0) }
 
 #[test]
 fn calls_and_short_circuit_operand_effects_forget_changed_facts() {
-    let prelude =
-        "func clear[g: group Bool](value: ref[g] Bool) -> Bool [mut g] { value = false }\n";
+    let prelude = "func clear(value: ref[value] Bool) -> Bool [mut value] { value = false }\n";
     let source = format!(
         "{prelude}{}",
         program("a && b", "not a || not b", "clear(ref a)")
@@ -408,7 +406,7 @@ fn computed_index_predicates_do_not_retain_stale_facts() {
 
 #[test]
 fn mutations_to_any_parameter_in_a_shared_group_forget_facts() {
-    let prelude = "func clear_second[g: group Bool](first: ref[g] Bool, second: ref[g] Bool) -> Bool [mut g] { second = false }\n";
+    let prelude = "func clear_second(first: ref[first] Bool, second: ref[first] Bool) -> Bool [mut first] { second = false }\n";
     let source = format!(
         "{prelude}{}",
         program(
@@ -434,8 +432,7 @@ fn existing_aliases_and_reborrows_cannot_preserve_mutated_predicates() {
         "clear(ref alias)",
         "change()",
     ] {
-        let prelude =
-            "func clear[g: group Bool](value: ref[g] Bool) -> Bool [mut g] { value = false }\n";
+        let prelude = "func clear(value: ref[value] Bool) -> Bool [mut value] { value = false }\n";
         let source = format!("{prelude}{}", program("a && b", "not a || not b", between)
             .replace("let values =", "let alias = ref a\nlet nested = ref alias\nlet change = [ref a] () -> { a = false }\nlet values ="));
         let error = foster::compile(&source).unwrap_err();

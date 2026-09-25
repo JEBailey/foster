@@ -349,6 +349,7 @@ impl FunctionLowerer<'_> {
         let expression = match expression {
             ast::Expr::Spanned { .. } => unreachable!("spans are removed before HIR lowering"),
             ast::Expr::Unit => Expr::Unit,
+            ast::Expr::Deferred => Expr::Deferred,
             ast::Expr::Bool(value) => Expr::Bool(*value),
             ast::Expr::Integer(value) => Expr::Integer(*value),
             ast::Expr::Float(value) => Expr::Float(*value),

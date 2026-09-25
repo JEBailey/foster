@@ -1,6 +1,6 @@
 # Foster Ownership and Borrowing
 
-Language version 15, ownership-model version 3.
+Language version 17, ownership-model version 5.
 
 This document describes Foster's ownership model, its source-level behavior, and how the compiler
 implements it today. It is intentionally separate from
@@ -32,6 +32,14 @@ Local values are mutable by default: `let` does not make a binding or its stored
 immutable. Mutation requires a valid stored place and must respect ownership, live loans,
 and the enclosing function's effect bounds. It does not require a separate `mut` binding
 or mutable-reference type. Constants and computed properties are not assignable places.
+
+A record field initialized with `??` is unavailable until assigned. The incomplete record must
+stay in its directly bound local: whole-record reads, borrows, moves, calls, captures, and aggregate
+storage require all fields to be initialized on every incoming control-flow path. Initialized
+fields may be used individually. Scope exit, replacement, and failure clean up initialized fields
+of an abandoned construction without calling the incomplete record's `deinit`. Once every field
+is initialized, ordinary record ownership and cleanup apply. This feature does not promote storage
+or change the lifetime of a reference.
 
 Calls expose their inferred effects, or an explicitly declared upper bound checked against
 the body. A mutable value does not make every call a mutation: a read-only operation keeps
@@ -67,9 +75,9 @@ remains live, but references or closures borrowing a scope-local owner cannot be
 after the scope ends. These checks also apply when a borrower is assigned to an outer
 binding rather than yielded as the scope's result.
 
-The scope name is descriptive, not a first-class resource container or a group
-parameter. Helper calls keep their ordinary ownership and cleanup rules; resources
-do not implicitly attach to a caller's named scope.
+The label names this lexical group. Nested blocks form nested groups, but the label
+is not a runtime value or resource container. Helper calls retain their ordinary
+ownership and cleanup rules; resources do not implicitly attach to a caller's group.
 
 ## Record destructuring
 
@@ -206,7 +214,7 @@ pending mode to `copy` for copy types and `move` otherwise.
 A reference type names the group from which it borrows:
 
 ```foster
-func rename[people: group Person](person: ref[people] Person, name: String)
+func rename(person: ref[person] Person, name: String)
     -> ()
 {
     person.name = name
@@ -214,26 +222,43 @@ func rename[people: group Person](person: ref[people] Person, name: String)
 }
 ```
 
-`people` is a group parameter. `ref[people] Person` says that `person` may refer into that group.
-The inferred `mut people.name` effect says the body may replace that field. A mutable reference
+`person` is a parameter whose name identifies its incoming storage group.
+`ref[person] Person` says that the reference may refer into that group.
+The inferred `mut person.name` effect says the body may replace that field. A mutable reference
 parameter remains connected to the caller's place, so `rename(ref person, "new name")` updates the
 caller's `person.name`; it does not detach a callee-local copy. Group names are part of the function contract:
-using an undeclared group is an error, and a type parameter and group parameter may not share a
-name.
+using a name that is not a parameter is an error in a signature. There is no separate
+group-parameter declaration.
 
-Groups describe sets of possible locations. They are not values, modules, hidden owner objects, or
-lexical lifetime variables. A reference may escape a function only when its group is exposed by a
-reference, nested type, callable result, or effect in the declared result type. A reference into a
+Lexical scopes define groups for local storage. Every parameter exposes an incoming storage
+group, including `self`. For borrowed parameters, its storage belongs to the caller rather than
+the callee's lexical frame. Names do not imply disjoint storage: arguments can alias.
+A borrow created in an inner scope retains its original storage dependency. Moving an owned
+result out transfers ownership and cleanup rather than permanently tying it to its defining group.
+Groups are compile-time relationships, not runtime values or hidden owner objects. A reference
+may escape a function only when its group is exposed by a reference, nested type, callable result,
+or effect in the declared result type. A reference into a
 frame-local value cannot be returned.
 
-Methods may use `self` as their receiver group. Non-method functions cannot declare effects on
-`self`. Compiler-created closure functions derive group effects from their reference captures.
-Method results may expose `ref[self] T`, including inside `Option`, to borrow storage from
-the receiver. Such results remain tied to the receiver's lifetime; reshaping or consuming
-the receiver invalidates them. A structural contract retains that dependency even when
+Ordinary borrowed parameters also support result contracts such as
+`func borrow(person: Person) -> ref[person] Person { ref person }`.
+The parameter need not itself have an explicit reference type. A consumed parameter cannot
+supply escaping references because its storage belongs to the callee.
+
+`self` is the first parameter of an instance method and follows exactly the same group rule
+as every other parameter. A function without a `self` parameter cannot name that group.
+Compiler-created closure functions derive group effects from their reference captures.
+Method results may expose `ref[self] T`, including inside `Option`, to borrow from
+the argument passed as `self`. Such results remain tied to that argument's lifetime; reshaping or consuming
+the argument invalidates them. A structural contract retains that dependency even when
 the implementation's storage fields are hidden.
 
 ### Group ownership at a glance
+
+Explicit reference parameters retain the group named in their type. Several reference
+parameters can expose a shared input group by naming one of the parameters; this is a
+conservative origin contract, not a claim that the arguments are the same object. Calls
+and returned values still retain every possible concrete origin.
 
 The group name connects a reference to the places it may borrow and connects an effect to the
 places it may access. It is a compile-time relationship, not another runtime owner:
@@ -243,7 +268,7 @@ flowchart LR
     owner["Owning place<br/><code>people</code>"]
     member["Projected place<br/><code>people[0]</code>"]
     reference["Borrowed reference<br/><code>ref[people] Person</code>"]
-    effect["Permitted access<br/><code>mut people.name</code>"]
+    effect["Permitted access<br/><code>mut people.items.name</code>"]
 
     owner -->|contains| member
     member -->|borrowed in group <code>people</code>| reference
@@ -295,7 +320,7 @@ effects required by the body ⊆ effects declared by the signature
 
 An explicit contract missing a permission is an error. An unnecessarily strong explicit
 permission produces a warning. Inferred functions require neither repetition nor annotations.
-Calls propagate the callee's contract after substituting its group arguments. See
+Calls propagate the callee's contract after substituting parameter groups with argument origins. See
 [`effect-derivation.md`](effect-derivation.md) for the derivation algorithm.
 
 ## Structural invalidation
@@ -358,14 +383,14 @@ A borrowed capture may escape when it originates from a reference parameter and 
 exposes the same group:
 
 ```foster
-func make_renamer[people: group Person](person: ref[people] Person)
-    -> func(String) -> () [mut people]
+func make_renamer(person: ref[person] Person)
+    -> func(String) -> () [mut person]
 {
     [ref person] (name: String) -> person.name = name
 }
 ```
 
-The returned callable's effect contract communicates that invoking it may mutate `people`.
+The returned callable's effect contract communicates that invoking it may mutate `person`.
 
 Borrowed values cannot be stored back into the place from which they borrow. For example, assigning
 a `[ref object]` closure into a field of `object` is rejected. This prevents an object from owning a
@@ -571,7 +596,7 @@ The relevant compilation order is:
 AST
   → lower to resolved HIR
   → infer effects for reference captures
-  → validate group and effect declarations
+  → validate parameter-based group contracts and effect declarations
   → infer types and derive body effects using inferred closure capture modes
   → commit validated closure capture modes
   → lower canonical places into ownership MIR

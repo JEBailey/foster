@@ -472,8 +472,8 @@ fn verify_function_structure(
                     verify_metadata_type(program, ty, 0)?;
                 }
                 let expected = metadata.layout().names();
-                if fields.len() != expected.len()
-                    || fields.iter().map(|(name, _)| name).ne(expected.iter())
+                if fields.iter().any(|(name, _)| !expected.contains(name))
+                    || fields.windows(2).any(|pair| pair[0].0 >= pair[1].0)
                 {
                     return invalid_instruction(
                         function,

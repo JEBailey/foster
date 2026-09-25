@@ -672,7 +672,10 @@ fn calculate_layout(
 ) -> Result<PhysicalLayout, LayoutError> {
     match kind {
         LayoutKind::Record { name, fields, .. } => {
-            let (fields, end, align) = place_fields(registry, target, header.size, fields)?;
+            // One initialization byte per field precedes the payload. Deferred
+            // fields can be scalars too, so null payloads are not a sufficient mask.
+            let payload = checked_add(header.size, fields.len() as u32)?;
+            let (fields, end, align) = place_fields(registry, target, payload, fields)?;
             finish(
                 id,
                 header,
@@ -1369,7 +1372,7 @@ mod tests {
             panic!();
         };
         assert_eq!(record.header.size, 24);
-        assert_eq!(fields[0].offset, 24);
+        assert_eq!(fields[0].offset, 27);
         assert_eq!(fields[1].offset, 32);
         assert_eq!(fields[2].offset, 40);
         assert_eq!(record.size, 48);
@@ -1426,7 +1429,7 @@ mod tests {
         let PhysicalKind::Record { fields, .. } = &physical.get(LayoutId(1)).kind else {
             panic!();
         };
-        assert_eq!(fields[0].offset, 12);
+        assert_eq!(fields[0].offset, 14);
         assert_eq!(fields[1].offset, 16);
         assert_eq!(physical.get(LayoutId(1)).align, 8);
     }

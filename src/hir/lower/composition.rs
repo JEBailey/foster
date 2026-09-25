@@ -46,9 +46,6 @@ pub(super) fn materialize(
         if let Some(ty) = &mut definition.return_type {
             *ty = qualify(hir, definition.module, ty);
         }
-        for group in &mut definition.groups {
-            group.element = qualify(hir, definition.module, &group.element);
-        }
         hir.functions[function] = definition;
     }
     let owners = hir
@@ -171,7 +168,7 @@ pub(super) fn materialize(
                     definition.return_type = candidate.source.return_type.clone();
                     definition.effects = candidate.source.effects.clone();
                     definition.effects_explicit = candidate.source.effects_explicit;
-                    definition.groups = candidate.source.groups.clone();
+
                     definition.suspends = candidate.source.suspends;
                 }
                 definition.public &= record.public;
@@ -191,9 +188,6 @@ pub(super) fn materialize(
                 definition.parameters[0].ty = Some(ast::TypeExpr::Named(alias, arguments.clone()));
                 if let Some(result) = &mut definition.return_type {
                     *result = substitute(result, &candidate.substitutions);
-                }
-                for group in &mut definition.groups {
-                    group.element = substitute(&group.element, &candidate.substitutions);
                 }
                 candidate.source.type_parameters = definition.type_parameters.clone();
                 let function = hir.functions.alloc(definition);
@@ -247,9 +241,6 @@ pub(super) fn materialize(
             }
             if let Some(result) = &mut closure.return_type {
                 *result = substitute(result, &candidate.substitutions);
-            }
-            for group in &mut closure.groups {
-                group.element = substitute(&group.element, &candidate.substitutions);
             }
         }
     }

@@ -17,6 +17,7 @@ func scalar(spelling: String, declarations: List<String>) -> String {
             "@cstring" -> "c_string"
             "_Bool" -> "bool"
             "bool" -> "bool"
+            "char" -> "char"
             "signed char" -> "i8"
             "unsigned char" -> "u8"
             "short" -> "i16"
@@ -25,6 +26,10 @@ func scalar(spelling: String, declarations: List<String>) -> String {
             "unsigned short int" -> "u16"
             "int" -> "i32"
             "unsigned int" -> "u32"
+            "long" -> "long"
+            "long int" -> "long"
+            "unsigned long" -> "ulong"
+            "unsigned long int" -> "ulong"
             "long long" -> "i64"
             "long long int" -> "i64"
             "unsigned long long" -> "u64"
@@ -266,13 +271,22 @@ test "scalar declarations resolve typedef chains and preserve operation order" {
     assert(generated.manifest.copy().split("\"name\": \"add\"").length == 2)
 }
 
-test "pointer ownership and ABI-incompatible scalar types are never guessed" {
-    let generated = generate("F\topen\tHandle *\nF\ttext\tint\tconst char *\nF\twide\tlong\nF\tcharacter\tchar\nR\tprintf\tvariadic function\n", "sample.h")
+test "pointer ownership and extended scalar types are never guessed" {
+    let generated = generate("F\topen\tHandle *\nF\ttext\tint\tconst char *\nF\twide\tlong double\nF\thuge\t__int128\nR\tprintf\tvariadic function\n", "sample.h")
     assert(!generated.manifest.contains?("\"name\""))
     assert(generated.report.contains?("open: unsupported result"))
     assert(generated.report.contains?("text: unsupported parameter"))
     assert(generated.report.contains?("wide: unsupported result"))
+    assert(generated.report.contains?("huge: unsupported result"))
     assert(generated.report.contains?("printf: variadic function"))
+}
+
+test "C char and long types preserve their ABI identity through aliases" {
+    let generated = generate("T\tCount\tlong int\nT\tFlags\tunsigned long int\nT\tByte\tchar\nF\tscalar\tCount\tFlags\tByte\nS\tScalars\tstruct Scalars\tcount\tCount\tflags\tFlags\tbyte\tByte\n", "sample.h")
+    assert(generated.report.empty?)
+    assert(generated.manifest.contains?("\"parameters\": [\"ulong\", \"char\"], \"result\": \"long\""))
+    assert(binding_type("long", [], []) == "\"long\"")
+    assert(binding_type("unsigned long", [], []) == "\"ulong\"")
 }
 
 test "alias cycles terminate and JSON paths are escaped" {

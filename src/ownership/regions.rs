@@ -311,6 +311,7 @@ fn transfer_requirement(
             remove_issued_at(function, block, operation_index, state);
         }
         Operation::Initialize { .. }
+        | Operation::DeferField { .. }
         | Operation::ForgetPathFacts { .. }
         | Operation::ForgetCallableTargets
         | Operation::Invalidate { .. }
@@ -671,6 +672,7 @@ fn mutated_place(operation: &Operation) -> Option<&Place> {
             ..
         }
         | Operation::Initialize { place, .. }
+        | Operation::DeferField { place, .. }
         | Operation::Invalidate { place, .. }
         | Operation::Destroy { place, .. } => Some(place),
         Operation::StoreBorrower { destination, .. } => Some(destination),
@@ -973,6 +975,7 @@ fn transfer_guarded_requirement(
             remove_guarded_issued_at(function, block, operation_index, state);
         }
         Operation::Initialize { .. }
+        | Operation::DeferField { .. }
         | Operation::ForgetPathFacts { .. }
         | Operation::ForgetCallableTargets
         | Operation::Invalidate { .. }
@@ -1374,24 +1377,24 @@ fn validate_returned_loan(
         .with_label(hir.locals[origin].span.clone(), "borrowed local is declared here")
         .with_help("return an owned value, or borrow from a reference parameter whose group appears in the result type"));
     };
-    let group = match function.parameters[parameter].ty.as_ref() {
-        Some(crate::ast::TypeExpr::Reference { group, .. }) => group.as_str(),
-        _ if function.receiver == Some(origin)
-            && !function.effects.iter().any(|effect| {
-                effect.kind == crate::ast::EffectKind::Consume && effect.target.root == "self"
-            }) =>
-        {
-            "self"
-        }
-        _ => {
-            return Err(FosterError::runtime(format!(
-            "in `{module}.{}`: returned reference borrows parameter `{name}` without an exposed group",
-            function.name
+    if function
+        .effects
+        .iter()
+        .any(|effect| effect.kind == crate::ast::EffectKind::Consume && effect.target.root == *name)
+    {
+        return Err(FosterError::runtime(format!(
+            "returned reference borrows consumed parameter `{name}`"
         ))
         .with_code(super::diagnostics::BORROW_ESCAPE)
         .with_source_module(module.clone())
-        .with_primary_label(returned_at.clone(), "this return exposes a borrow without a named result group"));
-        }
+        .with_primary_label(
+            returned_at.clone(),
+            "consumed storage cannot escape through a borrow",
+        ));
+    }
+    let group = match function.parameters[parameter].ty.as_ref() {
+        Some(crate::ast::TypeExpr::Reference { group, .. }) => group.as_str(),
+        _ => name.as_str(),
     };
     if !crate::hir::queries::type_exposes_group(function.return_type.as_ref(), group) {
         return Err(FosterError::runtime(format!(

@@ -1,0 +1,16 @@
+{
+  "resources": [
+    {"name":"Image","c_type":"Image","by_value":true,"valid":"IsImageValid","destroy":"UnloadImage"}
+  ],
+  "operations": [
+    {"name":"LoadFileData","symbol":"LoadFileData","parameters":["c_string"],"result":"bytes","length_type":"i32","release":"UnloadFileData"},
+    {"name":"LoadFileText","symbol":"LoadFileText","parameters":["c_string"],"result":"c_string","max_length":16777216,"release":"UnloadFileText"},
+    {"name":"LoadImage","symbol":"LoadImage","parameters":["c_string"],"result":"void","creates":"Image"},
+    {"name":"LoadImageFromMemory","symbol":"LoadImageFromMemory","parameters":["c_string",{"buffer":"u8","length":"i32"}],"result":"void","creates":"Image"},
+    {"name":"GenImageColor","symbol":"GenImageColor","parameters":["i32","i32",{"record":"Color"}],"result":"void","creates":"Image"},
+    {"name":"ImageResize","symbol":"ImageResize","receiver":"Image","receiver_pointer":true,"parameters":["i32","i32"],"result":"void"},
+    {"name":"GetImageColor","symbol":"GetImageColor","receiver":"Image","parameters":["i32","i32"],"result":{"record":"Color"}},
+    {"name":"ExportImageToMemory","symbol":"ExportImageToMemory","receiver":"Image","parameters":["c_string"],"result":"bytes","length_type":"i32","release":"MemFree"}
+  ],
+  "exclude": ["MemFree","UnloadFileData","UnloadFileText"]
+}

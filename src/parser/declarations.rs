@@ -500,7 +500,7 @@ impl Parser {
         let public = self.take(&TokenKind::Pub);
         self.expect(&TokenKind::Func, "expected `func`")?;
         let name = self.expect_ident("expected required method name")?;
-        let (type_parameters, groups) = self.function_parameters()?;
+        let type_parameters = self.function_parameters()?;
         self.expect(
             &TokenKind::LParen,
             "expected `(` after required method name",
@@ -532,7 +532,6 @@ impl Parser {
             receiver,
             public,
             type_parameters,
-            groups,
             parameters,
             return_type,
             effects: effects.effects,
@@ -603,7 +602,7 @@ impl Parser {
             return Err(self.error("duplicate impl type parameter"));
         }
         if self.at(&TokenKind::LBracket) {
-            return Err(self.error("group parameters belong on individual functions"));
+            return Err(self.error("storage groups are named by parameters and lexical scopes"));
         }
         self.newlines();
         self.expect(&TokenKind::LBrace, "expected `{` after impl type")?;
@@ -613,7 +612,9 @@ impl Parser {
             let documentation = self.documentation();
             let mut function =
                 self.member_function(documentation, Some(&owner), &type_parameters)?;
-            function.constraints = constraints.clone();
+            function
+                .constraints
+                .splice(0..0, constraints.iter().cloned());
             functions.push(function);
             self.newlines();
         }
@@ -649,7 +650,10 @@ impl Parser {
         }
         let owner = impl_owner.map(str::to_owned);
         let name = impl_owner.map_or_else(|| member.clone(), |owner| format!("{owner}.{member}"));
-        let (mut type_parameters, groups) = self.function_parameters()?;
+        let (mut type_parameters, constraints) = self.constrained_function_parameters()?;
+        if impl_owner.is_some() && !constraints.is_empty() {
+            return Err(self.error("declare method bounds on the implementation parameters"));
+        }
         if type_parameters
             .iter()
             .any(|name| impl_parameters.contains(name))
@@ -732,8 +736,7 @@ impl Parser {
             public,
             intrinsic,
             type_parameters,
-            constraints: Vec::new(),
-            groups,
+            constraints,
             parameters,
             return_type,
             effects_explicit,
@@ -759,34 +762,41 @@ impl Parser {
         Ok(receiver)
     }
 
-    pub(super) fn function_parameters(
+    pub(super) fn function_parameters(&mut self) -> Result<Vec<String>, FosterError> {
+        let (parameters, constraints) = self.constrained_function_parameters()?;
+        if !constraints.is_empty() {
+            return Err(self.error("required method type parameters cannot declare bounds"));
+        }
+        Ok(parameters)
+    }
+
+    fn constrained_function_parameters(
         &mut self,
-    ) -> Result<(Vec<String>, Vec<GroupParameter>), FosterError> {
+    ) -> Result<(Vec<String>, Vec<crate::ast::TypeConstraint>), FosterError> {
         let mut type_parameters = Vec::new();
-        let mut groups = Vec::new();
+        let mut constraints = Vec::new();
         if self.take(&TokenKind::Less) {
             loop {
-                type_parameters.push(self.expect_ident("expected type parameter")?);
+                let parameter = self.expect_ident("expected type parameter")?;
+                if self.take(&TokenKind::Ampersand) {
+                    constraints.push(crate::ast::TypeConstraint {
+                        parameter: parameter.clone(),
+                        requirement: self.type_expr()?,
+                    });
+                }
+                type_parameters.push(parameter);
                 if !self.take(&TokenKind::Comma) {
                     break;
                 }
             }
             self.expect(&TokenKind::Greater, "expected `>` after type parameters")?;
         }
-        if self.take(&TokenKind::LBracket) {
-            loop {
-                let name = self.expect_ident("expected group parameter name")?;
-                self.expect(&TokenKind::Colon, "expected `:` after group parameter name")?;
-                self.expect(&TokenKind::Group, "expected `group`")?;
-                let element = self.type_expr()?;
-                groups.push(GroupParameter { name, element });
-                if !self.take(&TokenKind::Comma) {
-                    break;
-                }
-            }
-            self.expect(&TokenKind::RBracket, "expected `]` after group parameters")?;
+        if self.at(&TokenKind::LBracket) {
+            return Err(self.error(
+                "group declarations are not supported; use parameter names in `ref[name]`",
+            ));
         }
-        Ok((type_parameters, groups))
+        Ok((type_parameters, constraints))
     }
 
     pub(super) fn parameter(&mut self, expected_name: &str) -> Result<Parameter, FosterError> {

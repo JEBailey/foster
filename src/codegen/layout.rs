@@ -835,18 +835,12 @@ fn canonicalize_and_verify(program: &mut Program, registry: &Registry) -> Result
                     let mut supplied = fields.drain(..).collect::<HashMap<_, _>>();
                     *fields = slots
                         .iter()
-                        .map(|slot| {
+                        .filter_map(|slot| {
                             supplied
                                 .remove(&slot.name)
                                 .map(|value| (slot.name.clone(), value))
-                                .ok_or_else(|| {
-                                    FosterError::runtime(format!(
-                                        "record construction is missing field `{}`",
-                                        slot.name
-                                    ))
-                                })
                         })
-                        .collect::<Result<Vec<_>, _>>()?;
+                        .collect();
                     if let Some((name, _)) = supplied.into_iter().next() {
                         return Err(FosterError::runtime(format!(
                             "record construction has unknown field `{name}`"

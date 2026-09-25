@@ -48,9 +48,9 @@ exports. Embedded library modules use package `foster`. Standalone source withou
 package `local`; API callers can supply explicit identities in `Package::symbol_modules`. Package
 names identify a namespace, not a registry coordinate, version constraint, or cryptographic identity.
 
-Generic parameters are represented by indices; parameter roots use `p0`, `p1`, and so on. Explicit
-reference groups use `g0`, `g1`, and so on. Renaming a generic, parameter, or group does not change
-the descriptor. An instance receiver occupies parameter zero. Synthetic closures and partial
+Generic parameters are represented by indices; parameter roots and their reference groups use
+`p0`, `p1`, and so on. Renaming a generic or parameter does not change the descriptor.
+The `self` parameter of an instance method occupies parameter zero. Synthetic closures and partial
 applications have private ordinal names; those helper identities are not a library compatibility
 promise. Executable-local function/type IDs and generic implementation spellings are kept separately
 from symbolic identity.
@@ -58,14 +58,14 @@ from symbolic identity.
 ## Semantic descriptors
 
 Descriptors retain checked parameter and result types, generic arity, receiver presence,
-borrow/consume modes, group element constraints, effects with projected paths, suspension, and
+borrow/consume modes, parameter-based reference origins, effects with projected paths, suspension, and
 ownership-MIR result dependencies. Nominal references are package-qualified. Function-valued types
 retain their own callable contract. Descriptors do not use the VM verifier's erased `Unknown` as a
 substitute for semantic types.
 
 Compatibility is deliberately conservative:
 
-- Parameter/result types, generic arity, receiver status, group constraints, and ownership modes
+- Parameter/result types and reference origins, generic arity, receiver status, and ownership modes
   must match.
 - An implementation may remove effects or narrow a projected effect path. Effect kinds otherwise
   match exactly; the linker does not implement a general effect-subtyping algorithm.

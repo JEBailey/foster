@@ -120,7 +120,7 @@ func probe(context: Context, names: List<String>, values: List<String>, reports:
                 let kind = bindings::binding_type(spelling, context.rows, context.accepted)
                 branch {
                     literal_string(tree, variable) -> { kind = "\"string\"" }
-                    ["long", "long int", "unsigned long", "unsigned long int", "char"].contains?(spelling) || spelling.starts_with?("enum ") -> { kind = "\"i64\"" }
+                    spelling.starts_with?("enum ") -> { kind = "\"i64\"" }
                     _ -> ()
                 }
                 branch { kind.empty? || kind == "\"void\"" -> reports.push(name + ": unsupported constant type " + spelling + "\n")

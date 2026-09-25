@@ -60,7 +60,6 @@ pub(super) fn slots(
                     })
                     .collect::<Result<_, FosterError>>()?,
                 result: nested(r)?,
-                groups: vec![],
                 effects: vec![],
                 suspends: false,
                 result_dependencies: vec![],
@@ -207,7 +206,6 @@ impl crate::dispatch::Tree for S {
                     })
                     .collect(),
                 result: children.next().unwrap(),
-                groups: vec![],
                 effects: vec![],
                 suspends: false,
                 result_dependencies: vec![],

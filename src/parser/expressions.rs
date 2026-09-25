@@ -314,7 +314,12 @@ impl Parser {
                 while !self.at(&TokenKind::RBrace) && !self.at(&TokenKind::Eof) {
                     let name = self.expect_ident("expected record field name")?;
                     let (value, shorthand) = if self.take(&TokenKind::Colon) {
-                        (self.expression()?, false)
+                        let value = if self.take(&TokenKind::Deferred) {
+                            self.spanned(self.tokens[self.current - 1].range.start, Expr::Deferred)
+                        } else {
+                            self.expression()?
+                        };
+                        (value, false)
                     } else {
                         (
                             self.spanned(
@@ -391,7 +396,6 @@ impl Parser {
                             TokenKind::Ident(_)
                                 | TokenKind::Move
                                 | TokenKind::Ref
-                                | TokenKind::Group
                                 | TokenKind::Read
                                 | TokenKind::Mut
                                 | TokenKind::Reshape

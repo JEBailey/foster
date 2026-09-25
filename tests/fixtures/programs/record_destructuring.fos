@@ -3,7 +3,7 @@ type Pair = { first: Int, second: Int }
 type Counter = { calls: Int }
 enum Outcome = Match(Box<Pair>) | Failed
 
-func make[g: group Counter](counter: ref[g] Counter) -> Box<Pair> [mut g] {
+func make(counter: ref[counter] Counter) -> Box<Pair> [mut counter] {
     counter.calls = counter.calls + 1
     Box { value: Pair { first: 20, second: 22 }, ignored: 0 }
 }

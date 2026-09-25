@@ -60,11 +60,6 @@ impl Table {
             for name in &function.type_parameters {
                 context.generic(name);
             }
-            for (index, group) in function.groups.iter().enumerate() {
-                context
-                    .roots
-                    .insert(group.name.clone(), format!("g{index}"));
-            }
             for (index, parameter) in function.parameters.iter().enumerate() {
                 context.roots.insert(
                     compilation.hir.locals[parameter.local].name.clone(),
@@ -82,16 +77,6 @@ impl Table {
             }
             descriptor.constraints.sort();
             descriptor.constraints.dedup();
-            descriptor.groups = function
-                .groups
-                .iter()
-                .map(|group| {
-                    (
-                        context.root(&group.name),
-                        context.annotation(&group.element),
-                    )
-                })
-                .collect();
             descriptor.generics = context.generics.len() as u32;
             if let Some(ownership) = compilation.ownership.functions.get(&id) {
                 descriptor.result_dependencies = ownership
@@ -276,7 +261,6 @@ impl<'a> Context<'a> {
             receiver: false,
             parameters,
             result,
-            groups: Vec::new(),
             effects: self.effects(&signature.effects),
             suspends: signature.suspends,
             result_dependencies: (0..signature.parameters.len() as u32).collect(),
@@ -440,7 +424,6 @@ impl<'a> Context<'a> {
                     constraints: Vec::new(),
                     receiver: false,
                     result: self.annotation(result),
-                    groups: Vec::new(),
                     effects: self.effects(effects),
                     suspends: *suspends,
                     result_dependencies: (0..parameters.len() as u32).collect(),
