@@ -146,7 +146,7 @@ following [C integration](../../docs/c-integration.md), or build a maintained
 manifest directly. Resource contracts remove their copyable value records,
 dependent records, and unreviewed operations using those records. Destructors and
 validity functions are handled by the owner rather than exposed as raw operations.
-The [raylib contracts](../../examples/raylib/contracts.json) cover file strings,
+The [foster-raylib contracts](../../../foster-raylib/contracts.json) (sibling repository) cover file strings,
 binary data, and owned Images, including pointer-based image mutation.
 The importer does not guess these contracts or modify an existing Foster module.
 
@@ -165,7 +165,7 @@ The generated methods support borrowed synchronous handlers, owned registrations
 and explicitly polled background notifications; see
 [callback contracts](../../docs/c-integration.md#callbacks) for lifetime and signature limits.
 
-See the [raylib example](../../examples/raylib/README.md) for a working graphics
+See the [foster-raylib repository](../../../foster-raylib/README.md) (sibling of this one) for a working graphics
 UI built from the real raylib header, including returned `Color`/`Vector2` values
 and by-value `Rectangle` parameters. Resource IDs stored in integer fields still
 need library-specific ownership rules; a structurally copyable record does not

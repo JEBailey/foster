@@ -186,7 +186,7 @@ Arrays are not valid top-level operation parameters or results: C array paramete
 decay to pointers and require explicit buffer contracts. Constant record values may
 contain JSON arrays matching the declared dimensions.
 
-The [raylib example](../examples/raylib/README.md) exercises these bindings in a
+The [foster-raylib](../../foster-raylib) repository (sibling of this one) exercises these bindings in a
 graphics UI with a click counter, color slider, and animated rectangle.
 
 Foster's private runtime intrinsics transport these packets as hexadecimal text
@@ -256,7 +256,7 @@ fallible `close` contract. Operations normally pass the boxed value by value;
 continue to pass their native pointer. Owners support explicit idempotent close
 and scope cleanup through `CResource`; copying a value record never creates an owner.
 
-See `examples/raylib/contracts.json` and `examples/raylib/resources.fos` for an
+See `contracts.json` and `resources.fos` in the [foster-raylib](../../foster-raylib) repository for an
 Image creation, resize, PNG export/import, and cleanup example.
 
 ## Callbacks
