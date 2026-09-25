@@ -12,6 +12,40 @@ use crate::vm::{Machine, Program};
 use la_arena::{Idx, RawIdx};
 
 #[test]
+fn public_function_lowering_rejects_unverified_ssa_before_emission() {
+    let function = ir::Function {
+        name: "invalid".into(),
+        signature: ir::Signature {
+            parameters: vec![],
+            result: Type::Int,
+        },
+        parameters: vec![],
+        captures: vec![],
+        entry_seeds: vec![],
+        entry: Block(0),
+        entry_arguments: vec![],
+        values: vec![Type::Int].into_iter().collect(),
+        blocks: vec![ir::BlockData {
+            parameters: vec![],
+            instructions: vec![],
+            terminator: ir::Terminator::Return(Value(0)),
+            terminator_span: 0..0,
+        }],
+    };
+    // v0 has a type but no definition. Emission must not treat it as verified.
+    let mut constants = vec![Constant::Integer(42)];
+    let error = lower_function(
+        &function,
+        &HashMap::new(),
+        &mut constants,
+        FunctionMetadata::default(),
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("invalid shared IR"));
+    assert_eq!(constants, vec![Constant::Integer(42)]);
+}
+
+#[test]
 fn program_sealing_restores_functions_after_an_error() {
     let id = Idx::from_raw(RawIdx::from_u32(0));
     let mut program = Program::default();

@@ -61,16 +61,15 @@ impl SharedProgram {
         let program = crate::compiler::profile::measure("shared.mutable_graph", || {
             Arc::make_mut(&mut self.program)
         });
-        let changed = super::optimizer::run_shared(program, &mut self.write_bindings)?;
+        let changed =
+            super::optimizer::run_shared(program, &self.signatures, &mut self.write_bindings)?;
         // Changed graphs cannot retain instruction-indexed facts. Rebuild only
         // affected functions, including callers changed by interprocedural passes.
         let mut changed = changed.into_iter().collect::<Vec<_>>();
         changed.sort();
         for id in changed {
             let function = &self.program.bodies[&id];
-            function
-                .verify(&self.signatures)
-                .map_err(|error| FosterError::runtime(format!("invalid optimized SSA: {error}")))?;
+            // run_shared verifies every rewritten graph before returning it.
             previous.remove(&id);
             let facts = crate::compiler::profile::measure("shared.rebuild_flow", || {
                 super::flow::analyze(

@@ -59,7 +59,16 @@ pub fn lower_function(
     function
         .verify(signatures)
         .map_err(|error| LowerError(format!("invalid shared IR: {error}")))?;
+    lower_verified_function(function, constants, metadata)
+}
 
+/// Internal lowering for bodies taken directly from a verified SharedProgram.
+/// The public lower_function entry point still validates arbitrary SSA input.
+pub(super) fn lower_verified_function(
+    function: &ir::Function,
+    constants: &mut Vec<Constant>,
+    metadata: FunctionMetadata,
+) -> Result<vm::BytecodeFunction, LowerError> {
     let mut registers = function
         .values
         .hints()

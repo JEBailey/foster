@@ -43,8 +43,13 @@ thread_local! { static STATE: RefCell<State> = RefCell::new(State::default()); }
 static NEXT_TOKEN: AtomicI64 = AtomicI64::new(1);
 
 pub fn encode(bytes: &[u8]) -> String {
+    encode_prefixed("", bytes)
+}
+
+fn encode_prefixed(prefix: &str, bytes: &[u8]) -> String {
     const HEX: &[u8] = b"0123456789abcdef";
-    let mut result = String::with_capacity(bytes.len() * 2);
+    let mut result = String::with_capacity(prefix.len() + bytes.len() * 2);
+    result.push_str(prefix);
     for &byte in bytes {
         result.push(HEX[(byte >> 4) as usize] as char);
         result.push(HEX[(byte & 15) as usize] as char);
@@ -52,6 +57,10 @@ pub fn encode(bytes: &[u8]) -> String {
     result
 }
 pub fn decode(text: &str) -> Result<Vec<u8>, String> {
+    decoded_bytes(text)?.collect()
+}
+
+fn decoded_bytes(text: &str) -> Result<impl Iterator<Item = Result<u8, String>> + '_, String> {
     if text.len() > LIMIT * 2 || text.len() % 2 != 0 {
         return Err("invalid C wire payload length".into());
     }
@@ -62,21 +71,29 @@ pub fn decode(text: &str) -> Result<Vec<u8>, String> {
             _ => Err("invalid C wire hexadecimal digit".into()),
         }
     }
-    text.as_bytes()
+    Ok(text
+        .as_bytes()
         .chunks_exact(2)
-        .map(|c| Ok(digit(c[0])? * 16 + digit(c[1])?))
-        .collect()
+        .map(|c| Ok(digit(c[0])? * 16 + digit(c[1])?)))
 }
 pub fn int(text: &str) -> Result<i64, String> {
-    let bytes = decode(text)?;
-    Ok(i64::from_le_bytes(bytes.try_into().map_err(
-        |_| "C scalar must contain exactly eight bytes",
-    )?))
+    let mut bytes = [0; 8];
+    // Validate every digit even on a wrong-sized scalar, preserving wire errors.
+    for (index, byte) in decoded_bytes(text)?.enumerate() {
+        let byte = byte?;
+        if let Some(destination) = bytes.get_mut(index) {
+            *destination = byte;
+        }
+    }
+    if text.len() != 16 {
+        return Err("C scalar must contain exactly eight bytes".into());
+    }
+    Ok(i64::from_le_bytes(bytes))
 }
 fn response(result: Result<Vec<u8>, String>) -> String {
     match result {
-        Ok(bytes) => format!("00{}", encode(&bytes)),
-        Err(error) => format!("01{}", encode(error.as_bytes())),
+        Ok(bytes) => encode_prefixed("00", &bytes),
+        Err(error) => encode_prefixed("01", error.as_bytes()),
     }
 }
 pub fn remote_error() -> String {
@@ -322,5 +339,53 @@ impl Module {
     }
     fn symbol(&self, _: &[u8]) -> Result<*mut std::ffi::c_void, String> {
         unreachable!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scalar_decoder_preserves_wire_validation_and_exact_bits() {
+        for value in [i64::MIN, -1, 0, 1, i64::MAX] {
+            assert_eq!(int(&encode(&value.to_le_bytes())).unwrap(), value);
+        }
+        for text in ["", "00", "000000000000000000"] {
+            assert_eq!(
+                int(text).unwrap_err(),
+                "C scalar must contain exactly eight bytes"
+            );
+        }
+        for text in ["0", "000"] {
+            assert_eq!(int(text).unwrap_err(), "invalid C wire payload length");
+        }
+        // Invalid digits take precedence over the scalar size check, including
+        // invalid bytes beyond the eight-byte destination.
+        for text in ["zz", "AA", "λ", "0000000000000000zz"] {
+            assert_eq!(int(text).unwrap_err(), "invalid C wire hexadecimal digit");
+        }
+        let oversized = "0".repeat(LIMIT * 2 + 2);
+        assert_eq!(
+            int(&oversized).unwrap_err(),
+            "invalid C wire payload length"
+        );
+        assert_eq!(
+            decode(&oversized).unwrap_err(),
+            "invalid C wire payload length"
+        );
+    }
+
+    #[test]
+    fn response_envelopes_preserve_all_bytes_and_utf8_errors() {
+        let bytes = (0..=255).collect::<Vec<u8>>();
+        assert_eq!(decode(&encode(&bytes)).unwrap(), bytes);
+        let packet = decode(&response(Ok(bytes.clone()))).unwrap();
+        assert_eq!(packet[0], 0);
+        assert_eq!(&packet[1..], bytes);
+        assert_eq!(response(Ok(vec![])), "00");
+        let packet = decode(&response(Err("failure: λ".into()))).unwrap();
+        assert_eq!(packet[0], 1);
+        assert_eq!(&packet[1..], "failure: λ".as_bytes());
     }
 }

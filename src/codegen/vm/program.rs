@@ -1,5 +1,5 @@
 use super::LowerError;
-use super::emission::{FunctionMetadata, lower_function};
+use super::emission::{FunctionMetadata, lower_verified_function};
 use crate::codegen::sealing::seal_program;
 use crate::codegen::shared::SharedProgram;
 use crate::vm;
@@ -62,9 +62,8 @@ pub(crate) fn lower_shared_program(shared: SharedProgram) -> Result<vm::Program,
                 instruction_spans: vec![0..0, 0..0],
             }
         } else {
-            lower_function(
+            lower_verified_function(
                 &source.bodies[&id],
-                &shared.signatures,
                 &mut program.metadata.constants,
                 FunctionMetadata::from_declaration(declaration),
             )?

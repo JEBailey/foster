@@ -13,15 +13,11 @@ mod inlining;
 
 pub(crate) fn run_shared(
     program: &mut super::program::Program,
+    signatures: &HashMap<FunctionId, ir::Signature>,
     writes: &mut HashMap<FunctionId, HashMap<Value, Value>>,
 ) -> Result<HashSet<FunctionId>, crate::error::FosterError> {
-    let signatures = program
-        .bodies
-        .iter()
-        .map(|(id, body)| (*id, body.signature.clone()))
-        .collect::<HashMap<_, _>>();
     let verify = |body: &ir::Function| {
-        body.verify(&signatures).map_err(|error| {
+        body.verify(signatures).map_err(|error| {
             crate::error::FosterError::runtime(format!(
                 "invalid optimized SSA in {}: {error}",
                 body.name
