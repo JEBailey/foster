@@ -41,10 +41,16 @@ fn copied_pointers_outputs_and_value_resources_work_on_vm_and_native() {
     let directory =
         std::env::temp_dir().join(format!("foster-pointer-contracts-{}", std::process::id()));
     fs::create_dir_all(&directory).unwrap();
+    // The fixture directory is temporary, so the generated module keeps the
+    // absolute path; relative names resolve against the run's directories.
     let output = foster::foreign::build(
         &fixture.join("pointers.json"),
         &directory.join("pointers.dll"),
         std::path::Path::new("clang"),
+        &directory
+            .join("pointers.dll")
+            .to_string_lossy()
+            .replace('\\', "/"),
     )
     .unwrap();
     let source = fs::read_to_string(output.with_extension("fos")).unwrap()

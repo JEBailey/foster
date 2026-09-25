@@ -388,6 +388,7 @@ func main() -> Result<Int, CError> {
         &wrong_path,
         &directory.join("wrong.dll"),
         std::path::Path::new("clang"),
+        "wrong.dll",
     )
     .unwrap_err();
     assert!(error.contains("C field type mismatch"), "{error}");
@@ -406,6 +407,7 @@ func main() -> Result<Int, CError> {
         &wrong_path,
         &directory.join("wrong-array.dll"),
         std::path::Path::new("clang"),
+        "wrong-array.dll",
     )
     .unwrap_err();
     assert!(

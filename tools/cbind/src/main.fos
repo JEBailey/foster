@@ -12,9 +12,9 @@ import bindings
 import constants
 import contracts
 
-type Options = { headers: List<String>, sources: List<String>, libraries: List<String>, includes: List<String>, functions: List<String>, strings: List<String>, output: String, compiler: String, manifest: String, contracts: String, skip: Bool, manifest_only: Bool }
+type Options = { headers: List<String>, sources: List<String>, libraries: List<String>, includes: List<String>, functions: List<String>, strings: List<String>, output: String, module_path: String, compiler: String, manifest: String, contracts: String, skip: Bool, manifest_only: Bool }
 func options(arguments: List<String>) -> Options {
-    let config = Options { headers: [], sources: [], libraries: [], includes: [], functions: [], strings: [], output: "", compiler: "clang", manifest: "", contracts: "", skip: false, manifest_only: false }
+    let config = Options { headers: [], sources: [], libraries: [], includes: [], functions: [], strings: [], output: "", module_path: "", compiler: "clang", manifest: "", contracts: "", skip: false, manifest_only: false }
     let index = 0
     while index < arguments.length {
         let flag = arguments[index].copy()
@@ -34,6 +34,7 @@ func options(arguments: List<String>) -> Options {
                     "--function" -> config.functions.push(value.copy())
                     "--c-string" -> config.strings.push(value.copy())
                     "--output" -> { config.output = value.copy() }
+                    "--module-path" -> { config.module_path = value.copy() }
                     "--clang" -> { config.compiler = value.copy() }
                     "--manifest" -> { config.manifest = value.copy() }
                     "--contracts" -> { config.contracts = value.copy() }
@@ -47,6 +48,7 @@ func options(arguments: List<String>) -> Options {
     assert(config.manifest.empty? || config.headers.empty?, "choose --header or --manifest")
     assert(!config.manifest.empty? || !config.headers.empty?, "--header or --manifest is required")
     assert(config.manifest.empty? || (config.sources.empty? && config.libraries.empty? && config.includes.empty? && config.functions.empty? && config.strings.empty? && config.contracts.empty? && !config.skip && !config.manifest_only), "build options belong inside the reviewed manifest")
+    branch { config.module_path.empty? -> { config.module_path = config.output.split("\\").join("/") } _ -> () }
     config
 }
 func text(tree: Contract, node: Int, key: String) -> String {
@@ -309,17 +311,17 @@ func import_header(config: Options) {
     branch { config.manifest_only -> { println(manifest_path)
         return () } _ -> () }
     println("Building the generated C bridge...")
-    bridge::build(manifest_path, output, config.compiler)
+    bridge::build(manifest_path, output, config.compiler, config.module_path.copy())
     println(bridge::artifact(output, ".fos"))
 }
 func main(args: Arguments) {
     branch { args.values.empty? || args.values.contains?("--help") -> {
-        println("cbind --header FILE --output FILE.dll [options]\ncbind --manifest FILE.json --output FILE.dll [--clang EXE]\nRepeat: --header --source --library --include --function --c-string NAME:INDEX\nOwnership: --contracts FILE.json\nFlags: --skip-unsupported --manifest-only\nClang and a Windows x64 C toolchain are required; Foster is not needed at runtime.")
+        println("cbind --header FILE --output FILE.dll [options]\ncbind --manifest FILE.json --output FILE.dll [--clang EXE]\nRepeat: --header --source --library --include --function --c-string NAME:INDEX\nOwnership: --contracts FILE.json\nFlags: --module-path NAME --skip-unsupported --manifest-only\nThe module path names the bridge for the runtime; relative names resolve against FOSTER_BRIDGE_DIR, the current directory, and the executable directory.\nClang and a Windows x64 C toolchain are required; Foster is not needed at runtime.")
         return ()
     } _ -> () }
     let config = options(args.values)
     branch { config.manifest.empty? -> import_header(config)
-        _ -> { println(bridge::build(config.manifest, config.output, config.compiler)) } }
+        _ -> { println(bridge::build(config.manifest, config.output, config.compiler, config.module_path.copy())) } }
 }
 
 test "trailing header comments use byte offsets and do not consume following code" {

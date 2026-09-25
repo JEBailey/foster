@@ -55,10 +55,16 @@ fn execute() -> Result<(), Box<dyn Error>> {
     match matches.subcommand() {
         Some(("init", arguments)) => init(arguments)?,
         Some(("bridge", arguments)) => {
+            let output_path = arguments.get_one::<PathBuf>("output").unwrap();
+            let module_path = arguments
+                .get_one::<String>("module_path")
+                .cloned()
+                .unwrap_or_else(|| output_path.to_string_lossy().replace('\\', "/"));
             let output = foster::foreign::build(
                 arguments.get_one::<PathBuf>("manifest").unwrap(),
-                arguments.get_one::<PathBuf>("output").unwrap(),
+                output_path,
                 arguments.get_one::<PathBuf>("cc").unwrap(),
+                &module_path,
             )
             .map_err(std::io::Error::other)?;
             println!("{}", output.display());
@@ -122,6 +128,12 @@ fn cli() -> Command {
             .about("Compile a reviewed C binding manifest into a Windows x64 bridge")
             .arg(Arg::new("manifest").required(true).value_parser(value_parser!(PathBuf)))
             .arg(Arg::new("output").long("output").required(true).value_parser(value_parser!(PathBuf)))
+            .arg(
+                Arg::new("module_path")
+                    .long("module-path")
+                    .value_parser(value_parser!(String))
+                    .help("Bridge name embedded in the module; defaults to --output with forward slashes"),
+            )
             .arg(Arg::new("cc").long("cc").default_value("clang").value_parser(value_parser!(PathBuf))))
         .subcommand(
             Command::new("init")

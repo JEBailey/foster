@@ -29,8 +29,15 @@ interpreted.
 The output includes `.fos`, `.dll`, `.schema`, and `.bridge.c` files. The
 `.bindings.json`, `.import.h`, `.declarations.tsv`, `.ast.json`, and
 `.unsupported.txt` intermediates make conversion inspectable. Use a dedicated
-output basename: these generated files are replaced. Bindings contain the
-absolute DLL path; regenerate them when relocating the DLL.
+output basename: these generated files are replaced. The generated module
+embeds a *module path* naming the bridge for the runtime: by default the
+`--output` value exactly as given, normalized to forward slashes, so relative
+outputs stay portable. Relative names resolve at run time against
+`FOSTER_BRIDGE_DIR`, the current directory, and the executable directory,
+trying the full name before the bare file name; absolute names load as given.
+Pass `--module-path NAME` to control the embedded name explicitly (for
+example, a path relative to the application root), and regenerate when the
+bridge moves to a location the resolver cannot reach.
 Use a distinct bridge basename such as `raylib_bridge.dll`; dependent DLLs must
 retain their original names beside the bridge.
 
@@ -80,6 +87,8 @@ Options:
 - `--manifest-only`: write the draft manifest without compiling a DLL.
 - `--clang EXE`: compiler executable; defaults to `clang` on PATH.
 - `--output FILE.dll`: required output basename.
+- `--module-path NAME`: name embedded in the generated module; defaults to
+  the `--output` value normalized to forward slashes.
 
 Build a reviewed manifest without rediscovering headers:
 

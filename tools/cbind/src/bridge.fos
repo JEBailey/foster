@@ -1086,13 +1086,14 @@ impl Contract {
 }
 
 /// Validates JSON and returns schema, C, and Foster text in order.
-/// The library path is supplied by the host; it is excluded from contract identity.
-pub func generate_bridge(input: String, path: String) -> List<String> {
+/// The module path names the bridge for the runtime loader; it is excluded
+/// from contract identity, so relocating the DLL never changes the schema.
+pub func generate_bridge(input: String, module_path: String) -> List<String> {
     let tree = json_rows(input)
     let manifest = contract(tree)
     manifest.validate()
     let schema = identity(tree)
-    [schema.copy(), manifest.c_source(schema), manifest.foster_source(path, schema)]
+    [schema.copy(), manifest.c_source(schema), manifest.foster_source(module_path, schema)]
 }
 
 test "schema hash uses exact unsigned FNV-1a arithmetic" {
@@ -1568,13 +1569,14 @@ pub func execute(executable: String, arguments: List<String>, directory: String)
     move stdout
 }
 /// Builds a reviewed manifest directly; paths inside it resolve relative to its directory.
-pub func build(manifest_path: String, destination: String, compiler: String) -> String {
+pub func build(manifest_path: String, destination: String, compiler: String, module_path: String) -> String {
     let file = canonical(manifest_path)
     let root = paths::parent(file).unwrap_or(".")
     let output = absolute(destination)
     assert(output.ends_with?(".dll"), "C bridge output must have a .dll extension")
+    assert(!module_path.empty?, "C bridge module path must not be empty")
     let input = read_file(file)
-    let generated = generate_bridge(input, output)
+    let generated = generate_bridge(input, module_path)
     let manifest = decode_json(input)
     make_parent(output)
     let source = artifact(output, ".bridge.c")

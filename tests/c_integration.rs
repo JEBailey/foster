@@ -31,6 +31,7 @@ fn bridge_dependencies_resolve_beside_forward_slash_paths() {
         &manifest_path,
         &directory.join("bridge.dll"),
         std::path::Path::new("clang"),
+        "bridge.dll",
     )
     .unwrap();
     let schema = Manifest::parse(contract).unwrap().identity();
@@ -88,6 +89,10 @@ fn generated_c_bridge_runs_on_vm_and_native_with_exact_cleanup() {
         &manifest_path,
         &temporary.join("fixture.dll"),
         std::path::Path::new("clang"),
+        &temporary
+            .join("fixture.dll")
+            .to_string_lossy()
+            .replace('\\', "/"),
     )
     .unwrap();
     let path = library.to_str().unwrap();

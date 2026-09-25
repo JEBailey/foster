@@ -46,11 +46,14 @@ and `c_set`; its owner type is `NativeCounter`. `close()` attempts explicit
 closing. An owner that remains live is destroyed when its Foster scope ends,
 including an early return, loop transfer, `try` failure, or runtime assertion.
 
-The generated bindings contain the DLL's absolute path and schema identifier.
-Keep the DLL available at that path. Rebuild bindings when relocating it. Both
-native executables and VM programs need the DLL at execution time; native builds
-do not currently statically link third-party C code. Dependent DLLs resolve beside
-the bridge or in System32, never by searching the working directory.
+The generated bindings contain the bridge's module path and schema identifier.
+Relative module paths resolve at run time against `FOSTER_BRIDGE_DIR`, the
+current directory, and the executable directory, trying the full name before
+the bare file name; absolute paths load as given. Regenerate bindings when the
+bridge moves to a location the resolver cannot reach. Both native executables
+and VM programs need the DLL at execution time; native builds do not currently
+statically link third-party C code. Dependent DLLs resolve beside the bridge or
+in System32, never by searching the working directory.
 
 Building always invokes the compiler. There is no bridge cache to become stale
 when a transitive header, compiler, source, or linked library changes. Running

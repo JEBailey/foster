@@ -1,7 +1,7 @@
 // Shared verbatim by the VM and native runtime; keep this module std-only.
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicI64, Ordering};
 
@@ -105,8 +105,11 @@ pub fn remote_error() -> String {
     ))
 }
 
-/// `path` must be an absolute, explicitly built bridge. Operation metadata is
-/// checked before passing a resource pointer to C. No pointer comes from Foster.
+/// `path` names an explicitly built bridge. Relative names resolve against
+/// `FOSTER_BRIDGE_DIR`, the current directory, and the executable directory,
+/// trying the full relative name before the bare file name; absolute names
+/// pass through unchanged. Operation metadata is checked before passing a
+/// resource pointer to C. No pointer comes from Foster.
 pub fn exchange(
     path: &str,
     schema: &str,
@@ -122,15 +125,17 @@ pub fn exchange(
             let mut state = state
                 .try_borrow_mut()
                 .map_err(|_| "C bridge registry is already in use")?;
-            let library = if token == 0 {
-                if !Path::new(path).is_absolute() {
-                    return Err("C bridge path must be absolute".into());
-                }
-                if let Some(library) = state.libraries.get(path) {
+            let resolved = if token == 0 {
+                Some(resolve_bridge(path)?)
+            } else {
+                None
+            };
+            let library = if let Some(resolved) = resolved {
+                if let Some(library) = state.libraries.get(&resolved) {
                     library.clone()
                 } else {
-                    let library = Rc::new(Library::load(path)?);
-                    state.libraries.insert(path.to_owned(), library.clone());
+                    let library = Rc::new(Library::load(&resolved)?);
+                    state.libraries.insert(resolved.clone(), library.clone());
                     library
                 }
             } else {
@@ -259,6 +264,75 @@ pub fn close(token: i64) -> String {
         Ok(result)
     })())
 }
+
+/// Resolves a bridge name to an existing file. `bridge_dir` is
+/// `FOSTER_BRIDGE_DIR`; all anchors are optional so tests stay hermetic.
+fn resolve_bridge_with(
+    name: &str,
+    bridge_dir: Option<&Path>,
+    cwd: Option<&Path>,
+    exe_dir: Option<&Path>,
+) -> Result<String, String> {
+    use std::ffi::OsStr;
+    if Path::new(name).is_absolute() {
+        return Ok(name.to_owned());
+    }
+    let file_name = Path::new(name).file_name().map(|name| name.to_os_string());
+    let anchors: Vec<&Path> = [bridge_dir, cwd, exe_dir]
+        .into_iter()
+        .flatten()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .collect();
+    let mut tried: Vec<PathBuf> = Vec::new();
+    let push = |base: &Path, suffix: &OsStr, tried: &mut Vec<PathBuf>| {
+        let candidate = base.join(suffix);
+        if !tried.contains(&candidate) {
+            tried.push(candidate);
+        }
+    };
+    // The full relative name wins over the bare file name at every anchor.
+    let mut suffixes = vec![name.as_ref()];
+    if let Some(file) = &file_name {
+        suffixes.push(file.as_os_str());
+    }
+    for suffix in suffixes {
+        for dir in &anchors {
+            push(dir, suffix, &mut tried);
+        }
+    }
+    for candidate in &tried {
+        if candidate.is_file() {
+            // Re-emit through components() so mixed separators canonicalize.
+            let resolved: PathBuf = candidate.components().collect();
+            return Ok(resolved.to_string_lossy().into_owned());
+        }
+    }
+    Err(format!(
+        "cannot resolve C bridge '{}'; tried {}; set FOSTER_BRIDGE_DIR or use an absolute path",
+        name,
+        tried
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
+fn resolve_bridge(name: &str) -> Result<String, String> {
+    let bridge_dir = std::env::var("FOSTER_BRIDGE_DIR")
+        .ok()
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from);
+    let cwd = std::env::current_dir().ok();
+    let exe = std::env::current_exe().ok();
+    resolve_bridge_with(
+        name,
+        bridge_dir.as_deref(),
+        cwd.as_deref(),
+        exe.as_ref().and_then(|exe| exe.parent()),
+    )
+}
+
 pub fn release(token: i64) -> Result<(), String> {
     if token == 0 {
         return Ok(());
@@ -405,6 +479,70 @@ mod tests {
             decode(&oversized).unwrap_err(),
             "invalid C wire payload length"
         );
+    }
+
+    #[test]
+    fn bridge_resolution_uses_documented_anchor_order() {
+        let root =
+            std::env::temp_dir().join(format!("foster-bridge-resolve-{}", std::process::id()));
+        let bridge = root.join("bridges").join("sub").join("bridge.dll");
+        let cwd = root.join("cwd");
+        let exe_dir = root.join("exe");
+        for directory in [bridge.parent().unwrap(), &cwd, &exe_dir] {
+            std::fs::create_dir_all(directory).unwrap();
+        }
+        std::fs::write(&bridge, b"bridge").unwrap();
+        let text = |path: &std::path::Path| path.to_string_lossy().into_owned();
+
+        // Absolute names bypass the search entirely.
+        assert_eq!(
+            resolve_bridge_with("C:/never/built.dll", None, Some(&cwd), Some(&exe_dir)).unwrap(),
+            "C:/never/built.dll"
+        );
+        // The bridge directory wins over both the current and executable directories.
+        assert_eq!(
+            resolve_bridge_with(
+                "sub/bridge.dll",
+                Some(root.join("bridges").as_path()),
+                Some(&cwd),
+                Some(&exe_dir)
+            )
+            .unwrap(),
+            text(&bridge)
+        );
+        // Full relative name: current directory before the executable directory.
+        let cwd_hit = cwd.join("full").join("bridge.dll");
+        std::fs::create_dir_all(cwd.join("full")).unwrap();
+        std::fs::write(&cwd_hit, b"cwd").unwrap();
+        assert_eq!(
+            resolve_bridge_with("full/bridge.dll", None, Some(&cwd), Some(&exe_dir)).unwrap(),
+            text(&cwd_hit)
+        );
+        // The bare file name is the native-exe case: the module carries a
+        // repository-relative name, but the DLL sits beside the executable.
+        let exe_hit = exe_dir.join("bridge.dll");
+        std::fs::write(&exe_hit, b"exe").unwrap();
+        assert_eq!(
+            resolve_bridge_with(
+                "full/bridge.dll",
+                None,
+                Some(cwd.join("empty").as_path()),
+                Some(&exe_dir)
+            )
+            .unwrap(),
+            text(&exe_hit)
+        );
+        // A missing bridge reports every candidate it tried.
+        let error = resolve_bridge_with(
+            "nope/bridge.dll",
+            None,
+            Some(cwd.join("empty").as_path()),
+            Some(exe_dir.join("empty").as_path()),
+        )
+        .unwrap_err();
+        assert!(error.starts_with("cannot resolve C bridge 'nope/bridge.dll'; tried "));
+        assert!(error.contains("set FOSTER_BRIDGE_DIR or use an absolute path"));
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]

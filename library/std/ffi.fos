@@ -142,9 +142,12 @@ impl CValue {
     }
 }
 
-/// A path to an explicitly built bridge. Operations use manifest order, starting
-/// at zero. The path must be absolute; dependent DLLs resolve beside the bridge
-/// or in System32. Opening stores the path; first use validates the library ABI.
+/// A name for an explicitly built bridge. Operations use manifest order, starting
+/// at zero. Relative names resolve against FOSTER_BRIDGE_DIR, the current
+/// directory, and the executable directory, trying the full name before the
+/// bare file name; absolute names load as given. Dependent DLLs resolve beside
+/// the bridge or in System32. Opening stores the resolved path; first use
+/// validates the library ABI.
 pub type CBridge = { path: String, schema: String }
 impl CBridge {
     /// Calls C with a callback borrowed for this call only. The adapter is consumed

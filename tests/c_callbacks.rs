@@ -35,10 +35,14 @@ fn callbacks_preserve_state_lifetimes_and_thread_boundaries_on_both_backends() {
     let fixture = root.join("tests/fixtures/c_bridge");
     let directory = root.join("target/callback-tests");
     fs::create_dir_all(&directory).unwrap();
+    // A name relative to the workspace root: the VM run resolves it against
+    // the current directory, and the native executables resolve the bare file
+    // name beside themselves.
     let output = foster::foreign::build(
         &fixture.join("callbacks.json"),
         &directory.join("callbacks.dll"),
         std::path::Path::new("clang"),
+        "target/callback-tests/callbacks.dll",
     )
     .unwrap();
     let source = fs::read_to_string(output.with_extension("fos")).unwrap()

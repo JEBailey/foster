@@ -13,7 +13,7 @@ fn generator() -> Result<&'static crate::vm::Program, String> {
     PROGRAM.get_or_init(|| {
         let source = concat!(
             include_str!("../../tools/cbind/src/bridge.fos"),
-            "\nfunc main(args: Arguments) -> List<String> {\nbranch args.values[0] {\n\"build\" -> [build(args.values[1], args.values[2], args.values[3])]\n_ -> generate_bridge(args.values[1], args.values[2])\n}\n}\n"
+            "\nfunc main(args: Arguments) -> List<String> {\nbranch args.values[0] {\n\"build\" -> [build(args.values[1], args.values[2], args.values[3], args.values[4])]\n_ -> generate_bridge(args.values[1], args.values[2])\n}\n}\n"
         );
         let compilation = crate::compile(source).map_err(|e| e.to_string())?;
         crate::vm::compile(&compilation).map_err(|e| e.to_string())
@@ -68,7 +68,15 @@ impl Manifest {
     }
 }
 /// Dispatch the existing compiler command to the same Foster implementation as cbind.
-pub fn build(manifest_path: &Path, output: &Path, compiler: &Path) -> Result<PathBuf, String> {
+/// `module_path` names the bridge for the runtime loader; relative names resolve
+/// at run time against `FOSTER_BRIDGE_DIR`, the current directory, and the
+/// executable directory.
+pub fn build(
+    manifest_path: &Path,
+    output: &Path,
+    compiler: &Path,
+    module_path: &str,
+) -> Result<PathBuf, String> {
     if !cfg!(all(windows, target_arch = "x86_64")) {
         return Err("C bridges currently require Windows x86-64".into());
     }
@@ -77,6 +85,7 @@ pub fn build(manifest_path: &Path, output: &Path, compiler: &Path) -> Result<Pat
         manifest_path.to_string_lossy().into_owned(),
         output.to_string_lossy().into_owned(),
         compiler.to_string_lossy().into_owned(),
+        module_path.to_owned(),
     ])?;
     if parts.len() != 1 {
         return Err("invalid bridge build response".into());
