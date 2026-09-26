@@ -146,8 +146,10 @@ impl CValue {
 /// at zero. Relative names resolve against FOSTER_BRIDGE_DIR, the current
 /// directory, and the executable directory, trying the full name before the
 /// bare file name; absolute names load as given. Dependent DLLs resolve beside
-/// the bridge or in System32. Opening stores the resolved path; first use
-/// validates the library ABI.
+/// the bridge or in System32. Opening stores the name; first use resolves it
+/// and validates the library ABI. Successful resolutions stay pinned in the
+/// thread's bridge registry, even if directories or environment settings change.
+/// Failed resolutions are retried on the next call.
 pub type CBridge = { path: String, schema: String }
 impl CBridge {
     /// Calls C with a callback borrowed for this call only. The adapter is consumed
@@ -176,7 +178,7 @@ impl CBridge {
         try resource.check_callbacks()
         Result.Ok(move resource)
     }
-    /// Selects a reviewed native bridge by absolute path and the schema identifier
+    /// Selects a reviewed native bridge by name and the schema identifier
     /// emitted by `foster bridge`. A mismatched schema fails before calling C.
     pub func at(path: String, schema: String) -> CBridge [consume path, consume schema] { CBridge { path: move path, schema: move schema } }
     /// Calls a scalar, value-record, void or copied-buffer operation. Rejects constructors.

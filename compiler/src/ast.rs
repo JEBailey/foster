@@ -1,0 +1,493 @@
+/// Compiler-only module alias used by desugared iteration; never a source import binding.
+pub(crate) const ITERATION_OPTION_MODULE: &str = "$for_option";
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct Program {
+    pub documentation: Option<String>,
+    pub imports: Vec<Import>,
+    pub constants: Vec<ConstDecl>,
+    pub records: Vec<RecordDecl>,
+    pub variants: Vec<VariantDecl>,
+    pub functions: Vec<Function>,
+    pub implementations: Vec<Implementation>,
+    pub tests: Vec<TestDecl>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct Implementation {
+    pub span: std::ops::Range<usize>,
+    pub owner_span: std::ops::Range<usize>,
+    pub owner: String,
+    pub parameters: Vec<String>,
+    pub constraints: Vec<TypeConstraint>,
+}
+
+/// Structural requirements on a generic parameter; its identity remains unchanged.
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct TypeConstraint {
+    pub parameter: String,
+    pub requirement: TypeExpr,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct TestDecl {
+    pub span: std::ops::Range<usize>,
+    pub description: String,
+    pub body: crate::block::Block<Stmt>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct ConstDecl {
+    pub span: std::ops::Range<usize>,
+    pub documentation: Option<String>,
+    pub name: String,
+    pub public: bool,
+    pub value: Expr,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct VariantDecl {
+    pub span: std::ops::Range<usize>,
+    pub documentation: Option<String>,
+    pub name: String,
+    pub public: bool,
+    pub kind: VariantKind,
+    pub parameters: Vec<String>,
+    pub alternatives: Vec<VariantAlternative>,
+    pub compositions: Vec<TypeExpr>,
+    pub methods: Vec<MethodRequirement>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VariantKind {
+    /// A transparent alias with exactly one target type.
+    Alias,
+    Enum,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum VariantAlternative {
+    AliasTarget {
+        span: std::ops::Range<usize>,
+        ty: TypeExpr,
+    },
+    EnumCase {
+        span: std::ops::Range<usize>,
+        name: String,
+        payload: Option<TypeExpr>,
+    },
+}
+
+impl VariantAlternative {
+    pub fn span(&self) -> &std::ops::Range<usize> {
+        match self {
+            Self::AliasTarget { span, .. } | Self::EnumCase { span, .. } => span,
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct RecordDecl {
+    pub span: std::ops::Range<usize>,
+    pub documentation: Option<String>,
+    pub name: String,
+    pub public: bool,
+    pub intrinsic: bool,
+    pub parameters: Vec<String>,
+    pub compositions: Vec<TypeExpr>,
+    pub fields: Vec<RecordField>,
+    pub methods: Vec<MethodRequirement>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct RecordField {
+    pub name: String,
+    pub public: bool,
+    pub ty: TypeExpr,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct MethodRequirement {
+    pub span: std::ops::Range<usize>,
+    pub documentation: Option<String>,
+    pub name: String,
+    pub receiver: bool,
+    pub public: bool,
+    pub type_parameters: Vec<String>,
+    pub parameters: Vec<Parameter>,
+    pub return_type: Option<TypeExpr>,
+    pub effects: Vec<Effect>,
+    pub suspends: bool,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Import {
+    pub span: std::ops::Range<usize>,
+    pub path: Vec<String>,
+    pub alias: Option<String>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct Function {
+    /// Interactive checking may preserve a signature after discarding an invalid body.
+    pub body_is_recovery_stub: bool,
+    pub span: std::ops::Range<usize>,
+    pub documentation: Option<String>,
+    pub name: String,
+    pub owner: Option<String>,
+    pub receiver: bool,
+    pub public: bool,
+    pub intrinsic: Option<String>,
+    pub type_parameters: Vec<String>,
+    pub constraints: Vec<TypeConstraint>,
+    pub parameters: Vec<Parameter>,
+    pub return_type: Option<TypeExpr>,
+    pub effects_explicit: bool,
+    pub effects: Vec<Effect>,
+    pub effect_spans: Vec<std::ops::Range<usize>>,
+    pub suspends: bool,
+    pub suspend_span: Option<std::ops::Range<usize>>,
+    pub body: crate::block::Block<Stmt>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct Parameter {
+    pub span: std::ops::Range<usize>,
+    pub name: String,
+    pub ty: Option<TypeExpr>,
+    pub type_span: Option<std::ops::Range<usize>>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub enum TypeExpr {
+    Unit,
+    Named(String, Vec<TypeExpr>),
+    Intersection(Vec<TypeExpr>),
+    Reference {
+        group: String,
+        value: Box<TypeExpr>,
+    },
+    Function {
+        parameters: Vec<TypeExpr>,
+        parameter_modes: Vec<ParameterMode>,
+        result: Box<TypeExpr>,
+        effects: Vec<Effect>,
+        suspends: bool,
+    },
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Effect {
+    pub kind: EffectKind,
+    pub target: GroupPath,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GroupPath {
+    pub root: String,
+    pub children: Vec<String>,
+}
+
+impl GroupPath {
+    pub fn root(name: impl Into<String>) -> Self {
+        Self {
+            root: name.into(),
+            children: Vec::new(),
+        }
+    }
+
+    pub fn is_root(&self) -> bool {
+        self.children.is_empty()
+    }
+
+    pub fn child(mut self, child: impl Into<String>) -> Self {
+        self.children.push(child.into());
+        self
+    }
+
+    pub fn with_children(mut self, children: &[String]) -> Self {
+        self.children.extend_from_slice(children);
+        self
+    }
+
+    pub fn covers(&self, actual: &Self) -> bool {
+        self.root == actual.root
+            && self.children.len() <= actual.children.len()
+            && self
+                .children
+                .iter()
+                .zip(&actual.children)
+                .all(|(expected, actual)| expected == actual)
+    }
+}
+
+impl From<String> for GroupPath {
+    fn from(root: String) -> Self {
+        Self::root(root)
+    }
+}
+
+impl From<&str> for GroupPath {
+    fn from(root: &str) -> Self {
+        Self::root(root)
+    }
+}
+
+impl std::fmt::Display for GroupPath {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.root)?;
+        for child in &self.children {
+            write!(formatter, ".{child}")?;
+        }
+        Ok(())
+    }
+}
+
+impl PartialEq<str> for GroupPath {
+    fn eq(&self, other: &str) -> bool {
+        let mut parts = other.split('.');
+        parts.next() == Some(self.root.as_str())
+            && parts.eq(self.children.iter().map(String::as_str))
+    }
+}
+
+impl PartialEq<&str> for GroupPath {
+    fn eq(&self, other: &&str) -> bool {
+        self == *other
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EffectKind {
+    Read,
+    Mut,
+    Reshape,
+    Consume,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub enum Stmt {
+    Destructure {
+        pattern: Pattern,
+        value: Expr,
+    },
+    Return {
+        value: Expr,
+        guard: Option<Expr>,
+    },
+    Assert {
+        condition: Expr,
+        message: Option<Expr>,
+    },
+    Loop {
+        body: crate::block::Block<Stmt>,
+    },
+    Break {
+        guard: Option<Expr>,
+    },
+    Continue {
+        guard: Option<Expr>,
+    },
+    Bind {
+        name: String,
+        value: Expr,
+    },
+    Assign {
+        name: String,
+        value: Expr,
+    },
+    Function(Box<Function>),
+    Set {
+        place: Expr,
+        value: Expr,
+    },
+    Expr(Expr),
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub enum Expr {
+    /// Explicit deferred record-field initializer; never a first-class value.
+    Deferred,
+    Spanned {
+        expression: Box<Expr>,
+        span: std::ops::Range<usize>,
+    },
+    Unit,
+    Bool(bool),
+    Integer(i64),
+    Float(f64),
+    String(String),
+    CodePoint(String),
+    Symbol(String),
+    Name(String),
+    /// A named lexical scope, with the same result and cleanup rules as an arm block.
+    NamedScope {
+        name: String,
+        body: crate::block::Block<Stmt>,
+    },
+    List(Vec<Expr>),
+    Call {
+        callee: Box<Expr>,
+        arguments: Vec<Expr>,
+    },
+    Member {
+        object: Box<Expr>,
+        name: String,
+    },
+    Qualified {
+        namespace: Box<Expr>,
+        name: String,
+    },
+    Index {
+        object: Box<Expr>,
+        index: Box<Expr>,
+    },
+    Reference(Box<Expr>),
+    MoveOut(Box<Expr>),
+    Remote(Box<Expr>),
+    Await(Box<Expr>),
+    Panic(Box<Expr>),
+    Try {
+        value: Box<Expr>,
+        variant: Option<String>,
+    },
+    Record {
+        constructor: Box<Expr>,
+        fields: Vec<RecordFieldValue>,
+    },
+    Unary {
+        operator: UnaryOp,
+        operand: Box<Expr>,
+    },
+    Binary {
+        left: Box<Expr>,
+        operator: BinaryOp,
+        right: Box<Expr>,
+    },
+    Logical {
+        left: Box<Expr>,
+        operator: LogicalOp,
+        right: Box<Expr>,
+    },
+    Branch {
+        subject: Option<Box<Expr>>,
+        arms: Vec<BranchArm>,
+    },
+    Closure {
+        captures: Vec<CaptureSpec>,
+        parameters: Vec<Parameter>,
+        effects: Vec<Effect>,
+        suspends: bool,
+        body: ClosureBody,
+    },
+    /// A call containing placeholder arguments. HIR lowering turns this into
+    /// a closure whose supplied operands are captured at creation time.
+    PartialApplication {
+        callee: Box<Expr>,
+        arguments: Vec<Expr>,
+    },
+    Placeholder,
+}
+
+impl Expr {
+    pub fn unspanned(&self) -> &Self {
+        match self {
+            Self::Spanned { expression, .. } => expression.unspanned(),
+            expression => expression,
+        }
+    }
+
+    pub fn span(&self) -> Option<std::ops::Range<usize>> {
+        match self {
+            Self::Spanned { span, .. } => Some(span.clone()),
+            _ => None,
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct RecordFieldValue {
+    pub name: String,
+    pub value: Expr,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct CaptureSpec {
+    pub mode: CaptureMode,
+    pub name: String,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CaptureMode {
+    Copy,
+    Move,
+    Ref,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub enum ClosureBody {
+    Expression(Box<Expr>),
+    Block(crate::block::Block<Stmt>),
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub struct BranchArm {
+    pub test: BranchTest,
+    pub body: crate::block::Block<Stmt>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub enum BranchTest {
+    Condition(Expr),
+    Wildcard,
+    Pattern(Pattern),
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
+pub enum Pattern {
+    Record {
+        fields: Vec<(String, Pattern)>,
+    },
+    Is(TypeExpr),
+    Spanned {
+        pattern: Box<Pattern>,
+        span: std::ops::Range<usize>,
+    },
+    Wildcard,
+    Binding(String),
+    Bool(bool),
+    Integer(i64),
+    Float(f64),
+    String(String),
+    CodePoint(String),
+    Symbol(String),
+    Variant {
+        path: Vec<String>,
+        enum_accessor: bool,
+        fields: Vec<Pattern>,
+    },
+}
+
+impl Pattern {
+    pub fn unspanned(&self) -> &Self {
+        match self {
+            Self::Spanned { pattern, .. } => pattern.unspanned(),
+            pattern => pattern,
+        }
+    }
+
+    pub fn span(&self) -> Option<std::ops::Range<usize>> {
+        match self {
+            Self::Spanned { span, .. } => Some(span.clone()),
+            _ => None,
+        }
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LogicalOp {
+    And,
+    Or,
+}
+
+pub use foster_bytecode::ast::{BinaryOp, ParameterMode, UnaryOp};

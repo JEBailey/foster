@@ -5,7 +5,7 @@ regression tests. Verification is layered so that a failure identifies which ass
 
 ## Place reasoning
 
-All move and loan checks use the canonical ownership-place relations in `src/ownership/mir.rs`.
+All move and loan checks use the canonical ownership-place relations in `compiler/src/ownership/mir.rs`.
 Ownership places distinguish named locals from expression temporaries while sharing HIR projection
 metadata. Named sibling fields are disjoint. Integer-literal indices retain their constant key, so
 different constant indices are disjoint; equal constants overlap even when they came from different
@@ -57,13 +57,13 @@ cargo test
 ```
 
 Long-running release qualification should additionally run a Rust mutation-testing tool against
-`src/ownership/regions.rs`, `src/ownership/lower.rs`, and `src/ownership/mir.rs`. Surviving mutations
+`compiler/src/ownership/regions.rs`, `compiler/src/ownership/lower.rs`, and `compiler/src/ownership/mir.rs`. Surviving mutations
 in place overlap, requirement transfer, invalidation, return escape, suspension, or destruction are
 release blockers unless documented as equivalent transformations.
 
 ## Executable reference model
 
-`src/ownership/model.rs` is a deliberately small operational oracle for a single loan on one CFG
+`compiler/src/ownership/model.rs` is a deliberately small operational oracle for a single loan on one CFG
 path. It models issuance, invalidation, use, and region end independently of the optimized dataflow
 implementation. The test suite exhaustively enumerates all six-event histories after issuance and
 requires the CFG checker and oracle to agree. CFG behavior is the union of independently valid

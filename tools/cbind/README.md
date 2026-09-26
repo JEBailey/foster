@@ -38,6 +38,9 @@ trying the full name before the bare file name; absolute names load as given.
 Pass `--module-path NAME` to control the embedded name explicitly (for
 example, a path relative to the application root), and regenerate when the
 bridge moves to a location the resolver cannot reach.
+The first successful resolution of each name stays cached in the thread's bridge
+registry; changing the working directory or `FOSTER_BRIDGE_DIR` afterwards does
+not redirect it. Failed resolutions are retried on the next call.
 Use a distinct bridge basename such as `raylib_bridge.dll`; dependent DLLs must
 retain their original names beside the bridge.
 

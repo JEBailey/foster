@@ -1,0 +1,274 @@
+//! Static documentation presentation and file output. The compiler adapter supplies
+//! linked signature HTML and Markdown HTML; all other text is escaped here.
+import core.byte
+import core.bytes
+import core.code_point
+import core.int
+import core.list
+import core.option
+import core.result
+import core.string
+import std.fs as fs
+import std.io
+import std.path as paths
+import std.process
+
+type Reader = { values: List<String>, offset: Int }
+impl Reader {
+    func take(self) -> String {
+        assert(self.offset < self.values.length, "incomplete documentation data")
+        let text = self.values[self.offset].copy()
+        self.offset = self.offset + 1
+        text
+    }
+    func number(self) -> Int {
+        let text = self.take()
+        assert(!text.empty?, "missing documentation count")
+        let value = 0
+        for octet in text.bytes {
+            let digit = octet.int - 48
+            assert(digit >= 0 && digit <= 9, "invalid documentation count")
+            value = value * 10 + digit
+        }
+        value
+    }
+    func flag(self) -> Bool {
+        let value = self.take()
+        assert(value == "0" || value == "1", "invalid documentation flag")
+        value == "1"
+    }
+    func optional(self) -> Option<String> {
+        branch { self.flag() -> Option.Some(self.take()) _ -> Option.None }
+    }
+}
+
+type ModulePage = { file_name: String, html: String }
+impl ModulePage {
+    func copy(self) -> self { ModulePage { file_name: self.file_name.copy(), html: self.html.copy() } }
+}
+type Entry = { name: String, file_name: String, count: Int }
+impl Entry {
+    func copy(self) -> self { Entry { name: self.name.copy(), file_name: self.file_name.copy(), count: self.count } }
+}
+type Site = { index: String, modules: List<ModulePage>, module_count: Int, declaration_count: Int }
+
+func escape(text: String) -> String {
+    let output = StringBuilder.empty()
+    for character in text.code_points() {
+        branch character.as_int() {
+            38 -> output.append("&amp;")
+            60 -> output.append("&lt;")
+            62 -> output.append("&gt;")
+            34 -> output.append("&quot;")
+            39 -> output.append("&#39;")
+            _ -> output.push(character)
+        }
+    }
+    (move output).finish()
+}
+
+func badge(public: Bool) -> String {
+    branch {
+        public -> "<span class=\"badge visibility-public\">public</span>"
+        _ -> "<span class=\"badge visibility-private\">private</span>"
+    }
+}
+
+func plural(count: Int) -> String { branch { count == 1 -> "" _ -> "s" } }
+
+func page(title: String, heading: String, body: String, stylesheet: String, script: String) -> String {
+    "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + escape(title) + "</title><link rel=\"stylesheet\" href=\"" + stylesheet + "\"></head><body><a class=\"skip-link\" href=\"#main-content\">Skip to content</a><header>" + heading + "</header><main id=\"main-content\" tabindex=\"-1\">" + body + "</main>" + script + "</body></html>"
+}
+
+func members(reader: Reader) -> String {
+    let heading = reader.take()
+    let count = reader.number()
+    let body = ""
+    let index = 0
+    while index < count {
+        let name = reader.take()
+        let documentation = reader.optional()
+        body = body + "<li><code>" + name + "</code>"
+        branch documentation {
+            Option.Some(text) -> { body = body + "<br><small>" + escape(text) + "</small>" }
+            Option.None -> ()
+        }
+        body = body + "</li>"
+        index = index + 1
+    }
+    branch { count == 0 -> "" _ -> "<h4>" + escape(heading) + "</h4><ul>" + body + "</ul>" }
+}
+
+func type_card(reader: Reader) -> String {
+    let name = escape(reader.take())
+    let public = reader.flag()
+    let documentation = reader.optional()
+    let body = "<article class=\"type-summary\"><h3><a href=\"#" + name + "\">" + name + "</a>" + badge(public) + "</h3>"
+    branch documentation { Option.Some(html) -> { body = body + html } Option.None -> () }
+    let sections = reader.number()
+    let section = 0
+    while section < sections {
+        body = body + members(reader)
+        section = section + 1
+    }
+    let functions = reader.number()
+    branch { functions > 0 -> { body = body + "<h4>Functions and methods</h4><ul>" } _ -> () }
+    let index = 0
+    while index < functions {
+        let anchor = escape(reader.take())
+        let label = escape(reader.take())
+        let summary = reader.optional()
+        body = body + "<li><a href=\"#" + anchor + "\"><code>" + label + "</code></a>"
+        branch summary { Option.Some(text) -> { body = body + "<br><small>" + escape(text) + "</small>" } Option.None -> () }
+        body = body + "</li>"
+        index = index + 1
+    }
+    branch { functions > 0 -> { body = body + "</ul>" } _ -> () }
+    body + "</article>"
+}
+
+type Declaration = { contents: String, html: String }
+func declaration(reader: Reader) -> Declaration {
+    let anchor = escape(reader.take())
+    let name = escape(reader.take())
+    let kind = escape(reader.take())
+    let owner = reader.take()
+    let count = reader.number()
+    let owner_attribute = branch { owner.empty? -> "" _ -> " data-owner=\"" + escape(owner) + "\"" }
+    let contents = "<li" + owner_attribute + " data-declaration><a href=\"#" + anchor + "\">" + name + " <small>" + kind + "</small></a></li>"
+    let body = "<article id=\"" + anchor + "\"><h2><a class=\"anchor\" href=\"#" + anchor + "\">" + name + "</a><span class=\"badge kind\">" + kind + "</span>"
+    let index = 0
+    branch { count > 1 -> { body = body + "</h2>" } _ -> () }
+    while index < count {
+        let public = reader.flag()
+        let signature = reader.take()
+        let docs = reader.optional()
+        body = body + branch {
+            count == 1 -> badge(public) + "</h2><pre><code>" + signature + "</code></pre>"
+            _ -> "<section><h3>Overload " + (index + 1).as_string() + badge(public) + "</h3><pre><code>" + signature + "</code></pre>"
+        }
+        branch docs {
+            Option.Some(html) -> { body = body + html }
+            Option.None -> { body = body + branch { count == 1 -> "<p class=\"empty\">No documentation provided.</p>" _ -> "<p>No documentation provided.</p>\n" } }
+        }
+        branch { count > 1 -> { body = body + "</section>" } _ -> () }
+        index = index + 1
+    }
+    Declaration { contents, html: body + "<a class=\"back-to-navigation\" href=\"#page-navigation\">↑ On this page</a></article>" }
+}
+
+type RenderedModule = { page: ModulePage, entry: Entry }
+func module_page(reader: Reader, script: String) -> RenderedModule {
+    let name = reader.take()
+    let docs = reader.optional()
+    let body = "<div id=\"module-overview\"><h2>Overview</h2>" + HELP
+    branch docs { Option.Some(html) -> { body = body + "<article class=\"module-documentation\">" + html + "</article>" } Option.None -> () }
+    let card_count = reader.number()
+    branch { card_count > 0 -> { body = body + "<section aria-labelledby=\"provided-types\"><h2 id=\"provided-types\">Provided types</h2><div class=\"type-grid\">" } _ -> () }
+    let index = 0
+    while index < card_count {
+        body = body + type_card(reader)
+        index = index + 1
+    }
+    branch { card_count > 0 -> { body = body + "</div></section>" } _ -> () }
+    body = body + "</div>"
+    let count = reader.number()
+    let contents = ""
+    index = 0
+    while index < count {
+        let item = declaration(reader)
+        contents = contents + item.contents
+        body = body + item.html
+        index = index + 1
+    }
+    branch { count == 0 -> { body = body + "<p class=\"empty\">This module has no declarations.</p>" } _ -> () }
+    let layout = "<div class=\"module-layout\"><nav id=\"page-navigation\" class=\"on-this-page\" aria-label=\"On this page\"><a class=\"crumb\" href=\"../index.html\">← All modules</a><details open><summary>On this page</summary><a href=\"#module-overview\">Overview</a><label for=\"declaration-filter\">Find a declaration</label><input id=\"declaration-filter\" class=\"filter\" type=\"search\" placeholder=\"Name or kind…\" data-declaration-filter><p class=\"filter-status\" role=\"status\" data-declaration-status>" + count.as_string() + " declarations</p><ul>" + contents + "</ul></details></nav><div class=\"module-content\">" + body + "</div></div>"
+    let heading = "<h1>module " + escape(name) + "</h1><p>" + count.as_string() + " declaration" + plural(count) + "</p>"
+    let filename = name.copy().split(".").join("-") + ".html"
+    RenderedModule {
+        page: ModulePage { file_name: filename.copy(), html: page(name + " — Foster documentation", heading, layout, "../style.css", script) }
+        entry: Entry { name, file_name: filename, count }
+    }
+}
+
+func namespace(name: String) -> String { name.copy().split(".").head }
+
+func index_page(entries: List<Entry>, declarations: Int, script: String) -> String {
+    let jumps = ""
+    let groups = ""
+    let position = 0
+    let group = 0
+    while position < entries.length {
+        let name = namespace(entries[position].name)
+        let end = position + 1
+        while end < entries.length {
+            break if namespace(entries[end].name) != name
+            end = end + 1
+        }
+        jumps = jumps + "<a href=\"#namespace-" + group.as_string() + "\" data-module-jump>" + escape(name) + "</a>"
+        groups = groups + "<details class=\"module-group\" id=\"namespace-" + group.as_string() + "\" data-module-group open><summary>" + escape(name) + "<small>" + (end - position).as_string() + " modules</small></summary><ul class=\"module-list\">"
+        while position < end {
+            let entry = entries[position].copy()
+            let depth = entry.name.copy().split(".").length - 1
+            groups = groups + "<li data-module=\"" + escape(entry.name.lower()) + "\" style=\"--depth:" + depth.as_string() + "\"><a href=\"modules/" + entry.file_name + "\"><strong>" + escape(entry.name) + "</strong><small>" + entry.count.as_string() + " declaration" + plural(entry.count) + "</small></a></li>"
+            position = position + 1
+        }
+        groups = groups + "</ul></details>"
+        group = group + 1
+    }
+    let count = entries.length
+    let body = "<div class=\"summary\"><span>" + count.as_string() + " module" + plural(count) + "</span><span>" + declarations.as_string() + " declaration" + plural(declarations) + "</span></div><h2>Modules</h2><label for=\"module-filter\">Filter modules by name</label><input id=\"module-filter\" class=\"filter\" type=\"search\" placeholder=\"e.g. collections or string\" aria-label=\"Filter modules\" data-module-filter><p class=\"filter-status\" role=\"status\" data-module-status>" + count.as_string() + " modules</p><nav class=\"module-jumps\" aria-label=\"Module namespaces\">" + jumps + "</nav>" + groups + "<p class=\"no-results\" role=\"status\" data-no-results hidden>No modules match your filter.</p>"
+    page("Foster documentation", "<h1>Foster documentation</h1><p>Resolved package API reference</p>", body, "style.css", script)
+}
+
+func checked_io(outcome: Result<(), IoError>) -> Result<(), String> [consume outcome] {
+    branch outcome { Result.Ok(_) -> Result.Ok(()) Result.Error(error) -> Result.Error(error.operation + " `" + error.path + "`: " + error.message) }
+}
+
+func write_site(site: Site, output: String, style: String) -> Result<(), String> {
+    let directory = paths::join(output, "modules")
+    try checked_io(fs::create_directory_all(directory))
+    try checked_io(fs::write_text(paths::join(output, "index.html"), site.index))
+    try checked_io(fs::write_text(paths::join(output, "style.css"), style))
+    for module in site.modules {
+        try checked_io(fs::write_text(paths::join(directory, module.file_name), module.html))
+    }
+    Result.Ok(())
+}
+
+func main(arguments: Arguments) -> Result<Site, String> {
+    let reader = Reader { values: arguments.values, offset: 0 }
+    let operation = reader.take()
+    let output = reader.take()
+    let style = reader.take()
+    let script = reader.take()
+    let count = reader.number()
+    let modules = []
+    let entries = []
+    let declarations = 0
+    let index = 0
+    while index < count {
+        let rendered = module_page(reader, script)
+        declarations = declarations + rendered.entry.count
+        entries.push(move rendered.entry)
+        modules.push(move rendered.page)
+        index = index + 1
+    }
+    assert(reader.offset == reader.values.length, "unexpected documentation data")
+    let site = Site { index: index_page(entries, declarations, script), modules, module_count: count, declaration_count: declarations }
+    branch {
+        operation == "write" -> { try write_site(site, output, style) }
+        operation == "render" -> ()
+        _ -> { return Result.Error("unknown documentation operation") }
+    }
+    Result.Ok(move site)
+}
+
+test "documentation escapes labels without double escaping trusted HTML" {
+    assert(escape("<&\"'λ>") == "&lt;&amp;&quot;&#39;λ&gt;")
+    let html = page("<title>", "<h1>Heading</h1>", "<p>Body</p>", "style.css", "")
+    assert(html.contains?("<title>&lt;title&gt;</title>"))
+    assert(html.contains?("<main id=\"main-content\" tabindex=\"-1\"><p>Body</p></main>"))
+}
+
+const HELP = "<details class=\"reference-help\"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details>"

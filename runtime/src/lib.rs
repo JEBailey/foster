@@ -6,15 +6,12 @@ use std::sync::OnceLock;
 include!("version.rs");
 pub const FOSTER_RUNTIME_ABI_VERSION: u16 = ABI_VERSION;
 
-#[allow(dead_code)]
-#[path = "../../src/remote.rs"]
-mod remote_lifecycle;
 pub use foster_host as services;
+#[allow(dead_code)]
+use foster_host::remote as remote_lifecycle;
 
-#[path = "../../src/foreign/runtime.rs"]
-mod c_bridge;
-#[path = "../../src/process.rs"]
-mod process_runtime;
+use foster_host::foreign as c_bridge;
+use foster_host::process as process_runtime;
 include!("process.rs");
 include!("foreign.rs");
 

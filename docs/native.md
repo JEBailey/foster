@@ -65,7 +65,7 @@ intermediate specialization but must be resolved or explicitly handled for mater
 Specializations contain sorted, unique names; their values can still contain generic leaves.
 Nominal IDs belong to the current compilation or relocated program rather than a global namespace.
 
-`src/codegen/type_conversion.rs` owns the recursive conversion from semantic types to
+`compiler/src/codegen/type_conversion.rs` owns the recursive conversion from semantic types to
 `ExecutableType`, which both bytecode verification and native layout selection consume.
 The `Bytecode` and `Native` policies explicitly preserve these backend differences:
 
@@ -224,11 +224,11 @@ Record schemas store paired `RecordField` entries. Construction derives their im
 layout and rejects duplicate names; linking remaps field types without changing storage order.
 
 
-`src/codegen/construction.rs` lowers HIR into the shared slot IR in `codegen::storage`.
-Shared lifetime analysis and validation live under `src/codegen/storage/`; `codegen::sealing`
+`compiler/src/codegen/construction.rs` lowers HIR into the shared slot IR in `codegen::storage`.
+Shared lifetime analysis and validation live under `bytecode/src/codegen/storage/`; `codegen::sealing`
 builds the authoritative SSA graph. These production stages do not depend on the VM backend.
-`src/codegen/vm/emission.rs` assigns VM registers and emits edge copies;
-`src/codegen/vm/instructions.rs` maps SSA operations to slot instructions for serialization
+`compiler/src/codegen/vm/emission.rs` assigns VM registers and emits edge copies;
+`compiler/src/codegen/vm/instructions.rs` maps SSA operations to slot instructions for serialization
 and execution. The VM reuses the shared slot model and verifier. Native lowering consumes SSA
 directly. Differential evidence checks compare slot-flow and SSA-flow facts at sealing.
 
@@ -257,7 +257,7 @@ Different closure environments join at a uniform callable ABI, and erased/concre
 at an erased ABI. Native edge legalization inserts conversions before parallel argument assignment
 and releases the old owners on the affected edge. Storage hints remain ownership locations during
 legalization, rather than identities for type inference.
-`src/native/inference.rs` owns the fixed-point solver; its `instructions` and `representations`
+`compiler/src/native/inference.rs` owns the fixed-point solver; its `instructions` and `representations`
 modules contain result-layout rules and layout/ABI helpers. Empty storage tokens receive layouts
 from their receiving blocks or callee ABIs, without constraining live producers backwards.
 

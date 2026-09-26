@@ -68,7 +68,7 @@ the small instrumented timing sample does not establish a general compiler speed
 
 ### Scheduling and analysis reuse
 
-The shared SSA pipeline in `src/codegen/optimizer.rs` runs before VM de-SSA and before native
+The shared SSA pipeline in `compiler/src/codegen/optimizer.rs` runs before VM de-SSA and before native
 specialization, representation inference, and cleanup planning. It performs bounded scalar leaf
 inlining, typed constant propagation, branch pruning, unreachable-block removal, and dead scalar
 elimination. Integer arithmetic remains checked, floats are not reassociated, and reference-exposed

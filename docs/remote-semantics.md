@@ -124,7 +124,7 @@ may be erased by retaining a future or adapting the receiver to another contract
 
 ## Implementation and conformance
 
-Both backends connect owner release to the [shared lifecycle controller](../src/remote.rs).
+Both backends connect owner release to the [shared lifecycle controller](../host/src/remote.rs).
 Shutdown publishes outstanding errors before reclaiming queued arguments. Futures retain their
 outcomes, not worker ownership. VM instruction dispatch and native block entry provide cooperative
 cancellation points; waits for futures also check cancellation. Cleanup continues to run `deinit`

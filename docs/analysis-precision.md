@@ -27,8 +27,8 @@ that list while the string is still used.
 
 See [ownership analysis](ownership.md#current-limitations-and-evolution) and
 [verification](ownership-verification.md#place-reasoning). The principal implementation entry
-points are `call_result_borrow_value` in `src/ownership/lower.rs`, result-summary inference in
-`src/ownership/regions.rs`, and the ownership MIR's comparison/place representation.
+points are `call_result_borrow_value` in `compiler/src/ownership/lower.rs`, result-summary inference in
+`compiler/src/ownership/regions.rs`, and the ownership MIR's comparison/place representation.
 
 ## 1. Precise results through indirect callables
 

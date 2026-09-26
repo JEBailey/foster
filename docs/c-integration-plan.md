@@ -209,10 +209,10 @@ replace manually reviewed ownership/invalidation contracts. C++ integration is s
 
 | Area | Existing integration points |
 | --- | --- |
-| Syntax and tooling | `src/lexer.rs`, `src/parser/`, `src/ast.rs`, formatter, LSP, generated documentation |
-| Static contract | `src/hir/`, `src/typecheck/`, `src/ownership/`, semantic and ownership specifications |
-| Execution | `src/vm/`, `src/native/`, `runtime/src/`; introduce a shared foreign subsystem rather than duplicating contracts |
-| Build and distribution | `src/project.rs`, `src/package/`, `src/library/`, native build/cache code, bytecode/package validation |
+| Syntax and tooling | `compiler/src/lexer.rs`, `compiler/src/parser/`, `compiler/src/ast.rs`, formatter, LSP, generated documentation |
+| Static contract | `compiler/src/hir/`, `compiler/src/typecheck/`, `compiler/src/ownership/`, semantic and ownership specifications |
+| Execution | `vm/src/`, `compiler/src/native/`, `runtime/src/`; introduce a shared foreign subsystem rather than duplicating contracts |
+| Build and distribution | `src/project.rs`, `compiler/src/package/`, `compiler/src/library/`, native build/cache code, bytecode/package validation |
 | Validation | C fixture, compile-pass/fail cases, backend parity, resource counters, compiled-library round trips |
 
 Each milestone updates implementation, tests, diagnostics, tooling, and implemented

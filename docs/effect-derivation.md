@@ -181,13 +181,13 @@ Erasure and indirect calls therefore do not discard ownership behavior.
 
 The relevant implementation is split by responsibility:
 
-- `src/typecheck/effects.rs` walks typed HIR, derives structured group paths, delegates calls, and
+- `compiler/src/typecheck/effects.rs` walks typed HIR, derives structured group paths, delegates calls, and
   records suspension.
-- `src/typecheck/predicates.rs` defines effect subset/coverage and callable contract helpers.
-- `src/hir/ownership.rs` validates parameter names used in group contracts and seeds reference-capture effects.
-- `src/ownership/` validates positional consume modes, moves, initialization, and partial moves on
+- `compiler/src/typecheck/predicates.rs` defines effect subset/coverage and callable contract helpers.
+- `compiler/src/hir/ownership.rs` validates parameter names used in group contracts and seeds reference-capture effects.
+- `compiler/src/ownership/` validates positional consume modes, moves, initialization, and partial moves on
   control-flow basic blocks.
-- `src/diagnostic.rs` carries over-declaration warnings and their source spans.
+- `compiler/src/diagnostic.rs` carries over-declaration warnings and their source spans.
 
 Compilation first infers effects, updates HIR, and repeats until no function contract changes. It
 then performs a final checked type/effect pass before loan and ownership validation.

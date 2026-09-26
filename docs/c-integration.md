@@ -55,6 +55,11 @@ and VM programs need the DLL at execution time; native builds do not currently
 statically link third-party C code. Dependent DLLs resolve beside the bridge or
 in System32, never by searching the working directory.
 
+The first successful resolution of a bridge name is cached in the thread's
+bridge registry. Later calls reuse that path without searching the filesystem,
+even if the working directory or `FOSTER_BRIDGE_DIR` changes. Set the search
+environment before first use. Failed resolutions are not cached and can be retried.
+
 Building always invokes the compiler. There is no bridge cache to become stale
 when a transitive header, compiler, source, or linked library changes. Running
 source, bytecode, or native executables never invokes the C compiler implicitly.

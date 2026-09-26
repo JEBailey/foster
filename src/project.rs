@@ -1,23 +1,13 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use crate::{error::FosterError, tooling, vm::Value};
+use std::collections::BTreeMap;
+#[cfg(test)]
 use std::fs;
-use std::path::{Component, Path, PathBuf};
-use std::sync::OnceLock;
-
-use crate::error::FosterError;
-use crate::vm::Value;
+use std::path::{Path, PathBuf};
 
 pub const MANIFEST_NAME: &str = "foster.toml";
 pub const DEFAULT_SOURCE_DIRECTORY: &str = "src";
-
-const MANIFEST_PARSER: &str = r#"
-import core.result
-import std.process
-import std.toml
-
-func main(arguments: Arguments) -> Result<TomlDocument, TomlError> {
-    parse(arguments.values.head)
-}
-"#;
+static TOOL: tooling::Tool =
+    tooling::Tool::new(include_bytes!(concat!(env!("OUT_DIR"), "/project.fbc")));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Project {
@@ -45,631 +35,137 @@ impl Project {
     pub fn load(root: impl AsRef<Path>) -> Result<Self, FosterError> {
         Self::load_manifest(root.as_ref().join(MANIFEST_NAME))
     }
-
-    pub fn load_manifest(manifest_path: impl AsRef<Path>) -> Result<Self, FosterError> {
-        let manifest_path = manifest_path.as_ref();
-        let source = fs::read_to_string(manifest_path).map_err(|error| {
-            FosterError::runtime(format!(
-                "cannot read project manifest `{}`: {error}",
-                manifest_path.display()
-            ))
-        })?;
-        let document = parse_manifest(&source, manifest_path)?;
-        let table = document_entries(&document).ok_or_else(|| {
-            FosterError::runtime("embedded Foster TOML parser returned an invalid document")
-        })?;
-        reject_unknown_keys(
-            table,
-            &["package", "dependencies", "discovery"],
-            &format!("project manifest `{}`", manifest_path.display()),
-        )?;
-
-        let package = find_entry(table, "package").ok_or_else(|| {
-            FosterError::runtime(format!(
-                "project manifest `{}` is missing the required `[package]` table",
-                manifest_path.display()
-            ))
-        })?;
-        let package = value_table(package).ok_or_else(|| {
-            FosterError::runtime(format!(
-                "`package` in `{}` must be a TOML table",
-                manifest_path.display()
-            ))
-        })?;
-        reject_unknown_keys(
-            package,
-            &["name", "source"],
-            &format!("`[package]` in `{}`", manifest_path.display()),
-        )?;
-
-        let name = required_string(package, "name", manifest_path)?;
-        if name.trim().is_empty() {
-            return Err(FosterError::runtime(format!(
-                "`package.name` in `{}` cannot be empty",
-                manifest_path.display()
-            )));
-        }
-
-        let source_directory = find_entry(package, "source")
-            .map(|value| {
-                value_string(value).ok_or_else(|| {
-                    FosterError::runtime(format!(
-                        "`package.source` in `{}` must be a string",
-                        manifest_path.display()
-                    ))
-                })
-            })
-            .transpose()?
-            .unwrap_or(DEFAULT_SOURCE_DIRECTORY);
-        validate_source_directory(source_directory, manifest_path)?;
-
-        let root = manifest_path
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .to_path_buf();
-        let source_root = root.join(source_directory);
-        if !source_root.is_dir() {
-            return Err(FosterError::runtime(format!(
-                "project source root `{}` from `{}` is not a directory",
-                source_root.display(),
-                manifest_path.display()
-            )));
-        }
-
-        let mut dependencies = find_entry(table, "dependencies")
-            .map(|value| parse_dependencies(value, &root, manifest_path))
-            .transpose()?
-            .unwrap_or_default();
-        if let Some(discovery) = find_entry(table, "discovery") {
-            discover_libraries(discovery, &root, manifest_path, &mut dependencies)?;
-        }
-
-        Ok(Self {
-            name: name.to_owned(),
-            root,
-            manifest_path: manifest_path.to_path_buf(),
-            source_root,
-            dependencies,
-        })
+    pub fn load_manifest(manifest: impl AsRef<Path>) -> Result<Self, FosterError> {
+        let value = TOOL.run(vec![
+            "load".into(),
+            platform(),
+            path_text(manifest.as_ref())?,
+        ])?;
+        decode_resolved(&value)?
+            .into_iter()
+            .next()
+            .and_then(|value| value.project)
+            .ok_or_else(invalid_response)
     }
-
     pub fn discover(
         start: impl AsRef<Path>,
         boundary: Option<&Path>,
     ) -> Result<Option<Self>, FosterError> {
         let start = start.as_ref();
-        let mut candidate = if start.is_file() {
+        // Ancestors and prefix comparison use the host's exact lexical path rules.
+        // Foster decides which manifest to select and how to load it.
+        let directory = if start.is_file() {
             start.parent()
         } else {
             Some(start)
         };
-        while let Some(directory) = candidate {
-            if boundary.is_some_and(|boundary| !directory.starts_with(boundary)) {
-                break;
+        let mut arguments = vec!["discover".into(), platform()];
+        if let Some(directory) = directory {
+            for ancestor in directory
+                .ancestors()
+                .take_while(|path| boundary.is_none_or(|boundary| path.starts_with(boundary)))
+            {
+                arguments.push(path_text(ancestor)?);
             }
-            let manifest = directory.join(MANIFEST_NAME);
-            if manifest.is_file() {
-                return Self::load_manifest(manifest).map(Some);
-            }
-            if boundary.is_some_and(|boundary| directory == boundary) {
-                break;
-            }
-            candidate = directory.parent();
         }
-        Ok(None)
+        Ok(decode_resolved(&TOOL.run(arguments)?)?
+            .into_iter()
+            .next()
+            .and_then(|value| value.project))
     }
 
     pub fn resolve_dependencies(&self) -> Result<Vec<ResolvedDependency>, FosterError> {
-        let root_manifest = canonical_manifest(self)?;
-        let mut state = DependencyResolution {
-            visiting: vec![(self.name.clone(), root_manifest)],
-            aliases: HashMap::new(),
-            resolved: HashSet::new(),
-            output: Vec::new(),
-        };
-        state.visit_dependencies(self)?;
-        Ok(state.output)
-    }
-}
-
-struct DependencyResolution {
-    visiting: Vec<(String, PathBuf)>,
-    aliases: HashMap<String, PathBuf>,
-    resolved: HashSet<(String, PathBuf)>,
-    output: Vec<ResolvedDependency>,
-}
-
-impl DependencyResolution {
-    fn visit_dependencies(&mut self, project: &Project) -> Result<(), FosterError> {
-        for dependency in project.dependencies.values() {
-            if dependency
-                .root
-                .extension()
-                .is_some_and(|extension| extension == "flib")
-            {
-                let artifact = fs::canonicalize(&dependency.root).map_err(|e| {
-                    FosterError::runtime(format!(
-                        "cannot resolve library `{}`: {e}",
-                        dependency.root.display()
-                    ))
-                })?;
-                if let Some(existing) = self.aliases.get(&dependency.name)
-                    && existing != &artifact
-                {
-                    return Err(FosterError::runtime(format!(
-                        "dependency name `{}` refers to different artifacts",
-                        dependency.name
-                    )));
-                }
-                self.aliases
-                    .insert(dependency.name.clone(), artifact.clone());
-                if self
-                    .resolved
-                    .insert((dependency.name.clone(), artifact.clone()))
-                {
-                    self.output.push(ResolvedDependency {
-                        name: dependency.name.clone(),
-                        project: None,
-                        artifact: Some(artifact),
-                    });
-                }
-                continue;
-            }
-            let dependency_project = Project::load(&dependency.root).map_err(|error| {
-                FosterError::runtime(format!(
-                    "cannot load dependency `{}` of package `{}`: {error}",
-                    dependency.name, project.name
-                ))
-            })?;
-            let manifest = canonical_manifest(&dependency_project)?;
-
-            if let Some((position, _)) = self
-                .visiting
-                .iter()
-                .enumerate()
-                .find(|(_, (_, candidate))| *candidate == manifest)
-            {
-                let mut cycle = self.visiting[position..]
-                    .iter()
-                    .map(|(name, _)| name.as_str())
-                    .collect::<Vec<_>>();
-                cycle.push(dependency.name.as_str());
-                return Err(FosterError::runtime(format!(
-                    "path dependency cycle: {}",
-                    cycle.join(" -> ")
-                )));
-            }
-
-            if let Some(existing) = self.aliases.get(&dependency.name) {
-                if existing != &manifest {
-                    return Err(FosterError::runtime(format!(
-                        "dependency name `{}` refers to both `{}` and `{}`",
-                        dependency.name,
-                        existing.display(),
-                        manifest.display()
-                    )));
-                }
-            } else {
-                self.aliases
-                    .insert(dependency.name.clone(), manifest.clone());
-            }
-
-            let identity = (dependency.name.clone(), manifest.clone());
-            if !self.resolved.insert(identity) {
-                continue;
-            }
-
-            self.output.push(ResolvedDependency {
-                name: dependency.name.clone(),
-                project: Some(dependency_project.clone()),
-                artifact: None,
-            });
-            self.visiting
-                .push((dependency.name.clone(), manifest.clone()));
-            self.visit_dependencies(&dependency_project)?;
-            self.visiting.pop();
+        let mut arguments = vec![
+            "resolve".into(),
+            platform(),
+            self.name.clone(),
+            path_text(&self.root)?,
+            path_text(&self.manifest_path)?,
+            path_text(&self.source_root)?,
+        ];
+        for dependency in self.dependencies.values() {
+            arguments.push(dependency.name.clone());
+            arguments.push(path_text(&dependency.root)?);
         }
-        Ok(())
+        decode_resolved(&TOOL.run(arguments)?)
     }
 }
 
-fn canonical_manifest(project: &Project) -> Result<PathBuf, FosterError> {
-    fs::canonicalize(&project.manifest_path).map_err(|error| {
+fn platform() -> String {
+    if cfg!(windows) { "windows" } else { "unix" }.into()
+}
+fn path_text(path: &Path) -> Result<String, FosterError> {
+    path.to_str().map(str::to_owned).ok_or_else(|| {
         FosterError::runtime(format!(
-            "cannot resolve project manifest `{}`: {error}",
-            project.manifest_path.display()
+            "project path `{}` must be valid UTF-8",
+            path.display()
         ))
     })
 }
-
-fn parse_dependencies(
-    value: &Value,
-    project_root: &Path,
-    manifest_path: &Path,
-) -> Result<BTreeMap<String, ProjectDependency>, FosterError> {
-    let entries = value_table(value).ok_or_else(|| {
-        FosterError::runtime(format!(
-            "`dependencies` in `{}` must be a TOML table",
-            manifest_path.display()
-        ))
-    })?;
+fn invalid_response() -> FosterError {
+    FosterError::runtime("Foster project tool returned an invalid response")
+}
+fn field<'a>(value: &'a Value, key: &str) -> Result<&'a Value, FosterError> {
+    match value {
+        Value::Record { fields, .. } => fields.get(key).ok_or_else(invalid_response),
+        _ => Err(invalid_response()),
+    }
+}
+fn text_field(value: &Value, key: &str) -> Result<String, FosterError> {
+    tooling::string(field(value, key)?)
+}
+fn decode_project(value: &Value) -> Result<Project, FosterError> {
     let mut dependencies = BTreeMap::new();
-    for entry in entries {
-        let name = entry_key(entry).ok_or_else(|| {
-            FosterError::runtime(format!(
-                "`dependencies` in `{}` contains an invalid entry",
-                manifest_path.display()
-            ))
-        })?;
-        validate_dependency_name(name, manifest_path)?;
-        let value = entry_value(entry).expect("a TOML entry has a value");
-        let table = value_table(value).ok_or_else(|| {
-            FosterError::runtime(format!(
-                "dependency `{name}` in `{}` must be a table containing `path`",
-                manifest_path.display()
-            ))
-        })?;
-        reject_unknown_keys(
-            table,
-            &["path"],
-            &format!("dependency `{name}` in `{}`", manifest_path.display()),
-        )?;
-        let path = find_entry(table, "path")
-            .and_then(value_string)
-            .ok_or_else(|| {
-                FosterError::runtime(format!(
-                    "dependency `{name}` in `{}` requires a string `path`",
-                    manifest_path.display()
-                ))
-            })?;
-        validate_dependency_path(path, name, manifest_path)?;
+    for entry in field(value, "dependencies")?
+        .as_list()
+        .ok_or_else(invalid_response)?
+    {
+        let name = text_field(entry, "name")?;
         dependencies.insert(
-            name.to_owned(),
+            name.clone(),
             ProjectDependency {
-                name: name.to_owned(),
-                root: project_root.join(path),
+                name,
+                root: text_field(entry, "root")?.into(),
             },
         );
     }
-    Ok(dependencies)
-}
-
-fn discover_libraries(
-    value: &Value,
-    root: &Path,
-    manifest_path: &Path,
-    dependencies: &mut BTreeMap<String, ProjectDependency>,
-) -> Result<(), FosterError> {
-    let location = format!("`[discovery]` in `{}`", manifest_path.display());
-    let table = value_table(value)
-        .ok_or_else(|| FosterError::runtime(format!("{location} must be a TOML table")))?;
-    reject_unknown_keys(table, &["libraries"], &location)?;
-    let Some(value) = find_entry(table, "libraries") else {
-        return Ok(());
-    };
-    let folders = match value {
-        Value::Variant {
-            alternative,
-            payload,
-            ..
-        } if alternative.as_ref() == "Array" => payload.first().and_then(Value::as_list),
-        _ => None,
-    }
-    .ok_or_else(|| {
-        FosterError::runtime(format!(
-            "`discovery.libraries` in `{}` must be an array of strings",
-            manifest_path.display()
-        ))
-    })?;
-    let explicit = dependencies.keys().cloned().collect::<HashSet<_>>();
-    let mut visited = HashSet::new();
-    let mut discovered = BTreeMap::<String, (String, PathBuf)>::new();
-    for folder in folders {
-        let folder = value_string(folder).ok_or_else(|| {
-            FosterError::runtime(format!(
-                "`discovery.libraries` in `{}` must be an array of strings",
-                manifest_path.display()
-            ))
-        })?;
-        let path = Path::new(folder);
-        if folder.trim().is_empty()
-            || path.is_absolute()
-            || path
-                .components()
-                .any(|component| matches!(component, Component::RootDir | Component::Prefix(_)))
-        {
-            return Err(FosterError::runtime(format!(
-                "`discovery.libraries` in `{}` requires non-empty relative folder paths",
-                manifest_path.display()
-            )));
-        }
-        let directory = root.join(path);
-        let canonical = fs::canonicalize(&directory).map_err(|error| {
-            FosterError::runtime(format!(
-                "cannot resolve library discovery folder `{}` from `{}`: {error}",
-                directory.display(),
-                manifest_path.display()
-            ))
-        })?;
-        if !visited.insert(canonical) {
-            continue;
-        }
-        let entries = fs::read_dir(&directory)
-            .and_then(|entries| entries.collect::<Result<Vec<_>, _>>())
-            .map_err(|error| {
-                FosterError::runtime(format!(
-                    "cannot read library discovery folder `{}` from `{}`: {error}",
-                    directory.display(),
-                    manifest_path.display()
-                ))
-            })?;
-        let mut paths = entries
-            .into_iter()
-            .map(|entry| entry.path())
-            .collect::<Vec<_>>();
-        paths.sort();
-        for path in paths {
-            if path.extension().is_none_or(|extension| extension != "flib") || !path.is_file() {
-                continue;
-            }
-            let name = path
-                .file_stem()
-                .and_then(|stem| stem.to_str())
-                .ok_or_else(|| {
-                    FosterError::runtime(format!(
-                        "library discovery filename `{}` must be valid UTF-8",
-                        path.display()
-                    ))
-                })?;
-            validate_dependency_name(name, manifest_path)?;
-            if explicit.contains(name) {
-                continue;
-            }
-            // Do not let filesystem case sensitivity decide which import wins.
-            let key = name.to_lowercase();
-            if let Some((previous_name, previous)) = discovered.get(&key) {
-                return Err(FosterError::runtime(format!(
-                    "ambiguous discovered library `{name}` in `{}`: `{}` and `{}`; select an explicit `[dependencies]` path or use distinct module names (previous name `{previous_name}`)",
-                    manifest_path.display(),
-                    previous.display(),
-                    path.display()
-                )));
-            }
-            discovered.insert(key, (name.to_owned(), path));
-        }
-    }
-    for (_, (name, root)) in discovered {
-        dependencies.insert(name.clone(), ProjectDependency { name, root });
-    }
-    Ok(())
-}
-
-fn validate_dependency_name(name: &str, manifest_path: &Path) -> Result<(), FosterError> {
-    let mut characters = name.chars();
-    let valid = characters
-        .next()
-        .is_some_and(|character| character == '_' || character.is_alphabetic())
-        && characters.all(|character| character == '_' || character.is_alphanumeric());
-    if valid && !matches!(name, "core" | "std") {
-        return Ok(());
-    }
-    Err(FosterError::runtime(format!(
-        "dependency name `{name}` in `{}` must be a portable module name other than `core` or `std`",
-        manifest_path.display()
-    )))
-}
-
-fn validate_dependency_path(
-    source: &str,
-    name: &str,
-    manifest_path: &Path,
-) -> Result<(), FosterError> {
-    let path = Path::new(source);
-    if source.trim().is_empty() || path.is_absolute() {
-        return Err(FosterError::runtime(format!(
-            "dependency `{name}` path in `{}` must be a non-empty relative path",
-            manifest_path.display()
-        )));
-    }
-    Ok(())
-}
-
-fn required_string<'a>(
-    table: &'a [Value],
-    key: &str,
-    manifest_path: &Path,
-) -> Result<&'a str, FosterError> {
-    let value = find_entry(table, key).ok_or_else(|| {
-        FosterError::runtime(format!(
-            "project manifest `{}` is missing required `package.{key}`",
-            manifest_path.display()
-        ))
-    })?;
-    value_string(value).ok_or_else(|| {
-        FosterError::runtime(format!(
-            "`package.{key}` in `{}` must be a string",
-            manifest_path.display()
-        ))
+    Ok(Project {
+        name: text_field(value, "name")?,
+        root: text_field(value, "root")?.into(),
+        manifest_path: text_field(value, "manifest")?.into(),
+        source_root: text_field(value, "source")?.into(),
+        dependencies,
     })
 }
-
-fn reject_unknown_keys(
-    table: &[Value],
-    allowed: &[&str],
-    location: &str,
-) -> Result<(), FosterError> {
-    if let Some(key) = table
+fn decode_resolved(value: &Value) -> Result<Vec<ResolvedDependency>, FosterError> {
+    value
+        .as_list()
+        .ok_or_else(invalid_response)?
         .iter()
-        .filter_map(entry_key)
-        .find(|key| !allowed.contains(key))
-    {
-        return Err(FosterError::runtime(format!(
-            "unknown key `{key}` in {location}; expected {}",
-            allowed
-                .iter()
-                .map(|key| format!("`{key}`"))
-                .collect::<Vec<_>>()
-                .join(" or ")
-        )));
-    }
-    Ok(())
-}
-
-fn parse_manifest(source: &str, manifest_path: &Path) -> Result<Value, FosterError> {
-    static PROGRAM: OnceLock<Result<crate::vm::Program, String>> = OnceLock::new();
-    let program = PROGRAM
-        .get_or_init(|| {
-            crate::compile(MANIFEST_PARSER)
-                .and_then(|compilation| crate::vm::compile(&compilation))
-                .map_err(|error| error.message)
+        .map(|value| {
+            let project = match field(value, "project")? {
+                Value::Variant {
+                    alternative,
+                    payload,
+                    ..
+                } if alternative.as_ref() == "Some" => Some(decode_project(
+                    payload.first().ok_or_else(invalid_response)?,
+                )?),
+                Value::Variant { alternative, .. } if alternative.as_ref() == "None" => None,
+                _ => return Err(invalid_response()),
+            };
+            let artifact = text_field(value, "artifact")?;
+            Ok(ResolvedDependency {
+                name: text_field(value, "name")?,
+                project,
+                artifact: if artifact.is_empty() {
+                    None
+                } else {
+                    Some(artifact.into())
+                },
+            })
         })
-        .as_ref()
-        .map_err(|error| {
-            FosterError::runtime(format!(
-                "cannot initialize embedded Foster TOML parser: {error}"
-            ))
-        })?;
-    let arguments = crate::entry::CommandArguments::new(
-        manifest_path.display().to_string(),
-        [source.to_owned()],
-    );
-    let outcome = crate::vm::Machine::new(program).run_main_with_arguments(&arguments)?;
-    match outcome {
-        Value::Variant {
-            alternative,
-            mut payload,
-            ..
-        } if alternative.as_ref() == "Ok" => payload.pop().ok_or_else(|| {
-            FosterError::runtime("embedded Foster TOML parser returned an empty Result.Ok")
-        }),
-        Value::Variant {
-            alternative,
-            mut payload,
-            ..
-        } if alternative.as_ref() == "Error" => {
-            let error = payload.pop().ok_or_else(|| {
-                FosterError::runtime("embedded Foster TOML parser returned an empty Result.Error")
-            })?;
-            Err(manifest_parse_error(&error, manifest_path))
-        }
-        _ => Err(FosterError::runtime(
-            "embedded Foster TOML parser returned an invalid result",
-        )),
-    }
-}
-
-fn manifest_parse_error(value: &Value, manifest_path: &Path) -> FosterError {
-    let (message, line, column) = match value {
-        Value::Record { fields, .. } => (
-            fields
-                .get("message")
-                .and_then(Value::as_string)
-                .unwrap_or("invalid TOML"),
-            fields
-                .get("line")
-                .and_then(|value| match value {
-                    Value::Integer(value) => Some(*value),
-                    _ => None,
-                })
-                .unwrap_or(0),
-            fields
-                .get("column")
-                .and_then(|value| match value {
-                    Value::Integer(value) => Some(*value),
-                    _ => None,
-                })
-                .unwrap_or(0),
-        ),
-        _ => ("invalid TOML", 0, 0),
-    };
-    FosterError::runtime(format!(
-        "invalid project manifest `{}` at {line}:{column}: {message}",
-        manifest_path.display()
-    ))
-}
-
-fn document_entries(value: &Value) -> Option<&[Value]> {
-    let Value::Record { name, fields, .. } = value else {
-        return None;
-    };
-    (name == "TomlDocument")
-        .then(|| fields.get("entries")?.as_list())
-        .flatten()
-}
-
-fn entry_key(value: &Value) -> Option<&str> {
-    let Value::Record { name, fields, .. } = value else {
-        return None;
-    };
-    (name == "TomlEntry")
-        .then(|| fields.get("key")?.as_string())
-        .flatten()
-}
-
-fn entry_value(value: &Value) -> Option<&Value> {
-    let Value::Record { name, fields, .. } = value else {
-        return None;
-    };
-    (name == "TomlEntry").then(|| fields.get("value")).flatten()
-}
-
-fn find_entry<'a>(entries: &'a [Value], key: &str) -> Option<&'a Value> {
-    entries
-        .iter()
-        .find(|entry| entry_key(entry) == Some(key))
-        .and_then(entry_value)
-}
-
-fn value_table(value: &Value) -> Option<&[Value]> {
-    let Value::Variant {
-        alternative,
-        payload,
-        ..
-    } = value
-    else {
-        return None;
-    };
-    (alternative.as_ref() == "Table")
-        .then(|| payload.first()?.as_list())
-        .flatten()
-}
-
-fn value_string(value: &Value) -> Option<&str> {
-    let Value::Variant {
-        alternative,
-        payload,
-        ..
-    } = value
-    else {
-        return None;
-    };
-    (alternative.as_ref() == "String")
-        .then(|| payload.first()?.as_string())
-        .flatten()
-}
-
-fn validate_source_directory(source: &str, manifest_path: &Path) -> Result<(), FosterError> {
-    if source.trim().is_empty() {
-        return Err(FosterError::runtime(format!(
-            "`package.source` in `{}` cannot be empty",
-            manifest_path.display()
-        )));
-    }
-    let path = Path::new(source);
-    if path.is_absolute()
-        || path.components().any(|component| {
-            matches!(
-                component,
-                Component::ParentDir | Component::RootDir | Component::Prefix(_)
-            )
-        })
-    {
-        return Err(FosterError::runtime(format!(
-            "`package.source` in `{}` must be a relative path contained by the project",
-            manifest_path.display()
-        )));
-    }
-    Ok(())
+        .collect()
 }
 
 #[cfg(test)]
@@ -688,6 +184,31 @@ mod tests {
         ));
         fs::create_dir_all(root.join("source")).unwrap();
         root
+    }
+
+    #[test]
+    fn discovery_respects_lexical_workspace_boundaries() {
+        let root = temporary_project("boundary");
+        fs::write(
+            root.join(MANIFEST_NAME),
+            "[package]\nname = 'outer'\nsource = 'source'\n",
+        )
+        .unwrap();
+        let nested = root.join("source/nested");
+        fs::create_dir_all(&nested).unwrap();
+        let file = nested.join("main.fos");
+        fs::write(&file, "func main() { 42 }").unwrap();
+        assert!(Project::discover(&file, Some(&nested)).unwrap().is_none());
+        assert_eq!(
+            Project::discover(&file, Some(&root)).unwrap().unwrap().name,
+            "outer"
+        );
+        assert!(
+            Project::discover(&file, Some(&root.join("source/nest")))
+                .unwrap()
+                .is_none()
+        );
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
@@ -869,6 +390,40 @@ mod tests {
     }
 
     #[test]
+    fn resolves_diamonds_and_artifacts_once_in_name_order() {
+        let root = temporary_project("diamond");
+        for folder in ["left", "right", "shared"] {
+            fs::create_dir_all(root.join(folder).join("src")).unwrap();
+            let dependencies = if folder == "shared" {
+                ""
+            } else {
+                "[dependencies]\nshared = { path = '../shared' }\n"
+            };
+            fs::write(
+                root.join(folder).join(MANIFEST_NAME),
+                format!("[package]\nname = '{folder}'\n{dependencies}"),
+            )
+            .unwrap();
+        }
+        fs::write(root.join("binary.flib"), []).unwrap();
+        fs::write(root.join(MANIFEST_NAME), "[package]\nname = 'app'\nsource = 'source'\n[dependencies]\nright = { path = 'right' }\nleft = { path = 'left' }\nbinary = { path = 'binary.flib' }\n").unwrap();
+        let dependencies = Project::load(&root)
+            .unwrap()
+            .resolve_dependencies()
+            .unwrap();
+        assert_eq!(
+            dependencies
+                .iter()
+                .map(|value| value.name.as_str())
+                .collect::<Vec<_>>(),
+            ["binary", "left", "shared", "right"]
+        );
+        assert!(dependencies[0].artifact.is_some());
+        assert!(dependencies[0].project.is_none());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn resolves_transitive_path_dependencies_in_stable_order() {
         let root = temporary_project("dependencies");
         let middle = root.join("middle");
@@ -978,5 +533,29 @@ mod tests {
         );
 
         fs::remove_dir_all(root).unwrap();
+    }
+}
+
+impl crate::package::ProjectInputs for Project {
+    fn source(&self) -> crate::package::ProjectSource {
+        crate::package::ProjectSource {
+            name: self.name.clone(),
+            root: self.root.clone(),
+            source_root: self.source_root.clone(),
+        }
+    }
+    fn dependency_sources(&self) -> Result<Vec<crate::package::DependencySource>, FosterError> {
+        Ok(self
+            .resolve_dependencies()?
+            .into_iter()
+            .map(|dependency| crate::package::DependencySource {
+                name: dependency.name,
+                project: dependency
+                    .project
+                    .as_ref()
+                    .map(crate::package::ProjectInputs::source),
+                artifact: dependency.artifact,
+            })
+            .collect())
     }
 }

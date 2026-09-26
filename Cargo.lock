@@ -579,26 +579,52 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 name = "foster"
 version = "0.1.0"
 dependencies = [
- "ariadne",
  "camino",
  "clap",
- "cranelift-codegen",
- "cranelift-frontend",
- "cranelift-module",
- "cranelift-native",
- "cranelift-object",
  "criterion",
  "crossbeam-channel",
+ "foster-bytecode",
+ "foster-compiler",
  "foster-host",
- "la-arena",
+ "foster-vm",
  "lsp-server",
  "lsp-types",
- "may",
  "pulldown-cmark",
  "serde",
  "serde_json",
  "walkdir",
  "zip",
+]
+
+[[package]]
+name = "foster-bytecode"
+version = "0.1.0"
+dependencies = [
+ "foster-compiler",
+ "foster-vm",
+ "la-arena",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "foster-compiler"
+version = "0.1.0"
+dependencies = [
+ "ariadne",
+ "camino",
+ "cranelift-codegen",
+ "cranelift-frontend",
+ "cranelift-module",
+ "cranelift-native",
+ "cranelift-object",
+ "foster-bytecode",
+ "foster-host",
+ "foster-vm",
+ "la-arena",
+ "serde",
+ "serde_json",
+ "walkdir",
 ]
 
 [[package]]
@@ -610,6 +636,17 @@ name = "foster-native-runtime"
 version = "0.1.0"
 dependencies = [
  "foster-host",
+ "may",
+]
+
+[[package]]
+name = "foster-vm"
+version = "0.1.0"
+dependencies = [
+ "foster-bytecode",
+ "foster-compiler",
+ "foster-host",
+ "la-arena",
  "may",
 ]
 

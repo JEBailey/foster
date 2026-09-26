@@ -1,7 +1,7 @@
 # Experimental Foster lexer
 
 This standalone Foster project explores implementing source scanning in Foster.
-The production compiler uses the Rust lexer in `src/lexer.rs`; it does not load
+The production compiler uses the Rust lexer in `compiler/src/lexer.rs`; it does not load
 or execute this tool. No bytecode seed or token cache is required.
 
 `src/main.fos` accepts one argument containing source text and returns a structured

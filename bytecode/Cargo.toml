@@ -1,0 +1,13 @@
+[package]
+name = "foster-bytecode"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+[dependencies]
+la-arena = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+foster-compiler = { path = "../compiler" }
+foster-vm = { path = "../vm" }

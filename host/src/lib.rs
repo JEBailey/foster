@@ -253,3 +253,7 @@ mod tests {
         );
     }
 }
+
+pub mod foreign;
+pub mod process;
+pub mod remote;

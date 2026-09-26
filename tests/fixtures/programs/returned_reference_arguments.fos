@@ -1,0 +1,32 @@
+import core.list
+
+func preserve(value: ref[value] Int) -> ref[value] Int {
+    ref value
+}
+
+func relay(value: ref[value] Int) -> ref[value] Int {
+    preserve(value)
+}
+
+func set(value: ref[value] Int, replacement: Int) -> Int [mut value] {
+    value = replacement
+}
+
+type Writer = {}
+impl Writer {
+    func set(self, value: ref[value] Int, replacement: Int) -> Int [mut value] {
+        value = replacement
+    }
+}
+
+func main() -> Int {
+    let values = [10, 20]
+    let selected = preserve(ref values[0])
+    set(selected, 40)
+    assert(values.head == 40)
+    set(preserve(ref values[0]), 41)
+    assert(values.head == 41)
+    let writer = Writer {}
+    writer.set(relay(ref values[0]), 42)
+    values.head
+}

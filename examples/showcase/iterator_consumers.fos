@@ -6,4 +6,8 @@ func main() -> () {
     [1, 2, 3, 4, 5].iterator().for_each((value: Int) -> {
         println("number", value)
     })
+
+    for value in [1, 2, 3, 4, 5] {
+        println("number", value)
+    }
 }

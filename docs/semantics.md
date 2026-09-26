@@ -428,11 +428,11 @@ Existing witnesses provide regression evidence, not a proof or exhaustive confor
 | --- | --- |
 | S-03–S-05 | [language tests](../tests/language.rs), [CLI tests](../tests/cli.rs) |
 | S-06–S-08 | [language tests](../tests/language.rs) for stored/computed place behavior and resolved member ownership, [ownership tests](../tests/language_ownership.rs), [backend parity](../tests/backend_parity.rs), [library algorithm fixture](../tests/fixtures/programs/library_algorithms.fos), [library sources/tests](../library/) |
-| S-09–S-10 | [backend parity](../tests/backend_parity.rs) for assignment, call, aggregate, branch, and partial-application ordering; [language tests](../tests/language.rs), [portable tests](../tests/foster/), [control-flow lowering](../src/control_flow.rs) |
-| S-11–S-16 | [ownership tests](../tests/language_ownership.rs) for accepted and rejected partial capture, moves, loans, and computed results; [rule-indexed witnesses](../tests/ownership_soundness.rs), [reference model](../src/ownership/model.rs) |
+| S-09–S-10 | [backend parity](../tests/backend_parity.rs) for assignment, call, aggregate, branch, and partial-application ordering; [language tests](../tests/language.rs), [portable tests](../tests/foster/), [control-flow lowering](../compiler/src/control_flow.rs) |
+| S-11–S-16 | [ownership tests](../tests/language_ownership.rs) for accepted and rejected partial capture, moves, loans, and computed results; [rule-indexed witnesses](../tests/ownership_soundness.rs), [reference model](../compiler/src/ownership/model.rs) |
 | S-17–S-18 | [ownership tests](../tests/language_ownership.rs) for reverse cleanup and transfer/failure edges, [backend parity](../tests/backend_parity.rs) for borrowed full-expression temporaries |
 | S-19–S-20 | [remote ownership tests](../tests/language_ownership.rs), [remote lifetime tests](../tests/remote_lifetime.rs), [backend parity tests](../tests/backend_parity.rs), [native tests](../tests/native.rs) |
-| S-21 | [host tests](../tests/core_host.rs), [intrinsic registry](../src/intrinsics/registry.rs) |
+| S-21 | [host tests](../tests/core_host.rs), [intrinsic registry](../bytecode/src/intrinsics/registry.rs) |
 | S-22 | [backend parity](../tests/backend_parity.rs), [native tests](../tests/native.rs) |
 
 Every changed semantic rule must keep the smallest applicable set of witnesses: an observable

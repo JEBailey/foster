@@ -2277,6 +2277,16 @@ func main() -> Int {
 }
 
 #[test]
+fn returned_reference_arguments_reject_an_invalidated_origin() {
+    let source = include_str!("fixtures/programs/returned_reference_arguments.fos").replace(
+        "set(selected, 40)",
+        "values.push(30)\n    set(selected, 40)",
+    );
+    let error = foster::compile(&source).unwrap_err();
+    assert_eq!(error.code.as_deref(), Some("E0401"), "{}", error.message);
+}
+
+#[test]
 fn permits_reshape_of_a_disjoint_record_field() {
     let source = r#"
 type Pair = {

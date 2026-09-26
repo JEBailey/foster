@@ -10,24 +10,40 @@ Use the [documentation guide](docs/README.md) to find language, library, and com
 Coding agents should start with [AGENTS.md](AGENTS.md) and the
 [Foster writing guide](docs/writing-foster.md), which includes compiler-checked examples.
 
+## Implementation
+
+The Rust workspace has six packages: `foster` (the toolchain driver),
+`foster-compiler`, `foster-vm`, `foster-bytecode`, `foster-native-runtime`, and
+`foster-host`. See [workspace architecture](docs/workspace.md) for their responsibilities,
+dependencies, and build commands.
+
+Project creation, manifest and dependency management, formatting policy, and documentation page generation are
+[written in Foster](tools/driver/README.md). The Rust build embeds their compiled
+bytecode in the command; using these tools does not require a source checkout.
+
 ## Try it
 
+Use a release build for normal execution: `cargo build --release --bin foster`.
+The executable is `target/release/foster` (`foster.exe` on Windows). Rust debug
+builds also run an unoptimized interpreter; Foster bytecode optimization does
+not remove that overhead.
+
 ```powershell
-cargo run --bin foster -- run examples/live_inventory_pipeline.fos
-cargo run --bin foster -- check examples/json_parser
-cargo run --bin foster -- check tests/fixtures/modules
-cargo run --bin foster -- fmt examples
-cargo run --bin foster -- fmt examples --check
-cargo run --bin foster -- test tests/foster
-cargo run --bin foster -- test library
-cargo run --bin foster -- run tests/fixtures/modules --no-optimize
-cargo run --bin foster -- run examples/arguments.fos -- --about
-cargo run --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.exe
-cargo run --bin foster -- build benchmarks/fibonacci.fos --native --emit native-ir
-cargo run --bin foster -- pack examples/json_parser -o json-parser.fpk
-cargo run --bin foster -- run json-parser.fpk
-cargo run --bin foster -- docs library
-cargo run --bin foster -- docs library --serve
+cargo run --release --bin foster -- run examples/live_inventory_pipeline.fos
+cargo run --release --bin foster -- check examples/json_parser
+cargo run --release --bin foster -- check tests/fixtures/modules
+cargo run --release --bin foster -- fmt examples
+cargo run --release --bin foster -- fmt examples --check
+cargo run --release --bin foster -- test tests/foster
+cargo run --release --bin foster -- test library
+cargo run --release --bin foster -- run tests/fixtures/modules --no-optimize
+cargo run --release --bin foster -- run examples/arguments.fos -- --about
+cargo run --release --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.exe
+cargo run --release --bin foster -- build benchmarks/fibonacci.fos --native --emit native-ir
+cargo run --release --bin foster -- pack examples/json_parser -o json-parser.fpk
+cargo run --release --bin foster -- run json-parser.fpk
+cargo run --release --bin foster -- docs library
+cargo run --release --bin foster -- docs library --serve
 cargo test
 ```
 
@@ -322,15 +338,15 @@ consume the same authoritative semantic branch/loop CFG. This keeps branch-test 
 edges consistent between static checking and execution.
 
 ```powershell
-cargo run --bin foster -- build examples/showcase/recursion.fos -o recursion.fbc
-cargo run --bin foster -- run recursion.fbc
+cargo run --release --bin foster -- build examples/showcase/recursion.fos -o recursion.fbc
+cargo run --release --bin foster -- run recursion.fbc
 ```
 
 The initial AOT backend emits host machine code with Cranelift and asks the installed Rust
 toolchain to link it into a standalone executable:
 
 ```powershell
-cargo run --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.exe
+cargo run --release --bin foster -- build benchmarks/fibonacci.fos --native -o fibonacci.exe
 ./fibonacci.exe
 ```
 
@@ -370,8 +386,8 @@ use `--resources <directory>` to select a different resource root. Packaged prog
 their Foster source and can read included files through `std.fs` beneath `resources/`:
 
 ```powershell
-cargo run --bin foster -- pack path/to/application -o application.fpk
-cargo run --bin foster -- run application.fpk
+cargo run --release --bin foster -- pack path/to/application -o application.fpk
+cargo run --release --bin foster -- run application.fpk
 ```
 
 The runtime validates the manifest and archive paths, expands resources into an isolated temporary
@@ -387,7 +403,7 @@ See [the VM design](docs/vm.md), [binary format](docs/binary-format.md),
 Start the server over standard input/output with:
 
 ```powershell
-cargo run --bin foster -- lsp
+cargo run --release --bin foster -- lsp
 ```
 
 It supports package diagnostics with open-buffer overlays, document symbols, go-to-definition

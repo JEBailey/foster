@@ -1,0 +1,13 @@
+[package]
+name = "foster-vm"
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+[dependencies]
+foster-bytecode = { path = "../bytecode" }
+foster-host = { path = "../host" }
+la-arena = "0.3"
+may = "0.3.51"
+
+[dev-dependencies]
+foster-compiler = { path = "../compiler" }

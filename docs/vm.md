@@ -11,7 +11,7 @@ source -> AST -> resolved HIR -> type/effect/loan/ownership checks
 ```
 
 Ownership-MIR and bytecode lowering consume the authoritative semantic branch/loop CFG in
-`src/control_flow.rs`.
+`compiler/src/control_flow.rs`.
 Conditional arm tests are evaluated in sequence, matched arms complete the branch, and `continue`
 is exclusively a loop transfer. Branch result decisions use the same reachability-aware arm-flow
 summary.
@@ -78,6 +78,17 @@ The dispatch loop borrows instructions and their operand tables directly from th
 executing an instruction does not clone its strings, patterns, captures, or argument vectors. A
 frame retains its resolved bytecode-function reference, avoiding a function-table lookup on every
 instruction dispatch.
+
+Calls initialize argument registers directly from iterators instead of allocating temporary
+argument vectors. Frame teardown detaches registers in reverse order before returning the empty
+register buffer to a host-thread pool. The pool retains at most 32 buffers and 4096 register cells;
+it never retains Foster values, references, or cleanup obligations. Reused buffers begin with unit
+values, while surviving promoted places retain their independent storage.
+
+Each execution lazily materializes string and symbol constants once. Repeated loads share their
+immutable bytes and copy-on-write record fields. The cache belongs to that execution, so constant
+indices from another program cannot alias it and it does not introduce shared mutable VM values
+between remote workers.
 
 Record instances use dense indexed value arrays. Field names and their index table live once in a
 shared record layout, including fields contributed by composed contracts. Variants similarly share

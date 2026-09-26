@@ -5,3 +5,5 @@ node_modules/
 documentation/
 !/src/documentation/
 !/src/documentation/**
+!/tools/driver/documentation/
+!/tools/driver/documentation/**

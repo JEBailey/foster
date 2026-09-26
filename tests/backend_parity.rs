@@ -11,6 +11,15 @@ fn conditional_branch_implicit_default_on_both_backends() {
 }
 
 #[test]
+fn returned_reference_arguments_agree_on_both_backends() {
+    check(
+        "returned-reference-arguments",
+        include_str!("fixtures/programs/returned_reference_arguments.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn deferred_initialization_cleanup_on_both_backends() {
     check_stdout(
         "deferred-initialization",

@@ -1,475 +1,231 @@
-use std::fmt::Write;
-
+//! Resolved compiler-data adapter for the Foster documentation renderer.
 use super::type_links::TypeLinks;
 use crate::ast::{Effect, EffectKind, ParameterMode};
 use crate::compiler::Compilation;
 use crate::hir::{ConstantId, FunctionId, ModuleId};
+use crate::{error::FosterError, tooling, vm::Value};
 
-pub(super) const STYLE: &str = r#":root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; line-height: 1.55; }
-* { box-sizing: border-box; }
-body { margin: 0; color: #20242b; background: #f6f7f9; }
-header { padding: 3rem max(1.5rem, calc((100% - 72rem) / 2)); color: white; background: linear-gradient(135deg, #172033, #253b66); }
-header h1 { margin: 0 0 .35rem; font-size: clamp(1.8rem, 4vw, 2.5rem); letter-spacing: -.025em; }
-header p { margin: 0; color: #d7e0ef; }
-main { max-width: 72rem; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
-a { color: #3564c4; text-decoration: none; } a:hover { text-decoration: underline; }
-.crumb { display: inline-flex; align-items: center; margin-bottom: 1rem; font-weight: 600; }
-.summary { display: flex; gap: .75rem; flex-wrap: wrap; margin: 0 0 1.5rem; color: #596273; }
-.summary span { padding: .3rem .7rem; border: 1px solid #d8dde7; border-radius: 99px; background: white; }
-.filter { width: 100%; margin: 0 0 1.25rem; padding: .8rem 1rem; border: 1px solid #c9d0dc; border-radius: .6rem; color: inherit; background: white; font: inherit; }
-.filter:focus { border-color: #3564c4; outline: 3px solid color-mix(in srgb, #3564c4 20%, transparent); }
-.module-list { margin: .5rem 0 1.5rem; padding: 0; list-style: none; }
-.module-list li[hidden] { display: none; }
-.module-list a, article, .on-this-page { display: block; padding: 1rem 1.15rem; border: 1px solid #d8dde7; border-radius: .65rem; background: white; }
-.module-list a { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; padding: .65rem .75rem; padding-left: calc(.75rem + var(--depth, 0) * 1rem); border: 0; border-bottom: 1px solid #d8dde7; border-radius: 0; background: transparent; }
-.module-list a:hover { background: color-mix(in srgb, #628ae0 10%, transparent); text-decoration: none; }
-.module-list small { flex-shrink: 0; }
-.module-list strong { min-width: 0; }
-@media (max-width: 36rem) { .module-list a { flex-wrap: wrap; gap: .15rem .75rem; } }
-.module-group { margin-bottom: 1rem; }
-.module-group > summary { cursor: pointer; padding: .65rem .75rem; background: color-mix(in srgb, #628ae0 10%, transparent); border-radius: .35rem; font-size: 1.1rem; font-weight: 700; }
-.module-group > summary small { font-size: .8rem; font-weight: 400; margin-left: .75rem; }
-.module-jumps { display: flex; flex-wrap: wrap; gap: .5rem 1.25rem; margin-bottom: 1.5rem; }
-.module-group { scroll-margin-top: 1rem; }
-.module-list small { color: #667085; }
-.on-this-page { margin: 0 0 1.5rem; }
-.on-this-page strong { display: block; margin-bottom: .45rem; }
-.on-this-page ul { display: flex; flex-wrap: wrap; gap: .35rem 1.2rem; margin: 0; padding-left: 1.2rem; }
-.type-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 1rem; margin-bottom: 2rem; }
-.type-summary { margin: 0; }
-.type-summary h3 { margin: 0 0 .35rem; font-size: 1.15rem; }
-.type-summary h4 { margin: 1rem 0 .3rem; font-size: .82rem; color: #667085; letter-spacing: .06em; text-transform: uppercase; }
-.type-summary ul { margin: .25rem 0 0; padding-left: 1.2rem; }
-.type-summary li + li { margin-top: .35rem; }
-.type-summary small { color: #667085; }
-article { margin: 1rem 0; scroll-margin-top: 1rem; }
-article h2 { margin: 0 0 .65rem; font-size: 1.2rem; }
-.anchor { color: inherit; } .anchor:hover { text-decoration: none; } .anchor:hover::after { content: " #"; color: #8090aa; }
-pre { overflow-x: auto; padding: .85rem 1rem; border-radius: .45rem; color: #e7edf7; background: #202838; }
-.type-link { text-decoration: underline; text-underline-offset: .18em; }
-pre .type-link { color: #a8c9ff; }
-pre .type-link:hover { color: white; }
-code { font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace; }
-p code, li code { padding: .08rem .3rem; border-radius: .25rem; background: #e8ebf1; }
-.badge { display: inline-block; white-space: nowrap; font-family: Inter, ui-sans-serif, system-ui, sans-serif; line-height: 1.4; margin-left: .45rem; padding: .15rem .5rem; border-radius: 99px; font-size: .68rem; font-weight: 700; letter-spacing: .02em; color: #596273; background: #edf0f5; vertical-align: middle; }
-.visibility-public { color: #14532d; background: #dcfce7; border: 1px solid #86efac; }
-.visibility-private { color: #7c2d12; background: #ffedd5; border: 1px solid #fdba74; }
-.kind { color: #2356a8; background: #e8f0ff; }
-.empty, .no-results { color: #667085; font-style: italic; }
-[hidden] { display: none !important; }
-.skip-link { position: absolute; left: 1rem; top: -5rem; padding: .75rem; background: white; z-index: 2; }
-.skip-link:focus { top: 1rem; }
-:focus-visible { outline: 3px solid #628ae0; outline-offset: 3px; }
-header h1, article, .module-list strong { overflow-wrap: anywhere; }
-.module-layout { display: grid; grid-template-columns: 17rem minmax(0, 1fr); gap: 2rem; align-items: start; }
-.module-content { min-width: 0; }
-.on-this-page { position: sticky; top: 1rem; max-height: calc(100vh - 2rem); overflow: auto; }
-.on-this-page summary { cursor: pointer; font-weight: 700; }
-.on-this-page .crumb { margin: 0 0 .75rem; }
-.on-this-page label { display: block; margin-top: 1rem; font-size: .85rem; font-weight: 600; }
-.on-this-page .filter { margin: .35rem 0 .5rem; padding: .55rem; }
-.on-this-page ul { display: block; padding: 0; list-style: none; }
-.on-this-page .declaration-tree { max-height: max(8rem, calc(100vh - 20rem)); overflow: auto; padding: .25rem; }
-.on-this-page li a { display: block; padding: .4rem .25rem; overflow-wrap: anywhere; }
-.on-this-page small { color: #596273; font-size: .75rem; margin-left: .35rem; }
-.on-this-page a[aria-current="location"] { background: #e8f0ff; border-radius: .25rem; font-weight: 700; }
-.type-navigation summary { padding: .5rem .25rem; overflow-wrap: anywhere; }
-.on-this-page .type-navigation ul { margin: .15rem 0 .5rem .55rem; padding-left: .65rem; border-left: 1px solid #8090aa; }
-.on-this-page h3 { font-size: .85rem; margin: 1rem .25rem .3rem; }
-.filter-status { font-size: .85rem; color: #596273; }
-.back-to-navigation { display: none; }
-article:target { outline: 2px solid #628ae0; outline-offset: 3px; }
-.type-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr)); }
-@media (max-width: 60rem) { .module-layout { display: block; } .on-this-page { position: static; max-height: none; } .on-this-page .declaration-tree { max-height: 16rem; overflow: auto; } }
-@media (max-width: 60rem) { .back-to-navigation { display: inline-block; margin-top: .75rem; padding-block: .35rem; font-size: .85rem; } }
-@media (max-width: 36rem) { header { padding-block: 2rem; } main { padding-top: 1.25rem; } .on-this-page ul { display: block; } }
-@media (prefers-color-scheme: dark) { body { color: #e5e7eb; background: #111827; } article, .module-list a, .on-this-page, .summary span, .filter { border-color: #344052; background: #1b2434; } p code, li code { background: #303b4d; } a { color: #8db4ff; } .module-list small, .summary, .type-summary small, .type-summary h4 { color: #aab5c5; } .kind { color: #b9d2ff; background: #263c60; } }
-@media (prefers-color-scheme: dark) { .empty, .no-results, .filter-status, .on-this-page small { color: #aab5c5; } .on-this-page a[aria-current="location"] { background: #263c60; } .skip-link { background: #1b2434; } }
-@media (prefers-color-scheme: dark) { .visibility-public { color: #bbf7d0; background: #163c2b; border-color: #39825a; } .visibility-private { color: #fed7aa; background: #482d1c; border-color: #a56735; } }
-"#;
-
-const SCRIPT: &str = r##"<script>
-const filter = document.querySelector('[data-module-filter]');
-if (filter) {
-  const modules = [...document.querySelectorAll('[data-module]')];
-  const empty = document.querySelector('[data-no-results]');
-  const groups = [...document.querySelectorAll('[data-module-group]')];
-  const status = document.querySelector('[data-module-status]');
-  let savedOpen = null;
-  filter.addEventListener('input', () => {
-    const query = filter.value.trim().toLowerCase();
-    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
-    let visible = 0;
-    for (const module of modules) {
-      module.hidden = !module.dataset.module.includes(query);
-      if (!module.hidden) visible++;
-    }
-    empty.hidden = visible > 0;
-    groups.forEach((group, index) => {
-      const matches = [...group.querySelectorAll('[data-module]')].filter(module => !module.hidden).length;
-      group.hidden = matches === 0;
-      if (query) group.open = matches > 0;
-      else if (savedOpen) group.open = savedOpen[index];
-    });
-    if (!query) savedOpen = null;
-    status.textContent = `${visible} of ${modules.length} modules`;
-  });
-  filter.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { filter.value = ''; filter.dispatchEvent(new Event('input')); }
-  });
-  document.querySelectorAll('[data-module-jump]').forEach(link => link.addEventListener('click', () => {
-    filter.value = '';
-    filter.dispatchEvent(new Event('input'));
-    document.getElementById(link.hash.slice(1)).open = true;
-  }));
-}
-const declarationFilter = document.querySelector('[data-declaration-filter]');
-// Keep the generated links usable without scripting, then enhance them into a tree.
-const declarationList = document.querySelector('.on-this-page details > ul');
-if (declarationList) {
-  declarationList.classList.add('declaration-tree');
-  const groups = new Map();
-  const entries = [...declarationList.children];
-  function groupFor(name) {
-    if (groups.has(name)) return groups.get(name);
-    const item = document.createElement('li');
-    const group = document.createElement('details');
-    group.className = 'type-navigation';
-    const summary = document.createElement('summary');
-    summary.textContent = name;
-    const children = document.createElement('ul');
-    group.append(summary, children);
-    item.append(group);
-    declarationList.append(item);
-    groups.set(name, group);
-    return group;
-  }
-  for (const entry of entries) {
-    entry.dataset.search = ((entry.dataset.owner || '') + ' ' + entry.textContent).toLowerCase();
-    const link = entry.querySelector('a');
-    const kind = entry.querySelector('small').textContent;
-    if (kind === 'type' || kind === 'variant') {
-      const name = link.firstChild.textContent.trim();
-      groupFor(name).querySelector('ul').append(entry);
-      link.firstChild.textContent = 'Type overview ';
-    }
-  }
-  for (const entry of entries) {
-    const owner = entry.dataset.owner;
-    if (!owner) continue;
-    const group = groupFor(owner);
-    group.querySelector('ul').append(entry);
-    const link = entry.querySelector('a');
-    link.firstChild.textContent = link.firstChild.textContent.replace(owner + '.', '');
-  }
-  for (const group of groups.values()) {
-    const count = group.querySelectorAll('[data-owner]').length;
-    const badge = document.createElement('small');
-    badge.textContent = ` ${count} function${count === 1 ? '' : 's'}`;
-    group.querySelector('summary').append(badge);
-  }
-  for (const kind of ['function', 'constant']) {
-    const remaining = entries.filter(entry => entry.parentElement === declarationList && entry.querySelector('small').textContent === kind);
-    if (!remaining.length) continue;
-    const section = document.createElement('li');
-    section.className = 'navigation-section';
-    const heading = document.createElement('h3');
-    heading.textContent = kind === 'function' ? 'Module functions' : 'Constants';
-    const list = document.createElement('ul');
-    list.append(...remaining);
-    section.append(heading, list);
-    declarationList.append(section);
-  }
-}
-if (declarationFilter) {
-  const entries = [...document.querySelectorAll('[data-declaration]')];
-  const status = document.querySelector('[data-declaration-status]');
-  const groups = [...document.querySelectorAll('.type-navigation')];
-  let savedOpen = null;
-  declarationFilter.addEventListener('input', () => {
-    const query = declarationFilter.value.trim().toLowerCase();
-    if (query && !savedOpen) savedOpen = groups.map(group => group.open);
-    let visible = 0;
-    for (const entry of entries) {
-      entry.hidden = !(entry.dataset.search || entry.textContent.toLowerCase()).includes(query);
-      if (!entry.hidden) visible++;
-    }
-    for (const section of declarationList.children) {
-      section.hidden = ![...section.querySelectorAll('[data-declaration]')].some(entry => !entry.hidden);
-    }
-    groups.forEach((group, index) => {
-      if (query) group.open = !group.parentElement.hidden;
-      else if (savedOpen) group.open = savedOpen[index];
-    });
-    if (!query) { savedOpen = null; updateCurrentLocation(); }
-    status.textContent = visible ? `${visible} of ${entries.length} declarations` : 'No matching declarations. Try another name or kind.';
-  });
-  declarationFilter.addEventListener('keydown', event => {
-    if (event.key === 'Escape') {
-      declarationFilter.value = '';
-      declarationFilter.dispatchEvent(new Event('input'));
-    }
-  });
-}
-const navigationLinks = [...document.querySelectorAll('.on-this-page a[href^="#"]')];
-function updateCurrentLocation() {
-  for (const link of navigationLinks) {
-    if (link.hash === location.hash) {
-      link.setAttribute('aria-current', 'location');
-      const group = link.closest('.type-navigation');
-      if (group) group.open = true;
-    }
-    else link.removeAttribute('aria-current');
-  }
-}
-window.addEventListener('hashchange', updateCurrentLocation);
-updateCurrentLocation();
-</script>"##;
+const STYLE: &str = include_str!("../../tools/driver/documentation/style.css");
+const SCRIPT: &str = include_str!("../../tools/driver/documentation/script.html");
+static TOOL: tooling::Tool = tooling::Tool::new(include_bytes!(concat!(
+    env!("OUT_DIR"),
+    "/documentation.fbc"
+)));
 
 pub(super) struct Site {
+    #[cfg(test)]
     pub index: String,
+    #[cfg(test)]
     pub modules: Vec<ModulePage>,
     pub module_count: usize,
     pub declaration_count: usize,
 }
 
+#[cfg(test)]
 pub(super) struct ModulePage {
     pub file_name: String,
     pub html: String,
 }
 
-pub(super) fn site(compilation: &Compilation) -> Site {
-    let mut index_groups = std::collections::BTreeMap::<String, Vec<(String, String)>>::new();
-    let mut pages = Vec::new();
-    let mut declaration_count = 0;
-    for (module_id, module) in compilation.hir.modules.iter() {
-        if !compilation.package.is_input_module(&module.name) {
-            continue;
-        }
-        let file_name = module_file_name(&module.name);
-        let count = module
-            .functions
-            .values()
-            .filter_map(|overloads| overloads.first().copied())
-            .filter(|id| visible_function(compilation, *id))
-            .count()
-            + module.constants.len()
-            + module
-                .records
-                .values()
-                .map(|id| &compilation.hir.records[*id])
-                .filter(|record| visible_type(record.public, record.documentation.as_deref()))
-                .count()
-            + module
-                .variant_types
-                .values()
-                .map(|id| &compilation.hir.variant_types[*id])
-                .filter(|variant| visible_type(variant.public, variant.documentation.as_deref()))
-                .count();
-        declaration_count += count;
-        let namespace = module.name.split('.').next().unwrap_or(&module.name);
-        let depth = module.name.matches('.').count();
-        let mut index_item = String::new();
-        let _ = write!(
-            index_item,
-            "<li data-module=\"{}\" style=\"--depth:{depth}\"><a href=\"modules/{file_name}\"><strong>{}</strong><small>{count} declaration{}</small></a></li>",
-            escape(&module.name.to_lowercase()),
-            escape(&module.name),
-            if count == 1 { "" } else { "s" }
-        );
-        index_groups
-            .entry(namespace.to_owned())
-            .or_default()
-            .push((module.name.clone(), index_item));
-        pages.push(ModulePage {
-            file_name,
-            html: module_page(compilation, module_id),
-        });
+// Count-prefixed string stream, consumed by Reader in documentation.fos.
+// Optional values use a presence flag so missing and empty documentation differ.
+#[derive(Default)]
+struct Data(Vec<String>);
+impl Data {
+    fn text(&mut self, value: impl Into<String>) {
+        self.0.push(value.into());
     }
-    let module_count = pages.len();
-    let mut index_items = String::new();
-    let mut jumps = String::new();
-    for (index, (namespace, mut entries)) in index_groups.into_iter().enumerate() {
-        entries.sort_by(|a, b| a.0.cmp(&b.0));
-        let count = entries.len();
-        let _ = write!(
-            jumps,
-            "<a href=\"#namespace-{index}\" data-module-jump>{}</a>",
-            escape(&namespace)
-        );
-        let _ = write!(
-            index_items,
-            "<details class=\"module-group\" id=\"namespace-{index}\" data-module-group open><summary>{}<small>{count} modules</small></summary><ul class=\"module-list\">",
-            escape(&namespace)
-        );
-        for (_, entry) in entries {
-            index_items.push_str(&entry);
-        }
-        index_items.push_str("</ul></details>");
+    fn number(&mut self, value: usize) {
+        self.text(value.to_string());
     }
-    Site {
-        index: page(
-            "Foster documentation",
-            "<h1>Foster documentation</h1><p>Resolved package API reference</p>",
-            &format!(
-                "<div class=\"summary\"><span>{module_count} module{module_suffix}</span><span>{declaration_count} declaration{declaration_suffix}</span></div><h2>Modules</h2><label for=\"module-filter\">Filter modules by name</label><input id=\"module-filter\" class=\"filter\" type=\"search\" placeholder=\"e.g. collections or string\" aria-label=\"Filter modules\" data-module-filter><p class=\"filter-status\" role=\"status\" data-module-status>{module_count} modules</p><nav class=\"module-jumps\" aria-label=\"Module namespaces\">{jumps}</nav>{index_items}<p class=\"no-results\" role=\"status\" data-no-results hidden>No modules match your filter.</p>",
-                module_suffix = if module_count == 1 { "" } else { "s" },
-                declaration_suffix = if declaration_count == 1 { "" } else { "s" },
-            ),
-            "style.css",
-        ),
-        modules: pages,
-        module_count,
-        declaration_count,
+    fn flag(&mut self, value: bool) {
+        self.text(if value { "1" } else { "0" });
+    }
+    fn optional(&mut self, value: Option<&str>) {
+        self.flag(value.is_some());
+        if let Some(value) = value {
+            self.text(value);
+        }
+    }
+    fn docs(&mut self, value: Option<&str>) {
+        self.optional(value.map(markdown).as_deref());
+    }
+    fn group(&mut self, name: &str, kind: &str, owner: &str, count: usize) {
+        self.text(name);
+        self.text(name);
+        self.text(kind);
+        self.text(owner);
+        self.number(count);
+    }
+    fn overload(&mut self, public: bool, signature: String, docs: Option<&str>) {
+        self.flag(public);
+        self.text(signature);
+        self.docs(docs);
     }
 }
 
-fn module_page(compilation: &Compilation, module_id: ModuleId) -> String {
-    let module = &compilation.hir.modules[module_id];
-    let mut body = String::from("<div id=\"module-overview\"><h2>Overview</h2>");
-    body.push_str("<details class=\"reference-help\"><summary>How to read this reference</summary><p>Green <strong>public</strong> labels mark accessible declarations; amber <strong>private</strong> labels mark implementation details. A public type can contain private fields. Visibility is shown for each member independently.</p><p>Read fields as <code>value.field</code> and call methods as <code>value.method()</code>, including zero-argument methods. Required methods describe a type's contract; functions and methods list implementations. Overloads share one navigation entry, with a signature and description for each overload.</p><p>Signatures show resolved types and effects, including inferred information, and are reference notation rather than copyable declarations. <code>consume</code> transfers ownership: pass an existing owned binding with <code>move</code>. <code>read</code>, <code>mut</code>, and <code>reshape</code> describe access to the named group or path; <code>suspend</code> permits suspension. Check the description for bounds, units, copying, and failure behavior.</p><p><code>Option&lt;T&gt;</code> represents an optional value; <code>Result&lt;T, E&gt;</code> carries success or a typed error. Assertions and execution failures are distinct from returned errors.</p></details>");
-    if let Some(documentation) = &module.documentation {
-        body.push_str("<article class=\"module-documentation\">");
-        body.push_str(&markdown(documentation));
-        body.push_str("</article>");
-    }
-    body.push_str(&provided_types(compilation, module_id));
-    body.push_str("</div>");
-    let mut count = 0;
-    let mut contents = String::new();
+#[cfg(test)]
+pub(super) fn site(compilation: &Compilation) -> Result<Site, FosterError> {
+    render(compilation, "render", "")
+}
 
-    for record_id in module.records.values().copied() {
-        let record = &compilation.hir.records[record_id];
-        if !visible_type(record.public, record.documentation.as_deref()) {
-            continue;
-        }
-        count += 1;
-        contents_entry(&mut contents, &record.name, &record.name, "type");
-        declaration(
-            &mut body,
-            &record.name,
-            &record.name,
-            record.public,
-            &record_signature(compilation, record),
-            record.documentation.as_deref(),
-            "type",
-        );
+pub(super) fn write(
+    compilation: &Compilation,
+    output: &std::path::Path,
+) -> Result<Site, FosterError> {
+    let output = output
+        .to_str()
+        .ok_or_else(|| FosterError::runtime("documentation output path must be valid UTF-8"))?;
+    render(compilation, "write", output)
+}
+
+fn render(compilation: &Compilation, operation: &str, output: &str) -> Result<Site, FosterError> {
+    let mut data = Data::default();
+    for text in [operation, output, STYLE, SCRIPT] {
+        data.text(text);
     }
-    for variant_id in module.variant_types.values().copied() {
-        let variant = &compilation.hir.variant_types[variant_id];
-        if !visible_type(variant.public, variant.documentation.as_deref()) {
-            continue;
-        }
-        count += 1;
-        contents_entry(&mut contents, &variant.name, &variant.name, "variant");
-        declaration(
-            &mut body,
-            &variant.name,
-            &variant.name,
-            variant.public,
-            &variant_signature(compilation, variant_id),
-            variant.documentation.as_deref(),
-            "variant",
-        );
-    }
-    for constant_id in module.constants.values().copied() {
-        count += 1;
-        let constant = &compilation.hir.constants[constant_id];
-        contents_entry(&mut contents, &constant.name, &constant.name, "constant");
-        declaration(
-            &mut body,
-            &constant.name,
-            &constant.name,
-            constant.public,
-            &constant_signature(compilation, constant_id),
-            constant.documentation.as_deref(),
-            "constant",
-        );
-    }
-    for overloads in module.functions.values() {
-        let visible = overloads
-            .iter()
+    let mut modules = compilation
+        .hir
+        .modules
+        .iter()
+        .filter(|(_, module)| compilation.package.is_input_module(&module.name))
+        .collect::<Vec<_>>();
+    modules.sort_by(|a, b| a.1.name.cmp(&b.1.name));
+    data.number(modules.len());
+    for (id, module) in modules {
+        data.text(&module.name);
+        data.docs(module.documentation.as_deref());
+        provided_types(&mut data, compilation, id);
+        let records = module
+            .records
+            .values()
             .copied()
-            .filter(|id| visible_function(compilation, *id))
-            .collect::<Vec<_>>();
-        let Some(&function_id) = visible.first() else {
-            continue;
-        };
-        count += 1;
-        let function = &compilation.hir.functions[function_id];
-        let source_name = source_function_name(function);
-        let entry_start = contents.len();
-        contents_entry(&mut contents, &function.name, &source_name, "function");
-        if let Some(owner) = function_owner(compilation, function_id) {
-            let hidden_record = module.records.get(&owner).is_some_and(|id| {
+            .filter(|id| {
                 let ty = &compilation.hir.records[*id];
-                !visible_type(ty.public, ty.documentation.as_deref())
-            });
-            let hidden_variant = module.variant_types.get(&owner).is_some_and(|id| {
+                visible_type(ty.public, ty.documentation.as_deref())
+            })
+            .collect::<Vec<_>>();
+        let variants = module
+            .variant_types
+            .values()
+            .copied()
+            .filter(|id| {
                 let ty = &compilation.hir.variant_types[*id];
-                !visible_type(ty.public, ty.documentation.as_deref())
+                visible_type(ty.public, ty.documentation.as_deref())
+            })
+            .collect::<Vec<_>>();
+        let functions = module
+            .functions
+            .values()
+            .map(|overloads| {
+                overloads
+                    .iter()
+                    .copied()
+                    .filter(|id| visible_function(compilation, *id))
+                    .collect::<Vec<_>>()
+            })
+            .filter(|overloads| !overloads.is_empty())
+            .collect::<Vec<_>>();
+        data.number(records.len() + variants.len() + module.constants.len() + functions.len());
+        for id in records {
+            let ty = &compilation.hir.records[id];
+            data.group(&ty.name, "type", "", 1);
+            data.overload(
+                ty.public,
+                record_signature(compilation, ty),
+                ty.documentation.as_deref(),
+            );
+        }
+        for id in variants {
+            let ty = &compilation.hir.variant_types[id];
+            data.group(&ty.name, "variant", "", 1);
+            data.overload(
+                ty.public,
+                variant_signature(compilation, id),
+                ty.documentation.as_deref(),
+            );
+        }
+        for id in module.constants.values().copied() {
+            let constant = &compilation.hir.constants[id];
+            data.group(&constant.name, "constant", "", 1);
+            data.overload(
+                constant.public,
+                constant_signature(compilation, id),
+                constant.documentation.as_deref(),
+            );
+        }
+        for overloads in functions {
+            let first = &compilation.hir.functions[overloads[0]];
+            let owner = function_owner(compilation, overloads[0]).filter(|owner| {
+                let hidden_record = module.records.get(owner).is_some_and(|id| {
+                    let ty = &compilation.hir.records[*id];
+                    !visible_type(ty.public, ty.documentation.as_deref())
+                });
+                let hidden_variant = module.variant_types.get(owner).is_some_and(|id| {
+                    let ty = &compilation.hir.variant_types[*id];
+                    !visible_type(ty.public, ty.documentation.as_deref())
+                });
+                !hidden_record && !hidden_variant
             });
-            if !hidden_record && !hidden_variant {
-                contents.insert_str(
-                    entry_start + 3,
-                    &format!(" data-owner=\"{}\"", escape(&owner)),
-                );
-            }
-        }
-        if visible.len() == 1 {
-            declaration(
-                &mut body,
-                &function.name,
-                &source_name,
-                function.public,
-                &function_signature(compilation, function_id),
-                function.documentation.as_deref(),
+            data.group(
+                &first.name,
                 "function",
+                owner.as_deref().unwrap_or(""),
+                overloads.len(),
             );
-        } else {
-            let _ = write!(
-                body,
-                "<article id=\"{}\"><h2><a class=\"anchor\" href=\"#{}\">{}</a><span class=\"badge kind\">function</span></h2>",
-                escape(&function.name),
-                escape(&function.name),
-                escape(&source_name)
-            );
-            for (index, id) in visible.iter().enumerate() {
-                let overload = &compilation.hir.functions[*id];
-                let _ = write!(
-                    body,
-                    "<section><h3>Overload {}{}</h3><pre><code>{}</code></pre>",
-                    index + 1,
-                    visibility_badge(overload.public),
-                    function_signature(compilation, *id)
+            for id in overloads {
+                let function = &compilation.hir.functions[id];
+                data.overload(
+                    function.public,
+                    function_signature(compilation, id),
+                    function.documentation.as_deref(),
                 );
-                body.push_str(&markdown(
-                    overload
-                        .documentation
-                        .as_deref()
-                        .unwrap_or("No documentation provided."),
-                ));
-                body.push_str("</section>");
             }
-            body.push_str("<a class=\"back-to-navigation\" href=\"#page-navigation\">↑ On this page</a></article>");
         }
     }
-    if count == 0 {
-        body.push_str("<p class=\"empty\">This module has no declarations.</p>");
+    decode_site(&TOOL.run(data.0)?)
+}
+
+fn invalid_response() -> FosterError {
+    FosterError::runtime("Foster documentation tool returned an invalid response")
+}
+fn field<'a>(value: &'a Value, key: &str) -> Result<&'a Value, FosterError> {
+    match value {
+        Value::Record { fields, .. } => fields.get(key).ok_or_else(invalid_response),
+        _ => Err(invalid_response()),
     }
-    let body = format!(
-        "<div class=\"module-layout\"><nav id=\"page-navigation\" class=\"on-this-page\" aria-label=\"On this page\"><a class=\"crumb\" href=\"../index.html\">← All modules</a><details open><summary>On this page</summary><a href=\"#module-overview\">Overview</a><label for=\"declaration-filter\">Find a declaration</label><input id=\"declaration-filter\" class=\"filter\" type=\"search\" placeholder=\"Name or kind…\" data-declaration-filter><p class=\"filter-status\" role=\"status\" data-declaration-status>{count} declarations</p><ul>{contents}</ul></details></nav><div class=\"module-content\">{body}</div></div>"
-    );
-    page(
-        &format!("{} — Foster documentation", module.name),
-        &format!(
-            "<h1>module {}</h1><p>{count} declaration{}</p>",
-            escape(&module.name),
-            if count == 1 { "" } else { "s" }
-        ),
-        &body,
-        "../style.css",
-    )
+}
+#[cfg(test)]
+fn text_field(value: &Value, key: &str) -> Result<String, FosterError> {
+    tooling::string(field(value, key)?)
+}
+fn count_field(value: &Value, key: &str) -> Result<usize, FosterError> {
+    match field(value, key)? {
+        Value::Integer(count) => usize::try_from(*count).map_err(|_| invalid_response()),
+        _ => Err(invalid_response()),
+    }
+}
+fn decode_site(value: &Value) -> Result<Site, FosterError> {
+    #[cfg(test)]
+    let modules = field(value, "modules")?
+        .as_list()
+        .ok_or_else(invalid_response)?
+        .iter()
+        .map(|page| {
+            Ok(ModulePage {
+                file_name: text_field(page, "file_name")?,
+                html: text_field(page, "html")?,
+            })
+        })
+        .collect::<Result<Vec<_>, FosterError>>()?;
+    Ok(Site {
+        #[cfg(test)]
+        index: text_field(value, "index")?,
+        #[cfg(test)]
+        modules,
+        module_count: count_field(value, "module_count")?,
+        declaration_count: count_field(value, "declaration_count")?,
+    })
 }
 
 fn visibility_badge(public: bool) -> &'static str {
@@ -484,16 +240,27 @@ pub(super) fn visible_type(public: bool, documentation: Option<&str>) -> bool {
     public || documentation.is_some_and(|docs| !docs.trim().is_empty())
 }
 
-fn provided_types(compilation: &Compilation, module_id: ModuleId) -> String {
+fn provided_types(cards: &mut Data, compilation: &Compilation, module_id: ModuleId) {
     let module = &compilation.hir.modules[module_id];
-    let mut cards = String::new();
+    cards.number(
+        module
+            .records
+            .values()
+            .filter(|id| compilation.hir.records[**id].public)
+            .count()
+            + module
+                .variant_types
+                .values()
+                .filter(|id| compilation.hir.variant_types[**id].public)
+                .count(),
+    );
     for record_id in module.records.values().copied() {
         let record = &compilation.hir.records[record_id];
         if !record.public {
             continue;
         }
         type_card(
-            &mut cards,
+            cards,
             compilation,
             module_id,
             &record.name,
@@ -527,7 +294,7 @@ fn provided_types(compilation: &Compilation, module_id: ModuleId) -> String {
             continue;
         }
         type_card(
-            &mut cards,
+            cards,
             compilation,
             module_id,
             &variant.name,
@@ -556,18 +323,11 @@ fn provided_types(compilation: &Compilation, module_id: ModuleId) -> String {
             },
         );
     }
-    if cards.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "<section aria-labelledby=\"provided-types\"><h2 id=\"provided-types\">Provided types</h2><div class=\"type-grid\">{cards}</div></section>"
-        )
-    }
 }
 
 #[allow(clippy::too_many_arguments)]
 fn type_card(
-    cards: &mut String,
+    cards: &mut Data,
     compilation: &Compilation,
     module_id: ModuleId,
     name: &str,
@@ -578,15 +338,10 @@ fn type_card(
     requirements: Vec<(&str, Option<&str>)>,
     alternatives_title: &str,
 ) {
-    let _ = write!(
-        cards,
-        "<article class=\"type-summary\"><h3><a href=\"#{0}\">{0}</a>{1}</h3>",
-        escape(name),
-        visibility_badge(public)
-    );
-    if let Some(docs) = docs {
-        cards.push_str(&markdown(docs));
-    }
+    cards.text(name);
+    cards.flag(public);
+    cards.docs(docs);
+    cards.number(4);
     let module = &compilation.hir.modules[module_id];
     let contracts = module
         .records
@@ -641,53 +396,32 @@ fn type_card(
                 && function_owner(compilation, *id).as_deref() == Some(name)
         })
         .collect::<Vec<_>>();
-    if !functions.is_empty() {
-        cards.push_str("<h4>Functions and methods</h4><ul>");
-        for id in functions {
-            let function = &compilation.hir.functions[id];
-            let label = function.name.rsplit('.').next().unwrap_or(&function.name);
-            let summary = function
+    cards.number(functions.len());
+    for id in functions {
+        let function = &compilation.hir.functions[id];
+        cards.text(&function.name);
+        cards.text(function.name.rsplit('.').next().unwrap_or(&function.name));
+        cards.optional(
+            function
                 .documentation
                 .as_deref()
-                .and_then(|docs| docs.lines().find(|line| !line.trim().is_empty()));
-            let _ = write!(
-                cards,
-                "<li><a href=\"#{}\"><code>{}</code></a>{}</li>",
-                escape(&function.name),
-                escape(label),
-                summary.map_or_else(String::new, |text| format!(
-                    "<br><small>{}</small>",
-                    escape(text)
-                ))
-            );
-        }
-        cards.push_str("</ul>");
+                .and_then(|docs| docs.lines().find(|line| !line.trim().is_empty())),
+        );
     }
-    cards.push_str("</article>");
 }
 
 fn type_members<'a>(
-    cards: &mut String,
+    cards: &mut Data,
     heading: &str,
     members: impl Iterator<Item = (String, Option<&'a str>)>,
 ) {
     let members = members.collect::<Vec<_>>();
-    if members.is_empty() {
-        return;
-    }
-    let _ = write!(cards, "<h4>{heading}</h4><ul>");
+    cards.text(heading);
+    cards.number(members.len());
     for (name, docs) in members {
-        let _ = write!(
-            cards,
-            "<li><code>{}</code>{}</li>",
-            name,
-            docs.map_or_else(String::new, |text| format!(
-                "<br><small>{}</small>",
-                escape(text)
-            ))
-        );
+        cards.text(name);
+        cards.optional(docs);
     }
-    cards.push_str("</ul>");
 }
 
 fn function_owner(compilation: &Compilation, id: FunctionId) -> Option<String> {
@@ -725,43 +459,6 @@ fn constant_signature(compilation: &Compilation, id: ConstantId) -> String {
         if constant.public { "pub " } else { "" },
         constant.name
     )
-}
-
-fn contents_entry(contents: &mut String, anchor: &str, name: &str, kind: &str) {
-    let _ = write!(
-        contents,
-        "<li data-declaration><a href=\"#{}\">{} <small>{kind}</small></a></li>",
-        escape(anchor),
-        escape(name)
-    );
-}
-
-fn declaration(
-    body: &mut String,
-    anchor: &str,
-    name: &str,
-    public: bool,
-    signature: &str,
-    docs: Option<&str>,
-    kind: &str,
-) {
-    let _ = write!(
-        body,
-        "<article id=\"{}\"><h2><a class=\"anchor\" href=\"#{}\">{}</a><span class=\"badge kind\">{kind}</span>{}</h2><pre><code>{}</code></pre>",
-        escape(anchor),
-        escape(anchor),
-        escape(name),
-        visibility_badge(public),
-        signature
-    );
-    if let Some(docs) = docs {
-        body.push_str(&markdown(docs));
-    } else {
-        body.push_str("<p class=\"empty\">No documentation provided.</p>");
-    }
-    body.push_str(
-        "<a class=\"back-to-navigation\" href=\"#page-navigation\">↑ On this page</a></article>",
-    );
 }
 
 fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
@@ -817,10 +514,6 @@ fn function_signature(compilation: &Compilation, id: FunctionId) -> String {
         "{}func {name}{generics}({parameters}) -&gt; {result}{effects}",
         if function.public { "pub " } else { "" },
     )
-}
-
-fn source_function_name(function: &crate::hir::Function) -> String {
-    function.name.clone()
 }
 
 fn record_signature(compilation: &Compilation, record: &crate::hir::Record) -> String {
@@ -971,13 +664,6 @@ fn angled(values: &[String]) -> String {
     }
 }
 
-fn page(title: &str, heading: &str, body: &str, stylesheet: &str) -> String {
-    format!(
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>{}</title><link rel=\"stylesheet\" href=\"{stylesheet}\"></head><body><a class=\"skip-link\" href=\"#main-content\">Skip to content</a><header>{heading}</header><main id=\"main-content\" tabindex=\"-1\">{body}</main>{SCRIPT}</body></html>",
-        escape(title)
-    )
-}
-
 pub(super) fn module_file_name(name: &str) -> String {
     format!("{}.html", name.replace('.', "-"))
 }
@@ -1060,7 +746,7 @@ func main() -> Int { 0 }
         )
         .unwrap();
         let compilation = crate::check_package(&root).unwrap();
-        let site = site(&compilation);
+        let site = site(&compilation).unwrap();
         let html = &site
             .modules
             .iter()
@@ -1091,7 +777,7 @@ func main() -> Int { 0 }
     #[test]
     fn library_type_links_only_target_generated_pages_and_anchors() {
         let compilation = crate::check_package("library").unwrap();
-        let site = site(&compilation);
+        let site = site(&compilation).unwrap();
         let string = &site
             .modules
             .iter()
@@ -1174,7 +860,7 @@ func main() -> Int { 0 }
              /// Boolean conversion.\npub func convert(value: Bool) -> Int { branch value { true -> 1\n_ -> 0 } }\n\
              func main() {}",
         ).unwrap();
-        let site = site(&compilation);
+        let site = site(&compilation).unwrap();
         let html = &site.modules[0].html;
         assert!(html.contains("func convert(value: Int)"));
         assert!(html.contains("pub func convert(value: Bool)"));
@@ -1195,7 +881,7 @@ func main() -> Int { 0 }
              func main() {}",
         )
         .unwrap();
-        let site = site(&compilation);
+        let site = site(&compilation).unwrap();
         let html = &site.modules[0].html;
         let overview = html.split("<article id=\"Example\">").next().unwrap();
         assert!(overview.contains("Int<span class=\"badge visibility-public\">public</span>"));
@@ -1245,7 +931,7 @@ func main() -> Int { 0 }
 "#,
         )
         .unwrap();
-        let site = site(&compilation);
+        let site = site(&compilation).unwrap();
         let html = &site.modules[0].html;
 
         for name in [
@@ -1286,7 +972,7 @@ func main() -> Int { 0 }
             "import core.option\n\nfunc main() -> Option<Int> { Option.Some(42) }\n",
         )
         .unwrap();
-        let site = site(&compilation);
+        let site = site(&compilation).unwrap();
 
         assert_eq!(site.module_count, 1);
         assert!(site.index.contains("data-module=\"main\""));

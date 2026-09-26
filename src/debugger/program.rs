@@ -23,13 +23,7 @@ pub(super) struct DebugProgram {
 
 impl DebugProgram {
     pub fn compile(compilation: &Compilation) -> Result<Self, FosterError> {
-        let mut locals = HashMap::new();
-        let shared = crate::codegen::program::compile_with_locals(compilation, Some(&mut locals))?;
-        let mut program = crate::codegen::vm::lower_shared_program(shared)
-            .map_err(|e| FosterError::runtime(e.to_string()))?;
-        vm::optimizer::finalize_register_drops(&mut program);
-        crate::symbols::link(&mut program)?;
-        vm::verify(&program)?;
+        let (program, locals) = vm::compile_debug(compilation)?;
         let mut functions = HashMap::new();
         for (id, slots) in locals {
             let declaration = &compilation.hir.functions[id];

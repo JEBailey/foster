@@ -1,0 +1,52 @@
+//! Project creation used by the installed Foster command.
+import core.code_point
+import core.list
+import core.option
+import core.result
+import core.string
+import std.fs as fs
+import std.io
+import std.path as paths
+import std.process
+
+func checked_io(outcome: Result<(), IoError>) -> Result<(), String> [consume outcome] {
+    branch outcome {
+        Result.Ok(_) -> Result.Ok(())
+        Result.Error(error) -> Result.Error(error.message)
+    }
+}
+
+func main(arguments: Arguments) -> Result<String, String> {
+    let requested = arguments.values[0].copy()
+    return Result.Error("project path `" + requested + "` exists and is not a directory") if fs::exists?(requested) && !fs::directory?(requested)
+    try checked_io(fs::create_directory_all(requested))
+    let root = branch paths::canonicalize(requested) {
+        Result.Ok(value) -> value
+        Result.Error(error) -> { return Result.Error(error.message) }
+    }
+    let manifest = paths::join(root, "foster.toml")
+    return Result.Error("project manifest `" + manifest + "` already exists") if fs::exists?(manifest)
+    let name = branch {
+        arguments.values.length > 1 -> arguments.values[1].copy()
+        _ -> branch paths::file_name(root) {
+            Option.Some(value) -> value
+            Option.None -> { return Result.Error("cannot infer a package name; pass `--name <name>`") }
+        }
+    }
+    let valid = !name.empty?
+    for character in name.code_points() {
+        let value = character.as_int()
+        valid = valid && ((value >= 65 && value <= 90) || (value >= 97 && value <= 122) || (value >= 48 && value <= 57) || value == 45 || value == 95)
+    }
+    return Result.Error("package names may contain only ASCII letters, digits, hyphens, and underscores") if !valid
+    let source = paths::join(root, "src")
+    return Result.Error("default source path `" + source + "` exists and is not a directory") if fs::exists?(source) && !fs::directory?(source)
+    try checked_io(fs::create_directory_all(source))
+    let main_path = paths::join(source, "main.fos")
+    branch {
+        !fs::exists?(main_path) -> { try checked_io(fs::write_text(main_path, "func main() -> () {\n    println(\"Hello, Foster!\")\n}\n")) }
+        _ -> ()
+    }
+    try checked_io(fs::write_text(manifest, "[package]\nname = \"" + name + "\"\nsource = \"src\"\n"))
+    Result.Ok("created Foster project `" + name + "` at " + root + "\n  " + manifest + "\n  " + main_path + "\n")
+}

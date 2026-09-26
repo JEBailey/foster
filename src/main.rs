@@ -365,64 +365,13 @@ fn source_target_or_current(arguments: &ArgMatches) -> Result<SourceTarget, Box<
 }
 
 fn init(arguments: &ArgMatches) -> Result<(), Box<dyn Error>> {
-    let requested_root = required_path(arguments, "path");
-    if requested_root.exists() && !requested_root.is_dir() {
-        return Err(format!(
-            "project path `{}` exists and is not a directory",
-            requested_root.display()
-        )
-        .into());
-    }
-    fs::create_dir_all(requested_root)?;
-    let root = fs::canonicalize(requested_root)?;
-    let manifest = root.join(foster::project::MANIFEST_NAME);
-    if manifest.exists() {
-        return Err(format!("project manifest `{}` already exists", manifest.display()).into());
-    }
-
-    let name = arguments
-        .get_one::<String>("name")
-        .cloned()
-        .or_else(|| {
-            root.file_name()
-                .and_then(|name| name.to_str())
-                .map(str::to_owned)
-        })
-        .ok_or("cannot infer a package name; pass `--name <name>`")?;
-    if name.is_empty()
-        || !name
-            .chars()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
-    {
-        return Err(
-            "package names may contain only ASCII letters, digits, hyphens, and underscores".into(),
-        );
-    }
-
-    let source_root = root.join(foster::project::DEFAULT_SOURCE_DIRECTORY);
-    if source_root.exists() && !source_root.is_dir() {
-        return Err(format!(
-            "default source path `{}` exists and is not a directory",
-            source_root.display()
-        )
-        .into());
-    }
-    fs::create_dir_all(&source_root)?;
-    let main = source_root.join("main.fos");
-    if !main.exists() {
-        fs::write(
-            &main,
-            "func main() -> () {\n    println(\"Hello, Foster!\")\n}\n",
-        )?;
-    }
-    fs::write(
-        &manifest,
-        format!("[package]\nname = \"{name}\"\nsource = \"src\"\n"),
-    )?;
-
-    println!("created Foster project `{name}` at {}", root.display());
-    println!("  {}", manifest.display());
-    println!("  {}", main.display());
+    print!(
+        "{}",
+        foster::init_project(
+            required_path(arguments, "path"),
+            arguments.get_one::<String>("name").map(String::as_str)
+        )?
+    );
     Ok(())
 }
 

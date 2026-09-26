@@ -245,6 +245,10 @@ Ordinary borrowed parameters also support result contracts such as
 The parameter need not itself have an explicit reference type. A consumed parameter cannot
 supply escaping references because its storage belongs to the callee.
 
+A returned reference can be passed directly to another reference parameter, either as a
+call expression or through a local binding. The call retains its existing group and origin;
+it does not add another reference layer or extend the origin's lifetime.
+
 `self` is the first parameter of an instance method and follows exactly the same group rule
 as every other parameter. A function without a `self` parameter cannot name that group.
 Compiler-created closure functions derive group effects from their reference captures.
@@ -606,23 +610,23 @@ AST
 
 The implementation is divided by responsibility:
 
-- `src/block.rs` couples statements to source spans so AST and HIR passes cannot desynchronize
+- `compiler/src/block.rs` couples statements to source spans so AST and HIR passes cannot desynchronize
   parallel body and location vectors.
-- `src/hir/visit.rs` is the policy-free recursive HIR traversal used by queries and capture-effect
+- `compiler/src/hir/visit.rs` is the policy-free recursive HIR traversal used by queries and capture-effect
   analysis; path-sensitive passes layer their own state on top of the same node coverage.
-- `src/control_flow.rs` owns reachability-aware branch-arm summaries and the semantic branch/loop
+- `compiler/src/control_flow.rs` owns reachability-aware branch-arm summaries and the semantic branch/loop
   CFG consumed by both ownership-MIR and bytecode lowering. Branch tests retain source order, and
   matched arms complete the branch without falling through to later tests.
-- `src/hir/lower/` resolves names and converts source references, moves, captures, and places into
+- `compiler/src/hir/lower/` resolves names and converts source references, moves, captures, and places into
   stable HIR IDs.
-- `src/semantics.rs` is the authoritative place/value and resolved-member classifier shared by
+- `compiler/src/semantics.rs` is the authoritative place/value and resolved-member classifier shared by
   type checking, effect inference, ownership lowering, and bytecode lowering.
-- `src/typecheck/effects.rs` derives group access, consume, and suspension requirements,
+- `compiler/src/typecheck/effects.rs` derives group access, consume, and suspension requirements,
   classifying pending captures from inferred local types during convergence.
-- `src/hir/ownership.rs` validates groups, resolves capture modes, and rejects use after a closure
+- `compiler/src/hir/ownership.rs` validates groups, resolves capture modes, and rejects use after a closure
   capture moved its source.
-- `src/hir/queries.rs` contains policy-free structural queries that do not require resolved types.
-- `src/ownership/` lowers typed HIR to ownership MIR basic blocks containing explicit
+- `compiler/src/hir/queries.rs` contains policy-free structural queries that do not require resolved types.
+- `compiler/src/ownership/` lowers typed HIR to ownership MIR basic blocks containing explicit
   read/copy/move/borrow/initialize operations, validates consuming call contracts, then checks
   initialization and partial-move state at control-flow joins. Ownership MIR also carries stable
   loan identities, borrower stores, typed invalidations, writes, and suspension points. Its region
@@ -631,9 +635,9 @@ The implementation is divided by responsibility:
   The same pass validates returned borrower escape and self-origin storage. Typed effect-to-place
   substitution is shared by MIR lowering and effect validation; there is no separate HIR temporal
   loan checker.
-- `src/vm/value.rs` implements slots and the common weak `PlaceHandle` used by projected references
+- `vm/src/value.rs` implements slots and the common weak `PlaceHandle` used by projected references
   and borrowed captures.
-- `src/vm/runtime.rs` and VM capture instructions represent copied/moved values and borrowed places.
+- `vm/src/runtime.rs` and VM capture instructions represent copied/moved values and borrowed places.
 
 HIR uses resolved `LocalId` and `ExprId` identities, so ownership checks do not compare source names.
 Canonical places contain a root local plus field, index, or dereference projections. Ownership MIR

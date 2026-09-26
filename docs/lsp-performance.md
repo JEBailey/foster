@@ -95,7 +95,7 @@ Gaps, in cost order for a steady-state body edit:
 
 ### 1. Eliminate the second typecheck pass
 
-`infer_capture_modes` (`src/hir/ownership.rs`) returns `changed = true` whenever it
+`infer_capture_modes` (`compiler/src/hir/ownership.rs`) returns `changed = true` whenever it
 sees a `CaptureMode::Pending` capture. Every fresh HIR lowering produces all
 captures as `Pending`, so the pipeline's `types.final` pass re-runs on **every**
 keystroke — 309 ms of the 1037 ms edit cost — even when nothing changed.
@@ -109,7 +109,7 @@ Expected: −300 ms per edit and per initial check.
 
 ### 2. Make `BodyCache::prepare` incremental and cheap
 
-`prepare` (`src/typecheck/incremental.rs`) runs on every check and currently:
+`prepare` (`compiler/src/typecheck/incremental.rs`) runs on every check and currently:
 
 - re-lexes every function body in the package and stringifies the token kinds
   (`format!("{:?}")`) to build a whitespace-insensitive shape key;

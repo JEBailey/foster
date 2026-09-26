@@ -34,7 +34,7 @@ Ownership diagnostics currently reserve these codes:
 | `E0507` | A borrow-by-default parameter is consumed without a consuming contract. |
 | `E0728` | A loan required after suspension is not backed by storage in the parked invocation. |
 
-These identifiers are defined once in `src/ownership/diagnostics.rs`. Their semantic categories are
+These identifiers are defined once in `compiler/src/ownership/diagnostics.rs`. Their semantic categories are
 stable within an ownership-model version; wording, labels, and help may improve without changing the
 code. Reassigning a code to a different category requires an ownership-model version increment.
 

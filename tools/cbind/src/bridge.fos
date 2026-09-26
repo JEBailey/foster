@@ -20,7 +20,10 @@ impl Node {
         Node { parent: self.parent, key: self.key.copy(), kind: self.kind.copy(), text: self.text.copy() }
     }
 }
-pub type Contract = { pub nodes: List<Node>, links: List<List<Int>> }
+pub type Contract = {
+    pub nodes: List<Node>,
+    links: List<List<Int>>
+}
 
 func empty_indices() -> List<Int> { [] }
 
@@ -70,7 +73,10 @@ func indexed(nodes: List<Node>) -> Contract [consume nodes] {
         }
         index = index + 1
     }
-    Contract { nodes: move nodes, links: move links }
+    Contract {
+        nodes: move nodes,
+        links: move links
+    }
 }
 impl Contract {
     pub func json(self, node: Int) -> String {

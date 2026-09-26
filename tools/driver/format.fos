@@ -1,0 +1,169 @@
+//! Formatting policy for already parser-validated Foster source.
+import core.code_point
+import core.list
+import core.result
+import core.string
+import std.process
+
+type ScanState = { depth: Int, quote: Int, escaped: Bool, indents: List<Int> }
+
+func declaration(line: String) -> String {
+    branch { line.starts_with?("pub ") -> line.scalar_slice(4, line.scalar_length()) _ -> line.copy() }
+}
+
+func begins_declaration(line: String) -> Bool {
+    let text = declaration(line)
+    for prefix in ["import ", "const ", "type ", "enum ", "impl ", "func ", "test "] {
+        return true if text.starts_with?(prefix)
+    }
+    false
+}
+
+func continues_type(lines: List<String>, start: Int) -> Bool {
+    let index = start
+    while index < lines.length {
+        let text = lines[index].copy().trim()
+        return text.starts_with?("|") || text.starts_with?("&") if !text.empty?
+        index = index + 1
+    }
+    false
+}
+
+func closers(line: String, state: ScanState) -> Int {
+    return 0 if state.depth != 0 || state.quote != 0
+    let count = 0
+    for point in line.code_points() {
+        let value = point.as_int()
+        break if value != 125 && value != 41 && value != 93
+        count = count + 1
+    }
+    count
+}
+
+func scan(line: String, indent: Int, state: ScanState) -> () {
+    let characters = line.code_points()
+    let index = 0
+    while index < characters.length {
+        let character = characters[index].as_int()
+        let next = branch { index + 1 < characters.length -> characters[index + 1].as_int() _ -> 0 }
+        branch {
+            state.depth > 0 -> {
+                branch {
+                    character == 47 && next == 42 -> { state.depth = state.depth + 1
+                        index = index + 2
+                        continue }
+                    character == 42 && next == 47 -> { state.depth = state.depth - 1
+                        index = index + 2
+                        continue }
+                    _ -> ()
+                }
+                index = index + 1
+                continue
+            }
+            state.quote != 0 -> {
+                branch {
+                    state.escaped -> { state.escaped = false }
+                    character == 92 -> { state.escaped = true }
+                    character == state.quote -> { state.quote = 0 }
+                    _ -> ()
+                }
+                index = index + 1
+                continue
+            }
+            _ -> ()
+        }
+        break if character == 47 && next == 47
+        branch {
+            character == 47 && next == 42 -> { state.depth = 1
+                index = index + 2
+                continue }
+            character == 34 || character == 39 -> { state.quote = character }
+            character == 123 || character == 40 || character == 91 -> { state.indents.push(indent + 1) }
+            character == 125 || character == 41 || character == 93 -> { state.indents.remove(state.indents.length - 1)
+                () }
+            _ -> ()
+        }
+        index = index + 1
+    }
+    ()
+}
+
+func format(source: String) -> String {
+    // Splitting and joining also handles a lone CR, without splitting Unicode scalars.
+    let normalized = source.copy().split("\r\n").join("\n").split("\r").join("\n")
+    let lines = (move normalized).split("\n")
+    let state = ScanState { depth: 0, quote: 0, escaped: false, indents: [] }
+    let output = []
+    let previous_blank = false
+    let type_continuation = false
+    let line_index = 0
+    while line_index < lines.length {
+        let content = lines[line_index].copy().trim()
+        line_index = line_index + 1
+        branch {
+            content.empty? -> {
+                branch { !output.empty? && !previous_blank -> { output.push("") } _ -> () }
+                previous_blank = true
+                continue
+            }
+            _ -> ()
+        }
+        previous_blank = false
+        let next_continues = continues_type(lines, line_index)
+        branch {
+            begins_declaration(content) && !content.starts_with?("|") && !content.starts_with?("&") -> {
+                let text = declaration(content)
+                type_continuation = (text.starts_with?("type ") || text.starts_with?("enum ")) && (content.ends_with?("=") || next_continues)
+            }
+            _ -> ()
+        }
+        let leading = closers(content, state)
+        let retained = branch { state.indents.length >= leading -> state.indents.length - leading _ -> 0 }
+        let indent = 0
+        branch {
+            leading > 0 -> {
+                branch { retained < state.indents.length -> { indent = state.indents[retained] - 1 } _ -> () }
+            }
+            !state.indents.empty? -> { indent = state.indents[state.indents.length - 1] }
+            _ -> ()
+        }
+        let text = declaration(content)
+        let header = text.starts_with?("type ") || text.starts_with?("enum ")
+        branch { type_continuation && !header && indent < 1 -> { indent = 1 } _ -> () }
+        let joins = false
+        branch {
+            type_continuation && !output.empty? -> {
+                let last = declaration(output[output.length - 1].copy().trim())
+                joins = last.starts_with?("enum ") && last.ends_with?("=")
+            }
+            _ -> ()
+        }
+        branch {
+            joins -> { output[output.length - 1] = output[output.length - 1] + " " + content }
+            _ -> {
+                let prefix = ""
+                let level = 0
+                while level < indent { prefix = prefix + "    "
+                    level = level + 1 }
+                output.push(prefix + content)
+            }
+        }
+        scan(content, indent, state)
+        branch { type_continuation && state.indents.empty? && !header && !next_continues -> { type_continuation = false } _ -> () }
+    }
+    while !output.empty? {
+        break if !output[output.length - 1].empty?
+        output.remove(output.length - 1)
+    }
+    output.join("\n") + "\n"
+}
+
+func main(arguments: Arguments) -> Result<String, String> { Result.Ok(format(arguments.values[0])) }
+
+test "formatter is stable around nested comments and Unicode strings" {
+    let source = "func main() {\n/* { /* [ */ } */\nlet text = \"λ}\"\n}\n"
+    let expected = "func main() {\n    /* { /* [ */ } */\n    let text = \"λ}\"\n}\n"
+    assert(format(source) == expected)
+    assert(format(expected) == expected)
+    assert(format("\r\n  \r") == "\n")
+}

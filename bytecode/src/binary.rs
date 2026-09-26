@@ -1,0 +1,236 @@
+//! Portable, deterministic serialization for executable VM programs.
+
+use std::collections::HashMap;
+use std::fmt;
+use std::ops::Range;
+
+use la_arena::{Idx, RawIdx};
+
+use super::{
+    BytecodeFunction, Constant, Instruction, Program, Register, RuntimeRecord, RuntimeVariant,
+    verify,
+};
+use crate::ast::{BinaryOp, ParameterMode, UnaryOp};
+use crate::codegen::types::{ExecutableType, Specialization};
+use crate::hir::{CaptureMode, Function, Local, Pattern, Record, Variant, VariantType};
+use crate::intrinsics::Builtin;
+use crate::types::{DispatchSlot, NominalTypeId};
+
+const MAGIC: &[u8; 8] = b"FOSTERBC";
+pub const FORMAT_VERSION: u16 = 35;
+const MAX_ITEMS: usize = 16_777_216;
+const MAX_STRING: usize = 64 * 1024 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BinaryError {
+    message: String,
+}
+
+impl BinaryError {
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+impl fmt::Display for BinaryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for BinaryError {}
+
+/// Encodes a program using the canonical ordering defined by `docs/binary-format.md`.
+pub fn encode_program(program: &Program) -> Result<Vec<u8>, BinaryError> {
+    verify(program).map_err(|error| BinaryError::new(format!("invalid program: {error}")))?;
+    let mut w = Writer { bytes: Vec::new() };
+    w.bytes.extend_from_slice(MAGIC);
+    w.u16(FORMAT_VERSION);
+    w.u16(0); // flags
+    w.u32(program.metadata.constants.len())?;
+    for value in &program.metadata.constants {
+        w.constant(value)?;
+    }
+
+    let mut functions: Vec<_> = program.functions.iter().collect();
+    functions.sort_by_key(|(id, _)| raw(**id));
+    w.u32(functions.len())?;
+    for (id, function) in functions {
+        w.id(*id);
+        w.function(function)?;
+    }
+    w.u8(u8::from(program.drops_inserted));
+    w.option_id(program.metadata.main);
+    w.u8(u8::from(program.metadata.main_arguments));
+    w.option_id(program.metadata.string_record);
+    w.option_id(program.metadata.symbol_record);
+    w.option_id(program.metadata.list_record);
+    w.option_id(program.metadata.bytes_record);
+    w.option_id(program.metadata.byte_buffer_record);
+    w.option_id(program.metadata.remote_result);
+    w.option_id(program.metadata.remote_error);
+
+    let mut records: Vec<_> = program.metadata.records.iter().collect();
+    records.sort_by_key(|(id, _)| raw(**id));
+    w.u32(records.len())?;
+    for (id, record) in records {
+        w.id(*id);
+        w.string(&record.name)?;
+        w.u32(record.parameters.len())?;
+        for parameter in &record.parameters {
+            w.string(parameter)?;
+        }
+        w.u32(record.fields().len())?;
+        for field in record.fields() {
+            w.string(&field.name)?;
+            w.verification_type(&field.ty)?;
+        }
+    }
+
+    let mut dispatch: Vec<_> = program.metadata.dispatch.iter().collect();
+    dispatch.sort_by_key(|((nominal, slot), _)| (*nominal, *slot));
+    w.u32(dispatch.len())?;
+    for ((nominal, slot), function) in dispatch {
+        w.nominal_type(*nominal);
+        w.u32_value(slot.0);
+        w.id(*function);
+    }
+
+    let mut variants: Vec<_> = program.metadata.variants.iter().collect();
+    variants.sort_by_key(|(id, _)| raw(**id));
+    w.u32(variants.len())?;
+    for (id, variant) in variants {
+        w.id(*id);
+        w.id(variant.parent);
+        w.string(&variant.type_name)?;
+        w.u32(variant.parameters.len())?;
+        for parameter in &variant.parameters {
+            w.string(parameter)?;
+        }
+        w.string(&variant.alternative)?;
+        w.u32(variant.payload.len())?;
+        for ty in &variant.payload {
+            w.verification_type(ty)?;
+        }
+    }
+    w.string(
+        &serde_json::to_string(&program.metadata.symbols.canonical())
+            .map_err(|e| BinaryError::new(e.to_string()))?,
+    )?;
+    Ok(w.bytes)
+}
+
+/// Decodes, bounds-checks, and verifies a serialized program.
+pub fn decode_program(bytes: &[u8]) -> Result<Program, BinaryError> {
+    let mut r = Reader { bytes, offset: 0 };
+    if r.take(8)? != MAGIC {
+        return Err(BinaryError::new("not a Foster bytecode file"));
+    }
+    let version = r.u16()?;
+    if version != FORMAT_VERSION {
+        return Err(BinaryError::new(format!(
+            "unsupported Foster bytecode version {version}"
+        )));
+    }
+    let flags = r.u16()?;
+    if flags != 0 {
+        return Err(BinaryError::new(format!(
+            "unsupported Foster bytecode flags 0x{flags:04x}"
+        )));
+    }
+    let constants = r.vec(|r| r.constant())?;
+    let functions = r.map(|r| Ok((r.id::<Function>()?, r.function()?)))?;
+    let drops_inserted = r.bool()?;
+    let main = r.option_id::<Function>()?;
+    let main_arguments = r.bool()?;
+    let string_record = r.option_id::<Record>()?;
+    let symbol_record = r.option_id::<Record>()?;
+    let list_record = r.option_id::<Record>()?;
+    let bytes_record = r.option_id::<Record>()?;
+    let byte_buffer_record = r.option_id::<Record>()?;
+    let remote_result = r.option_id::<crate::hir::VariantType>()?;
+    let remote_error = r.option_id::<crate::hir::VariantType>()?;
+    let records = r.map(|r| {
+        let id = r.id::<Record>()?;
+        let name = r.string()?;
+        let parameters = r.vec(|r| r.string())?;
+        let fields = r.vec(|r| {
+            Ok(crate::codegen::metadata::RecordField {
+                name: r.string()?,
+                ty: r.verification_type(0)?,
+            })
+        })?;
+        Ok((
+            id,
+            RuntimeRecord::new(name, parameters, fields)
+                .map_err(|error| BinaryError::new(error.to_string()))?,
+        ))
+    })?;
+    let dispatch = r.map(|r| {
+        Ok((
+            (r.nominal_type()?, DispatchSlot(r.u32()?)),
+            r.id::<Function>()?,
+        ))
+    })?;
+    let variants = r.map(|r| {
+        Ok((
+            r.id::<Variant>()?,
+            RuntimeVariant {
+                parent: r.id::<VariantType>()?,
+                type_name: std::sync::Arc::from(r.string()?),
+                parameters: r.vec(|r| r.string())?,
+                alternative: std::sync::Arc::from(r.string()?),
+                payload: r.vec(|r| r.verification_type(0))?,
+            },
+        ))
+    })?;
+    let symbols = serde_json::from_str(&r.string()?)
+        .map_err(|e| BinaryError::new(format!("invalid symbolic module table: {e}")))?;
+    if r.offset != bytes.len() {
+        return Err(BinaryError::new(
+            "trailing bytes after Foster bytecode program",
+        ));
+    }
+    let mut program = Program {
+        drops_inserted,
+        functions,
+        metadata: crate::codegen::metadata::ProgramMetadata {
+            symbols,
+            constants,
+            main,
+            main_arguments,
+            string_record,
+            symbol_record,
+            list_record,
+            bytes_record,
+            byte_buffer_record,
+            remote_result,
+            remote_error,
+            records,
+            dispatch,
+            variants,
+        },
+    };
+    crate::symbols::link(&mut program)
+        .map_err(|error| BinaryError::new(format!("invalid Foster bytecode: {error}")))?;
+    Ok(program)
+}
+
+fn raw<T>(id: Idx<T>) -> u32 {
+    id.into_raw().into_u32()
+}
+fn id<T>(value: u32) -> Idx<T> {
+    Idx::from_raw(RawIdx::from_u32(value))
+}
+
+mod read;
+
+mod write;
+
+use read::Reader;
+use write::Writer;
+
+#[cfg(test)]
+mod tests;
