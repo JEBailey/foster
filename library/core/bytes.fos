@@ -67,7 +67,9 @@ pub type HexError = {
 
 impl Bytes {
     /// Returns an independent immutable byte value.
-    pub func copy(self) -> self [read self] { BytesHost.from_list(BytesHost.to_list(self)) }
+    pub func copy(self) -> self [read self] {
+        BytesHost.from_list(BytesHost.to_list(self))
+    }
 
     /// Creates an empty immutable byte sequence.
     pub func empty() -> Bytes {
@@ -177,23 +179,20 @@ impl Bytes {
                 _ -> 0
             }
             return false if width == 0 || width > self.length - index
-            branch {
-                width > 1 -> {
-                    let second = self[index + 1].int
-                    return false if second < 128 || second > 191
-                    return false if first == 224 && second < 160
-                    return false if first == 237 && second > 159
-                    return false if first == 240 && second < 144
-                    return false if first == 244 && second > 143
-                    let tail = 2
-                    while tail < width {
-                        let continuation = self[index + tail].int
-                        return false if continuation < 128 || continuation > 191
-                        tail = tail + 1
-                    }
-                    ()
+            if width > 1 {
+                let second = self[index + 1].int
+                return false if second < 128 || second > 191
+                return false if first == 224 && second < 160
+                return false if first == 237 && second > 159
+                return false if first == 240 && second < 144
+                return false if first == 244 && second > 143
+                let tail = 2
+                while tail < width {
+                    let continuation = self[index + tail].int
+                    return false if continuation < 128 || continuation > 191
+                    tail = tail + 1
                 }
-                _ -> ()
+                ()
             }
             index = index + width
         }

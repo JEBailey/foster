@@ -1,7 +1,7 @@
 # Foster semantic specification
 
 Status: **draft normative specification**, revision 10, 2026-09-25.
-Baseline: **language version 17, ownership-model version 5**.
+Baseline: **language version 19, ownership-model version 5**.
 
 This specification states the observable meaning of Foster programs independently of the VM,
 Cranelift, reference counting, or physical layouts. It consolidates existing contracts; publishing
@@ -162,6 +162,15 @@ left before right. `&&` evaluates its right operand only if the left is true; `|
 if the left is false. `!` and `not` have the same Boolean meaning. A guarded transfer evaluates
 its guard before its transferred expression; a false guard does not evaluate that expression.
 Effects of an executed guard still occur on the fall-through path.
+
+An `if condition statement` or `if condition { ... }` requires a `Bool` condition
+and evaluates it before the entire body. A false condition skips the body,
+including call arguments, assignment destinations, moves, and side effects. A
+completing `if` produces `()` on either path. It is equivalent to a subjectless
+branch with the body followed by `()` in its true arm and `_ -> ()` as fallback;
+ordinary branch ownership joins, local scope, and full-expression temporary
+boundaries apply. It does not introduce a loop or function transfer target.
+Postfix guards are only allowed on `return`, `break`, and `continue`.
 
 Assignment evaluates the complete right-hand expression first. It then evaluates the left-hand
 place once, including member receivers and index expressions, and replaces the selected value.

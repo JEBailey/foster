@@ -39,6 +39,7 @@ type Scanner = {
 func digit(c: CodePoint) -> Bool {
     c >= '0' && c <= '9'
 }
+
 func identifier_start(c: CodePoint) -> Bool {
     branch {
         c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' -> true
@@ -46,6 +47,7 @@ func identifier_start(c: CodePoint) -> Bool {
         _ -> c.alphabetic?()
     }
 }
+
 func identifier_part(c: CodePoint) -> Bool {
     identifier_start(c) || digit(c) || c == '?'
 }
@@ -114,23 +116,17 @@ impl Scanner {
             let c = self.advance()
             branch c {
                 '\\' -> {
-                    branch {
-                        self.quoted_raw -> {
-                            let prefix = String.from_code_points(self.chars.slice(content_start, self.index - 1))
-                            value.append(prefix)
-                            self.quoted_raw = false
-                        }
-                        _ -> ()
+                    if self.quoted_raw {
+                        let prefix = String.from_code_points(self.chars.slice(content_start, self.index - 1))
+                        value.append(prefix)
+                        self.quoted_raw = false
                     }
-                    branch {
-                        self.index == self.chars.length -> {
-                            self.fail(branch quote {
-                                '"' -> "unterminated escape"
-                                _ -> "unterminated code-point escape"
-                            }, line, column)
-                            break
-                        }
-                        _ -> ()
+                    if self.index == self.chars.length {
+                        self.fail(branch quote {
+                            '"' -> "unterminated escape"
+                            _ -> "unterminated code-point escape"
+                        }, line, column)
+                        break
                     }
                     let escaped = self.advance()
                     c = branch escaped {
@@ -156,22 +152,18 @@ impl Scanner {
                 }
                 _ -> ()
             }
-            branch {
-                !self.quoted_raw -> value.push(c)
-                _ -> ()
+            if !self.quoted_raw {
+                value.push(c)
             }
-            branch {
-                quote == '\'' -> {
-                    branch {
-                        self.index < self.chars.length && self.peek(0) == '\'' -> self.advance()
-                        _ -> {
-                            self.fail("code-point literal must contain exactly one Unicode scalar value", line, column)
-                            c
-                        }
+            if quote == '\'' {
+                branch {
+                    self.index < self.chars.length && self.peek(0) == '\'' -> self.advance()
+                    _ -> {
+                        self.fail("code-point literal must contain exactly one Unicode scalar value", line, column)
+                        c
                     }
-                    break
                 }
-                _ -> ()
+                break
             }
         }
         (move value).finish()
@@ -185,27 +177,19 @@ func normalize_block(text: String) -> String [consume text] {
     let started = false
     for raw in lines {
         let line = (move raw).trim_start()
-        branch {
-            line.starts_with?("*") -> {
-                line = (line.scalar_rest()).trim_start()
-            }
-            _ -> ()
-        }
+        if line.starts_with?("*") line = (line.scalar_rest()).trim_start()
         line = line.trim_end()
         branch {
             line.byte_length() == 0 -> {
                 pending = pending + 1
             }
             _ -> {
-                branch {
-                    started -> {
+                if started {
+                    out.append("\n")
+                    while pending > 0 {
                         out.append("\n")
-                        while pending > 0 {
-                            out.append("\n")
-                            pending = pending - 1
-                        }
+                        pending = pending - 1
                     }
-                    _ -> ()
                 }
                 pending = 0
                 out.append(line)
@@ -291,9 +275,8 @@ pub func scan(source: String) -> Scan {
                         }
                         _ -> {
                             let character = scanner.advance()
-                            branch {
-                                documentation -> content.push(character)
-                                _ -> ()
+                            if documentation {
+                                content.push(character)
                             }
                             character
                         }
@@ -316,12 +299,9 @@ pub func scan(source: String) -> Scan {
                     _ -> "CodePoint"
                 }
                 text = scanner.quoted(c, line, column)
-                branch {
-                    scanner.quoted_raw -> {
-                        raw_start = start + 1
-                        raw_end = scanner.offset - 1
-                    }
-                    _ -> ()
+                if scanner.quoted_raw {
+                    raw_start = start + 1
+                    raw_end = scanner.offset - 1
                 }
             }
             digit(c) -> {
@@ -329,57 +309,41 @@ pub func scan(source: String) -> Scan {
                 while digit(scanner.peek(0)) {
                     scanner.advance()
                 }
-                branch {
-                    scanner.peek(0) == '.' && digit(scanner.peek(1)) -> {
-                        kind = "Float"
+                if scanner.peek(0) == '.' && digit(scanner.peek(1)) {
+                    kind = "Float"
+                    scanner.advance()
+                    while digit(scanner.peek(0)) {
                         scanner.advance()
-                        while digit(scanner.peek(0)) {
-                            scanner.advance()
-                        }
                     }
-                    _ -> ()
                 }
-                branch {
-                    scanner.peek(0) == 'e' || scanner.peek(0) == 'E' -> {
-                        kind = "Float"
-                        scanner.advance()
-                        branch {
-                            scanner.peek(0) == '+' || scanner.peek(0) == '-' -> {
-                                scanner.advance()
-                                ()
-                            }
-                            _ -> ()
-                        }
-                        branch {
-                            !digit(scanner.peek(0)) -> scanner.fail("expected exponent digits", line, column)
-                            _ -> ()
-                        }
-                        while digit(scanner.peek(0)) {
-                            scanner.advance()
-                        }
+                if scanner.peek(0) == 'e' || scanner.peek(0) == 'E' {
+                    kind = "Float"
+                    scanner.advance()
+                    if scanner.peek(0) == '+' || scanner.peek(0) == '-' scanner.advance()
+                    if !digit(scanner.peek(0)) {
+                        scanner.fail("expected exponent digits", line, column)
                     }
-                    _ -> ()
+                    while digit(scanner.peek(0)) {
+                        scanner.advance()
+                    }
                 }
                 text = scanner.text(index)
-                branch {
-                    kind == "Integer" -> {
-                        let value = 0
-                        let position = index
-                        while position < scanner.index {
-                            let number = scanner.chars[position].as_int() - 48
-                            branch {
-                                value > 922337203685477580 || value == 922337203685477580 && number > 7 -> {
-                                    scanner.fail("integer is out of range", line, column)
-                                    break
-                                }
-                                _ -> {
-                                    value = value * 10 + number
-                                }
+                if kind == "Integer" {
+                    let value = 0
+                    let position = index
+                    while position < scanner.index {
+                        let number = scanner.chars[position].as_int() - 48
+                        branch {
+                            value > 922337203685477580 || value == 922337203685477580 && number > 7 -> {
+                                scanner.fail("integer is out of range", line, column)
+                                break
                             }
-                            position = position + 1
+                            _ -> {
+                                value = value * 10 + number
+                            }
                         }
+                        position = position + 1
                     }
-                    _ -> ()
                 }
             }
             identifier_start(c) || c == ':' && identifier_start(next) -> {
@@ -428,16 +392,9 @@ pub func scan(source: String) -> Scan {
                     }
                     _ -> ()
                 }
-                branch {
-                    kind != punctuation(c) -> {
-                        scanner.advance()
-                        ()
-                    }
-                    _ -> ()
-                }
-                branch {
-                    kind == "" -> scanner.fail("unexpected character `" + String.from_code_points([c]) + "`", line, column)
-                    _ -> ()
+                if kind != punctuation(c) scanner.advance()
+                if kind == "" {
+                    scanner.fail("unexpected character `" + String.from_code_points([c]) + "`", line, column)
                 }
             }
         }

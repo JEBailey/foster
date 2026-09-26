@@ -17,8 +17,9 @@ and the standard library are written in `.fos` files.
 ## Rules that are easy to get wrong
 
 - Use `func`, mutable `let`, newline-separated statements, and `()` for unit.
-- Use `branch` for conditional selection. `if` only guards `return`, `break`, or
-  `continue`; there is no general `if/else` statement.
+- Use `branch` to select a value. Use `if condition statement` or
+  `if condition { ... }` for conditional execution; a completing `if` produces
+  `()`. Postfix `if` only guards `return`, `break`, or `continue`. There is no `else`.
 - Use dotted imports, `module::function()`, `Type.factory()`, `Enum.Case(...)`,
   `value.field`, and `value.method()`. Zero-argument methods still require `()`.
 - Imports expose public declarations; a public type does not make its fields public.

@@ -156,10 +156,7 @@ impl List<T> {
         let index = 0
         while index < self.length {
             let value = self.read_at(index)
-            branch {
-                include(value) -> result.push(value)
-                _ -> ()
-            }
+            if include(value) result.push(value)
             index = index + 1
         }
         result
@@ -250,10 +247,14 @@ impl List<T> {
         let cursor = 0
         loop {
             branch entries.next() {
-                Option.None -> { break }
+                Option.None -> {
+                    break
+                }
                 Option.Some(value) -> {
                     branch {
-                        cursor == index -> { removed = Option.Some(value) }
+                        cursor == index -> {
+                            removed = Option.Some(value)
+                        }
                         _ -> self.push(value)
                     }
                     cursor = cursor + 1
@@ -315,13 +316,7 @@ impl List<T> {
         let count = 0
         let index = 0
         while index < self.length {
-            branch {
-                predicate(self[index]) -> {
-                    count = count + 1
-                    ()
-                }
-                _ -> ()
-            }
+            if predicate(self[index]) count = count + 1
             index = index + 1
         }
         count
@@ -366,10 +361,7 @@ impl List {
         let output = StringBuilder.empty()
         let index = 0
         while index < self.length {
-            branch {
-                index > 0 -> output.append(separator)
-                _ -> ()
-            }
+            if index > 0 output.append(separator)
             output.append(self.read_at(index))
             index = index + 1
         }

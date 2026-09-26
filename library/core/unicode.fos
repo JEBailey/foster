@@ -39,7 +39,9 @@ pub func grapheme_end(source: StringCursor) -> Int {
     loop {
         let offset = source.checkpoint()
         branch source.next() {
-            Option.None -> { return offset }
+            Option.None -> {
+                return offset
+            }
             Option.Some(point) -> {
                 let scalar = point.as_int()
                 let current = branch {
@@ -50,7 +52,9 @@ pub func grapheme_end(source: StringCursor) -> Int {
                     _ -> range_value(data::grapheme_break().bytes, scalar)
                 }
                 let emoji = scalar == 169 || scalar == 174 || scalar >= 768 && range_value(data::extended_pictographic().bytes, scalar) == 1
-                let indic = branch { scalar < 768 -> 0 _ -> range_value(data::indic_conjunct_break().bytes, scalar) }
+                let indic = branch {
+                    scalar < 768 -> 0 _ -> range_value(data::indic_conjunct_break().bytes, scalar)
+                }
                 let hangul_l = previous == 9 && (current == 9 || current == 10 || current == 12 || current == 13)
                 let hangul_v = (previous == 12 || previous == 10) && (current == 10 || current == 11)
                 let hangul_t = (previous == 13 || previous == 11) && current == 11
@@ -67,9 +71,10 @@ pub func grapheme_end(source: StringCursor) -> Int {
                     previous == 6 && current == 6 && regional - regional / 2 * 2 == 1 -> false
                     _ -> true
                 }
-                branch { boundary -> { source.restore(offset)
+                if boundary {
+                    source.restore(offset)
                     return offset
-                } _ -> () }
+                }
                 joined_pictographic = current == 5 && pictographic
                 pictographic = emoji || (current == 4 && pictographic)
                 conjunct = branch {
@@ -78,7 +83,9 @@ pub func grapheme_end(source: StringCursor) -> Int {
                     indic == 2 -> conjunct
                     _ -> 0
                 }
-                regional = branch { current == 6 -> regional + 1 _ -> 0 }
+                regional = branch {
+                    current == 6 -> regional + 1 _ -> 0
+                }
                 previous = current
             }
         }
@@ -92,7 +99,9 @@ func hex(table: Bytes, offset: Int, width: Int) -> Int {
     let index = 0
     while index != width {
         let digit = table[offset + index].int
-        value = value * 16 + branch { digit <= 57 -> digit - 48 _ -> digit - 55 }
+        value = value * 16 + branch {
+            digit <= 57 -> digit - 48 _ -> digit - 55
+        }
         index = index + 1
     }
     value
@@ -105,8 +114,12 @@ func lower_bound(table: Bytes, point: Int, width: Int, key_offset: Int) -> Int {
     while low < high {
         let middle = low + (high - low) / 2
         branch {
-            hex(table, middle * width + key_offset, 6) < point -> { low = middle + 1 }
-            _ -> { high = middle }
+            hex(table, middle * width + key_offset, 6) < point -> {
+                low = middle + 1
+            }
+            _ -> {
+                high = middle
+            }
         }
     }
     low
@@ -126,7 +139,9 @@ func bit?(bits: Int, mask: Int) -> Bool {
 }
 
 /// Returns the pinned General_Category index used by core.code_point.
-pub func category(point: Int) -> Int { range_value(data::categories().bytes, point) }
+pub func category(point: Int) -> Int {
+    range_value(data::categories().bytes, point)
+}
 
 /// Evaluates a Unicode classification property; property IDs are internal library details.
 pub func property(point: Int, property: Int) -> Bool {
@@ -177,19 +192,16 @@ pub func change_case(text: String, mode: Int) -> String {
     let properties = data::properties().bytes
     let points = text.code_points()
     let following = []
-    branch {
-        mode == 0 -> {
-            let next_cased = false
-            let index = points.length
-            while index != 0 {
-                index = index - 1
-                following.push(next_cased)
-                let bits = range_value(properties, points[index])
-                // Ignore Case_Ignorable even when it overlaps Cased (e.g. U+0345).
-                branch { !bit?(bits, 32) -> { next_cased = bit?(bits, 16) } _ -> () }
-            }
+    if mode == 0 {
+        let next_cased = false
+        let index = points.length
+        while index != 0 {
+            index = index - 1
+            following.push(next_cased)
+            let bits = range_value(properties, points[index])
+            // Ignore Case_Ignorable even when it overlaps Cased (e.g. U+0345).
+            if !bit?(bits, 32) next_cased = bit?(bits, 16)
         }
-        _ -> ()
     }
     let output = StringBuilder.empty()
     let preceding_cased = false
@@ -197,20 +209,14 @@ pub func change_case(text: String, mode: Int) -> String {
     while index != points.length {
         let point = points[index]
         let final_sigma = false
-        branch {
-            mode == 0 -> { final_sigma = point == 931 && preceding_cased && !following[points.length - index - 1] }
-            _ -> ()
-        }
+        if mode == 0 final_sigma = point == 931 && preceding_cased && !following[points.length - index - 1]
         branch {
             final_sigma -> output.push(from_code_point(962))
             _ -> append_mapping(output, table, point)
         }
-        branch {
-            mode == 0 -> {
-                let bits = range_value(properties, point)
-                branch { !bit?(bits, 32) -> { preceding_cased = bit?(bits, 16) } _ -> () }
-            }
-            _ -> ()
+        if mode == 0 {
+            let bits = range_value(properties, point)
+            if !bit?(bits, 32) preceding_cased = bit?(bits, 16)
         }
         index = index + 1
     }

@@ -8,12 +8,14 @@ import std.json
 pub type Generated = {
     pub manifest: String, pub report: String
 }
+
 type Metadata = {
     names: List<String>, parts: List<String>
 }
 
 // The adapter supplies tab-separated T(alias, type), F(name, result, parameters),
 // S(name, C type, field/type pairs), and R(name, reason) records. Clang parses C.
+
 func scalar(spelling: String, declarations: List<String>) -> String {
     let name = spelling.copy().trim()
     let depth = 0
@@ -48,11 +50,7 @@ func scalar(spelling: String, declarations: List<String>) -> String {
         let alias = ""
         for row in declarations {
             let fields = row.copy().split("\t")
-            branch {
-                fields.length == 3 && fields[0] == "T" && fields[1] == name -> {
-                    alias = fields[2].copy()
-                }
-            }
+            if fields.length == 3 && fields[0] == "T" && fields[1] == name alias = fields[2].copy()
         }
         return "" if alias.empty? || alias == name
         name = move alias
@@ -62,35 +60,34 @@ func scalar(spelling: String, declarations: List<String>) -> String {
 }
 
 // Returns a complete JSON type, resolving aliases before matching record tags.
+
 pub func binding_type(spelling: String, declarations: List<String>, accepted: List<String>) -> String {
     let primitive = scalar(spelling, declarations)
     return quoted(primitive) if !primitive.empty?
     let name = spelling.copy()
     let depth = 0
     while depth < 32 {
-        branch {
-            name.contains?("[") -> {
-                let parts = name.copy().split("[")
-                let dimension = parts[1].copy().split("]")
-                let length = 0
-                for character in dimension[0] {
-                    let digit = character.bytes[0].int - 48
-                    return "" if digit < 0 || digit > 9 || length > 8191
-                    length = length * 10 + digit
-                }
-                return "" if length < 1 || length > 8191 || dimension.length != 2 || !dimension[1].empty?
-                let element = parts[0].copy().trim()
-                let index = 2
-                while index < parts.length {
-                    element = element + "[" + parts[index]
-                    index = index + 1
-                }
-                let kind = branch {
-                    element == "char" -> "\"char\"" _ -> binding_type(element, declarations, accepted)
-                }
-                return "" if kind.empty? || kind == "\"void\"" || kind == "\"c_string\""
-                return "{\"array\": " + kind + ", \"length\": " + length.as_string() + "}"
+        if name.contains?("[") {
+            let parts = name.copy().split("[")
+            let dimension = parts[1].copy().split("]")
+            let length = 0
+            for character in dimension[0] {
+                let digit = character.bytes[0].int - 48
+                return "" if digit < 0 || digit > 9 || length > 8191
+                length = length * 10 + digit
             }
+            return "" if length < 1 || length > 8191 || dimension.length != 2 || !dimension[1].empty?
+            let element = parts[0].copy().trim()
+            let index = 2
+            while index < parts.length {
+                element = element + "[" + parts[index]
+                index = index + 1
+            }
+            let kind = branch {
+                element == "char" -> "\"char\"" _ -> binding_type(element, declarations, accepted)
+            }
+            return "" if kind.empty? || kind == "\"void\"" || kind == "\"c_string\""
+            return "{\"array\": " + kind + ", \"length\": " + length.as_string() + "}"
         }
         let alias = ""
         for row in declarations {
@@ -98,11 +95,7 @@ pub func binding_type(spelling: String, declarations: List<String>, accepted: Li
             continue if fields.length < 3
             return "{\"record\": " + quoted(fields[1]) + "}" if fields[0] == "S" && (fields[2] == name || fields[1] == name) && accepted.contains?(fields[1])
             return "{\"enum\": " + quoted(fields[1]) + "}" if fields[0] == "N" && (fields[2] == name || fields[1] == name)
-            branch {
-                fields[0] == "T" && fields[1] == name -> {
-                    alias = fields[2].copy()
-                }
-            }
+            if fields[0] == "T" && fields[1] == name alias = fields[2].copy()
         }
         return "" if alias.empty? || alias == name
         name = move alias
@@ -112,6 +105,7 @@ pub func binding_type(spelling: String, declarations: List<String>, accepted: Li
 }
 
 // Preserve paths and diagnostic characters as JSON text, never source fragments.
+
 pub func quoted(text: String) -> String {
     branch json::stringify(JsonValue.String(text.copy())) {
         Result.Ok(output) -> move output
@@ -123,11 +117,7 @@ func metadata(data: Metadata, name: String) -> String {
     let output = ""
     let index = 0
     while index < data.names.length {
-        branch {
-            data.names[index] == name -> {
-                output = output + data.parts[index]
-            }
-        }
+        if data.names[index] == name output = output + data.parts[index]
         index = index + 1
     }
     move output
@@ -185,10 +175,8 @@ pub func generate(input: String, header: String) -> Generated {
     for row in types {
         let fields = row.copy().split("\t")
         continue if fields[0] != "T"
-        branch {
-            binding_type(fields[1], types, []).starts_with?("{\"enum\":") -> {
-                enum_aliases.push("N\t" + fields[1] + "\t" + fields[1])
-            }
+        if binding_type(fields[1], types, []).starts_with?("{\"enum\":") {
+            enum_aliases.push("N\t" + fields[1] + "\t" + fields[1])
         }
     }
     for row in enum_aliases {
@@ -213,23 +201,17 @@ pub func generate(input: String, header: String) -> Generated {
             let index = 3
             while index + 1 < fields.length {
                 let kind = binding_type(fields[index + 1], types, accepted)
-                branch {
-                    kind.empty? || kind == "\"void\"" || kind == "\"c_string\"" -> {
-                        valid = false
-                    }
-                }
+                if kind.empty? || kind == "\"void\"" || kind == "\"c_string\"" valid = false
                 members = members + branch {
                     index == 3 -> "" _ -> ", "
                 } + "{\"name\": " + quoted(fields[index]) + ", \"type\": " + kind + metadata(annotations, "S." + fields[1] + "." + fields[index]) + "}"
                 index = index + 2
             }
-            branch {
-                valid -> {
-                    records = records + branch {
-                        records.empty? -> "" _ -> ",\n"
-                    } + "    {\"name\": " + quoted(fields[1]) + ", \"c_type\": " + quoted(fields[2]) + ", \"fields\": [" + members + "]" + metadata(annotations, "S." + fields[1]) + "}"
-                    accepted.push(fields[1].copy())
-                }
+            if valid {
+                records = records + branch {
+                    records.empty? -> "" _ -> ",\n"
+                } + "    {\"name\": " + quoted(fields[1]) + ", \"c_type\": " + quoted(fields[2]) + ", \"fields\": [" + members + "]" + metadata(annotations, "S." + fields[1]) + "}"
+                accepted.push(fields[1].copy())
             }
         }
         break if previous == accepted.length
@@ -242,10 +224,8 @@ pub func generate(input: String, header: String) -> Generated {
             fields[0] == "Q" -> {
                 continue if reported_types.contains?(fields[1])
                 reported_types.push(fields[1].copy())
-                branch {
-                    binding_type(fields[2], types, accepted).empty? -> {
-                        report = report + fields[1] + ": unsupported type declaration: " + fields[2] + "\n"
-                    }
+                if binding_type(fields[2], types, accepted).empty? {
+                    report = report + fields[1] + ": unsupported type declaration: " + fields[2] + "\n"
                 }
             }
             fields[0] == "R" -> {
@@ -256,20 +236,12 @@ pub func generate(input: String, header: String) -> Generated {
                 continue if names.contains?(name)
                 let returns = binding_type(fields[2], types, accepted)
                 let reason = ""
-                branch {
-                    returns.empty? -> {
-                        reason = "unsupported result type: " + fields[2]
-                    }
-                }
+                if returns.empty? reason = "unsupported result type: " + fields[2]
                 let parameters = ""
                 let index = 3
                 while index < fields.length {
                     let kind = binding_type(fields[index], types, accepted)
-                    branch {
-                        kind.empty? || kind == "\"void\"" -> {
-                            reason = "unsupported parameter type: " + fields[index]
-                        }
-                    }
+                    if kind.empty? || kind == "\"void\"" reason = "unsupported parameter type: " + fields[index]
                     parameters = parameters + branch {
                         index == 3 -> "" _ -> ", "
                     } + kind

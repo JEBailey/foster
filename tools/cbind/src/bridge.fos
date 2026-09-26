@@ -18,6 +18,7 @@ import std.env
 pub type Node = {
     pub parent: Int, pub key: String, pub kind: String, pub text: String
 }
+
 impl Node {
     func copy(self) -> self {
         Node {
@@ -25,6 +26,7 @@ impl Node {
         }
     }
 }
+
 pub type Contract = {
     pub nodes: List<Node>,
     links: List<List<Int>>
@@ -44,6 +46,7 @@ func unpack(text: String) -> String {
         Result.Error(_) -> panic("invalid host UTF-8")
     }
 }
+
 func decimal(text: String) -> Int {
     return -1 if text == "-1"
     let number = 0
@@ -54,6 +57,7 @@ func decimal(text: String) -> Int {
     }
     number
 }
+
 func contract(input: String) -> Contract {
     let nodes = []
     for row in input.copy().split("\n") {
@@ -66,6 +70,7 @@ func contract(input: String) -> Contract {
     }
     indexed(move nodes)
 }
+
 func indexed(nodes: List<Node>) -> Contract [consume nodes] {
     let links = []
     for node in nodes {
@@ -73,12 +78,10 @@ func indexed(nodes: List<Node>) -> Contract [consume nodes] {
     }
     let index = 0
     for node in nodes {
-        branch {
-            node.parent >= 0 -> {
-                branch links.borrow(node.parent) {
-                    Option.Some(children) -> children.push(index)
-                    Option.None -> panic("invalid host JSON parent")
-                }
+        if node.parent >= 0 {
+            branch links.borrow(node.parent) {
+                Option.Some(children) -> children.push(index)
+                Option.None -> panic("invalid host JSON parent")
             }
         }
         index = index + 1
@@ -88,6 +91,7 @@ func indexed(nodes: List<Node>) -> Contract [consume nodes] {
         links: move links
     }
 }
+
 impl Contract {
     pub func json(self, node: Int) -> String {
         assert(node >= 0, "missing JSON value")
@@ -154,57 +158,42 @@ impl Contract {
                 move value
             }
             "object" -> {
-                branch {
-                    self.member(node, "callback") >= 0 -> {
-                        self.fields(node, "callback retained")
-                        self.boolean(node, "retained")
-                        return "^" + self.string(node, "callback", true)
-                    }
+                if self.member(node, "callback") >= 0 {
+                    self.fields(node, "callback retained")
+                    self.boolean(node, "retained")
+                    return "^" + self.string(node, "callback", true)
                 }
                 for key in ["out", "inout"] {
-                    branch {
-                        self.member(node, key) >= 0 -> {
-                            self.fields(node, key)
-                            return branch {
-                                key == "out" -> "&" _ -> "!"
-                            } + self.ty(self.member(node, key))
-                        }
+                    if self.member(node, key) >= 0 {
+                        self.fields(node, key)
+                        return branch {
+                            key == "out" -> "&" _ -> "!"
+                        } + self.ty(self.member(node, key))
                     }
                 }
-                branch {
-                    self.member(node, "buffer") >= 0 -> {
-                        self.fields(node, "buffer length mutable output")
-                        let element = self.ty(self.member(node, "buffer"))
-                        assert(!element.starts_with?("["), "buffer elements must be scalars or value records")
-                        branch {
-                            !["u8", "char", "void"].contains?(element) -> {
-                                self.slots(element, [])
-                            }
-                            _ -> 0
-                        }
-                        assert(["i32", "u32", "size"].contains?(self.string(node, "length", true)), "buffer length must be i32, u32, or size")
-                        self.boolean(node, "mutable")
-                        assert(!self.boolean(node, "output") || !self.boolean(node, "mutable"), "choose mutable input or output-only buffer")
-                        return "~" + node.as_string()
-                    }
+                if self.member(node, "buffer") >= 0 {
+                    self.fields(node, "buffer length mutable output")
+                    let element = self.ty(self.member(node, "buffer"))
+                    assert(!element.starts_with?("["), "buffer elements must be scalars or value records")
+                    if !["u8", "char", "void"].contains?(element) self.slots(element, [])
+                    assert(["i32", "u32", "size"].contains?(self.string(node, "length", true)), "buffer length must be i32, u32, or size")
+                    self.boolean(node, "mutable")
+                    assert(!self.boolean(node, "output") || !self.boolean(node, "mutable"), "choose mutable input or output-only buffer")
+                    return "~" + node.as_string()
                 }
-                branch {
-                    self.member(node, "array") >= 0 -> {
-                        self.fields(node, "array length")
-                        let length = self.member(node, "length")
-                        assert(length >= 0 && self.nodes[length].kind == "number", "missing array length")
-                        let digits = self.nodes[length].text.copy()
-                        assert(digits.length <= 4, "invalid C array length")
-                        let count = decimal(digits)
-                        assert(count > 0 && count <= 8191, "invalid C array length")
-                        return "[" + count.as_string() + "]" + self.ty(self.member(node, "array"))
-                    }
+                if self.member(node, "array") >= 0 {
+                    self.fields(node, "array length")
+                    let length = self.member(node, "length")
+                    assert(length >= 0 && self.nodes[length].kind == "number", "missing array length")
+                    let digits = self.nodes[length].text.copy()
+                    assert(digits.length <= 4, "invalid C array length")
+                    let count = decimal(digits)
+                    assert(count > 0 && count <= 8191, "invalid C array length")
+                    return "[" + count.as_string() + "]" + self.ty(self.member(node, "array"))
                 }
-                branch {
-                    self.member(node, "enum") >= 0 -> {
-                        self.fields(node, "enum")
-                        return "$" + self.string(node, "enum", true)
-                    }
+                if self.member(node, "enum") >= 0 {
+                    self.fields(node, "enum")
+                    return "$" + self.string(node, "enum", true)
                 }
                 self.fields(node, "record")
                 "@" + self.string(node, "record", true)
@@ -262,8 +251,8 @@ impl Contract {
     func outputs(self, node: Int) -> List<String> {
         let values = []
         let result_type = self.ty(self.member(node, "result"))
-        branch {
-            result_type != "void" -> values.push(result_type.copy())
+        if result_type != "void" {
+            values.push(result_type.copy())
         }
         for parameter in self.array(node, "parameters", false) {
             let ty = self.ty(parameter)
@@ -278,14 +267,14 @@ impl Contract {
     }
     func output_names(self, node: Int) -> List<String> {
         let names = []
-        branch {
-            self.ty(self.member(node, "result")) != "void" -> names.push("result")
+        if self.ty(self.member(node, "result")) != "void" {
+            names.push("result")
         }
         let index = 0
         for parameter in self.array(node, "parameters", false) {
             let ty = self.ty(parameter)
-            branch {
-                ty.starts_with?("&") || ty.starts_with?("!") || ty.starts_with?("~") && self.writable_buffer(parameter) -> names.push("out" + index.as_string())
+            if ty.starts_with?("&") || ty.starts_with?("!") || ty.starts_with?("~") && self.writable_buffer(parameter) {
+                names.push("out" + index.as_string())
             }
             index = index + 1
         }
@@ -390,10 +379,8 @@ impl Contract {
                 for octet in value.bytes {
                     assert(octet.int != 0, "NUL in build path")
                 }
-                branch {
-                    key == "headers" -> {
-                        assert(!value.empty? && !value.contains?("\"") && !value.contains?("\n") && !value.contains?("\r"), "invalid C header name")
-                    }
+                if key == "headers" {
+                    assert(!value.empty? && !value.contains?("\"") && !value.contains?("\n") && !value.contains?("\r"), "invalid C header name")
                 }
             }
         }
@@ -457,13 +444,11 @@ impl Contract {
             }
             assert(width <= 8191, "callback packet exceeds 65528 bytes")
             let callback_result = self.ty(self.member(node, "result"))
-            branch {
-                callback_result != "void" -> {
-                    assert(!callback_result.starts_with?("["), "C callbacks cannot return arrays")
-                    self.slots(callback_result, [])
-                    assert(delivery == "direct", "queued callbacks must return void")
-                    assert(self.string(node, "failure", true) == "zero", "callback result requires explicit zero failure policy")
-                }
+            if callback_result != "void" {
+                assert(!callback_result.starts_with?("["), "C callbacks cannot return arrays")
+                self.slots(callback_result, [])
+                assert(delivery == "direct", "queued callbacks must return void")
+                assert(self.string(node, "failure", true) == "zero", "callback result requires explicit zero failure policy")
             }
         }
         let resource_names = []
@@ -501,15 +486,13 @@ impl Contract {
             let callback_count = 0
             for parameter in self.array(node, "parameters", false) {
                 let ty = self.ty(parameter)
-                branch {
-                    ty.starts_with?("^") -> {
-                        callback_count = callback_count + 1
-                        let callback = self.callback(ty)
-                        let retained = self.boolean(parameter, "retained")
-                        assert(self.string(node, "receiver", false).empty?, "callback registration must not borrow a receiver")
-                        assert(retained == !self.string(node, "creates", false).empty?, "retained callback requires an owning resource constructor")
-                        assert(retained || self.string(callback, "delivery", true) == "direct", "queued callback must be retained")
-                    }
+                if ty.starts_with?("^") {
+                    callback_count = callback_count + 1
+                    let callback = self.callback(ty)
+                    let retained = self.boolean(parameter, "retained")
+                    assert(self.string(node, "receiver", false).empty?, "callback registration must not borrow a receiver")
+                    assert(retained == !self.string(node, "creates", false).empty?, "retained callback requires an owning resource constructor")
+                    assert(retained || self.string(callback, "delivery", true) == "direct", "queued callback must be retained")
                 }
                 assert(ty != "void", "void is not a C parameter")
                 assert(!ty.starts_with?("["), "array parameters require an explicit buffer contract")
@@ -592,6 +575,7 @@ impl Contract {
         }
     }
 }
+
 func doc_lines(text: String, indent: String) -> String {
     let lines = []
     for line in text.copy().split("\n") {
@@ -599,6 +583,7 @@ func doc_lines(text: String, indent: String) -> String {
     }
     lines.join("\n") + "\n"
 }
+
 impl Contract {
     func docs(self, node: Int, indent: String) -> String {
         let field = self.member(node, "documentation")
@@ -672,6 +657,7 @@ impl Contract {
         }
     }
 }
+
 func identifier(value: String) -> Bool {
     return false if value.empty?
     let index = 0
@@ -682,10 +668,12 @@ func identifier(value: String) -> Bool {
     }
     true
 }
+
 func check_name(name: String, names: List<String>) {
     assert(identifier(name), "invalid C identifier " + name)
     assert(!names.contains?(name), "duplicate C name " + name)
 }
+
 func foster_type(ty: String) -> String {
     return "List<" + foster_type(array_element(ty)) + ">" if ty.starts_with?("[")
     return "C" + ty.slice(1, ty.length) if ty.starts_with?("@") || ty.starts_with?("$")
@@ -699,24 +687,26 @@ func foster_type(ty: String) -> String {
         _ -> "Int"
     }
 }
+
 func array_length(ty: String) -> Int {
     decimal(ty.copy().split("]")[0].slice(1, ty.copy().split("]")[0].length))
 }
+
 func array_element(ty: String) -> String {
     let prefix = ty.copy().split("]")[0]
     ty.slice(prefix.length + 1, ty.length)
 }
+
 func foster_copy(ty: String, place: String, depth: Int) -> String {
     return place + ".copy()" if ty.starts_with?("@")
-    branch {
-        ty.starts_with?("[") -> {
-            let element = array_element(ty)
-            let name = "element" + depth.as_string()
-            return place + ".map((" + name + ": " + foster_type(element) + ") -> " + foster_copy(element, name, depth + 1) + ")"
-        }
+    if ty.starts_with?("[") {
+        let element = array_element(ty)
+        let name = "element" + depth.as_string()
+        return place + ".map((" + name + ": " + foster_type(element) + ") -> " + foster_copy(element, name, depth + 1) + ")"
     }
     place.copy()
 }
+
 func foster_field(name: String) -> String {
     let reserved = "func function impl test const let pub type enum import as return assert loop while for in break continue if branch else remote await try panic not true false move ref group read mut reshape consume suspend intrinsic self copy".split(" ")
     branch {
@@ -724,6 +714,7 @@ func foster_field(name: String) -> String {
         _ -> name.copy()
     }
 }
+
 func quoted(text: String) -> String {
     // Foster literals have different escapes from JSON. Iterate scalars so a
     // combining mark cannot hide an adjacent quote or backslash in a grapheme.
@@ -742,6 +733,7 @@ func quoted(text: String) -> String {
     output.append("\"")
     (move output).finish()
 }
+
 func json_quoted(text: String) -> String {
     branch json::stringify(JsonValue.String(text.copy())) {
         Result.Ok(output) -> move output
@@ -758,6 +750,7 @@ test "indexed JSON re-emits escaped object keys and string values" {
     assert(restored.nodes[1].key == tree.nodes[1].key)
     assert(restored.nodes[1].text == tree.nodes[1].text)
 }
+
 func hex32(number: Int) -> String {
     let output = ""
     let value = number
@@ -769,6 +762,7 @@ func hex32(number: Int) -> String {
     move output
 }
 // FNV-1a using bounded 32-bit limbs, independent of signed overflow behavior.
+
 func identity(input: String) -> String {
     let high = 3421674724
     let low = 2216829733
@@ -804,14 +798,12 @@ impl Contract {
             _ -> ty + " *owned=" + call + "; if(!owned) return 4;\n"
         }
         let valid = self.string(resource, "valid", false)
-        branch {
-            !valid.empty? -> {
-                code = code + "_Bool (*valid)(" + ty + branch {
-                    by_value -> "" _ -> "*"
-                } + ")=&" + valid + "; if(!valid(" + branch {
-                    by_value -> "*owned" _ -> "owned"
-                } + ")) { " + self.c_destroy(resource, "owned") + " return 4; }\n"
-            }
+        if !valid.empty? {
+            code = code + "_Bool (*valid)(" + ty + branch {
+                by_value -> "" _ -> "*"
+            } + ")=&" + valid + "; if(!valid(" + branch {
+                by_value -> "*owned" _ -> "owned"
+            } + ")) { " + self.c_destroy(resource, "owned") + " return 4; }\n"
         }
         code + "*created=(void*)owned; return 0;\n"
     }
@@ -827,18 +819,16 @@ impl Contract {
         let receiver = self.string(node, "receiver", false)
         let creates = self.string(node, "creates", false)
         let returns = self.ty(self.member(node, "result"))
-        branch {
-            !receiver.empty? -> {
-                let resource = self.resource(receiver)
-                let ty = self.string(resource, "c_type", true)
-                let by_value = self.boolean(resource, "by_value") && !self.boolean(node, "receiver_pointer")
-                types.push(ty + branch {
-                    by_value -> "" _ -> "*"
-                })
-                arguments.push(branch {
-                    by_value -> "*(" + ty + "*)resource" _ -> "(" + ty + "*)resource"
-                })
-            }
+        if !receiver.empty? {
+            let resource = self.resource(receiver)
+            let ty = self.string(resource, "c_type", true)
+            let by_value = self.boolean(resource, "by_value") && !self.boolean(node, "receiver_pointer")
+            types.push(ty + branch {
+                by_value -> "" _ -> "*"
+            })
+            arguments.push(branch {
+                by_value -> "*(" + ty + "*)resource" _ -> "(" + ty + "*)resource"
+            })
         }
         let index = 0
         for parameter in self.array(node, "parameters", false) {
@@ -859,11 +849,7 @@ impl Contract {
                     let base = ty.slice(1, ty.length)
                     types.push(self.c_type(base) + "*")
                     parse = parse + self.c_type(base) + " " + place + "={0};\n"
-                    branch {
-                        ty.starts_with?("!") -> {
-                            parse = parse + self.c_read(base, place)
-                        }
-                    }
+                    if ty.starts_with?("!") parse = parse + self.c_read(base, place)
                     arguments.push("&" + place)
                     values.push(place.copy())
                     lengths.push("")
@@ -888,31 +874,23 @@ impl Contract {
                     parse = parse + "uint64_t " + size + "; if(!read64(&input,&remaining,&" + size + ") || " + size + ">16777216/" + stride.as_string() + " || " + size + ">16777216/sizeof(" + stored + ")" + branch {
                         output_only -> "" _ -> " || " + size + ">remaining/" + stride.as_string()
                     } + ") return 2;\n"
-                    branch {
-                        ty == "c_string" -> {
-                            parse = parse + "if(!c_string_valid(input," + size + ")) return 2;\n"
-                        }
-                    }
-                    branch {
-                        !output_only -> {
-                            parse = parse + "const uint8_t *" + place + "_input=input; input+=" + size + "*" + stride.as_string() + "; remaining-=" + size + "*" + stride.as_string() + ";\n"
-                        }
+                    if ty == "c_string" parse = parse + "if(!c_string_valid(input," + size + ")) return 2;\n"
+                    if !output_only {
+                        parse = parse + "const uint8_t *" + place + "_input=input; input+=" + size + "*" + stride.as_string() + "; remaining-=" + size + "*" + stride.as_string() + ";\n"
                     }
                     branch {
                         mutable || !raw -> {
                             // Declare every allocation before the first possible cleanup jump.
                             prefix = prefix + stored + " *" + place + "=NULL;\n"
                             allocate = allocate + place + "=calloc((size_t)(" + size + " ? " + size + " : 1),sizeof(" + stored + ")); if(!" + place + ") { status=5; goto cleanup; }\n"
-                            branch {
-                                !output_only -> {
-                                    branch {
-                                        raw -> {
-                                            allocate = allocate + "if(" + size + ") memcpy(" + place + "," + place + "_input,(size_t)" + size + ");\n"
-                                        }
-                                        _ -> {
-                                            let decode = self.c_read(element, place + "[buffer_index]").split("return 2;").join("{ status=2; goto cleanup; }").split("return 3;").join("{ status=3; goto cleanup; }")
-                                            allocate = allocate + "{ const uint8_t *input=" + place + "_input; uint64_t remaining=" + size + "*" + stride.as_string() + "; for(uint64_t buffer_index=0; buffer_index<" + size + "; buffer_index++) {\n" + decode + "} }\n"
-                                        }
+                            if !output_only {
+                                branch {
+                                    raw -> {
+                                        allocate = allocate + "if(" + size + ") memcpy(" + place + "," + place + "_input,(size_t)" + size + ");\n"
+                                    }
+                                    _ -> {
+                                        let decode = self.c_read(element, place + "[buffer_index]").split("return 2;").join("{ status=2; goto cleanup; }").split("return 3;").join("{ status=3; goto cleanup; }")
+                                        allocate = allocate + "{ const uint8_t *input=" + place + "_input; uint64_t remaining=" + size + "*" + stride.as_string() + "; for(uint64_t buffer_index=0; buffer_index<" + size + "; buffer_index++) {\n" + decode + "} }\n"
                                     }
                                 }
                             }
@@ -920,26 +898,22 @@ impl Contract {
                             arguments.push("(" + branch {
                                 mutable -> "" _ -> "const "
                             } + native + "*)" + place)
-                            branch {
-                                mutable -> {
-                                    values.push(place.copy())
-                                    lengths.push(size.copy())
-                                }
+                            if mutable {
+                                values.push(place.copy())
+                                lengths.push(size.copy())
                             }
                         }
                         _ -> arguments.push("(const " + native + "*)" + place + "_input")
                     }
-                    branch {
-                        ty != "c_string" -> {
-                            let length_type = branch {
-                                ty.starts_with?("~") -> self.string(parameter, "length", true) _ -> "size"
-                            }
-                            let c_length = branch {
-                                length_type == "size" -> "size_t" _ -> self.c_type(length_type)
-                            }
-                            types.push(c_length.copy())
-                            arguments.push("(" + c_length + ")" + size)
+                    if ty != "c_string" {
+                        let length_type = branch {
+                            ty.starts_with?("~") -> self.string(parameter, "length", true) _ -> "size"
                         }
+                        let c_length = branch {
+                            length_type == "size" -> "size_t" _ -> self.c_type(length_type)
+                        }
+                        types.push(c_length.copy())
+                        arguments.push("(" + c_length + ")" + size)
                     }
                 }
                 _ -> {
@@ -950,19 +924,17 @@ impl Contract {
             }
             index = index + 1
         }
-        branch {
-            returns == "bytes" -> {
-                let length_type = self.string(node, "length_type", false)
-                let native = branch {
-                    length_type.empty? || length_type == "size" -> "size_t" _ -> self.c_type(length_type)
-                }
-                types.push(native + "*")
-                parse = parse + native + " result_size=0;\n"
-                arguments.push("&result_size")
+        if returns == "bytes" {
+            let length_type = self.string(node, "length_type", false)
+            let native = branch {
+                length_type.empty? || length_type == "size" -> "size_t" _ -> self.c_type(length_type)
             }
+            types.push(native + "*")
+            parse = parse + native + " result_size=0;\n"
+            arguments.push("&result_size")
         }
-        branch {
-            types.empty? -> types.push("void")
+        if types.empty? {
+            types.push("void")
         }
         let return_type = branch {
             !creates.empty? -> self.string(self.resource(creates), "c_type", true) + branch {
@@ -973,15 +945,13 @@ impl Contract {
         }
         let declaration = return_type + " (*target)(" + types.join(",") + ")=&" + self.string(node, "symbol", true) + ";\n"
         let call = "target(" + arguments.join(",") + ")"
-        branch {
-            !creates.empty? -> {
-                let creation = self.c_create(creates, call)
-                for status in [0, 4, 5] {
-                    creation = creation.split("return " + status.as_string() + ";").join("{ status=" + status.as_string() + "; goto cleanup; }")
-                }
-                let code = prefix + "int32_t status=0;\n" + declaration + parse + "if(remaining) return 2;\n" + allocate + creation + "cleanup:\n" + cleanup + "return status;\n}\n"
-                return code.copy().split("goto cleanup;").join("goto cleanup_" + operation.as_string() + ";").split("cleanup:\n").join("cleanup_" + operation.as_string() + ":\n")
+        if !creates.empty? {
+            let creation = self.c_create(creates, call)
+            for status in [0, 4, 5] {
+                creation = creation.split("return " + status.as_string() + ";").join("{ status=" + status.as_string() + "; goto cleanup; }")
             }
+            let code = prefix + "int32_t status=0;\n" + declaration + parse + "if(remaining) return 2;\n" + allocate + creation + "cleanup:\n" + cleanup + "return status;\n}\n"
+            return code.copy().split("goto cleanup;").join("goto cleanup_" + operation.as_string() + ";").split("cleanup:\n").join("cleanup_" + operation.as_string() + ":\n")
         }
         // Result storage is declared before jumps caused by allocation failures.
         let result_declaration = branch {
@@ -991,33 +961,27 @@ impl Contract {
         // C labels have function scope; each operation uses its own label.
         let result_cleanup = ""
         let release = self.string(node, "release", false)
-        branch {
-            !release.empty? -> {
-                result_cleanup = "if(result) " + release + "(result);\n"
-            }
-        }
+        if !release.empty? result_cleanup = "if(result) " + release + "(result);\n"
         code = code + branch {
             returns == "void" -> call + ";\n" _ -> "result=" + call + ";\n"
         }
         let all_values = []
         let all_lengths = []
-        branch {
-            returns != "void" -> {
-                all_values.push("result")
-                let length = ""
-                branch {
-                    returns == "c_string" -> {
-                        let maximum = self.bound(node, "max_length", 16777216).as_string()
-                        code = code + "if(!result) { status=4; goto cleanup; } uint64_t result_size=0; while(result_size<" + maximum + " && result[result_size]) result_size++; if(result_size==" + maximum + ") { status=5; goto cleanup; }\n"
-                        length = "result_size"
-                    }
-                    returns == "bytes" -> {
-                        code = code + "if(result_size<0 || (uint64_t)result_size>16777216 || (!result && result_size)) { status=4; goto cleanup; }\n"
-                        length = "(uint64_t)result_size"
-                    }
+        if returns != "void" {
+            all_values.push("result")
+            let length = ""
+            branch {
+                returns == "c_string" -> {
+                    let maximum = self.bound(node, "max_length", 16777216).as_string()
+                    code = code + "if(!result) { status=4; goto cleanup; } uint64_t result_size=0; while(result_size<" + maximum + " && result[result_size]) result_size++; if(result_size==" + maximum + ") { status=5; goto cleanup; }\n"
+                    length = "result_size"
                 }
-                all_lengths.push(move length)
+                returns == "bytes" -> {
+                    code = code + "if(result_size<0 || (uint64_t)result_size>16777216 || (!result && result_size)) { status=4; goto cleanup; }\n"
+                    length = "(uint64_t)result_size"
+                }
             }
+            all_lengths.push(move length)
         }
         for value in values {
             all_values.push(value.copy())
@@ -1081,20 +1045,16 @@ impl Contract {
                     }
                     ty == "f32" || ty == "f64" -> {
                         output = output + "double d; memcpy(&d,&w,8);\n"
-                        branch {
-                            ty == "f32" -> {
-                                output = output + "if(isfinite(d) && (d > FLT_MAX || d < -FLT_MAX)) return 3;\n"
-                            }
+                        if ty == "f32" {
+                            output = output + "if(isfinite(d) && (d > FLT_MAX || d < -FLT_MAX)) return 3;\n"
                         }
                         output = output + place + "=(" + self.c_type(ty) + ")d;\n"
                     }
                     ty.starts_with?("i") -> {
                         output = output + "int64_t s; memcpy(&s,&w,8);\n"
-                        branch {
-                            ty != "i64" -> {
-                                let width = ty.slice(1, ty.length)
-                                output = output + "if(s < INT" + width + "_MIN || s > INT" + width + "_MAX) return 3;\n"
-                            }
+                        if ty != "i64" {
+                            let width = ty.slice(1, ty.length)
+                            output = output + "if(s < INT" + width + "_MIN || s > INT" + width + "_MAX) return 3;\n"
                         }
                         output = output + place + "=(" + self.c_type(ty) + ")s;\n"
                     }
@@ -1149,17 +1109,15 @@ impl Contract {
         let receiver = self.string(node, "receiver", false)
         let creates = self.string(node, "creates", false)
         let result_type = self.ty(self.member(node, "result"))
-        branch {
-            !receiver.empty? -> {
-                let c_type = self.string(self.resource(receiver), "c_type", true)
-                let by_value = self.boolean(self.resource(receiver), "by_value") && !self.boolean(node, "receiver_pointer")
-                types.push(c_type + branch {
-                    by_value -> "" _ -> "*"
-                })
-                arguments.push(branch {
-                    by_value -> "*(" + c_type + "*)resource" _ -> "(" + c_type + "*)resource"
-                })
-            }
+        if !receiver.empty? {
+            let c_type = self.string(self.resource(receiver), "c_type", true)
+            let by_value = self.boolean(self.resource(receiver), "by_value") && !self.boolean(node, "receiver_pointer")
+            types.push(c_type + branch {
+                by_value -> "" _ -> "*"
+            })
+            arguments.push(branch {
+                by_value -> "*(" + c_type + "*)resource" _ -> "(" + c_type + "*)resource"
+            })
         }
         for parameter in self.array(node, "parameters", false) {
             let ty = self.ty(parameter)
@@ -1171,11 +1129,11 @@ impl Contract {
                 _ -> types.push(self.c_type(ty))
             }
         }
-        branch {
-            result_type == "bytes" -> types.push("size_t*")
+        if result_type == "bytes" {
+            types.push("size_t*")
         }
-        branch {
-            types.length == 0 -> types.push("void")
+        if types.length == 0 {
+            types.push("void")
         }
         let return_type = branch {
             !creates.empty? -> self.string(self.resource(creates), "c_type", true) + branch {
@@ -1204,17 +1162,15 @@ impl Contract {
                 }
             }
             arguments.push(place.copy())
-            branch {
-                ty == "bytes" -> arguments.push("(size_t)" + size)
+            if ty == "bytes" {
+                arguments.push("(size_t)" + size)
             }
             number = number + 1
         }
         output = output + "if(remaining != 0) return 2;\n"
-        branch {
-            result_type == "bytes" -> {
-                output = output + "size_t size=0;\n"
-                arguments.push("&size")
-            }
+        if result_type == "bytes" {
+            output = output + "size_t size=0;\n"
+            arguments.push("&size")
         }
         let call = "target(" + arguments.join(",") + ")"
         output = output + branch {
@@ -1260,24 +1216,18 @@ impl Contract {
             callback_result == "void" -> "return;" _ -> "return zero;"
         }
         let output = "typedef " + self.c_type(callback_result) + " (*foster_cb_" + name + "_fn)(" + types.join(",") + ");\nstatic " + self.c_type(callback_result) + " foster_cb_" + name + "(" + parameters.join(",") + ") {\n"
-        branch {
-            callback_result != "void" -> {
-                output = output + self.c_type(callback_result) + " zero={0};\n"
-            }
+        if callback_result != "void" {
+            output = output + self.c_type(callback_result) + " zero={0};\n"
         }
         output = output + "uint8_t packet[" + (width * 8 + 1).as_string() + "], reply[" + (size + 1).as_string() + "]; uint8_t *out=packet; uint64_t written=0;\n" + encode + "if(!foster_dispatch || foster_dispatch((int64_t)(uintptr_t)context,UINT64_C(0x" + identity(self.json(node)) + "),packet," + (width * 8).as_string() + ",reply," + size.as_string() + ",&written) || written!=" + size.as_string() + ") { " + fallback + " }\n"
-        branch {
-            callback_result != "void" -> {
-                let invalid = "{ foster_dispatch((int64_t)(uintptr_t)context,UINT64_C(0x" + identity(self.json(node)) + "),NULL,UINT64_MAX-1,NULL,0,NULL); " + fallback + " }"
-                output = output + "const uint8_t *input=reply; uint64_t remaining=written; " + self.c_type(callback_result) + " result={0};\n" + self.c_read(callback_result, "result").split("return 2;").join(invalid).split("return 3;").join(invalid) + "return result;\n"
-            }
+        if callback_result != "void" {
+            let invalid = "{ foster_dispatch((int64_t)(uintptr_t)context,UINT64_C(0x" + identity(self.json(node)) + "),NULL,UINT64_MAX-1,NULL,0,NULL); " + fallback + " }"
+            output = output + "const uint8_t *input=reply; uint64_t remaining=written; " + self.c_type(callback_result) + " result={0};\n" + self.c_read(callback_result, "result").split("return 2;").join(invalid).split("return 3;").join(invalid) + "return result;\n"
         }
         output = output + "}\n"
         let native = self.string(node, "c_type", false)
-        branch {
-            !native.empty? -> {
-                output = output + "_Static_assert(_Generic((" + native + ")0, foster_cb_" + name + "_fn: 1, default: 0), \"C callback typedef mismatch\");\n"
-            }
+        if !native.empty? {
+            output = output + "_Static_assert(_Generic((" + native + ")0, foster_cb_" + name + "_fn: 1, default: 0), \"C callback typedef mismatch\");\n"
         }
         move output
     }
@@ -1287,12 +1237,10 @@ impl Contract {
             output = output + "#include \"" + self.nodes[node].text + "\"\n"
         }
         output = output + "EXPORT uint64_t foster_c_schema(void) { return UINT64_C(0x" + schema + "); }\n"
-        branch {
-            !self.callbacks().empty? -> {
-                output = output + "#include <stdatomic.h>\ntypedef int32_t (*foster_dispatch_fn)(int64_t,uint64_t,const uint8_t*,uint64_t,uint8_t*,uint64_t,uint64_t*);\nstatic _Atomic(foster_dispatch_fn) foster_dispatch;\nEXPORT int32_t foster_c_callbacks_init(uint64_t version,foster_dispatch_fn fn) { if(version!=1) return 1; atomic_store(&foster_dispatch,fn); return 0; }\n"
-                for callback in self.callbacks() {
-                    output = output + self.c_callback(callback)
-                }
+        if !self.callbacks().empty? {
+            output = output + "#include <stdatomic.h>\ntypedef int32_t (*foster_dispatch_fn)(int64_t,uint64_t,const uint8_t*,uint64_t,uint8_t*,uint64_t,uint64_t*);\nstatic _Atomic(foster_dispatch_fn) foster_dispatch;\nEXPORT int32_t foster_c_callbacks_init(uint64_t version,foster_dispatch_fn fn) { if(version!=1) return 1; atomic_store(&foster_dispatch,fn); return 0; }\n"
+            for callback in self.callbacks() {
+                output = output + self.c_callback(callback)
             }
         }
         for node in self.enums() {
@@ -1332,11 +1280,7 @@ impl Contract {
                 !receiver.empty? -> self.kind(receiver)
                 _ -> 0
             }
-            branch {
-                result_type == "bytes" || self.extended(node) -> {
-                    mode = mode + 256
-                }
-            }
+            if result_type == "bytes" || self.extended(node) mode = mode + 256
             let size = branch {
                 result_type.starts_with?("@") -> self.slots(result_type, []) * 8
                 _ -> 0
@@ -1424,11 +1368,7 @@ impl Contract {
         let callback_result = self.ty(self.member(node, "result"))
         let output = "/// Handler for copied C callback values.\npub type C" + name + "Handler = {\n    /// Handles one event on the registering Foster thread.\n    pub func " + method + "(" + parameters.join(", ") + ") -> " + foster_type(callback_result) + " [reshape self]\n}\nfunc callback_" + name + "<H & C" + name + "Handler>(handler: H, payload: String) -> Result<String, CError> [reshape handler, read payload] {\n    let value = try CValue.callback_packet(payload)\n    try value.check_slots(" + width.as_string() + ")\n" + statements.join("")
         output = output + "    let returned = handler." + method + "(" + arguments.join(", ") + ")\n    let arguments = CArguments.empty()\n"
-        branch {
-            callback_result != "void" -> {
-                output = output + self.foster_argument(callback_result, "returned")
-            }
-        }
+        if callback_result != "void" output = output + self.foster_argument(callback_result, "returned")
         output + "    Result.Ok(arguments.reply())\n}\n\n"
     }
     func foster_extended(self, node: Int, id: Int) -> String {
@@ -1444,20 +1384,18 @@ impl Contract {
             _ -> "CResult_" + name
         }
         let output = ""
-        branch {
-            outputs.length > 1 -> {
-                output = output + "/// Copied return value and output parameters of `" + name + "`.\npub type " + result_type + " = {\n"
-                let index = 0
-                for ty in outputs {
-                    output = output + "    pub " + output_names[index] + ": " + self.value_type(ty) + "\n"
-                    index = index + 1
-                }
-                output = output + "}\n\n"
+        if outputs.length > 1 {
+            output = output + "/// Copied return value and output parameters of `" + name + "`.\npub type " + result_type + " = {\n"
+            let index = 0
+            for ty in outputs {
+                output = output + "    pub " + output_names[index] + ": " + self.value_type(ty) + "\n"
+                index = index + 1
             }
+            output = output + "}\n\n"
         }
         let parameters = []
-        branch {
-            !receiver.empty? -> parameters.push("resource: Native" + receiver)
+        if !receiver.empty? {
+            parameters.push("resource: Native" + receiver)
         }
         let arguments = "    let arguments = CArguments.empty()\n"
         let before = ""
@@ -1481,10 +1419,8 @@ impl Contract {
                     } + place
                     let other = 0
                     for item in self.array(node, "parameters", false) {
-                        branch {
-                            other != index && !self.ty(item).starts_with?("&") -> {
-                                effects = effects + ", read p" + other.as_string()
-                            }
+                        if other != index && !self.ty(item).starts_with?("&") {
+                            effects = effects + ", read p" + other.as_string()
                         }
                         other = other + 1
                     }
@@ -1662,10 +1598,8 @@ impl Contract {
             output = output + self.docs(node, "")
             for field in self.array(node, "fields", true) {
                 let doc = self.member(field, "documentation")
-                branch {
-                    doc >= 0 -> {
-                        output = output + doc_lines(self.string(field, "name", true) + ": " + self.nodes[doc].text, "")
-                    }
+                if doc >= 0 {
+                    output = output + doc_lines(self.string(field, "name", true) + ": " + self.nodes[doc].text, "")
                 }
             }
             output = output + "/// Copied fields of C `" + self.string(node, "c_type", true) + "`; no native padding or pointers.\npub type " + name + " = {\n"
@@ -1696,38 +1630,32 @@ impl Contract {
         }
         let id = 0
         for node in self.operations() {
-            branch {
-                self.extended(node) -> {
-                    output = output + self.foster_extended(node, id)
-                    id = id + 1
-                    continue
-                }
+            if self.extended(node) {
+                output = output + self.foster_extended(node, id)
+                id = id + 1
+                continue
             }
             let parameters = []
             let receiver = self.string(node, "receiver", false)
             let creates = self.string(node, "creates", false)
             let result_type = self.ty(self.member(node, "result"))
-            branch {
-                !receiver.empty? -> parameters.push("resource: Native" + receiver)
+            if !receiver.empty? {
+                parameters.push("resource: Native" + receiver)
             }
             let index = 0
             let argument_source = ""
             let parameter_names = self.array(node, "parameter_names", false)
             let used_names = ["arguments", "value", "bridge", "resource", "ffi", "bytes", "string", "result", "list"]
-            branch {
-                result_type.starts_with?("@") -> {
-                    for slot in 0.range(self.slots(result_type, [])) {
-                        used_names.push("slot" + slot.as_string())
-                    }
+            if result_type.starts_with?("@") {
+                for slot in 0.range(self.slots(result_type, [])) {
+                    used_names.push("slot" + slot.as_string())
                 }
             }
             for parameter in self.array(node, "parameters", false) {
                 let ty = self.ty(parameter)
                 let place = "p" + index.as_string()
-                branch {
-                    !parameter_names.empty? && !self.nodes[parameter_names[index]].text.empty? -> {
-                        place = foster_field(self.nodes[parameter_names[index]].text)
-                    }
+                if !parameter_names.empty? && !self.nodes[parameter_names[index]].text.empty? {
+                    place = foster_field(self.nodes[parameter_names[index]].text)
                 }
                 while used_names.contains?(place) {
                     place = place + "_"
@@ -1772,9 +1700,11 @@ impl Contract {
         move output
     }
 }
+
 const PREAMBLE = "/* Generated Foster C bridge. Do not edit. */\n#include <stdint.h>\n#include <stddef.h>\n#include <stdlib.h>\n#include <string.h>\n#include <limits.h>\n#include <float.h>\n#include <math.h>\n#define EXPORT __declspec(dllexport)\n_Static_assert(sizeof(void*) == 8, \"Foster requires x86-64\");\n_Static_assert(sizeof(float) == 4 && sizeof(double) == 8, \"unsupported float ABI\");\nstatic int read64(const uint8_t **p, uint64_t *n, uint64_t *v) {\n    if (*n < 8) return 0;\n    *v = 0; for (unsigned i=0;i<8;i++) *v |= (uint64_t)(*p)[i] << (8*i);\n    *p += 8; *n -= 8; return 1;\n}\nstatic void write64(uint8_t *p, uint64_t v) { for(unsigned i=0;i<8;i++) p[i]=(uint8_t)(v >> (8*i)); }\nstatic int c_string_valid(const uint8_t *p, uint64_t n) {\n    if(!n || p[n-1] != 0) return 0;\n    n--;\n    while(n) {\n        uint8_t first=*p++; n--;\n        if(!first) return 0;\n        if(first < 0x80) continue;\n        unsigned count; uint32_t value, minimum;\n        if(first >= 0xc2 && first <= 0xdf) { count=1; value=first&31; minimum=0x80; }\n        else if(first >= 0xe0 && first <= 0xef) { count=2; value=first&15; minimum=0x800; }\n        else if(first >= 0xf0 && first <= 0xf4) { count=3; value=first&7; minimum=0x10000; }\n        else return 0;\n        if(n < count) return 0;\n        n -= count;\n        while(count--) { uint8_t next=*p++; if((next&0xc0)!=0x80) return 0; value=(value<<6)|(next&63); }\n        if(value < minimum || value > 0x10ffff || (value >= 0xd800 && value <= 0xdfff)) return 0;\n    }\n    return 1;\n}\nEXPORT uint64_t foster_c_abi(void) { return 1; }\n"
 
 // Lexicographic UTF-8 ordering keeps schema identity independent of object order.
+
 func key_before(left: String, right: String) -> Bool {
     let a = left.bytes
     let b = right.bytes
@@ -1785,9 +1715,11 @@ func key_before(left: String, right: String) -> Bool {
     }
     a.length < b.length
 }
+
 func json_member(member: JsonMember, parent: Int, rows: List<String>) {
     json_flatten(member.value, parent, member.key, rows)
 }
+
 func json_flatten(value: JsonValue, parent: Int, key: String, rows: List<String>) {
     let id = rows.length
     let kind = ""
@@ -1859,6 +1791,7 @@ func json_flatten(value: JsonValue, parent: Int, key: String, rows: List<String>
         _ -> ()
     }
 }
+
 func json_rows(input: String) -> String {
     let tree = branch json::parse_with(input, JsonParseOptions {
         max_depth: 256
@@ -1870,6 +1803,7 @@ func json_rows(input: String) -> String {
     json_flatten(tree, -1, "", rows)
     rows.join("\n") + "\n"
 }
+
 /// Decodes a JSON document into indexed nodes without copying nested subtrees on lookup.
 pub func decode_json(input: String) -> Contract {
     let tree = branch json::parse_with(input, JsonParseOptions {
@@ -1882,11 +1816,13 @@ pub func decode_json(input: String) -> Contract {
     json_nodes(tree, -1, "", nodes)
     indexed(move nodes)
 }
+
 func member_node(member: JsonMember, parent: Int, nodes: List<Node>) {
     json_nodes(member.value, parent, member.key, nodes)
 }
 // AST discovery needs indexed lookups, not canonical schema bytes. Avoid the
 // hex/TSV serialization, reparsing, and key sorting used for manifest identity.
+
 func json_nodes(value: JsonValue, parent: Int, key: String, nodes: List<Node>) {
     let id = nodes.length
     let kind = ""
@@ -1947,11 +1883,13 @@ pub func read_file(file: String) -> String {
         Result.Ok(text) -> move text Result.Error(error) -> panic(error.message)
     }
 }
+
 pub func write_file(file: String, text: String) {
     branch fs::write_text(file, text) {
         Result.Ok(_) -> () Result.Error(error) -> panic(error.message)
     }
 }
+
 pub func canonical(file: String) -> String {
     let value = branch paths::canonicalize(file) {
         Result.Ok(text) -> text.copy().split("\\").join("/") Result.Error(error) -> panic(error.message)
@@ -1962,22 +1900,26 @@ pub func canonical(file: String) -> String {
     return value.slice(4, value.length) if value.starts_with?("//?/")
     move value
 }
+
 pub func absolute(file: String) -> String {
     let directory = branch env::current_directory() {
         Result.Ok(text) -> move text Result.Error(error) -> panic(error.message)
     }
     paths::join(directory, file).split("\\").join("/")
 }
+
 pub func artifact(output: String, extension: String) -> String {
     assert(output.ends_with?(".dll"), "output must name a .dll file")
     output.slice(0, output.length - 4) + extension
 }
+
 pub func make_parent(output: String) {
     let parent = paths::parent(output).unwrap_or(".")
     branch fs::create_directory_all(parent) {
         Result.Ok(_) -> () Result.Error(error) -> panic(error.message)
     }
 }
+
 /// Starts a direct process with separate arguments; forwards failures and captures bounded UTF-8 output.
 pub func execute(executable: String, arguments: List<String>, directory: String) -> String {
     let child = branch process::spawn_with(executable, arguments, SpawnOptions {
@@ -1992,11 +1934,12 @@ pub func execute(executable: String, arguments: List<String>, directory: String)
     let stdout = String.from_utf8(move output.stdout).unwrap_or("<non-UTF-8 stdout>")
     let stderr = String.from_utf8(move output.stderr).unwrap_or("<non-UTF-8 stderr>")
     assert(output.status.success, executable + " failed:\n" + stdout + "\n" + stderr)
-    branch {
-        !stderr.empty? -> println(stderr)
+    if !stderr.empty? {
+        println(stderr)
     }
     move stdout
 }
+
 /// Builds a reviewed manifest directly; paths inside it resolve relative to its directory.
 pub func build(manifest_path: String, destination: String, compiler: String, module_path: String) -> String {
     let file = canonical(manifest_path)

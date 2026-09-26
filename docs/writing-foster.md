@@ -147,9 +147,26 @@ iterable. `break` and `continue` target the nearest enclosing loop; completed
 loops produce `()`. Loop-body locals do not escape the loop.
 
 Use `return value if condition`, `break if condition`, or `continue if condition`
-for guarded transfers. Do not write `if condition { ... }`, `else`, or a postfix
-guard on an assignment. In loop headers, parenthesize a direct record literal
-to distinguish its braces from the body.
+for guarded transfers. Other statements use `if condition statement` on one line,
+or `if condition { ... }` for a block. The condition must be `Bool` and runs first;
+a false condition skips the body. A completing `if` produces `()`, discarding any
+body result. Body-local declarations do not escape. Use `branch` to choose a value
+or express alternatives; there is no `else`. In `if` and loop conditions,
+parenthesize a direct record literal to distinguish its braces from the body.
+Use a braced body when an action could be parsed as part of the condition, such
+as an action starting with `(` or `[`.
+
+```foster
+func main() -> Int {
+    let answer = 40
+    if answer == 40 answer = answer + 2
+    if false {
+        answer = 0
+        panic("unselected action")
+    }
+    answer
+}
+```
 
 ## Deferred record fields
 

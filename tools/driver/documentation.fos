@@ -143,12 +143,7 @@ func type_card(reader: Reader) -> String {
         section = section + 1
     }
     let functions = reader.number()
-    branch {
-        functions > 0 -> {
-            body = body + "<h4>Functions and methods</h4><ul>"
-        }
-        _ -> ()
-    }
+    if functions > 0 body = body + "<h4>Functions and methods</h4><ul>"
     let index = 0
     while index < functions {
         let anchor = escape(reader.take())
@@ -164,12 +159,7 @@ func type_card(reader: Reader) -> String {
         body = body + "</li>"
         index = index + 1
     }
-    branch {
-        functions > 0 -> {
-            body = body + "</ul>"
-        }
-        _ -> ()
-    }
+    if functions > 0 body = body + "</ul>"
     body + "</article>"
 }
 
@@ -188,12 +178,7 @@ func declaration(reader: Reader) -> Declaration {
     let contents = "<li" + owner_attribute + " data-declaration><a href=\"#" + anchor + "\">" + name + " <small>" + kind + "</small></a></li>"
     let body = "<article id=\"" + anchor + "\"><h2><a class=\"anchor\" href=\"#" + anchor + "\">" + name + "</a><span class=\"badge kind\">" + kind + "</span>"
     let index = 0
-    branch {
-        count > 1 -> {
-            body = body + "</h2>"
-        }
-        _ -> ()
-    }
+    if count > 1 body = body + "</h2>"
     while index < count {
         let public = reader.flag()
         let signature = reader.take()
@@ -212,12 +197,7 @@ func declaration(reader: Reader) -> Declaration {
                 }
             }
         }
-        branch {
-            count > 1 -> {
-                body = body + "</section>"
-            }
-            _ -> ()
-        }
+        if count > 1 body = body + "</section>"
         index = index + 1
     }
     Declaration {
@@ -239,23 +219,15 @@ func module_page(reader: Reader, script: String) -> RenderedModule {
         Option.None -> ()
     }
     let card_count = reader.number()
-    branch {
-        card_count > 0 -> {
-            body = body + "<section aria-labelledby=\"provided-types\"><h2 id=\"provided-types\">Provided types</h2><div class=\"type-grid\">"
-        }
-        _ -> ()
+    if card_count > 0 {
+        body = body + "<section aria-labelledby=\"provided-types\"><h2 id=\"provided-types\">Provided types</h2><div class=\"type-grid\">"
     }
     let index = 0
     while index < card_count {
         body = body + type_card(reader)
         index = index + 1
     }
-    branch {
-        card_count > 0 -> {
-            body = body + "</div></section>"
-        }
-        _ -> ()
-    }
+    if card_count > 0 body = body + "</div></section>"
     body = body + "</div>"
     let count = reader.number()
     let contents = ""
@@ -266,12 +238,7 @@ func module_page(reader: Reader, script: String) -> RenderedModule {
         body = body + item.html
         index = index + 1
     }
-    branch {
-        count == 0 -> {
-            body = body + "<p class=\"empty\">This module has no declarations.</p>"
-        }
-        _ -> ()
-    }
+    if count == 0 body = body + "<p class=\"empty\">This module has no declarations.</p>"
     let layout = "<div class=\"module-layout\"><nav id=\"page-navigation\" class=\"on-this-page\" aria-label=\"On this page\"><a class=\"crumb\" href=\"../index.html\">← All modules</a><details open><summary>On this page</summary><a href=\"#module-overview\">Overview</a><label for=\"declaration-filter\">Find a declaration</label><input id=\"declaration-filter\" class=\"filter\" type=\"search\" placeholder=\"Name or kind…\" data-declaration-filter><p class=\"filter-status\" role=\"status\" data-declaration-status>" + count.as_string() + " declarations</p><ul>" + contents + "</ul></details></nav><div class=\"module-content\">" + body + "</div></div>"
     let heading = "<h1>module " + escape(name) + "</h1><p>" + count.as_string() + " declaration" + plural(count) + "</p>"
     let filename = name.copy().split(".").join("-") + ".html"

@@ -1,6 +1,27 @@
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 #[test]
+fn if_consumption_prevents_unconditional_reuse() {
+    let error = foster::compile(
+        r#"
+func take(values: List<Int>) -> () [consume values] { () }
+func example(flag: Bool) -> Int {
+    let values = [42]
+    if flag take(move values)
+    values[0]
+}
+func main() -> Int { example(false) }
+"#,
+    )
+    .unwrap_err();
+    assert!(
+        error.message.contains("used after it was moved"),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
 fn ownership_rules_have_indexed_compile_pass_and_compile_fail_witnesses() {
     let pass = [
         (
@@ -544,7 +565,7 @@ func main() -> Int {
 
 #[test]
 fn ownership_revision_and_diagnostic_catalog_match_current_contract() {
-    assert_eq!(foster::ownership::LANGUAGE_VERSION, 17);
+    assert_eq!(foster::ownership::LANGUAGE_VERSION, 19);
     assert_eq!(foster::ownership::MODEL_VERSION, 5);
     assert_eq!(
         foster::ownership::diagnostics::CATALOG

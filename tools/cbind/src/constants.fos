@@ -51,10 +51,8 @@ func literal_string(tree: Contract, node: Int) -> Bool {
 }
 func type_json(tree: Contract, node: Int) -> String {
     return bindings::quoted(tree.nodes[node].text) if tree.nodes[node].kind == "string"
-    branch {
-        tree.member(node, "array") >= 0 -> {
-            return "{\"array\":" + type_json(tree, tree.member(node, "array")) + ",\"length\":" + tree.nodes[tree.member(node, "length")].text + "}"
-        }
+    if tree.member(node, "array") >= 0 {
+        return "{\"array\":" + type_json(tree, tree.member(node, "array")) + ",\"length\":" + tree.nodes[tree.member(node, "length")].text + "}"
     }
     let key = branch {
         tree.member(node, "enum") >= 0 -> "enum" _ -> "record"
@@ -77,11 +75,7 @@ func print_value(context: Context, ty: String, place: String) -> String {
                     }
                     let output = "putchar('[');\n"
                     for index in 0.range(length) {
-                        branch {
-                            index > 0 -> {
-                                output = output + "putchar(',');\n"
-                            }
-                        }
+                        if index > 0 output = output + "putchar(',');\n"
                         output = output + print_value(context, element, place + "[" + index.as_string() + "]")
                     }
                     return output + "putchar(']');\n"
@@ -126,18 +120,16 @@ func probe(context: Context, names: List<String>, values: List<String>, reports:
         args.push(arg.copy())
     }
     let completed = attempt(context, args)
-    branch {
-        !completed.status.success -> {
-            branch {
-                names.length == 1 -> reports.push(names[0] + ": macro is not a supported C static constant expression\n")
-                _ -> {
-                    let middle = names.length / 2
-                    probe(context, names.slice(0, middle), values, reports)
-                    probe(context, names.slice(middle, names.length), values, reports)
-                }
+    if !completed.status.success {
+        branch {
+            names.length == 1 -> reports.push(names[0] + ": macro is not a supported C static constant expression\n")
+            _ -> {
+                let middle = names.length / 2
+                probe(context, names.slice(0, middle), values, reports)
+                probe(context, names.slice(middle, names.length), values, reports)
             }
-            return ()
         }
+        return ()
     }
     let tree = bridge::decode_json(String.from_utf8(move completed.stdout).unwrap_or(""))
     let kinds = []
@@ -149,16 +141,8 @@ func probe(context: Context, names: List<String>, values: List<String>, reports:
                 let name = text(tree, variable, "name").slice(13, text(tree, variable, "name").length)
                 let node = tree.member(variable, "type")
                 let spelling = text(tree, node, "desugaredQualType")
-                branch {
-                    spelling.empty? -> {
-                        spelling = text(tree, node, "qualType")
-                    }
-                }
-                branch {
-                    spelling.starts_with?("const ") -> {
-                        spelling = spelling.slice(6, spelling.length)
-                    }
-                }
+                if spelling.empty? spelling = text(tree, node, "qualType")
+                if spelling.starts_with?("const ") spelling = spelling.slice(6, spelling.length)
                 let kind = bindings::binding_type(spelling, context.rows, context.accepted)
                 branch {
                     literal_string(tree, variable) -> {
@@ -201,11 +185,7 @@ func probe(context: Context, names: List<String>, values: List<String>, reports:
         let decoded = bridge::decode_json(value)
         let finite = true
         for node in decoded.nodes {
-            branch {
-                node.kind == "null" -> {
-                    finite = false
-                }
-            }
+            if node.kind == "null" finite = false
         }
         branch {
             !finite -> reports.push(name + ": non-finite constant is not representable\n")
@@ -213,10 +193,8 @@ func probe(context: Context, names: List<String>, values: List<String>, reports:
                 let docs = ""
                 let position = 0
                 while position < context.doc_names.length {
-                    branch {
-                        context.doc_names[position] == name -> {
-                            docs = ",\"documentation\":" + context.doc_texts[position]
-                        }
+                    if context.doc_names[position] == name {
+                        docs = ",\"documentation\":" + context.doc_texts[position]
                     }
                     position = position + 1
                 }
@@ -267,17 +245,11 @@ pub func discover(rows: String, manifest: String, shim: String, output: String, 
     let selected = false
     for line in preprocessed.copy().split("\n") {
         let parts = line.copy().split("\"")
-        branch {
-            line.starts_with?("# ") && parts.length >= 3 -> {
-                selected = false
-                let file = parts[1].copy().split("\\\\").join("\\")
-                branch {
-                    !file.starts_with?("<") -> {
-                        selected = headers.contains?(bridge::canonical(file))
-                    }
-                }
-                continue
-            }
+        if line.starts_with?("# ") && parts.length >= 3 {
+            selected = false
+            let file = parts[1].copy().split("\\\\").join("\\")
+            if !file.starts_with?("<") selected = headers.contains?(bridge::canonical(file))
+            continue
         }
         continue if !line.starts_with?("#define ") && !line.starts_with?("#undef ")
         let define = line.starts_with?("#define ")
@@ -289,11 +261,7 @@ pub func discover(rows: String, manifest: String, shim: String, output: String, 
         let name = token.copy().split("(")[0].copy()
         let index = 0
         for prior in macros {
-            branch {
-                prior == name -> {
-                    definitions[index] = ""
-                }
-            }
+            if prior == name definitions[index] = ""
             index = index + 1
         }
         continue if !define || !selected
@@ -313,8 +281,8 @@ pub func discover(rows: String, manifest: String, shim: String, output: String, 
         }
     }
     for name in enumerators {
-        branch {
-            !names.contains?(name) -> names.push(name.copy())
+        if !names.contains?(name) {
+            names.push(name.copy())
         }
     }
     let values = []

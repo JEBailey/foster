@@ -895,18 +895,61 @@ fn postfix_guards_require_boolean_conditions() {
 }
 
 #[test]
-fn postfix_guards_only_apply_to_control_statements() {
-    let expression = foster::compile("func main() { println() if true }").unwrap_err();
-    assert_eq!(
-        expression.message,
-        "postfix `if` may only guard a control statement"
-    );
+fn postfix_guards_reject_non_transfer_statements() {
+    for source in [
+        "func main() { let value = 1 if true }",
+        "func main() { let { value } = unknown if true }",
+        "func main() { assert(true) if true }",
+        "func main() { let value = 0\nvalue = 1 if true }",
+        "func main() { println() if true }",
+        "func main() { let values = [0]\nvalues[0] = 1 if true }",
+    ] {
+        let error = foster::compile(source).unwrap_err();
+        assert!(
+            error
+                .message
+                .contains("postfix `if` is only allowed on return, break, or continue"),
+            "{}",
+            error.message
+        );
+    }
+}
 
-    let binding = foster::compile("func main() { value = 1 if true\nvalue }").unwrap_err();
+#[test]
+fn if_statements_require_boolean_conditions() {
+    for source in [
+        "func main() { let value = 0\nif 42 value = 1 }",
+        "func main() { if 42 { println() } }",
+    ] {
+        let error = foster::compile(source).unwrap_err();
+        assert!(error.message.contains("Bool"), "{}", error.message);
+    }
+}
+
+#[test]
+fn if_statements_execute_conditionally() {
     assert_eq!(
-        binding.message,
-        "postfix `if` may only guard a control statement"
+        foster::run(include_str!("fixtures/programs/if_statements.fos")).unwrap(),
+        Value::Integer(42)
     );
+}
+
+#[test]
+fn if_statements_require_a_body_and_do_not_produce_values() {
+    for source in [
+        "func main() { if true }",
+        "func main() { if true\nprintln() }",
+        "func main() { let value = if true { 42 } }",
+        "func main() -> Int { if true { 42 } }",
+        "func main() { if true { let hidden = 42 }\nhidden }",
+        "func main() { if true let hidden = 42\nhidden }",
+        "func main() { if false {} else {} }",
+    ] {
+        assert!(
+            foster::compile(source).is_err(),
+            "unexpectedly accepted {source}"
+        );
+    }
 }
 
 #[test]

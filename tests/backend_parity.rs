@@ -2,6 +2,51 @@
 use foster::{native, vm};
 
 #[test]
+fn if_statements_on_both_backends() {
+    check(
+        "if-statements",
+        include_str!("fixtures/programs/if_statements.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
+fn if_statements_cleanup_and_propagate_on_both_backends() {
+    check_stdout(
+        "if-statement-cleanup",
+        r#"
+import core.drop
+import core.result
+type Resource = & Drop & { id: Int }
+impl Resource { func deinit(self) -> () { println(self.id) } }
+func take(value: Resource) -> () [consume value] { () }
+func produce() -> Resource { Resource { id: 3 } }
+func exercise(flag: Bool) -> () {
+    let value = Resource { id: 1 }
+    if flag take(move value)
+    println(2)
+    if flag {
+        produce()
+    }
+}
+func fail(value: Resource) -> Result<Int, Int> [consume value] { Result.Error(7) }
+func propagate(flag: Bool) -> Result<Int, Int> {
+    if flag try fail(Resource { id: 4 })
+    Result.Ok(42)
+}
+func main() -> Int {
+    exercise(false)
+    exercise(true)
+    assert(propagate(false) == Result.Ok(42))
+    assert(propagate(true) == Result.Error(7))
+    42
+}
+"#,
+        "2\n1\n1\n2\n3\n4\n42",
+    );
+}
+
+#[test]
 fn conditional_branch_implicit_default_on_both_backends() {
     check(
         "conditional-branch-default",

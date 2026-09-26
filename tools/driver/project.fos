@@ -62,12 +62,9 @@ func string_value(value: TomlValue, message: String) -> Result<String, String> [
 
 func reject_unknown(entries: List<TomlEntry>, allowed: List<String>, location: String) -> Result<(), String> {
     for entry in entries {
-        branch {
-            !allowed.contains?(entry.key) -> {
-                let expected = allowed.map((key: String) -> "`" + key + "`").join(" or ")
-                return Result.Error("unknown key `" + entry.key + "` in " + location + "; expected " + expected)
-            }
-            _ -> ()
+        if !allowed.contains?(entry.key) {
+            let expected = allowed.map((key: String) -> "`" + key + "`").join(" or ")
+            return Result.Error("unknown key `" + entry.key + "` in " + location + "; expected " + expected)
         }
     }
     Result.Ok(())
@@ -285,34 +282,28 @@ func visit(project: ProjectData, state: Resolution, windows: Bool) -> Result<(),
         let extension = branch paths::extension(dependency.root) {
             Option.Some(value) -> value Option.None -> ""
         }
-        branch {
-            extension == "flib" -> {
-                let artifact = branch paths::canonicalize(dependency.root) {
-                    Result.Ok(path) -> path
-                    Result.Error(error) -> {
-                        return Result.Error("cannot resolve library `" + dependency.root + "`: " + error.message)
-                    }
+        if extension == "flib" {
+            let artifact = branch paths::canonicalize(dependency.root) {
+                Result.Ok(path) -> path
+                Result.Error(error) -> {
+                    return Result.Error("cannot resolve library `" + dependency.root + "`: " + error.message)
                 }
-                let seen = false
-                for alias in state.aliases {
-                    branch {
-                        alias.name == dependency.name -> {
-                            return Result.Error("dependency name `" + dependency.name + "` refers to different artifacts") if alias.root != artifact
-                            seen = true
-                        }
-                        _ -> ()
-                    }
-                }
-                continue if seen
-                state.aliases.push(Dependency {
-                    name: dependency.name.copy(), root: artifact.copy()
-                })
-                state.output.push(Resolved {
-                    name: dependency.name.copy(), project: Option.None, artifact
-                })
-                continue
             }
-            _ -> ()
+            let seen = false
+            for alias in state.aliases {
+                if alias.name == dependency.name {
+                    return Result.Error("dependency name `" + dependency.name + "` refers to different artifacts") if alias.root != artifact
+                    seen = true
+                }
+            }
+            continue if seen
+            state.aliases.push(Dependency {
+                name: dependency.name.copy(), root: artifact.copy()
+            })
+            state.output.push(Resolved {
+                name: dependency.name.copy(), project: Option.None, artifact
+            })
+            continue
         }
         let child = branch load(paths::join(dependency.root, "foster.toml"), windows) {
             Result.Ok(value) -> value
@@ -325,28 +316,17 @@ func visit(project: ProjectData, state: Resolution, windows: Bool) -> Result<(),
         let in_cycle = false
         for ancestor in state.visiting {
             in_cycle = in_cycle || ancestor.root == manifest
-            branch {
-                in_cycle -> {
-                    cycle.push(ancestor.name.copy())
-                }
-                _ -> ()
-            }
+            if in_cycle cycle.push(ancestor.name.copy())
         }
-        branch {
-            in_cycle -> {
-                cycle.push(dependency.name.copy())
-                return Result.Error("path dependency cycle: " + cycle.join(" -> "))
-            }
-            _ -> ()
+        if in_cycle {
+            cycle.push(dependency.name.copy())
+            return Result.Error("path dependency cycle: " + cycle.join(" -> "))
         }
         let seen = false
         for alias in state.aliases {
-            branch {
-                alias.name == dependency.name -> {
-                    return Result.Error("dependency name `" + dependency.name + "` refers to both `" + alias.root + "` and `" + manifest + "`") if alias.root != manifest
-                    seen = true
-                }
-                _ -> ()
+            if alias.name == dependency.name {
+                return Result.Error("dependency name `" + dependency.name + "` refers to both `" + alias.root + "` and `" + manifest + "`") if alias.root != manifest
+                seen = true
             }
         }
         continue if seen

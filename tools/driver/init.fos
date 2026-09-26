@@ -47,11 +47,8 @@ func main(arguments: Arguments) -> Result<String, String> {
     return Result.Error("default source path `" + source + "` exists and is not a directory") if fs::exists?(source) && !fs::directory?(source)
     try checked_io(fs::create_directory_all(source))
     let main_path = paths::join(source, "main.fos")
-    branch {
-        !fs::exists?(main_path) -> {
-            try checked_io(fs::write_text(main_path, "func main() -> () {\n    println(\"Hello, Foster!\")\n}\n"))
-        }
-        _ -> ()
+    if !fs::exists?(main_path) {
+        try checked_io(fs::write_text(main_path, "func main() -> () {\n    println(\"Hello, Foster!\")\n}\n"))
     }
     try checked_io(fs::write_text(manifest, "[package]\nname = \"" + name + "\"\nsource = \"src\"\n"))
     Result.Ok("created Foster project `" + name + "` at " + root + "\n  " + manifest + "\n  " + main_path + "\n")

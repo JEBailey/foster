@@ -81,6 +81,16 @@ mod tests {
     }
 
     #[test]
+    fn formats_if_statements_with_inline_and_braced_bodies() {
+        let source =
+            "func main() {\nlet value = 0\nif true value = 42\nif false { println(value) }\n}\n";
+        let expected = "func main() {\n    let value = 0\n    if true value = 42\n    if false {\n        println(value)\n    }\n}\n";
+        let formatted = format(source).unwrap();
+        assert_eq!(formatted, expected);
+        assert_eq!(format(&formatted).unwrap(), formatted);
+    }
+
+    #[test]
     fn formats_while_without_expanding_the_sugar() {
         let formatted =
             "func main() {\n    while true {\n        // stop here\n        break\n    }\n}\n";

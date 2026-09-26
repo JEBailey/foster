@@ -145,11 +145,7 @@ func expand_braces(source: String) -> String {
             }
             line_comment -> {
                 output.push(points[index])
-                branch {
-                    value == 10 -> {
-                        line_comment = false
-                    }
-                }
+                if value == 10 line_comment = false
             }
             depth > 0 -> {
                 output.push(points[index])
@@ -167,24 +163,16 @@ func expand_braces(source: String) -> String {
                 }
             }
             _ -> {
-                branch {
-                    pending && value == 32 || pending && value == 9 -> {
-                        index = index + 1
-                        continue
-                    }
+                if pending && value == 32 || pending && value == 9 {
+                    index = index + 1
+                    continue
                 }
-                branch {
-                    pending && value != 10 -> {
-                        output.append("\n")
-                        line_start = true
-                    }
+                if pending && value != 10 {
+                    output.append("\n")
+                    line_start = true
                 }
                 pending = false
-                branch {
-                    value == 125 && !line_start -> {
-                        output.append("\n")
-                    }
-                }
+                if value == 125 && !line_start output.append("\n")
                 output.push(points[index])
                 branch {
                     value == 123 -> {
@@ -211,12 +199,10 @@ func expand_braces(source: String) -> String {
                             break if code != 32 && code != 9
                             following = following + 1
                         }
-                        branch {
-                            following < points.length -> {
-                                let code = points[following].as_int()
-                                let guarded = following + 1 < points.length && points[following].as_int() == 105 && points[following + 1].as_int() == 102
-                                pending = !guarded && code >= 65 && code <= 90 || !guarded && code >= 97 && code <= 122 || code == 95
-                            }
+                        if following < points.length {
+                            let code = points[following].as_int()
+                            let guarded = following + 1 < points.length && points[following].as_int() == 105 && points[following + 1].as_int() == 102
+                            pending = !guarded && code >= 65 && code <= 90 || !guarded && code >= 97 && code <= 122 || code == 95
                         }
                     }
                     value == 34 || value == 39 -> {
@@ -258,17 +244,15 @@ func format(source: String) -> String {
     let type_continuation = false
     let line_index = 0
     while line_index < lines.length {
-        branch {
-            state.quote != 0 || state.depth > 0 -> {
-                let literal_line = lines[line_index].copy()
-                output.push(literal_line.copy())
-                scan(literal_line, branch {
-                    state.indents.empty? -> 0 _ -> state.indents[state.indents.length - 1]
-                }, state)
-                line_index = line_index + 1
-                previous_blank = false
-                continue
-            }
+        if state.quote != 0 || state.depth > 0 {
+            let literal_line = lines[line_index].copy()
+            output.push(literal_line.copy())
+            scan(literal_line, branch {
+                state.indents.empty? -> 0 _ -> state.indents[state.indents.length - 1]
+            }, state)
+            line_index = line_index + 1
+            previous_blank = false
+            continue
         }
         let probe = ScanState {
             depth: 0, quote: 0, escaped: false, indents: []
@@ -279,27 +263,16 @@ func format(source: String) -> String {
             _ -> lines[line_index].copy().trim()
         }
         line_index = line_index + 1
-        branch {
-            content.empty? -> {
-                branch {
-                    !output.empty? && !previous_blank -> {
-                        output.push("")
-                    }
-                    _ -> ()
-                }
-                previous_blank = true
-                continue
-            }
-            _ -> ()
+        if content.empty? {
+            if !output.empty? && !previous_blank output.push("")
+            previous_blank = true
+            continue
         }
         previous_blank = false
         let next_continues = continues_type(lines, line_index)
-        branch {
-            begins_declaration(content) && !content.starts_with?("|") && !content.starts_with?("&") -> {
-                let text = declaration(content)
-                type_continuation = (text.starts_with?("type ") || text.starts_with?("enum ")) && (content.ends_with?("=") || next_continues)
-            }
-            _ -> ()
+        if begins_declaration(content) && !content.starts_with?("|") && !content.starts_with?("&") {
+            let text = declaration(content)
+            type_continuation = (text.starts_with?("type ") || text.starts_with?("enum ")) && (content.ends_with?("=") || next_continues)
         }
         let leading = closers(content, state)
         let retained = branch {
@@ -308,12 +281,7 @@ func format(source: String) -> String {
         let indent = 0
         branch {
             leading > 0 -> {
-                branch {
-                    retained < state.indents.length -> {
-                        indent = state.indents[retained] - 1
-                    }
-                    _ -> ()
-                }
+                if retained < state.indents.length indent = state.indents[retained] - 1
             }
             !state.indents.empty? -> {
                 indent = state.indents[state.indents.length - 1]
@@ -322,19 +290,11 @@ func format(source: String) -> String {
         }
         let text = declaration(content)
         let header = text.starts_with?("type ") || text.starts_with?("enum ")
-        branch {
-            type_continuation && !header && indent < 1 -> {
-                indent = 1
-            }
-            _ -> ()
-        }
+        if type_continuation && !header && indent < 1 indent = 1
         let joins = false
-        branch {
-            type_continuation && !output.empty? -> {
-                let last = declaration(output[output.length - 1].copy().trim())
-                joins = last.starts_with?("enum ") && last.ends_with?("=")
-            }
-            _ -> ()
+        if type_continuation && !output.empty? {
+            let last = declaration(output[output.length - 1].copy().trim())
+            joins = last.starts_with?("enum ") && last.ends_with?("=")
         }
         branch {
             joins -> {
@@ -351,12 +311,7 @@ func format(source: String) -> String {
             }
         }
         scan(content, indent, state)
-        branch {
-            type_continuation && state.indents.empty? && !header && !next_continues -> {
-                type_continuation = false
-            }
-            _ -> ()
-        }
+        if type_continuation && state.indents.empty? && !header && !next_continues type_continuation = false
     }
     while !output.empty? {
         break if !output[output.length - 1].empty?

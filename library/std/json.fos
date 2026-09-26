@@ -26,56 +26,88 @@ pub enum JsonErrorKind = Syntax | DuplicateKey | DepthLimit | InvalidUtf8 | Numb
 /// are one-based, columns count bytes, and LF starts a new line (including CRLF).
 /// Non-source failures use offset -1 and line/column 0. Messages are explanatory,
 /// not a stable interface for branching; use `kind` instead.
-pub type JsonError = { pub kind: JsonErrorKind, pub message: String, pub offset: Int, pub line: Int, pub column: Int }
+pub type JsonError = {
+    pub kind: JsonErrorKind, pub message: String, pub offset: Int, pub line: Int, pub column: Int
+}
 
 /// Parser nesting budget. Counts arrays and objects, including an outer container.
 /// A budget of zero accepts scalars only; the supported range is 0 through 256.
-pub type JsonParseOptions = { pub max_depth: Int }
+pub type JsonParseOptions = {
+    pub max_depth: Int
+}
 impl JsonParseOptions {
     /// Allows 128 nested arrays/objects.
-    pub func defaults() -> JsonParseOptions { JsonParseOptions { max_depth: 128 } }
+    pub func defaults() -> JsonParseOptions {
+        JsonParseOptions {
+            max_depth: 128
+        }
+    }
 }
 
 /// Writer settings. `indent` is 0 for compact output or 1..8 spaces per level.
 /// `max_depth` counts containers and must be in 0..256. Output has no final newline.
-pub type JsonWriteOptions = { pub indent: Int, pub max_depth: Int }
+pub type JsonWriteOptions = {
+    pub indent: Int, pub max_depth: Int
+}
 impl JsonWriteOptions {
     /// Compact output with at most 128 nested containers.
-    pub func defaults() -> JsonWriteOptions { JsonWriteOptions { indent: 0, max_depth: 128 } }
+    pub func defaults() -> JsonWriteOptions {
+        JsonWriteOptions {
+            indent: 0, max_depth: 128
+        }
+    }
 }
 
 /// A validated JSON number, stored as exact decimal text without precision loss.
 /// Construction validates syntax; exponent and coefficient size are not restricted
 /// by machine numeric ranges. `copy` and `text` preserve spelling, including -0.
-pub type JsonNumber = & Copy & { spelling: String }
+pub type JsonNumber = & Copy & {
+    spelling: String
+}
 impl JsonNumber {
     /// Validates a number alone, without leading/trailing whitespace or other values.
     pub func parse(text: String) -> Result<JsonNumber, JsonError> {
-        let parser = Parser { data: text.bytes, offset: 0, line: 1, column: 1, max_depth: 0 }
+        let parser = Parser {
+            data: text.bytes, offset: 0, line: 1, column: 1, max_depth: 0
+        }
         let number = try parser.number()
         return Result.Error(parser.error("unexpected text after number")) if parser.peek() != -1
         Result.Ok(move number)
     }
     /// Constructs the exact decimal representation of a signed Int.
-    pub func from_int(value: Int) -> JsonNumber { JsonNumber { spelling: value.as_string() } }
+    pub func from_int(value: Int) -> JsonNumber {
+        JsonNumber {
+            spelling: value.as_string()
+        }
+    }
     /// Uses round-trippable binary64 text. NaN and infinities return NumberRange.
     pub func from_float(value: Float) -> Result<JsonNumber, JsonError> {
         return Result.Error(failure(JsonErrorKind.NumberRange, "JSON numbers must be finite")) if value - value != 0.0
         JsonNumber.parse(value.as_string())
     }
     /// Copies the validated spelling without consuming this number.
-    pub func copy(self) -> self { JsonNumber { spelling: self.spelling.copy() } }
+    pub func copy(self) -> self {
+        JsonNumber {
+            spelling: self.spelling.copy()
+        }
+    }
     /// Returns an independent copy of the exact number spelling.
-    pub func text(self) -> String { self.spelling.copy() }
+    pub func text(self) -> String {
+        self.spelling.copy()
+    }
     /// Converts integer syntax only, checking the complete signed 64-bit range.
     /// Fractions and exponent notation are rejected even when mathematically integral.
     pub func as_int(self) -> Result<Int, JsonError> {
         let data = self.spelling.bytes
         let negative = data[0].int == 45
-        let index = branch { negative -> 1 _ -> 0 }
+        let index = branch {
+            negative -> 1 _ -> 0
+        }
         let number = 0
         // Accumulate negatively so Int's asymmetric minimum remains representable.
-        let last = branch { negative -> 8 _ -> 7 }
+        let last = branch {
+            negative -> 8 _ -> 7
+        }
         while index < data.length {
             let digit = data[index].int - 48
             return Result.Error(failure(JsonErrorKind.NumberRange, "number is not integer syntax")) if digit < 0 || digit > 9
@@ -83,7 +115,9 @@ impl JsonNumber {
             number = number * 10 - digit
             index = index + 1
         }
-        Result.Ok(branch { negative -> number _ -> -number })
+        Result.Ok(branch {
+            negative -> number _ -> -number
+        })
     }
     /// Converts to binary64 with rounding; very small values may underflow to zero.
     /// Values overflowing the finite range return NumberRange. The exact text remains.
@@ -96,10 +130,16 @@ impl JsonNumber {
 
 /// One object member. Object lists preserve insertion order; serialization rejects
 /// duplicate keys even in trees constructed manually. Keys compare without normalization.
-pub type JsonMember = & Copy & { pub key: String, pub value: JsonValue }
+pub type JsonMember = & Copy & {
+    pub key: String, pub value: JsonValue
+}
 impl JsonMember {
     /// Copies the key and complete child tree.
-    pub func copy(self) -> self { JsonMember { key: self.key.copy(), value: self.value.copy() } }
+    pub func copy(self) -> self {
+        JsonMember {
+            key: self.key.copy(), value: self.value.copy()
+        }
+    }
 }
 
 /// The six JSON kinds. Arrays preserve order; objects contain ordered members.
@@ -148,23 +188,35 @@ impl JsonValue {
     }
     /// Returns a copy of a string payload; other kinds return None without coercion.
     pub func as_string(self) -> Option<String> {
-        branch self { JsonValue.String(value) -> Option.Some(value.copy()) _ -> Option.None }
+        branch self {
+            JsonValue.String(value) -> Option.Some(value.copy()) _ -> Option.None
+        }
     }
     /// Copies a number payload; other kinds return None without coercion.
     pub func as_number(self) -> Option<JsonNumber> {
-        branch self { JsonValue.Number(value) -> Option.Some(value.copy()) _ -> Option.None }
+        branch self {
+            JsonValue.Number(value) -> Option.Some(value.copy()) _ -> Option.None
+        }
     }
     /// Returns a Boolean payload; other kinds return None without coercion.
     pub func as_bool(self) -> Option<Bool> {
-        branch self { JsonValue.Bool(value) -> Option.Some(value) _ -> Option.None }
+        branch self {
+            JsonValue.Bool(value) -> Option.Some(value) _ -> Option.None
+        }
     }
     /// Tests the null kind without consuming the tree.
-    pub func null?(self) -> Bool { branch self { JsonValue.Null -> true _ -> false } }
+    pub func null?(self) -> Bool {
+        branch self {
+            JsonValue.Null -> true _ -> false
+        }
+    }
 }
 
 /// Parses one complete value, preserving the source. Rejects duplicate decoded keys,
 /// trailing data, invalid escapes, and nesting beyond 128 containers.
-pub func parse(source: String) -> Result<JsonValue, JsonError> { parse_with(source, JsonParseOptions.defaults()) }
+pub func parse(source: String) -> Result<JsonValue, JsonError> {
+    parse_with(source, JsonParseOptions.defaults())
+}
 
 /// Parses UTF-8 bytes without consuming them. Invalid UTF-8 returns InvalidUtf8;
 /// its position is unknown (-1, 0, 0). Valid text uses positioned syntax errors.
@@ -179,7 +231,9 @@ pub func parse_bytes(source: Bytes) -> Result<JsonValue, JsonError> {
 /// partial trees never escape. No implicit numeric conversion or Unicode normalization occurs.
 pub func parse_with(source: String, options: JsonParseOptions) -> Result<JsonValue, JsonError> {
     return Result.Error(failure(JsonErrorKind.InvalidOptions, "max_depth must be in 0..256")) if options.max_depth < 0 || options.max_depth > 256
-    let parser = Parser { data: source.bytes, offset: 0, line: 1, column: 1, max_depth: options.max_depth }
+    let parser = Parser {
+        data: source.bytes, offset: 0, line: 1, column: 1, max_depth: options.max_depth
+    }
     let value = try parser.value(0)
     parser.space()
     return Result.Error(parser.error("unexpected text after JSON value")) if parser.peek() != -1
@@ -188,16 +242,24 @@ pub func parse_with(source: String, options: JsonParseOptions) -> Result<JsonVal
 
 /// Serializes a borrowed tree compactly, preserving object order and number spelling.
 /// Rejects duplicate keys and nesting beyond 128. No partial text escapes on failure.
-pub func stringify(value: JsonValue) -> Result<String, JsonError> [read value] { stringify_with(value, JsonWriteOptions.defaults()) }
+pub func stringify(value: JsonValue) -> Result<String, JsonError> [read value] {
+    stringify_with(value, JsonWriteOptions.defaults())
+}
 
 /// Serializes with two-space indentation, preserving the tree. No trailing newline.
-pub func pretty(value: JsonValue) -> Result<String, JsonError> [read value] { stringify_with(value, JsonWriteOptions { indent: 2, max_depth: 128 }) }
+pub func pretty(value: JsonValue) -> Result<String, JsonError> [read value] {
+    stringify_with(value, JsonWriteOptions {
+        indent: 2, max_depth: 128
+    })
+}
 
 /// Serializes using checked indentation and nesting settings. Object order is stable;
 /// strings escape quotes, backslashes, and controls while preserving other UTF-8 text.
 pub func stringify_with(value: JsonValue, options: JsonWriteOptions) -> Result<String, JsonError> [read value, read options(indent, max_depth)] {
     return Result.Error(failure(JsonErrorKind.InvalidOptions, "invalid JSON writer options")) if options.indent < 0 || options.indent > 8 || options.max_depth < 0 || options.max_depth > 256
-    let writer = Writer { output: ByteBuffer.empty(), indent: options.indent, max_depth: options.max_depth }
+    let writer = Writer {
+        output: ByteBuffer.empty(), indent: options.indent, max_depth: options.max_depth
+    }
     try writer.value(value, 0)
     let encoded = (move writer.output).freeze()
     let text = String.from_utf8(move encoded).unwrap_or("")
@@ -206,22 +268,37 @@ pub func stringify_with(value: JsonValue, options: JsonWriteOptions) -> Result<S
 
 /// Constructs an error for values without a source location.
 func failure(kind: JsonErrorKind, message: String) -> JsonError [consume kind, consume message] {
-    JsonError { kind, message, offset: -1, line: 0, column: 0 }
+    JsonError {
+        kind, message, offset: -1, line: 0, column: 0
+    }
 }
 
 // The cursor counts UTF-8 bytes. All input is valid UTF-8 before this parser runs.
 // Peek returns -1 at EOF; advancing never slices/copies the unparsed suffix.
-type Parser = { data: Bytes, offset: Int, line: Int, column: Int, max_depth: Int }
+type Parser = {
+    data: Bytes, offset: Int, line: Int, column: Int, max_depth: Int
+}
 impl Parser {
     /// Returns the current byte, or -1 at EOF.
-    func peek(self) -> Int { branch { self.offset < self.data.length -> self.data[self.offset].int _ -> -1 } }
+    func peek(self) -> Int {
+        branch {
+            self.offset < self.data.length -> self.data[self.offset].int _ -> -1
+        }
+    }
     /// Consumes one byte, tracking LF-delimited lines and byte columns.
     func take(self) -> Int {
         let code = self.peek()
         return code if code == -1
         self.offset = self.offset + 1
-        branch { code == 10 -> { self.line = self.line + 1
-            self.column = 1 } _ -> { self.column = self.column + 1 } }
+        branch {
+            code == 10 -> {
+                self.line = self.line + 1
+                self.column = 1
+            }
+            _ -> {
+                self.column = self.column + 1
+            }
+        }
         code
     }
     /// Skips only the four whitespace bytes admitted by JSON.
@@ -234,18 +311,26 @@ impl Parser {
     }
     /// Reports a syntax failure at the next unconsumed byte.
     func error(self, message: String) -> JsonError [read self(offset, line, column), consume message] {
-        JsonError { kind: JsonErrorKind.Syntax, message, offset: self.offset, line: self.line, column: self.column }
+        JsonError {
+            kind: JsonErrorKind.Syntax, message, offset: self.offset, line: self.line, column: self.column
+        }
     }
     /// Parses one value at the current container depth.
     func value(self, depth: Int) -> Result<JsonValue, JsonError> {
         self.space()
         branch self.peek() {
-            110 -> { try self.literal("null")
-                Result.Ok(JsonValue.Null) }
-            116 -> { try self.literal("true")
-                Result.Ok(JsonValue.Bool(true)) }
-            102 -> { try self.literal("false")
-                Result.Ok(JsonValue.Bool(false)) }
+            110 -> {
+                try self.literal("null")
+                Result.Ok(JsonValue.Null)
+            }
+            116 -> {
+                try self.literal("true")
+                Result.Ok(JsonValue.Bool(true))
+            }
+            102 -> {
+                try self.literal("false")
+                Result.Ok(JsonValue.Bool(false))
+            }
             34 -> Result.Ok(JsonValue.String(try self.string()))
             91 -> self.array(depth)
             123 -> self.object(depth)
@@ -263,31 +348,37 @@ impl Parser {
     /// Validates decimal syntax and saves only the number's exact source span.
     func number(self) -> Result<JsonNumber, JsonError> {
         let start = self.offset
-        branch { self.peek() == 45 -> { self.take() } _ -> 0 }
+        if self.peek() == 45 self.take()
         return Result.Error(self.error("expected JSON value or number")) if !digit?(self.peek())
         branch {
-            self.peek() == 48 -> { self.take() }
-            _ -> { while digit?(self.peek()) { self.take() }
-                0 }
-        }
-        branch {
-            self.peek() == 46 -> {
+            self.peek() == 48 -> {
                 self.take()
-                return Result.Error(self.error("expected digit after decimal point")) if !digit?(self.peek())
-                while digit?(self.peek()) { self.take() }
             }
-            _ -> ()
+            _ -> {
+                while digit?(self.peek()) {
+                    self.take()
+                }
+                0
+            }
         }
-        branch {
-            self.peek() == 101 || self.peek() == 69 -> {
+        if self.peek() == 46 {
+            self.take()
+            return Result.Error(self.error("expected digit after decimal point")) if !digit?(self.peek())
+            while digit?(self.peek()) {
                 self.take()
-                branch { self.peek() == 43 || self.peek() == 45 -> { self.take() } _ -> 0 }
-                return Result.Error(self.error("expected exponent digit")) if !digit?(self.peek())
-                while digit?(self.peek()) { self.take() }
             }
-            _ -> ()
         }
-        Result.Ok(JsonNumber { spelling: String.from_utf8(self.data.slice(start, self.offset)).unwrap_or("") })
+        if self.peek() == 101 || self.peek() == 69 {
+            self.take()
+            if self.peek() == 43 || self.peek() == 45 self.take()
+            return Result.Error(self.error("expected exponent digit")) if !digit?(self.peek())
+            while digit?(self.peek()) {
+                self.take()
+            }
+        }
+        Result.Ok(JsonNumber {
+            spelling: String.from_utf8(self.data.slice(start, self.offset)).unwrap_or("")
+        })
     }
     /// Reads a quoted string and expands escapes, including UTF-16 surrogate pairs.
     func string(self) -> Result<String, JsonError> {
@@ -298,9 +389,13 @@ impl Parser {
             let code = self.peek()
             return Result.Error(self.error("unterminated JSON string")) if code == -1
             branch {
-                code == 34 -> { self.take()
-                    return Result.Ok(String.from_utf8((move output).freeze()).unwrap_or("")) }
-                code < 32 -> { return Result.Error(self.error("unescaped control byte in string")) }
+                code == 34 -> {
+                    self.take()
+                    return Result.Ok(String.from_utf8((move output).freeze()).unwrap_or(""))
+                }
+                code < 32 -> {
+                    return Result.Error(self.error("unescaped control byte in string"))
+                }
                 code == 92 -> {
                     self.take()
                     let escape = self.peek()
@@ -319,10 +414,14 @@ impl Parser {
                             let scalar = try self.unicode_escape()
                             output.extend(from_code_point(scalar).as_string().bytes)
                         }
-                        _ -> { return Result.Error(self.error("invalid JSON string escape")) }
+                        _ -> {
+                            return Result.Error(self.error("invalid JSON string escape"))
+                        }
                     }
                 }
-                _ -> { output.push(Byte.unchecked(self.take())) }
+                _ -> {
+                    output.push(Byte.unchecked(self.take()))
+                }
             }
         }
     }
@@ -354,7 +453,9 @@ impl Parser {
     }
     /// Checks depth before allocating a new container.
     func container(self, depth: Int) -> Result<(), JsonError> {
-        return Result.Error(JsonError { kind: JsonErrorKind.DepthLimit, message: "JSON nesting limit exceeded", offset: self.offset, line: self.line, column: self.column }) if depth >= self.max_depth
+        return Result.Error(JsonError {
+            kind: JsonErrorKind.DepthLimit, message: "JSON nesting limit exceeded", offset: self.offset, line: self.line, column: self.column
+        }) if depth >= self.max_depth
         self.take()
         self.space()
         Result.Ok(())
@@ -363,17 +464,25 @@ impl Parser {
     func array(self, depth: Int) -> Result<JsonValue, JsonError> {
         try self.container(depth)
         let values = []
-        branch { self.peek() == 93 -> { self.take()
-            return Result.Ok(JsonValue.Array(move values)) } _ -> () }
+        if self.peek() == 93 {
+            self.take()
+            return Result.Ok(JsonValue.Array(move values))
+        }
         loop {
             let value = try self.value(depth + 1)
             values.push(move value)
             self.space()
             branch self.peek() {
-                93 -> { self.take()
-                    return Result.Ok(JsonValue.Array(move values)) }
-                44 -> { self.take() }
-                _ -> { return Result.Error(self.error("expected comma or closing array bracket")) }
+                93 -> {
+                    self.take()
+                    return Result.Ok(JsonValue.Array(move values))
+                }
+                44 -> {
+                    self.take()
+                }
+                _ -> {
+                    return Result.Error(self.error("expected comma or closing array bracket"))
+                }
             }
         }
     }
@@ -382,52 +491,74 @@ impl Parser {
         try self.container(depth)
         let members = []
         let keys = []
-        branch { self.peek() == 125 -> { self.take()
-            return Result.Ok(JsonValue.Object(move members)) } _ -> () }
+        if self.peek() == 125 {
+            self.take()
+            return Result.Ok(JsonValue.Object(move members))
+        }
         loop {
             self.space()
             let start = self.offset
             let line = self.line
             let column = self.column
             let key = try self.string()
-            return Result.Error(JsonError { kind: JsonErrorKind.DuplicateKey, message: "duplicate object key", offset: start, line, column }) if keys.contains?(key)
+            return Result.Error(JsonError {
+                kind: JsonErrorKind.DuplicateKey, message: "duplicate object key", offset: start, line, column
+            }) if keys.contains?(key)
             keys.push(key.copy())
             self.space()
             return Result.Error(self.error("expected colon after object key")) if self.peek() != 58
             self.take()
             let value = try self.value(depth + 1)
-            members.push(JsonMember { key: move key, value: move value })
+            members.push(JsonMember {
+                key: move key, value: move value
+            })
             self.space()
             branch self.peek() {
-                125 -> { self.take()
-                    return Result.Ok(JsonValue.Object(move members)) }
-                44 -> { self.take() }
-                _ -> { return Result.Error(self.error("expected comma or closing object brace")) }
+                125 -> {
+                    self.take()
+                    return Result.Ok(JsonValue.Object(move members))
+                }
+                44 -> {
+                    self.take()
+                }
+                _ -> {
+                    return Result.Error(self.error("expected comma or closing object brace"))
+                }
             }
         }
     }
 }
 
 /// Tests an ASCII decimal byte, also excluding the EOF sentinel.
-func digit?(code: Int) -> Bool { code >= 48 && code <= 57 }
+func digit?(code: Int) -> Bool {
+    code >= 48 && code <= 57
+}
 /// Decodes one ASCII hexadecimal byte, or returns -1.
 func hex_digit(code: Int) -> Int {
-    branch { digit?(code) -> code - 48 code >= 65 && code <= 70 -> code - 55 code >= 97 && code <= 102 -> code - 87 _ -> -1 }
+    branch {
+        digit?(code) -> code - 48 code >= 65 && code <= 70 -> code - 55 code >= 97 && code <= 102 -> code - 87 _ -> -1
+    }
 }
 
 // One append-only byte builder avoids repeated copying of an expanding string.
-type Writer = { output: ByteBuffer, indent: Int, max_depth: Int }
+type Writer = {
+    output: ByteBuffer, indent: Int, max_depth: Int
+}
 impl Writer {
     /// Appends UTF-8 bytes without changing their scalar content.
-    func text(self, text: String) -> () { self.output.extend(text.bytes) }
+    func text(self, text: String) -> () {
+        self.output.extend(text.bytes)
+    }
     /// Emits a line break and indentation only in pretty mode.
     func line(self, depth: Int) -> () {
         return () if self.indent == 0
         self.output.push(Byte.unchecked(10))
         let spaces = depth * self.indent
         let index = 0
-        while index < spaces { self.output.push(Byte.unchecked(32))
-            index = index + 1 }
+        while index < spaces {
+            self.output.push(Byte.unchecked(32))
+            index = index + 1
+        }
     }
     /// Emits a quoted string with mandatory JSON escapes and literal Unicode text.
     func string(self, value: String) -> () {
@@ -450,24 +581,36 @@ impl Writer {
     /// Emits one tree node, checking container depth and object-key uniqueness.
     func value(self, value: JsonValue, depth: Int) -> Result<(), JsonError> [read value, read depth, reshape self.output, read self(indent, max_depth)] {
         branch value {
-            JsonValue.Null -> { self.text("null") }
-            JsonValue.Bool(flag) -> { self.text(branch { flag -> "true" _ -> "false" }) }
-            JsonValue.Number(number) -> { self.text(number.spelling) }
-            JsonValue.String(text) -> { self.string(text) }
+            JsonValue.Null -> {
+                self.text("null")
+            }
+            JsonValue.Bool(flag) -> {
+                self.text(branch {
+                    flag -> "true" _ -> "false"
+                })
+            }
+            JsonValue.Number(number) -> {
+                self.text(number.spelling)
+            }
+            JsonValue.String(text) -> {
+                self.string(text)
+            }
             JsonValue.Array(values) -> {
                 try self.depth(depth)
                 self.text("[")
                 let index = 0
                 while index < values.length {
-                    branch { index > 0 -> self.text(",") _ -> () }
+                    if index > 0 self.text(",")
                     self.line(depth + 1)
                     branch values.borrow(index) {
-                        Option.Some(child) -> { try self.value(child, depth + 1) }
+                        Option.Some(child) -> {
+                            try self.value(child, depth + 1)
+                        }
                         Option.None -> panic("JSON array traversal invariant")
                     }
                     index = index + 1
                 }
-                branch { index > 0 -> self.line(depth) _ -> () }
+                if index > 0 self.line(depth)
                 self.text("]")
             }
             JsonValue.Object(members) -> {
@@ -481,17 +624,19 @@ impl Writer {
                             let key = member.key.copy()
                             return Result.Error(failure(JsonErrorKind.DuplicateKey, "duplicate object key")) if keys.contains?(key)
                             keys.push(key.copy())
-                            branch { index > 0 -> self.text(",") _ -> () }
+                            if index > 0 self.text(",")
                             self.line(depth + 1)
                             self.string(key)
-                            self.text(branch { self.indent == 0 -> ":" _ -> ": " })
+                            self.text(branch {
+                                self.indent == 0 -> ":" _ -> ": "
+                            })
                             try self.value(member.value, depth + 1)
                         }
                         Option.None -> panic("JSON object traversal invariant")
                     }
                     index = index + 1
                 }
-                branch { index > 0 -> self.line(depth) _ -> () }
+                if index > 0 self.line(depth)
                 self.text("}")
             }
         }
@@ -499,9 +644,15 @@ impl Writer {
     }
     /// Rejects excess container nesting before writing an opening delimiter.
     func depth(self, depth: Int) -> Result<(), JsonError> {
-        branch { depth >= self.max_depth -> Result.Error(failure(JsonErrorKind.DepthLimit, "JSON nesting limit exceeded")) _ -> Result.Ok(()) }
+        branch {
+            depth >= self.max_depth -> Result.Error(failure(JsonErrorKind.DepthLimit, "JSON nesting limit exceeded")) _ -> Result.Ok(())
+        }
     }
 }
 
 /// Encodes a nibble as a lowercase ASCII hexadecimal byte.
-func hex_byte(value: Int) -> Byte { Byte.unchecked(branch { value < 10 -> value + 48 _ -> value + 87 }) }
+func hex_byte(value: Int) -> Byte {
+    Byte.unchecked(branch {
+        value < 10 -> value + 48 _ -> value + 87
+    })
+}

@@ -51,23 +51,31 @@ pub type ListCursor<T> = & Cursor<T> & {
 impl ListCursor<T> {
     /// Takes ownership of a stable list snapshot.
     pub func from(values: List<T>) -> ListCursor<T> [consume values] {
-        ListCursor { values: move values, offset: 0 }
+        ListCursor {
+            values: move values, offset: 0
+        }
     }
     /// Reads the current element without advancing.
     pub func peek(self) -> Option<T> {
         branch {
             self.offset >= self.values.length -> Option.None
-            _ -> branch self.values.at(self.offset) { Result.Ok(value) -> Option.Some(value) Result.Error(_) -> { panic("cursor elements must support Copy") } }
+            _ -> branch self.values.at(self.offset) {
+                Result.Ok(value) -> Option.Some(value) Result.Error(_) -> {
+                    panic("cursor elements must support Copy")
+                }
+            }
         }
     }
     /// Reads one element and advances, remaining exhausted at the end.
     pub func next(self) -> Option<T> {
         let value = self.peek()
-        branch { self.offset < self.values.length -> { self.offset = self.offset + 1 } _ -> () }
+        if self.offset < self.values.length self.offset = self.offset + 1
         value
     }
     /// Returns the current element offset.
-    pub func checkpoint(self) -> Int { self.offset }
+    pub func checkpoint(self) -> Int {
+        self.offset
+    }
     /// Restores an element offset in `[0, length]`, including the exhausted position.
     /// Returns false without moving for an out-of-range offset.
     pub func restore(self, position: Int) -> Bool {
@@ -92,20 +100,28 @@ pub type BytesCursor = & Cursor<Byte> & {
 }
 impl BytesCursor {
     /// Takes ownership of a byte snapshot.
-    pub func from(data: Bytes) -> BytesCursor [consume data] { BytesCursor { data: move data, offset: 0 } }
+    pub func from(data: Bytes) -> BytesCursor [consume data] {
+        BytesCursor {
+            data: move data, offset: 0
+        }
+    }
     /// Reads the current byte without advancing.
     pub func peek(self) -> Option<Byte> {
-        branch { self.offset >= self.data.length -> Option.None
-            _ -> Option.Some(self.data[self.offset]) }
+        branch {
+            self.offset >= self.data.length -> Option.None
+            _ -> Option.Some(self.data[self.offset])
+        }
     }
     /// Reads one byte and advances.
     pub func next(self) -> Option<Byte> {
         let value = self.peek()
-        branch { self.offset < self.data.length -> { self.offset = self.offset + 1 } _ -> () }
+        if self.offset < self.data.length self.offset = self.offset + 1
         value
     }
     /// Returns the byte offset.
-    pub func checkpoint(self) -> Int { self.offset }
+    pub func checkpoint(self) -> Int {
+        self.offset
+    }
     /// Restores a byte offset in `[0, length]`, including the exhausted position.
     /// Returns false without moving for an out-of-range offset.
     pub func restore(self, position: Int) -> Bool {

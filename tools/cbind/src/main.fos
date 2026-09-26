@@ -66,11 +66,7 @@ func options(arguments: List<String>) -> Options {
     assert(config.manifest.empty? || config.headers.empty?, "choose --header or --manifest")
     assert(!config.manifest.empty? || !config.headers.empty?, "--header or --manifest is required")
     assert(config.manifest.empty? || (config.sources.empty? && config.libraries.empty? && config.includes.empty? && config.functions.empty? && config.strings.empty? && config.contracts.empty? && !config.skip && !config.manifest_only), "build options belong inside the reviewed manifest")
-    branch {
-        config.module_path.empty? -> {
-            config.module_path = config.output.split("\\").join("/")
-        }
-    }
+    if config.module_path.empty? config.module_path = config.output.split("\\").join("/")
     config
 }
 func text(tree: Contract, node: Int, key: String) -> String {
@@ -108,11 +104,7 @@ func trailing_text(source: Bytes, offset: Int) -> String {
         end = end + 1
     }
     let suffix = String.from_utf8(source.slice(offset, end)).unwrap_or("").trim()
-    branch {
-        suffix.starts_with?(";") -> {
-            suffix = suffix.slice(1, suffix.length).trim()
-        }
-    }
+    if suffix.starts_with?(";") suffix = suffix.slice(1, suffix.length).trim()
     return suffix.slice(2, suffix.length).trim() if suffix.starts_with?("//")
     return suffix.slice(2, suffix.length).split("*/")[0].copy().trim() if suffix.starts_with?("/*") && suffix.contains?("*/")
     ""
@@ -129,26 +121,16 @@ func location_number(tree: Contract, node: Int, key: String) -> Int {
 }
 func documentation(tree: Contract, node: Int, name: String, rows: List<String>, source: Bytes) {
     let description = comment(tree, node)
-    branch {
-        description.empty? && !source.empty? -> {
-            let end = tree.member(tree.member(node, "range"), "end")
-            let expansion = tree.member(end, "expansionLoc")
-            branch {
-                expansion >= 0 -> {
-                    end = expansion
-                }
-            }
-            let offset = location_number(tree, end, "offset")
-            let length = location_number(tree, end, "tokLen")
-            branch {
-                offset >= 0 && length >= 0 -> {
-                    description = trailing_text(source, offset + length)
-                }
-            }
-        }
+    if description.empty? && !source.empty? {
+        let end = tree.member(tree.member(node, "range"), "end")
+        let expansion = tree.member(end, "expansionLoc")
+        if expansion >= 0 end = expansion
+        let offset = location_number(tree, end, "offset")
+        let length = location_number(tree, end, "tokLen")
+        if offset >= 0 && length >= 0 description = trailing_text(source, offset + length)
     }
-    branch {
-        !description.empty? -> rows.push("D\t" + name + "\t" + bindings::quoted(description))
+    if !description.empty? {
+        rows.push("D\t" + name + "\t" + bindings::quoted(description))
     }
 }
 func declarations(ast: String, config: Options) -> String {
@@ -161,11 +143,9 @@ func declarations(ast: String, config: Options) -> String {
         for part in tree.array(node, "inner", false) {
             let tag = tree.member(part, "ownedTagDecl")
             let id = text(tree, tag, "id")
-            branch {
-                !id.empty? && text(tree, tag, "name").empty? -> {
-                    anonymous_ids.push(id.copy())
-                    anonymous_names.push(text(tree, node, "name"))
-                }
+            if !id.empty? && text(tree, tag, "name").empty? {
+                anonymous_ids.push(id.copy())
+                anonymous_names.push(text(tree, node, "name"))
             }
         }
     }
@@ -181,88 +161,62 @@ func declarations(ast: String, config: Options) -> String {
     for node in nodes {
         let location = tree.member(node, "loc")
         let expansion = tree.member(location, "expansionLoc")
-        branch {
-            expansion >= 0 -> {
-                location = expansion
-            }
-        }
+        if expansion >= 0 location = expansion
         let file = text(tree, location, "file")
-        branch {
-            !file.empty? -> {
-                current_file = bridge::canonical(file)
-                current_source = Bytes.empty()
-                let index = 0
-                for header in config.headers {
-                    branch {
-                        header == current_file -> {
-                            current_source = source_files[index].copy()
-                        }
-                    }
-                    index = index + 1
-                }
+        if !file.empty? {
+            current_file = bridge::canonical(file)
+            current_source = Bytes.empty()
+            let index = 0
+            for header in config.headers {
+                if header == current_file current_source = source_files[index].copy()
+                index = index + 1
             }
         }
         let kind = text(tree, node, "kind")
         let name = text(tree, node, "name")
-        branch {
-            config.headers.contains?(current_file) -> {
-                branch {
-                    kind == "FunctionDecl" -> documentation(tree, node, "F." + name, rows, current_source)
-                    kind == "TypedefDecl" -> documentation(tree, node, "S." + name, rows, current_source)
-                }
+        if config.headers.contains?(current_file) {
+            branch {
+                kind == "FunctionDecl" -> documentation(tree, node, "F." + name, rows, current_source)
+                kind == "TypedefDecl" -> documentation(tree, node, "S." + name, rows, current_source)
             }
         }
-        branch {
-            config.headers.contains?(current_file) && config.functions.empty? -> {
-                branch {
-                    kind == "TypedefDecl" -> rows.push("Q\t" + name + "\t" + spelling(tree, node))
-                    kind == "EnumDecl" && !name.empty? -> rows.push("Q\t" + name + "\t" + "enum " + name)
-                    kind == "RecordDecl" && !name.empty? -> rows.push("Q\t" + name + "\t" + text(tree, node, "tagUsed") + " " + name)
-                    kind == "VarDecl" -> rows.push("R\t" + name + "\tglobal variables require a C adapter")
-                }
+        if config.headers.contains?(current_file) && config.functions.empty? {
+            branch {
+                kind == "TypedefDecl" -> rows.push("Q\t" + name + "\t" + spelling(tree, node))
+                kind == "EnumDecl" && !name.empty? -> rows.push("Q\t" + name + "\t" + "enum " + name)
+                kind == "RecordDecl" && !name.empty? -> rows.push("Q\t" + name + "\t" + text(tree, node, "tagUsed") + " " + name)
+                kind == "VarDecl" -> rows.push("R\t" + name + "\tglobal variables require a C adapter")
             }
         }
-        branch {
-            kind == "EnumDecl" && config.headers.contains?(current_file) && config.functions.empty? -> {
-                for item in tree.array(node, "inner", false) {
-                    continue if text(tree, item, "kind") != "EnumConstantDecl"
-                    let constant = text(tree, item, "name")
-                    rows.push("E\t" + constant)
-                    documentation(tree, item, "K." + constant, rows, current_source)
-                }
+        if kind == "EnumDecl" && config.headers.contains?(current_file) && config.functions.empty? {
+            for item in tree.array(node, "inner", false) {
+                continue if text(tree, item, "kind") != "EnumConstantDecl"
+                let constant = text(tree, item, "name")
+                rows.push("E\t" + constant)
+                documentation(tree, item, "K." + constant, rows, current_source)
             }
         }
         branch {
             kind == "EnumDecl" -> {
                 let complete = false
                 for item in tree.array(node, "inner", false) {
-                    branch {
-                        text(tree, item, "kind") == "EnumConstantDecl" -> {
-                            complete = true
-                        }
-                    }
+                    if text(tree, item, "kind") == "EnumConstantDecl" complete = true
                 }
                 let enum_name = name.copy()
                 let c_type = "enum " + name
-                branch {
-                    name.empty? -> {
-                        let index = 0
-                        while index < anonymous_ids.length {
-                            branch {
-                                anonymous_ids[index] == text(tree, node, "id") -> {
-                                    enum_name = anonymous_names[index].copy()
-                                    c_type = enum_name.copy()
-                                }
-                            }
-                            index = index + 1
+                if name.empty? {
+                    let index = 0
+                    while index < anonymous_ids.length {
+                        if anonymous_ids[index] == text(tree, node, "id") {
+                            enum_name = anonymous_names[index].copy()
+                            c_type = enum_name.copy()
                         }
+                        index = index + 1
                     }
                 }
-                branch {
-                    complete && !enum_name.empty? -> {
-                        rows.push("N\t" + enum_name + "\t" + c_type)
-                        documentation(tree, node, "S." + enum_name, rows, current_source)
-                    }
+                if complete && !enum_name.empty? {
+                    rows.push("N\t" + enum_name + "\t" + c_type)
+                    documentation(tree, node, "S." + enum_name, rows, current_source)
                 }
             }
             kind == "TypedefDecl" -> {
@@ -271,18 +225,14 @@ func declarations(ast: String, config: Options) -> String {
             kind == "RecordDecl" && tree.boolean(node, "completeDefinition") && text(tree, node, "tagUsed") == "struct" -> {
                 let record_name = name.copy()
                 let c_type = "struct " + name
-                branch {
-                    name.empty? -> {
-                        let index = 0
-                        while index < anonymous_ids.length {
-                            branch {
-                                anonymous_ids[index] == text(tree, node, "id") -> {
-                                    record_name = anonymous_names[index].copy()
-                                    c_type = record_name.copy()
-                                }
-                            }
-                            index = index + 1
+                if name.empty? {
+                    let index = 0
+                    while index < anonymous_ids.length {
+                        if anonymous_ids[index] == text(tree, node, "id") {
+                            record_name = anonymous_names[index].copy()
+                            c_type = record_name.copy()
                         }
+                        index = index + 1
                     }
                 }
                 let fields = ["S", record_name.copy(), c_type.copy()]
@@ -291,17 +241,13 @@ func declarations(ast: String, config: Options) -> String {
                 for field in tree.array(node, "inner", false) {
                     continue if text(tree, field, "kind") != "FieldDecl"
                     let field_name = text(tree, field, "name")
-                    branch {
-                        field_name.empty? || tree.boolean(field, "isBitfield") -> {
-                            supported = false
-                        }
-                    }
+                    if field_name.empty? || tree.boolean(field, "isBitfield") supported = false
                     fields.push(field_name.copy())
                     fields.push(spelling(tree, field))
                     documentation(tree, field, "S." + record_name + "." + field_name, rows, current_source)
                 }
-                branch {
-                    supported && fields.length > 3 -> rows.push(fields.join("\t"))
+                if supported && fields.length > 3 {
+                    rows.push(fields.join("\t"))
                 }
             }
         }
@@ -318,11 +264,9 @@ func declarations(ast: String, config: Options) -> String {
             parts[1].contains?(")") && parts[1].copy().split(")").length != 2 -> "complex declarator requires a C adapter"
             _ -> ""
         }
-        branch {
-            !reason.empty? -> {
-                rows.push("R\t" + name + "\t" + reason)
-                continue
-            }
+        if !reason.empty? {
+            rows.push("R\t" + name + "\t" + reason)
+            continue
         }
         let fields = ["F", name.copy(), parts[0].copy().trim()]
         let parameter_names = []
@@ -331,12 +275,10 @@ func declarations(ast: String, config: Options) -> String {
             continue if text(tree, parameter, "kind") != "ParmVarDecl"
             let ty = spelling(tree, parameter)
             let key = name + ":" + parameter_index.as_string()
-            branch {
-                config.strings.contains?(key) -> {
-                    assert(ty == "const char *", key + " is not a const char* parameter")
-                    ty = "@cstring"
-                    strings_found.push(key.copy())
-                }
+            if config.strings.contains?(key) {
+                assert(ty == "const char *", key + " is not a const char* parameter")
+                ty = "@cstring"
+                strings_found.push(key.copy())
             }
             fields.push(move ty)
             parameter_names.push(text(tree, parameter, "name"))
@@ -385,19 +327,15 @@ func import_header(config: Options) {
     bridge::write_file(bridge::artifact(output, ".declarations.tsv"), rows)
     println("Mapping C types and functions...")
     let generated = bindings::generate(rows, shim_path)
-    branch {
-        !config.contracts.empty? -> {
-            generated = contracts::apply(generated.manifest, generated.report, rows, bridge::read_file(config.contracts))
-        }
+    if !config.contracts.empty? {
+        generated = contracts::apply(generated.manifest, generated.report, rows, bridge::read_file(config.contracts))
     }
     let extracted = constants::Extracted {
         values: "[]", report: ""
     }
-    branch {
-        config.functions.empty? -> {
-            println("Evaluating enum and macro constants with Clang...")
-            extracted = constants::discover(rows, generated.manifest, shim_path, output, config.compiler, config.headers, config.includes)
-        }
+    if config.functions.empty? {
+        println("Evaluating enum and macro constants with Clang...")
+        extracted = constants::discover(rows, generated.manifest, shim_path, output, config.compiler, config.headers, config.includes)
     }
     let manifest = generated.manifest.copy().trim()
     manifest = manifest.slice(0, manifest.length - 1)
@@ -412,28 +350,24 @@ func import_header(config: Options) {
     println("Imported " + document.array(0, "operations", true).length.as_string() + " functions, " + document.array(0, "records", false).length.as_string() + " value records, and " + document.array(0, "constants", false).length.as_string() + " constants.")
     let report = generated.report + extracted.report
     bridge::write_file(bridge::artifact(output, ".unsupported.txt"), report)
-    branch {
-        !report.empty? -> {
-            println(report)
-            assert(config.skip, "unsupported declarations: review the report or explicitly select --function / --skip-unsupported")
-        }
+    if !report.empty? {
+        println(report)
+        assert(config.skip, "unsupported declarations: review the report or explicitly select --function / --skip-unsupported")
     }
-    branch {
-        config.manifest_only -> {
-            println(manifest_path)
-            return ()
-        }
+
+    if config.manifest_only {
+        println(manifest_path)
+        return ()
     }
+
     println("Building the generated C bridge...")
     bridge::build(manifest_path, output, config.compiler, config.module_path.copy())
     println(bridge::artifact(output, ".fos"))
 }
 func main(args: Arguments) {
-    branch {
-        args.values.empty? || args.values.contains?("--help") -> {
-            println("cbind --header FILE --output FILE.dll [options]\ncbind --manifest FILE.json --output FILE.dll [--clang EXE]\nRepeat: --header --source --library --include --function --c-string NAME:INDEX\nOwnership: --contracts FILE.json\nFlags: --module-path NAME --skip-unsupported --manifest-only\nThe module path names the bridge for the runtime; relative names resolve against FOSTER_BRIDGE_DIR, the current directory, and the executable directory.\nClang and a Windows x64 C toolchain are required; Foster is not needed at runtime.")
-            return ()
-        }
+    if args.values.empty? || args.values.contains?("--help") {
+        println("cbind --header FILE --output FILE.dll [options]\ncbind --manifest FILE.json --output FILE.dll [--clang EXE]\nRepeat: --header --source --library --include --function --c-string NAME:INDEX\nOwnership: --contracts FILE.json\nFlags: --module-path NAME --skip-unsupported --manifest-only\nThe module path names the bridge for the runtime; relative names resolve against FOSTER_BRIDGE_DIR, the current directory, and the executable directory.\nClang and a Windows x64 C toolchain are required; Foster is not needed at runtime.")
+        return ()
     }
     let config = options(args.values)
     branch {

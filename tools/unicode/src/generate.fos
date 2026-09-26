@@ -88,14 +88,11 @@ func category_index(name: String) -> Int {
 func put(table: List<Mapping>, point: Int, targets: List<Int>) -> List<Mapping> [consume table, consume targets] {
     let index = 0
     while index != table.length {
-        branch {
-            table[index].point == point -> {
-                table[index] = Mapping {
-                    point, targets
-                }
-                return table
+        if table[index].point == point {
+            table[index] = Mapping {
+                point, targets
             }
-            _ -> ()
+            return table
         }
         index = index + 1
     }
@@ -134,37 +131,28 @@ func read_unicode(db: Database, text: String) -> Database [consume db, consume t
                 db.categories[point] = category
             }
         }
-        branch {
-            !row[13].empty? -> {
-                let lower = number(row[13])
-                db.lower.push(Mapping {
-                    point, targets: [lower]
-                })
-                db.full_lower.push(Mapping {
-                    point, targets: [lower]
-                })
-            }
-            _ -> ()
+        if !row[13].empty? {
+            let lower = number(row[13])
+            db.lower.push(Mapping {
+                point, targets: [lower]
+            })
+            db.full_lower.push(Mapping {
+                point, targets: [lower]
+            })
         }
-        branch {
-            !row[12].empty? -> {
-                let upper = number(row[12])
-                db.upper.push(Mapping {
-                    point, targets: [upper]
-                })
-                db.full_upper.push(Mapping {
-                    point, targets: [upper]
-                })
-            }
-            _ -> ()
+        if !row[12].empty? {
+            let upper = number(row[12])
+            db.upper.push(Mapping {
+                point, targets: [upper]
+            })
+            db.full_upper.push(Mapping {
+                point, targets: [upper]
+            })
         }
-        branch {
-            !row[14].empty? -> {
-                db.title.push(Mapping {
-                    point, targets: [number(row[14])]
-                })
-            }
-            _ -> ()
+        if !row[14].empty? {
+            db.title.push(Mapping {
+                point, targets: [number(row[14])]
+            })
         }
     }
     assert(range_start == -1, "unterminated UnicodeData range")
@@ -202,11 +190,8 @@ func read_fold(db: Database, text: String) -> Database [consume db, consume text
         let row = fields(line.copy())
         continue if row.empty?
         assert(row.length >= 3, "invalid CaseFolding record")
-        branch {
-            row[1] == "C" || row[1] == "F" -> {
-                db.fold = put(db.fold.slice(0, db.fold.length), number(row[0]), targets(row[2]))
-            }
-            _ -> ()
+        if row[1] == "C" || row[1] == "F" {
+            db.fold = put(db.fold.slice(0, db.fold.length), number(row[0]), targets(row[2]))
         }
     }
     db
@@ -240,12 +225,7 @@ func read_properties(db: Database, text: String) -> Database [consume db, consum
         assert(point <= last && last < LIMIT, "invalid property range")
         while point <= last {
             let old = db.properties[point]
-            branch {
-                old / mask - old / (mask * 2) * 2 == 0 -> {
-                    db.properties[point] = old + mask
-                }
-                _ -> ()
-            }
+            if old / mask - old / (mask * 2) * 2 == 0 db.properties[point] = old + mask
             point = point + 1
         }
     }
@@ -295,19 +275,13 @@ func append_ranges(output: StringBuilder, name: String, values: List<Int>) -> ()
         let boundary = branch {
             end == values.length -> true _ -> values[end] != values[start]
         }
-        branch {
-            boundary -> {
-                branch {
-                    values[start] != 0 -> {
-                        append_hex(output, start, 6)
-                        append_hex(output, end - 1, 6)
-                        append_hex(output, values[start], 2)
-                    }
-                    _ -> ()
-                }
-                start = end
+        if boundary {
+            if values[start] != 0 {
+                append_hex(output, start, 6)
+                append_hex(output, end - 1, 6)
+                append_hex(output, values[start], 2)
             }
-            _ -> ()
+            start = end
         }
         end = end + 1
     }
@@ -446,18 +420,14 @@ func append_literal(output: StringBuilder, table: List<Mapping>, keys: Bool, sep
     output.append("\"")
     let index = 0
     while index != table.length {
-        branch {
-            separator && index > 0 -> output.append("|") _ -> ()
-        }
+        if separator && index > 0 output.append("|")
         let values = branch {
             keys -> [table[index].point] _ -> table[index].targets.slice(0, table[index].targets.length)
         }
         let target_index = 0
         while target_index != values.length {
             let point = values[target_index]
-            branch {
-                point == 34 || point == 92 -> output.append("\\") _ -> ()
-            }
+            if point == 34 || point == 92 output.append("\\")
             output.push(from_code_point(point))
             target_index = target_index + 1
         }
@@ -555,12 +525,9 @@ pub func run(args: List<String>) -> Int {
     // Capture insertion-ordered fixtures before sorting tables for binary searches.
     let fixture = conformance(db)
     let generated = tables(db, provenance(root), root)
-    branch {
-        !check -> {
-            ensure_directory(root + "/library/core/unicode")
-            ensure_directory(root + "/tests/fixtures/programs")
-        }
-        _ -> ()
+    if !check {
+        ensure_directory(root + "/library/core/unicode")
+        ensure_directory(root + "/tests/fixtures/programs")
     }
     publish(root + "/library/core/unicode/data.fos", generated, check)
     publish(root + "/tests/fixtures/programs/unicode_conformance.fos", fixture, check)

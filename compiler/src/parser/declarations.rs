@@ -1039,6 +1039,9 @@ impl Parser {
         if documentation.is_some() {
             return Err(self.error("documentation comment must precede a declaration"));
         }
+        if self.take(&TokenKind::If) {
+            return self.if_statement();
+        }
         if self.take(&TokenKind::Return) {
             let value = self.expression()?;
             let guard = self.control_guard()?;
@@ -1110,10 +1113,9 @@ impl Parser {
                     return Err(self.error("a destructuring binding requires field bindings, not a conditional pattern"));
                 }
                 self.expect(&TokenKind::Equal, "expected `=` after record bindings")?;
-                return Ok(Stmt::Destructure {
-                    pattern,
-                    value: self.expression()?,
-                });
+                let value = self.expression()?;
+                self.reject_value_guard()?;
+                return Ok(Stmt::Destructure { pattern, value });
             }
             let name = self.expect_ident("expected local name after `let`")?;
             self.expect(&TokenKind::Equal, "expected `=` after local name")?;
@@ -1140,6 +1142,52 @@ impl Parser {
         Ok(Stmt::Expr(place))
     }
 
+    fn if_statement(&mut self) -> Result<Stmt, FosterError> {
+        let start = self.tokens[self.current - 1].range.start;
+        let previous = self.suppress_record_literal;
+        self.suppress_record_literal = true;
+        let condition = self.expression();
+        self.suppress_record_literal = previous;
+        let condition = condition?;
+        let newline = self.at(&TokenKind::Newline);
+        self.newlines();
+        let mut body = if self.at(&TokenKind::LBrace) {
+            self.block()?
+        } else {
+            if newline || self.at(&TokenKind::RBrace) || self.at(&TokenKind::Eof) {
+                return Err(
+                    self.error("expected a same-line statement or `{` after `if` condition")
+                );
+            }
+            let action_start = self.peek().range.start;
+            let action = self.statement()?;
+            let action_span = action_start..self.tokens[self.current - 1].range.end;
+            crate::block::Block::single(action, action_span)
+        };
+        let span = start..self.tokens[self.current - 1].range.end;
+        // An if statement discards its body's result on the completing path.
+        body.push(Stmt::Expr(Expr::Unit), span.end..span.end);
+        Ok(Stmt::Expr(Expr::Spanned {
+            span: span.clone(),
+            expression: Box::new(Expr::Branch {
+                subject: None,
+                arms: vec![
+                    BranchArm {
+                        test: BranchTest::Condition(condition),
+                        body,
+                    },
+                    BranchArm {
+                        test: BranchTest::Wildcard,
+                        body: crate::block::Block::single(
+                            Stmt::Expr(Expr::Unit),
+                            span.end..span.end,
+                        ),
+                    },
+                ],
+            }),
+        }))
+    }
+
     fn control_guard(&mut self) -> Result<Option<Expr>, FosterError> {
         self.take(&TokenKind::If)
             .then(|| self.expression())
@@ -1148,7 +1196,7 @@ impl Parser {
 
     fn reject_value_guard(&self) -> Result<(), FosterError> {
         if self.at(&TokenKind::If) {
-            return Err(self.error("postfix `if` may only guard a control statement"));
+            return Err(self.error("postfix `if` is only allowed on return, break, or continue; use `if condition { ... }` for other statements"));
         }
         Ok(())
     }

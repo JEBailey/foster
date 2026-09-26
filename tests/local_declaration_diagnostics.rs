@@ -60,7 +60,7 @@ fn rejects_invalid_local_declarations_and_assignments_with_actionable_messages()
         ErrorCase {
             name: "guarded local declaration",
             source: "func main() { let value = 1 if true }",
-            expected: "postfix `if` may only guard a control statement",
+            expected: "postfix `if` is only allowed on return, break, or continue",
         },
         ErrorCase {
             name: "non-place assignment target",

@@ -222,6 +222,27 @@ func first(values: List<String>) -> String {
 The value is evaluated and returned only when the guard is `true`; execution continues with the
 next statement when it is `false`. The guard must have type `Bool`.
 
+Conditional execution uses an `if` statement, with a same-line action or a block:
+
+```foster
+if spelling.empty? spelling = text(tree, node, "qualType")
+if verbose {
+    println(spelling)
+    println("resolved type")
+}
+```
+
+The condition is evaluated first. Only a true condition evaluates the action,
+including its receiver, arguments, or assignment destination. Within an executed
+assignment, the right side still evaluates before the destination. The condition
+must be `Bool`. A completing `if` produces `()`, discarding any body result. The
+body has its own local scope and can contain declarations, assertions, or control
+transfers. A single action must start on the same line as the condition; braces
+may start on the following line. Parenthesize direct record literals in conditions.
+Use braces when a body's first token (such as `(` or `[`) could extend the condition.
+This is statement syntax; use `branch` to select a value or express alternatives.
+There is no `else`. Postfix guards remain limited to `return`, `break`, and `continue`.
+
 `assert` requires a `Bool` condition and may include a `String` message:
 
 ```foster
@@ -257,9 +278,9 @@ without a reachable break also end their current path. Their branch arms need no
 final value. A guarded transfer can continue and is not unconditionally non-returning.
 Unreachable source remains subject to name and type checking.
 
-`if` is deliberately not a general conditional statement or expression. It may only follow a
-control-transfer statement, so `write(value) if ready` and `value = next() if ready` are invalid.
-Use `branch` when choosing whether to evaluate a value-producing operation.
+Postfix `if` may only follow a control-transfer statement, so `write(value) if ready` and
+`value = next() if ready` are invalid. Use `if ready write(value)` or `if ready value = next()`
+for conditional actions, and `branch` when selecting a result value.
 
 `while condition { ... }` checks a Boolean condition before each iteration. It is syntax sugar for:
 

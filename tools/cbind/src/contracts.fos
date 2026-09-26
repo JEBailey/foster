@@ -27,12 +27,8 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
     let declared_types = []
     for row in declarations.copy().split("\n") {
         let fields = row.copy().split("\t")
-        branch {
-            fields.length >= 3 && ["F", "R"].contains?(fields[0]) -> declared.push(fields[1].copy())
-        }
-        branch {
-            fields.length >= 3 && fields[0] == "T" -> declared_types.push(fields[1].copy())
-        }
+        if fields.length >= 3 && ["F", "R"].contains?(fields[0]) declared.push(fields[1].copy())
+        if fields.length >= 3 && fields[0] == "T" declared_types.push(fields[1].copy())
     }
     let reviewed = []
     let replaced = []
@@ -56,34 +52,29 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
         resources.push(contracts.json(resource))
         let native = contracts.string(resource, "c_type", true)
         blocked.push(native.copy())
+
         // A resource may use a typedef such as Texture2D while discovery names
         // its value record Texture. Suppress that underlying record as well.
         for pass in 0.range(32) {
             let previous = native.copy()
             for row in declarations.copy().split("\n") {
                 let fields = row.copy().split("\t")
-                branch {
-                    fields.length >= 3 && fields[0] == "T" && fields[1] == native -> {
-                        native = fields[2].copy()
-                        break
-                    }
+                if fields.length >= 3 && fields[0] == "T" && fields[1] == native {
+                    native = fields[2].copy()
+                    break
                 }
             }
             break if native == previous
         }
-        branch {
-            native.starts_with?("struct ") -> {
-                native = native.slice(7, native.length)
-            }
-        }
+
+        if native.starts_with?("struct ") native = native.slice(7, native.length)
+
         blocked.push(native.copy())
         for key in ["destroy", "close", "valid"] {
             let symbol = contracts.string(resource, key, key == "destroy")
-            branch {
-                !symbol.empty? -> {
-                    assert(declared.contains?(symbol), "resource function was not discovered: " + symbol)
-                    excluded.push(symbol.copy())
-                }
+            if !symbol.empty? {
+                assert(declared.contains?(symbol), "resource function was not discovered: " + symbol)
+                excluded.push(symbol.copy())
             }
         }
     }
@@ -93,20 +84,20 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
         for record in base.array(0, "records", false) {
             let name = base.string(record, "name", true)
             continue if blocked.contains?(name)
-            branch {
-                mentions(base, base.member(record, "fields"), blocked) -> {
-                    blocked.push(name.copy())
-                    changed = true
-                }
+            if mentions(base, base.member(record, "fields"), blocked) {
+                blocked.push(name.copy())
+                changed = true
             }
         }
     }
+
     let records = []
     for record in base.array(0, "records", false) {
-        branch {
-            !blocked.contains?(base.string(record, "name", true)) -> records.push(base.json(record))
+        if !blocked.contains?(base.string(record, "name", true)) {
+            records.push(base.json(record))
         }
     }
+
     let operations = []
     let extra_report = ""
     for operation in base.array(0, "operations", true) {
@@ -119,18 +110,22 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
             _ -> operations.push(base.json(operation))
         }
     }
+
     for operation in reviewed {
         operations.push(operation.copy())
     }
+
     let members = []
     for member in base.children(0) {
         let key = base.nodes[member].key.copy()
         continue if ["operations", "records", "resources", "callbacks"].contains?(key)
         members.push(bindings::quoted(key) + ":" + base.json(member))
     }
+
     members.push("\"operations\":[" + operations.join(",") + "]")
     members.push("\"records\":[" + records.join(",") + "]")
     members.push("\"resources\":[" + resources.join(",") + "]")
+
     let callbacks = []
     let callback_types = []
     for callback in base.array(0, "callbacks", false) {
@@ -139,11 +134,9 @@ pub func apply(manifest: String, report: String, declarations: String, source: S
     for callback in contracts.array(0, "callbacks", false) {
         callbacks.push(contracts.json(callback))
         let native = contracts.string(callback, "c_type", false)
-        branch {
-            !native.empty? -> {
-                assert(declared_types.contains?(native), "callback typedef was not discovered: " + native)
-                callback_types.push(native.copy())
-            }
+        if !native.empty? {
+            assert(declared_types.contains?(native), "callback typedef was not discovered: " + native)
+            callback_types.push(native.copy())
         }
     }
     members.push("\"callbacks\":[" + callbacks.join(",") + "]")

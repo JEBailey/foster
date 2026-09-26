@@ -20,7 +20,9 @@ import core.string
 const MODULUS = 4294967296
 
 /// Reduces a nonnegative integer to an unsigned 32-bit word.
-func word(value: Int) -> Int { value - value / MODULUS * MODULUS }
+func word(value: Int) -> Int {
+    value - value / MODULUS * MODULUS
+}
 
 /// Rotates an unsigned word right using the supplied power-of-two divisor.
 func rotate(value: Int, divisor: Int) -> Int {
@@ -37,10 +39,7 @@ func and_table() -> List<Int> {
             let bit = 1
             let value = 0
             while bit != 16 {
-                branch {
-                    a / bit - a / (bit * 2) * 2 == 1 && b / bit - b / (bit * 2) * 2 == 1 -> { value = value + bit }
-                    _ -> ()
-                }
+                if a / bit - a / (bit * 2) * 2 == 1 && b / bit - b / (bit * 2) * 2 == 1 value = value + bit
                 bit = bit * 2
             }
             table.push(value)
@@ -90,7 +89,9 @@ func words(text: String) -> List<Int> {
         let count = 0
         while count != 8 {
             let digit = encoded[index].int
-            value = value * 16 + branch { digit <= 57 -> digit - 48 _ -> digit - 87 }
+            value = value * 16 + branch {
+                digit <= 57 -> digit - 48 _ -> digit - 87
+            }
             index = index + 1
             count = count + 1
         }

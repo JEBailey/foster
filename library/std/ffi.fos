@@ -42,20 +42,32 @@ impl CHost {
 
 /// A bridge or C operation failure. Native close codes appear in `status`;
 /// validation/loading failures use zero and explain the failure in `message`.
-pub type CError = { pub message: String, pub status: Int }
+pub type CError = {
+    pub message: String, pub status: Int
+}
 impl CError {
     /// Encodes a callback failure without allowing an exception through C.
-    pub func callback_reply(self) -> String { "01" + self.message.bytes.hex() }
+    pub func callback_reply(self) -> String {
+        "01" + self.message.bytes.hex()
+    }
 }
 
 /// Copied wire arguments. Integer slots contain all 64 bits; unsigned C values
 /// use the same bits. Narrow integer parameters are range checked by the bridge.
-pub type CArguments = { payload: String }
+pub type CArguments = {
+    payload: String
+}
 impl CArguments {
     /// Encodes a successful callback reply; generated adapters validate its shape.
-    pub func reply(self) -> String { "00" + self.payload }
+    pub func reply(self) -> String {
+        "00" + self.payload
+    }
     /// Starts an empty argument list.
-    pub func empty() -> CArguments { CArguments { payload: "" } }
+    pub func empty() -> CArguments {
+        CArguments {
+            payload: ""
+        }
+    }
     /// Appends one exact integer slot. U64 interprets its bits as unsigned.
     pub func integer(self, value: Int) -> () [mut self.payload] {
         self.payload = self.payload + CHost.encode_int(value)
@@ -80,64 +92,94 @@ impl CArguments {
 }
 
 /// A copied result. Scalar conversions check the exact payload length.
-pub type CValue = { data: Bytes }
+pub type CValue = {
+    data: Bytes
+}
 impl CValue {
     /// Decodes a copied callback argument packet. This never exposes native memory.
-    pub func callback_packet(payload: String) -> Result<CValue, CError> { decode_response("00" + payload) }
+    pub func callback_packet(payload: String) -> Result<CValue, CError> {
+        decode_response("00" + payload)
+    }
     /// Copies one length-prefixed component of a compound result. Every frame
     /// is validated, including frames after the requested index. Native pointers
     /// never escape through this interface; lengths are bounded by the packet.
     pub func part(self, index: Int) -> Result<CValue, CError> {
-        return Result.Error(CError { message: "negative C result component", status: 0 }) if index < 0
+        return Result.Error(CError {
+            message: "negative C result component", status: 0
+        }) if index < 0
         let offset = 0
         let current = 0
         let selected = Bytes.empty()
         let found = false
         while offset < self.data.length {
-            return Result.Error(CError { message: "truncated C result frame", status: 0 }) if self.data.length - offset < 8
+            return Result.Error(CError {
+                message: "truncated C result frame", status: 0
+            }) if self.data.length - offset < 8
             let length = CHost.decode_int(self.data.slice(offset, offset + 8).hex())
             offset = offset + 8
-            return Result.Error(CError { message: "invalid C result frame length", status: 0 }) if length < 0 || length > self.data.length - offset
-            branch { current == index -> {
+            return Result.Error(CError {
+                message: "invalid C result frame length", status: 0
+            }) if length < 0 || length > self.data.length - offset
+            if current == index {
                 selected = self.data.slice(offset, offset + length)
                 found = true
-            } _ -> () }
+            }
             offset = offset + length
             current = current + 1
         }
-        return Result.Error(CError { message: "missing C result component", status: 0 }) if !found
-        Result.Ok(CValue { data: move selected })
+        return Result.Error(CError {
+            message: "missing C result component", status: 0
+        }) if !found
+        Result.Ok(CValue {
+            data: move selected
+        })
     }
     /// Checks the exact number of eight-byte scalar slots in a copied record.
     /// Counts outside 0..8191 fail without arithmetic overflow.
     pub func check_slots(self, count: Int) -> Result<(), CError> {
-        return Result.Error(CError { message: "invalid C record slot count", status: 0 }) if count < 0 || count > 8191
-        return Result.Error(CError { message: "C record payload size mismatch", status: 0 }) if self.data.length != count * 8
+        return Result.Error(CError {
+            message: "invalid C record slot count", status: 0
+        }) if count < 0 || count > 8191
+        return Result.Error(CError {
+            message: "C record payload size mismatch", status: 0
+        }) if self.data.length != count * 8
         Result.Ok(())
     }
     /// Copies one eight-byte scalar slot from a record. The index is zero-based;
     /// negative/out-of-range indexes and partial-slot payloads return an error.
     pub func slot(self, index: Int) -> Result<CValue, CError> {
-        return Result.Error(CError { message: "invalid C record slot", status: 0 }) if index < 0 || self.data.length / 8 * 8 != self.data.length || index >= self.data.length / 8
-        Result.Ok(CValue { data: self.data.slice(index * 8, index * 8 + 8) })
+        return Result.Error(CError {
+            message: "invalid C record slot", status: 0
+        }) if index < 0 || self.data.length / 8 * 8 != self.data.length || index >= self.data.length / 8
+        Result.Ok(CValue {
+            data: self.data.slice(index * 8, index * 8 + 8)
+        })
     }
     /// Reads a signed integer; U64 results preserve their bits in an Int.
     pub func integer(self) -> Result<Int, CError> {
-        return Result.Error(CError { message: "C integer requires eight bytes", status: 0 }) if self.data.length != 8
+        return Result.Error(CError {
+            message: "C integer requires eight bytes", status: 0
+        }) if self.data.length != 8
         Result.Ok(CHost.decode_int(self.data.hex()))
     }
     /// Reads a binary64 result, including widened C float results.
     pub func floating(self) -> Result<Float, CError> {
-        return Result.Error(CError { message: "C float requires eight bytes", status: 0 }) if self.data.length != 8
+        return Result.Error(CError {
+            message: "C float requires eight bytes", status: 0
+        }) if self.data.length != 8
         Result.Ok(CHost.decode_float(self.data.hex()))
     }
     /// Returns an independent buffer copy.
-    pub func bytes(self) -> Bytes { self.data.copy() }
+    pub func bytes(self) -> Bytes {
+        self.data.copy()
+    }
     /// Validates copied UTF-8; embedded NUL bytes remain ordinary text content.
     pub func text(self) -> Result<String, CError> {
         branch String.from_utf8(self.data.copy()) {
             Result.Ok(value) -> Result.Ok(value)
-            Result.Error(_) -> Result.Error(CError { message: "C result is not UTF-8", status: 0 })
+            Result.Error(_) -> Result.Error(CError {
+                message: "C result is not UTF-8", status: 0
+            })
         }
     }
 }
@@ -150,14 +192,18 @@ impl CValue {
 /// and validates the library ABI. Successful resolutions stay pinned in the
 /// thread's bridge registry, even if directories or environment settings change.
 /// Failed resolutions are retried on the next call.
-pub type CBridge = { path: String, schema: String }
+pub type CBridge = {
+    path: String, schema: String
+}
 impl CBridge {
     /// Calls C with a callback borrowed for this call only. The adapter is consumed
     /// and released before return; its borrowed captures must remain live throughout.
     /// One callback/context pair is inserted between the two argument packets.
     pub func call_with<F>(self, operation: Int, before: CArguments, after: CArguments, callback: F, signature: String) -> Result<CValue, CError> [read self.path, read self.schema, read before.payload, read after.payload, read signature, consume callback] {
         let token = try (try decode_response(CHost.callback_new(move callback, signature, 0))).integer()
-        let lease = CCallbackLease { token }
+        let lease = CCallbackLease {
+            token
+        }
         let payload = before.payload + CHost.encode_int(token) + after.payload
         let response = CHost.exchange(self.path, self.schema, operation, 0, false, payload)
         try decode_response(CHost.callback_error(token))
@@ -168,19 +214,29 @@ impl CBridge {
     /// poll_callbacks; direct callbacks run only on the registering thread.
     /// The native destructor must unregister and quiesce before returning.
     pub func subscribe<F>(self, operation: Int, before: CArguments, after: CArguments, callback: F, signature: String, queued: Bool) -> Result<CResource, CError> [read self.path, read self.schema, read before.payload, read after.payload, read signature, consume callback] {
-        let mode = branch { queued -> 2 _ -> 1 }
+        let mode = branch {
+            queued -> 2 _ -> 1
+        }
         let token = try (try decode_response(CHost.callback_new(move callback, signature, mode))).integer()
-        let lease = CCallbackLease { token }
+        let lease = CCallbackLease {
+            token
+        }
         let payload = before.payload + CHost.encode_int(token) + after.payload
         let value = try decode_response(CHost.exchange(self.path, self.schema, operation, 0, true, payload))
-        let resource = CResource { token: try value.integer(), callback: token }
+        let resource = CResource {
+            token: try value.integer(), callback: token
+        }
         lease.token = 0
         try resource.check_callbacks()
         Result.Ok(move resource)
     }
     /// Selects a reviewed native bridge by name and the schema identifier
     /// emitted by `foster bridge`. A mismatched schema fails before calling C.
-    pub func at(path: String, schema: String) -> CBridge [consume path, consume schema] { CBridge { path: move path, schema: move schema } }
+    pub func at(path: String, schema: String) -> CBridge [consume path, consume schema] {
+        CBridge {
+            path: move path, schema: move schema
+        }
+    }
     /// Calls a scalar, value-record, void or copied-buffer operation. Rejects constructors.
     pub func call(self, operation: Int, arguments: CArguments) -> Result<CValue, CError> {
         decode_response(CHost.exchange(self.path, self.schema, operation, 0, false, arguments.payload))
@@ -190,14 +246,18 @@ impl CBridge {
     pub func create(self, operation: Int, arguments: CArguments) -> Result<CResource, CError> {
         let value = try decode_response(CHost.exchange(self.path, self.schema, operation, 0, true, arguments.payload))
         let token = try value.integer()
-        Result.Ok(CResource { token, callback: 0 })
+        Result.Ok(CResource {
+            token, callback: 0
+        })
     }
 }
 
 /// An opaque, non-copyable owner. Private fields prevent fabrication or extracting
 /// a C pointer. Receiver calls mutate conservatively. Close errors can retain the
 /// resource; deinit always destroys a remaining owner using its cleanup function.
-pub type CResource = { token: Int, callback: Int }
+pub type CResource = {
+    token: Int, callback: Int
+}
 impl CResource {
     /// Delivers queued notifications on the registering thread. Processes only
     /// the events pending at entry and returns the first handler/queue failure.
@@ -216,7 +276,9 @@ impl CResource {
     }
     /// Calls an operation for this resource type. Errors leave ownership intact.
     pub func call(self, operation: Int, arguments: CArguments) -> Result<CValue, CError> [mut self.token, mut self.callback] {
-        return Result.Error(CError { message: "C resource is closed", status: 0 }) if self.token == 0
+        return Result.Error(CError {
+            message: "C resource is closed", status: 0
+        }) if self.token == 0
         // Native state changes must participate in the slot's mutation effect.
         self.token = self.token
         let response = CHost.exchange("", "", operation, self.token, false, arguments.payload)
@@ -228,14 +290,13 @@ impl CResource {
     pub func close(self) -> Result<(), CError> [mut self.token, mut self.callback] {
         return Result.Ok(()) if self.token == 0
         let response = try decode_response(CHost.close(self.token))
-        let callback_response = branch { self.callback == 0 -> "00" _ -> CHost.callback_error(self.callback) }
-        branch {
-            response.data[0] != Byte.unchecked(0) -> {
-                self.token = 0
-                CHost.callback_release(self.callback)
-                self.callback = 0
-            }
-            _ -> ()
+        let callback_response = branch {
+            self.callback == 0 -> "00" _ -> CHost.callback_error(self.callback)
+        }
+        if response.data[0] != Byte.unchecked(0) {
+            self.token = 0
+            CHost.callback_release(self.callback)
+            self.callback = 0
         }
         let status = CHost.decode_int(response.data.slice(1, 9).hex())
         branch {
@@ -243,7 +304,9 @@ impl CResource {
                 try decode_response(callback_response)
                 Result.Ok(())
             }
-            _ -> Result.Error(CError { message: "C close failed", status })
+            _ -> Result.Error(CError {
+                message: "C close failed", status
+            })
         }
     }
     /// Unconditionally destroys any remaining allocation on ownership cleanup.
@@ -260,51 +323,91 @@ impl CResource {
 }
 
 // Private so a borrowed callback cannot escape call_with through a token owner.
-type CCallbackLease = { token: Int }
+type CCallbackLease = {
+    token: Int
+}
 impl CCallbackLease {
-    func deinit(self) -> () { CHost.callback_release(self.token) }
+    func deinit(self) -> () {
+        CHost.callback_release(self.token)
+    }
 }
 
 /// Validates the private response envelope and exposes only copied bytes.
 func decode_response(response: String) -> Result<CValue, CError> {
     let octets = branch Bytes.from_hex(response) {
         Result.Ok(value) -> value
-        Result.Error(_) -> { return Result.Error(CError { message: "invalid C response", status: 0 }) }
+        Result.Error(_) -> {
+            return Result.Error(CError {
+                message: "invalid C response", status: 0
+            })
+        }
     }
-    return Result.Error(CError { message: "empty C response", status: 0 }) if octets.length == 0
+    return Result.Error(CError {
+        message: "empty C response", status: 0
+    }) if octets.length == 0
     let payload = octets.slice(1, octets.length)
     branch {
-        octets[0] == Byte.unchecked(0) -> Result.Ok(CValue { data: move payload })
-        _ -> Result.Error(CError { message: String.from_utf8(move payload).unwrap_or("C bridge failure"), status: 0 })
+        octets[0] == Byte.unchecked(0) -> Result.Ok(CValue {
+            data: move payload
+        })
+        _ -> Result.Error(CError {
+            message: String.from_utf8(move payload).unwrap_or("C bridge failure"), status: 0
+        })
     }
 }
 
 test "record slots reject partial payloads and overflowing indexes" {
-    let value = CValue { data: Bytes.from_hex("01000000000000000200000000000000").unwrap_or(Bytes.empty()) }
-    branch value.check_slots(2) { Result.Ok(_) -> () Result.Error(_) -> panic("valid record rejected") }
-    let first = branch value.slot(0) { Result.Ok(slot) -> slot Result.Error(_) -> panic("valid slot rejected") }
+    let value = CValue {
+        data: Bytes.from_hex("01000000000000000200000000000000").unwrap_or(Bytes.empty())
+    }
+    branch value.check_slots(2) {
+        Result.Ok(_) -> () Result.Error(_) -> panic("valid record rejected")
+    }
+    let first = branch value.slot(0) {
+        Result.Ok(slot) -> slot Result.Error(_) -> panic("valid slot rejected")
+    }
     assert(first.integer().unwrap_or(0) == 1)
     for index in [-1, 2, 9223372036854775807] {
-        branch value.slot(index) { Result.Error(_) -> () Result.Ok(_) -> panic("invalid slot accepted") }
+        branch value.slot(index) {
+            Result.Error(_) -> () Result.Ok(_) -> panic("invalid slot accepted")
+        }
     }
     for count in [-1, 1, 8192, 9223372036854775807] {
-        branch value.check_slots(count) { Result.Error(_) -> () Result.Ok(_) -> panic("invalid size accepted") }
+        branch value.check_slots(count) {
+            Result.Error(_) -> () Result.Ok(_) -> panic("invalid size accepted")
+        }
     }
-    let partial = CValue { data: Bytes.from_hex("00").unwrap_or(Bytes.empty()) }
-    branch partial.slot(0) { Result.Error(_) -> () Result.Ok(_) -> panic("partial slot accepted") }
+    let partial = CValue {
+        data: Bytes.from_hex("00").unwrap_or(Bytes.empty())
+    }
+    branch partial.slot(0) {
+        Result.Error(_) -> () Result.Ok(_) -> panic("partial slot accepted")
+    }
 }
 
 test "compound results validate every frame before copying a component" {
-    let value = CValue { data: Bytes.from_hex("01000000000000002a0000000000000000").unwrap_or(Bytes.empty()) }
-    let first = branch value.part(0) { Result.Ok(part) -> part Result.Error(_) -> panic("valid frame rejected") }
+    let value = CValue {
+        data: Bytes.from_hex("01000000000000002a0000000000000000").unwrap_or(Bytes.empty())
+    }
+    let first = branch value.part(0) {
+        Result.Ok(part) -> part Result.Error(_) -> panic("valid frame rejected")
+    }
     assert(first.bytes().hex() == "2a")
-    let empty = branch value.part(1) { Result.Ok(part) -> part Result.Error(_) -> panic("empty frame rejected") }
+    let empty = branch value.part(1) {
+        Result.Ok(part) -> part Result.Error(_) -> panic("empty frame rejected")
+    }
     assert(empty.bytes().length == 0)
     for index in [-1, 2, 9223372036854775807] {
-        branch value.part(index) { Result.Error(_) -> () Result.Ok(_) -> panic("missing frame accepted") }
+        branch value.part(index) {
+            Result.Error(_) -> () Result.Ok(_) -> panic("missing frame accepted")
+        }
     }
     for packet in ["00", "ffffffffffffffff", "ffffffffffffff7f", "02000000000000002a", "01000000000000002a00"] {
-        let malformed = CValue { data: Bytes.from_hex(packet).unwrap_or(Bytes.empty()) }
-        branch malformed.part(0) { Result.Error(_) -> () Result.Ok(_) -> panic("malformed frame accepted") }
+        let malformed = CValue {
+            data: Bytes.from_hex(packet).unwrap_or(Bytes.empty())
+        }
+        branch malformed.part(0) {
+            Result.Error(_) -> () Result.Ok(_) -> panic("malformed frame accepted")
+        }
     }
 }
