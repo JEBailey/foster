@@ -125,6 +125,20 @@ func main() -> Int {
 `_` is the fallback. Result-producing arms must have compatible types. A `Bool`
 subject match also needs `_` for exhaustiveness in the current compiler.
 
+A subjectless `branch { ... }` can omit `_` when its completing arms produce
+unit. No matching condition means do nothing and produce `()`, equivalent to
+an implicit `_ -> ()`. Arms may also transfer control. A non-unit result still
+needs a fallback; subject branches keep their exhaustiveness rules.
+
+```foster
+func main() -> Int {
+    let answer = 40
+    branch { answer == 40 -> { answer = answer + 2 } }
+    branch { false -> { answer = 0 } }
+    answer
+}
+```
+
 `while condition { ... }` checks the condition before each iteration.
 `loop { ... }` repeats until control leaves it. `for item in collection { ... }`
 opens `.iterator()` once, then calls `.next()` until `Option.None`. The yielded

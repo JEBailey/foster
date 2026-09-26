@@ -1,0 +1,43 @@
+type Counter = { value: Int }
+
+func condition(counter: Counter, result: Bool) -> Bool [mut counter.value] {
+    counter.value = counter.value + 1
+    result
+}
+
+func selected(flag: Bool) -> Int {
+    branch { flag -> { return 40 } }
+    2
+}
+
+func unit(flag: Bool) -> () {
+    branch { flag -> () }
+}
+
+func main() -> Int {
+    let counter = Counter { value: 0 }
+    let result = branch {
+        condition(counter, false) -> { counter.value = 99 }
+        condition(counter, false) -> { counter.value = 99 }
+    }
+    assert(result == ())
+    assert(counter.value == 2)
+    branch {
+        condition(counter, true) -> { counter.value = counter.value + 10 }
+        condition(counter, true) -> { counter.value = 99 }
+    }
+    assert(counter.value == 13)
+    assert(unit(false) == ())
+    assert(unit(true) == ())
+    branch { false -> panic("unselected arm") }
+    let index = 0
+    let total = 0
+    loop {
+        index = index + 1
+        branch { index == 2 -> { continue } }
+        branch { index == 4 -> { break } }
+        total = total + index
+    }
+    assert(total == 4)
+    selected(true) + selected(false)
+}

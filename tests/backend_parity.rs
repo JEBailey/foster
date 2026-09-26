@@ -2,6 +2,15 @@
 use foster::{native, vm};
 
 #[test]
+fn conditional_branch_implicit_default_on_both_backends() {
+    check(
+        "conditional-branch-default",
+        include_str!("fixtures/programs/conditional_branch_default.fos"),
+        Ok("42"),
+    );
+}
+
+#[test]
 fn deferred_initialization_cleanup_on_both_backends() {
     check_stdout(
         "deferred-initialization",

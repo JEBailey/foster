@@ -2,6 +2,41 @@ use foster::vm::Value;
 use std::path::Path;
 
 #[test]
+fn conditional_branch_implicit_default_preserves_no_match_ownership() {
+    let initialization = foster::compile(
+        r#"
+type Item = { value: Int }
+func inspect(flag: Bool) -> Int {
+    let item = Item { value: ?? }
+    branch { flag -> { item.value = 42 } }
+    item.value
+}
+func main() -> Int { inspect(false) }
+"#,
+    )
+    .unwrap_err();
+    assert!(
+        initialization.message.contains("initialized"),
+        "{initialization:?}"
+    );
+
+    let moved = foster::compile(
+        r#"
+import core.string
+func discard_text(value: String) -> () [consume value] {}
+func inspect(flag: Bool) -> Int {
+    let value = "hello"
+    branch { flag -> discard_text(move value) }
+    value.length
+}
+func main() -> Int { inspect(false) }
+"#,
+    )
+    .unwrap_err();
+    assert!(moved.message.contains("moved"), "{moved:?}");
+}
+
+#[test]
 fn grouped_effect_paths_match_expanded_contracts() {
     let source = r#"
 type Pair = { left: Int, right: Int }

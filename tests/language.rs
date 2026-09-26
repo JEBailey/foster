@@ -974,9 +974,21 @@ fn logical_operators_require_boolean_operands() {
 }
 
 #[test]
-fn conditional_branches_require_a_wildcard_arm() {
-    let missing = foster::compile("func main() { branch { true -> 1 } }").unwrap_err();
-    assert!(missing.message.contains("requires a `_` arm"));
+fn conditional_branches_without_a_default_have_a_unit_fallback() {
+    for source in [
+        "func main() { branch { true -> 1 } }",
+        "func main() -> Int { branch { true -> 1 } }",
+        "func main() -> Never { branch { false -> panic(\"failed\") } }",
+    ] {
+        let missing = foster::compile(source).unwrap_err();
+        assert!(missing.message.contains("()"), "{missing:?}");
+    }
+
+    let subject = foster::compile("func main() { branch true { true -> () } }").unwrap_err();
+    assert!(subject.message.contains("exhaustiveness"), "{subject:?}");
+
+    let empty = foster::compile("func main() { branch {} }").unwrap_err();
+    assert!(empty.message.contains("no arms"), "{empty:?}");
 
     let legacy = foster::compile("func main() { branch { true -> 1 else -> 0 } }").unwrap_err();
     assert!(legacy.message.contains("expected expression"));

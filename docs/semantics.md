@@ -197,6 +197,11 @@ prohibition on partial moves from a `deinit` owner apply normally.
 
 **S-10 — Selection and repetition.** A subject branch evaluates its subject once. Branch arms
 are considered in source order; the first matching arm executes and does not fall through.
+A nonempty subjectless `branch { ... }` without `_` has an implicit `_ -> ()`
+arm. If no condition matches, it completes with unit and no arm body runs.
+The implicit arm participates in result typing, ownership, and initialization
+checks; value-producing arms must be compatible with unit. Subject branches
+retain their exhaustiveness requirements.
 Enum coverage must account for refutable payload patterns, not merely mention each case name.
 Record branch patterns test accessible stored fields and bind only on success;
 failed nested patterns expose none of their tentative bindings. A record pattern

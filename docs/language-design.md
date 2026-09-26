@@ -622,7 +622,12 @@ declare the same case label, Foster requires the qualified spelling.
 
 ## Branch expressions
 
-`branch` is an expression. Conditional branches use `_` as their required catch-all arm.
+`branch` is an expression. A subjectless conditional branch may omit its `_`
+catch-all arm. The omitted arm acts as `_ -> ()`: when no condition matches,
+the branch does nothing and produces unit. Its completing arms must therefore
+produce `()`; arms that return, break, continue, or diverge are also allowed.
+A conditional branch producing a non-unit value needs an explicit fallback.
+Empty branches are invalid.
 
 ```foster
 branch {

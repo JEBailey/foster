@@ -543,6 +543,22 @@ impl FunctionLowerer<'_> {
                     lowered.push(BranchArm { test, body });
                     self.locals = locals;
                 }
+                // Subjectless selection has an implicit unit fallback. Materialize
+                // it before type/effect/ownership checking so every analysis and
+                // backend sees the no-match path, including divergent arms.
+                if subject.is_none()
+                    && !lowered.is_empty()
+                    && !lowered
+                        .iter()
+                        .any(|arm| matches!(arm.test, BranchTest::Wildcard))
+                {
+                    let unit = self.alloc_expression(Expr::Unit);
+                    let span = self.hir.functions[self.function].span.clone();
+                    lowered.push(BranchArm {
+                        test: BranchTest::Wildcard,
+                        body: crate::block::Block::single(Stmt::Expr(unit), span),
+                    });
+                }
                 Expr::Branch {
                     subject,
                     arms: lowered,

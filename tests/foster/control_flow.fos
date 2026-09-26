@@ -69,6 +69,17 @@ test "statement branch arms produce values" {
     assert(conditional + matched == 42)
 }
 
+test "subjectless branches have an implicit unit default" {
+    let answer = 40
+    let unmatched = branch { false -> { answer = 0 } }
+    assert(unmatched == ())
+    branch {
+        answer == 40 -> { answer = answer + 2 }
+        true -> { answer = 0 }
+    }
+    assert(answer == 42)
+}
+
 test "wildcard arms stop later tests" {
     let conditional = branch {
         _ -> 20

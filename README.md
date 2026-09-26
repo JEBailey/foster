@@ -185,7 +185,8 @@ constants. Use `.` for type-associated functions, enum cases, fields, and instan
 operations with a natural receiver are fluent (`values.map(transform)`, `outcome.map(transform)`);
 module qualification remains for namespace operations such as `toml::parse(source)`.
 
-Conditional `branch` expressions use `_` for their required fallback arm:
+Subjectless `branch { ... }` expressions may omit `_`; no match then does nothing
+and produces `()`. Branches producing a non-unit value still need a fallback:
 
 ```foster
 func skip_whitespace(characters: String) -> String {
