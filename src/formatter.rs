@@ -55,6 +55,16 @@ mod tests {
     }
 
     #[test]
+    fn expands_inline_blocks_and_preserves_program_behavior() {
+        let source = "func main() -> Int { branch { true -> { 42 } _ -> { 0 } } }\n";
+        let expected = "func main() -> Int {\n    branch {\n        true -> {\n            42\n        }\n        _ -> {\n            0\n        }\n    }\n}\n";
+        let formatted = format(source).unwrap();
+        assert_eq!(formatted, expected);
+        assert_eq!(format(&formatted).unwrap(), formatted);
+        assert_eq!(crate::run(&formatted).unwrap(), crate::run(source).unwrap());
+    }
+
+    #[test]
     fn formats_test_declarations() {
         assert_eq!(
             format("test \"works\" {\nprintln()\n}\n").unwrap(),

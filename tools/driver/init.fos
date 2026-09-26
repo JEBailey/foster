@@ -22,7 +22,9 @@ func main(arguments: Arguments) -> Result<String, String> {
     try checked_io(fs::create_directory_all(requested))
     let root = branch paths::canonicalize(requested) {
         Result.Ok(value) -> value
-        Result.Error(error) -> { return Result.Error(error.message) }
+        Result.Error(error) -> {
+            return Result.Error(error.message)
+        }
     }
     let manifest = paths::join(root, "foster.toml")
     return Result.Error("project manifest `" + manifest + "` already exists") if fs::exists?(manifest)
@@ -30,7 +32,9 @@ func main(arguments: Arguments) -> Result<String, String> {
         arguments.values.length > 1 -> arguments.values[1].copy()
         _ -> branch paths::file_name(root) {
             Option.Some(value) -> value
-            Option.None -> { return Result.Error("cannot infer a package name; pass `--name <name>`") }
+            Option.None -> {
+                return Result.Error("cannot infer a package name; pass `--name <name>`")
+            }
         }
     }
     let valid = !name.empty?
@@ -44,7 +48,9 @@ func main(arguments: Arguments) -> Result<String, String> {
     try checked_io(fs::create_directory_all(source))
     let main_path = paths::join(source, "main.fos")
     branch {
-        !fs::exists?(main_path) -> { try checked_io(fs::write_text(main_path, "func main() -> () {\n    println(\"Hello, Foster!\")\n}\n")) }
+        !fs::exists?(main_path) -> {
+            try checked_io(fs::write_text(main_path, "func main() -> () {\n    println(\"Hello, Foster!\")\n}\n"))
+        }
         _ -> ()
     }
     try checked_io(fs::write_text(manifest, "[package]\nname = \"" + name + "\"\nsource = \"src\"\n"))

@@ -36,6 +36,8 @@ fn foster_header_tool_builds_scalars_and_reports_unsupported_declarations() {
 #include "dependency.h"
 typedef int32_t Count;
 #define VERSION "6.0\nquoted \"value\""
+#define UNICODE_TEXT "\"\xcc\x81\\\xcc\x81"
+#define CONTROL_TEXT "\001\b\f"
 #define WIDE_TEXT L"wide"
 #define MASK ((1u << 5) | 3u)
 #define MASK_ALIAS MASK
@@ -288,6 +290,8 @@ func main() -> Result<Int, CError> {
     assert(C_FRACTION == 0.25 && C_WIDE_BITS == -1 && C_CHANGED == 42)
     assert(C_MINIMUM() == -9223372036854775807 - 1)
     assert(C_VERSION == "6.0\nquoted \"value\"")
+    assert(C_UNICODE_TEXT == "\"́\\́")
+    assert(C_CONTROL_TEXT.bytes.hex() == "01080c")
     let red = C_RED()
     assert(red.r == 230 && red.g == 41 && red.b == 55 && red.a == 255)
     let before = try c_header_calls()

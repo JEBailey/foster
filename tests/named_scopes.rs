@@ -115,7 +115,7 @@ fn named_scopes_format_without_losing_labels() {
     let formatted = foster::formatter::format(source).unwrap();
     assert_eq!(
         formatted,
-        "func main() {\n    :request {\n        // resource scope\n        :child { 42 }\n    }\n}\n"
+        "func main() {\n    :request {\n        // resource scope\n        :child {\n            42\n        }\n    }\n}\n"
     );
     assert_eq!(foster::formatter::format(&formatted).unwrap(), formatted);
 }

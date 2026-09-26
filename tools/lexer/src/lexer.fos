@@ -36,7 +36,9 @@ type Scanner = {
     quoted_raw: Bool
 }
 
-func digit(c: CodePoint) -> Bool { c >= '0' && c <= '9' }
+func digit(c: CodePoint) -> Bool {
+    c >= '0' && c <= '9'
+}
 func identifier_start(c: CodePoint) -> Bool {
     branch {
         c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' -> true
@@ -44,7 +46,9 @@ func identifier_start(c: CodePoint) -> Bool {
         _ -> c.alphabetic?()
     }
 }
-func identifier_part(c: CodePoint) -> Bool { identifier_start(c) || digit(c) || c == '?' }
+func identifier_part(c: CodePoint) -> Bool {
+    identifier_start(c) || digit(c) || c == '?'
+}
 
 impl Scanner {
     func peek(self, ahead: Int) -> CodePoint {
@@ -64,9 +68,13 @@ impl Scanner {
             _ -> 4
         }
         branch {
-            c == '\n' -> { self.line = self.line + 1
-                self.column = 1 }
-            _ -> { self.column = self.column + 1 }
+            c == '\n' -> {
+                self.line = self.line + 1
+                self.column = 1
+            }
+            _ -> {
+                self.column = self.column + 1
+            }
         }
         c
     }
@@ -87,12 +95,16 @@ impl Scanner {
         loop {
             branch {
                 self.index == self.chars.length -> {
-                    self.fail(branch quote { '"' -> "unterminated string"
-                        _ -> "unterminated code-point literal" }, line, column)
+                    self.fail(branch quote {
+                        '"' -> "unterminated string"
+                        _ -> "unterminated code-point literal"
+                    }, line, column)
                     break
                 }
-                quote == '"' && self.peek(0) == '"' -> { self.advance()
-                    break }
+                quote == '"' && self.peek(0) == '"' -> {
+                    self.advance()
+                    break
+                }
                 quote == '"' && self.peek(0) == '\n' -> {
                     self.fail("unterminated string", line, column)
                     break
@@ -112,8 +124,10 @@ impl Scanner {
                     }
                     branch {
                         self.index == self.chars.length -> {
-                            self.fail(branch quote { '"' -> "unterminated escape"
-                                _ -> "unterminated code-point escape" }, line, column)
+                            self.fail(branch quote {
+                                '"' -> "unterminated escape"
+                                _ -> "unterminated code-point escape"
+                            }, line, column)
                             break
                         }
                         _ -> ()
@@ -142,8 +156,10 @@ impl Scanner {
                 }
                 _ -> ()
             }
-            branch { !self.quoted_raw -> value.push(c)
-                _ -> () }
+            branch {
+                !self.quoted_raw -> value.push(c)
+                _ -> ()
+            }
             branch {
                 quote == '\'' -> {
                     branch {
@@ -170,18 +186,24 @@ func normalize_block(text: String) -> String [consume text] {
     for raw in lines {
         let line = (move raw).trim_start()
         branch {
-            line.starts_with?("*") -> { line = (line.scalar_rest()).trim_start() }
+            line.starts_with?("*") -> {
+                line = (line.scalar_rest()).trim_start()
+            }
             _ -> ()
         }
         line = line.trim_end()
         branch {
-            line.byte_length() == 0 -> { pending = pending + 1 }
+            line.byte_length() == 0 -> {
+                pending = pending + 1
+            }
             _ -> {
                 branch {
                     started -> {
                         out.append("\n")
-                        while pending > 0 { out.append("\n")
-                            pending = pending - 1 }
+                        while pending > 0 {
+                            out.append("\n")
+                            pending = pending - 1
+                        }
                     }
                     _ -> ()
                 }
@@ -196,8 +218,10 @@ func normalize_block(text: String) -> String [consume text] {
 
 /// Scans the entire input, preserving documentation tokens and scalar-based positions.
 pub func scan(source: String) -> Scan {
-    let scanner = Scanner { chars: source.code_points(), index: 0, offset: 0, line: 1, column: 1,
-        error: "", error_line: 1, error_column: 1, quoted_raw: false }
+    let scanner = Scanner {
+        chars: source.code_points(), index: 0, offset: 0, line: 1, column: 1,
+        error: "", error_line: 1, error_column: 1, quoted_raw: false
+    }
     let tokens = []
     while scanner.index < scanner.chars.length {
         let line = scanner.line
@@ -211,8 +235,10 @@ pub func scan(source: String) -> Scan {
         let raw_start = -1
         let raw_end = -1
         branch {
-            c == ' ' || c == '\t' || c == '\r' -> { scanner.advance()
-                continue }
+            c == ' ' || c == '\t' || c == '\r' -> {
+                scanner.advance()
+                continue
+            }
             c == '/' && next == '/' -> {
                 let doc = scanner.peek(2)
                 scanner.advance()
@@ -220,17 +246,27 @@ pub func scan(source: String) -> Scan {
                 branch {
                     doc == '/' || doc == '!' -> {
                         scanner.advance()
-                        branch scanner.peek(0) { ' ' -> { scanner.advance()
-                            () }
-                            _ -> () }
+                        branch scanner.peek(0) {
+                            ' ' -> {
+                                scanner.advance()
+                                ()
+                            }
+                            _ -> ()
+                        }
                         let content = scanner.index
-                        while scanner.index < scanner.chars.length && scanner.peek(0) != '\n' { scanner.advance() }
+                        while scanner.index < scanner.chars.length && scanner.peek(0) != '\n' {
+                            scanner.advance()
+                        }
                         text = scanner.text(content).trim_end()
-                        kind = branch doc { '!' -> "ModuleDocComment"
-                            _ -> "DocComment" }
+                        kind = branch doc {
+                            '!' -> "ModuleDocComment"
+                            _ -> "DocComment"
+                        }
                     }
                     _ -> {
-                        while scanner.index < scanner.chars.length && scanner.peek(0) != '\n' { scanner.advance() }
+                        while scanner.index < scanner.chars.length && scanner.peek(0) != '\n' {
+                            scanner.advance()
+                        }
                         continue
                     }
                 }
@@ -253,37 +289,53 @@ pub func scan(source: String) -> Scan {
                             scanner.advance()
                             scanner.advance()
                         }
-                        _ -> { let character = scanner.advance()
-                            branch { documentation -> content.push(character)
-                                _ -> () }
-                            character }
+                        _ -> {
+                            let character = scanner.advance()
+                            branch {
+                                documentation -> content.push(character)
+                                _ -> ()
+                            }
+                            character
+                        }
                     }
                 }
                 branch {
                     depth != 0 -> scanner.fail("unterminated block comment", line, column)
-                    documentation -> { kind = "DocComment"
-                        text = normalize_block((move content).finish()) }
-                    _ -> { continue }
+                    documentation -> {
+                        kind = "DocComment"
+                        text = normalize_block((move content).finish())
+                    }
+                    _ -> {
+                        continue
+                    }
                 }
             }
             c == '"' || c == '\'' -> {
-                kind = branch c { '"' -> "String"
-                    _ -> "CodePoint" }
+                kind = branch c {
+                    '"' -> "String"
+                    _ -> "CodePoint"
+                }
                 text = scanner.quoted(c, line, column)
                 branch {
-                    scanner.quoted_raw -> { raw_start = start + 1
-                        raw_end = scanner.offset - 1 }
+                    scanner.quoted_raw -> {
+                        raw_start = start + 1
+                        raw_end = scanner.offset - 1
+                    }
                     _ -> ()
                 }
             }
             digit(c) -> {
                 kind = "Integer"
-                while digit(scanner.peek(0)) { scanner.advance() }
+                while digit(scanner.peek(0)) {
+                    scanner.advance()
+                }
                 branch {
                     scanner.peek(0) == '.' && digit(scanner.peek(1)) -> {
                         kind = "Float"
                         scanner.advance()
-                        while digit(scanner.peek(0)) { scanner.advance() }
+                        while digit(scanner.peek(0)) {
+                            scanner.advance()
+                        }
                     }
                     _ -> ()
                 }
@@ -291,12 +343,20 @@ pub func scan(source: String) -> Scan {
                     scanner.peek(0) == 'e' || scanner.peek(0) == 'E' -> {
                         kind = "Float"
                         scanner.advance()
-                        branch { scanner.peek(0) == '+' || scanner.peek(0) == '-' -> { scanner.advance()
-                            () }
-                            _ -> () }
-                        branch { !digit(scanner.peek(0)) -> scanner.fail("expected exponent digits", line, column)
-                            _ -> () }
-                        while digit(scanner.peek(0)) { scanner.advance() }
+                        branch {
+                            scanner.peek(0) == '+' || scanner.peek(0) == '-' -> {
+                                scanner.advance()
+                                ()
+                            }
+                            _ -> ()
+                        }
+                        branch {
+                            !digit(scanner.peek(0)) -> scanner.fail("expected exponent digits", line, column)
+                            _ -> ()
+                        }
+                        while digit(scanner.peek(0)) {
+                            scanner.advance()
+                        }
                     }
                     _ -> ()
                 }
@@ -312,7 +372,9 @@ pub func scan(source: String) -> Scan {
                                     scanner.fail("integer is out of range", line, column)
                                     break
                                 }
-                                _ -> { value = value * 10 + number }
+                                _ -> {
+                                    value = value * 10 + number
+                                }
                             }
                             position = position + 1
                         }
@@ -322,42 +384,76 @@ pub func scan(source: String) -> Scan {
             }
             identifier_start(c) || c == ':' && identifier_start(next) -> {
                 scanner.advance()
-                while identifier_part(scanner.peek(0)) { scanner.advance() }
+                while identifier_part(scanner.peek(0)) {
+                    scanner.advance()
+                }
                 branch c {
-                    ':' -> { kind = "Symbol"
-                        text = scanner.text(index + 1) }
-                    _ -> { text = scanner.text(index)
-                        kind = keyword(text) }
+                    ':' -> {
+                        kind = "Symbol"
+                        text = scanner.text(index + 1)
+                    }
+                    _ -> {
+                        text = scanner.text(index)
+                        kind = keyword(text)
+                    }
                 }
             }
             _ -> {
                 scanner.advance()
                 kind = punctuation(c)
                 branch {
-                    c == '|' && next == '|' -> { kind = "DoublePipe" }
-                    c == '&' && next == '&' -> { kind = "DoubleAmpersand" }
-                    c == ':' && next == ':' -> { kind = "DoubleColon" }
-                    c == '-' && next == '>' -> { kind = "Arrow" }
-                    c == '=' && next == '=' -> { kind = "EqualEqual" }
-                    c == '!' && next == '=' -> { kind = "BangEqual" }
-                    c == '<' && next == '=' -> { kind = "LessEqual" }
-                    c == '>' && next == '=' -> { kind = "GreaterEqual" }
+                    c == '|' && next == '|' -> {
+                        kind = "DoublePipe"
+                    }
+                    c == '&' && next == '&' -> {
+                        kind = "DoubleAmpersand"
+                    }
+                    c == ':' && next == ':' -> {
+                        kind = "DoubleColon"
+                    }
+                    c == '-' && next == '>' -> {
+                        kind = "Arrow"
+                    }
+                    c == '=' && next == '=' -> {
+                        kind = "EqualEqual"
+                    }
+                    c == '!' && next == '=' -> {
+                        kind = "BangEqual"
+                    }
+                    c == '<' && next == '=' -> {
+                        kind = "LessEqual"
+                    }
+                    c == '>' && next == '=' -> {
+                        kind = "GreaterEqual"
+                    }
                     _ -> ()
                 }
-                branch { kind != punctuation(c) -> { scanner.advance()
-                    () }
-                    _ -> () }
+                branch {
+                    kind != punctuation(c) -> {
+                        scanner.advance()
+                        ()
+                    }
+                    _ -> ()
+                }
                 branch {
                     kind == "" -> scanner.fail("unexpected character `" + String.from_code_points([c]) + "`", line, column)
                     _ -> ()
                 }
             }
         }
-        return Scan { tokens: [], error: scanner.error, line: scanner.error_line, column: scanner.error_column } if scanner.error != ""
-        tokens.push(Token { kind, text, line, column, start, end: scanner.offset, raw_start, raw_end })
+        return Scan {
+            tokens: [], error: scanner.error, line: scanner.error_line, column: scanner.error_column
+        } if scanner.error != ""
+        tokens.push(Token {
+            kind, text, line, column, start, end: scanner.offset, raw_start, raw_end
+        })
     }
-    tokens.push(Token { kind: "Eof", text: "", line: scanner.line, column: scanner.column, start: scanner.offset, end: scanner.offset, raw_start: -1, raw_end: -1 })
-    Scan { tokens, error: "", line: scanner.line, column: scanner.column }
+    tokens.push(Token {
+        kind: "Eof", text: "", line: scanner.line, column: scanner.column, start: scanner.offset, end: scanner.offset, raw_start: -1, raw_end: -1
+    })
+    Scan {
+        tokens, error: "", line: scanner.line, column: scanner.column
+    }
 }
 
 func keyword(name: String) -> String {

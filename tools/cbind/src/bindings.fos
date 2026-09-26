@@ -2,9 +2,15 @@
 import core.list
 import core.string
 import core.int
+import core.result
+import std.json
 
-pub type Generated = { pub manifest: String, pub report: String }
-type Metadata = { names: List<String>, parts: List<String> }
+pub type Generated = {
+    pub manifest: String, pub report: String
+}
+type Metadata = {
+    names: List<String>, parts: List<String>
+}
 
 // The adapter supplies tab-separated T(alias, type), F(name, result, parameters),
 // S(name, C type, field/type pairs), and R(name, reason) records. Clang parses C.
@@ -43,8 +49,9 @@ func scalar(spelling: String, declarations: List<String>) -> String {
         for row in declarations {
             let fields = row.copy().split("\t")
             branch {
-                fields.length == 3 && fields[0] == "T" && fields[1] == name -> { alias = fields[2].copy() }
-                _ -> ()
+                fields.length == 3 && fields[0] == "T" && fields[1] == name -> {
+                    alias = fields[2].copy()
+                }
             }
         }
         return "" if alias.empty? || alias == name
@@ -61,24 +68,30 @@ pub func binding_type(spelling: String, declarations: List<String>, accepted: Li
     let name = spelling.copy()
     let depth = 0
     while depth < 32 {
-        branch { name.contains?("[") -> {
-            let parts = name.copy().split("[")
-            let dimension = parts[1].copy().split("]")
-            let length = 0
-            for character in dimension[0] {
-                let digit = character.bytes[0].int - 48
-                return "" if digit < 0 || digit > 9 || length > 8191
-                length = length * 10 + digit
+        branch {
+            name.contains?("[") -> {
+                let parts = name.copy().split("[")
+                let dimension = parts[1].copy().split("]")
+                let length = 0
+                for character in dimension[0] {
+                    let digit = character.bytes[0].int - 48
+                    return "" if digit < 0 || digit > 9 || length > 8191
+                    length = length * 10 + digit
+                }
+                return "" if length < 1 || length > 8191 || dimension.length != 2 || !dimension[1].empty?
+                let element = parts[0].copy().trim()
+                let index = 2
+                while index < parts.length {
+                    element = element + "[" + parts[index]
+                    index = index + 1
+                }
+                let kind = branch {
+                    element == "char" -> "\"char\"" _ -> binding_type(element, declarations, accepted)
+                }
+                return "" if kind.empty? || kind == "\"void\"" || kind == "\"c_string\""
+                return "{\"array\": " + kind + ", \"length\": " + length.as_string() + "}"
             }
-            return "" if length < 1 || length > 8191 || dimension.length != 2 || !dimension[1].empty?
-            let element = parts[0].copy().trim()
-            let index = 2
-            while index < parts.length { element = element + "[" + parts[index]
-                index = index + 1 }
-            let kind = branch { element == "char" -> "\"char\"" _ -> binding_type(element, declarations, accepted) }
-            return "" if kind.empty? || kind == "\"void\"" || kind == "\"c_string\""
-            return "{\"array\": " + kind + ", \"length\": " + length.as_string() + "}"
-        } _ -> () }
+        }
         let alias = ""
         for row in declarations {
             let fields = row.copy().split("\t")
@@ -86,8 +99,9 @@ pub func binding_type(spelling: String, declarations: List<String>, accepted: Li
             return "{\"record\": " + quoted(fields[1]) + "}" if fields[0] == "S" && (fields[2] == name || fields[1] == name) && accepted.contains?(fields[1])
             return "{\"enum\": " + quoted(fields[1]) + "}" if fields[0] == "N" && (fields[2] == name || fields[1] == name)
             branch {
-                fields[0] == "T" && fields[1] == name -> { alias = fields[2].copy() }
-                _ -> ()
+                fields[0] == "T" && fields[1] == name -> {
+                    alias = fields[2].copy()
+                }
             }
         }
         return "" if alias.empty? || alias == name
@@ -99,28 +113,38 @@ pub func binding_type(spelling: String, declarations: List<String>, accepted: Li
 
 // Preserve paths and diagnostic characters as JSON text, never source fragments.
 pub func quoted(text: String) -> String {
-    let output = "\""
-    for character in text {
-        output = output + branch character {
-            "\"" -> "\\\""
-            "\\" -> "\\\\"
-            "\n" -> "\\n"
-            "\r" -> "\\r"
-            "\t" -> "\\t"
-            _ -> character.copy()
-        }
+    branch json::stringify(JsonValue.String(text.copy())) {
+        Result.Ok(output) -> move output
+        Result.Error(error) -> panic(error.message)
     }
-    output + "\""
 }
 
 func metadata(data: Metadata, name: String) -> String {
     let output = ""
     let index = 0
     while index < data.names.length {
-        branch { data.names[index] == name -> { output = output + data.parts[index] } _ -> () }
+        branch {
+            data.names[index] == name -> {
+                output = output + data.parts[index]
+            }
+        }
         index = index + 1
     }
     move output
+}
+
+test "JSON quoting preserves controls and combining marks beside syntax" {
+    let text = branch json::parse("\"\\u0000\\b\\f\"") {
+        Result.Ok(JsonValue.String(value)) -> move value
+        _ -> panic("invalid fixture")
+    }
+    text = text + "\"́\\́\r\n\t"
+    branch json::parse(quoted(text)) {
+        Result.Ok(JsonValue.String(value)) -> {
+            assert(value == text)
+        }
+        _ -> panic("quoted text did not round-trip")
+    }
 }
 
 /// Produces a manifest and diagnostics for rejected functions. Value records are
@@ -128,7 +152,9 @@ func metadata(data: Metadata, name: String) -> String {
 pub func generate(input: String, header: String) -> Generated {
     let declarations = input.copy().split("\n")
     let types = []
-    let annotations = Metadata { names: [], parts: [] }
+    let annotations = Metadata {
+        names: [], parts: []
+    }
     let annotation_keys = []
     for row in declarations {
         let fields = row.copy().split("\t")
@@ -140,10 +166,11 @@ pub func generate(input: String, header: String) -> Generated {
                 continue if annotation_keys.contains?(key)
                 annotation_keys.push(move key)
                 annotations.names.push(fields[1].copy())
-                let field = branch { fields[0] == "D" -> "documentation" _ -> "parameter_names" }
+                let field = branch {
+                    fields[0] == "D" -> "documentation" _ -> "parameter_names"
+                }
                 annotations.parts.push(", " + quoted(field) + ": " + fields[2])
             }
-            _ -> ()
         }
     }
     let operations = ""
@@ -158,11 +185,15 @@ pub func generate(input: String, header: String) -> Generated {
     for row in types {
         let fields = row.copy().split("\t")
         continue if fields[0] != "T"
-        branch { binding_type(fields[1], types, []).starts_with?("{\"enum\":") -> {
-            enum_aliases.push("N\t" + fields[1] + "\t" + fields[1])
-        } _ -> () }
+        branch {
+            binding_type(fields[1], types, []).starts_with?("{\"enum\":") -> {
+                enum_aliases.push("N\t" + fields[1] + "\t" + fields[1])
+            }
+        }
     }
-    for row in enum_aliases { types.push(row.copy()) }
+    for row in enum_aliases {
+        types.push(row.copy())
+    }
     let enums = []
     let enum_names = []
     for row in types {
@@ -183,18 +214,22 @@ pub func generate(input: String, header: String) -> Generated {
             while index + 1 < fields.length {
                 let kind = binding_type(fields[index + 1], types, accepted)
                 branch {
-                    kind.empty? || kind == "\"void\"" || kind == "\"c_string\"" -> { valid = false }
-                    _ -> ()
+                    kind.empty? || kind == "\"void\"" || kind == "\"c_string\"" -> {
+                        valid = false
+                    }
                 }
-                members = members + branch { index == 3 -> "" _ -> ", " } + "{\"name\": " + quoted(fields[index]) + ", \"type\": " + kind + metadata(annotations, "S." + fields[1] + "." + fields[index]) + "}"
+                members = members + branch {
+                    index == 3 -> "" _ -> ", "
+                } + "{\"name\": " + quoted(fields[index]) + ", \"type\": " + kind + metadata(annotations, "S." + fields[1] + "." + fields[index]) + "}"
                 index = index + 2
             }
             branch {
                 valid -> {
-                    records = records + branch { records.empty? -> "" _ -> ",\n" } + "    {\"name\": " + quoted(fields[1]) + ", \"c_type\": " + quoted(fields[2]) + ", \"fields\": [" + members + "]" + metadata(annotations, "S." + fields[1]) + "}"
+                    records = records + branch {
+                        records.empty? -> "" _ -> ",\n"
+                    } + "    {\"name\": " + quoted(fields[1]) + ", \"c_type\": " + quoted(fields[2]) + ", \"fields\": [" + members + "]" + metadata(annotations, "S." + fields[1]) + "}"
                     accepted.push(fields[1].copy())
                 }
-                _ -> ()
             }
         }
         break if previous == accepted.length
@@ -207,36 +242,50 @@ pub func generate(input: String, header: String) -> Generated {
             fields[0] == "Q" -> {
                 continue if reported_types.contains?(fields[1])
                 reported_types.push(fields[1].copy())
-                branch { binding_type(fields[2], types, accepted).empty? -> { report = report + fields[1] + ": unsupported type declaration: " + fields[2] + "\n" } _ -> () }
+                branch {
+                    binding_type(fields[2], types, accepted).empty? -> {
+                        report = report + fields[1] + ": unsupported type declaration: " + fields[2] + "\n"
+                    }
+                }
             }
-            fields[0] == "R" -> { report = report + fields[1] + ": " + fields[2] + "\n" }
+            fields[0] == "R" -> {
+                report = report + fields[1] + ": " + fields[2] + "\n"
+            }
             fields[0] == "F" -> {
                 let name = fields[1].copy()
                 continue if names.contains?(name)
                 let returns = binding_type(fields[2], types, accepted)
                 let reason = ""
                 branch {
-                    returns.empty? -> { reason = "unsupported result type: " + fields[2] }
-                    _ -> ()
+                    returns.empty? -> {
+                        reason = "unsupported result type: " + fields[2]
+                    }
                 }
                 let parameters = ""
                 let index = 3
                 while index < fields.length {
                     let kind = binding_type(fields[index], types, accepted)
                     branch {
-                        kind.empty? || kind == "\"void\"" -> { reason = "unsupported parameter type: " + fields[index] }
-                        _ -> ()
+                        kind.empty? || kind == "\"void\"" -> {
+                            reason = "unsupported parameter type: " + fields[index]
+                        }
                     }
-                    parameters = parameters + branch { index == 3 -> "" _ -> ", " } + kind
+                    parameters = parameters + branch {
+                        index == 3 -> "" _ -> ", "
+                    } + kind
                     index = index + 1
                 }
                 branch {
                     reason.empty? -> {
-                        operations = operations + branch { operations.empty? -> "" _ -> ",\n" }
+                        operations = operations + branch {
+                            operations.empty? -> "" _ -> ",\n"
+                        }
                         operations = operations + "    {\"name\": " + quoted(name) + ", \"symbol\": " + quoted(name) + ", \"parameters\": [" + parameters + "], \"result\": " + returns + metadata(annotations, "F." + name) + "}"
                         names.push(name)
                     }
-                    _ -> { report = report + name + ": " + reason + "; provide a reviewed binding contract\n" }
+                    _ -> {
+                        report = report + name + ": " + reason + "; provide a reviewed binding contract\n"
+                    }
                 }
             }
             _ -> panic("invalid declaration record")

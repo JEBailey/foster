@@ -10,32 +10,54 @@ import std.path as paths
 import std.process
 import std.toml
 
-type Dependency = { name: String, root: String }
-impl Dependency {
-    func copy(self) -> self { Dependency { name: self.name.copy(), root: self.root.copy() } }
+type Dependency = {
+    name: String, root: String
 }
-type ProjectData = { name: String, root: String, manifest: String, source: String, dependencies: List<Dependency> }
-impl ProjectData {
+impl Dependency {
     func copy(self) -> self {
-        ProjectData { name: self.name.copy(), root: self.root.copy(), manifest: self.manifest.copy(), source: self.source.copy(), dependencies: self.dependencies.map((value: Dependency) -> value.copy()) }
+        Dependency {
+            name: self.name.copy(), root: self.root.copy()
+        }
     }
 }
-type Resolved = { name: String, project: Option<ProjectData>, artifact: String }
-type Resolution = { visiting: List<Dependency>, aliases: List<Dependency>, output: List<Resolved> }
+type ProjectData = {
+    name: String, root: String, manifest: String, source: String, dependencies: List<Dependency>
+}
+impl ProjectData {
+    func copy(self) -> self {
+        ProjectData {
+            name: self.name.copy(), root: self.root.copy(), manifest: self.manifest.copy(), source: self.source.copy(), dependencies: self.dependencies.map((value: Dependency) -> value.copy())
+        }
+    }
+}
+type Resolved = {
+    name: String, project: Option<ProjectData>, artifact: String
+}
+type Resolution = {
+    visiting: List<Dependency>, aliases: List<Dependency>, output: List<Resolved>
+}
 
-func empty_dependencies() -> List<Dependency> { [] }
+func empty_dependencies() -> List<Dependency> {
+    []
+}
 
 func lookup(entries: List<TomlEntry>, key: String) -> Option<TomlValue> {
-    for entry in entries { return Option.Some(entry.value.copy()) if entry.key == key }
+    for entry in entries {
+        return Option.Some(entry.value.copy()) if entry.key == key
+    }
     Option.None
 }
 
 func table(value: TomlValue, message: String) -> Result<List<TomlEntry>, String> [consume value] {
-    branch value { TomlValue.Table(entries) -> Result.Ok(move entries) _ -> Result.Error(message) }
+    branch value {
+        TomlValue.Table(entries) -> Result.Ok(move entries) _ -> Result.Error(message)
+    }
 }
 
 func string_value(value: TomlValue, message: String) -> Result<String, String> [consume value] {
-    branch value { TomlValue.String(text) -> Result.Ok(move text) _ -> Result.Error(message) }
+    branch value {
+        TomlValue.String(text) -> Result.Ok(move text) _ -> Result.Error(message)
+    }
 }
 
 func reject_unknown(entries: List<TomlEntry>, allowed: List<String>, location: String) -> Result<(), String> {
@@ -58,7 +80,9 @@ func relative(path: String, windows: Bool) -> Bool {
 }
 
 func components(path: String, windows: Bool) -> List<String> {
-    let text = branch { windows -> path.copy().split("\\").join("/") _ -> path.copy() }
+    let text = branch {
+        windows -> path.copy().split("\\").join("/") _ -> path.copy()
+    }
     (move text).split("/")
 }
 
@@ -67,10 +91,14 @@ func validate_name(name: String, manifest: String) -> Result<(), String> {
     let valid = !characters.empty? && name != "core" && name != "std"
     let index = 0
     for character in characters {
-        valid = valid && (character.as_int() == 95 || branch { index == 0 -> character.alphabetic?() _ -> character.alphanumeric?() })
+        valid = valid && (character.as_int() == 95 || branch {
+            index == 0 -> character.alphabetic?() _ -> character.alphanumeric?()
+        })
         index = index + 1
     }
-    branch { valid -> Result.Ok(()) _ -> Result.Error("dependency name `" + name + "` in `" + manifest + "` must be a portable module name other than `core` or `std`") }
+    branch {
+        valid -> Result.Ok(()) _ -> Result.Error("dependency name `" + name + "` in `" + manifest + "` must be a portable module name other than `core` or `std`")
+    }
 }
 
 // Keep dependency traversal deterministic regardless of manifest or directory order.
@@ -105,9 +133,17 @@ func discover_libraries(value: TomlValue, root: String, manifest: String, depend
     let location = "`[discovery]` in `" + manifest + "`"
     let entries = try table(move value, location + " must be a TOML table")
     try reject_unknown(entries, ["libraries"], location)
-    let library_value = branch lookup(entries, "libraries") { Option.Some(value) -> value Option.None -> { return Result.Ok([]) } }
+    let library_value = branch lookup(entries, "libraries") {
+        Option.Some(value) -> value Option.None -> {
+            return Result.Ok([])
+        }
+    }
     let message = "`discovery.libraries` in `" + manifest + "` must be an array of strings"
-    let folders = branch library_value { TomlValue.Array(values) -> move values _ -> { return Result.Error(message) } }
+    let folders = branch library_value {
+        TomlValue.Array(values) -> move values _ -> {
+            return Result.Error(message)
+        }
+    }
     let explicit = dependencies.map((value: Dependency) -> value.name.copy())
     let visited = []
     let discovered = empty_dependencies()
@@ -117,28 +153,42 @@ func discover_libraries(value: TomlValue, root: String, manifest: String, depend
         let directory = paths::join(root, folder)
         let canonical = branch paths::canonicalize(directory) {
             Result.Ok(path) -> path
-            Result.Error(error) -> { return Result.Error("cannot resolve library discovery folder `" + directory + "` from `" + manifest + "`: " + error.message) }
+            Result.Error(error) -> {
+                return Result.Error("cannot resolve library discovery folder `" + directory + "` from `" + manifest + "`: " + error.message)
+            }
         }
         continue if visited.contains?(canonical)
         visited.push(canonical)
         let files = branch fs::list_directory(directory) {
             Result.Ok(files) -> files
-            Result.Error(error) -> { return Result.Error("cannot read library discovery folder `" + directory + "` from `" + manifest + "`: " + error.message) }
+            Result.Error(error) -> {
+                return Result.Error("cannot read library discovery folder `" + directory + "` from `" + manifest + "`: " + error.message)
+            }
         }
-        let ordered = files.map((path: String) -> Dependency { name: path.copy(), root: path.copy() })
+        let ordered = files.map((path: String) -> Dependency {
+            name: path.copy(), root: path.copy()
+        })
         sort_dependencies(ordered)
         for file in ordered {
             let path = paths::join(directory, file.root)
-            let extension = branch paths::extension(path) { Option.Some(value) -> value Option.None -> "" }
+            let extension = branch paths::extension(path) {
+                Option.Some(value) -> value Option.None -> ""
+            }
             continue if extension != "flib" || !fs::file?(path)
-            let filename = branch paths::file_name(path) { Option.Some(value) -> value Option.None -> { return Result.Error("library discovery filename `" + path + "` must be valid UTF-8") } }
+            let filename = branch paths::file_name(path) {
+                Option.Some(value) -> value Option.None -> {
+                    return Result.Error("library discovery filename `" + path + "` must be valid UTF-8")
+                }
+            }
             let name = filename.scalar_slice(0, filename.scalar_length() - 5)
             try validate_name(name, manifest)
             continue if explicit.contains?(name)
             for previous in discovered {
                 return Result.Error("ambiguous discovered library `" + name + "` in `" + manifest + "`: `" + previous.root + "` and `" + path + "`; select an explicit `[dependencies]` path or use distinct module names (previous name `" + previous.name + "`)") if previous.name.lower() == name.lower()
             }
-            discovered.push(Dependency { name, root: path })
+            discovered.push(Dependency {
+                name, root: path
+            })
         }
     }
     Result.Ok(move discovered)
@@ -147,22 +197,30 @@ func discover_libraries(value: TomlValue, root: String, manifest: String, depend
 func load(manifest: String, windows: Bool) -> Result<ProjectData, String> {
     let source = branch fs::read_text(manifest) {
         Result.Ok(text) -> text
-        Result.Error(error) -> { return Result.Error("cannot read project manifest `" + manifest + "`: " + error.message) }
+        Result.Error(error) -> {
+            return Result.Error("cannot read project manifest `" + manifest + "`: " + error.message)
+        }
     }
     let document = branch toml::parse(move source) {
         Result.Ok(document) -> document
-        Result.Error(error) -> { return Result.Error("invalid project manifest `" + manifest + "` at " + error.line.as_string() + ":" + error.column.as_string() + ": " + error.message) }
+        Result.Error(error) -> {
+            return Result.Error("invalid project manifest `" + manifest + "` at " + error.line.as_string() + ":" + error.column.as_string() + ": " + error.message)
+        }
     }
     try reject_unknown(document.entries, ["package", "dependencies", "discovery"], "project manifest `" + manifest + "`")
     let package_value = branch lookup(document.entries, "package") {
         Option.Some(value) -> value
-        Option.None -> { return Result.Error("project manifest `" + manifest + "` is missing the required `[package]` table") }
+        Option.None -> {
+            return Result.Error("project manifest `" + manifest + "` is missing the required `[package]` table")
+        }
     }
     let package = try table(move package_value, "`package` in `" + manifest + "` must be a TOML table")
     try reject_unknown(package, ["name", "source"], "`[package]` in `" + manifest + "`")
     let name_value = branch lookup(package, "name") {
         Option.Some(value) -> value
-        Option.None -> { return Result.Error("project manifest `" + manifest + "` is missing required `package.name`") }
+        Option.None -> {
+            return Result.Error("project manifest `" + manifest + "` is missing required `package.name`")
+        }
     }
     let name = try string_value(move name_value, "`package.name` in `" + manifest + "` must be a string")
     return Result.Error("`package.name` in `" + manifest + "` cannot be empty") if name.copy().trim().empty?
@@ -172,7 +230,9 @@ func load(manifest: String, windows: Bool) -> Result<ProjectData, String> {
     }
     return Result.Error("`package.source` in `" + manifest + "` cannot be empty") if source_directory.copy().trim().empty?
     return Result.Error("`package.source` in `" + manifest + "` must be a relative path contained by the project") if !relative(source_directory, windows) || components(source_directory, windows).contains?("..")
-    let root = branch paths::parent(manifest) { Option.Some(value) -> value Option.None -> "" }
+    let root = branch paths::parent(manifest) {
+        Option.Some(value) -> value Option.None -> ""
+    }
     let source_root = paths::join(root, source_directory)
     return Result.Error("project source root `" + source_root + "` from `" + manifest + "` is not a directory") if !fs::directory?(source_root)
     let dependencies = []
@@ -186,10 +246,14 @@ func load(manifest: String, windows: Bool) -> Result<ProjectData, String> {
                 try reject_unknown(fields, ["path"], location)
                 let path = branch lookup(fields, "path") {
                     Option.Some(value) -> try string_value(move value, location + " requires a string `path`")
-                    Option.None -> { return Result.Error(location + " requires a string `path`") }
+                    Option.None -> {
+                        return Result.Error(location + " requires a string `path`")
+                    }
                 }
                 return Result.Error("dependency `" + entry.key + "` path in `" + manifest + "` must be a non-empty relative path") if path.copy().trim().empty? || !relative(path, windows)
-                dependencies.push(Dependency { name: entry.key.copy(), root: paths::join(root, path) })
+                dependencies.push(Dependency {
+                    name: entry.key.copy(), root: paths::join(root, path)
+                })
             }
         }
         Option.None -> ()
@@ -197,12 +261,16 @@ func load(manifest: String, windows: Bool) -> Result<ProjectData, String> {
     branch lookup(document.entries, "discovery") {
         Option.Some(value) -> {
             let discovered = try discover_libraries(move value, root, manifest, dependencies, windows)
-            for dependency in discovered { dependencies.push(dependency.copy()) }
+            for dependency in discovered {
+                dependencies.push(dependency.copy())
+            }
         }
         Option.None -> ()
     }
     sort_dependencies(dependencies)
-    Result.Ok(ProjectData { name, root, manifest: manifest.copy(), source: source_root, dependencies })
+    Result.Ok(ProjectData {
+        name, root, manifest: manifest.copy(), source: source_root, dependencies
+    })
 }
 
 func canonical_manifest(project: ProjectData) -> Result<String, String> {
@@ -214,12 +282,16 @@ func canonical_manifest(project: ProjectData) -> Result<String, String> {
 
 func visit(project: ProjectData, state: Resolution, windows: Bool) -> Result<(), String> {
     for dependency in project.dependencies {
-        let extension = branch paths::extension(dependency.root) { Option.Some(value) -> value Option.None -> "" }
+        let extension = branch paths::extension(dependency.root) {
+            Option.Some(value) -> value Option.None -> ""
+        }
         branch {
             extension == "flib" -> {
                 let artifact = branch paths::canonicalize(dependency.root) {
                     Result.Ok(path) -> path
-                    Result.Error(error) -> { return Result.Error("cannot resolve library `" + dependency.root + "`: " + error.message) }
+                    Result.Error(error) -> {
+                        return Result.Error("cannot resolve library `" + dependency.root + "`: " + error.message)
+                    }
                 }
                 let seen = false
                 for alias in state.aliases {
@@ -232,38 +304,61 @@ func visit(project: ProjectData, state: Resolution, windows: Bool) -> Result<(),
                     }
                 }
                 continue if seen
-                state.aliases.push(Dependency { name: dependency.name.copy(), root: artifact.copy() })
-                state.output.push(Resolved { name: dependency.name.copy(), project: Option.None, artifact })
+                state.aliases.push(Dependency {
+                    name: dependency.name.copy(), root: artifact.copy()
+                })
+                state.output.push(Resolved {
+                    name: dependency.name.copy(), project: Option.None, artifact
+                })
                 continue
             }
             _ -> ()
         }
         let child = branch load(paths::join(dependency.root, "foster.toml"), windows) {
             Result.Ok(value) -> value
-            Result.Error(error) -> { return Result.Error("cannot load dependency `" + dependency.name + "` of package `" + project.name + "`: " + error) }
+            Result.Error(error) -> {
+                return Result.Error("cannot load dependency `" + dependency.name + "` of package `" + project.name + "`: " + error)
+            }
         }
         let manifest = try canonical_manifest(child)
         let cycle = []
         let in_cycle = false
         for ancestor in state.visiting {
             in_cycle = in_cycle || ancestor.root == manifest
-            branch { in_cycle -> { cycle.push(ancestor.name.copy()) } _ -> () }
+            branch {
+                in_cycle -> {
+                    cycle.push(ancestor.name.copy())
+                }
+                _ -> ()
+            }
         }
-        branch { in_cycle -> {
-            cycle.push(dependency.name.copy())
-            return Result.Error("path dependency cycle: " + cycle.join(" -> "))
-        } _ -> () }
+        branch {
+            in_cycle -> {
+                cycle.push(dependency.name.copy())
+                return Result.Error("path dependency cycle: " + cycle.join(" -> "))
+            }
+            _ -> ()
+        }
         let seen = false
         for alias in state.aliases {
-            branch { alias.name == dependency.name -> {
-                return Result.Error("dependency name `" + dependency.name + "` refers to both `" + alias.root + "` and `" + manifest + "`") if alias.root != manifest
-                seen = true
-            } _ -> () }
+            branch {
+                alias.name == dependency.name -> {
+                    return Result.Error("dependency name `" + dependency.name + "` refers to both `" + alias.root + "` and `" + manifest + "`") if alias.root != manifest
+                    seen = true
+                }
+                _ -> ()
+            }
         }
         continue if seen
-        state.aliases.push(Dependency { name: dependency.name.copy(), root: manifest.copy() })
-        state.output.push(Resolved { name: dependency.name.copy(), project: Option.Some(child.copy()), artifact: "" })
-        state.visiting.push(Dependency { name: dependency.name.copy(), root: manifest.copy() })
+        state.aliases.push(Dependency {
+            name: dependency.name.copy(), root: manifest.copy()
+        })
+        state.output.push(Resolved {
+            name: dependency.name.copy(), project: Option.Some(child.copy()), artifact: ""
+        })
+        state.visiting.push(Dependency {
+            name: dependency.name.copy(), root: manifest.copy()
+        })
         try visit(child, state, windows)
         state.visiting.remove(state.visiting.length - 1)
     }
@@ -271,7 +366,9 @@ func visit(project: ProjectData, state: Resolution, windows: Bool) -> Result<(),
 }
 
 func one(project: ProjectData) -> List<Resolved> [consume project] {
-    [Resolved { name: project.name.copy(), project: Option.Some(move project), artifact: "" }]
+    [Resolved {
+        name: project.name.copy(), project: Option.Some(move project), artifact: ""
+    }]
 }
 
 func main(arguments: Arguments) -> Result<List<Resolved>, String> {
@@ -292,12 +389,20 @@ func main(arguments: Arguments) -> Result<List<Resolved>, String> {
             let dependencies = []
             let index = 6
             while index < values.length {
-                dependencies.push(Dependency { name: values[index].copy(), root: values[index + 1].copy() })
+                dependencies.push(Dependency {
+                    name: values[index].copy(), root: values[index + 1].copy()
+                })
                 index = index + 2
             }
-            let project = ProjectData { name: values[2].copy(), root: values[3].copy(), manifest: values[4].copy(), source: values[5].copy(), dependencies }
+            let project = ProjectData {
+                name: values[2].copy(), root: values[3].copy(), manifest: values[4].copy(), source: values[5].copy(), dependencies
+            }
             let manifest = try canonical_manifest(project)
-            let state = Resolution { visiting: [Dependency { name: project.name.copy(), root: manifest }], aliases: [], output: [] }
+            let state = Resolution {
+                visiting: [Dependency {
+                    name: project.name.copy(), root: manifest
+                }], aliases: [], output: []
+            }
             try visit(project, state, windows)
             Result.Ok(move state.output)
         }

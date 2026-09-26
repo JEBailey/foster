@@ -13,7 +13,9 @@ import std.io
 import std.path as paths
 import std.process
 
-type Reader = { values: List<String>, offset: Int }
+type Reader = {
+    values: List<String>, offset: Int
+}
 impl Reader {
     func take(self) -> String {
         assert(self.offset < self.values.length, "incomplete documentation data")
@@ -38,19 +40,35 @@ impl Reader {
         value == "1"
     }
     func optional(self) -> Option<String> {
-        branch { self.flag() -> Option.Some(self.take()) _ -> Option.None }
+        branch {
+            self.flag() -> Option.Some(self.take()) _ -> Option.None
+        }
     }
 }
 
-type ModulePage = { file_name: String, html: String }
+type ModulePage = {
+    file_name: String, html: String
+}
 impl ModulePage {
-    func copy(self) -> self { ModulePage { file_name: self.file_name.copy(), html: self.html.copy() } }
+    func copy(self) -> self {
+        ModulePage {
+            file_name: self.file_name.copy(), html: self.html.copy()
+        }
+    }
 }
-type Entry = { name: String, file_name: String, count: Int }
+type Entry = {
+    name: String, file_name: String, count: Int
+}
 impl Entry {
-    func copy(self) -> self { Entry { name: self.name.copy(), file_name: self.file_name.copy(), count: self.count } }
+    func copy(self) -> self {
+        Entry {
+            name: self.name.copy(), file_name: self.file_name.copy(), count: self.count
+        }
+    }
 }
-type Site = { index: String, modules: List<ModulePage>, module_count: Int, declaration_count: Int }
+type Site = {
+    index: String, modules: List<ModulePage>, module_count: Int, declaration_count: Int
+}
 
 func escape(text: String) -> String {
     let output = StringBuilder.empty()
@@ -74,7 +92,11 @@ func badge(public: Bool) -> String {
     }
 }
 
-func plural(count: Int) -> String { branch { count == 1 -> "" _ -> "s" } }
+func plural(count: Int) -> String {
+    branch {
+        count == 1 -> "" _ -> "s"
+    }
+}
 
 func page(title: String, heading: String, body: String, stylesheet: String, script: String) -> String {
     "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>" + escape(title) + "</title><link rel=\"stylesheet\" href=\"" + stylesheet + "\"></head><body><a class=\"skip-link\" href=\"#main-content\">Skip to content</a><header>" + heading + "</header><main id=\"main-content\" tabindex=\"-1\">" + body + "</main>" + script + "</body></html>"
@@ -90,13 +112,17 @@ func members(reader: Reader) -> String {
         let documentation = reader.optional()
         body = body + "<li><code>" + name + "</code>"
         branch documentation {
-            Option.Some(text) -> { body = body + "<br><small>" + escape(text) + "</small>" }
+            Option.Some(text) -> {
+                body = body + "<br><small>" + escape(text) + "</small>"
+            }
             Option.None -> ()
         }
         body = body + "</li>"
         index = index + 1
     }
-    branch { count == 0 -> "" _ -> "<h4>" + escape(heading) + "</h4><ul>" + body + "</ul>" }
+    branch {
+        count == 0 -> "" _ -> "<h4>" + escape(heading) + "</h4><ul>" + body + "</ul>"
+    }
 }
 
 func type_card(reader: Reader) -> String {
@@ -104,7 +130,12 @@ func type_card(reader: Reader) -> String {
     let public = reader.flag()
     let documentation = reader.optional()
     let body = "<article class=\"type-summary\"><h3><a href=\"#" + name + "\">" + name + "</a>" + badge(public) + "</h3>"
-    branch documentation { Option.Some(html) -> { body = body + html } Option.None -> () }
+    branch documentation {
+        Option.Some(html) -> {
+            body = body + html
+        }
+        Option.None -> ()
+    }
     let sections = reader.number()
     let section = 0
     while section < sections {
@@ -112,33 +143,57 @@ func type_card(reader: Reader) -> String {
         section = section + 1
     }
     let functions = reader.number()
-    branch { functions > 0 -> { body = body + "<h4>Functions and methods</h4><ul>" } _ -> () }
+    branch {
+        functions > 0 -> {
+            body = body + "<h4>Functions and methods</h4><ul>"
+        }
+        _ -> ()
+    }
     let index = 0
     while index < functions {
         let anchor = escape(reader.take())
         let label = escape(reader.take())
         let summary = reader.optional()
         body = body + "<li><a href=\"#" + anchor + "\"><code>" + label + "</code></a>"
-        branch summary { Option.Some(text) -> { body = body + "<br><small>" + escape(text) + "</small>" } Option.None -> () }
+        branch summary {
+            Option.Some(text) -> {
+                body = body + "<br><small>" + escape(text) + "</small>"
+            }
+            Option.None -> ()
+        }
         body = body + "</li>"
         index = index + 1
     }
-    branch { functions > 0 -> { body = body + "</ul>" } _ -> () }
+    branch {
+        functions > 0 -> {
+            body = body + "</ul>"
+        }
+        _ -> ()
+    }
     body + "</article>"
 }
 
-type Declaration = { contents: String, html: String }
+type Declaration = {
+    contents: String, html: String
+}
 func declaration(reader: Reader) -> Declaration {
     let anchor = escape(reader.take())
     let name = escape(reader.take())
     let kind = escape(reader.take())
     let owner = reader.take()
     let count = reader.number()
-    let owner_attribute = branch { owner.empty? -> "" _ -> " data-owner=\"" + escape(owner) + "\"" }
+    let owner_attribute = branch {
+        owner.empty? -> "" _ -> " data-owner=\"" + escape(owner) + "\""
+    }
     let contents = "<li" + owner_attribute + " data-declaration><a href=\"#" + anchor + "\">" + name + " <small>" + kind + "</small></a></li>"
     let body = "<article id=\"" + anchor + "\"><h2><a class=\"anchor\" href=\"#" + anchor + "\">" + name + "</a><span class=\"badge kind\">" + kind + "</span>"
     let index = 0
-    branch { count > 1 -> { body = body + "</h2>" } _ -> () }
+    branch {
+        count > 1 -> {
+            body = body + "</h2>"
+        }
+        _ -> ()
+    }
     while index < count {
         let public = reader.flag()
         let signature = reader.take()
@@ -148,29 +203,59 @@ func declaration(reader: Reader) -> Declaration {
             _ -> "<section><h3>Overload " + (index + 1).as_string() + badge(public) + "</h3><pre><code>" + signature + "</code></pre>"
         }
         branch docs {
-            Option.Some(html) -> { body = body + html }
-            Option.None -> { body = body + branch { count == 1 -> "<p class=\"empty\">No documentation provided.</p>" _ -> "<p>No documentation provided.</p>\n" } }
+            Option.Some(html) -> {
+                body = body + html
+            }
+            Option.None -> {
+                body = body + branch {
+                    count == 1 -> "<p class=\"empty\">No documentation provided.</p>" _ -> "<p>No documentation provided.</p>\n"
+                }
+            }
         }
-        branch { count > 1 -> { body = body + "</section>" } _ -> () }
+        branch {
+            count > 1 -> {
+                body = body + "</section>"
+            }
+            _ -> ()
+        }
         index = index + 1
     }
-    Declaration { contents, html: body + "<a class=\"back-to-navigation\" href=\"#page-navigation\">↑ On this page</a></article>" }
+    Declaration {
+        contents, html: body + "<a class=\"back-to-navigation\" href=\"#page-navigation\">↑ On this page</a></article>"
+    }
 }
 
-type RenderedModule = { page: ModulePage, entry: Entry }
+type RenderedModule = {
+    page: ModulePage, entry: Entry
+}
 func module_page(reader: Reader, script: String) -> RenderedModule {
     let name = reader.take()
     let docs = reader.optional()
     let body = "<div id=\"module-overview\"><h2>Overview</h2>" + HELP
-    branch docs { Option.Some(html) -> { body = body + "<article class=\"module-documentation\">" + html + "</article>" } Option.None -> () }
+    branch docs {
+        Option.Some(html) -> {
+            body = body + "<article class=\"module-documentation\">" + html + "</article>"
+        }
+        Option.None -> ()
+    }
     let card_count = reader.number()
-    branch { card_count > 0 -> { body = body + "<section aria-labelledby=\"provided-types\"><h2 id=\"provided-types\">Provided types</h2><div class=\"type-grid\">" } _ -> () }
+    branch {
+        card_count > 0 -> {
+            body = body + "<section aria-labelledby=\"provided-types\"><h2 id=\"provided-types\">Provided types</h2><div class=\"type-grid\">"
+        }
+        _ -> ()
+    }
     let index = 0
     while index < card_count {
         body = body + type_card(reader)
         index = index + 1
     }
-    branch { card_count > 0 -> { body = body + "</div></section>" } _ -> () }
+    branch {
+        card_count > 0 -> {
+            body = body + "</div></section>"
+        }
+        _ -> ()
+    }
     body = body + "</div>"
     let count = reader.number()
     let contents = ""
@@ -181,17 +266,28 @@ func module_page(reader: Reader, script: String) -> RenderedModule {
         body = body + item.html
         index = index + 1
     }
-    branch { count == 0 -> { body = body + "<p class=\"empty\">This module has no declarations.</p>" } _ -> () }
+    branch {
+        count == 0 -> {
+            body = body + "<p class=\"empty\">This module has no declarations.</p>"
+        }
+        _ -> ()
+    }
     let layout = "<div class=\"module-layout\"><nav id=\"page-navigation\" class=\"on-this-page\" aria-label=\"On this page\"><a class=\"crumb\" href=\"../index.html\">← All modules</a><details open><summary>On this page</summary><a href=\"#module-overview\">Overview</a><label for=\"declaration-filter\">Find a declaration</label><input id=\"declaration-filter\" class=\"filter\" type=\"search\" placeholder=\"Name or kind…\" data-declaration-filter><p class=\"filter-status\" role=\"status\" data-declaration-status>" + count.as_string() + " declarations</p><ul>" + contents + "</ul></details></nav><div class=\"module-content\">" + body + "</div></div>"
     let heading = "<h1>module " + escape(name) + "</h1><p>" + count.as_string() + " declaration" + plural(count) + "</p>"
     let filename = name.copy().split(".").join("-") + ".html"
     RenderedModule {
-        page: ModulePage { file_name: filename.copy(), html: page(name + " — Foster documentation", heading, layout, "../style.css", script) }
-        entry: Entry { name, file_name: filename, count }
+        page: ModulePage {
+            file_name: filename.copy(), html: page(name + " — Foster documentation", heading, layout, "../style.css", script)
+        }
+        entry: Entry {
+            name, file_name: filename, count
+        }
     }
 }
 
-func namespace(name: String) -> String { name.copy().split(".").head }
+func namespace(name: String) -> String {
+    name.copy().split(".").head
+}
 
 func index_page(entries: List<Entry>, declarations: Int, script: String) -> String {
     let jumps = ""
@@ -222,7 +318,9 @@ func index_page(entries: List<Entry>, declarations: Int, script: String) -> Stri
 }
 
 func checked_io(outcome: Result<(), IoError>) -> Result<(), String> [consume outcome] {
-    branch outcome { Result.Ok(_) -> Result.Ok(()) Result.Error(error) -> Result.Error(error.operation + " `" + error.path + "`: " + error.message) }
+    branch outcome {
+        Result.Ok(_) -> Result.Ok(()) Result.Error(error) -> Result.Error(error.operation + " `" + error.path + "`: " + error.message)
+    }
 }
 
 func write_site(site: Site, output: String, style: String) -> Result<(), String> {
@@ -237,7 +335,9 @@ func write_site(site: Site, output: String, style: String) -> Result<(), String>
 }
 
 func main(arguments: Arguments) -> Result<Site, String> {
-    let reader = Reader { values: arguments.values, offset: 0 }
+    let reader = Reader {
+        values: arguments.values, offset: 0
+    }
     let operation = reader.take()
     let output = reader.take()
     let style = reader.take()
@@ -255,11 +355,17 @@ func main(arguments: Arguments) -> Result<Site, String> {
         index = index + 1
     }
     assert(reader.offset == reader.values.length, "unexpected documentation data")
-    let site = Site { index: index_page(entries, declarations, script), modules, module_count: count, declaration_count: declarations }
+    let site = Site {
+        index: index_page(entries, declarations, script), modules, module_count: count, declaration_count: declarations
+    }
     branch {
-        operation == "write" -> { try write_site(site, output, style) }
+        operation == "write" -> {
+            try write_site(site, output, style)
+        }
         operation == "render" -> ()
-        _ -> { return Result.Error("unknown documentation operation") }
+        _ -> {
+            return Result.Error("unknown documentation operation")
+        }
     }
     Result.Ok(move site)
 }

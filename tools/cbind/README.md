@@ -9,7 +9,7 @@ installed Foster compiler or Rust toolchain.
 Build once from the repository root:
 
 ```powershell
-cargo run --bin foster -- build tools/cbind --native --output target/cbind.exe
+cargo run --release --bin foster -- build tools/cbind --native --output target/cbind.exe
 ```
 
 Then run the executable from any directory:
@@ -75,6 +75,12 @@ manifest and generated Foster source. Names that collide with Foster keywords,
 imported modules, or generated locals are disambiguated. Record field comments
 appear in the record documentation, because Foster does not accept field doc
 comments. These comments are descriptive; ownership contracts remain explicit.
+
+The implementation uses subjectless branches with an implicit unit default for
+optional actions; subject matches and value-producing branches remain exhaustive.
+JSON strings use `std.json` escaping. Generated Foster string literals use the
+language's own escapes and iterate Unicode scalars, preserving control characters
+and combining marks without treating grapheme clusters as syntax characters.
 
 Options:
 
@@ -186,8 +192,9 @@ prove that duplicating the underlying native resource is valid.
 Validation:
 
 ```powershell
-./target/debug/foster.exe check tools/cbind
-./target/debug/foster.exe test tools/cbind
-./target/debug/foster.exe fmt tools/cbind --check
-cargo test --test c_header_tool
+./target/release/foster.exe check tools/cbind
+./target/release/foster.exe test tools/cbind
+./target/release/foster.exe fmt tools/cbind --check
+cargo test --release --lib foreign::bridge::tests
+cargo test --release --test c_header_tool --test c_integration --test c_pointer_contracts --test c_callbacks
 ```

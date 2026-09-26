@@ -4,4 +4,6 @@ import core.string
 import generate
 import std.process
 
-func main(args: Arguments) -> Int { generate::run(args.values) }
+func main(args: Arguments) -> Int {
+    generate::run(args.values)
+}

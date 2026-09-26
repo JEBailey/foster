@@ -191,6 +191,27 @@ mod tests {
         crate::compile(&(source + "\nfunc main() -> Int { 42 }\n")).unwrap();
     }
     #[test]
+    fn generated_string_literals_preserve_controls_and_combining_marks() {
+        let text = (0..32).map(char::from).collect::<String>() + "\"\u{301}\\\u{301}λ🙂";
+        let input = serde_json::json!({
+            "abi": 1, "headers": [], "operations": [],
+            "constants": [{"name": "TEXT", "type": "string", "value": text}]
+        })
+        .to_string();
+        let manifest = Manifest::parse(&input).unwrap();
+        let source = manifest
+            .foster_source(Path::new("quote\"\u{301}.dll"))
+            .unwrap();
+        let compilation =
+            crate::compile(&(source + "\nfunc main() -> String { C_TEXT }\n")).unwrap();
+        for optimize in [false, true] {
+            let value =
+                crate::vm::run_with_options(&compilation, crate::vm::CompileOptions { optimize })
+                    .unwrap();
+            assert_eq!(value.as_string(), Some(text.as_str()));
+        }
+    }
+    #[test]
     fn constants_and_parameter_metadata_generate_valid_foster() {
         let manifest = Manifest::parse(r#"{
             "abi":1,"headers":[],

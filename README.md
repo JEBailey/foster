@@ -110,7 +110,9 @@ is enabled by default and can be selected with `--optimize` or `--no-optimize`.
 
 `foster fmt [file-or-directory]` formats `.fos` source in place. It preserves comments and literal
 contents while normalizing indentation, line endings, trailing whitespace, blank lines, and the
-final newline. Enum declarations keep their first case after `=` and align later `|` cases on
+final newline. Nonempty braces put their contents on following indented lines, with the closing
+brace on its own line (retaining expression suffixes such as `.field`). Empty braces stay `{}`.
+Enum declarations keep their first case after `=` and align later `|` cases on
 indented lines. `foster fmt --check` reports files that differ without writing them, making it
 suitable for CI. The current directory is used when no path is supplied.
 
